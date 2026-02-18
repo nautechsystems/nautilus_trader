@@ -427,7 +427,11 @@ impl ExecutionClient for AxExecutionClient {
         self.ws_orders.connect(&token).await?;
         log::info!("Connected to orders WebSocket");
 
-        if self.ws_stream_handle.is_none() {
+        let should_spawn = match &self.ws_stream_handle {
+            None => true,
+            Some(handle) => handle.is_finished(),
+        };
+        if should_spawn {
             let stream = self.ws_orders.stream();
             let emitter = self.emitter.clone();
 

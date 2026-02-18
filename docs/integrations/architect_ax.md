@@ -35,7 +35,7 @@ and won't need to necessarily work with these lower level components directly.
 ## AX Exchange documentation
 
 AX Exchange provides documentation for users which can be found at the
-[Architect documentation site](https://docs.architect.co/).
+[Architect documentation site](https://docs.architect.exchange/).
 It's recommended you also refer to the AX Exchange documentation in conjunction with this
 NautilusTrader integration guide.
 
@@ -44,13 +44,13 @@ NautilusTrader integration guide.
 AX Exchange specializes in perpetual futures contracts on traditional asset classes. Perpetual
 contracts never expire, eliminating rollover costs associated with standard futures.
 
-| Asset Class      | Examples                            | Notes                            |
-|------------------|-------------------------------------|----------------------------------|
-| Foreign exchange | GBPUSD-PERP, EURUSD-PERP.           | Major and minor FX pairs.        |
-| Stock indices    | Equity index perpetuals.            |                                  |
-| Metals           | XAU-PERP (gold), XAG-PERP (silver). | Precious metals perpetuals.      |
-| Energy           | Crude oil, natural gas.             | Energy commodity perpetuals.     |
-| Interest rates   | SOFR, treasury yields.              | Rate perpetuals.                 |
+| Asset Class      | Examples                            | Notes                        |
+|------------------|-------------------------------------|------------------------------|
+| Foreign exchange | GBPUSD-PERP, EURUSD-PERP.           | Major and minor FX pairs.    |
+| Stock indices    | Equity index perpetuals.            |                              |
+| Metals           | XAU-PERP (gold), XAG-PERP (silver). | Precious metals perpetuals.  |
+| Energy           | Crude oil, natural gas.             | Energy commodity perpetuals. |
+| Interest rates   | SOFR, treasury yields.              | Rate perpetuals.             |
 
 :::info
 All instruments on AX Exchange are perpetual futures using a netting account model with
@@ -121,13 +121,13 @@ for historical data backfill.
 
 ### Data types
 
-| AX Data         | Nautilus Data Type  | Notes                                                    |
-|-----------------|---------------------|----------------------------------------------------------|
-| Order book (L1) | `QuoteTick`         | Best bid/ask top-of-book from L1 book subscription.      |
-| Order book (L2) | `OrderBookDelta`    | Aggregated price levels.                                 |
-| Order book (L3) | `OrderBookDelta`    | Individual order quantities.                             |
-| Trades          | `TradeTick`         | Real-time trade events from L1 subscription.             |
-| Bars/candles    | `Bar`               | OHLCV data (total volume only, no buy/sell breakdown).   |
+| AX Data         | Nautilus Data Type  | Notes                                                       |
+|-----------------|---------------------|-------------------------------------------------------------|
+| Order book (L1) | `QuoteTick`         | Best bid/ask top-of-book from L1 book subscription.         |
+| Order book (L2) | `OrderBookDelta`    | Aggregated price levels.                                    |
+| Order book (L3) | `OrderBookDelta`    | Individual order quantities.                                |
+| Trades          | `TradeTick`         | Real-time trade events from L1 subscription.                |
+| Bars/candles    | `Bar`               | OHLCV data (total volume only, no buy/sell breakdown).      |
 | Funding rates   | `FundingRateUpdate` | Polled via HTTP every 15 minutes (not real-time WebSocket). |
 
 :::note
@@ -165,10 +165,10 @@ AX Exchange supports market and limit order types with stop triggers.
 
 ### Execution instructions
 
-| Instruction   | Supported | Notes                                                    |
-|---------------|-----------|----------------------------------------------------------|
-| `post_only`   | ✓         | Maker-only; rejected if order would take liquidity.      |
-| `reduce_only` | -         | *Not supported*.                                         |
+| Instruction   | Supported | Notes                                               |
+|---------------|-----------|-----------------------------------------------------|
+| `post_only`   | ✓         | Maker-only; rejected if order would take liquidity. |
+| `reduce_only` | -         | *Not supported*.                                    |
 
 ### Time in force
 
@@ -184,30 +184,30 @@ AX Exchange supports market and limit order types with stop triggers.
 
 ### Advanced order features
 
-| Feature            | Supported | Notes                                                       |
-|--------------------|-----------|-------------------------------------------------------------|
-| Order modification | -         | *Not supported by AX*. Cancel and resubmit instead.         |
-| Cancel order       | ✓         | Single order cancellation.                                  |
-| Cancel all orders  | ✓         | Cancel all open orders for an instrument.                   |
-| Batch cancel       | ✓         | Cancel multiple specified orders.                           |
+| Feature            | Supported | Notes                                                              |
+|--------------------|-----------|--------------------------------------------------------------------|
+| Order modification | -         | *Not supported by AX*. Cancel and resubmit instead.                |
+| Cancel order       | ✓         | Single order cancellation.                                         |
+| Cancel all orders  | ✓         | Cancel all open orders for an instrument.                          |
+| Batch cancel       | ✓         | Cancel multiple specified orders.                                  |
 | Order lists        | ✓         | Sequential submission (orders submitted individually, non-atomic). |
 
 ### Position management
 
-| Feature          | Supported | Notes                                  |
-|------------------|-----------|----------------------------------------|
-| Query positions  | ✓         | Real-time position updates.            |
-| Position mode    | -         | Netting mode only.                     |
-| Cross margin     | ✓         | Cross-margin across all instruments.   |
+| Feature          | Supported | Notes                                |
+|------------------|-----------|--------------------------------------|
+| Query positions  | ✓         | Real-time position updates.          |
+| Position mode    | -         | Netting mode only.                   |
+| Cross margin     | ✓         | Cross-margin across all instruments. |
 
 ### Order querying
 
-| Feature              | Supported | Notes                                                          |
-|----------------------|-----------|----------------------------------------------------------------|
-| Query open orders    | ✓         | List all active orders.                                        |
-| Query single order   | ✓         | By venue order ID or client order ID (any order state).        |
-| Order status reports | ✓         | Reconciliation from open orders; see note below.               |
-| Fill reports         | ✓         | Execution and fill history.                                    |
+| Feature              | Supported | Notes                                                   |
+|----------------------|-----------|---------------------------------------------------------|
+| Query open orders    | ✓         | List all active orders.                                 |
+| Query single order   | ✓         | By venue order ID or client order ID (any order state). |
+| Order status reports | ✓         | Reconciliation from open orders; see note below.        |
+| Fill reports         | ✓         | Execution and fill history.                             |
 
 :::note
 Order status reports for reconciliation are generated from the open orders endpoint.

@@ -24,7 +24,6 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_data import DataTester
@@ -71,7 +70,6 @@ bar_type = BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")
 config_tester = DataTesterConfig(
     instrument_ids=[instrument_id],
     bar_types=[bar_type],
-    # subscribe_book_at_interval=True,
     subscribe_quotes=True,
     subscribe_trades=True,
     subscribe_bars=True,
@@ -79,10 +77,19 @@ config_tester = DataTesterConfig(
     request_trades=True,
     request_bars=True,
     request_funding_rates=True,
-    book_type=BookType.L2_MBP,
-    book_interval_ms=10,
     log_data=True,
 )
+
+# Alternative config for testing the order book:
+# config_tester = DataTesterConfig(
+#     instrument_ids=[instrument_id],
+#     bar_types=[bar_type],
+#     subscribe_book_at_interval=True,
+#     book_type=BookType.L2_MBP,
+#     book_interval_ms=10,
+#     log_data=True,
+# )
+
 tester = DataTester(config=config_tester)
 
 node.trader.add_actor(tester)

@@ -45,6 +45,7 @@ use super::consts::{
     Serialize,
     Deserialize,
 )]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
@@ -130,8 +131,11 @@ impl AxEnvironment {
     pyo3::pyclass(
         eq,
         eq_int,
+        frozen,
+        hash,
         module = "nautilus_trader.core.nautilus_pyo3.architect",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AxInstrumentState {
@@ -170,8 +174,11 @@ pub enum AxInstrumentState {
     pyo3::pyclass(
         eq,
         eq_int,
+        frozen,
+        hash,
         module = "nautilus_trader.core.nautilus_pyo3.architect",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AxOrderSide {
@@ -249,8 +256,11 @@ impl TryFrom<OrderSide> for AxOrderSide {
     pyo3::pyclass(
         eq,
         eq_int,
+        frozen,
+        hash,
         module = "nautilus_trader.core.nautilus_pyo3.architect",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AxOrderStatus {
@@ -330,8 +340,11 @@ impl From<AxOrderStatus> for OrderStatus {
     pyo3::pyclass(
         eq,
         eq_int,
+        frozen,
+        hash,
         module = "nautilus_trader.core.nautilus_pyo3.architect",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AxTimeInForce {
@@ -384,7 +397,7 @@ impl TryFrom<TimeInForce> for AxTimeInForce {
 /// Order type as defined by the AX Exchange API.
 ///
 /// # References
-/// - <https://docs.architect.co/sdk-reference/order-entry>
+/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
 #[derive(
     Clone,
     Copy,
@@ -406,8 +419,11 @@ impl TryFrom<TimeInForce> for AxTimeInForce {
     pyo3::pyclass(
         eq,
         eq_int,
+        frozen,
+        hash,
         module = "nautilus_trader.core.nautilus_pyo3.architect",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AxOrderType {
@@ -449,6 +465,12 @@ impl TryFrom<OrderType> for AxOrderType {
 
 /// Market data subscription level.
 ///
+/// The AX API uses `LEVEL_1`, `LEVEL_2`, `LEVEL_3` on the wire (with underscore
+/// before the digit). Serde and strum per-variant renames handle the wire and
+/// string formats correctly, however PyO3's `rename_all` does not insert an
+/// underscore at letter-digit boundaries, so the Python variant names are
+/// `LEVEL1`, `LEVEL2`, `LEVEL3` (without underscore).
+///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(
@@ -466,6 +488,7 @@ impl TryFrom<OrderType> for AxOrderType {
     Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -581,22 +604,16 @@ impl TryFrom<&BarSpecification> for AxCandleWidth {
     Serialize,
     Deserialize,
 )]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum AxMdRequestType {
     /// Subscribe to market data for a symbol.
-    #[serde(rename = "subscribe")]
-    #[strum(serialize = "subscribe")]
     Subscribe,
     /// Unsubscribe from market data for a symbol.
-    #[serde(rename = "unsubscribe")]
-    #[strum(serialize = "unsubscribe")]
     Unsubscribe,
     /// Subscribe to candle data for a symbol.
-    #[serde(rename = "subscribe_candles")]
-    #[strum(serialize = "subscribe_candles")]
     SubscribeCandles,
     /// Unsubscribe from candle data for a symbol.
-    #[serde(rename = "unsubscribe_candles")]
-    #[strum(serialize = "unsubscribe_candles")]
     UnsubscribeCandles,
 }
 
@@ -656,8 +673,11 @@ pub enum AxOrderRequestType {
     pyo3::pyclass(
         eq,
         eq_int,
+        frozen,
+        hash,
         module = "nautilus_trader.core.nautilus_pyo3.architect",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AxMdWsMessageType {
@@ -714,8 +734,11 @@ pub enum AxMdWsMessageType {
     pyo3::pyclass(
         eq,
         eq_int,
+        frozen,
+        hash,
         module = "nautilus_trader.core.nautilus_pyo3.architect",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AxOrderWsMessageType {
@@ -786,8 +809,11 @@ pub enum AxOrderWsMessageType {
     pyo3::pyclass(
         eq,
         eq_int,
+        frozen,
+        hash,
         module = "nautilus_trader.core.nautilus_pyo3.architect",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AxCancelReason {
@@ -823,8 +849,11 @@ pub enum AxCancelReason {
     pyo3::pyclass(
         eq,
         eq_int,
+        frozen,
+        hash,
         module = "nautilus_trader.core.nautilus_pyo3.architect",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AxCancelRejectionReason {

@@ -79,7 +79,7 @@ use crate::common::{
     consts::{AX_HTTP_URL, AX_ORDERS_URL},
     credential::Credential,
     enums::{AxCandleWidth, AxInstrumentState},
-    parse::client_order_id_to_cid,
+    parse::{cid_to_client_order_id, client_order_id_to_cid},
 };
 
 /// Default Ax REST API rate limit.
@@ -1509,7 +1509,8 @@ impl AxHttpClient {
             .funding_rates
             .iter()
             .map(|r| parse_funding_rate(r, instrument_id, ts_init))
-            .collect();
+            .collect::<anyhow::Result<Vec<_>>>()
+            .map_err(|e| AxHttpError::from(e.to_string()))?;
 
         Ok(funding_rates)
     }
@@ -1595,13 +1596,12 @@ impl AxHttpClient {
         let filled_qty = Quantity::new(filled as f64, size_precision);
         let ts_init = self.generate_ts_init();
 
-        let resolved_coid = client_order_id
-            .unwrap_or_else(|| ClientOrderId::new(format!("CID-{}", detail.clord_id.unwrap_or(0))));
+        let resolved_coid = client_order_id.or_else(|| detail.clord_id.map(cid_to_client_order_id));
 
         Ok(OrderStatusReport::new(
             account_id,
             instrument_id,
-            Some(resolved_coid),
+            resolved_coid,
             voi,
             order_side,
             order_type,

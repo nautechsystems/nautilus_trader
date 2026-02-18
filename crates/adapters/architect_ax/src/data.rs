@@ -85,7 +85,7 @@ pub struct AxDataClient {
     /// WebSocket client for real-time data streaming.
     ws_client: AxMdWebSocketClient,
     /// Whether the client is currently connected.
-    is_connected: AtomicBool,
+    is_connected: Arc<AtomicBool>,
     /// Cancellation token for async operations.
     cancellation_token: CancellationToken,
     /// Background task handles.
@@ -123,7 +123,7 @@ impl AxDataClient {
             config,
             http_client,
             ws_client,
-            is_connected: AtomicBool::new(false),
+            is_connected: Arc::new(AtomicBool::new(false)),
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
             data_sender,
@@ -158,6 +158,7 @@ impl AxDataClient {
         let stream = self.ws_client.stream();
         let data_sender = self.data_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
+        let is_connected = Arc::clone(&self.is_connected);
 
         let handle = get_runtime().spawn(async move {
             tokio::pin!(stream);
@@ -175,6 +176,7 @@ impl AxDataClient {
                             }
                             None => {
                                 log::debug!("WebSocket stream ended");
+                                is_connected.store(false, Ordering::Release);
                                 break;
                             }
                         }
@@ -259,6 +261,12 @@ impl DataClient for AxDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::debug!("Stopping {}", self.client_id);
         self.cancellation_token.cancel();
+        for task in self.tasks.drain(..) {
+            task.abort();
+        }
+        for (_, task) in self.funding_rate_tasks.drain() {
+            task.abort();
+        }
         self.is_connected.store(false, Ordering::Release);
         Ok(())
     }
@@ -280,6 +288,12 @@ impl DataClient for AxDataClient {
     fn dispose(&mut self) -> anyhow::Result<()> {
         log::debug!("Disposing {}", self.client_id);
         self.cancellation_token.cancel();
+        for task in self.tasks.drain(..) {
+            task.abort();
+        }
+        for (_, task) in self.funding_rate_tasks.drain() {
+            task.abort();
+        }
         self.is_connected.store(false, Ordering::Release);
         Ok(())
     }
@@ -293,6 +307,11 @@ impl DataClient for AxDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        if self.is_connected() {
+            log::debug!("Already connected {}", self.client_id);
+            return Ok(());
+        }
+
         log::info!("Connecting {}", self.client_id);
 
         // Recreate token so a previous disconnect/stop doesn't block new operations
@@ -643,6 +662,7 @@ impl DataClient for AxDataClient {
         let http = self.http_client.clone();
         let ws = self.ws_client.clone();
         let sender = self.data_sender.clone();
+        let cancel = self.cancellation_token.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = *AX_VENUE;
@@ -654,6 +674,9 @@ impl DataClient for AxDataClient {
         get_runtime().spawn(async move {
             match http.request_instruments(None, None).await {
                 Ok(instruments) => {
+                    if cancel.is_cancelled() {
+                        return;
+                    }
                     log::info!("Fetched {} instruments from Ax", instruments.len());
                     for inst in &instruments {
                         ws.cache_instrument(inst.clone());
@@ -688,6 +711,7 @@ impl DataClient for AxDataClient {
         let http = self.http_client.clone();
         let ws = self.ws_client.clone();
         let sender = self.data_sender.clone();
+        let cancel = self.cancellation_token.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let instrument_id = request.instrument_id;
@@ -700,6 +724,9 @@ impl DataClient for AxDataClient {
         get_runtime().spawn(async move {
             match http.request_instrument(symbol, None, None).await {
                 Ok(instrument) => {
+                    if cancel.is_cancelled() {
+                        return;
+                    }
                     log::debug!("Fetched instrument {symbol} from Ax");
                     ws.cache_instrument(instrument.clone());
                     http.cache_instrument(instrument.clone());
@@ -731,6 +758,7 @@ impl DataClient for AxDataClient {
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
+        let cancel = self.cancellation_token.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let instrument_id = request.instrument_id;
@@ -742,6 +770,9 @@ impl DataClient for AxDataClient {
         get_runtime().spawn(async move {
             match http.request_book_snapshot(symbol, depth).await {
                 Ok(book) => {
+                    if cancel.is_cancelled() {
+                        return;
+                    }
                     log::debug!(
                         "Fetched book snapshot for {symbol} ({} bids, {} asks)",
                         book.bids(None).count(),
@@ -775,6 +806,7 @@ impl DataClient for AxDataClient {
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
+        let cancel = self.cancellation_token.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let instrument_id = request.instrument_id;
@@ -791,6 +823,9 @@ impl DataClient for AxDataClient {
                 .await
             {
                 Ok(ticks) => {
+                    if cancel.is_cancelled() {
+                        return;
+                    }
                     log::debug!("Fetched {} trades for {symbol}", ticks.len());
 
                     let response = DataResponse::Trades(TradesResponse::new(
@@ -838,9 +873,14 @@ impl DataClient for AxDataClient {
             }
         };
 
+        let cancel = self.cancellation_token.clone();
+
         get_runtime().spawn(async move {
             match http.request_bars(symbol, start, end, width).await {
                 Ok(bars) => {
+                    if cancel.is_cancelled() {
+                        return;
+                    }
                     log::debug!("Fetched {} bars for {symbol}", bars.len());
 
                     let response = DataResponse::Bars(BarsResponse::new(
@@ -870,6 +910,7 @@ impl DataClient for AxDataClient {
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
+        let cancel = self.cancellation_token.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let instrument_id = request.instrument_id;
@@ -884,6 +925,9 @@ impl DataClient for AxDataClient {
         get_runtime().spawn(async move {
             match http.request_funding_rates(instrument_id, start, end).await {
                 Ok(funding_rates) => {
+                    if cancel.is_cancelled() {
+                        return;
+                    }
                     log::debug!("Fetched {} funding rates for {symbol}", funding_rates.len());
 
                     let ts_init = clock.get_time_ns();

@@ -856,7 +856,7 @@ impl AuthenticateUserRequest {
 /// Request body for `POST /place_order`.
 ///
 /// # References
-/// - <https://docs.architect.co/sdk-reference/order-entry>
+/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlaceOrderRequest {
     /// Order side: "B" (buy) or "S" (sell).
@@ -1022,7 +1022,7 @@ impl CancelOrderRequest {
 /// Request body for `POST /cancel_all_orders`.
 ///
 /// # References
-/// - <https://docs.architect.co/sdk-reference/order-entry>
+/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CancelAllOrdersRequest {
     /// Optional symbol filter - only cancel orders for this symbol.
@@ -1058,7 +1058,7 @@ impl CancelAllOrdersRequest {
 /// Response payload returned by `POST /cancel_all_orders`.
 ///
 /// # References
-/// - <https://docs.architect.co/sdk-reference/order-entry>
+/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxCancelAllOrdersResponse {
     /// Number of orders canceled.
@@ -1069,7 +1069,7 @@ pub struct AxCancelAllOrdersResponse {
 /// Request body for batch cancel orders.
 ///
 /// # References
-/// - <https://docs.architect.co/sdk-reference/order-entry>
+/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BatchCancelOrdersRequest {
     /// List of order IDs to cancel.
@@ -1087,7 +1087,7 @@ impl BatchCancelOrdersRequest {
 /// Response payload returned by batch cancel orders.
 ///
 /// # References
-/// - <https://docs.architect.co/sdk-reference/order-entry>
+/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxBatchCancelOrdersResponse {
     /// Number of orders successfully canceled.

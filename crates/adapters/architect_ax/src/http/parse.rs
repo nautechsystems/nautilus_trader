@@ -116,7 +116,7 @@ pub fn parse_bar(
     // Ax provides volume as i64 contracts
     let volume = Quantity::new(candle.volume as f64, size_precision);
 
-    let ts_event = ax_timestamp_s_to_unix_nanos(candle.ts);
+    let ts_event = ax_timestamp_s_to_unix_nanos(candle.ts)?;
 
     let bar_spec = candle_width_to_bar_spec(candle.width);
     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::External);
@@ -126,19 +126,22 @@ pub fn parse_bar(
 }
 
 /// Parses an Ax funding rate into a Nautilus [`FundingRateUpdate`].
-#[must_use]
+///
+/// # Errors
+///
+/// Returns an error if the timestamp is invalid.
 pub fn parse_funding_rate(
     ax_rate: &AxFundingRate,
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
-) -> FundingRateUpdate {
-    FundingRateUpdate::new(
+) -> anyhow::Result<FundingRateUpdate> {
+    Ok(FundingRateUpdate::new(
         instrument_id,
         ax_rate.funding_rate,
         None, // AX doesn't provide next funding time
-        ax_timestamp_ns_to_unix_nanos(ax_rate.timestamp_ns),
+        ax_timestamp_ns_to_unix_nanos(ax_rate.timestamp_ns)?,
         ts_init,
-    )
+    ))
 }
 
 /// Parses an Ax perpetual futures instrument into a Nautilus CryptoPerpetual.
@@ -305,7 +308,7 @@ where
     let price = decimal_to_price_dp(order.p, instrument.price_precision(), "order.p")?;
 
     // Ax timestamps are in Unix epoch seconds
-    let ts_event = ax_timestamp_s_to_unix_nanos(order.ts);
+    let ts_event = ax_timestamp_s_to_unix_nanos(order.ts)?;
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -665,7 +668,8 @@ mod tests {
         let instrument_id = InstrumentId::new(Symbol::new("JPYUSD-PERP"), *AX_VENUE);
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let update = parse_funding_rate(&response.funding_rates[1], instrument_id, ts_init);
+        let update =
+            parse_funding_rate(&response.funding_rates[1], instrument_id, ts_init).unwrap();
 
         assert_eq!(update.instrument_id, instrument_id);
         assert_eq!(update.rate, dec!(0.003558290026));

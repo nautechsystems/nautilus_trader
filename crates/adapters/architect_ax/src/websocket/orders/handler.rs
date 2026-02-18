@@ -52,11 +52,11 @@ use crate::{
     },
     websocket::{
         messages::{
-            AxOrdersWsMessage, AxWsCancelOrder, AxWsCancelRejected, AxWsGetOpenOrders, AxWsOrder,
-            AxWsOrderAcknowledged, AxWsOrderCanceled, AxWsOrderDoneForDay, AxWsOrderEvent,
-            AxWsOrderExpired, AxWsOrderFilled, AxWsOrderPartiallyFilled, AxWsOrderRejected,
-            AxWsOrderReplaced, AxWsOrderResponse, AxWsPlaceOrder, AxWsRawMessage,
-            AxWsTradeExecution, NautilusExecWsMessage, OrderMetadata,
+            AxOrdersWsMessage, AxWsCancelOrder, AxWsCancelRejected, AxWsError, AxWsGetOpenOrders,
+            AxWsOrder, AxWsOrderAcknowledged, AxWsOrderCanceled, AxWsOrderDoneForDay,
+            AxWsOrderEvent, AxWsOrderExpired, AxWsOrderFilled, AxWsOrderPartiallyFilled,
+            AxWsOrderRejected, AxWsOrderReplaced, AxWsOrderResponse, AxWsPlaceOrder,
+            AxWsRawMessage, AxWsTradeExecution, NautilusExecWsMessage, OrderMetadata,
         },
         parse::parse_order_message,
     },
@@ -298,11 +298,20 @@ impl FeedHandler {
                     "PlaceOrder command received: request_id={request_id}, symbol={}",
                     order.s
                 );
-                self.pending_orders.insert(request_id, order_info);
+                self.pending_orders.insert(request_id, order_info.clone());
 
                 if let Err(e) = self.send_json(&order).await {
                     log::error!("Failed to send place order message: {e}");
                     self.pending_orders.remove(&request_id);
+                    self.orders_metadata.remove(&order_info.client_order_id);
+                    if let Some(cid) = order.cid {
+                        self.cid_to_client_order_id.remove(&cid);
+                    }
+                    self.message_queue
+                        .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
+                            "Failed to send place order for {}: {e}",
+                            order_info.client_order_id
+                        ))));
                 }
             }
             HandlerCommand::CancelOrder {
@@ -335,7 +344,7 @@ impl FeedHandler {
         }
     }
 
-    async fn send_cancel_order(&self, request_id: i64, order_id: &str) {
+    async fn send_cancel_order(&mut self, request_id: i64, order_id: &str) {
         let msg = AxWsCancelOrder {
             rid: request_id,
             t: AxOrderRequestType::CancelOrder,
@@ -344,10 +353,14 @@ impl FeedHandler {
 
         if let Err(e) = self.send_json(&msg).await {
             log::error!("Failed to send cancel order message: {e}");
+            self.message_queue
+                .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
+                    "Failed to send cancel for order {order_id}: {e}"
+                ))));
         }
     }
 
-    async fn send_get_open_orders(&self, request_id: i64) {
+    async fn send_get_open_orders(&mut self, request_id: i64) {
         let msg = AxWsGetOpenOrders {
             rid: request_id,
             t: AxOrderRequestType::GetOpenOrders,
@@ -355,6 +368,10 @@ impl FeedHandler {
 
         if let Err(e) = self.send_json(&msg).await {
             log::error!("Failed to send get open orders message: {e}");
+            self.message_queue
+                .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
+                    "Failed to send get open orders request: {e}"
+                ))));
         }
     }
 
@@ -766,7 +783,9 @@ impl FeedHandler {
             entry.venue_order_id = Some(venue_order_id);
         }
 
-        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
 
         Some(OrderAccepted::new(
             trader_id,
@@ -791,7 +810,9 @@ impl FeedHandler {
         let venue_order_id = VenueOrderId::new(&order.oid);
         let metadata = self.lookup_order_metadata(order)?;
 
-        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
 
         // AX uses u64 contracts - use instrument precision from metadata
         let last_qty = Quantity::new(execution.q as f64, metadata.size_precision);
@@ -844,7 +865,9 @@ impl FeedHandler {
         let strategy_id = metadata.strategy_id;
         let instrument_id = metadata.instrument_id;
 
-        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
 
         Some(OrderCanceled::new(
             trader_id,
@@ -869,7 +892,9 @@ impl FeedHandler {
         let strategy_id = metadata.strategy_id;
         let instrument_id = metadata.instrument_id;
 
-        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
 
         Some(OrderExpired::new(
             trader_id,
@@ -898,7 +923,9 @@ impl FeedHandler {
         let strategy_id = metadata.strategy_id;
         let instrument_id = metadata.instrument_id;
 
-        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
         let due_post_only = reason.contains(AX_POST_ONLY_REJECT);
 
         Some(OrderRejected::new(
@@ -952,7 +979,9 @@ impl FeedHandler {
         let quantity = Quantity::new(order.q as f64, instrument.size_precision());
         let filled_qty = Quantity::new(order.xq as f64, instrument.size_precision());
 
-        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
         let ts_init = self.generate_ts_init();
 
         let client_order_id = order.cid.map(|cid| {
@@ -1006,7 +1035,9 @@ impl FeedHandler {
             LiquiditySide::Maker
         };
 
-        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
         let ts_init = self.generate_ts_init();
 
         let client_order_id = order.cid.map(|cid| {

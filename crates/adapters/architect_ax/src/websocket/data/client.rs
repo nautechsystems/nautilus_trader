@@ -775,6 +775,7 @@ impl AxMdWebSocketClient {
     ///
     /// Returns an error if the unsubscribe command cannot be sent.
     pub async fn unsubscribe_candles(&self, symbol: &str, width: AxCandleWidth) -> AxWsResult<()> {
+        let _guard = self.subscribe_lock.lock().await;
         let request_id = self.next_request_id();
         let topic = format!("candles:{symbol}:{width:?}");
 

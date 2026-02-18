@@ -55,6 +55,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import position_side_to_str
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
@@ -320,7 +321,7 @@ class AxExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 report = PositionStatusReport.from_pyo3(pyo3_report)
                 self._log.info(
-                    f"Position: {report.instrument_id} side={report.position_side} "
+                    f"Position: {report.instrument_id} side={position_side_to_str(report.position_side)} "
                     f"qty={report.quantity} avg_px={report.avg_px_open}",
                     LogColor.MAGENTA,
                 )

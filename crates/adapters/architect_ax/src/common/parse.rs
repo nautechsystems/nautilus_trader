@@ -36,30 +36,28 @@ const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
 
 /// Converts an AX epoch-seconds timestamp to [`UnixNanos`].
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `seconds` is negative (malformed data from AX).
-#[must_use]
-pub fn ax_timestamp_s_to_unix_nanos(seconds: i64) -> UnixNanos {
-    assert!(
+/// Returns an error if `seconds` is negative (malformed data from AX).
+pub fn ax_timestamp_s_to_unix_nanos(seconds: i64) -> anyhow::Result<UnixNanos> {
+    anyhow::ensure!(
         seconds >= 0,
         "AX timestamp must be non-negative, was {seconds}"
     );
-    UnixNanos::from(seconds as u64 * NANOSECONDS_IN_SECOND)
+    Ok(UnixNanos::from(seconds as u64 * NANOSECONDS_IN_SECOND))
 }
 
 /// Converts an AX nanosecond timestamp to [`UnixNanos`].
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `nanos` is negative (malformed data from AX).
-#[must_use]
-pub fn ax_timestamp_ns_to_unix_nanos(nanos: i64) -> UnixNanos {
-    assert!(
+/// Returns an error if `nanos` is negative (malformed data from AX).
+pub fn ax_timestamp_ns_to_unix_nanos(nanos: i64) -> anyhow::Result<UnixNanos> {
+    anyhow::ensure!(
         nanos >= 0,
         "AX timestamp_ns must be non-negative, was {nanos}"
     );
-    UnixNanos::from(nanos as u64)
+    Ok(UnixNanos::from(nanos as u64))
 }
 
 /// Cached hasher state for deterministic client order ID to cid conversion
@@ -263,5 +261,33 @@ mod tests {
         let spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
         let result = map_bar_spec_to_candle_width(&spec);
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_ax_timestamp_s_to_unix_nanos_valid() {
+        let result = ax_timestamp_s_to_unix_nanos(1_000).unwrap();
+        assert_eq!(result, UnixNanos::from(1_000_000_000_000u64));
+    }
+
+    #[rstest]
+    fn test_ax_timestamp_s_to_unix_nanos_zero() {
+        let result = ax_timestamp_s_to_unix_nanos(0).unwrap();
+        assert_eq!(result, UnixNanos::from(0u64));
+    }
+
+    #[rstest]
+    fn test_ax_timestamp_s_to_unix_nanos_negative_errors() {
+        assert!(ax_timestamp_s_to_unix_nanos(-1).is_err());
+    }
+
+    #[rstest]
+    fn test_ax_timestamp_ns_to_unix_nanos_valid() {
+        let result = ax_timestamp_ns_to_unix_nanos(1_000_000_000).unwrap();
+        assert_eq!(result, UnixNanos::from(1_000_000_000u64));
+    }
+
+    #[rstest]
+    fn test_ax_timestamp_ns_to_unix_nanos_negative_errors() {
+        assert!(ax_timestamp_ns_to_unix_nanos(-1).is_err());
     }
 }
