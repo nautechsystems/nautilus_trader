@@ -32,6 +32,7 @@ import fsspec
 import pandas as pd
 import portion as P
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.dataset as pds
 import pyarrow.parquet as pq
 from fsspec.implementations.local import make_path_posix
@@ -2555,21 +2556,34 @@ class ParquetDataCatalog(BaseDataCatalog):
 
             table = table.replace_schema_metadata(metadata)
 
-        # Enforce ts_init non-decreasing for non-empty tables
-        if len(table) > 0:
-            if "ts_init" not in table.schema.names:
-                raise ValueError(
-                    "Table has no 'ts_init' column; cannot enforce monotonicity",
-                )
+        table = ParquetDataCatalog._enforce_monotonic_ts(table)
 
-            if len(table) > 1:
-                sort_indices = pa.compute.sort_indices(
-                    table,
-                    sort_keys=[("ts_init", "ascending")],
-                )
-                identity = pa.array(range(len(table)), type=pa.uint64())
-                if not sort_indices.equals(identity):
-                    table = table.take(sort_indices)
+        return table
+
+    @staticmethod
+    def _enforce_monotonic_ts(table: pa.Table) -> pa.Table:
+        if len(table) <= 1:
+            return table
+
+        if "ts_init" not in table.schema.names:
+            raise ValueError(
+                "Table has no 'ts_init' column; cannot enforce monotonicity",
+            )
+
+        ts_col = table.column("ts_init")
+        if isinstance(ts_col, pa.ChunkedArray):
+            ts_col = ts_col.combine_chunks()
+
+        # Use direct comparison instead of pairwise_diff to avoid uint64 overflow
+        is_sorted = pc.all(
+            pc.greater_equal(ts_col.slice(1), ts_col.slice(0, len(ts_col) - 1)),
+        ).as_py()
+        if not is_sorted:
+            sort_indices = pc.sort_indices(
+                table,
+                sort_keys=[("ts_init", "ascending")],
+            )
+            table = table.take(sort_indices)
 
         return table
 
