@@ -88,6 +88,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true, features = ["examples"] }
 
 axum = { workspace = true }
 criterion = { workspace = true }
@@ -132,5 +133,12 @@ doc = false
 [[example]]
 name = "dydx-exec-tester"
 path = "examples/node_exec_tester.rs"
+required-features = []
+doc = false
+
+# Run with `cargo run --example dydx-grid-mm --package nautilus-dydx`
+[[example]]
+name = "dydx-grid-mm"
+path = "examples/node_grid_mm.rs"
 required-features = []
 doc = false

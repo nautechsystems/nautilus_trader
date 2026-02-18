@@ -232,9 +232,17 @@ impl TxBroadcaster {
 
     /// Broadcasts a short-term order transaction without sequence management.
     ///
+    /// Short-term orders use Good-Til-Block (GTB) for replay protection, so sequence
+    /// numbers are not incremented. All short-term broadcasts use a cached sequence.
+    ///
+    /// Benign cancel errors are treated as success (the cancel is already handled):
+    /// - code=19: Transaction already in mempool cache (duplicate tx)
+    /// - code=9: Cancel already exists in memclob with >= GoodTilBlock
+    /// - code=3006: Order to cancel does not exist (already filled/expired/cancelled)
+    ///
     /// # Errors
     ///
-    /// Returns error if building or broadcasting fails.
+    /// Returns error if building or broadcasting fails (excluding benign cancel errors).
     pub async fn broadcast_short_term(
         &self,
         tx_manager: &TransactionManager,
@@ -247,13 +255,24 @@ impl TxBroadcaster {
             .await?;
 
         let mut grpc = self.grpc_client.clone();
-        let tx_hash = grpc.broadcast_tx(prepared.tx_bytes).await.map_err(|e| {
-            log::error!("gRPC broadcast failed for {operation_name}: {e}");
-            DydxError::Nautilus(e)
-        })?;
-
-        log::debug!("{operation_name} successfully: tx_hash={tx_hash}");
-        Ok(tx_hash)
+        match grpc.broadcast_tx(prepared.tx_bytes).await {
+            Ok(tx_hash) => {
+                log::debug!("{operation_name} successfully: tx_hash={tx_hash}");
+                Ok(tx_hash)
+            }
+            Err(e) => {
+                let dydx_err = DydxError::Nautilus(e);
+                if dydx_err.is_benign_cancel_error() {
+                    log::debug!(
+                        "{operation_name}: benign cancel error, treating as success: {dydx_err}"
+                    );
+                    Ok(String::new())
+                } else {
+                    log::error!("gRPC broadcast failed for {operation_name}: {dydx_err}");
+                    Err(dydx_err)
+                }
+            }
+        }
     }
 
     /// Broadcasts a prepared transaction without retry.
