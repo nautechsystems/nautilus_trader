@@ -22,11 +22,11 @@ use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 
 use crate::{
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BetSide,
-        BookAction, BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType,
-        LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide,
-        OrderStatus, OrderType, OtoTriggerMode, PositionAdjustmentType, PositionSide, PriceType,
-        RecordFlag, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BarIntervalType,
+        BetSide, BookAction, BookType, ContingencyType, CurrencyType, InstrumentClass,
+        InstrumentCloseType, LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind,
+        OrderSide, OrderStatus, OrderType, OtoTriggerMode, PositionAdjustmentType, PositionSide,
+        PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
     },
     python::common::EnumIterator,
 };
@@ -39,13 +39,8 @@ impl AccountType {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(AccountType),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -86,17 +81,8 @@ impl PositionAdjustmentType {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
+    const fn __hash__(&self) -> isize {
         *self as isize
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(PositionAdjustmentType),
-            self.name(),
-            self.value(),
-        )
     }
 
     fn __str__(&self) -> String {
@@ -137,13 +123,8 @@ impl AggregationSource {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(AggregationSource),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -184,13 +165,8 @@ impl AggressorSide {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(AggressorSide),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -231,13 +207,8 @@ impl AssetClass {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(AssetClass),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -278,13 +249,8 @@ impl InstrumentClass {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(InstrumentClass),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -325,13 +291,8 @@ impl BarAggregation {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(BarAggregation),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -365,6 +326,13 @@ impl BarAggregation {
 }
 
 #[pymethods]
+impl BarIntervalType {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
 impl BetSide {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -372,13 +340,8 @@ impl BetSide {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(BetSide),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -430,13 +393,8 @@ impl BookAction {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(BookAction),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -477,13 +435,8 @@ impl ContingencyType {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(ContingencyType),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -524,13 +477,8 @@ impl CurrencyType {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(CurrencyType),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -571,13 +519,8 @@ impl InstrumentCloseType {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(InstrumentCloseType),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -618,13 +561,8 @@ impl LiquiditySide {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(LiquiditySide),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -665,13 +603,8 @@ impl MarketStatus {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(MarketStatus),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -712,13 +645,8 @@ impl MarketStatusAction {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(MarketStatus),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -759,13 +687,8 @@ impl OmsType {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(OmsType),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -806,13 +729,8 @@ impl OptionKind {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(OptionKind),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -853,13 +771,8 @@ impl OtoTriggerMode {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(OtoTriggerMode),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -900,13 +813,8 @@ impl OrderSide {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(OrderSide),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -947,13 +855,8 @@ impl OrderStatus {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(OrderStatus),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -994,13 +897,8 @@ impl OrderType {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(OrderType),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -1041,13 +939,8 @@ impl PositionSide {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(PositionSide),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -1088,13 +981,8 @@ impl PriceType {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(PositionSide),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -1142,13 +1030,8 @@ impl RecordFlag {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(RecordFlag),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -1194,13 +1077,8 @@ impl TimeInForce {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(TimeInForce),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -1241,13 +1119,8 @@ impl TrailingOffsetType {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(TrailingOffsetType),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -1288,13 +1161,8 @@ impl TriggerType {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(TriggerType),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -1335,13 +1203,8 @@ impl BookType {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(BookType),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {
@@ -1382,13 +1245,8 @@ impl TradingState {
         Self::py_from_str(&t, value)
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(TradingState),
-            self.name(),
-            self.value(),
-        )
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 
     fn __str__(&self) -> String {

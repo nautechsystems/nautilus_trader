@@ -330,7 +330,14 @@ For enums with extensive derive attributes:
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.model")
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
 )]
 pub enum AccountType {
     /// An account with unleveraged cash assets only.
@@ -719,6 +726,31 @@ pub fn py_do_something() -> PyResult<()> {
 :::info Automated enforcement
 The `check_pyo3_conventions.sh` pre-commit hook enforces the `py_` prefix for PyO3 functions.
 :::
+
+### PyO3 enum conventions
+
+Enums exposed to Python should use the following `pyclass` attributes:
+
+- `frozen`: enums are immutable value types.
+- `eq, eq_int`: enables equality with other enum instances and integer discriminants.
+- `rename_all = "SCREAMING_SNAKE_CASE"`: standardizes Python variant names.
+- `from_py_object`: enables conversion from Python objects.
+
+:::warning Do not use the `hash` pyclass attribute with `eq_int` enums
+PyO3's auto-generated `__hash__` uses Rust's `DefaultHasher`, which produces different values
+than Python's `hash()` on the equivalent integer. Since `eq_int` makes `MyEnum.VARIANT == 1`
+true, the hash contract (`a == b` implies `hash(a) == hash(b)`) would be violated. Instead,
+provide a manual `__hash__` returning the discriminant directly:
+:::
+
+```rust
+#[pymethods]
+impl MyEnum {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+```
 
 ### Testing conventions
 

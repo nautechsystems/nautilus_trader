@@ -31,7 +31,9 @@ use crate::{
     Debug,
     Clone,
     Copy,
+    Hash,
     PartialEq,
+    Eq,
     Serialize,
     Deserialize,
     strum::EnumString,
@@ -41,6 +43,9 @@ use crate::{
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
         module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
@@ -81,7 +86,14 @@ pub enum AmmType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
 )]
 #[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 pub enum DexType {

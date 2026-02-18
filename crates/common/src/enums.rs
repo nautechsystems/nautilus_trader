@@ -43,10 +43,12 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
+        frozen,
         eq,
         eq_int,
         module = "nautilus_trader.core.nautilus_pyo3.common.enums",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum ComponentState {
@@ -111,10 +113,12 @@ impl ComponentState {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
+        frozen,
         eq,
         eq_int,
         module = "nautilus_trader.core.nautilus_pyo3.common.enums",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum ComponentTrigger {
@@ -173,11 +177,12 @@ pub enum ComponentTrigger {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
+        frozen,
         eq,
         eq_int,
         module = "nautilus_trader.core.nautilus_pyo3.common.enums",
         from_py_object,
-        rename_all = "SCREAMING_SNAKE_CASE"
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum Environment {
@@ -209,11 +214,12 @@ pub enum Environment {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
+        frozen,
         eq,
         eq_int,
         module = "nautilus_trader.core.nautilus_pyo3.common.enums",
         from_py_object,
-        rename_all = "SCREAMING_SNAKE_CASE"
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum LogLevel {
@@ -266,11 +272,12 @@ pub enum LogLevel {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
+        frozen,
         eq,
         eq_int,
         module = "nautilus_trader.core.nautilus_pyo3.common.enums",
         from_py_object,
-        rename_all = "SCREAMING_SNAKE_CASE"
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum LogColor {
@@ -347,10 +354,12 @@ impl From<Level> for LogColor {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
+        frozen,
         eq,
         eq_int,
         module = "nautilus_trader.core.nautilus_pyo3.common.enums",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum LogFormat {
@@ -396,10 +405,12 @@ pub enum LogFormat {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
+        frozen,
         eq,
         eq_int,
         module = "nautilus_trader.core.nautilus_pyo3.common.enums",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum SerializationEncoding {

@@ -19,7 +19,10 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::python::common::EnumIterator;
 use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 
-use crate::enums::{Environment, LogColor, LogLevel};
+use crate::enums::{
+    ComponentState, ComponentTrigger, Environment, LogColor, LogFormat, LogLevel,
+    SerializationEncoding,
+};
 
 #[pymethods]
 impl Environment {
@@ -31,15 +34,6 @@ impl Environment {
 
     const fn __hash__(&self) -> isize {
         *self as isize
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(Environment),
-            self.name(),
-            self.value(),
-        )
     }
 
     fn __str__(&self) -> String {
@@ -84,15 +78,6 @@ impl LogLevel {
         *self as isize
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(LogLevel),
-            self.name(),
-            self.value(),
-        )
-    }
-
     fn __str__(&self) -> String {
         self.to_string()
     }
@@ -135,15 +120,6 @@ impl LogColor {
         *self as isize
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(LogColor),
-            self.name(),
-            self.value(),
-        )
-    }
-
     fn __str__(&self) -> String {
         self.to_string()
     }
@@ -171,5 +147,33 @@ impl LogColor {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+}
+
+#[pymethods]
+impl ComponentState {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
+impl ComponentTrigger {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
+impl LogFormat {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
+impl SerializationEncoding {
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 }

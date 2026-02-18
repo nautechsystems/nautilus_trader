@@ -43,6 +43,9 @@ use crate::types::Currency;
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
         module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",

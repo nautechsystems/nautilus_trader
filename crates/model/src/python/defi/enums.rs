@@ -21,7 +21,11 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 
 use crate::{
-    defi::{chain::Blockchain, data::PoolLiquidityUpdateType, dex::AmmType},
+    defi::{
+        chain::Blockchain,
+        data::PoolLiquidityUpdateType,
+        dex::{AmmType, DexType},
+    },
     python::common::EnumIterator,
 };
 
@@ -33,17 +37,8 @@ impl Blockchain {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
+    const fn __hash__(&self) -> isize {
         *self as isize
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(Blockchain),
-            self.name(),
-            self.value(),
-        )
     }
 
     fn __str__(&self) -> String {
@@ -84,17 +79,8 @@ impl AmmType {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
+    const fn __hash__(&self) -> isize {
         *self as isize
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(AmmType),
-            self.name(),
-            self.value(),
-        )
     }
 
     fn __str__(&self) -> String {
@@ -127,6 +113,13 @@ impl AmmType {
 }
 
 #[pymethods]
+impl DexType {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
 impl PoolLiquidityUpdateType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -134,17 +127,8 @@ impl PoolLiquidityUpdateType {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
+    const fn __hash__(&self) -> isize {
         *self as isize
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(PoolLiquidityUpdateType),
-            self.name(),
-            self.value(),
-        )
     }
 
     fn __str__(&self) -> String {
