@@ -41,6 +41,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -427,6 +428,41 @@ def test_catalog_persists_equity(
     assert instrument_from_catalog == instrument
     assert len(quotes_from_catalog) == 1
     assert quotes_from_catalog[0].instrument_id == instrument.id
+
+
+def test_catalog_instrument_roundtrip_with_info_params(
+    catalog: ParquetDataCatalog,
+) -> None:
+    # Roundtrip a vector of same instrument (CurrencyPair) with Params in info and
+    # small variations: two ts_init times.
+    base = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    d = CurrencyPair.to_dict(base)
+    inst1 = CurrencyPair.from_dict(
+        {
+            **d,
+            "info": {"venue_extra": "v1", "count": 1, "enabled": True},
+            "ts_event": 1000,
+            "ts_init": 1000,
+        },
+    )
+    inst2 = CurrencyPair.from_dict(
+        {
+            **d,
+            "info": {"venue_extra": "v2", "count": 2, "enabled": False},
+            "ts_event": 2000,
+            "ts_init": 2000,
+        },
+    )
+    catalog.write_data([inst1, inst2])
+    read = catalog.instruments(instrument_ids=["AUD/USD.SIM"])
+    assert len(read) == 2
+    by_ts = {inst.ts_init: inst for inst in read}
+    assert 1000 in by_ts
+    assert 2000 in by_ts
+    assert by_ts[1000].info == {"venue_extra": "v1", "count": 1, "enabled": True}
+    assert by_ts[2000].info == {"venue_extra": "v2", "count": 2, "enabled": False}
+    assert by_ts[1000].id == inst1.id
+    assert by_ts[2000].id == inst2.id
 
 
 def test_list_backtest_runs(

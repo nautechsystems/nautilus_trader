@@ -37,6 +37,7 @@ extension-module = [
 ]
 ffi = ["nautilus-core/ffi", "nautilus-model/ffi"]
 python = [
+  "nautilus-common/python",
   "nautilus-core/ffi",
   "nautilus-core/python",
   "nautilus-model/python",
@@ -62,6 +63,8 @@ nautilus-serialization = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
 datafusion = { workspace = true }
 futures = { workspace = true }
 heck = { workspace = true }
@@ -79,6 +82,7 @@ pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+rust_decimal = { workspace = true }
 
 criterion = { workspace = true }
 pretty_assertions = { workspace = true }

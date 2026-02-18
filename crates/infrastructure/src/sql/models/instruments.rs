@@ -253,6 +253,7 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             ts_event,
             ts_init,
         );
@@ -354,6 +355,7 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             ts_event,
             ts_init,
         );
@@ -457,6 +459,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             ts_event,
             ts_init,
         );
@@ -568,6 +571,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             ts_event,
             ts_init,
         );
@@ -666,6 +670,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             ts_event,
             ts_init,
         );
@@ -759,6 +764,7 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             ts_event,
             ts_init,
         );
@@ -830,6 +836,7 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             ts_event,
             ts_init,
         );
@@ -921,6 +928,7 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             ts_event,
             ts_init,
         );
@@ -1027,6 +1035,7 @@ impl<'r> FromRow<'r, PgRow> for OptionContractModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             ts_event,
             ts_init,
         );

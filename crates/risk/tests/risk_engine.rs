@@ -414,6 +414,7 @@ pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
         Some(dec!(0.0035)),
         Some(dec!(-0.00025)),
         Some(dec!(0.00075)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     ))
@@ -511,13 +512,7 @@ fn order_filled(
     )));
 
     let commission = account
-        .calculate_commission(
-            instrument.clone(),
-            order.quantity(),
-            last_px,
-            liquidity_side,
-            None,
-        )
+        .calculate_commission(instrument, order.quantity(), last_px, liquidity_side, None)
         .unwrap();
 
     OrderFilled::new(
@@ -3538,6 +3533,7 @@ fn test_submit_order_with_quote_quantity_validates_correctly(
         Some(dec!(0.1)),      // margin_maint
         Some(dec!(-0.00005)), // maker_fee
         Some(dec!(0.00015)),  // taker_fee
+        None,                 // info
         UnixNanos::default(),
         UnixNanos::default(),
     ));
@@ -3659,6 +3655,7 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
         Some(dec!(0.1)),
         Some(dec!(-0.00005)),
         Some(dec!(0.00015)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     ));

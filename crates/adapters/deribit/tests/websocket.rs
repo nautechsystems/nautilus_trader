@@ -87,6 +87,7 @@ fn create_btc_perpetual() -> InstrumentAny {
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))

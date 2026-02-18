@@ -361,6 +361,7 @@ fn cache_test_instruments(client: &mut HyperliquidWebSocketClient) {
             None,
             None,
             None,
+            None,
             ts,
             ts,
         ));

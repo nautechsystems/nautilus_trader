@@ -1194,14 +1194,15 @@ pub fn decode_equity(
         price_increment.precision,
         price_increment,
         Some(lot_size),
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
+        None, // max_quantity
+        None, // min_quantity
+        None, // max_price
+        None, // min_price
+        None, // margin_init
+        None, // margin_maint
+        None, // maker_fee
+        None, // taker_fee
+        None, // info
         ts_event,
         ts_init,
     ))
@@ -1240,14 +1241,15 @@ pub fn decode_futures_contract(
         price_increment,
         multiplier,
         lot_size,
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
+        None, // max_quantity
+        None, // min_quantity
+        None, // max_price
+        None, // min_price
+        None, // margin_init
+        None, // margin_maint
+        None, // maker_fee
+        None, // taker_fee
+        None, // info
         ts_event,
         ts_init,
     )
@@ -1288,14 +1290,15 @@ pub fn decode_futures_spread(
         price_increment,
         multiplier,
         lot_size,
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
+        None, // max_quantity
+        None, // min_quantity
+        None, // max_price
+        None, // min_price
+        None, // margin_init
+        None, // margin_maint
+        None, // maker_fee
+        None, // taker_fee
+        None, // info
         ts_event,
         ts_init,
     )
@@ -1348,14 +1351,15 @@ pub fn decode_option_contract(
         price_increment,
         multiplier,
         lot_size,
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
+        None, // max_quantity
+        None, // min_quantity
+        None, // max_price
+        None, // min_price
+        None, // margin_init
+        None, // margin_maint
+        None, // maker_fee
+        None, // taker_fee
+        None, // info
         ts_event,
         ts_init,
     )
@@ -1401,14 +1405,15 @@ pub fn decode_option_spread(
         price_increment,
         multiplier,
         lot_size,
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
-        None, // TBD
+        None, // max_quantity
+        None, // min_quantity
+        None, // max_price
+        None, // min_price
+        None, // margin_init
+        None, // margin_maint
+        None, // maker_fee
+        None, // taker_fee
+        None, // info
         ts_event,
         ts_init,
     )

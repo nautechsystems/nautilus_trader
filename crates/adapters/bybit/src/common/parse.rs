@@ -220,6 +220,7 @@ pub fn parse_spot_instrument(
         Some(default_margin()),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     );
@@ -309,6 +310,7 @@ pub fn parse_linear_instrument(
                 Some(default_margin()),
                 Some(maker_fee),
                 Some(taker_fee),
+                None,
                 ts_event,
                 ts_init,
             );
@@ -342,6 +344,7 @@ pub fn parse_linear_instrument(
                 Some(default_margin()),
                 Some(maker_fee),
                 Some(taker_fee),
+                None,
                 ts_event,
                 ts_init,
             );
@@ -435,6 +438,7 @@ pub fn parse_inverse_instrument(
                 Some(default_margin()),
                 Some(maker_fee),
                 Some(taker_fee),
+                None,
                 ts_event,
                 ts_init,
             );
@@ -468,6 +472,7 @@ pub fn parse_inverse_instrument(
                 Some(default_margin()),
                 Some(maker_fee),
                 Some(taker_fee),
+                None,
                 ts_event,
                 ts_init,
             );
@@ -552,6 +557,7 @@ pub fn parse_option_instrument(
         Some(Decimal::ZERO),
         Some(Decimal::ZERO),
         Some(Decimal::ZERO),
+        None,
         ts_event,
         ts_init,
     );

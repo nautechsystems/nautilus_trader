@@ -20,7 +20,6 @@ use std::{future::Future, str::FromStr, sync::Mutex};
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
-use indexmap::IndexMap;
 use nautilus_common::{
     clients::ExecutionClient,
     enums::LogLevel,
@@ -34,7 +33,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -742,8 +741,7 @@ impl ExecutionClient for BitmexExecutionClient {
         let submit_tries = cmd
             .params
             .as_ref()
-            .and_then(|params| params.get("submit_tries"))
-            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|p| p.get_usize("submit_tries"))
             .filter(|&n| n > 0);
 
         let peg_price_type = parse_peg_price_type(cmd.params.as_ref())?;
@@ -776,8 +774,7 @@ impl ExecutionClient for BitmexExecutionClient {
         let submit_tries = cmd
             .params
             .as_ref()
-            .and_then(|params| params.get("submit_tries"))
-            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|p| p.get_usize("submit_tries"))
             .filter(|&n| n > 0);
 
         let peg_price_type = parse_peg_price_type(cmd.params.as_ref())?;
@@ -984,10 +981,8 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
     }
 }
 
-fn parse_peg_price_type(
-    params: Option<&IndexMap<String, String>>,
-) -> anyhow::Result<Option<BitmexPegPriceType>> {
-    let value = params.and_then(|p| p.get("peg_price_type"));
+fn parse_peg_price_type(params: Option<&Params>) -> anyhow::Result<Option<BitmexPegPriceType>> {
+    let value = params.and_then(|p| p.get_str("peg_price_type"));
     match value {
         Some(s) => BitmexPegPriceType::from_str(s)
             .map(Some)
@@ -996,10 +991,8 @@ fn parse_peg_price_type(
     }
 }
 
-fn parse_peg_offset_value(
-    params: Option<&IndexMap<String, String>>,
-) -> anyhow::Result<Option<f64>> {
-    let value = params.and_then(|p| p.get("peg_offset_value"));
+fn parse_peg_offset_value(params: Option<&Params>) -> anyhow::Result<Option<f64>> {
+    let value = params.and_then(|p| p.get_str("peg_offset_value"));
     match value {
         Some(s) => s
             .parse::<f64>()

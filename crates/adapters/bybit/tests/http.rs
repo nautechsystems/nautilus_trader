@@ -2024,6 +2024,7 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
         None,
         None,
         None,
+        None,
         0.into(),
         0.into(),
     );

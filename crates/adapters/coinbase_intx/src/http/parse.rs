@@ -90,6 +90,7 @@ pub fn parse_spot_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         UnixNanos::from(definition.quote.timestamp),
         ts_init,
     );
@@ -156,6 +157,7 @@ pub fn parse_perp_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         UnixNanos::from(definition.quote.timestamp),
         ts_init,
     );

@@ -121,6 +121,7 @@ fn create_test_futures_instrument() -> InstrumentAny {
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None,
         0.into(),
         0.into(),
     ))

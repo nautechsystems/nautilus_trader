@@ -1305,6 +1305,7 @@ mod tests {
             None,
             None,
             None,
+            None, // info
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -1353,6 +1354,7 @@ mod tests {
             None,
             None,
             None,
+            None, // info
             UnixNanos::default(),
             UnixNanos::default(),
         );

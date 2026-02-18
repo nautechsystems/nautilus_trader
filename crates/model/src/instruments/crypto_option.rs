@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    UnixNanos,
+    Params, UnixNanos,
     correctness::{FAILED, check_equal_u8},
 };
 use rust_decimal::Decimal;
@@ -37,7 +37,7 @@ use crate::{
 
 /// Represents a generic option contract instrument.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
@@ -95,6 +95,8 @@ pub struct CryptoOption {
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// Additional instrument metadata as a JSON-serializable dictionary.
+    pub info: Option<Params>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the data object was initialized.
@@ -138,6 +140,7 @@ impl CryptoOption {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -185,6 +188,7 @@ impl CryptoOption {
             min_quantity: Some(min_quantity.unwrap_or(1.into())),
             max_price,
             min_price,
+            info,
             ts_event,
             ts_init,
         })
@@ -223,6 +227,7 @@ impl CryptoOption {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
@@ -253,6 +258,7 @@ impl CryptoOption {
             margin_maint,
             maker_fee,
             taker_fee,
+            info,
             ts_event,
             ts_init,
         )
@@ -404,7 +410,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(crypto_option_btc_deribit: CryptoOption) {
-        let crypto_option = crypto_option_btc_deribit;
+        let crypto_option = crypto_option_btc_deribit.clone();
         assert_eq!(crypto_option_btc_deribit, crypto_option);
     }
 }

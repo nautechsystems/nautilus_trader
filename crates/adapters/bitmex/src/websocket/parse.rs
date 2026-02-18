@@ -1126,6 +1126,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // info
             UnixNanos::default(),
             UnixNanos::default(),
         ))
@@ -1865,6 +1866,7 @@ mod tests {
             None,                 // margin_maint
             None,                 // maker_fee
             None,                 // taker_fee
+            None,                 // info
             UnixNanos::default(), // ts_event
             UnixNanos::default(), // ts_init
         );

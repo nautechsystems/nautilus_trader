@@ -191,6 +191,7 @@ fn parse_spot_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     );
@@ -253,6 +254,7 @@ fn parse_perpetual_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     );
@@ -324,6 +326,7 @@ fn parse_future_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     );
@@ -408,6 +411,7 @@ fn parse_option_instrument(
         None,
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     );

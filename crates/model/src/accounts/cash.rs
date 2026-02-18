@@ -294,7 +294,7 @@ impl Account for CashAccount {
 
     fn calculate_balance_locked(
         &mut self,
-        instrument: InstrumentAny,
+        instrument: &InstrumentAny,
         side: OrderSide,
         quantity: Quantity,
         price: Price,
@@ -305,8 +305,8 @@ impl Account for CashAccount {
 
     fn calculate_pnls(
         &self,
-        instrument: InstrumentAny, // TODO: Make this a reference
-        fill: OrderFilled,         // TODO: Make this a reference
+        instrument: &InstrumentAny,
+        fill: &OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         self.base_calculate_pnls(instrument, fill, position)
@@ -314,7 +314,7 @@ impl Account for CashAccount {
 
     fn calculate_commission(
         &self,
-        instrument: InstrumentAny,
+        instrument: &InstrumentAny,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
@@ -535,7 +535,7 @@ mod tests {
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                audusd_sim.into_any(),
+                &audusd_sim.into_any(),
                 OrderSide::Buy,
                 Quantity::from("1000000"),
                 Price::from("0.8"),
@@ -552,7 +552,7 @@ mod tests {
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                audusd_sim.into_any(),
+                &audusd_sim.into_any(),
                 OrderSide::Sell,
                 Quantity::from("1000000"),
                 Price::from("0.8"),
@@ -569,7 +569,7 @@ mod tests {
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                equity_aapl.into_any(),
+                &equity_aapl.into_any(),
                 OrderSide::Sell,
                 Quantity::from("100"),
                 Price::from("1500.0"),
@@ -603,8 +603,9 @@ mod tests {
             Some(AccountId::from("SIM-001")),
         );
         let position = Position::new(&audusd_sim, fill.clone().into());
+        let fill_owned: crate::events::OrderFilled = fill.into();
         let pnls = cash_account_million_usd
-            .calculate_pnls(audusd_sim, fill.into(), Some(position)) // TODO: Remove clone
+            .calculate_pnls(&audusd_sim, &fill_owned, Some(position))
             .unwrap();
         assert_eq!(pnls, vec![Money::from("-800000 USD")]);
     }
@@ -614,7 +615,7 @@ mod tests {
         cash_account_multi: CashAccount,
         currency_pair_btcusdt: CurrencyPair,
     ) {
-        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
+        let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt.clone());
         let order1 = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(currency_pair_btcusdt.id)
             .side(OrderSide::Sell)
@@ -633,12 +634,9 @@ mod tests {
             Some(AccountId::from("SIM-001")),
         );
         let position = Position::new(&btcusdt, fill1.clone().into());
+        let fill1_owned: crate::events::OrderFilled = fill1.into();
         let result1 = cash_account_multi
-            .calculate_pnls(
-                currency_pair_btcusdt.into_any(),
-                fill1.into(), // TODO: This doesn't need to be owned
-                Some(position.clone()),
-            )
+            .calculate_pnls(&btcusdt, &fill1_owned, Some(position.clone()))
             .unwrap();
         let order2 = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(currency_pair_btcusdt.id)
@@ -657,10 +655,11 @@ mod tests {
             None,
             Some(AccountId::from("SIM-001")),
         );
+        let fill2_owned: crate::events::OrderFilled = fill2.into();
         let result2 = cash_account_multi
             .calculate_pnls(
-                currency_pair_btcusdt.into_any(),
-                fill2.into(),
+                &currency_pair_btcusdt.into_any(),
+                &fill2_owned,
                 Some(position),
             )
             .unwrap();
@@ -690,7 +689,7 @@ mod tests {
     ) {
         let result = cash_account_million_usd
             .calculate_commission(
-                xbtusd_bitmex.into_any(),
+                &xbtusd_bitmex.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Maker,
@@ -707,7 +706,7 @@ mod tests {
     ) {
         let result = cash_account_million_usd
             .calculate_commission(
-                audusd_sim.into_any(),
+                &audusd_sim.into_any(),
                 Quantity::from("1500000"),
                 Price::from("0.8005"),
                 LiquiditySide::Taker,
@@ -724,7 +723,7 @@ mod tests {
     ) {
         let result = cash_account_million_usd
             .calculate_commission(
-                xbtusd_bitmex.into_any(),
+                &xbtusd_bitmex.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Taker,
@@ -739,7 +738,7 @@ mod tests {
         let instrument = usdjpy_idealpro();
         let result = cash_account_million_usd
             .calculate_commission(
-                instrument.into_any(),
+                &instrument.into_any(),
                 Quantity::from("2200000"),
                 Price::from("120.310"),
                 LiquiditySide::Taker,

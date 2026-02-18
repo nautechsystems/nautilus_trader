@@ -15,8 +15,7 @@
 
 //! Cap'n Proto serialization for trading commands.
 
-use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::identifiers::{ClientId, InstrumentId, StrategyId, TraderId};
 use nautilus_serialization::{
     base_capnp,
@@ -29,16 +28,14 @@ use crate::messages::execution::{
     SubmitOrder, SubmitOrderList, TradingCommand,
 };
 
-/// Helper function to populate a StringMap builder from an IndexMap
-fn populate_string_map<'a>(
-    builder: base_capnp::string_map::Builder<'a>,
-    params: &IndexMap<String, String>,
-) {
+/// Helper function to populate a StringMap builder from Params (IndexMap<String, Value>).
+fn populate_string_map<'a>(builder: base_capnp::string_map::Builder<'a>, params: &Params) {
     let mut entries_builder = builder.init_entries(params.len() as u32);
     for (i, (key, value)) in params.iter().enumerate() {
         let mut entry_builder = entries_builder.reborrow().get(i as u32);
         entry_builder.set_key(key.as_str());
-        entry_builder.set_value(value.as_str());
+        let value_str = serde_json::to_string(value).unwrap_or_else(|_| value.to_string());
+        entry_builder.set_value(value_str.as_str());
     }
 }
 

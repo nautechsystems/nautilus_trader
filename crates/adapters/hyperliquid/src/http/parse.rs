@@ -275,6 +275,7 @@ pub fn create_instrument_from_def(
             None,
             None,
             None,
+            None,
             ts_init, // Identical to ts_init for now
             ts_init,
         ))),
@@ -292,6 +293,7 @@ pub fn create_instrument_from_def(
                 def.size_decimals as u8,
                 price_increment,
                 size_increment,
+                None, // multiplier
                 None,
                 None,
                 None,

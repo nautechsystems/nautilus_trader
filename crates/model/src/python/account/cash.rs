@@ -160,7 +160,7 @@ impl CashAccount {
         py: Python,
     ) -> PyResult<Money> {
         let instrument = pyobject_to_instrument_any(py, instrument)?;
-        self.calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
+        self.calculate_balance_locked(&instrument, side, quantity, price, use_quote_for_inverse)
             .map_err(to_pyvalue_err)
     }
 
@@ -180,7 +180,7 @@ impl CashAccount {
         }
         let instrument = pyobject_to_instrument_any(py, instrument)?;
         self.calculate_commission(
-            instrument,
+            &instrument,
             last_qty,
             last_px,
             liquidity_side,
@@ -199,7 +199,7 @@ impl CashAccount {
         py: Python,
     ) -> PyResult<Vec<Money>> {
         let instrument = pyobject_to_instrument_any(py, instrument)?;
-        self.calculate_pnls(instrument, fill, position)
+        self.calculate_pnls(&instrument, &fill, position)
             .map_err(to_pyvalue_err)
     }
 

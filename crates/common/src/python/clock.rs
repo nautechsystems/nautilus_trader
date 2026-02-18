@@ -186,6 +186,12 @@ impl PyClock {
         Self(rc)
     }
 
+    /// Gets the inner `Rc<RefCell<dyn Clock>>` for use in Rust code.
+    #[must_use]
+    pub fn clock_rc(&self) -> Rc<RefCell<dyn Clock>> {
+        self.0.clone()
+    }
+
     /// Creates a clock backed by [`TestClock`].
     #[must_use]
     pub fn new_test() -> Self {

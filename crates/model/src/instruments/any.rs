@@ -71,3 +71,9 @@ impl PartialEq for InstrumentAny {
         self.id() == other.id()
     }
 }
+
+impl crate::data::HasTsInit for InstrumentAny {
+    fn ts_init(&self) -> nautilus_core::UnixNanos {
+        Instrument::ts_init(self)
+    }
+}

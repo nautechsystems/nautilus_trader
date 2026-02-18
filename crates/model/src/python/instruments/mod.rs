@@ -35,6 +35,7 @@ pub mod futures_contract;
 pub mod futures_spread;
 pub mod option_contract;
 pub mod option_spread;
+pub mod synthetic;
 
 /// Converts an [`InstrumentAny`] into a Python object.
 ///

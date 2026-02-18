@@ -20,14 +20,13 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use indexmap::IndexMap;
 use nautilus_common::{
     actor::{DataActor, DataActorCore},
     enums::LogColor,
     log_info, log_warn,
     timer::TimeEvent,
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{BookType, OrderSide, OrderType, TimeInForce, TriggerType},
@@ -54,7 +53,7 @@ pub struct ExecTesterConfig {
     /// Minutes until GTD orders expire (None for GTC).
     pub order_expire_time_delta_mins: Option<u64>,
     /// Adapter-specific order parameters.
-    pub order_params: Option<IndexMap<String, String>>,
+    pub order_params: Option<Params>,
     /// Client ID to use for orders and subscriptions.
     pub client_id: Option<ClientId>,
     /// Whether to subscribe to quotes.
@@ -376,7 +375,7 @@ impl ExecTesterConfig {
     }
 
     #[must_use]
-    pub fn with_order_params(mut self, params: Option<IndexMap<String, String>>) -> Self {
+    pub fn with_order_params(mut self, params: Option<Params>) -> Self {
         self.order_params = params;
         self
     }
@@ -2085,8 +2084,9 @@ mod tests {
 
     #[rstest]
     fn test_config_with_order_params() {
-        let mut params = IndexMap::new();
-        params.insert("key".to_string(), "value".to_string());
+        use serde_json::Value;
+        let mut params = Params::new();
+        params.insert("key".to_string(), Value::String("value".to_string()));
         let config = ExecTesterConfig::default().with_order_params(Some(params.clone()));
         assert_eq!(config.order_params, Some(params));
     }
@@ -2250,8 +2250,9 @@ mod tests {
         mut config: ExecTesterConfig,
         instrument: InstrumentAny,
     ) {
-        let mut params = IndexMap::new();
-        params.insert("tdMode".to_string(), "cross".to_string());
+        use serde_json::Value;
+        let mut params = Params::new();
+        params.insert("tdMode".to_string(), Value::String("cross".to_string()));
         config.order_params = Some(params);
         let cache = create_cache_with_instrument(&instrument);
         let mut tester = ExecTester::new(config);

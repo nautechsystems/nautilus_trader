@@ -20,6 +20,7 @@ pub mod close;
 pub mod delta;
 pub mod depth;
 pub mod index_price;
+pub mod instrument;
 pub mod mark_price;
 pub mod quote;
 pub mod trade;

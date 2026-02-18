@@ -958,7 +958,9 @@ mod tests {
         identifiers::{
             AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
         },
-        instruments::{CryptoPerpetual, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+        instruments::{
+            CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
+        },
         orders::{Order, OrderAny, OrderTestBuilder},
         stubs::TestDefault,
         types::{AccountBalance, Currency, Money, Price, Quantity},
@@ -1095,7 +1097,7 @@ mod tests {
             BookType::L1_MBP,
             None,
         );
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
 
         // register instrument
         exchange.borrow_mut().add_instrument(instrument).unwrap();
@@ -1130,7 +1132,7 @@ mod tests {
             BookType::L1_MBP,
             None,
         );
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
 
         // register instrument
         exchange.borrow_mut().add_instrument(instrument).unwrap();
@@ -1165,7 +1167,7 @@ mod tests {
             BookType::L1_MBP,
             None,
         );
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
 
         // register instrument
         exchange.borrow_mut().add_instrument(instrument).unwrap();
@@ -1202,7 +1204,7 @@ mod tests {
             BookType::L1_MBP,
             None,
         );
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
 
         // register instrument
         exchange.borrow_mut().add_instrument(instrument).unwrap();
@@ -1253,7 +1255,7 @@ mod tests {
             BookType::L2_MBP,
             None,
         );
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
 
         // register instrument
         exchange.borrow_mut().add_instrument(instrument).unwrap();
@@ -1318,7 +1320,7 @@ mod tests {
             BookType::L2_MBP,
             None,
         );
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
 
         // register instrument
         exchange.borrow_mut().add_instrument(instrument).unwrap();
@@ -1390,7 +1392,7 @@ mod tests {
             BookType::L2_MBP,
             None,
         );
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
 
         // register instrument
         exchange.borrow_mut().add_instrument(instrument).unwrap();
@@ -1648,7 +1650,7 @@ mod tests {
             Some(cache.clone()),
         );
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-        let instrument_id = crypto_perpetual_ethusdt.id;
+        let instrument_id = instrument.id();
         exchange.borrow_mut().add_instrument(instrument).unwrap();
 
         let quote = QuoteTick::new(
@@ -1824,7 +1826,7 @@ mod tests {
     fn test_module_pre_process_called_on_quote(crypto_perpetual_ethusdt: CryptoPerpetual) {
         let counts = MockModuleCounts::new();
         let exchange = get_exchange_with_module(Venue::new("BINANCE"), counts.clone());
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
         exchange.borrow_mut().add_instrument(instrument).unwrap();
 
         let quote = QuoteTick::new(
@@ -1921,7 +1923,7 @@ mod tests {
     fn test_module_pre_process_and_process_call_order(crypto_perpetual_ethusdt: CryptoPerpetual) {
         let counts = MockModuleCounts::new();
         let exchange = get_exchange_with_module(Venue::new("BINANCE"), counts.clone());
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
         exchange.borrow_mut().add_instrument(instrument).unwrap();
 
         // pre_process called per data item, process_modules called separately

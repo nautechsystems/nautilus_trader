@@ -774,7 +774,7 @@ fn test_request_instrument(
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
-    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim.clone());
     let data = instrument.clone();
     let ts_init = UnixNanos::default();
     let response = InstrumentResponse::new(
@@ -1197,9 +1197,9 @@ fn test_unsubscribe_instruments(
     actor.subscribe_instruments(venue, None, None);
 
     let topic = get_instruments_topic(venue);
-    let inst1 = InstrumentAny::CurrencyPair(audusd_sim);
+    let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
     msgbus::publish_any(topic, &inst1);
-    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim);
+    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
     msgbus::publish_any(topic, &inst2);
 
     assert_eq!(actor.received_instruments.len(), 2);
@@ -1225,14 +1225,13 @@ fn test_unsubscribe_instrument(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-
     actor.subscribe_instrument(audusd_sim.id, None, None);
 
     let topic = get_instrument_topic(audusd_sim.id);
-    let inst1 = InstrumentAny::CurrencyPair(audusd_sim);
-    msgbus::publish_any(topic, &inst1);
-    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim);
-    msgbus::publish_any(topic, &inst2);
+    let inst3 = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    msgbus::publish_any(topic, &inst3);
+    let inst4 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
+    msgbus::publish_any(topic, &inst4);
 
     assert_eq!(actor.received_instruments.len(), 2);
 
