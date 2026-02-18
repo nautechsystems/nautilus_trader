@@ -19,6 +19,7 @@ import tempfile
 from unittest.mock import patch
 
 import pandas as pd
+import pyarrow as pa
 import pyarrow.dataset as ds
 import pytest
 
@@ -153,6 +154,60 @@ def test_catalog_instrument_ids_correctly_unmapped(catalog: ParquetDataCatalog) 
     # Assert
     assert instrument.id.value == "AUD/USD.SIM"
     assert trade_tick.instrument_id.value == "AUD/USD.SIM"
+
+
+def test_enforce_monotonic_ts_already_sorted_returns_unchanged() -> None:
+    table = pa.table(
+        {
+            "ts_init": pa.array([1000, 2000, 3000], type=pa.uint64()),
+            "x": pa.array([1, 2, 3]),
+        },
+    )
+    result = ParquetDataCatalog._enforce_monotonic_ts(table)
+    assert result.num_rows == 3
+    assert result.column("ts_init")[0].as_py() == 1000
+    assert result.column("ts_init")[1].as_py() == 2000
+    assert result.column("ts_init")[2].as_py() == 3000
+
+
+def test_enforce_monotonic_ts_unsorted_returns_sorted_by_ts_init() -> None:
+    table = pa.table(
+        {
+            "ts_init": pa.array([3000, 1000, 2000], type=pa.uint64()),
+            "x": pa.array([3, 1, 2]),
+        },
+    )
+    result = ParquetDataCatalog._enforce_monotonic_ts(table)
+    assert result.num_rows == 3
+    assert result.column("ts_init")[0].as_py() == 1000
+    assert result.column("ts_init")[1].as_py() == 2000
+    assert result.column("ts_init")[2].as_py() == 3000
+    assert result.column("x")[0].as_py() == 1
+    assert result.column("x")[1].as_py() == 2
+    assert result.column("x")[2].as_py() == 3
+
+
+def test_enforce_monotonic_ts_chunked_array_unsorted_returns_sorted() -> None:
+    # Tables from concat can have ChunkedArray ts_init; ensure we sort correctly
+    t1 = pa.table(
+        {
+            "ts_init": pa.array([3000, 1000], type=pa.uint64()),
+            "x": pa.array([3, 1]),
+        },
+    )
+    t2 = pa.table(
+        {
+            "ts_init": pa.array([2000], type=pa.uint64()),
+            "x": pa.array([2]),
+        },
+    )
+    combined = pa.concat_tables([t1, t2])
+    assert isinstance(combined.column("ts_init"), pa.ChunkedArray)
+    result = ParquetDataCatalog._enforce_monotonic_ts(combined)
+    assert result.num_rows == 3
+    assert result.column("ts_init")[0].as_py() == 1000
+    assert result.column("ts_init")[1].as_py() == 2000
+    assert result.column("ts_init")[2].as_py() == 3000
 
 
 def test_query_files_discovers_when_files_none(
