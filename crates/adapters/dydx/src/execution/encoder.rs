@@ -368,7 +368,7 @@ impl ClientOrderIdEncoder {
 
     /// Decodes deterministic pairs or pairs known to this instance.
     ///
-    /// Unlike [`decode`], sequential IDs (non-deterministic) require the
+    /// Unlike [`Self::decode`], sequential IDs (non-deterministic) require the
     /// reverse map. Numeric and O-format are deterministic and always decode.
     #[must_use]
     pub fn decode_if_known(&self, client_id: u32, client_metadata: u32) -> Option<ClientOrderId> {
