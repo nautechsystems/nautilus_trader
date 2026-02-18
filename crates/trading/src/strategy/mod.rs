@@ -21,7 +21,6 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ahash::AHashSet;
 pub use config::StrategyConfig;
-use indexmap::IndexMap;
 use nautilus_common::{
     actor::DataActor,
     component::Component,
@@ -34,7 +33,7 @@ use nautilus_common::{
     msgbus,
     timer::TimeEvent,
 };
-use nautilus_core::UUID4;
+use nautilus_core::{Params, UUID4};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, PositionSide, TimeInForce, TriggerType},
     events::{
@@ -103,7 +102,7 @@ pub trait Strategy: DataActor {
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
-        self.submit_order_with_params(order, position_id, client_id, IndexMap::new())
+        self.submit_order_with_params(order, position_id, client_id, Params::new())
     }
 
     /// Submits an order with adapter-specific parameters.
@@ -116,7 +115,7 @@ pub trait Strategy: DataActor {
         order: OrderAny,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
-        params: IndexMap<String, String>,
+        params: Params,
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
@@ -295,7 +294,7 @@ pub trait Strategy: DataActor {
         mut orders: Vec<OrderAny>,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
-        params: IndexMap<String, String>,
+        params: Params,
     ) -> anyhow::Result<()> {
         let should_deny = {
             let core = self.core_mut();
@@ -421,7 +420,7 @@ pub trait Strategy: DataActor {
             price,
             trigger_price,
             client_id,
-            IndexMap::new(),
+            Params::new(),
         )
     }
 
@@ -437,7 +436,7 @@ pub trait Strategy: DataActor {
         price: Option<Price>,
         trigger_price: Option<Price>,
         client_id: Option<ClientId>,
-        params: IndexMap<String, String>,
+        params: Params,
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
@@ -484,7 +483,7 @@ pub trait Strategy: DataActor {
     ///
     /// Returns an error if the strategy is not registered or order cancellation fails.
     fn cancel_order(&mut self, order: OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
-        self.cancel_order_with_params(order, client_id, IndexMap::new())
+        self.cancel_order_with_params(order, client_id, Params::new())
     }
 
     /// Cancels an order with adapter-specific parameters.
@@ -496,7 +495,7 @@ pub trait Strategy: DataActor {
         &mut self,
         order: OrderAny,
         client_id: Option<ClientId>,
-        params: IndexMap<String, String>,
+        params: Params,
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
@@ -547,7 +546,7 @@ pub trait Strategy: DataActor {
         &mut self,
         mut orders: Vec<OrderAny>,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> anyhow::Result<()> {
         if orders.is_empty() {
             anyhow::bail!("Cannot batch cancel empty order list");
@@ -632,7 +631,7 @@ pub trait Strategy: DataActor {
         order_side: Option<OrderSide>,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
-        self.cancel_all_orders_with_params(instrument_id, order_side, client_id, IndexMap::new())
+        self.cancel_all_orders_with_params(instrument_id, order_side, client_id, Params::new())
     }
 
     /// Cancels all open orders for the given instrument with adapter-specific parameters.
@@ -645,7 +644,7 @@ pub trait Strategy: DataActor {
         instrument_id: InstrumentId,
         order_side: Option<OrderSide>,
         client_id: Option<ClientId>,
-        params: IndexMap<String, String>,
+        params: Params,
     ) -> anyhow::Result<()> {
         let params = if params.is_empty() {
             None

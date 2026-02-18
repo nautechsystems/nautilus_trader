@@ -15,8 +15,7 @@
 
 use std::num::NonZeroUsize;
 
-use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{BarType, DataType},
     enums::BookType,
@@ -33,7 +32,7 @@ pub struct SubscribeCustomData {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeCustomData {
@@ -46,7 +45,7 @@ impl SubscribeCustomData {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -69,7 +68,7 @@ pub struct SubscribeInstrument {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeInstrument {
@@ -82,7 +81,7 @@ impl SubscribeInstrument {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -104,7 +103,7 @@ pub struct SubscribeInstruments {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeInstruments {
@@ -115,7 +114,7 @@ impl SubscribeInstruments {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             client_id,
@@ -139,7 +138,7 @@ pub struct SubscribeBookDeltas {
     pub depth: Option<NonZeroUsize>,
     pub managed: bool,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeBookDeltas {
@@ -155,7 +154,7 @@ impl SubscribeBookDeltas {
         depth: Option<NonZeroUsize>,
         managed: bool,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -184,7 +183,7 @@ pub struct SubscribeBookDepth10 {
     pub depth: Option<NonZeroUsize>,
     pub managed: bool,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeBookDepth10 {
@@ -200,7 +199,7 @@ impl SubscribeBookDepth10 {
         depth: Option<NonZeroUsize>,
         managed: bool,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -229,7 +228,7 @@ pub struct SubscribeBookSnapshots {
     pub depth: Option<NonZeroUsize>,
     pub interval_ms: NonZeroUsize,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeBookSnapshots {
@@ -245,7 +244,7 @@ impl SubscribeBookSnapshots {
         depth: Option<NonZeroUsize>,
         interval_ms: NonZeroUsize,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -271,7 +270,7 @@ pub struct SubscribeQuotes {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeQuotes {
@@ -284,7 +283,7 @@ impl SubscribeQuotes {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -307,7 +306,7 @@ pub struct SubscribeTrades {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeTrades {
@@ -320,7 +319,7 @@ impl SubscribeTrades {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -343,7 +342,7 @@ pub struct SubscribeBars {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeBars {
@@ -356,7 +355,7 @@ impl SubscribeBars {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -379,7 +378,7 @@ pub struct SubscribeMarkPrices {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeMarkPrices {
@@ -392,7 +391,7 @@ impl SubscribeMarkPrices {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -415,7 +414,7 @@ pub struct SubscribeIndexPrices {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeIndexPrices {
@@ -428,7 +427,7 @@ impl SubscribeIndexPrices {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -451,7 +450,7 @@ pub struct SubscribeFundingRates {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeFundingRates {
@@ -464,7 +463,7 @@ impl SubscribeFundingRates {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -487,7 +486,7 @@ pub struct SubscribeInstrumentStatus {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeInstrumentStatus {
@@ -500,7 +499,7 @@ impl SubscribeInstrumentStatus {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -523,7 +522,7 @@ pub struct SubscribeInstrumentClose {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeInstrumentClose {
@@ -536,7 +535,7 @@ impl SubscribeInstrumentClose {
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {

@@ -43,6 +43,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
+    Params,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -155,14 +156,11 @@ impl DeribitDataClient {
     ///
     /// If authenticated, we prefer Raw interval for best data quality.
     /// Users can still override via params if they want 100ms or agg2.
-    fn get_interval(
-        &self,
-        params: &Option<indexmap::IndexMap<String, String>>,
-    ) -> Option<DeribitUpdateInterval> {
+    fn get_interval(&self, params: &Option<Params>) -> Option<DeribitUpdateInterval> {
         if let Some(interval) = params
             .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok())
+            .and_then(|p| p.get_str("interval"))
+            .and_then(|s| s.parse::<DeribitUpdateInterval>().ok())
         {
             return Some(interval);
         }
@@ -495,14 +493,14 @@ impl DataClient for DeribitDataClient {
         let kind = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get("kind"))
-            .map_or("any", |s| s.as_str())
+            .and_then(|p| p.get_str("kind"))
+            .unwrap_or("any")
             .to_string();
         let currency = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get("currency"))
-            .map_or("any", |s| s.as_str())
+            .and_then(|p| p.get_str("currency"))
+            .unwrap_or("any")
             .to_string();
 
         let ws = self
@@ -579,8 +577,8 @@ impl DataClient for DeribitDataClient {
             .or_else(|| {
                 cmd.params
                     .as_ref()
-                    .and_then(|p| p.get("depth"))
-                    .and_then(|v| v.parse::<u32>().ok())
+                    .and_then(|p| p.get_u64("depth"))
+                    .map(|n| n as u32)
             })
             .unwrap_or(DERIBIT_BOOK_DEFAULT_DEPTH);
 
@@ -591,8 +589,8 @@ impl DataClient for DeribitDataClient {
         let group = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get("group"))
-            .map_or(DERIBIT_BOOK_DEFAULT_GROUP, String::as_str)
+            .and_then(|p| p.get_str("group"))
+            .unwrap_or(DERIBIT_BOOK_DEFAULT_GROUP)
             .to_string();
 
         log::info!(
@@ -635,8 +633,8 @@ impl DataClient for DeribitDataClient {
         let group = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get("group"))
-            .map_or(DERIBIT_BOOK_DEFAULT_GROUP, String::as_str)
+            .and_then(|p| p.get_str("group"))
+            .unwrap_or(DERIBIT_BOOK_DEFAULT_GROUP)
             .to_string();
 
         log::info!(
@@ -815,14 +813,14 @@ impl DataClient for DeribitDataClient {
         let kind = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get("kind"))
-            .map_or("any", |s| s.as_str())
+            .and_then(|p| p.get_str("kind"))
+            .unwrap_or("any")
             .to_string();
         let currency = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get("currency"))
-            .map_or("any", |s| s.as_str())
+            .and_then(|p| p.get_str("currency"))
+            .unwrap_or("any")
             .to_string();
 
         let ws = self
@@ -881,9 +879,8 @@ impl DataClient for DeribitDataClient {
         let depth = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get("depth"))
-            .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(DERIBIT_BOOK_DEFAULT_DEPTH);
+            .and_then(|p| p.get_u64("depth"))
+            .map_or(DERIBIT_BOOK_DEFAULT_DEPTH, |n| n as u32);
 
         if !DERIBIT_BOOK_VALID_DEPTHS.contains(&depth) {
             anyhow::bail!("invalid depth {depth}; supported depths: {DERIBIT_BOOK_VALID_DEPTHS:?}");
@@ -892,8 +889,8 @@ impl DataClient for DeribitDataClient {
         let group = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get("group"))
-            .map_or(DERIBIT_BOOK_DEFAULT_GROUP, String::as_str)
+            .and_then(|p| p.get_str("group"))
+            .unwrap_or(DERIBIT_BOOK_DEFAULT_GROUP)
             .to_string();
 
         log::info!(
@@ -931,8 +928,8 @@ impl DataClient for DeribitDataClient {
         let group = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get("group"))
-            .map_or(DERIBIT_BOOK_DEFAULT_GROUP, String::as_str)
+            .and_then(|p| p.get_str("group"))
+            .unwrap_or(DERIBIT_BOOK_DEFAULT_GROUP)
             .to_string();
 
         log::info!(

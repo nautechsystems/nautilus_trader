@@ -394,6 +394,7 @@ pub fn parse_instrument_any(
         margin_maint,
         maker_fee,
         taker_fee,
+        None, // info: Option<Params>
         ts_init,
         ts_init,
     );
@@ -1399,6 +1400,7 @@ mod reconciliation_tests {
             Some(dec!(0.03)),                 // margin_maint
             Some(dec!(0.0002)),               // maker_fee
             Some(dec!(0.0005)),               // taker_fee
+            None,                             // info: Option<Params>
             UnixNanos::default(),             // ts_event
             UnixNanos::default(),             // ts_init
         ))

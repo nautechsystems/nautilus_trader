@@ -15,8 +15,7 @@
 
 use std::fmt::Display;
 
-use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos, correctness::check_equal};
+use nautilus_core::{Params, UUID4, UnixNanos, correctness::check_equal};
 use nautilus_model::{
     events::OrderInitialized,
     identifiers::{
@@ -37,7 +36,7 @@ pub struct SubmitOrder {
     pub order_init: OrderInitialized,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
 }
@@ -55,7 +54,7 @@ impl SubmitOrder {
         order_init: OrderInitialized,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
         command_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
@@ -125,7 +124,7 @@ pub struct SubmitOrderList {
     pub order_inits: Vec<OrderInitialized>,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
 }
@@ -147,7 +146,7 @@ impl SubmitOrderList {
         order_inits: Vec<OrderInitialized>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
         command_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {

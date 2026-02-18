@@ -521,6 +521,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // info
             UnixNanos::from(0),
             UnixNanos::from(0),
         );

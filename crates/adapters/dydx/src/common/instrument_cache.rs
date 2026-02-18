@@ -348,6 +348,7 @@ mod tests {
             None,                    // margin_maint
             None,                    // maker_fee
             None,                    // taker_fee
+            None,                    // info: Option<Params>
             UnixNanos::default(),    // ts_event
             UnixNanos::default(),    // ts_init
         ))

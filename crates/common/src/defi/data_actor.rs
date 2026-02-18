@@ -18,8 +18,7 @@
 //! This module provides DeFi subscription and unsubscription helper methods
 //! for the `DataActorCore`. All code in this module requires the `defi` feature flag.
 
-use indexmap::IndexMap;
-use nautilus_core::UUID4;
+use nautilus_core::{Params, UUID4};
 use nautilus_model::{
     defi::{Block, Blockchain, Pool, PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolSwap},
     identifiers::{ClientId, InstrumentId},
@@ -49,7 +48,7 @@ impl DataActorCore {
         handler: TypedHandler<Block>,
         chain: Blockchain,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -73,7 +72,7 @@ impl DataActorCore {
         handler: TypedHandler<Pool>,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -97,7 +96,7 @@ impl DataActorCore {
         handler: TypedHandler<PoolSwap>,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -121,7 +120,7 @@ impl DataActorCore {
         handler: TypedHandler<PoolLiquidityUpdate>,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -145,7 +144,7 @@ impl DataActorCore {
         handler: TypedHandler<PoolFeeCollect>,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -169,7 +168,7 @@ impl DataActorCore {
         handler: TypedHandler<PoolFlash>,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -191,7 +190,7 @@ impl DataActorCore {
         &mut self,
         chain: Blockchain,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -214,7 +213,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -237,7 +236,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -260,7 +259,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -284,7 +283,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -307,7 +306,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 

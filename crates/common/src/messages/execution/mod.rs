@@ -21,8 +21,6 @@ pub mod query;
 pub mod report;
 pub mod submit;
 
-// Re-exports
-pub use nautilus_core::Params;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{ClientId, InstrumentId, StrategyId},

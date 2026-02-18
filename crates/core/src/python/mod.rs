@@ -30,6 +30,7 @@
 pub mod casing;
 pub mod datetime;
 pub mod enums;
+pub mod params;
 pub mod parsing;
 pub mod serialization;
 /// String manipulation utilities for Python.

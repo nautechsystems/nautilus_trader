@@ -96,7 +96,7 @@ pub fn cash_account_borrowing_million_usd(
 /// Panics if the underlying `calculate_commission` returns an error.
 #[must_use]
 pub fn calculate_commission(
-    instrument: InstrumentAny,
+    instrument: &InstrumentAny,
     quantity: Quantity,
     price: Price,
     currency: Option<Currency>,

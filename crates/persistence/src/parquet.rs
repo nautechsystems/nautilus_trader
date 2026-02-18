@@ -21,6 +21,7 @@ use object_store::{ObjectStore, path::Path as ObjectPath};
 use parquet::{
     arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder},
     file::{
+        metadata::KeyValue,
         properties::WriterProperties,
         reader::{FileReader, SerializedFileReader},
         statistics::Statistics,
@@ -74,11 +75,44 @@ pub async fn write_batches_to_parquet(
         &object_path,
         compression,
         max_row_group_size,
+        None,
     )
     .await
 }
 
-/// Writes multiple `RecordBatch` items to an object store URI, with optional compression and row group sizing.
+/// Reads a Parquet file from an object store and returns all record batches plus
+/// the Arrow schema from the builder. The builder's schema includes metadata restored
+/// from the file's `ARROW:schema` key_value_metadata; use it for decoding instead of
+/// each batch's schema (which has metadata stripped).
+///
+/// # Errors
+///
+/// Returns an error if the path cannot be read or Parquet parsing fails.
+pub async fn read_parquet_from_object_store(
+    object_store: Arc<dyn ObjectStore>,
+    path: &ObjectPath,
+) -> anyhow::Result<(Vec<RecordBatch>, Arc<arrow::datatypes::Schema>)> {
+    let data = object_store.get(path).await?.bytes().await?;
+    if data.is_empty() {
+        return Ok((
+            Vec::new(),
+            Arc::new(arrow::datatypes::Schema::new(
+                Vec::<arrow::datatypes::Field>::new(),
+            )),
+        ));
+    }
+    let builder = ParquetRecordBatchReaderBuilder::try_new(data)?;
+    let schema = builder.schema().clone();
+    let reader = builder.build()?;
+    let mut batches = Vec::new();
+    for batch in reader {
+        batches.push(batch?);
+    }
+    Ok((batches, schema))
+}
+
+/// Writes multiple `RecordBatch` items to an object store URI, with optional compression,
+/// row group sizing, and key_value_metadata (e.g. for instrument "class" so it survives roundtrip).
 ///
 /// # Errors
 ///
@@ -89,14 +123,18 @@ pub async fn write_batches_to_object_store(
     path: &ObjectPath,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
+    key_value_metadata: Option<Vec<KeyValue>>,
 ) -> anyhow::Result<()> {
     // Create a temporary buffer to write the parquet data
     let mut buffer = Vec::new();
 
-    let writer_props = WriterProperties::builder()
+    let mut props_builder = WriterProperties::builder()
         .set_compression(compression.unwrap_or(parquet::basic::Compression::SNAPPY))
-        .set_max_row_group_size(max_row_group_size.unwrap_or(5000))
-        .build();
+        .set_max_row_group_size(max_row_group_size.unwrap_or(5000));
+    if let Some(kv) = key_value_metadata {
+        props_builder = props_builder.set_key_value_metadata(Some(kv));
+    }
+    let writer_props = props_builder.build();
 
     let mut writer = ArrowWriter::try_new(&mut buffer, batches[0].schema(), Some(writer_props))?;
     for batch in batches {
@@ -194,6 +232,7 @@ pub async fn combine_parquet_files_from_object_store(
         new_file_path,
         compression,
         max_row_group_size,
+        None,
     )
     .await?;
 

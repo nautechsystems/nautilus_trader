@@ -88,6 +88,7 @@ pub fn crypto_future_btcusdt(
         None,
         None,
         None,
+        None, // info
         0.into(),
         0.into(),
     )
@@ -127,6 +128,7 @@ pub fn ethbtc_quanto(
         None,
         None,
         None,
+        None, // info
         0.into(),
         0.into(),
     )
@@ -168,6 +170,7 @@ pub fn xbtusd_inverse_perp(
         Some(dec!(0.0035)),                // margin_maint
         Some(dec!(-0.00025)),              // maker_fee (rebate)
         Some(dec!(0.00075)),               // taker_fee
+        None,                              // info
         UnixNanos::default(),              // ts_event
         UnixNanos::default(),              // ts_init
     )
@@ -213,6 +216,7 @@ pub fn crypto_option_btc_deribit(
         None,
         Some(dec!(0.0003)),
         Some(dec!(0.0003)),
+        None, // info
         0.into(),
         0.into(),
     )
@@ -247,6 +251,7 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         Some(dec!(0.35)),
         Some(dec!(0.0002)),
         Some(dec!(0.0004)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -277,6 +282,7 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         Some(dec!(0.0035)),
         Some(dec!(-0.00025)),
         Some(dec!(0.00075)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -307,6 +313,7 @@ pub fn ethusdt_bitmex() -> CryptoPerpetual {
         Some(dec!(0.0035)),
         Some(dec!(-0.00025)),
         Some(dec!(0.00075)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -339,6 +346,7 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         Some(dec!(0.001)),
         Some(dec!(0.001)),
         Some(dec!(0.001)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -367,6 +375,7 @@ pub fn currency_pair_ethusdt() -> CurrencyPair {
         Some(dec!(0.0035)),
         Some(dec!(0.0001)),
         Some(dec!(0.0001)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -404,6 +413,7 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         Some(dec!(0.03)),
         Some(dec!(0.00002)),
         Some(dec!(0.00002)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -446,6 +456,7 @@ pub fn equity_aapl() -> Equity {
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -496,6 +507,7 @@ pub fn futures_contract_es(
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -531,6 +543,7 @@ pub fn futures_spread_es() -> FuturesSpread {
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -567,6 +580,7 @@ pub fn option_contract_appl() -> OptionContract {
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -602,6 +616,7 @@ pub fn option_spread() -> OptionSpread {
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -691,6 +706,7 @@ pub fn betting() -> BettingInstrument {
         margin_maint,
         maker_fee,
         taker_fee,
+        None, // info
         ts_event,
         ts_init,
     )
@@ -732,6 +748,7 @@ pub fn binary_option() -> BinaryOption {
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )

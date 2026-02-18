@@ -236,6 +236,7 @@ pub fn parse_spot_instrument(
         None,
         maker_fee,
         taker_fee,
+        None,
         ts_event,
         ts_init,
     );
@@ -345,6 +346,7 @@ pub fn parse_futures_instrument(
         margin_maint,
         None, // maker_fee
         None, // taker_fee
+        None,
         ts_event,
         ts_init,
     );
@@ -1243,6 +1245,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             TS,
             TS,
         ));
@@ -1289,6 +1292,7 @@ mod tests {
             8, // size_precision
             Price::from("0.1"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,
@@ -1442,6 +1446,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             TS,
             TS,
         ));
@@ -1478,6 +1483,7 @@ mod tests {
             8,
             Price::from("0.01"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,

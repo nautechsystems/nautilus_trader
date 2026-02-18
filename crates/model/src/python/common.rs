@@ -136,6 +136,12 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     }
 }
 
+// Re-export centralized Params conversion functions from nautilus_core
+// Backward compatibility: re-export pydict_to_params as an alias
+pub use nautilus_core::{
+    from_pydict as pydict_to_params, from_pydict, python::params::params_to_pydict,
+};
+
 /// Converts a list of `Money` values into a Python list of strings, or `None` if empty.
 ///
 /// # Panics

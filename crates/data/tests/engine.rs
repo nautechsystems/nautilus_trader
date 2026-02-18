@@ -783,7 +783,7 @@ fn test_execute_subscribe_bars(
         &mut data_engine,
     );
 
-    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim.clone());
     data_engine.process(&inst_any as &dyn Any);
 
     let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
@@ -3804,7 +3804,7 @@ fn test_process_book_snapshot_publish(
     // Add instrument to cache
     let _ = cache
         .borrow_mut()
-        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim));
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()));
 
     // Set up book snapshot handler to capture published snapshots
     let interval_ms = NonZeroUsize::new(100).unwrap();

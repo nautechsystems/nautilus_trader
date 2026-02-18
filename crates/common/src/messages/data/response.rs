@@ -15,8 +15,7 @@
 
 use std::{any::Any, sync::Arc};
 
-use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, DataType, FundingRateUpdate, QuoteTick, TradeTick},
     identifiers::{ClientId, InstrumentId, Venue},
@@ -36,7 +35,7 @@ pub struct CustomDataResponse {
     pub start: Option<UnixNanos>,
     pub end: Option<UnixNanos>,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl CustomDataResponse {
@@ -51,7 +50,7 @@ impl CustomDataResponse {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             correlation_id,
@@ -81,7 +80,7 @@ pub struct InstrumentResponse {
     pub start: Option<UnixNanos>,
     pub end: Option<UnixNanos>,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl InstrumentResponse {
@@ -100,7 +99,7 @@ impl InstrumentResponse {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             correlation_id,
@@ -124,7 +123,7 @@ pub struct InstrumentsResponse {
     pub start: Option<UnixNanos>,
     pub end: Option<UnixNanos>,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl InstrumentsResponse {
@@ -143,7 +142,7 @@ impl InstrumentsResponse {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             correlation_id,
@@ -167,7 +166,7 @@ pub struct BookResponse {
     pub start: Option<UnixNanos>,
     pub end: Option<UnixNanos>,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl BookResponse {
@@ -186,7 +185,7 @@ impl BookResponse {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             correlation_id,
@@ -210,7 +209,7 @@ pub struct QuotesResponse {
     pub start: Option<UnixNanos>,
     pub end: Option<UnixNanos>,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl QuotesResponse {
@@ -229,7 +228,7 @@ impl QuotesResponse {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             correlation_id,
@@ -253,7 +252,7 @@ pub struct TradesResponse {
     pub start: Option<UnixNanos>,
     pub end: Option<UnixNanos>,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl TradesResponse {
@@ -272,7 +271,7 @@ impl TradesResponse {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             correlation_id,
@@ -296,7 +295,7 @@ pub struct FundingRatesResponse {
     pub start: Option<UnixNanos>,
     pub end: Option<UnixNanos>,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl FundingRatesResponse {
@@ -315,7 +314,7 @@ impl FundingRatesResponse {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             correlation_id,
@@ -339,7 +338,7 @@ pub struct BarsResponse {
     pub ts_init: UnixNanos,
     pub start: Option<UnixNanos>,
     pub end: Option<UnixNanos>,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl BarsResponse {
@@ -358,7 +357,7 @@ impl BarsResponse {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             correlation_id,
