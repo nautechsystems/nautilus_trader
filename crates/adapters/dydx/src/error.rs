@@ -97,9 +97,30 @@ pub enum DydxError {
     Nautilus(#[from] anyhow::Error),
 }
 
+/// Cosmos SDK error code for transaction already in mempool cache (`ErrTxInMempoolCache`).
+///
+/// Returned when the exact same transaction bytes (same hash) are submitted to a node
+/// that already has the transaction in its mempool cache. For short-term dYdX orders,
+/// this is benign — the original transaction is already queued for processing.
+pub const COSMOS_ERROR_CODE_TX_IN_MEMPOOL_CACHE: u32 = 19;
+
 /// Cosmos SDK error code for account sequence mismatch.
-/// See: https://github.com/cosmos/cosmos-sdk/blob/main/types/errors/errors.go
 const COSMOS_ERROR_CODE_SEQUENCE_MISMATCH: u32 = 32;
+
+/// dYdX CLOB error code for duplicate cancel in memclob.
+///
+/// Returned when a cancel message is submitted for an order that already has a pending
+/// cancel with a greater-than-or-equal `GoodTilBlock`. This is benign for short-term
+/// cancel operations — the previous cancel is already queued and will be processed.
+///
+/// Common scenario: overlapping `cancel_all_orders` waves from a grid MM strategy.
+pub const DYDX_ERROR_CODE_CANCEL_ALREADY_IN_MEMCLOB: u32 = 9;
+
+/// dYdX CLOB error code for cancelling a non-existent order.
+///
+/// Returned when attempting to cancel an order that has already been filled, expired,
+/// or previously cancelled. This is benign — the order is already gone.
+pub const DYDX_ERROR_CODE_ORDER_DOES_NOT_EXIST: u32 = 3006;
 
 /// dYdX AllOf authenticator error code (ErrAllOfVerification).
 /// On dYdX v4, sequence mismatches surface as code=104 when using permissioned keys:
@@ -151,6 +172,67 @@ impl DydxError {
         }
         // dYdX authenticator error code 104 with sequence hint
         msg.contains(&format!("code={DYDX_ERROR_CODE_ALL_OF_FAILED}")) && msg.contains("sequence")
+    }
+
+    /// Returns true if this error indicates the transaction is already in the mempool (code=19).
+    ///
+    /// This is benign for short-term orders — the transaction was already accepted by the
+    /// mempool on a previous submission and will be processed. Callers can safely treat
+    /// this as success.
+    #[must_use]
+    pub fn is_tx_in_mempool(&self) -> bool {
+        match self {
+            Self::Nautilus(e) => {
+                let msg = e.to_string();
+                msg.contains(&format!("code={COSMOS_ERROR_CODE_TX_IN_MEMPOOL_CACHE}"))
+                    || msg.contains("tx already in mempool")
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns true if this error indicates a duplicate cancel already in the memclob (code=9).
+    ///
+    /// dYdX rejects cancel messages when an existing cancel for the same order has a
+    /// greater-than-or-equal `GoodTilBlock`. The original cancel will be processed.
+    #[must_use]
+    pub fn is_cancel_already_in_memclob(&self) -> bool {
+        match self {
+            Self::Nautilus(e) => {
+                let msg = e.to_string();
+                msg.contains(&format!("code={DYDX_ERROR_CODE_CANCEL_ALREADY_IN_MEMCLOB}"))
+                    && msg.contains("cancel already exists")
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns true if this error indicates the order to cancel does not exist (code=3006).
+    ///
+    /// The order was already filled, expired, or previously cancelled.
+    #[must_use]
+    pub fn is_order_does_not_exist(&self) -> bool {
+        match self {
+            Self::Nautilus(e) => {
+                let msg = e.to_string();
+                msg.contains(&format!("code={DYDX_ERROR_CODE_ORDER_DOES_NOT_EXIST}"))
+                    || msg.contains("Order Id to cancel does not exist")
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns true if this error is benign for short-term cancel operations.
+    ///
+    /// Benign cancel errors occur during overlapping cancel waves (common in grid MM):
+    /// - code=19: Transaction already in mempool cache (duplicate tx bytes)
+    /// - code=9: Cancel already exists in memclob with >= GoodTilBlock
+    /// - code=3006: Order to cancel does not exist (already filled/expired/cancelled)
+    #[must_use]
+    pub fn is_benign_cancel_error(&self) -> bool {
+        self.is_tx_in_mempool()
+            || self.is_cancel_already_in_memclob()
+            || self.is_order_does_not_exist()
     }
 
     /// Returns true if this error is likely transient and worth retrying.
