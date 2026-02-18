@@ -816,11 +816,13 @@ impl PoolProfiler {
         amount0: U256,
         amount1: U256,
     ) -> anyhow::Result<()> {
+        let liquidity_delta = i128::try_from(liquidity)
+            .map_err(|_| anyhow::anyhow!("Liquidity {liquidity} exceeds i128::MAX"))?;
         self.update_position(
             owner,
             tick_lower,
             tick_upper,
-            liquidity as i128,
+            liquidity_delta,
             amount0,
             amount1,
         )?;
@@ -911,12 +913,15 @@ impl PoolProfiler {
         }
         self.validate_ticks(update.tick_lower, update.tick_upper)?;
 
-        // Update the position with a negative liquidity delta for the burn.
+        // Update the position with a negative liquidity delta for the burn
+        let liquidity_delta = i128::try_from(update.position_liquidity).map_err(|_| {
+            anyhow::anyhow!("Liquidity {} exceeds i128::MAX", update.position_liquidity)
+        })?;
         self.update_position(
             &update.owner,
             update.tick_lower,
             update.tick_upper,
-            -(update.position_liquidity as i128),
+            -liquidity_delta,
             update.amount0,
             update.amount1,
         )?;
@@ -969,11 +974,13 @@ impl PoolProfiler {
         );
 
         // Update the position with a negative liquidity delta for the burn
+        let liquidity_delta = i128::try_from(liquidity)
+            .map_err(|_| anyhow::anyhow!("Liquidity {liquidity} exceeds i128::MAX"))?;
         self.update_position(
             &recipient,
             tick_lower,
             tick_upper,
-            -(liquidity as i128),
+            -liquidity_delta,
             amount0,
             amount1,
         )?;
@@ -1258,7 +1265,7 @@ impl PoolProfiler {
 
         // Update active liquidity if this position spans the current tick
         if tick_lower <= current_tick && current_tick < tick_upper {
-            self.tick_map.liquidity = ((self.tick_map.liquidity as i128) + liquidity_delta) as u128;
+            self.tick_map.liquidity = liquidity_math_add(self.tick_map.liquidity, liquidity_delta);
         }
 
         // Clear the ticks if they are flipped and burned

@@ -42,7 +42,7 @@ use std::{
 /// fail-fast guarantee with effectively no debugging downside (the panic
 /// message is still logged before the abort).
 #[inline]
-pub(crate) fn abort_on_panic<F, R>(f: F) -> R
+pub fn abort_on_panic<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
 {

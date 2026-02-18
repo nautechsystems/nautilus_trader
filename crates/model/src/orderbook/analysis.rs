@@ -124,19 +124,28 @@ pub fn get_avg_px_qty_for_exposure(
         .first_key_value()
         .map_or(0.0, |(price, _)| price.value.as_f64());
 
+    let target_exposure_raw = target_exposure.raw as f64;
+
     for (book_price, level) in levels {
         let price = book_price.value.as_f64();
-        final_price = price;
+
+        if price == 0.0 {
+            continue;
+        }
 
         let level_exposure = price * level.size_raw() as f64;
-        let exposure_this_level =
-            level_exposure.min(target_exposure.raw as f64 - cumulative_exposure);
+        let exposure_this_level = level_exposure.min(target_exposure_raw - cumulative_exposure);
         let size_this_level = (exposure_this_level / price).floor() as QuantityRaw;
 
+        if size_this_level == 0 {
+            continue;
+        }
+
+        final_price = price;
         cumulative_exposure += price * size_this_level as f64;
         cumulative_size_raw += size_this_level;
 
-        if cumulative_exposure >= target_exposure.as_f64() {
+        if cumulative_exposure >= target_exposure_raw {
             break;
         }
     }

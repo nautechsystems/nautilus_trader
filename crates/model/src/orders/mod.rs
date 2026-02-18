@@ -88,7 +88,7 @@ pub const LIMIT_ORDER_TYPES: &[OrderType] = &[
     OrderType::Limit,
     OrderType::StopLimit,
     OrderType::LimitIfTouched,
-    OrderType::MarketIfTouched,
+    OrderType::TrailingStopLimit,
 ];
 
 /// Order statuses for locally active orders (pre-submission to venue).

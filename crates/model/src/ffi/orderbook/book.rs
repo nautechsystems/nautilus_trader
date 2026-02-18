@@ -18,7 +18,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
+use nautilus_core::ffi::{abort_on_panic, cvec::CVec, string::str_to_cstr};
 
 use super::level::BookLevel_API;
 use crate::{
@@ -232,8 +232,10 @@ pub extern "C" fn orderbook_has_ask(book: &mut OrderBook_API) -> u8 {
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook_API) -> Price {
-    book.best_bid_price()
-        .expect("Error: No bid orders for best bid price")
+    abort_on_panic(|| {
+        book.best_bid_price()
+            .expect("Error: No bid orders for best bid price")
+    })
 }
 
 /// # Panics
@@ -242,8 +244,10 @@ pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook_API) -> Price {
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
-    book.best_ask_price()
-        .expect("Error: No ask orders for best ask price")
+    abort_on_panic(|| {
+        book.best_ask_price()
+            .expect("Error: No ask orders for best ask price")
+    })
 }
 
 /// # Panics
@@ -252,8 +256,10 @@ pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity {
-    book.best_bid_size()
-        .expect("Error: No bid orders for best bid size")
+    abort_on_panic(|| {
+        book.best_bid_size()
+            .expect("Error: No bid orders for best bid size")
+    })
 }
 
 /// # Panics
@@ -262,8 +268,10 @@ pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity {
-    book.best_ask_size()
-        .expect("Error: No ask orders for best ask size")
+    abort_on_panic(|| {
+        book.best_ask_size()
+            .expect("Error: No ask orders for best ask size")
+    })
 }
 
 /// # Panics
@@ -271,8 +279,10 @@ pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity 
 /// Panics if unable to calculate spread (requires at least one bid and one ask).
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_spread(book: &mut OrderBook_API) -> f64 {
-    book.spread()
-        .expect("Error: Unable to calculate `spread` (no bid or ask)")
+    abort_on_panic(|| {
+        book.spread()
+            .expect("Error: Unable to calculate `spread` (no bid or ask)")
+    })
 }
 
 /// # Panics
@@ -280,8 +290,10 @@ pub extern "C" fn orderbook_spread(book: &mut OrderBook_API) -> f64 {
 /// Panics if unable to calculate midpoint (requires at least one bid and one ask).
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_midpoint(book: &mut OrderBook_API) -> f64 {
-    book.midpoint()
-        .expect("Error: Unable to calculate `midpoint` (no bid or ask)")
+    abort_on_panic(|| {
+        book.midpoint()
+            .expect("Error: Unable to calculate `midpoint` (no bid or ask)")
+    })
 }
 
 #[unsafe(no_mangle)]
