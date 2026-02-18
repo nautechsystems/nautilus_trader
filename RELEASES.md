@@ -214,7 +214,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Optimized message bus publish with thread-local `SmallVec` buffers in Rust
 - Optimized message bus pattern matching with greedy algorithm
 - Upgraded Interactive Brokers adapter to `ibapi` 10.43 (#3427, #3595), thanks @faysou
-- Upgraded Rust (MSRV) to 1.93.0
+- Upgraded Rust (MSRV) to 1.93.1
 - Upgraded Cap'n Proto to v1.3.0
 - Upgraded Cython to v3.2.4
 - Upgraded `databento` crate to v0.39.0
