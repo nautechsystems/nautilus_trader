@@ -111,7 +111,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         config: InteractiveBrokersDataClientConfig,
         name: str | None = None,
         connection_timeout: int = 300,
-        request_timeout: int = 60,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -124,7 +123,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             config=config,
         )
         self._connection_timeout = connection_timeout
-        self._request_timeout = request_timeout
         self._client = client
         self._handle_revised_bars = config.handle_revised_bars
         self._use_regular_trading_hours = config.use_regular_trading_hours
@@ -433,7 +431,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end_date_time=end,
             limit=request.limit,
             use_rth=self._use_regular_trading_hours,
-            timeout=self._request_timeout,
+            timeout=self._client._request_timeout,
         )
         if not ticks:
             self._log.warning(f"No quote tick data received for {request.instrument_id}")
@@ -471,7 +469,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end_date_time=end,
             limit=request.limit,
             use_rth=self._use_regular_trading_hours,
-            timeout=self._request_timeout,
+            timeout=self._client._request_timeout,
         )
         if not ticks:
             self._log.warning(f"No trades received for {request.instrument_id}")
@@ -623,7 +621,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end_date_time=request.end,
             duration=duration_str,
             use_rth=self._use_regular_trading_hours,
-            timeout=self._request_timeout,
+            timeout=self._client._request_timeout,
         )
 
         if bars:

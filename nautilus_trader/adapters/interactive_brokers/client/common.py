@@ -526,6 +526,7 @@ class BaseMixin:
     _host: str
     _port: int
     _client_id: int
+    _request_timeout: int
     _requests: Requests
     _instrument_provider: (
         Any  # InteractiveBrokersInstrumentProvider | None - Will be set by data/execution client

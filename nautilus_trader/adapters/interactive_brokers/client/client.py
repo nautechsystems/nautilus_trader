@@ -95,6 +95,7 @@ class InteractiveBrokersClient(
         port: int = 7497,
         client_id: int = 1,
         fetch_all_open_orders: bool = False,
+        request_timeout: int = 60,
     ) -> None:
         super().__init__(
             clock=clock,
@@ -110,6 +111,7 @@ class InteractiveBrokersClient(
         self._port = port
         self._client_id = client_id
         self._fetch_all_open_orders = fetch_all_open_orders
+        self._request_timeout = request_timeout
 
         # TWS API
         self._eclient: EClient = EClient(
