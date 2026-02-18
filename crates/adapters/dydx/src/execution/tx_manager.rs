@@ -139,7 +139,7 @@ impl TransactionManager {
 
         let chain_seq = base_account.sequence;
         self.sequence_number.store(chain_seq, Ordering::SeqCst);
-        log::info!("Initialized sequence from chain: {chain_seq}");
+        log::debug!("Initialized sequence from chain: {chain_seq}");
         Ok(chain_seq)
     }
 
@@ -409,7 +409,7 @@ impl TransactionManager {
             )
             .is_ok()
         {
-            log::info!("Initialized sequence from chain: {chain_seq}");
+            log::debug!("Initialized sequence from chain: {chain_seq}");
         }
         Ok(())
     }

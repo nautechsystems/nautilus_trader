@@ -199,7 +199,7 @@ impl TxBroadcaster {
                     DydxError::Nautilus(e)
                 })?;
 
-                log::info!("{op_name} successfully: tx_hash={tx_hash}");
+                log::debug!("{op_name} successfully: tx_hash={tx_hash}");
                 Ok(tx_hash)
             }
         };
@@ -252,7 +252,7 @@ impl TxBroadcaster {
             DydxError::Nautilus(e)
         })?;
 
-        log::info!("{operation_name} successfully: tx_hash={tx_hash}");
+        log::debug!("{operation_name} successfully: tx_hash={tx_hash}");
         Ok(tx_hash)
     }
 
@@ -283,7 +283,7 @@ impl TxBroadcaster {
                 DydxError::Nautilus(e)
             })?;
 
-        log::info!("{operation} successfully: tx_hash={tx_hash}");
+        log::debug!("{operation} successfully: tx_hash={tx_hash}");
         Ok(tx_hash)
     }
 }

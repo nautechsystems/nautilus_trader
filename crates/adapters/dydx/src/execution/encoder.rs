@@ -176,7 +176,9 @@ impl ClientOrderIdEncoder {
         if id_str.starts_with("O-") {
             match self.encode_o_format(id_str) {
                 Ok(encoded) => {
-                    // No need to cache - deterministic
+                    // Cache for reverse lookup so decode_if_known can verify
+                    self.reverse
+                        .insert((encoded.client_id, encoded.client_metadata), id);
                     return Ok(encoded);
                 }
                 Err(e) => {
@@ -364,6 +366,31 @@ impl ClientOrderIdEncoder {
         self.decode_o_format(client_id, client_metadata)
     }
 
+    /// Decodes deterministic pairs or pairs known to this instance.
+    ///
+    /// Unlike [`decode`], sequential IDs (non-deterministic) require the
+    /// reverse map. Numeric and O-format are deterministic and always decode.
+    #[must_use]
+    pub fn decode_if_known(&self, client_id: u32, client_metadata: u32) -> Option<ClientOrderId> {
+        // Reverse map covers all encoding types for the current session
+        if let Some(entry) = self.reverse.get(&(client_id, client_metadata)) {
+            return Some(*entry.value());
+        }
+
+        // Sequential IDs are non-deterministic, reverse map only
+        if client_metadata == SEQUENTIAL_METADATA_MARKER {
+            return None;
+        }
+
+        // Numeric IDs: deterministic (safe across restarts)
+        if client_metadata == DEFAULT_RUST_CLIENT_METADATA {
+            return Some(ClientOrderId::from(client_id.to_string().as_str()));
+        }
+
+        // O-format: deterministic (safe across restarts)
+        self.decode_o_format(client_id, client_metadata)
+    }
+
     /// Decodes O-format encoded values back to ClientOrderId string.
     ///
     /// Encoding scheme (swapped for uniqueness):
@@ -433,27 +460,12 @@ impl ClientOrderIdEncoder {
     /// Removes the mapping for a given encoded pair.
     ///
     /// Returns the original ClientOrderId if it was mapped.
-    /// For deterministic formats, this is a no-op.
     pub fn remove(&self, client_id: u32, client_metadata: u32) -> Option<ClientOrderId> {
-        // Sequential allocations need cleanup (identified by metadata marker)
-        if client_metadata == SEQUENTIAL_METADATA_MARKER {
-            if let Some((_, client_order_id)) = self.reverse.remove(&(client_id, client_metadata)) {
-                self.forward.remove(&client_order_id);
-                return Some(client_order_id);
-            }
-            return None;
-        }
-
-        // Numeric IDs cached for reverse lookup
-        if client_metadata == DEFAULT_RUST_CLIENT_METADATA
-            && let Some((_, client_order_id)) = self.reverse.remove(&(client_id, client_metadata))
-        {
+        if let Some((_, client_order_id)) = self.reverse.remove(&(client_id, client_metadata)) {
             self.forward.remove(&client_order_id);
             return Some(client_order_id);
         }
-
-        // O-format IDs are deterministic - just decode
-        self.decode_o_format(client_id, client_metadata)
+        None
     }
 
     /// Legacy remove method for backward compatibility.

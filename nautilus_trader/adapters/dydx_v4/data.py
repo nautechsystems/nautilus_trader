@@ -188,14 +188,11 @@ class DYDXv4DataClient(LiveMarketDataClient):
 
         # Shutdown websocket
         if not self._ws_client.is_closed():
-            self._log.info("Disconnecting WebSocket")
+            self._log.debug("Disconnecting WebSocket")
 
             await self._ws_client.disconnect()
 
-            self._log.info(
-                f"Disconnected from {self._ws_client.py_url}",
-                LogColor.BLUE,
-            )
+            self._log.debug(f"Disconnected from {self._ws_client.py_url}")
 
         # Cancel any pending futures
         await cancel_tasks_with_timeout(

@@ -39,10 +39,12 @@
 //! See <https://docs.dydx.xyz/concepts/trading/orders#short-term-vs-long-term> for details.
 
 use std::{
+    collections::VecDeque,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -63,7 +65,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
+    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
@@ -123,6 +125,25 @@ use block_time::BlockTimeMonitor;
 /// dYdX protocol accepts u32 client IDs. The `ClientOrderIdEncoder` uses sequential
 /// allocation starting from 1, with overflow protection near `u32::MAX - 1000`.
 pub const MAX_CLIENT_ID: u32 = u32::MAX;
+
+const MAX_TERMINAL_IDS: usize = 10_000;
+
+fn apply_avg_px_from_fills(order_reports: &mut [OrderStatusReport], fill_reports: &[FillReport]) {
+    let mut totals: AHashMap<VenueOrderId, (Decimal, Decimal)> = AHashMap::new();
+    for fill in fill_reports {
+        let entry = totals.entry(fill.venue_order_id).or_default();
+        let qty = fill.last_qty.as_decimal();
+        entry.0 += fill.last_px.as_decimal() * qty;
+        entry.1 += qty;
+    }
+    for report in order_reports {
+        if let Some((notional, total_qty)) = totals.get(&report.venue_order_id)
+            && !total_qty.is_zero()
+        {
+            report.avg_px = Some(notional / total_qty);
+        }
+    }
+}
 
 /// Live execution client for the dYdX v4 exchange adapter.
 ///
@@ -322,6 +343,16 @@ impl DydxExecutionClient {
 
         let handle = get_runtime().spawn(async move {
             log::debug!("Execution WebSocket message loop started");
+
+            // Cumulative fill totals per order for avg_px computation
+            // (dYdX doesn't provide avg_px on orders)
+            let mut cum_fill_totals: AHashMap<VenueOrderId, (Decimal, Decimal)> =
+                AHashMap::new();
+
+            // Track orders that have reached terminal state to skip stale updates
+            let mut terminal_venue_order_ids: AHashSet<VenueOrderId> = AHashSet::new();
+            let mut terminal_id_queue: VecDeque<VenueOrderId> = VecDeque::new();
+
             pin_mut!(stream);
             while let Some(msg) = stream.next().await {
                 match msg {
@@ -451,12 +482,12 @@ impl DydxExecutionClient {
                         // to prevent reconciliation from inferring fills at the limit price.
                         let mut pending_order_reports = Vec::new();
                         if let Some(ref orders) = data.contents.orders {
-                            log::info!(
+                            log::debug!(
                                 "Processing {} orders from SubaccountsChannelData",
                                 orders.len()
                             );
                             for ws_order in orders {
-                                log::info!(
+                                log::debug!(
                                     "Parsing WS order: clob_pair_id={}, status={:?}, client_id={}",
                                     ws_order.clob_pair_id,
                                     ws_order.status,
@@ -492,7 +523,7 @@ impl DydxExecutionClient {
                                                 .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
                                             terminal_orders.push((cid, meta, ws_order.id.clone()));
                                         }
-                                        log::info!(
+                                        log::debug!(
                                             "Parsed order report: {} {} {:?} qty={} client_order_id={:?}",
                                             report.instrument_id,
                                             report.order_side,
@@ -511,6 +542,7 @@ impl DydxExecutionClient {
 
                         // Phase 2: Send fills FIRST so reconciliation sees them before
                         // the terminal order status (prevents inferred fills at limit price)
+                        let mut filled_in_msg: AHashSet<VenueOrderId> = AHashSet::new();
                         if let Some(ref fills) = data.contents.fills {
                             for ws_fill in fills {
                                 match parse_ws_fill_report(
@@ -523,7 +555,7 @@ impl DydxExecutionClient {
                                     ts_init,
                                 ) {
                                     Ok(report) => {
-                                        log::info!(
+                                        log::debug!(
                                             "Parsed fill report: {} {} {} @ {} client_order_id={:?}",
                                             report.instrument_id,
                                             report.venue_order_id,
@@ -531,6 +563,16 @@ impl DydxExecutionClient {
                                             report.last_px,
                                             report.client_order_id
                                         );
+
+                                        // Accumulate for cumulative avg_px
+                                        let entry = cum_fill_totals
+                                            .entry(report.venue_order_id)
+                                            .or_default();
+                                        let qty = report.last_qty.as_decimal();
+                                        entry.0 += report.last_px.as_decimal() * qty;
+                                        entry.1 += qty;
+                                        filled_in_msg.insert(report.venue_order_id);
+
                                         emitter.send_fill_report(report);
                                     }
                                     Err(e) => {
@@ -540,8 +582,45 @@ impl DydxExecutionClient {
                             }
                         }
 
+                        // Set avg_px from cumulative fill totals
+                        for report in &mut pending_order_reports {
+                            if let Some((notional, total_qty)) =
+                                cum_fill_totals.get(&report.venue_order_id)
+                                && !total_qty.is_zero()
+                            {
+                                report.avg_px = Some(notional / total_qty);
+                            }
+                        }
+
                         // Phase 3: Now send order status reports
+                        // Skip Accepted when fills already sent for same order in
+                        // this message, or order already reached terminal state
                         for report in pending_order_reports {
+                            if report.order_status == OrderStatus::Accepted
+                                && (filled_in_msg.contains(&report.venue_order_id)
+                                    || terminal_venue_order_ids
+                                        .contains(&report.venue_order_id))
+                            {
+                                log::debug!(
+                                    "Skipping Accepted report for {:?} {:?}",
+                                    report.client_order_id,
+                                    report.venue_order_id,
+                                );
+                                continue;
+                            }
+
+                            // Track terminal state with bounded FIFO eviction
+                            if !report.order_status.is_open()
+                                && terminal_venue_order_ids.insert(report.venue_order_id)
+                            {
+                                terminal_id_queue.push_back(report.venue_order_id);
+                                while terminal_id_queue.len() > MAX_TERMINAL_IDS {
+                                    if let Some(old) = terminal_id_queue.pop_front() {
+                                        terminal_venue_order_ids.remove(&old);
+                                    }
+                                }
+                            }
+
                             emitter.send_order_status_report(report);
                         }
 
@@ -551,6 +630,7 @@ impl DydxExecutionClient {
                             order_contexts.remove(&client_id);
                             encoder.remove(client_id, client_metadata);
                             order_id_map.remove(&order_id);
+                            cum_fill_totals.remove(&VenueOrderId::new(&order_id));
                         }
                     }
                     NautilusWsMessage::MarkPrice(mark_price) => {
@@ -2278,8 +2358,24 @@ impl ExecutionClient for DydxExecutionClient {
             None => return Ok(None),
         };
 
-        let report = parse_order_status_report(order, &instrument, self.core.account_id, ts_init)
-            .context("failed to parse order status report")?;
+        let mut report =
+            parse_order_status_report(order, &instrument, self.core.account_id, ts_init)
+                .context("failed to parse order status report")?;
+
+        if !order.client_id.is_empty()
+            && let Ok(client_id_u32) = order.client_id.parse::<u32>()
+            && let Some(decoded) = self
+                .encoder
+                .decode_if_known(client_id_u32, order.client_metadata)
+        {
+            log::debug!(
+                "Decoded order: dYdX client_id={} meta={:#x} -> '{}'",
+                client_id_u32,
+                order.client_metadata,
+                decoded,
+            );
+            report.client_order_id = Some(decoded);
+        }
 
         if let Some(client_order_id) = cmd.client_order_id
             && report.client_order_id != Some(client_order_id)
@@ -2334,17 +2430,29 @@ impl ExecutionClient for DydxExecutionClient {
                 continue;
             }
 
-            let report =
-                match parse_order_status_report(&order, &instrument, self.core.account_id, ts_init)
-                {
-                    Ok(r) => r,
-                    Err(e) => {
-                        log::warn!("Failed to parse order status report: {e}");
-                        continue;
+            match parse_order_status_report(&order, &instrument, self.core.account_id, ts_init) {
+                Ok(mut r) => {
+                    if !order.client_id.is_empty()
+                        && let Ok(client_id_u32) = order.client_id.parse::<u32>()
+                        && let Some(decoded) = self
+                            .encoder
+                            .decode_if_known(client_id_u32, order.client_metadata)
+                    {
+                        log::debug!(
+                            "Decoded order: dYdX client_id={} meta={:#x} -> '{}'",
+                            client_id_u32,
+                            order.client_metadata,
+                            decoded,
+                        );
+                        r.client_order_id = Some(decoded);
                     }
-                };
-
-            reports.push(report);
+                    reports.push(r);
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse order status report: {e}");
+                    continue;
+                }
+            }
         }
 
         // Filter by open_only if specified
@@ -2509,11 +2617,11 @@ impl ExecutionClient for DydxExecutionClient {
 
             match parse_order_status_report(&order, &instrument, self.core.account_id, ts_init) {
                 Ok(mut r) => {
-                    // Decode dYdX u32 client_id back to Nautilus format using bidirectional encoder
                     if !order.client_id.is_empty()
                         && let Ok(client_id_u32) = order.client_id.parse::<u32>()
-                        && let Some(decoded) =
-                            self.encoder.decode(client_id_u32, order.client_metadata)
+                        && let Some(decoded) = self
+                            .encoder
+                            .decode_if_known(client_id_u32, order.client_metadata)
                     {
                         log::debug!(
                             "Decoded reconciliation order: dYdX client_id={} meta={:#x} -> '{}'",
@@ -2575,6 +2683,8 @@ impl ExecutionClient for DydxExecutionClient {
                 }
             }
         }
+
+        apply_avg_px_from_fills(&mut order_reports, &fill_reports);
 
         // Apply lookback filter to orders and fills (positions are always current state)
         if let Some(mins) = lookback_mins {

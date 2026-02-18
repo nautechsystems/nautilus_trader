@@ -196,16 +196,24 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 
 ### Order classification
 
-dYdX classifies orders as either **short-term** or **long-term**:
+dYdX v4 classifies every order into one of three on-chain categories. The Rust adapter
+automatically determines the category based on time-in-force and expiry, so no manual
+configuration is required.
 
-- **Short-term orders**: In-memory orders that expire by block height (max 20 blocks). Used
-  for IOC/FOK orders or orders expiring within 60 seconds. Lower fees.
-- **Long-term orders**: Stored on-chain with timestamp-based expiry. Used for GTC/GTD orders
-  with expiry beyond 60 seconds.
-- **Conditional orders**: Stop-loss and take-profit orders, always stored on-chain.
+| Category        | Placement   | Expiry            | Typical use                                   |
+|-----------------|-------------|-------------------|-----------------------------------------------|
+| Short-term      | In-memory   | Block height      | IOC/FOK, or orders expiring within 20 blocks. |
+| Long-term       | On-chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond ~60 seconds.       |
+| Conditional     | On-chain    | Timestamp (UTC)   | Stop-loss and take-profit triggers.           |
 
-The Rust adapter automatically determines the order lifetime based on the order's time-in-force
-and expiry time.
+At the protocol level, **all dYdX v4 orders are limit orders**. The `MARKET` order type
+is a Nautilus convenience that the adapter implements as an aggressive IOC limit order
+priced well through the book. This means market orders follow the same
+`Submitted > Accepted > Filled` lifecycle as limit orders (an `OrderAccepted` event is
+expected before the fill).
+
+See the [dYdX v4 order documentation](https://docs.dydx.exchange/api_integration-trading/short_term_vs_stateful)
+for full protocol-level details on short-term vs stateful order mechanics.
 
 ## Data subscriptions
 
@@ -267,6 +275,94 @@ config = TradingNodeConfig(
 Most users will use subaccount `0` (the default). Advanced users can configure multiple execution
 clients for different subaccounts to implement strategy segregation or risk isolation.
 :::
+
+## Testnet setup
+
+The dYdX v4 testnet (`dydx-testnet-4`) is a full replica of mainnet for testing strategies
+without risking real funds. All default testnet endpoints are resolved automatically when
+`is_testnet=True`.
+
+### 1. Create a testnet wallet
+
+**Option A: Via the dYdX testnet web app (easiest)**
+
+1. Go to [v4.testnet.dydx.exchange](https://v4.testnet.dydx.exchange)
+2. Connect with MetaMask, Keplr, Phantom, or WalletConnect
+3. A dYdX account is generated automatically
+4. Export your secret phrase: click your address (top-right) and select "Export secret phrase"
+
+**Option B: Use an existing secp256k1 private key**
+
+Any 32-byte hex-encoded secp256k1 private key will work. The adapter derives the `dydx1...`
+address from the key automatically using Cosmos bech32 encoding.
+
+### 2. Fund the testnet account
+
+A subaccount must be funded before the adapter can connect (see [First-time account activation](#architecture)).
+
+**Via the testnet web app:**
+
+Click the deposit/recharge button on [v4.testnet.dydx.exchange](https://v4.testnet.dydx.exchange)
+to receive testnet USDC automatically.
+
+**Via the faucet API directly:**
+
+```bash
+# Fund subaccount 0 with 2000 USDC
+curl -X POST https://faucet.v4testnet.dydx.exchange/faucet/tokens \
+  -H "Content-Type: application/json" \
+  -d '{"address": "dydx1...", "subaccountNumber": 0, "amount": 2000}'
+
+# Fund native tokens (for gas fees)
+curl -X POST https://faucet.v4testnet.dydx.exchange/faucet/native-token \
+  -H "Content-Type: application/json" \
+  -d '{"address": "dydx1..."}'
+```
+
+### 3. Set environment variables
+
+```bash
+export DYDX_TESTNET_WALLET_ADDRESS="dydx1..."
+export DYDX_TESTNET_PRIVATE_KEY="0x..."  # hex-encoded, 0x prefix optional
+```
+
+### 4. Configure the trading node
+
+Set `is_testnet=True` on both data and execution clients:
+
+```python
+config = TradingNodeConfig(
+    ...,  # Omitted
+    data_clients={
+        DYDX: DYDXv4DataClientConfig(
+            wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
+            instrument_provider=InstrumentProviderConfig(load_all=True),
+            is_testnet=True,
+        ),
+    },
+    exec_clients={
+        DYDX: DYDXv4ExecClientConfig(
+            wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
+            private_key=None,  # Falls back to DYDX_TESTNET_PRIVATE_KEY env var
+            subaccount=0,
+            instrument_provider=InstrumentProviderConfig(load_all=True),
+            is_testnet=True,
+        ),
+    },
+)
+```
+
+### Testnet endpoints
+
+Default testnet endpoints are used automatically. Override with `base_url_*` config options if needed.
+
+| Service   | Default URL                                          |
+|-----------|------------------------------------------------------|
+| HTTP      | `https://indexer.v4testnet.dydx.exchange`            |
+| WebSocket | `wss://indexer.v4testnet.dydx.exchange/v4/ws`        |
+| gRPC      | `https://test-dydx-grpc.kingnodes.com:443` (primary) |
+| Faucet    | `https://faucet.v4testnet.dydx.exchange`             |
+| Web app   | `https://v4.testnet.dydx.exchange`                   |
 
 ## Configuration
 
@@ -368,94 +464,6 @@ resolved automatically from environment variables based on the `is_testnet` sett
 
 1. Value passed in the Python config (if non-empty)
 2. Environment variable (selected by `is_testnet` flag)
-
-### Testnet setup
-
-The dYdX v4 testnet (`dydx-testnet-4`) is a full replica of mainnet for testing strategies
-without risking real funds. All default testnet endpoints are resolved automatically when
-`is_testnet=True`.
-
-#### 1. Create a testnet wallet
-
-**Option A: Via the dYdX testnet web app (easiest)**
-
-1. Go to [v4.testnet.dydx.exchange](https://v4.testnet.dydx.exchange)
-2. Connect with MetaMask, Keplr, Phantom, or WalletConnect
-3. A dYdX account is generated automatically
-4. Export your secret phrase: click your address (top-right) and select "Export secret phrase"
-
-**Option B: Use an existing secp256k1 private key**
-
-Any 32-byte hex-encoded secp256k1 private key will work. The adapter derives the `dydx1...`
-address from the key automatically using Cosmos bech32 encoding.
-
-#### 2. Fund the testnet account
-
-A subaccount must be funded before the adapter can connect (see [First-time account activation](#architecture)).
-
-**Via the testnet web app:**
-
-Click the deposit/recharge button on [v4.testnet.dydx.exchange](https://v4.testnet.dydx.exchange)
-to receive testnet USDC automatically.
-
-**Via the faucet API directly:**
-
-```bash
-# Fund subaccount 0 with 2000 USDC
-curl -X POST https://faucet.v4testnet.dydx.exchange/faucet/tokens \
-  -H "Content-Type: application/json" \
-  -d '{"address": "dydx1...", "subaccountNumber": 0, "amount": 2000}'
-
-# Fund native tokens (for gas fees)
-curl -X POST https://faucet.v4testnet.dydx.exchange/faucet/native-token \
-  -H "Content-Type: application/json" \
-  -d '{"address": "dydx1..."}'
-```
-
-#### 3. Set environment variables
-
-```bash
-export DYDX_TESTNET_WALLET_ADDRESS="dydx1..."
-export DYDX_TESTNET_PRIVATE_KEY="0x..."  # hex-encoded, 0x prefix optional
-```
-
-#### 4. Configure the trading node
-
-Set `is_testnet=True` on both data and execution clients:
-
-```python
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        DYDX: DYDXv4DataClientConfig(
-            wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=True,
-        ),
-    },
-    exec_clients={
-        DYDX: DYDXv4ExecClientConfig(
-            wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
-            private_key=None,  # Falls back to DYDX_TESTNET_PRIVATE_KEY env var
-            subaccount=0,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=True,
-        ),
-    },
-)
-```
-
-#### Testnet endpoints
-
-Default testnet endpoints are used automatically. Override with `base_url_*` config options if needed.
-
-| Service   | Default URL                                          |
-|-----------|------------------------------------------------------|
-| HTTP      | `https://indexer.v4testnet.dydx.exchange`            |
-| WebSocket | `wss://indexer.v4testnet.dydx.exchange/v4/ws`        |
-| gRPC      | `https://test-dydx-grpc.kingnodes.com:443` (primary) |
-| Faucet    | `https://faucet.v4testnet.dydx.exchange`             |
-| Web app   | `https://v4.testnet.dydx.exchange`                   |
 
 ### Permissioned key trading
 

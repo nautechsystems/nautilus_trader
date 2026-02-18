@@ -549,7 +549,7 @@ impl DydxWebSocketClient {
         // Drop receiver to stop any consumers
         self.out_rx = None;
 
-        log::info!("Disconnected dYdX WebSocket");
+        log::debug!("Disconnected dYdX WebSocket");
         Ok(())
     }
 

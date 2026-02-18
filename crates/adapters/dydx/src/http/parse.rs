@@ -977,7 +977,7 @@ use nautilus_model::{
 use super::models::{Fill, Order, PerpetualPosition};
 use crate::common::enums::{DydxConditionType, DydxLiquidity, DydxOrderStatus};
 #[cfg(test)]
-use crate::common::enums::{DydxFillType, DydxPositionStatus, DydxTickerType};
+use crate::common::enums::{DydxFillType, DydxPositionSide, DydxPositionStatus, DydxTickerType};
 
 /// Map dYdX order status to Nautilus OrderStatus.
 fn parse_order_status(status: &DydxOrderStatus) -> OrderStatus {
@@ -1565,7 +1565,7 @@ mod reconciliation_tests {
         let position = PerpetualPosition {
             market: Ustr::from("BTC-USD"),
             status: DydxPositionStatus::Open,
-            side: OrderSide::Buy,
+            side: DydxPositionSide::Long,
             size: dec!(2.5),
             max_size: dec!(3.0),
             entry_price: dec!(49500.0),
@@ -1599,7 +1599,7 @@ mod reconciliation_tests {
         let position = PerpetualPosition {
             market: Ustr::from("BTC-USD"),
             status: DydxPositionStatus::Open,
-            side: OrderSide::Sell,
+            side: DydxPositionSide::Short,
             size: dec!(-1.5),
             max_size: dec!(1.5),
             entry_price: dec!(51000.0),
@@ -1631,7 +1631,7 @@ mod reconciliation_tests {
         let position = PerpetualPosition {
             market: Ustr::from("BTC-USD"),
             status: DydxPositionStatus::Closed,
-            side: OrderSide::Buy,
+            side: DydxPositionSide::Long,
             size: dec!(0.0),
             max_size: dec!(2.0),
             entry_price: dec!(50000.0),
@@ -1759,7 +1759,7 @@ mod reconciliation_tests {
         let long_position = PerpetualPosition {
             market: Ustr::from("BTC-USD"),
             status: DydxPositionStatus::Open,
-            side: OrderSide::Buy,
+            side: DydxPositionSide::Long,
             size: dec!(1.5),
             max_size: dec!(1.5),
             entry_price: dec!(49000.0),
@@ -1784,7 +1784,7 @@ mod reconciliation_tests {
         let short_position = PerpetualPosition {
             market: Ustr::from("BTC-USD"),
             status: DydxPositionStatus::Open,
-            side: OrderSide::Sell,
+            side: DydxPositionSide::Short,
             size: dec!(-2.0),
             max_size: dec!(2.0),
             entry_price: dec!(51000.0),

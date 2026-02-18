@@ -287,9 +287,9 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
         # Shutdown websocket
         if self._ws_client is not None and not self._ws_client.is_closed():
-            self._log.info("Disconnecting WebSocket")
+            self._log.debug("Disconnecting WebSocket")
             await self._ws_client.disconnect()
-            self._log.info("Disconnected from WebSocket", LogColor.BLUE)
+            self._log.debug("Disconnected from WebSocket")
 
     def _handle_msg(self, raw: object) -> None:
         try:
@@ -306,7 +306,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 self._send_fill_report(report)
             elif isinstance(raw, nautilus_pyo3.PositionStatusReport):
                 report = PositionStatusReport.from_pyo3(raw)
-                self._send_position_report(report)
+                self._send_position_status_report(report)
             else:
                 self._log.warning(f"Ignoring message of type {type(raw).__name__}")
         except Exception as e:
@@ -408,7 +408,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         expire_ns = order.expire_time_ns if hasattr(order, "expire_time_ns") else None
         self._order_contexts[client_order_id_u32] = (tif_value, expire_ns)
 
-        self._log.info(f"Submit {order}", LogColor.NORMAL)
+        self._log.debug(f"Submit {order}")
 
         # Generate OrderSubmitted event before dispatch
         self.generate_order_submitted(
@@ -482,10 +482,9 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         assert self._order_submitter is not None
         tif_value = order.time_in_force.value
 
-        self._log.info(
+        self._log.debug(
             f"Submitting limit order: "
             f"price={order.price}, qty={order.quantity}, tif={order.time_in_force}",
-            LogColor.NORMAL,
         )
 
         await self._order_submitter.submit_limit_order(
@@ -675,7 +674,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
         # Cancel each order individually (dYdX does not allow batching short-term cancels)
         assert self._encoder is not None
-        self._log.info(
+        self._log.debug(
             f"Cancelling {len(open_orders)} orders individually for "
             f"{command.instrument_id or 'all instruments'}",
         )
@@ -705,7 +704,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
         # Cancel each order individually (dYdX does not allow batching short-term cancels)
         assert self._encoder is not None
-        self._log.info(f"Cancelling {len(command.cancels)} orders individually")
+        self._log.debug(f"Cancelling {len(command.cancels)} orders individually")
         for cancel in command.cancels:
             order = self._cache.order(cancel.client_order_id)
             if order is None:

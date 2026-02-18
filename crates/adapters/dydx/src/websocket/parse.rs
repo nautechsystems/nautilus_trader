@@ -38,7 +38,7 @@ use rust_decimal::Decimal;
 use super::{DydxWsError, DydxWsResult};
 use crate::{
     common::{
-        enums::{DydxOrderStatus, DydxTickerType},
+        enums::{DydxOrderStatus, DydxPositionSide, DydxTickerType},
         instrument_cache::InstrumentCache,
     },
     execution::{encoder::ClientOrderIdEncoder, types::OrderContext},
@@ -104,7 +104,7 @@ pub fn parse_ws_order_report(
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
 
-    log::info!(
+    log::debug!(
         "[WS_ORDER_RECV] dYdX client_id='{}' meta={:#x} (parsed u32={:?}) | status={:?} | clob_pair={} | side={:?} | size={} | filled={}",
         ws_order.client_id,
         dydx_client_metadata,
@@ -117,24 +117,25 @@ pub fn parse_ws_order_report(
     );
 
     // Look up the original Nautilus client_order_id from the order context first,
-    // then fall back to encoder.decode() if not found in context
+    // then fall back to encoder.decode_if_known() if not found in context
     if let Some(client_id) = dydx_client_id {
         if let Some(ctx) = order_contexts.get(&client_id) {
-            log::info!(
+            log::debug!(
                 "[WS_ORDER_RECV] DECODE via order_contexts: dYdX u32={} -> Nautilus '{}'",
                 client_id,
                 ctx.client_order_id
             );
             report.client_order_id = Some(ctx.client_order_id);
-        } else if let Some(client_order_id) = encoder.decode(client_id, dydx_client_metadata) {
-            // Fallback: use encoder's bidirectional decode with both client_id and client_metadata
-            log::info!(
+        } else if let Some(client_order_id) =
+            encoder.decode_if_known(client_id, dydx_client_metadata)
+        {
+            log::debug!(
                 "[WS_ORDER_RECV] DECODE via encoder fallback: dYdX u32={client_id} meta={dydx_client_metadata:#x} -> Nautilus '{client_order_id}'"
             );
             report.client_order_id = Some(client_order_id);
         } else {
-            log::warn!(
-                "[WS_ORDER_RECV] DECODE FAILED: dYdX u32={client_id} meta={dydx_client_metadata:#x} not found in order_contexts or encoder!"
+            log::debug!(
+                "[WS_ORDER_RECV] Unknown order: dYdX u32={client_id} meta={dydx_client_metadata:#x} (external or previous session)"
             );
         }
     } else {
@@ -309,11 +310,13 @@ pub fn parse_ws_fill_report(
             let (client_id, client_metadata) = *entry.value();
             if let Some(ctx) = order_contexts.get(&client_id) {
                 report.client_order_id = Some(ctx.client_order_id);
-            } else if let Some(client_order_id) = encoder.decode(client_id, client_metadata) {
+            } else if let Some(client_order_id) =
+                encoder.decode_if_known(client_id, client_metadata)
+            {
                 report.client_order_id = Some(client_order_id);
             } else {
-                log::warn!(
-                    "[WS_FILL_RECV] DECODE FAILED: order_id={order_id} -> client_id={client_id} meta={client_metadata:#x} not decodable",
+                log::debug!(
+                    "[WS_FILL_RECV] Unknown order: order_id={order_id} -> client_id={client_id} meta={client_metadata:#x} (external or previous session)",
                 );
             }
         } else {
@@ -477,11 +480,10 @@ fn convert_ws_position_to_http(
         .context("Failed to parse closed_at")?
         .map(|dt| dt.with_timezone(&Utc));
 
-    // Determine side from size sign (HTTP format uses OrderSide, not PositionSide)
     let side = if size.is_sign_positive() {
-        OrderSide::Buy
+        DydxPositionSide::Long
     } else {
-        OrderSide::Sell
+        DydxPositionSide::Short
     };
 
     Ok(PerpetualPosition {
@@ -1239,7 +1241,7 @@ mod tests {
         let http_position = result.unwrap();
         assert_eq!(http_position.market, "BTC-USD");
         assert_eq!(http_position.status, DydxPositionStatus::Open);
-        assert_eq!(http_position.side, OrderSide::Buy); // Positive size = Buy
+        assert_eq!(http_position.side, DydxPositionSide::Long); // Positive size = Long
         assert_eq!(http_position.size, rust_decimal_macros::dec!(1.5));
         assert_eq!(http_position.max_size, rust_decimal_macros::dec!(2.0));
         assert_eq!(

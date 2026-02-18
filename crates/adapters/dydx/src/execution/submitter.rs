@@ -195,7 +195,7 @@ impl OrderSubmitter {
         side: OrderSide,
         quantity: Quantity,
     ) -> Result<String, DydxError> {
-        log::info!(
+        log::debug!(
             "Submitting market order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, quantity={quantity}"
         );
 
@@ -247,7 +247,7 @@ impl OrderSubmitter {
         reduce_only: bool,
         expire_time: Option<i64>,
     ) -> Result<String, DydxError> {
-        log::info!(
+        log::debug!(
             "Submitting limit order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, price={price}, \
              quantity={quantity}, tif={time_in_force:?}, post_only={post_only}, reduce_only={reduce_only}"
         );
@@ -402,7 +402,7 @@ impl OrderSubmitter {
         time_in_force: TimeInForce,
         expire_time_ns: Option<nautilus_core::UnixNanos>,
     ) -> Result<String, DydxError> {
-        log::info!("Cancelling order: client_id={client_order_id}, instrument={instrument_id}");
+        log::debug!("Cancelling order: client_id={client_order_id}, instrument={instrument_id}");
 
         let block_height = self.current_block_height();
 
@@ -508,7 +508,7 @@ impl OrderSubmitter {
         reduce_only: bool,
         expire_time: Option<i64>,
     ) -> Result<String, DydxError> {
-        log::info!(
+        log::debug!(
             "Submitting stop market order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, \
              trigger={trigger_price}, qty={quantity}"
         );
@@ -562,7 +562,7 @@ impl OrderSubmitter {
         reduce_only: bool,
         expire_time: Option<i64>,
     ) -> Result<String, DydxError> {
-        log::info!(
+        log::debug!(
             "Submitting stop limit order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, \
              trigger={trigger_price}, limit={limit_price}, qty={quantity}"
         );
@@ -616,7 +616,7 @@ impl OrderSubmitter {
         reduce_only: bool,
         expire_time: Option<i64>,
     ) -> Result<String, DydxError> {
-        log::info!(
+        log::debug!(
             "Submitting take profit market order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, \
              trigger={trigger_price}, qty={quantity}"
         );
@@ -670,7 +670,7 @@ impl OrderSubmitter {
         reduce_only: bool,
         expire_time: Option<i64>,
     ) -> Result<String, DydxError> {
-        log::info!(
+        log::debug!(
             "Submitting take profit limit order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, \
              trigger={trigger_price}, limit={limit_price}, qty={quantity}"
         );

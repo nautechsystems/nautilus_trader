@@ -59,6 +59,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.portfolio.config import PortfolioConfig
@@ -71,6 +72,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 # dYdX v4 perpetual markets
 # All instruments follow {BASE}-{QUOTE}-PERP.DYDX naming
+is_testnet = False
 symbol = "ETH-USD-PERP"
 instrument_id = InstrumentId.from_str(f"{symbol}.{DYDX_VENUE}")
 
@@ -105,7 +107,7 @@ config_node = TradingNodeConfig(
                 load_all=False,
                 load_ids=frozenset(reconciliation_instrument_ids),
             ),
-            is_testnet=False,  # Mainnet by default; flip to True for testnet
+            is_testnet=is_testnet,
         ),
     },
     exec_clients={
@@ -120,7 +122,7 @@ config_node = TradingNodeConfig(
                 load_all=False,
                 load_ids=frozenset(reconciliation_instrument_ids),
             ),
-            is_testnet=False,  # Mainnet by default; flip to True for testnet
+            is_testnet=is_testnet,
         ),
     },
     timeout_connection=20.0,
@@ -144,16 +146,18 @@ config_tester = ExecTesterConfig(
     external_order_claims=[instrument_id],
     subscribe_quotes=True,
     subscribe_trades=True,
-    enable_limit_buys=True,
-    enable_limit_sells=True,
-    enable_stop_buys=False,  # Stop orders require long-term orders with DYDXOrderTags
-    enable_stop_sells=False,  # Stop orders require long-term orders with DYDXOrderTags
+    # enable_limit_buys=False,
+    # enable_limit_sells=False,
+    # enable_stop_buys=True,  # Stop orders require long-term orders with DYDXOrderTags
+    # enable_stop_sells=True,  # Stop orders require long-term orders with DYDXOrderTags
     order_qty=order_qty,
-    tob_offset_ticks=500,  # Definitely out of the market
+    open_position_on_start_qty=order_qty,
+    open_position_time_in_force=TimeInForce.IOC,
+    # tob_offset_ticks=0,  # Definitely out of the market
     use_post_only=True,  # dYdX supports post-only for maker orders
-    reduce_only_on_stop=True,  # dYdX supports reduce-only
-    cancel_orders_on_stop=True,
-    close_positions_on_stop=True,
+    # cancel_orders_on_stop=False,
+    # close_positions_on_stop=False,
+    manage_stop=True,
     log_data=False,
 )
 
