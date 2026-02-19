@@ -1680,7 +1680,7 @@ async fn test_user_subscription_confirmed_after_auth() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws/api/v2");
 
-    let mut client = create_test_client(&ws_url);
+    let mut client = create_authenticated_client(&ws_url);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1731,7 +1731,7 @@ async fn test_user_subscription_failure_leaves_state_clean_for_retry() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws/api/v2");
 
-    let mut client = create_test_client(&ws_url);
+    let mut client = create_authenticated_client(&ws_url);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
