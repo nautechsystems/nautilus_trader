@@ -222,7 +222,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
         The client's gateway container configuration.
     connection_timeout : int, default 300
         The timeout (seconds) to wait for the client connection to be established.
-    request_timeout : int, default 60
+    request_timeout_secs : int, default 60
         The timeout (seconds) to wait for a historical data response. Also used for
         contract detail lookups — increase this when requesting large option chains.
 
@@ -240,7 +240,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     ignore_quote_tick_size_updates: bool = False
     dockerized_gateway: DockerizedIBGatewayConfig | None = None
     connection_timeout: int = 300
-    request_timeout: int = 60
+    request_timeout_secs: int = 60
 
 
 class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -263,7 +263,7 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
         The client's gateway container configuration.
     connection_timeout : int, default 300
         The timeout (seconds) to wait for the client connection to be established.
-    request_timeout : int, default 60
+    request_timeout_secs : int, default 60
         The timeout (seconds) to wait for request responses (contract details, etc.).
         Increase this when requesting large option chains.
     fetch_all_open_orders : bool, default False
@@ -285,6 +285,6 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     account_id: str | None = None
     dockerized_gateway: DockerizedIBGatewayConfig | None = None
     connection_timeout: int = 300
-    request_timeout: int = 60
+    request_timeout_secs: int = 60
     fetch_all_open_orders: bool = False
     track_option_exercise_from_position_update: bool = False

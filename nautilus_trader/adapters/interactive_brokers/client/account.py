@@ -163,9 +163,9 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
                 return []
 
             request.handle()
-            all_positions = await self._await_request(request, self._request_timeout)
+            all_positions = await self._await_request(request, self._request_timeout_secs)
         else:
-            all_positions = await self._await_request(request, self._request_timeout)
+            all_positions = await self._await_request(request, self._request_timeout_secs)
 
         if not all_positions:
             return []

@@ -431,7 +431,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end_date_time=end,
             limit=request.limit,
             use_rth=self._use_regular_trading_hours,
-            timeout=self._client._request_timeout,
+            timeout=self._client._request_timeout_secs,
         )
         if not ticks:
             self._log.warning(f"No quote tick data received for {request.instrument_id}")
@@ -469,7 +469,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end_date_time=end,
             limit=request.limit,
             use_rth=self._use_regular_trading_hours,
-            timeout=self._client._request_timeout,
+            timeout=self._client._request_timeout_secs,
         )
         if not ticks:
             self._log.warning(f"No trades received for {request.instrument_id}")
@@ -621,7 +621,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end_date_time=request.end,
             duration=duration_str,
             use_rth=self._use_regular_trading_hours,
-            timeout=self._client._request_timeout,
+            timeout=self._client._request_timeout_secs,
         )
 
         if bars:

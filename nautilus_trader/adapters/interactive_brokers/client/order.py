@@ -148,7 +148,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
             request.handle()
 
-        all_orders: list[IBOrder] | None = await self._await_request(request, self._request_timeout)
+        all_orders: list[IBOrder] | None = await self._await_request(
+            request,
+            self._request_timeout_secs,
+        )
 
         if all_orders:
             orders: list[IBOrder] = [order for order in all_orders if order.account == account_id]
@@ -208,7 +211,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         # Wait for execution details to be collected
         execution_details: list[dict] | None = await self._await_request(
             request,
-            self._request_timeout,
+            self._request_timeout_secs,
         )
 
         if execution_details:

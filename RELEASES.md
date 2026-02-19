@@ -35,7 +35,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added Databento bulk subscription and historical request support (#3490), thanks @shzhng
 - Added Interactive Brokers subscribe index price functionality (#3514), thanks @Murph24
 - Added Interactive Brokers `TotalCashValue` to account summary `info` dict, exposing actual cash balance (#3567), thanks @shzhng
-- Added Interactive Brokers `request_timeout` config to `InteractiveBrokersExecClientConfig` and consolidated all IB request timeouts into a single configurable value (#3602), thanks @shzhng
+- Added Interactive Brokers `request_timeout_secs` config to `InteractiveBrokersExecClientConfig` and consolidated all IB request timeouts into a single configurable value (#3602), thanks @shzhng
 - Added OKX batch cancel support for conditional (algo) orders
 - Added Polymarket data loader event-level API support (#3484), thanks @jsemldonado
 - Added Polymarket `event_slug_builder` support (#3501), thanks @jsemldonado
