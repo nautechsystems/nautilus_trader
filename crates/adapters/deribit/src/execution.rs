@@ -462,10 +462,18 @@ impl ExecutionClient for DeribitExecutionClient {
             .await
             .map_err(|e| anyhow::anyhow!("failed to subscribe to user portfolio: {e}"))?;
 
+        if let Err(e) = self.ws_client.wait_for_subscriptions_confirmed(30.0).await {
+            // Roll back subscription state so a retry re-sends subscribe requests
+            let _ = self.ws_client.unsubscribe_user_orders().await;
+            let _ = self.ws_client.unsubscribe_user_trades().await;
+            let _ = self.ws_client.unsubscribe_user_portfolio().await;
+            anyhow::bail!("subscription confirmation failed: {e}");
+        }
+
         log::info!("Subscribed to user order, trade, and portfolio updates");
 
         // Spawn stream handler to dispatch WebSocket messages to the execution engine
-        let stream = self.ws_client.stream();
+        let stream = self.ws_client.stream()?;
         self.spawn_stream_handler(stream);
 
         self.core.set_connected();
@@ -1105,6 +1113,9 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
         }
         NautilusWsMessage::Authenticated(auth) => {
             log::debug!("WebSocket authenticated: scope={}", auth.scope);
+        }
+        NautilusWsMessage::AuthenticationFailed(reason) => {
+            log::error!("Authentication failed in execution client: {reason}");
         }
         NautilusWsMessage::Data(_)
         | NautilusWsMessage::Deltas(_)

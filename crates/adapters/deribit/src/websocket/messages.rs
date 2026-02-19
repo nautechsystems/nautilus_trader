@@ -759,6 +759,8 @@ pub enum NautilusWsMessage {
     Reconnected,
     /// Authentication succeeded with tokens.
     Authenticated(Box<DeribitAuthResult>),
+    /// Authentication failed with reason.
+    AuthenticationFailed(String),
 }
 
 /// Parses a raw JSON message into a DeribitWsMessage.

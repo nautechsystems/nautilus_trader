@@ -667,8 +667,8 @@ async fn test_get_last_trades_success() {
     assert_eq!(first_trade.trade_id, "ETH-284830839");
     assert_eq!(first_trade.trade_seq, 203024587);
     assert_eq!(first_trade.tick_direction, 0);
-    assert_eq!(first_trade.index_price, dec!(2967.73));
-    assert_eq!(first_trade.mark_price, dec!(2968.01));
+    assert_eq!(first_trade.index_price, Some(dec!(2967.73)));
+    assert_eq!(first_trade.mark_price, Some(dec!(2968.01)));
 
     // Verify last trade (buy order with larger size)
     let last_trade = &trades_response.trades[9];

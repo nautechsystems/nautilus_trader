@@ -1385,24 +1385,34 @@ impl DeribitHttpClient {
                 }
             }
 
-            // Get historical orders if not open_only
             if !open_only {
-                let history_params = GetOrderHistoryByInstrumentParams {
-                    instrument_name,
-                    count: Some(100),
-                    offset: None,
-                    include_old: Some(true),
-                    include_unfilled: Some(true),
-                };
-                if let Some(orders) = self
-                    .inner
-                    .get_order_history_by_instrument(history_params)
-                    .await?
-                    .result
-                {
+                const PAGE_SIZE: u32 = 100;
+                let mut offset: u32 = 0;
+
+                loop {
+                    let history_params = GetOrderHistoryByInstrumentParams {
+                        instrument_name: instrument_name.clone(),
+                        count: Some(PAGE_SIZE),
+                        offset: Some(offset),
+                        include_old: Some(true),
+                        include_unfilled: Some(true),
+                    };
+                    let orders = self
+                        .inner
+                        .get_order_history_by_instrument(history_params)
+                        .await?
+                        .result
+                        .unwrap_or_default();
+
+                    let count = orders.len() as u32;
                     for order in &orders {
                         parse_and_add(order);
                     }
+
+                    if count < PAGE_SIZE {
+                        break;
+                    }
+                    offset += count;
                 }
             }
         } else {
@@ -1414,24 +1424,37 @@ impl DeribitHttpClient {
                 }
             }
 
-            // For historical orders, iterate currencies (ANY may not be supported)
             if !open_only {
+                const PAGE_SIZE: u32 = 100;
+
                 for currency in DeribitCurrency::iter().filter(|c| *c != DeribitCurrency::ANY) {
-                    let history_params = GetOrderHistoryByCurrencyParams {
-                        currency,
-                        kind: None,
-                        count: Some(100),
-                        include_unfilled: Some(true),
-                    };
-                    if let Some(orders) = self
-                        .inner
-                        .get_order_history_by_currency(history_params)
-                        .await?
-                        .result
-                    {
+                    let mut offset: u32 = 0;
+
+                    loop {
+                        let history_params = GetOrderHistoryByCurrencyParams {
+                            currency,
+                            kind: None,
+                            count: Some(PAGE_SIZE),
+                            offset: Some(offset),
+                            include_old: Some(true),
+                            include_unfilled: Some(true),
+                        };
+                        let orders = self
+                            .inner
+                            .get_order_history_by_currency(history_params)
+                            .await?
+                            .result
+                            .unwrap_or_default();
+
+                        let count = orders.len() as u32;
                         for order in &orders {
                             parse_and_add(order);
                         }
+
+                        if count < PAGE_SIZE {
+                            break;
+                        }
+                        offset += count;
                     }
                 }
             }
@@ -1444,6 +1467,7 @@ impl DeribitHttpClient {
     /// Requests fill reports for reconciliation.
     ///
     /// Fetches user trades from Deribit and converts them to Nautilus [`FillReport`].
+    /// Automatically paginates through all results using time-cursor advancement.
     ///
     /// # Strategy
     /// - Uses `/private/get_user_trades_by_instrument_and_time` when instrument is provided
@@ -1491,43 +1515,93 @@ impl DeribitHttpClient {
             }
         };
 
+        // Track seen trade IDs to deduplicate across page boundaries when
+        // multiple trades share the same millisecond timestamp.
+        let mut seen_trade_ids: AHashSet<String> = AHashSet::new();
+
         if let Some(instrument_id) = instrument_id {
-            // Use instrument-specific endpoint (1 API call)
-            let params = GetUserTradesByInstrumentAndTimeParams {
-                instrument_name: instrument_id.symbol.to_string(),
-                start_timestamp: start_ms,
-                end_timestamp: end_ms,
-                count: Some(1000),
-                sorting: None,
-            };
-            if let Some(response) = self
-                .inner
-                .get_user_trades_by_instrument_and_time(params)
-                .await?
-                .result
-            {
-                for trade in &response.trades {
-                    parse_and_add(trade);
+            let mut current_start = start_ms;
+
+            loop {
+                let params = GetUserTradesByInstrumentAndTimeParams {
+                    instrument_name: instrument_id.symbol.to_string(),
+                    start_timestamp: current_start,
+                    end_timestamp: end_ms,
+                    count: Some(DERIBIT_HISTORICAL_TRADES_MAX_COUNT),
+                    sorting: Some("asc".to_string()),
+                };
+                let response = self
+                    .inner
+                    .get_user_trades_by_instrument_and_time(params)
+                    .await?;
+
+                let Some(data) = response.result else { break };
+
+                let prev_seen = seen_trade_ids.len();
+                for trade in &data.trades {
+                    if seen_trade_ids.insert(trade.trade_id.clone()) {
+                        parse_and_add(trade);
+                    }
+                }
+                let new_count = seen_trade_ids.len() - prev_seen;
+
+                let Some(last_trade) = data.trades.last() else {
+                    break;
+                };
+                if !data.has_more {
+                    break;
+                }
+
+                // Advance past the boundary timestamp when all trades were
+                // already seen, preventing an infinite loop on duplicate pages
+                if new_count == 0 {
+                    current_start = last_trade.timestamp as i64 + 1;
+                } else {
+                    current_start = last_trade.timestamp as i64;
                 }
             }
         } else {
-            // Iterate currencies (ANY not supported for user trades endpoint)
             for currency in DeribitCurrency::iter().filter(|c| *c != DeribitCurrency::ANY) {
-                let params = GetUserTradesByCurrencyAndTimeParams {
-                    currency,
-                    start_timestamp: start_ms,
-                    end_timestamp: end_ms,
-                    kind: None,
-                    count: Some(1000),
-                };
-                if let Some(response) = self
-                    .inner
-                    .get_user_trades_by_currency_and_time(params)
-                    .await?
-                    .result
-                {
-                    for trade in &response.trades {
-                        parse_and_add(trade);
+                let mut current_start = start_ms;
+                seen_trade_ids.clear();
+
+                loop {
+                    let params = GetUserTradesByCurrencyAndTimeParams {
+                        currency,
+                        start_timestamp: current_start,
+                        end_timestamp: end_ms,
+                        kind: None,
+                        count: Some(DERIBIT_HISTORICAL_TRADES_MAX_COUNT),
+                        sorting: Some("asc".to_string()),
+                    };
+                    let response = self
+                        .inner
+                        .get_user_trades_by_currency_and_time(params)
+                        .await?;
+
+                    let Some(data) = response.result else { break };
+
+                    let prev_seen = seen_trade_ids.len();
+                    for trade in &data.trades {
+                        if seen_trade_ids.insert(trade.trade_id.clone()) {
+                            parse_and_add(trade);
+                        }
+                    }
+                    let new_count = seen_trade_ids.len() - prev_seen;
+
+                    let Some(last_trade) = data.trades.last() else {
+                        break;
+                    };
+                    if !data.has_more {
+                        break;
+                    }
+
+                    // Advance past the boundary timestamp when all trades were
+                    // already seen, preventing an infinite loop on duplicate pages
+                    if new_count == 0 {
+                        current_start = last_trade.timestamp as i64 + 1;
+                    } else {
+                        current_start = last_trade.timestamp as i64;
                     }
                 }
             }

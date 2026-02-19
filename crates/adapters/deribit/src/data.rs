@@ -314,6 +314,9 @@ impl DeribitDataClient {
                     "Data client received AccountState message (should be handled by execution client): {state:?}"
                 );
             }
+            NautilusWsMessage::AuthenticationFailed(reason) => {
+                log::error!("Authentication failed in data client: {reason}");
+            }
         }
     }
 
@@ -445,7 +448,7 @@ impl DataClient for DeribitDataClient {
         }
 
         // Get the stream and spawn processing task
-        let stream = self.ws_client_mut()?.stream();
+        let stream = self.ws_client_mut()?.stream()?;
         self.spawn_stream_task(stream)?;
 
         self.is_connected.store(true, Ordering::Release);

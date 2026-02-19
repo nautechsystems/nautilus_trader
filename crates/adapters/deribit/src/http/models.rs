@@ -368,9 +368,9 @@ pub struct DeribitPublicTrade {
     pub contracts: Option<Decimal>,
     /// Direction of the trade: "buy" or "sell"
     pub direction: String,
-    /// Index Price at the moment of trade.
-    #[serde(deserialize_with = "deserialize_decimal")]
-    pub index_price: Decimal,
+    /// Index Price at the moment of trade (can be empty for some trade types).
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub index_price: Option<Decimal>,
     /// Unique instrument identifier.
     pub instrument_name: String,
     /// Option implied volatility for the price (Option only).
@@ -379,9 +379,9 @@ pub struct DeribitPublicTrade {
     /// Optional field (only for trades caused by liquidation).
     #[serde(default)]
     pub liquidation: Option<String>,
-    /// Mark Price at the moment of trade.
-    #[serde(deserialize_with = "deserialize_decimal")]
-    pub mark_price: Decimal,
+    /// Mark Price at the moment of trade (can be empty for some trade types).
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub mark_price: Option<Decimal>,
     /// Price in base currency.
     #[serde(deserialize_with = "deserialize_decimal")]
     pub price: Decimal,
@@ -681,4 +681,71 @@ pub struct DeribitUserTradesResponse {
     pub has_more: bool,
     /// Array of user trade objects.
     pub trades: Vec<crate::websocket::messages::DeribitUserTradeMsg>,
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+
+    use super::*;
+
+    #[rstest]
+    fn test_deserialize_public_trade_with_empty_mark_and_index_price() {
+        let json = r#"{
+            "amount": 1.0,
+            "direction": "sell",
+            "index_price": "",
+            "instrument_name": "ETH-PERPETUAL",
+            "mark_price": "",
+            "price": 2968.3,
+            "tick_direction": 0,
+            "timestamp": 1766332040636,
+            "trade_id": "ETH-123",
+            "trade_seq": 1
+        }"#;
+
+        let trade: DeribitPublicTrade = serde_json::from_str(json).unwrap();
+        assert_eq!(trade.index_price, None);
+        assert_eq!(trade.mark_price, None);
+        assert_eq!(trade.price, dec!(2968.3));
+    }
+
+    #[rstest]
+    fn test_deserialize_public_trade_with_missing_mark_and_index_price() {
+        let json = r#"{
+            "amount": 1.0,
+            "direction": "sell",
+            "instrument_name": "ETH-PERPETUAL",
+            "price": 2968.3,
+            "tick_direction": 0,
+            "timestamp": 1766332040636,
+            "trade_id": "ETH-123",
+            "trade_seq": 1
+        }"#;
+
+        let trade: DeribitPublicTrade = serde_json::from_str(json).unwrap();
+        assert_eq!(trade.index_price, None);
+        assert_eq!(trade.mark_price, None);
+    }
+
+    #[rstest]
+    fn test_deserialize_public_trade_with_present_mark_and_index_price() {
+        let json = r#"{
+            "amount": 1.0,
+            "direction": "sell",
+            "index_price": 2967.73,
+            "instrument_name": "ETH-PERPETUAL",
+            "mark_price": 2968.01,
+            "price": 2968.3,
+            "tick_direction": 0,
+            "timestamp": 1766332040636,
+            "trade_id": "ETH-123",
+            "trade_seq": 1
+        }"#;
+
+        let trade: DeribitPublicTrade = serde_json::from_str(json).unwrap();
+        assert_eq!(trade.index_price, Some(dec!(2967.73)));
+        assert_eq!(trade.mark_price, Some(dec!(2968.01)));
+    }
 }

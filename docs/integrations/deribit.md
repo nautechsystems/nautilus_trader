@@ -32,20 +32,22 @@ and won't need to work directly with these lower-level components.
 
 ### Product support
 
-| Product Type     | Data Feed | Trading | Notes                                         |
-|------------------|-----------|---------|-----------------------------------------------|
-| Perpetual Futures| ✓         | ✓       | BTC-PERPETUAL, ETH-PERPETUAL                  |
-| Dated Futures    | ✓         | ✓       | Futures with fixed expiry dates.              |
-| Options          | ✓         | ✓       | BTC and ETH options                           |
-| Spot             | ✓         | ✓       | BTC_USDC, ETH_USDC pairs                      |
-| Future Combos    | ✓         | ✓       | Calendar spreads for futures                  |
-| Option Combos    | ✓         | ✓       | Option spread strategies                      |
+| Product Type      | Data Feed | Trading | Notes                            |
+|-------------------|-----------|---------|----------------------------------|
+| Perpetual futures | ✓         | ✓       | BTC-PERPETUAL, ETH-PERPETUAL.    |
+| Dated futures     | ✓         | ✓       | Futures with fixed expiry dates. |
+| Options           | ✓         | ✓       | BTC and ETH options.             |
+| Spot              | ✓         | ✓       | BTC_USDC, ETH_USDC pairs.        |
+| Future combos     | ✓         | ✓       | Calendar spreads for futures.    |
+| Option combos     | ✓         | ✓       | Option spread strategies.        |
 
 ## Symbology
 
-Deribit uses specific symbol conventions for different instrument types. All instrument IDs should include the `.DERIBIT` suffix when referencing them (e.g., `BTC-PERPETUAL.DERIBIT` for BTC perpetual).
+Deribit uses specific symbol conventions for different instrument types.
+All instrument IDs should include the `.DERIBIT` suffix when referencing them
+(e.g., `BTC-PERPETUAL.DERIBIT` for BTC perpetual).
 
-### Perpetual Futures
+### Perpetual futures
 
 Format: `{Currency}-PERPETUAL`
 
@@ -60,7 +62,7 @@ To subscribe to BTC perpetual in your strategy:
 InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
 ```
 
-### Dated Futures
+### Dated futures
 
 Format: `{Currency}-{DDMMMYY}`
 
@@ -162,6 +164,18 @@ For most strategies, the default 100ms aggregated feed provides sufficient granu
 significantly lower message overhead. Only use raw feeds when tick-by-tick precision is essential.
 :::
 
+### Sequence gap recovery
+
+The adapter tracks `change_id` / `prev_change_id` sequence numbers on every book update.
+When a gap is detected (missed message), the adapter automatically:
+
+1. Drops all incoming deltas for the affected instrument.
+2. Unsubscribes from the book channel.
+3. Resubscribes to obtain a fresh snapshot.
+4. Resumes normal processing once the snapshot arrives.
+
+During resync, the strategy will not receive stale or incomplete book updates.
+
 ## Orders capability
 
 Below are the order types, execution instructions, and time-in-force options supported on Deribit.
@@ -192,7 +206,9 @@ Below are the order types, execution instructions, and time-in-force options sup
 | `FOK`         | ✓         | Fill or Kill (`fill_or_kill`).                      |
 
 :::note
-**GTD on Deribit**: Unlike other exchanges where GTD accepts an arbitrary expiry time, Deribit's `good_til_day` always expires at 8:00 UTC the same or next day. Custom expiry times will be logged as warnings and the order will use the exchange's fixed expiry behavior.
+**GTD on Deribit**: Unlike other exchanges where GTD accepts an arbitrary expiry time,
+Deribit's `good_til_day` always expires at 8:00 UTC the same or next day. Custom expiry times
+will be logged as warnings and the order will use the exchange's fixed expiry behavior.
 :::
 
 ### Trigger types
@@ -230,8 +246,8 @@ strategy.submit_order(stop_order)
 Deribit offers two post-only modes:
 
 1. **Price adjustment (Deribit default)**: If a post-only order would cross the spread and execute,
-   Deribit automatically adjusts the price to one tick inside the spread
-2. **Reject mode**: Order is immediately rejected if it would cross the spread
+   Deribit automatically adjusts the price to one tick inside the spread.
+2. **Reject mode**: Order is immediately rejected if it would cross the spread.
 
 The Nautilus adapter uses **reject mode** (`reject_post_only=true`) to ensure deterministic behavior.
 If a post-only order would take liquidity, it is rejected with error code `11054`, and an `OrderRejected`
@@ -239,25 +255,25 @@ event is emitted with the `due_post_only` flag set to `true`.
 
 This allows strategies to differentiate between:
 
-- Orders rejected due to post-only violation (attempted to take liquidity)
-- Orders rejected for other reasons (insufficient margin, invalid price, etc.)
+- Orders rejected due to post-only violation (attempted to take liquidity).
+- Orders rejected for other reasons (insufficient margin, invalid price, etc.).
 
 ### Order modification
 
 The adapter uses Deribit's native `private/edit` endpoint rather than cancel-and-replace.
 This provides several advantages:
 
-| Benefit | Description |
-|---------|-------------|
-| Single request | Faster execution, lower latency than cancel + new order |
-| Queue priority preservation | Keeps position when only reducing quantity or keeping same price |
-| Fill history maintained | Partial fills remain linked to the same order ID |
+| Benefit                    | Description                                                        |
+|----------------------------|--------------------------------------------------------------------|
+| Single request             | Faster execution, lower latency than cancel + new order.           |
+| Queue priority preservation | Keeps position when only reducing quantity or keeping same price. |
+| Fill history maintained    | Partial fills remain linked to the same order ID.                  |
 
 **Queue priority rules:**
 
-- **Decreasing quantity only**: Keeps queue position
-- **Same price**: Keeps queue position
-- **Increasing quantity or changing price**: Loses queue position (treated as new order)
+- **Decreasing quantity only**: Keeps queue position.
+- **Same price**: Keeps queue position.
+- **Increasing quantity or changing price**: Loses queue position (treated as new order).
 
 ### Position management
 
@@ -318,18 +334,18 @@ continuously at a fixed rate—each second, credits "drip" back into your sub-ac
 
 **Non-matching engine requests:**
 
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| Cost per request | 500 credits | Each API call consumes credits |
-| Maximum pool | 50,000 credits | Allows 100 request burst |
-| Refill rate | 10,000 credits/sec | ~20 sustained requests/second |
+| Parameter        | Value              | Notes                           |
+|------------------|--------------------|---------------------------------|
+| Cost per request | 500 credits        | Each API call consumes credits. |
+| Maximum pool     | 50,000 credits     | Allows 100 request burst.       |
+| Refill rate      | 10,000 credits/sec | ~20 sustained requests/second.  |
 
 **Matching engine requests (default tier):**
 
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| Sustained rate | 5 requests/sec | Continuous rate limit |
-| Burst capacity | 20 requests | Maximum burst before throttling |
+| Parameter      | Value          | Notes                              |
+|----------------|----------------|------------------------------------|
+| Sustained rate | 5 requests/sec | Continuous rate limit.             |
+| Burst capacity | 20 requests    | Maximum burst before throttling.   |
 
 Higher matching engine limits are available for market makers and high-volume traders based on
 7-day trading volume tiers.
@@ -352,46 +368,48 @@ Repeated violations may result in temporary throttling.
 
 ### Platform limits
 
-| Limit | Value |
-|-------|-------|
-| Maximum connections per IP | 32 |
-| Maximum sessions per API key | 16 |
-| Maximum API keys per (sub)account | 8 |
+| Limit                             | Value |
+|-----------------------------------|-------|
+| Maximum connections per IP        | 32    |
+| Maximum sessions per API key      | 16    |
+| Maximum API keys per (sub)account | 8     |
 
 ### Session-based authentication
 
 The adapter uses **separate WebSocket sessions** for data and execution clients, each with its own
 authentication scope:
 
-| Client | Session Name | Purpose |
-|--------|--------------|---------|
-| Data client | `nautilus-data` | Market data subscriptions (raw feeds require auth) |
-| Execution client | `nautilus-execution` | Order operations (buy, sell, edit, cancel) |
+| Client           | Session Name         | Purpose                                              |
+|------------------|----------------------|------------------------------------------------------|
+| Data client      | `nautilus-data`      | Market data subscriptions (raw feeds require auth).  |
+| Execution client | `nautilus-execution` | Order operations (buy, sell, edit, cancel).          |
 
 **Authentication flow:**
 
-1. WebSocket connects to Deribit
-2. Client authenticates using `client_signature` grant type with session scope
-3. Tokens are automatically refreshed at 80% of expiry time (continuous refresh cycle)
-4. On reconnection, re-authentication occurs automatically
+1. WebSocket connects to Deribit.
+2. Client authenticates using `client_signature` grant type with session scope.
+3. Tokens are automatically refreshed at 80% of expiry time (continuous refresh cycle).
+4. On reconnection, re-authentication is retried with exponential backoff (up to 3 attempts).
+   If all attempts fail, only public channel subscriptions are restored.
 
 This session-based approach allows:
 
 - Independent token management per client type.
-- Isolated failure domains (data auth failure doesn't affect execution).
+- Isolated failure domains (data auth failure does not affect execution).
 - Clear audit trail in Deribit's session logs.
 
 ### Best practices
 
-The adapter follows Deribit's [recommended connection practices](https://support.deribit.com/hc/en-us/articles/25944603459613):
+The adapter follows Deribit's
+[recommended connection practices](https://support.deribit.com/hc/en-us/articles/25944603459613):
 
-1. **Uses WebSocket subscriptions** for real-time data instead of REST polling—fewer requests,
-   lower latency, and reduced rate limit consumption
+1. **Uses WebSocket subscriptions** for real-time data instead of REST polling — fewer requests,
+   lower latency, and reduced rate limit consumption.
 2. **Authenticates all connections** when credentials are provided. Authenticated users benefit
-   from higher rate limits and are less likely to be IP rate-limited
+   from higher rate limits and are less likely to be IP rate-limited.
 3. **Implements heartbeats** (30 second interval) to maintain connection health and detect
-   disconnections early
-4. **Handles reconnection** automatically with re-authentication and subscription recovery
+   disconnections early.
+4. **Handles reconnection** automatically with re-authentication and subscription recovery.
 
 :::tip
 Always provide API credentials even for public data access. Authenticated connections have higher
@@ -425,14 +443,15 @@ Keep your API secret secure. Never share it or commit it to version control.
 ### API key scopes
 
 Each API key on Deribit is assigned a default access scope, which defines the maximum permissions.
-Configure appropriate permissions when [creating your API key](https://support.deribit.com/hc/en-us/articles/26268257333661):
+Configure appropriate permissions when
+[creating your API key](https://support.deribit.com/hc/en-us/articles/26268257333661):
 
-| Scope | Required For |
-|-------|-------------|
-| `account:read` | Account information, portfolio data |
-| `trade:read` | View orders and positions |
-| `trade:read_write` | Place, modify, and cancel orders |
-| `wallet:read` | View balances and transaction history |
+| Scope              | Required For                           |
+|--------------------|----------------------------------------|
+| `account:read`     | Account information, portfolio data.   |
+| `trade:read`       | View orders and positions.             |
+| `trade:read_write` | Place, modify, and cancel orders.      |
+| `wallet:read`      | View balances and transaction history. |
 
 **Recommended minimum for trading:** `account:read`, `trade:read_write`, `wallet:read`
 
@@ -470,7 +489,8 @@ When testnet mode is enabled:
 - Loads credentials from `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET` environment variables.
 
 :::note
-Testnet API keys are separate from production keys. You must create API keys specifically for the testnet through the testnet interface at [test.deribit.com](https://test.deribit.com).
+Testnet API keys are separate from production keys. Create API keys specifically
+for the testnet through the testnet interface at [test.deribit.com](https://test.deribit.com).
 :::
 
 ## Configuration

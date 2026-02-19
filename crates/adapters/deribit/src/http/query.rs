@@ -302,10 +302,18 @@ pub struct GetOrderHistoryByCurrencyParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub kind: Option<DeribitProductType>,
-    /// Number of requested items, default - 20, maximum - 10000
+    /// Number of requested items, default - 20, maximum - 1000
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub count: Option<u32>,
+    /// Offset for pagination
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub offset: Option<u32>,
+    /// Include orders older than 3 days
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub include_old: Option<bool>,
     /// Include unfilled orders
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
@@ -320,6 +328,8 @@ impl GetOrderHistoryByCurrencyParams {
             currency,
             kind: None,
             count: None,
+            offset: None,
+            include_old: None,
             include_unfilled: None,
         }
     }
@@ -395,6 +405,10 @@ pub struct GetUserTradesByCurrencyAndTimeParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub count: Option<u32>,
+    /// Direction of results sorting: "asc", "desc", or "default"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub sorting: Option<String>,
 }
 
 impl GetUserTradesByCurrencyAndTimeParams {
@@ -407,6 +421,7 @@ impl GetUserTradesByCurrencyAndTimeParams {
             end_timestamp,
             kind: None,
             count: None,
+            sorting: None,
         }
     }
 

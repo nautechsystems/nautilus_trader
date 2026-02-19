@@ -53,6 +53,10 @@ pub enum DeribitWsError {
     /// WebSocket transport error from tungstenite.
     #[error("Tungstenite error: {0}")]
     TungsteniteError(String),
+    /// Subscription rejected by server.
+    #[error("Subscribe error: {0}")]
+    Subscribe(String),
+
     /// Request timeout.
     #[error("Timeout: {0}")]
     Timeout(String),
@@ -98,6 +102,7 @@ pub fn should_retry_deribit_ws_error(error: &DeribitWsError) -> bool {
         | DeribitWsError::Authentication(_)
         | DeribitWsError::ClientError(_)
         | DeribitWsError::ParsingError(_)
-        | DeribitWsError::TungsteniteError(_) => false,
+        | DeribitWsError::TungsteniteError(_)
+        | DeribitWsError::Subscribe(_) => false,
     }
 }
