@@ -46,6 +46,12 @@ pub struct PyClock(Rc<RefCell<dyn Clock>>);
 
 #[pymethods]
 impl PyClock {
+    #[staticmethod]
+    #[pyo3(name = "new_test")]
+    fn py_new_test() -> Self {
+        Self(Rc::new(RefCell::new(TestClock::default())))
+    }
+
     #[pyo3(name = "register_default_handler")]
     fn py_register_default_handler(&mut self, callback: Py<PyAny>) {
         self.0

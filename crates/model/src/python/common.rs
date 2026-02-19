@@ -117,6 +117,8 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
         Value::Number(n) => {
             if n.is_i64() {
                 n.as_i64().unwrap().into_py_any(py)
+            } else if n.is_u64() {
+                n.as_u64().unwrap().into_py_any(py)
             } else if n.is_f64() {
                 n.as_f64().unwrap().into_py_any(py)
             } else {

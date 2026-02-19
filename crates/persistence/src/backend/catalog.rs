@@ -63,6 +63,7 @@
 //! ```
 
 use std::{
+    borrow::Cow,
     collections::HashSet,
     fmt::Debug,
     io::Cursor,
@@ -724,12 +725,17 @@ impl ParquetDataCatalog {
                     // Extract instrument_id from directory path (last component)
                     let path_parts: Vec<&str> = dir_path.split('/').collect();
                     if let Some(instrument_id_dir) = path_parts.last() {
+                        // Decode percent-encoded dir name from object store
+                        // (e.g. "%5ESPX.CBOE" → "^SPX.CBOE")
+                        let decoded_dir = urlencoding::decode(instrument_id_dir)
+                            .unwrap_or(Cow::Borrowed(instrument_id_dir));
+
                         // Apply filter if provided
                         if let Some(ref ids) = instrument_ids
                             && !ids
                                 .iter()
                                 .map(|id| urisafe_instrument_id(id))
-                                .any(|x| x.as_str() == *instrument_id_dir)
+                                .any(|x| x.as_str() == decoded_dir.as_ref())
                         {
                             continue;
                         }
@@ -1555,14 +1561,15 @@ impl ParquetDataCatalog {
                 .collect();
 
             if exact_match_file_paths.is_empty() && data_cls == "bars" {
-                // Partial match of instrument_ids in bar_types for bars
                 file_paths.retain(|file_path| {
                     let path_parts: Vec<&str> = file_path.split('/').collect();
                     if path_parts.len() >= 2 {
                         let dir_name = path_parts[path_parts.len() - 2];
-                        safe_identifiers
-                            .iter()
-                            .any(|safe_id| dir_name.starts_with(&format!("{safe_id}-")))
+                        if let Some(bar_instrument_id) = extract_bar_type_instrument_id(dir_name) {
+                            safe_identifiers.iter().any(|id| id == bar_instrument_id)
+                        } else {
+                            false
+                        }
                     } else {
                         false
                     }
@@ -2044,9 +2051,53 @@ impl ParquetDataCatalog {
         data_cls: &str,
         identifier: Option<String>,
     ) -> anyhow::Result<Vec<(u64, u64)>> {
-        let directory = self.make_path(data_cls, identifier)?;
+        let directory = self.make_path(data_cls, identifier.clone())?;
+        let intervals = self.get_directory_intervals(&directory)?;
 
-        self.get_directory_intervals(&directory)
+        // For bars, fall back to partial matching when the exact directory
+        // doesn't exist (callers may pass an instrument_id like "EUR/USD.SIM"
+        // but bars are stored under bar_type dirs like "EURUSD.SIM-1-MINUTE-...")
+        if !intervals.is_empty() || data_cls != "bars" || identifier.is_none() {
+            return Ok(intervals);
+        }
+
+        let safe_id = urisafe_instrument_id(&identifier.unwrap());
+
+        // Use relative path so list_directory_stems doesn't double-prefix
+        // for remote catalogs (make_path already includes base_path)
+        let bars_subdir = format!("data/{data_cls}");
+        let subdirs = self.list_directory_stems(&bars_subdir)?;
+
+        let mut all_intervals = Vec::new();
+
+        for subdir in &subdirs {
+            let decoded = urlencoding::decode(subdir).unwrap_or(Cow::Borrowed(subdir));
+
+            if extract_bar_type_instrument_id(&decoded) == Some(safe_id.as_str()) {
+                // Use decoded name to avoid double percent-encoding
+                // (to_object_path uses Path::from which re-encodes)
+                let subdir_path = self.make_path(data_cls, Some(decoded.into_owned()))?;
+                all_intervals.extend(self.get_directory_intervals(&subdir_path)?);
+            }
+        }
+
+        all_intervals.sort_by_key(|&(start, _)| start);
+
+        // Merge overlapping intervals from different bar types so that
+        // last().1 reliably gives the maximum end timestamp
+        let mut merged: Vec<(u64, u64)> = Vec::new();
+
+        for interval in all_intervals {
+            if let Some(last) = merged.last_mut()
+                && interval.0 <= last.1
+            {
+                last.1 = last.1.max(interval.1);
+                continue;
+            }
+            merged.push(interval);
+        }
+
+        Ok(merged)
     }
 
     /// Gets the time intervals covered by Parquet files in a specific directory.
@@ -3361,6 +3412,22 @@ pub(crate) fn urisafe_instrument_id(instrument_id: &str) -> String {
     instrument_id.replace('/', "")
 }
 
+// Extract the instrument ID portion from a bar type directory name.
+// Handles both standard and composite formats:
+//   {id}-{step}-{agg}-{price}-{source}
+//   {id}-{step}-{agg}-{price}-{source}@{step}-{agg}-{source}
+// Strips the composite suffix before parsing with rsplitn(5, '-').
+fn extract_bar_type_instrument_id(bar_type_dir: &str) -> Option<&str> {
+    let standard = bar_type_dir.split('@').next().unwrap_or(bar_type_dir);
+    let pieces: Vec<&str> = standard.rsplitn(5, '-').collect();
+    // pieces (reversed): [source, price_type, agg, step, instrument_id]
+    if pieces.len() == 5 && pieces[3].chars().all(|c| c.is_ascii_digit()) {
+        Some(pieces[4])
+    } else {
+        None
+    }
+}
+
 /// Extracts the identifier from a file path.
 ///
 /// The identifier is typically the second-to-last path component (directory name).
@@ -3885,5 +3952,31 @@ fn interval_to_tuple(
         Some((start, end))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("EURUSD.SIM-1-MINUTE-LAST-EXTERNAL", Some("EURUSD.SIM"))]
+    #[case("ESM4.XCME-5-SECOND-MID-INTERNAL", Some("ESM4.XCME"))]
+    #[case("BTC-USDT.BINANCE-1-HOUR-LAST-EXTERNAL", Some("BTC-USDT.BINANCE"))]
+    #[case("A-B-C.VENUE-15-TICK-BID-EXTERNAL", Some("A-B-C.VENUE"))]
+    #[case(
+        "EURUSD.SIM-1-MINUTE-LAST-EXTERNAL@15-MINUTE-EXTERNAL",
+        Some("EURUSD.SIM")
+    )]
+    #[case(
+        "BTC-USDT.BINANCE-1-TICK-LAST-INTERNAL@5-MINUTE-EXTERNAL",
+        Some("BTC-USDT.BINANCE")
+    )]
+    #[case("AAPL.XNAS", None)]
+    #[case("", None)]
+    fn test_extract_bar_type_instrument_id(#[case] input: &str, #[case] expected: Option<&str>) {
+        assert_eq!(extract_bar_type_instrument_id(input), expected);
     }
 }

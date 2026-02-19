@@ -52,6 +52,7 @@ use crate::{
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
     module = "nautilus_trader.core.nautilus_pyo3.common",
+    name = "Cache",
     unsendable,
     from_py_object
 )]
@@ -68,6 +69,12 @@ impl PyCache {
 
 #[pymethods]
 impl PyCache {
+    #[new]
+    #[pyo3(signature = (config=None))]
+    fn py_new(config: Option<CacheConfig>) -> Self {
+        Self(Rc::new(RefCell::new(Cache::new(config, None))))
+    }
+
     #[pyo3(name = "instrument")]
     fn py_instrument(
         &self,
