@@ -91,6 +91,48 @@ For datasets requiring format conversion (e.g., binary ITCH to Parquet):
 5. Add path helper functions to `crates/testkit/src/common.rs`.
 6. Write tests that consume the dataset.
 
+## Regenerating datasets
+
+When a schema change invalidates a large Parquet file, regenerate it from the
+original source data using the curation tests below. After regenerating:
+
+1. `sha256sum /tmp/<output_file>.parquet`
+2. Update `tests/test_data/large/checksums.json` with the new hash.
+3. Update the corresponding `metadata.json` (sha256, size_bytes).
+4. Upload the Parquet file to R2.
+5. Commit `checksums.json` and `metadata.json` (this also busts the CI cache).
+
+### ITCH AAPL L3 deltas
+
+Source: `01302019.NASDAQ_ITCH50.gz` (~4.4 GB) from NASDAQ EMI.
+
+```bash
+# Download source (keep a local copy, this is a large file)
+wget -O ~/Downloads/01302019.NASDAQ_ITCH50.gz \
+  "https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/01302019.NASDAQ_ITCH50.gz"
+
+# Curation test expects source at /tmp
+ln -sf ~/Downloads/01302019.NASDAQ_ITCH50.gz /tmp/01302019.NASDAQ_ITCH50.gz
+
+# Regenerate parquet (output: /tmp/itch_AAPL.XNAS_2019-01-30_deltas.parquet)
+cargo test -p nautilus-testkit --lib test_curate_aapl_itch -- --ignored --nocapture
+```
+
+### Tardis Deribit BTC-PERPETUAL L2 deltas
+
+Source: `tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz` from
+[Tardis](https://tardis.dev/). First-of-month data is available as free samples
+(no API key required).
+
+```bash
+# Download source (free sample, no API key needed)
+wget -O tests/test_data/large/tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz \
+  "https://datasets.tardis.dev/v1/deribit/incremental_book_L2/2020/04/01/BTC-PERPETUAL.csv.gz"
+
+# Regenerate parquet (output: /tmp/tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet)
+cargo test -p nautilus-tardis test_curate_deribit_deltas -- --ignored --nocapture
+```
+
 ## Legacy datasets
 
 These datasets predate this policy and use raw vendor formats (CSV/CSV.gz)

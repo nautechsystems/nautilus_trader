@@ -16,7 +16,7 @@
 use std::{
     cmp,
     fmt::Display,
-    fs::{File, OpenOptions},
+    fs::{File, OpenOptions, remove_file},
     io::{BufReader, BufWriter, Read, copy},
     path::Path,
     sync::{Mutex, OnceLock},
@@ -181,17 +181,20 @@ pub fn ensure_file_exists_or_download_http_with_config(
     retry_config: Option<RetryConfig>,
     initial_jitter_ms: Option<u64>,
 ) -> anyhow::Result<()> {
+    // Local/cached file path: accept the file if it exists, updating the
+    // checksum record when it differs (e.g. after local regeneration).
+    // This is intentionally lenient — download verification below is strict.
     if filepath.exists() {
-        println!("File already exists: {filepath:?}");
+        println!("File already exists (local/cached): {filepath:?}");
 
         if let Some(checksums_file) = checksums {
             let _guard = lock_large_checksums()?;
             if verify_sha256_checksum(filepath, checksums_file)? {
-                println!("File is valid");
+                println!("Checksum verified");
                 return Ok(());
             } else {
                 let new_checksum = calculate_sha256(filepath)?;
-                println!("Adding checksum for existing file: {new_checksum}");
+                println!("Updating checksum for local file: {new_checksum}");
                 update_sha256_checksums(filepath, checksums_file, &new_checksum)?;
                 return Ok(());
             }
@@ -213,13 +216,28 @@ pub fn ensure_file_exists_or_download_http_with_config(
         sleep(jitter_delay);
     }
 
-    download_file(filepath, url, timeout_secs, retry_config)?;
+    download_file(filepath, url, timeout_secs, retry_config.clone())?;
 
+    // Verify checksum after download, retry once on mismatch (corrupt download)
     if let Some(checksums_file) = checksums {
         let _guard = lock_large_checksums()?;
         if !verify_sha256_checksum(filepath, checksums_file)? {
-            let new_checksum = calculate_sha256(filepath)?;
-            update_sha256_checksums(filepath, checksums_file, &new_checksum)?;
+            let actual = calculate_sha256(filepath)?;
+            println!("Checksum mismatch after download (got {actual}), retrying...");
+            remove_file(filepath)?;
+            drop(_guard);
+
+            download_file(filepath, url, timeout_secs, retry_config)?;
+
+            let _guard = lock_large_checksums()?;
+            if !verify_sha256_checksum(filepath, checksums_file)? {
+                let actual = calculate_sha256(filepath)?;
+                remove_file(filepath)?;
+                anyhow::bail!(
+                    "Checksum mismatch after retry for {:?} (got {actual})",
+                    filepath.file_name().unwrap_or_default(),
+                );
+            }
         }
     }
 
@@ -704,6 +722,140 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(counter.load(Ordering::SeqCst), 1, "should not retry on 404");
+    }
+
+    #[tokio::test]
+    async fn test_checksum_mismatch_retry_then_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("testfile.txt");
+        let filepath_clone = filepath.clone();
+
+        let good_content = "correct content";
+        let good_checksum = calculate_sha256_bytes(good_content.as_bytes());
+
+        let checksums_path = temp_dir.path().join("checksums.json");
+        let checksums_data = json!({
+            "testfile.txt": format!("sha256:{good_checksum}")
+        });
+        let checksums_file = File::create(&checksums_path).unwrap();
+        to_writer(BufWriter::new(checksums_file), &checksums_data).unwrap();
+        let checksums_clone = checksums_path.clone();
+
+        // First request returns corrupt data, second returns correct data
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let app = Router::new().route(
+            "/testfile.txt",
+            get(move || {
+                let c = counter_clone.clone();
+                async move {
+                    let n = c.fetch_add(1, Ordering::SeqCst);
+                    if n == 0 {
+                        (StatusCode::OK, "corrupt data")
+                    } else {
+                        (StatusCode::OK, "correct content")
+                    }
+                }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = serve(listener, app);
+        task::spawn(async move {
+            let _ = server.await;
+        });
+        sleep(Duration::from_millis(100)).await;
+
+        let url = format!("http://{addr}/testfile.txt");
+
+        let result = tokio::task::spawn_blocking(move || {
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                Some(&checksums_clone),
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
+        })
+        .await
+        .unwrap();
+
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&filepath).unwrap();
+        assert_eq!(content, good_content);
+        assert_eq!(counter.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn test_checksum_mismatch_retry_then_fail() {
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("testfile.txt");
+        let filepath_clone = filepath.clone();
+
+        // Checksum for content that the server will never return
+        let checksums_path = temp_dir.path().join("checksums.json");
+        let checksums_data = json!({
+            "testfile.txt": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        });
+        let checksums_file = File::create(&checksums_path).unwrap();
+        to_writer(BufWriter::new(checksums_file), &checksums_data).unwrap();
+        let checksums_clone = checksums_path.clone();
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let app = Router::new().route(
+            "/testfile.txt",
+            get(move || {
+                let c = counter_clone.clone();
+                async move {
+                    c.fetch_add(1, Ordering::SeqCst);
+                    (StatusCode::OK, "always wrong content")
+                }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = serve(listener, app);
+        task::spawn(async move {
+            let _ = server.await;
+        });
+        sleep(Duration::from_millis(100)).await;
+
+        let url = format!("http://{addr}/testfile.txt");
+
+        let result = tokio::task::spawn_blocking(move || {
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                Some(&checksums_clone),
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
+        })
+        .await
+        .unwrap();
+
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Checksum mismatch after retry"));
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            2,
+            "should download exactly twice"
+        );
+        assert!(!filepath.exists(), "corrupt file should be cleaned up");
+    }
+
+    fn calculate_sha256_bytes(data: &[u8]) -> String {
+        let mut ctx = digest::Context::new(&digest::SHA256);
+        ctx.update(data);
+        hex::encode(ctx.finish().as_ref())
     }
 
     #[rstest]
