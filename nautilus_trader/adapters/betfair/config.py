@@ -42,6 +42,9 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
         The delay (seconds) before sending the *initial* subscription message.
     keep_alive_secs : PositiveInt, default 36_000 (10 hours)
         The keep alive interval (seconds) for the HTTP client.
+    subscribe_race_data : bool, default False
+        If True, sends a ``raceSubscription`` on the stream to receive Race Change
+        Messages (RCM) with live GPS tracking data (Total Performance Data).
     stream_conflate_ms : PositiveInt, optional
         The Betfair data stream conflation setting. Default of `None` means no explicit value is
         set for the conflation interval. Betfair interprets this as using its default behaviour for
@@ -64,6 +67,7 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     instrument_config: BetfairInstrumentProviderConfig | None = None
     subscription_delay_secs: PositiveInt | None = 3
     keep_alive_secs: PositiveInt = 36_000  # 10 hours
+    subscribe_race_data: bool = False
     stream_conflate_ms: PositiveInt | None = None
     stream_heartbeat_ms: PositiveInt | None = 5000
     proxy_url: str | None = None

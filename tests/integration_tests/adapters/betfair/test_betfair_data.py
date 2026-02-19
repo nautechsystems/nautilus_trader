@@ -16,12 +16,15 @@
 import asyncio
 from collections import Counter
 from pathlib import Path
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import msgspec
 import pytest
 from betfair_parser.spec.streaming import stream_decode
 
+from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data_types import BetfairOrderVoided
 from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
@@ -29,6 +32,7 @@ from nautilus_trader.adapters.betfair.data_types import BetfairRaceRunnerData
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
+from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -57,6 +61,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
@@ -154,6 +159,367 @@ async def test_subscriptions(data_client, instrument):
     assert data_client.subscribed_trade_ticks() == [instrument.id]
     assert data_client.subscribed_instrument_status() == [instrument.id]
     assert data_client.subscribed_instrument_close() == [instrument.id]
+
+
+def test_race_stream_client_created_when_configured(
+    mocker,
+    betfair_client,
+    instrument_provider,
+    instrument,
+    venue,
+    event_loop,
+    msgbus,
+    cache,
+    clock,
+):
+    """
+    Verify that subscribe_race_data=True creates a race stream client on a separate
+    connection to sports-data-stream-api.betfair.com.
+    """
+    # Arrange
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.factories.get_cached_betfair_client",
+        return_value=betfair_client,
+    )
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.factories.get_cached_betfair_instrument_provider",
+        return_value=instrument_provider,
+    )
+    instrument_provider.add(instrument)
+
+    # Act
+    client = BetfairLiveDataClientFactory.create(
+        loop=event_loop,
+        name=venue.value,
+        config=BetfairDataClientConfig(
+            account_currency="GBP",
+            username="username",
+            password="password",
+            app_key="app_key",
+            subscribe_race_data=True,
+        ),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    # Assert
+    assert client._race_stream is not None
+    assert client._race_stream.host == "sports-data-stream-api.betfair.com"
+
+
+def test_race_stream_client_not_created_by_default(
+    mocker,
+    betfair_client,
+    instrument_provider,
+    instrument,
+    venue,
+    event_loop,
+    msgbus,
+    cache,
+    clock,
+):
+    """
+    Verify that the race stream client is not created by default.
+    """
+    # Arrange
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.factories.get_cached_betfair_client",
+        return_value=betfair_client,
+    )
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.factories.get_cached_betfair_instrument_provider",
+        return_value=instrument_provider,
+    )
+    instrument_provider.add(instrument)
+
+    # Act
+    client = BetfairLiveDataClientFactory.create(
+        loop=event_loop,
+        name=venue.value,
+        config=BetfairDataClientConfig(
+            account_currency="GBP",
+            username="username",
+            password="password",
+            app_key="app_key",
+        ),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    # Assert
+    assert client._race_stream is None
+
+
+@pytest.mark.asyncio
+async def test_race_stream_fatal_error_disables_race_stream(data_client):
+    """
+    A permanent auth error on the race stream should disconnect and disable it rather
+    than entering an infinite reconnect loop.
+    """
+    # Arrange
+    mock_stream = MagicMock()
+    mock_stream.disconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_APP_KEY",
+            "errorMessage": "AppKey is not configured for service",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act
+    data_client.on_race_stream_update(raw)
+    await eventually(lambda: data_client._race_stream is None)
+
+    # Assert - stream disconnected and reference cleared
+    mock_stream.disconnect.assert_called_once()
+    assert not data_client._is_reconnecting
+
+
+@pytest.mark.asyncio
+async def test_race_stream_transient_error_renews_session_via_keep_alive(data_client):
+    """
+    A transient race stream closure should renew the session token via keep_alive (not
+    reconnect which resets shared HTTP client state) and reconnect the race stream.
+    """
+    # Arrange
+    mock_stream = MagicMock()
+    mock_stream.reconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    data_client._client.keep_alive = AsyncMock()
+    data_client._client.reconnect = AsyncMock()
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_SESSION",
+            "errorMessage": "Session expired",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act
+    data_client.on_race_stream_update(raw)
+    await eventually(lambda: not data_client._is_reconnecting_race_stream)
+
+    # Assert - keep_alive used (not reconnect), race stream reconnected
+    data_client._client.keep_alive.assert_called_once()
+    data_client._client.reconnect.assert_not_called()
+    mock_stream.reconnect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_race_stream_reconnect_falls_back_to_full_session_refresh(data_client):
+    """
+    When keep_alive fails during race reconnect, fall back to a full session refresh so
+    the race stream can recover.
+    """
+    # Arrange
+    mock_stream = MagicMock()
+    mock_stream.reconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    data_client._client.keep_alive = AsyncMock(side_effect=Exception("Token invalid"))
+    data_client._client.reconnect = AsyncMock()
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_SESSION",
+            "errorMessage": "Session expired",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act
+    data_client.on_race_stream_update(raw)
+    await eventually(lambda: not data_client._is_reconnecting_race_stream)
+
+    # Assert - fell back to full reconnect, race stream recovered
+    data_client._client.keep_alive.assert_called_once()
+    data_client._client.reconnect.assert_called_once()
+    mock_stream.reconnect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_race_stream_connect_failure_does_not_block_market_startup(race_data_client):
+    """
+    If the race stream fails to connect during startup, market data should still
+    function normally with the race stream disabled.
+    """
+    # Arrange
+    race_data_client._race_stream.connect = AsyncMock(
+        side_effect=Exception("TPD endpoint unreachable"),
+    )
+    race_data_client._stream.connect = AsyncMock()
+    race_data_client._client.connect = AsyncMock()
+    race_data_client._instrument_provider.load_all_async = AsyncMock()
+
+    # Act
+    await race_data_client._connect()
+
+    # Assert - market stream connected, race stream disabled
+    race_data_client._stream.connect.assert_called_once()
+    assert race_data_client._race_stream is None
+
+
+@pytest.mark.asyncio
+async def test_race_stream_max_connection_limit_is_fatal(data_client):
+    """
+    MAX_CONNECTION_LIMIT_EXCEEDED should disable the race stream rather than looping
+    reconnects that can never succeed.
+    """
+    # Arrange
+    mock_stream = MagicMock()
+    mock_stream.disconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "MAX_CONNECTION_LIMIT_EXCEEDED",
+            "errorMessage": "Connection limit exceeded",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act
+    data_client.on_race_stream_update(raw)
+    await eventually(lambda: data_client._race_stream is None)
+
+    # Assert
+    mock_stream.disconnect.assert_called_once()
+    assert not data_client._is_reconnecting_race_stream
+
+
+@pytest.mark.asyncio
+async def test_race_stream_duplicate_reconnect_suppressed(data_client):
+    """
+    Back-to-back race stream status errors should result in a single reconnect, not
+    overlapping tasks.
+    """
+    # Arrange - make keep_alive block so the first reconnect is still in-flight
+    # when the second status message arrives
+    keep_alive_entered = asyncio.Event()
+    keep_alive_proceed = asyncio.Event()
+
+    async def slow_keep_alive():
+        keep_alive_entered.set()
+        await keep_alive_proceed.wait()
+
+    mock_stream = MagicMock()
+    mock_stream.reconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    data_client._client.keep_alive = slow_keep_alive
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_SESSION",
+            "errorMessage": "Session expired",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act - first status spawns reconnect task
+    data_client.on_race_stream_update(raw)
+    await keep_alive_entered.wait()
+    assert data_client._is_reconnecting_race_stream
+
+    # Second status while first reconnect is in-flight
+    data_client.on_race_stream_update(raw)
+
+    # Unblock the first reconnect
+    keep_alive_proceed.set()
+    await eventually(lambda: not data_client._is_reconnecting_race_stream)
+
+    # Assert - stream reconnected exactly once
+    mock_stream.reconnect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_race_reconnect_aborts_when_full_reconnect_starts_during_await(data_client):
+    """
+    If a full reconnect starts while _reconnect_race_stream is awaiting keep_alive, the
+    race reconnect should abort and let the full reconnect handle both streams.
+    """
+    # Arrange - make keep_alive block so we can simulate a full reconnect starting
+    keep_alive_entered = asyncio.Event()
+    keep_alive_proceed = asyncio.Event()
+
+    async def slow_keep_alive():
+        keep_alive_entered.set()
+        await keep_alive_proceed.wait()
+
+    mock_stream = MagicMock()
+    mock_stream.reconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    data_client._client.keep_alive = slow_keep_alive
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_SESSION",
+            "errorMessage": "Session expired",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act - race reconnect starts and blocks on keep_alive
+    data_client.on_race_stream_update(raw)
+    await keep_alive_entered.wait()
+
+    # Full reconnect starts while race reconnect is mid-keep_alive
+    data_client._is_reconnecting = True
+
+    # Unblock keep_alive so race reconnect can check the flag
+    keep_alive_proceed.set()
+    await eventually(lambda: not data_client._is_reconnecting_race_stream)
+
+    # Assert - race stream reconnect aborted, deferred to full reconnect
+    mock_stream.reconnect.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_market_reconnect_proceeds_despite_race_reconnect_in_flight(data_client):
+    """
+    Market stream recovery always takes priority.
+
+    A full reconnect should proceed even when a race-only reconnect is in-flight,
+    subsuming it.
+
+    """
+    # Arrange
+    data_client._is_reconnecting_race_stream = True
+    data_client._client.reconnect = AsyncMock()
+    data_client._stream.reconnect = AsyncMock()
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_SESSION",
+            "errorMessage": "Session expired",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act
+    data_client.on_market_update(raw)
+    await eventually(lambda: data_client._client.reconnect.called)
+
+    # Assert - full reconnect ran, race reconnect flag cleared
+    assert not data_client._is_reconnecting_race_stream
 
 
 def test_market_heartbeat(data_client):
@@ -568,7 +934,7 @@ def test_rcm_race_runner_data(data_client, mock_data_engine_process):
     raw = (RESOURCES_PATH / "streaming" / "streaming_rcm.json").read_bytes()
 
     # Act
-    data_client.on_market_update(raw)
+    data_client.on_race_stream_update(raw)
 
     # Assert
     mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
@@ -589,7 +955,7 @@ def test_rcm_race_progress(data_client, mock_data_engine_process):
     raw = (RESOURCES_PATH / "streaming" / "streaming_rcm.json").read_bytes()
 
     # Act
-    data_client.on_market_update(raw)
+    data_client.on_race_stream_update(raw)
 
     # Assert
     mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
@@ -610,7 +976,7 @@ def test_rcm_multi_runner(data_client, mock_data_engine_process):
     raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_multi_runner.json").read_bytes()
 
     # Act
-    data_client.on_market_update(raw)
+    data_client.on_race_stream_update(raw)
 
     # Assert
     mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
@@ -629,7 +995,7 @@ def test_rcm_with_jumps(data_client, mock_data_engine_process):
     raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_race_start.json").read_bytes()
 
     # Act
-    data_client.on_market_update(raw)
+    data_client.on_race_stream_update(raw)
 
     # Assert
     mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
@@ -795,7 +1161,7 @@ def test_rcm_runner_data_reaches_subscriber_via_data_engine(data_client, data_en
     lines = raw.splitlines()
 
     # Act - first message has 3 runners including selection_id 49411491
-    data_client.on_market_update(lines[0])
+    data_client.on_race_stream_update(lines[0])
 
     # Assert
     assert len(received) == 1
@@ -824,7 +1190,7 @@ def test_rcm_runner_data_filtered_by_selection_id(data_client, data_engine, msgb
     lines = raw.splitlines()
 
     # Act - first message has runners 49411491, 44169412, 19080425
-    data_client.on_market_update(lines[0])
+    data_client.on_race_stream_update(lines[0])
 
     # Assert - each subscriber only gets their runner
     assert len(received_target) == 1
@@ -851,7 +1217,7 @@ def test_rcm_progress_data_reaches_subscriber_via_data_engine(data_client, data_
     lines = raw.splitlines()
 
     # Act - second message has race progress data
-    data_client.on_market_update(lines[1])
+    data_client.on_race_stream_update(lines[1])
 
     # Assert
     assert len(received) == 1
@@ -879,7 +1245,7 @@ def test_rcm_sequence_delivers_all_updates(data_client, data_engine, msgbus):
 
     # Act - process all 3 messages
     for line in raw.splitlines():
-        data_client.on_market_update(line)
+        data_client.on_race_stream_update(line)
 
     # Assert - 3 runners from msg 0, 1 runner from msg 2, 1 progress from msg 1
     assert len(runner_data) == 4

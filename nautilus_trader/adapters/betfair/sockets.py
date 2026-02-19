@@ -28,6 +28,7 @@ from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 
 
 HOST = "stream-api.betfair.com"
+RACE_HOST = "sports-data-stream-api.betfair.com"
 PORT = 443
 CRLF = b"\r\n"
 ENCODING = "utf-8"
@@ -411,3 +412,51 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         self._log.error(
             f"Failed to authenticate after {retries} attempts, connection may be unusable",
         )
+
+
+class BetfairRaceStreamClient(BetfairStreamClient):
+    """
+    Provides a Betfair race stream client for Total Performance Data (TPD).
+
+    Connects to sports-data-stream-api.betfair.com and subscribes to Race Change
+    Messages (RCM) with live GPS tracking data.
+
+    """
+
+    def __init__(
+        self,
+        http_client: BetfairHttpClient,
+        message_handler: Callable,
+        certs_dir: str | None = None,
+        **kwargs,
+    ):
+        super().__init__(
+            http_client=http_client,
+            message_handler=message_handler,
+            host=RACE_HOST,
+            certs_dir=certs_dir,
+            **kwargs,
+        )
+
+    def post_connection(self) -> None:
+        self._loop.create_task(self._post_connection())
+
+    def post_reconnection(self) -> None:
+        super().post_reconnection()
+        self._loop.create_task(self._post_connection())
+
+    async def _post_connection(self) -> None:
+        retries = 5
+        for i in range(retries):
+            try:
+                subscribe_msg = {
+                    "op": "raceSubscription",
+                    "id": next(UNIQUE_ID),
+                }
+                await self.send(msgspec.json.encode(self.auth_message()))
+                await self.send(msgspec.json.encode(subscribe_msg))
+                self._log.info("Race stream subscribed")
+                return
+            except Exception as e:
+                self._log.error(f"Failed race stream setup({e}), retrying {i + 1}/{retries}...")
+                await asyncio.sleep(1.0)

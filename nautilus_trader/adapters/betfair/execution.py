@@ -290,6 +290,8 @@ class BetfairExecutionClient(LiveExecutionClient):
 
             if self.config.request_account_state_secs:
                 self._update_account_task = self.create_task(self._update_account_state())
+        except Exception as e:
+            self._log.error(f"Reconnection failed: {e}")
         finally:
             self._is_reconnecting = False
 

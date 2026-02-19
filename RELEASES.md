@@ -22,6 +22,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads (#3535), thanks @shzhng
 - Added Ichimoku Cloud indicator (#3552), thanks @faysou
 - Added Betfair RCM parsing for TPD race data
+- Added Betfair race stream subscription via `subscribe_race_data` config
 - Added Betfair market version price protection for orders
 - Added Betfair `BetfairOrderVoided` custom data type for VAR voids
 - Added `BetfairOrderVoided` custom data type for VAR voids
