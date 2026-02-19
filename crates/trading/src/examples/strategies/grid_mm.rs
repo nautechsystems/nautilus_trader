@@ -32,8 +32,8 @@ use nautilus_common::actor::{DataActor, DataActorCore};
 use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, TimeInForce},
-    events::OrderCanceled,
-    identifiers::{InstrumentId, StrategyId},
+    events::{OrderCanceled, OrderFilled},
+    identifiers::{ClientOrderId, InstrumentId, StrategyId},
     instruments::Instrument,
     orders::Order,
     types::{Price, Quantity},
@@ -162,6 +162,7 @@ pub struct GridMarketMaker {
     trade_size: Option<Quantity>,
     price_precision: u8,
     last_quoted_mid: Option<Price>,
+    pending_self_cancels: AHashSet<ClientOrderId>,
 }
 
 impl GridMarketMaker {
@@ -174,6 +175,7 @@ impl GridMarketMaker {
             config,
             price_precision: 0,
             last_quoted_mid: None,
+            pending_self_cancels: AHashSet::new(),
         }
     }
 
@@ -308,6 +310,27 @@ impl DataActor for GridMarketMaker {
         }
 
         let instrument_id = self.config.instrument_id;
+
+        if self.config.on_cancel_resubmit {
+            let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
+            let inst = Some(&instrument_id);
+            let strategy = Some(&strategy_id);
+            let ids: Vec<ClientOrderId> = {
+                let cache = self.cache();
+                cache
+                    .orders_open(None, inst, strategy, None, None)
+                    .iter()
+                    .chain(
+                        cache
+                            .orders_inflight(None, inst, strategy, None, None)
+                            .iter(),
+                    )
+                    .map(|o| o.client_order_id())
+                    .collect()
+            };
+            self.pending_self_cancels.extend(ids);
+        }
+
         self.cancel_all_orders(instrument_id, None, None)?;
 
         // Compute worst-case per-side exposure for max_position checks,
@@ -409,7 +432,16 @@ impl DataActor for GridMarketMaker {
         Ok(())
     }
 
-    fn on_order_canceled(&mut self, _event: &OrderCanceled) -> anyhow::Result<()> {
+    fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
+        self.pending_self_cancels.remove(&event.client_order_id);
+        Ok(())
+    }
+
+    fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
+        if self.pending_self_cancels.remove(&event.client_order_id) {
+            return Ok(());
+        }
+
         if self.config.on_cancel_resubmit {
             // Reset so the next incoming quote triggers a full grid resubmission
             self.last_quoted_mid = None;
@@ -430,9 +462,12 @@ impl Strategy for GridMarketMaker {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::actor::DataActor;
+    use nautilus_core::UUID4;
     use nautilus_model::{
         enums::OrderSide,
-        identifiers::InstrumentId,
+        events::OrderCanceled,
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -586,5 +621,108 @@ mod tests {
         let strategy = create_strategy(3, 100, 0.0, Quantity::from("0.050"), 5);
         let orders = strategy.grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0));
         assert!(orders.is_empty());
+    }
+
+    fn order_canceled(client_order_id: &str) -> OrderCanceled {
+        OrderCanceled::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("GRID_MM-001"),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            ClientOrderId::from(client_order_id),
+            UUID4::new(),
+            0.into(),
+            0.into(),
+            false,
+            None,
+            None,
+        )
+    }
+
+    fn create_cancel_resubmit_strategy() -> GridMarketMaker {
+        let config = GridMarketMakerConfig::new(
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            Quantity::from("10.0"),
+        )
+        .with_trade_size(Quantity::from("0.100"))
+        .with_on_cancel_resubmit(true);
+
+        let mut strategy = GridMarketMaker::new(config);
+        strategy.price_precision = PRECISION;
+        strategy
+    }
+
+    #[rstest]
+    fn test_on_order_canceled_self_cancel_preserves_last_quoted_mid() {
+        let mut strategy = create_cancel_resubmit_strategy();
+        strategy.last_quoted_mid = Some(mid("1000.00"));
+        strategy
+            .pending_self_cancels
+            .insert(ClientOrderId::from("O-001"));
+
+        let event = order_canceled("O-001");
+        strategy.on_order_canceled(&event).unwrap();
+
+        assert!(strategy.pending_self_cancels.is_empty());
+        assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
+    }
+
+    #[rstest]
+    fn test_on_order_canceled_protocol_cancel_resets_last_quoted_mid() {
+        // ID not in pending set → protocol-initiated cancel resets mid
+        let mut strategy = create_cancel_resubmit_strategy();
+        strategy.last_quoted_mid = Some(mid("1000.00"));
+
+        let event = order_canceled("O-999");
+        strategy.on_order_canceled(&event).unwrap();
+
+        assert_eq!(strategy.last_quoted_mid, None);
+    }
+
+    #[rstest]
+    fn test_on_order_canceled_self_cancel_then_protocol_cancel() {
+        let mut strategy = create_cancel_resubmit_strategy();
+        strategy.last_quoted_mid = Some(mid("1000.00"));
+        strategy
+            .pending_self_cancels
+            .insert(ClientOrderId::from("O-001"));
+
+        // Self-cancel consumed
+        let self_event = order_canceled("O-001");
+        strategy.on_order_canceled(&self_event).unwrap();
+        assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
+
+        // Protocol cancel triggers reset
+        let protocol_event = order_canceled("O-002");
+        strategy.on_order_canceled(&protocol_event).unwrap();
+        assert_eq!(strategy.last_quoted_mid, None);
+    }
+
+    #[rstest]
+    fn test_on_order_canceled_filled_order_does_not_block_protocol_cancel() {
+        // Order O-001 tracked as self-cancel but fills before cancel ack,
+        // so O-002 (protocol cancel) must still trigger reset
+        let mut strategy = create_cancel_resubmit_strategy();
+        strategy.last_quoted_mid = Some(mid("1000.00"));
+        strategy
+            .pending_self_cancels
+            .insert(ClientOrderId::from("O-001"));
+
+        // O-001 filled (no cancel event) → O-002 is a protocol cancel
+        let event = order_canceled("O-002");
+        strategy.on_order_canceled(&event).unwrap();
+
+        assert_eq!(strategy.last_quoted_mid, None);
+    }
+
+    #[rstest]
+    fn test_on_order_canceled_without_resubmit_does_nothing() {
+        // on_cancel_resubmit=false: cancel never resets mid
+        let mut strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
+        strategy.last_quoted_mid = Some(mid("1000.00"));
+
+        let event = order_canceled("O-001");
+        strategy.on_order_canceled(&event).unwrap();
+
+        assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
     }
 }
