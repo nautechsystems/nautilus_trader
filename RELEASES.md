@@ -227,7 +227,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Upgraded `datafusion` crate to v52.1.0
 - Upgraded `pyo3` crate to v0.28.2
 - Upgraded `pyo3-async-runtimes` crate to v0.28.0
-- Upgraded `redis` crate to v1.0.3
+- Upgraded `redis` crate to v1.0.4
 - Upgraded `tokio` crate to v1.49.0
 
 ### Documentation Updates

@@ -48,6 +48,16 @@ ignore = [
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for capnp update
   { id = "RUSTSEC-2025-0143", reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix" },
 
+  # rsa Marvin Attack timing sidechannel (CVSS 5.9 medium)
+  # Transitive via sqlx-mysql, no fix available upstream
+  # Low risk: not using MySQL RSA key exchange in practice
+  # TODO: Monitor https://github.com/RustCrypto/RSA for fix
+  { id = "RUSTSEC-2023-0071", reason = "rsa Marvin Attack, transitive via sqlx-mysql, no fix available" },
+
+  # derivative is unmaintained, transitive via ark-ff→ruint→alloy-primitives
+  # TODO: Monitor upstream for migration to derive_more or educe
+  { id = "RUSTSEC-2024-0388", reason = "derivative unmaintained, transitive via alloy blockchain dependencies" },
+
 ]
 
 # =============================================================================

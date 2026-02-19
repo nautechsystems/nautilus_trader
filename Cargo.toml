@@ -131,7 +131,7 @@ chrono = { version = "0.4.43", default-features = false, features = [
   "clock",
 ] }
 chrono-tz = "0.10.4"
-clap = { version = "4.5.59", features = ["derive", "env"] }
+clap = { version = "4.5.60", features = ["derive", "env"] }
 ctrlc = "3.5.2"
 dashmap = "6.1.0"
 datafusion = { version = "52.1.0", default-features = false, features = [
@@ -196,7 +196,7 @@ rand = { version = "0.10.0", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
-redis = { version = "1.0.3", default-features = false, features = [
+redis = { version = "1.0.4", default-features = false, features = [
   "connection-manager",
   "sentinel",
   "streams",
