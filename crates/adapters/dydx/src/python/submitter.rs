@@ -17,7 +17,7 @@
 
 #![allow(clippy::missing_errors_doc)]
 
-use std::{str::FromStr, sync::Arc};
+use std::{num::NonZeroU32, str::FromStr, sync::Arc};
 
 use chrono::Utc;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -26,6 +26,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
+use nautilus_network::ratelimiter::quota::Quota;
 use pyo3::prelude::*;
 
 use super::grpc::PyDydxGrpcClient;
@@ -72,6 +73,7 @@ impl PyDydxOrderSubmitter {
     /// * `wallet_address` - Main account address (may differ from derived address for permissioned keys)
     /// * `subaccount_number` - dYdX subaccount number (default: 0)
     /// * `chain_id` - Chain ID string (default: "dydx-mainnet-1")
+    /// * `grpc_rate_limit_per_second` - Optional gRPC rate limit (requests per second)
     ///
     /// # Errors
     ///
@@ -83,7 +85,8 @@ impl PyDydxOrderSubmitter {
         private_key,
         wallet_address,
         subaccount_number=0,
-        chain_id=None
+        chain_id=None,
+        grpc_rate_limit_per_second=None,
     ))]
     pub fn py_new(
         grpc_client: PyDydxGrpcClient,
@@ -92,12 +95,17 @@ impl PyDydxOrderSubmitter {
         wallet_address: String,
         subaccount_number: u32,
         chain_id: Option<&str>,
+        grpc_rate_limit_per_second: Option<u32>,
     ) -> PyResult<Self> {
         let chain_id = if let Some(chain_str) = chain_id {
             ChainId::from_str(chain_str).map_err(to_pyvalue_err)?
         } else {
             ChainId::Mainnet1
         };
+
+        let grpc_quota = grpc_rate_limit_per_second
+            .and_then(NonZeroU32::new)
+            .and_then(Quota::per_second);
 
         // Create block time monitor (updated via record_block)
         let block_time_monitor = Arc::new(BlockTimeMonitor::new());
@@ -110,6 +118,7 @@ impl PyDydxOrderSubmitter {
             subaccount_number,
             chain_id,
             Arc::clone(&block_time_monitor),
+            grpc_quota,
         )
         .map_err(to_pyvalue_err)?;
 

@@ -39,7 +39,10 @@ use std::sync::{
 };
 
 use cosmrs::Any;
-use nautilus_network::retry::{RetryConfig, RetryManager};
+use nautilus_network::{
+    ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
+    retry::{RetryConfig, RetryManager},
+};
 
 use super::{tx_manager::TransactionManager, types::PreparedTransaction};
 use crate::{error::DydxError, grpc::DydxGrpcClient};
@@ -107,6 +110,9 @@ pub fn create_tx_retry_manager() -> RetryManager<DydxError> {
 /// - No semaphore needed (fully concurrent)
 /// - Cached sequence used (no increment, no allocation)
 /// - No sequence-based retry logic needed
+///   Rate limiter key for gRPC broadcast calls.
+const GRPC_RATE_LIMIT_KEY: &str = "grpc";
+
 #[derive(Debug)]
 pub struct TxBroadcaster {
     /// gRPC client for broadcasting transactions.
@@ -116,17 +122,28 @@ pub struct TxBroadcaster {
     /// Semaphore for serializing broadcasts (permits=1 acts as mutex).
     /// Ensures sequence allocation → build → broadcast are atomic.
     broadcast_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Rate limiter for gRPC broadcast calls.
+    rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
 }
 
 impl TxBroadcaster {
     /// Creates a new transaction broadcaster.
     #[must_use]
-    pub fn new(grpc_client: DydxGrpcClient) -> Self {
+    pub fn new(grpc_client: DydxGrpcClient, grpc_quota: Option<Quota>) -> Self {
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(grpc_quota, vec![]));
         Self {
             grpc_client,
             retry_manager: create_tx_retry_manager(),
             broadcast_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+            rate_limiter,
         }
+    }
+
+    /// Waits for the gRPC rate limiter to allow a request.
+    async fn wait_for_rate_limit(&self) {
+        self.rate_limiter
+            .until_key_ready(&GRPC_RATE_LIMIT_KEY.to_string())
+            .await;
     }
 
     /// Broadcasts a prepared transaction with automatic retry on sequence mismatch.
@@ -173,12 +190,14 @@ impl TxBroadcaster {
 
         // Clone values that need to be moved into closures
         let grpc_client = self.grpc_client.clone();
+        let rate_limiter = Arc::clone(&self.rate_limiter);
         let op_name = operation_name.to_string();
 
         let operation = || {
             // Clone captures for the async block
             let needs_resync = Arc::clone(&needs_resync);
             let grpc_client = grpc_client.clone();
+            let rate_limiter = Arc::clone(&rate_limiter);
             let msgs = msgs.clone();
             let op_name = op_name.clone();
 
@@ -191,6 +210,11 @@ impl TxBroadcaster {
 
                 // Prepare transaction (allocates new sequence)
                 let prepared = tx_manager.prepare_transaction(msgs, &op_name).await?;
+
+                // Wait for rate limiter before gRPC call
+                rate_limiter
+                    .until_key_ready(&GRPC_RATE_LIMIT_KEY.to_string())
+                    .await;
 
                 // Broadcast
                 let mut grpc = grpc_client;
@@ -254,6 +278,9 @@ impl TxBroadcaster {
             .build_transaction(msgs, cached_sequence, operation_name)
             .await?;
 
+        // Wait for rate limiter before gRPC call
+        self.wait_for_rate_limit().await;
+
         let mut grpc = self.grpc_client.clone();
         match grpc.broadcast_tx(prepared.tx_bytes).await {
             Ok(tx_hash) => {
@@ -291,6 +318,9 @@ impl TxBroadcaster {
         &self,
         prepared: &PreparedTransaction,
     ) -> Result<String, DydxError> {
+        // Wait for rate limiter before gRPC call
+        self.wait_for_rate_limit().await;
+
         let mut grpc = self.grpc_client.clone();
         let operation = &prepared.operation;
 

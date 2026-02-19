@@ -235,6 +235,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             wallet_address=self._wallet_address,
             subaccount_number=self._subaccount,
             chain_id=chain_id,
+            grpc_rate_limit_per_second=self._config.grpc_rate_limit_per_second,
         )
 
         # Resolve authenticators for permissioned key trading

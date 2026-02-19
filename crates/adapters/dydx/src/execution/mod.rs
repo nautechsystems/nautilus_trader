@@ -2140,7 +2140,10 @@ impl ExecutionClient for DydxExecutionClient {
             .context("failed to initialize sequence")?;
 
         self.tx_manager = Some(tx_manager);
-        self.broadcaster = Some(Arc::new(TxBroadcaster::new(grpc_client)));
+        self.broadcaster = Some(Arc::new(TxBroadcaster::new(
+            grpc_client,
+            self.config.grpc_quota(),
+        )));
         self.order_builder = Some(Arc::new(OrderMessageBuilder::new(
             self.http_client.clone(),
             self.wallet_address.clone(),

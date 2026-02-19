@@ -32,6 +32,8 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
+use nautilus_network::ratelimiter::quota::Quota;
+
 use crate::{
     error::DydxError,
     execution::{
@@ -89,10 +91,12 @@ impl OrderSubmitter {
     /// * `subaccount_number` - dYdX subaccount number (typically 0)
     /// * `chain_id` - dYdX chain ID
     /// * `block_time_monitor` - Block time monitor (provides current height and dynamic block time)
+    /// * `grpc_quota` - Optional rate limit quota for gRPC calls
     ///
     /// # Errors
     ///
     /// Returns error if wallet creation from private key fails.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         grpc_client: DydxGrpcClient,
         http_client: DydxHttpClient,
@@ -101,6 +105,7 @@ impl OrderSubmitter {
         subaccount_number: u32,
         chain_id: ChainId,
         block_time_monitor: Arc<BlockTimeMonitor>,
+        grpc_quota: Option<Quota>,
     ) -> Result<Self, DydxError> {
         // Create transaction manager (owns wallet and sequence management)
         let tx_manager = Arc::new(TransactionManager::new(
@@ -110,7 +115,7 @@ impl OrderSubmitter {
             chain_id,
         )?);
 
-        let broadcaster = Arc::new(TxBroadcaster::new(grpc_client));
+        let broadcaster = Arc::new(TxBroadcaster::new(grpc_client, grpc_quota));
 
         let order_builder = Arc::new(OrderMessageBuilder::new(
             http_client,
