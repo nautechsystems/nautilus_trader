@@ -26,7 +26,7 @@ use nautilus_common::{
     log_info, log_warn,
     timer::TimeEvent,
 };
-use nautilus_core::{Params, UnixNanos};
+use nautilus_core::{Params, UnixNanos, datetime::secs_to_nanos_unchecked};
 use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{BookType, OrderSide, OrderType, TimeInForce, TriggerType},
@@ -56,12 +56,12 @@ pub struct ExecTesterConfig {
     pub order_params: Option<Params>,
     /// Client ID to use for orders and subscriptions.
     pub client_id: Option<ClientId>,
+    /// Whether to subscribe to order book.
+    pub subscribe_book: bool,
     /// Whether to subscribe to quotes.
     pub subscribe_quotes: bool,
     /// Whether to subscribe to trades.
     pub subscribe_trades: bool,
-    /// Whether to subscribe to order book.
-    pub subscribe_book: bool,
     /// Book type for order book subscriptions.
     pub book_type: BookType,
     /// Order book depth for subscriptions.
@@ -84,6 +84,8 @@ pub struct ExecTesterConfig {
     pub enable_stop_sells: bool,
     /// Offset from TOB in price ticks for limit orders.
     pub tob_offset_ticks: u64,
+    /// Override time in force for limit orders (None uses GTC/GTD logic).
+    pub limit_time_in_force: Option<TimeInForce>,
     /// Type of stop order (STOP_MARKET, STOP_LIMIT, MARKET_IF_TOUCHED, LIMIT_IF_TOUCHED).
     pub stop_order_type: OrderType,
     /// Offset from market in price ticks for stop trigger.
@@ -92,6 +94,8 @@ pub struct ExecTesterConfig {
     pub stop_limit_offset_ticks: Option<u64>,
     /// Trigger type for stop orders.
     pub stop_trigger_type: TriggerType,
+    /// Override time in force for stop orders (None uses GTC/GTD logic).
+    pub stop_time_in_force: Option<TimeInForce>,
     /// Enable bracket orders (entry with TP/SL).
     pub enable_brackets: bool,
     /// Entry order type for bracket orders.
@@ -175,10 +179,12 @@ impl ExecTesterConfig {
             enable_stop_buys: false,
             enable_stop_sells: false,
             tob_offset_ticks: 500,
+            limit_time_in_force: None,
             stop_order_type: OrderType::StopMarket,
             stop_offset_ticks: 100,
             stop_limit_offset_ticks: None,
             stop_trigger_type: TriggerType::Default,
+            stop_time_in_force: None,
             enable_brackets: false,
             bracket_entry_order_type: OrderType::Limit,
             bracket_offset_ticks: 500,
@@ -379,6 +385,18 @@ impl ExecTesterConfig {
         self.order_params = params;
         self
     }
+
+    #[must_use]
+    pub fn with_limit_time_in_force(mut self, tif: Option<TimeInForce>) -> Self {
+        self.limit_time_in_force = tif;
+        self
+    }
+
+    #[must_use]
+    pub fn with_stop_time_in_force(mut self, tif: Option<TimeInForce>) -> Self {
+        self.stop_time_in_force = tif;
+        self
+    }
 }
 
 impl Default for ExecTesterConfig {
@@ -405,10 +423,12 @@ impl Default for ExecTesterConfig {
             enable_stop_buys: false,
             enable_stop_sells: false,
             tob_offset_ticks: 500,
+            limit_time_in_force: None,
             stop_order_type: OrderType::StopMarket,
             stop_offset_ticks: 100,
             stop_limit_offset_ticks: None,
             stop_trigger_type: TriggerType::Default,
+            stop_time_in_force: None,
             enable_brackets: false,
             bracket_entry_order_type: OrderType::Limit,
             bracket_offset_ticks: 500,
@@ -743,22 +763,44 @@ impl ExecTester {
         Ok(())
     }
 
-    /// Calculate the price offset from TOB based on configuration.
     fn get_price_offset(&self, instrument: &InstrumentAny) -> f64 {
         instrument.price_increment().as_f64() * self.config.tob_offset_ticks as f64
     }
 
-    /// Check if an order is still active.
+    fn expire_time_from_delta(&self, mins: u64) -> UnixNanos {
+        let current_ns = self.timestamp_ns();
+        let delta_ns = secs_to_nanos_unchecked((mins * 60) as f64);
+        UnixNanos::from(current_ns.as_u64() + delta_ns)
+    }
+
+    fn resolve_time_in_force(
+        &self,
+        tif_override: Option<TimeInForce>,
+    ) -> (TimeInForce, Option<UnixNanos>) {
+        match (tif_override, self.config.order_expire_time_delta_mins) {
+            (Some(TimeInForce::Gtd), Some(mins)) => {
+                (TimeInForce::Gtd, Some(self.expire_time_from_delta(mins)))
+            }
+            (Some(TimeInForce::Gtd), None) => {
+                log_warn!(
+                    "GTD time in force requires order_expire_time_delta_mins, falling back to GTC"
+                );
+                (TimeInForce::Gtc, None)
+            }
+            (Some(tif), _) => (tif, None),
+            (None, Some(mins)) => (TimeInForce::Gtd, Some(self.expire_time_from_delta(mins))),
+            (None, None) => (TimeInForce::Gtc, None),
+        }
+    }
+
     fn is_order_active(&self, order: &OrderAny) -> bool {
         order.is_active_local() || order.is_inflight() || order.is_open()
     }
 
-    /// Get the trigger price from a stop/conditional order.
     fn get_order_trigger_price(&self, order: &OrderAny) -> Option<Price> {
         order.trigger_price()
     }
 
-    /// Modify a stop order's trigger price and optionally limit price.
     fn modify_stop_order(
         &mut self,
         order: OrderAny,
@@ -1094,14 +1136,7 @@ impl ExecTester {
         }
 
         let (time_in_force, expire_time) =
-            if let Some(mins) = self.config.order_expire_time_delta_mins {
-                let current_ns = self.timestamp_ns();
-                let delta_ns = mins * 60 * 1_000_000_000;
-                let expire_ns = UnixNanos::from(current_ns.as_u64() + delta_ns);
-                (TimeInForce::Gtd, Some(expire_ns))
-            } else {
-                (TimeInForce::Gtc, None)
-            };
+            self.resolve_time_in_force(self.config.limit_time_in_force);
 
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
 
@@ -1162,14 +1197,7 @@ impl ExecTester {
         }
 
         let (time_in_force, expire_time) =
-            if let Some(mins) = self.config.order_expire_time_delta_mins {
-                let current_ns = self.timestamp_ns();
-                let delta_ns = mins * 60 * 1_000_000_000;
-                let expire_ns = UnixNanos::from(current_ns.as_u64() + delta_ns);
-                (TimeInForce::Gtd, Some(expire_ns))
-            } else {
-                (TimeInForce::Gtc, None)
-            };
+            self.resolve_time_in_force(self.config.stop_time_in_force);
 
         // Use instrument's make_qty to ensure correct precision
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
@@ -1311,14 +1339,11 @@ impl ExecTester {
         }
 
         let (time_in_force, expire_time) =
-            if let Some(mins) = self.config.order_expire_time_delta_mins {
-                let current_ns = self.timestamp_ns();
-                let delta_ns = mins * 60 * 1_000_000_000;
-                let expire_ns = UnixNanos::from(current_ns.as_u64() + delta_ns);
-                (TimeInForce::Gtd, Some(expire_ns))
-            } else {
-                (TimeInForce::Gtc, None)
-            };
+            self.resolve_time_in_force(self.config.limit_time_in_force);
+        let sl_time_in_force = self.config.stop_time_in_force.unwrap_or(TimeInForce::Gtc);
+        if sl_time_in_force == TimeInForce::Gtd {
+            anyhow::bail!("GTD time in force not supported for bracket stop-loss legs");
+        }
 
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
         let price_increment = instrument.price_increment().as_f64();
@@ -1349,6 +1374,7 @@ impl ExecTester {
             None,                                // entry_trigger_price (limit entry, no trigger)
             Some(time_in_force),
             expire_time,
+            Some(sl_time_in_force),
             Some(self.config.use_post_only),
             None, // reduce_only
             Some(self.config.use_quote_quantity),
@@ -2495,5 +2521,104 @@ mod tests {
                 .to_string()
                 .contains("requires limit_price")
         );
+    }
+
+    #[rstest]
+    fn test_config_new_fields_default_values(config: ExecTesterConfig) {
+        assert!(config.limit_time_in_force.is_none());
+        assert!(config.stop_time_in_force.is_none());
+    }
+
+    #[rstest]
+    fn test_config_with_limit_time_in_force_builder() {
+        let config = ExecTesterConfig::default().with_limit_time_in_force(Some(TimeInForce::Ioc));
+        assert_eq!(config.limit_time_in_force, Some(TimeInForce::Ioc));
+    }
+
+    #[rstest]
+    fn test_config_with_stop_time_in_force_builder() {
+        let config = ExecTesterConfig::default().with_stop_time_in_force(Some(TimeInForce::Day));
+        assert_eq!(config.stop_time_in_force, Some(TimeInForce::Day));
+    }
+
+    #[rstest]
+    fn test_submit_limit_order_with_limit_time_in_force(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.limit_time_in_force = Some(TimeInForce::Ioc);
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_limit_order(OrderSide::Buy, Price::from("3000.0"));
+
+        assert!(result.is_ok());
+        let order = tester.buy_order.unwrap();
+        assert_eq!(order.time_in_force(), TimeInForce::Ioc);
+        assert!(order.expire_time().is_none());
+    }
+
+    #[rstest]
+    fn test_submit_limit_order_limit_time_in_force_overrides_expire(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        // limit_time_in_force takes priority over order_expire_time_delta_mins
+        config.limit_time_in_force = Some(TimeInForce::Day);
+        config.order_expire_time_delta_mins = Some(30);
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_limit_order(OrderSide::Buy, Price::from("3000.0"));
+
+        assert!(result.is_ok());
+        let order = tester.buy_order.unwrap();
+        assert_eq!(order.time_in_force(), TimeInForce::Day);
+        assert!(order.expire_time().is_none());
+    }
+
+    #[rstest]
+    fn test_submit_stop_order_with_stop_time_in_force(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_stop_buys = true;
+        config.stop_time_in_force = Some(TimeInForce::Day);
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_stop_order(OrderSide::Buy, Price::from("3200.0"), None);
+
+        assert!(result.is_ok());
+        let order = tester.buy_stop_order.unwrap();
+        assert_eq!(order.time_in_force(), TimeInForce::Day);
+        assert!(order.expire_time().is_none());
+    }
+
+    #[rstest]
+    fn test_submit_stop_order_stop_time_in_force_overrides_expire(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_stop_buys = true;
+        config.stop_time_in_force = Some(TimeInForce::Ioc);
+        config.order_expire_time_delta_mins = Some(30);
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_stop_order(OrderSide::Buy, Price::from("3200.0"), None);
+
+        assert!(result.is_ok());
+        let order = tester.buy_stop_order.unwrap();
+        assert_eq!(order.time_in_force(), TimeInForce::Ioc);
+        assert!(order.expire_time().is_none());
     }
 }

@@ -506,6 +506,7 @@ impl OrderFactory {
         entry_trigger_price: Option<Price>,
         time_in_force: Option<TimeInForce>,
         expire_time: Option<nautilus_core::UnixNanos>,
+        sl_time_in_force: Option<TimeInForce>,
         post_only: Option<bool>,
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
@@ -666,8 +667,8 @@ impl OrderFactory {
             quantity,
             sl_trigger_price,
             sl_trigger_type.unwrap_or(TriggerType::Default),
-            time_in_force.unwrap_or(TimeInForce::Gtc),
-            expire_time,
+            sl_time_in_force.unwrap_or(TimeInForce::Gtc),
+            None, // SL has no independent expire time
             true, // SL/TP should only reduce positions
             quote_quantity.unwrap_or(false),
             None, // display_qty
@@ -1141,6 +1142,7 @@ pub mod tests {
             None,                    // no entry trigger
             Some(TimeInForce::Gtc),
             None,
+            None, // sl_time_in_force
             Some(false),
             Some(false),
             Some(false),
@@ -1179,6 +1181,7 @@ pub mod tests {
             None,                          // no entry trigger
             Some(TimeInForce::Gtc),
             None,
+            None, // sl_time_in_force
             Some(false),
             Some(false),
             Some(false),
@@ -1208,6 +1211,7 @@ pub mod tests {
             Some(Price::from("51000.00")), // entry trigger (stop entry)
             Some(TimeInForce::Gtc),
             None,
+            None, // sl_time_in_force
             Some(false),
             Some(false),
             Some(false),
@@ -1237,6 +1241,7 @@ pub mod tests {
             None,
             Some(TimeInForce::Gtc),
             None,
+            None, // sl_time_in_force
             Some(false),
             Some(false),
             Some(false),
@@ -1272,6 +1277,7 @@ pub mod tests {
             None,                          // entry_trigger_price
             Some(TimeInForce::Gtc),
             None,
+            None, // sl_time_in_force
             Some(false),
             Some(false),
             Some(false),

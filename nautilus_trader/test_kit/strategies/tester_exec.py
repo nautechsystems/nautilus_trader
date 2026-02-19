@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitIfTouchedOrder
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketIfTouchedOrder
@@ -75,10 +76,12 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     enable_stop_buys: bool = False
     enable_stop_sells: bool = False
     tob_offset_ticks: PositiveInt = 500  # Definitely out of the market
+    limit_time_in_force: TimeInForce | None = None
     stop_order_type: OrderType = OrderType.STOP_MARKET
     stop_offset_ticks: PositiveInt = 100
     stop_limit_offset_ticks: PositiveInt | None = None
     stop_trigger_type: TriggerType | str | None = None
+    stop_time_in_force: TimeInForce | None = None
     enable_brackets: bool = False
     bracket_entry_order_type: OrderType = OrderType.LIMIT
     bracket_offset_ticks: PositiveInt = 500
@@ -339,6 +342,29 @@ class ExecTester(Strategy):
     def is_order_active(self, order: Order) -> bool:
         return order.is_active_local or order.is_inflight or order.is_open
 
+    def _resolve_time_in_force(
+        self,
+        tif_override: TimeInForce | None,
+    ) -> tuple[TimeInForce, pd.Timestamp | None]:
+        if tif_override == TimeInForce.GTD:
+            if self.config.order_expire_time_delta_mins is not None:
+                expire_time = self.clock.utc_now() + pd.Timedelta(
+                    minutes=self.config.order_expire_time_delta_mins,
+                )
+                return TimeInForce.GTD, expire_time
+            self.log.warning(
+                "GTD time in force requires order_expire_time_delta_mins, falling back to GTC",
+            )
+            return TimeInForce.GTC, None
+        if tif_override is not None:
+            return tif_override, None
+        if self.config.order_expire_time_delta_mins is not None:
+            expire_time = self.clock.utc_now() + pd.Timedelta(
+                minutes=self.config.order_expire_time_delta_mins,
+            )
+            return TimeInForce.GTD, expire_time
+        return TimeInForce.GTC, None
+
     def submit_limit_order(self, order_side: OrderSide, price: Price) -> None:
         if not self.instrument:
             self.log.error("No instrument loaded")
@@ -359,14 +385,9 @@ class ExecTester(Strategy):
             self.submit_bracket_order(order_side, price)
             return
 
-        if self.config.order_expire_time_delta_mins is not None:
-            time_in_force = TimeInForce.GTD
-            expire_time = self.clock.utc_now() + pd.Timedelta(
-                minutes=self.config.order_expire_time_delta_mins,
-            )
-        else:
-            time_in_force = TimeInForce.GTC
-            expire_time = None
+        time_in_force, expire_time = self._resolve_time_in_force(
+            self.config.limit_time_in_force,
+        )
 
         if self.config.order_display_qty is not None:
             # Zero display_qty represents a "hidden" order, otherwise "iceberg"
@@ -428,14 +449,13 @@ class ExecTester(Strategy):
             self.log.error("Only LIMIT entry bracket orders are currently supported")
             return
 
-        if self.config.order_expire_time_delta_mins is not None:
-            time_in_force = TimeInForce.GTD
-            expire_time = self.clock.utc_now() + pd.Timedelta(
-                minutes=self.config.order_expire_time_delta_mins,
-            )
-        else:
-            time_in_force = TimeInForce.GTC
-            expire_time = None
+        entry_tif, entry_expire = self._resolve_time_in_force(
+            self.config.limit_time_in_force,
+        )
+        sl_tif = self.config.stop_time_in_force or TimeInForce.GTC
+        if sl_tif == TimeInForce.GTD:
+            self.log.error("GTD time in force not supported for bracket stop-loss legs")
+            return
 
         emulation_trigger = (
             TriggerType[self.config.emulation_trigger]
@@ -468,15 +488,15 @@ class ExecTester(Strategy):
             emulation_trigger=emulation_trigger,
             entry_order_type=self.config.bracket_entry_order_type,
             entry_price=price,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
+            time_in_force=entry_tif,
+            expire_time=entry_expire,
             entry_post_only=self.config.use_post_only,
             tp_price=tp_price,
-            tp_time_in_force=time_in_force,
+            tp_time_in_force=entry_tif,
             tp_post_only=self.config.use_post_only,
             sl_trigger_price=sl_trigger_price,
             sl_trigger_type=trigger_type,
-            sl_time_in_force=time_in_force,
+            sl_time_in_force=sl_tif,
         )
 
         entry_order = order_list.first
@@ -493,7 +513,7 @@ class ExecTester(Strategy):
             params=self.config.order_params,
         )
 
-    def submit_stop_order(  # noqa: C901
+    def submit_stop_order(
         self,
         order_side: OrderSide,
         trigger_price: Price,
@@ -514,14 +534,9 @@ class ExecTester(Strategy):
             self.log.warning("SELL stop orders not enabled, skipping")
             return
 
-        if self.config.order_expire_time_delta_mins is not None:
-            time_in_force = TimeInForce.GTD
-            expire_time = self.clock.utc_now() + pd.Timedelta(
-                minutes=self.config.order_expire_time_delta_mins,
-            )
-        else:
-            time_in_force = TimeInForce.GTC
-            expire_time = None
+        time_in_force, expire_time = self._resolve_time_in_force(
+            self.config.stop_time_in_force,
+        )
 
         trigger_type = (
             TriggerType[self.config.stop_trigger_type]
@@ -534,8 +549,51 @@ class ExecTester(Strategy):
             else (self.config.emulation_trigger or TriggerType.NO_TRIGGER)
         )
 
+        display_qty = (
+            self.instrument.make_qty(self.config.order_display_qty)
+            if self.config.order_display_qty is not None
+            else None
+        )
+
+        order = self._create_stop_order(
+            order_side=order_side,
+            trigger_price=trigger_price,
+            limit_price=limit_price,
+            trigger_type=trigger_type,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            display_qty=display_qty,
+            emulation_trigger=emulation_trigger,
+        )
+        if order is None:
+            return
+
+        if order_side == OrderSide.BUY:
+            self.buy_stop_order = order
+        else:
+            self.sell_stop_order = order
+
+        self.submit_order(
+            order,
+            client_id=self.client_id,
+            params=self.config.order_params,
+        )
+
+    def _create_stop_order(
+        self,
+        order_side: OrderSide,
+        trigger_price: Price,
+        limit_price: Price | None,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        expire_time: pd.Timestamp | None,
+        display_qty: Quantity | None,
+        emulation_trigger: TriggerType,
+    ) -> Order | None:
+        assert self.instrument is not None
+
         if self.config.stop_order_type == OrderType.STOP_MARKET:
-            order = self.order_factory.stop_market(
+            return self.order_factory.stop_market(
                 instrument_id=self.config.instrument_id,
                 order_side=order_side,
                 quantity=self.instrument.make_qty(self.config.order_qty),
@@ -549,15 +607,8 @@ class ExecTester(Strategy):
         elif self.config.stop_order_type == OrderType.STOP_LIMIT:
             if limit_price is None:
                 self.log.error("STOP_LIMIT order requires limit_price")
-                return
-
-            if self.config.order_display_qty is not None:
-                # Zero display_qty represents a "hidden" order, otherwise "iceberg"
-                display_qty = self.instrument.make_qty(self.config.order_display_qty)
-            else:
-                display_qty = None
-
-            order = self.order_factory.stop_limit(
+                return None
+            return self.order_factory.stop_limit(
                 instrument_id=self.config.instrument_id,
                 order_side=order_side,
                 quantity=self.instrument.make_qty(self.config.order_qty),
@@ -572,7 +623,7 @@ class ExecTester(Strategy):
                 emulation_trigger=emulation_trigger,
             )
         elif self.config.stop_order_type == OrderType.MARKET_IF_TOUCHED:
-            order = self.order_factory.market_if_touched(
+            return self.order_factory.market_if_touched(
                 instrument_id=self.config.instrument_id,
                 order_side=order_side,
                 quantity=self.instrument.make_qty(self.config.order_qty),
@@ -586,15 +637,8 @@ class ExecTester(Strategy):
         elif self.config.stop_order_type == OrderType.LIMIT_IF_TOUCHED:
             if limit_price is None:
                 self.log.error("LIMIT_IF_TOUCHED order requires limit_price")
-                return
-
-            if self.config.order_display_qty is not None:
-                # Zero display_qty represents a "hidden" order, otherwise "iceberg"
-                display_qty = self.instrument.make_qty(self.config.order_display_qty)
-            else:
-                display_qty = None
-
-            order = self.order_factory.limit_if_touched(
+                return None
+            return self.order_factory.limit_if_touched(
                 instrument_id=self.config.instrument_id,
                 order_side=order_side,
                 quantity=self.instrument.make_qty(self.config.order_qty),
@@ -610,18 +654,7 @@ class ExecTester(Strategy):
             )
         else:
             self.log.error(f"Unknown stop order type: {self.config.stop_order_type}")
-            return
-
-        if order_side == OrderSide.BUY:
-            self.buy_stop_order = order
-        else:
-            self.sell_stop_order = order
-
-        self.submit_order(
-            order,
-            client_id=self.client_id,
-            params=self.config.order_params,
-        )
+            return None
 
     def maintain_stop_buy_orders(
         self,
