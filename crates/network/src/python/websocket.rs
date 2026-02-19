@@ -544,6 +544,7 @@ counter = Counter()
             None,
             None,
             None,
+            None,
         );
 
         let handler_clone = Python::attach(|py| handler.clone_ref(py));
@@ -626,6 +627,7 @@ counter = Counter()
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),
+            None,
             None,
             None,
             None,
