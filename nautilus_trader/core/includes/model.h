@@ -3228,6 +3228,8 @@ CVec level_orders(const struct BookLevel_API *level);
 
 double level_size(const struct BookLevel_API *level);
 
+QuantityRaw level_size_raw(const struct BookLevel_API *level);
+
 double level_exposure(const struct BookLevel_API *level);
 
 /**

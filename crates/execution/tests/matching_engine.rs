@@ -5700,3 +5700,558 @@ fn test_settlement_price_used_on_contract_expiration(
 
     assert_eq!(expiration_fill.last_px, settlement);
 }
+
+#[rstest]
+fn test_trade_tick_seeds_liquidity_consumption_for_stop_market_fill(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Scenario from issue #3596: a BUY trade consumes ask-side liquidity,
+    // then a resting stop market BUY order triggers. The stop order should
+    // fill against post-trade liquidity (reduced book), not the full pre-trade book.
+    //
+    // Book asks: 1000.00×10, 1001.00×10
+    // Stop BUY trigger=1001.00 (above best ask, won't trigger on submission)
+    // Trade: BUY 8 @ 1001.00 (consumes 8 from best ask at 1000.00, triggers stop)
+    // Stop BUY qty=5 fills → should get 2 @ 1000.00 + 3 @ 1001.00
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        liquidity_consumption: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let bid_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("900.00"),
+            Quantity::from("100.000"),
+            100,
+        ))
+        .build();
+    engine.process_order_book_delta(&bid_delta).unwrap();
+
+    let ask1 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("10.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask1).unwrap();
+
+    let ask2 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1001.00"),
+            Quantity::from("10.000"),
+            2,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask2).unwrap();
+
+    // Trigger at 1001.00, above current best ask of 1000.00, so not triggered on submission
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1001.00"))
+        .quantity(Quantity::from("5.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut stop_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // BUY trade at 1001.00 size=8 triggers the stop and consumes 8 from best ask.
+    // ts_event=2 > book.ts_last=1, so seeding proceeds (trade is newer than book).
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1001.00"),
+        Quantity::from("8.000"),
+        AggressorSide::Buyer,
+        TradeId::new("1"),
+        UnixNanos::from(2u64),
+        UnixNanos::from(2u64),
+    );
+    engine.process_trade_tick(&trade);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<_> = saved_messages
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    assert!(
+        !fills.is_empty(),
+        "Stop order should have triggered and filled"
+    );
+
+    let total_qty: f64 = fills.iter().map(|f| f.last_qty.as_f64()).sum();
+    assert!(
+        (total_qty - 5.0).abs() < 0.001,
+        "Total fill qty should be 5.0, was {total_qty}"
+    );
+
+    // Trade consumed 8 of 10 at 1000.00 → only 2 remain at best ask.
+    // The stop order should NOT get all 5 at 1000.00, it should spill to 1001.00.
+    let got_fill_at_1001 = fills.iter().any(|f| f.last_px == Price::from("1001.00"));
+    assert!(
+        got_fill_at_1001,
+        "Expected fill at 1001.00 due to consumed liquidity at 1000.00, \
+         but all fills were at 1000.00. Trade consumption was not applied."
+    );
+}
+
+#[rstest]
+fn test_trade_tick_seeds_consumption_with_stale_entry_reconciles(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Verifies that seed_trade_consumption reconciles stale consumption entries.
+    // If the book level size changed since the last consumption entry was created,
+    // the seeded consumption must update original_size to prevent
+    // apply_liquidity_consumption from resetting consumed to 0.
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        liquidity_consumption: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let bid_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("900.00"),
+            Quantity::from("100.000"),
+            100,
+        ))
+        .build();
+    engine.process_order_book_delta(&bid_delta).unwrap();
+
+    let ask1 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("10.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask1).unwrap();
+
+    let ask2 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1001.00"),
+            Quantity::from("20.000"),
+            2,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask2).unwrap();
+
+    // Fill a market BUY to populate consumption at 1000.00 with original_size=10
+    let mut order1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("3.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order1, account_id);
+
+    // Update ask level to a new size (simulating fresh book data)
+    let ask_update = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Update)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("8.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask_update).unwrap();
+
+    // Consumption entry for 1000.00 now has original_size=10 but book shows 8 (stale).
+    // Stop trigger at 1001.00 (above best ask 1000.00, won't trigger on submission).
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1001.00"))
+        .quantity(Quantity::from("5.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut stop_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // Trade consumes 6 of 8 at 1000.00 and triggers the stop
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1001.00"),
+        Quantity::from("6.000"),
+        AggressorSide::Buyer,
+        TradeId::new("1"),
+        UnixNanos::from(2u64),
+        UnixNanos::from(2u64),
+    );
+    engine.process_trade_tick(&trade);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<_> = saved_messages
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    assert!(
+        !fills.is_empty(),
+        "Stop order should have triggered and filled"
+    );
+
+    // Trade consumed 6 of 8 at 1000.00 → only 2 remain.
+    // Stop BUY qty=5 should spill to next level if consumption was correctly reconciled.
+    let got_fill_at_1001 = fills.iter().any(|f| f.last_px == Price::from("1001.00"));
+    assert!(
+        got_fill_at_1001,
+        "Expected fill at 1001.00 due to consumed liquidity at 1000.00 with stale entry. \
+         Stale original_size was not reconciled, causing consumption to be discarded."
+    );
+}
+
+#[rstest]
+fn test_trade_tick_skips_seeding_when_book_already_updated(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // When deltas arrive before the trade tick (e.g., Binance), the book already
+    // reflects the trade's consumed volume. Seeding would double-count consumption,
+    // producing systematically pessimistic fills. Verify we skip seeding in this case.
+    //
+    // Book: asks 1000.00×10, 1001.00×20
+    // Delta arrives with ts_event=3 reducing 1000.00→2 (trade consumed 8)
+    // Trade arrives with ts_event=2 → book.ts_last(3) > trade.ts_event(2) → skip
+    // Then a market BUY gets full book liquidity (not phantom-consumed)
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        liquidity_consumption: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let bid_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("900.00"),
+            Quantity::from("100.000"),
+            100,
+        ))
+        .build();
+    engine.process_order_book_delta(&bid_delta).unwrap();
+
+    let ask1 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("10.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask1).unwrap();
+
+    let ask2 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1001.00"),
+            Quantity::from("20.000"),
+            2,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask2).unwrap();
+
+    // Delta arrives with ts_event=3 (after trade), reducing 1000.00→2
+    let ask_update = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Update)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("2.000"),
+            1,
+        ))
+        .ts_event(UnixNanos::from(3))
+        .build();
+    engine.process_order_book_delta(&ask_update).unwrap();
+
+    // Trade tick with ts_event=2 → book.ts_last(3) > trade.ts_event(2) → skip seeding
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1000.00"),
+        Quantity::from("8.000"),
+        AggressorSide::Buyer,
+        TradeId::new("1"),
+        UnixNanos::from(2u64),
+        UnixNanos::from(2u64),
+    );
+    engine.process_trade_tick(&trade);
+
+    // Now submit a market BUY. If seeding was incorrectly applied, it would have
+    // consumed 2 at 1000.00 (phantom), leaving 0 available at best ask.
+    // With correct skip, the full 2 at 1000.00 should be available.
+    clear_order_event_handler_messages(&order_event_handler);
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("5.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<_> = saved_messages
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    // With seeding skipped, fills should use actual book: 2 at 1000.00, 3 at 1001.00
+    // If seeding had NOT been skipped, 1000.00 would be fully consumed → 0+5 at 1001.00
+    let got_fill_at_1000 = fills.iter().any(|f| f.last_px == Price::from("1000.00"));
+    assert!(
+        got_fill_at_1000,
+        "Should fill at 1000.00 from actual book (seeding should be skipped for \
+         already-updated book). If all fills are at 1001.00, trade seeding double-counted."
+    );
+}
+
+#[rstest]
+fn test_trade_tick_seeds_consumption_when_book_ts_equals_trade_ts(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Verifies that seeding proceeds when book.ts_last == trade.ts_event.
+    // Equal timestamps don't prove deltas already reflect the trade, only
+    // strictly newer book timestamps skip seeding. This pins the > guard.
+    //
+    // Book deltas: ts_event=1 → book.ts_last=1
+    // Trade: ts_event=1 → book.ts_last(1) > trade.ts_event(1) is false → seed
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        liquidity_consumption: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let bid_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("900.00"),
+            Quantity::from("100.000"),
+            100,
+        ))
+        .build();
+    engine.process_order_book_delta(&bid_delta).unwrap();
+
+    let ask1 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("10.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask1).unwrap();
+
+    let ask2 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1001.00"),
+            Quantity::from("10.000"),
+            2,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask2).unwrap();
+
+    // Stop trigger above best ask so it doesn't trigger on submission
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1001.00"))
+        .quantity(Quantity::from("5.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut stop_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // Trade with ts_event=1 (same as book deltas) → seeding should proceed
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1001.00"),
+        Quantity::from("8.000"),
+        AggressorSide::Buyer,
+        TradeId::new("1"),
+        UnixNanos::from(1u64),
+        UnixNanos::from(1u64),
+    );
+    engine.process_trade_tick(&trade);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<_> = saved_messages
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    assert!(
+        !fills.is_empty(),
+        "Stop order should have triggered and filled"
+    );
+
+    // Trade consumed 8 of 10 at 1000.00 → only 2 remain.
+    // If seeding was incorrectly skipped (>= guard), all 5 would fill at 1000.00.
+    let got_fill_at_1001 = fills.iter().any(|f| f.last_px == Price::from("1001.00"));
+    assert!(
+        got_fill_at_1001,
+        "Expected fill at 1001.00, seeding should proceed when book.ts_last == trade.ts_event. \
+         If all fills at 1000.00, the guard incorrectly skipped seeding on equal timestamps."
+    );
+}
+
+#[rstest]
+fn test_trade_tick_seeds_consumption_for_seller_side(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Verifies that seller-side trades correctly seed bid_consumption.
+    // A SELL trade consumes bid-side liquidity, then a resting stop market SELL
+    // order triggers and fills against the reduced bid book.
+    //
+    // Book bids: 1000.00×10, 999.00×10
+    // Stop SELL trigger=999.00 (below best bid, won't trigger on submission)
+    // Trade: SELL 8 @ 999.00 (consumes 8 from best bid at 1000.00, triggers stop)
+    // Stop SELL qty=5 fills → should get 2 @ 1000.00 + 3 @ 999.00
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        liquidity_consumption: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let ask_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1100.00"),
+            Quantity::from("100.000"),
+            100,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask_delta).unwrap();
+
+    let bid1 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1000.00"),
+            Quantity::from("10.000"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&bid1).unwrap();
+
+    let bid2 = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("999.00"),
+            Quantity::from("10.000"),
+            2,
+        ))
+        .build();
+    engine.process_order_book_delta(&bid2).unwrap();
+
+    // Stop SELL trigger below best bid so it doesn't trigger on submission
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("999.00"))
+        .quantity(Quantity::from("5.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut stop_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // SELL trade at 999.00 size=8 triggers the stop and consumes 8 from best bid.
+    // ts_event=2 > book.ts_last=1, so seeding proceeds.
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("999.00"),
+        Quantity::from("8.000"),
+        AggressorSide::Seller,
+        TradeId::new("1"),
+        UnixNanos::from(2u64),
+        UnixNanos::from(2u64),
+    );
+    engine.process_trade_tick(&trade);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<_> = saved_messages
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    assert!(
+        !fills.is_empty(),
+        "Stop order should have triggered and filled"
+    );
+
+    let total_qty: f64 = fills.iter().map(|f| f.last_qty.as_f64()).sum();
+    assert!(
+        (total_qty - 5.0).abs() < 0.001,
+        "Total fill qty should be 5.0, was {total_qty}"
+    );
+
+    // Trade consumed 8 of 10 at 1000.00 → only 2 remain at best bid.
+    // The stop SELL should spill to 999.00.
+    let got_fill_at_999 = fills.iter().any(|f| f.last_px == Price::from("999.00"));
+    assert!(
+        got_fill_at_999,
+        "Expected fill at 999.00 due to consumed bid liquidity at 1000.00, \
+         but all fills were at 1000.00. Seller-side trade consumption was not applied."
+    );
+}

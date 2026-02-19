@@ -2192,6 +2192,8 @@ cdef extern from "../includes/model.h":
 
     double level_size(const BookLevel_API *level);
 
+    QuantityRaw level_size_raw(const BookLevel_API *level);
+
     double level_exposure(const BookLevel_API *level);
 
     # Drops a `CVec` of `BookLevel_API` values.

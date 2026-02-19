@@ -638,6 +638,24 @@ Trade ticks provide evidence of executable liquidity at the trade price. When a 
 not reflected in the current book, the engine can use the trade quantity as available liquidity, subject to
 the same consumption tracking rules (when enabled).
 
+**Trade consumption seeding:**
+
+When using L2/L3 book data and a trade tick triggers order matching (e.g., triggering a resting stop order),
+the trade itself consumed liquidity from the book. Before simulating fills for triggered orders, the engine
+pre-seeds the consumption maps with the trade's consumed volume. This prevents triggered orders from filling
+against liquidity that the triggering trade already consumed. This seeding is skipped for L1 books, where the
+trade tick has already updated the single top-of-book level directly.
+
+For example, if the book has 10 units at the best ask and a BUY trade of size 8 triggers a stop market BUY
+for 5 units, the stop order sees only 2 units remaining at best ask (10 - 8) and must fill the remaining
+3 units at the next price level. Without this seeding, the stop would incorrectly fill all 5 units at the
+best ask price.
+
+The engine uses a timestamp guard to avoid double-counting: if the book's most recent update (`ts_last`)
+is newer than the trade's event time (`ts_event`), seeding is skipped. This handles exchanges like Binance
+where depth deltas arrive before the corresponding trade tick, so the book already reflects the consumed
+liquidity, so additional seeding would over-penalize fills.
+
 :::note
 As the `FillModel` continues to evolve, future versions may introduce more sophisticated simulation of order execution dynamics, including:
 

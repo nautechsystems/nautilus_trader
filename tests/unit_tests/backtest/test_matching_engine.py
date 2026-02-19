@@ -4889,11 +4889,14 @@ class TestOrderMatchingEngineLiquidityConsumption:
         matching_engine.process_order(order2, self.account_id)
         matching_engine.iterate(timestamp_ns=2)
 
-        # Assert: consumption at 99.00 preserved despite 100.00 update
+        # Assert: consumption at 99.00 preserved despite 100.00 update,
+        # order spills to 100.00 for remaining 100
         filled_events = [m for m in messages if isinstance(m, OrderFilled)]
-        assert len(filled_events) == 1
+        assert len(filled_events) == 2
         assert filled_events[0].last_qty == Quantity.from_str("100.000")
         assert filled_events[0].last_px == Price.from_str("99.00")
+        assert filled_events[1].last_qty == Quantity.from_str("100.000")
+        assert filled_events[1].last_px == Price.from_str("100.00")
 
     def test_liquidity_consumption_resets_on_snapshot_flag(self):
         """
@@ -8363,3 +8366,311 @@ class TestPriceProtection:
         filled_events = [m for m in messages if isinstance(m, OrderFilled)]
         total_filled = sum(f.last_qty.as_double() for f in filled_events)
         assert total_filled == 5.0, f"Expected 5.0 filled, was {total_filled}"
+
+
+class TestTradeConsumptionSeeding:
+    def setup(self):
+        self.clock = TestClock()
+        self.trader_id = TestIdStubs.trader_id()
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        self.instrument = _ETHUSDT_PERP_BINANCE
+        self.account_id = TestIdStubs.account_id()
+        self.cache = TestComponentStubs.cache()
+        self.cache.add_instrument(self.instrument)
+
+    def _make_l2_engine(self):
+        return OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=False,
+            trade_execution=True,
+            liquidity_consumption=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+    def _add_book_level(self, engine, side, price, size, order_id, ts_event=0):
+        delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=side,
+                price=Price.from_str(price),
+                size=Quantity.from_str(size),
+                order_id=order_id,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=ts_event,
+            ts_init=ts_event,
+        )
+        engine.process_order_book_delta(delta)
+
+    def test_trade_seeds_consumption_for_stop_market_fill(self) -> None:
+        # Arrange
+        engine = self._make_l2_engine()
+        self._add_book_level(engine, OrderSide.BUY, "900.00", "100.000", 100)
+        self._add_book_level(engine, OrderSide.SELL, "1000.00", "10.000", 1)
+        self._add_book_level(engine, OrderSide.SELL, "1001.00", "10.000", 2)
+
+        stop = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(5.0),
+            trigger_price=Price.from_str("1001.00"),
+            trigger_type=TriggerType.DEFAULT,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+        engine.process_order(stop, self.account_id)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Act: trade consumes 8 of 10 at 1000.00, triggers stop.
+        # ts_event=2 > book.ts_last=0, so seeding proceeds.
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1001.0,
+            size=8.0,
+            aggressor_side=AggressorSide.BUYER,
+            ts_event=2,
+            ts_init=2,
+        )
+        engine.process_trade_tick(trade)
+
+        # Assert: trade consumed 8 of 10 at 1000.00, should spill to 1001.00
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) > 0, "Stop order should have triggered and filled"
+        got_fill_at_1001 = any(f.last_px == Price.from_str("1001.00") for f in fills)
+        assert got_fill_at_1001, (
+            "Expected fill at 1001.00 due to consumed liquidity at 1000.00, "
+            "but all fills were at 1000.00. Trade consumption was not applied."
+        )
+
+    def test_trade_seeds_consumption_with_stale_entry_reconciles(self) -> None:
+        # Arrange
+        engine = self._make_l2_engine()
+        self._add_book_level(engine, OrderSide.BUY, "900.00", "100.000", 100)
+        self._add_book_level(engine, OrderSide.SELL, "1000.00", "10.000", 1)
+        self._add_book_level(engine, OrderSide.SELL, "1001.00", "20.000", 2)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        order1 = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(3.0),
+            client_order_id=TestIdStubs.client_order_id(1),
+        )
+        engine.process_order(order1, self.account_id)
+
+        update_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                side=OrderSide.SELL,
+                price=Price.from_str("1000.00"),
+                size=Quantity.from_str("8.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        engine.process_order_book_delta(update_delta)
+
+        stop = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(2),
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(5.0),
+            trigger_price=Price.from_str("1001.00"),
+            trigger_type=TriggerType.DEFAULT,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+        engine.process_order(stop, self.account_id)
+        messages.clear()
+
+        # Act: trade consumes 6 of 8 at 1000.00, triggers stop
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1001.0,
+            size=6.0,
+            aggressor_side=AggressorSide.BUYER,
+            ts_event=2,
+            ts_init=2,
+        )
+        engine.process_trade_tick(trade)
+
+        # Assert
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) > 0, "Stop order should have triggered and filled"
+        got_fill_at_1001 = any(f.last_px == Price.from_str("1001.00") for f in fills)
+        assert got_fill_at_1001, (
+            "Expected fill at 1001.00 due to consumed liquidity at 1000.00 with stale entry. "
+            "Stale original_size was not reconciled."
+        )
+
+    def test_trade_skips_seeding_when_book_already_updated(self) -> None:
+        # Arrange
+        engine = self._make_l2_engine()
+        self._add_book_level(engine, OrderSide.BUY, "900.00", "100.000", 100)
+        self._add_book_level(engine, OrderSide.SELL, "1000.00", "10.000", 1)
+        self._add_book_level(engine, OrderSide.SELL, "1001.00", "20.000", 2)
+
+        # Delta with ts_event=3 (after trade) reduces 1000.00→2
+        update_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                side=OrderSide.SELL,
+                price=Price.from_str("1000.00"),
+                size=Quantity.from_str("2.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=3,
+            ts_init=3,
+        )
+        engine.process_order_book_delta(update_delta)
+
+        # Trade with ts_event=2 → book.ts_last(3) > trade.ts_event(2) → skip seeding
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1000.0,
+            size=8.0,
+            aggressor_side=AggressorSide.BUYER,
+            ts_event=2,
+            ts_init=2,
+        )
+        engine.process_trade_tick(trade)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Act
+        order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(5.0),
+            client_order_id=TestIdStubs.client_order_id(),
+        )
+        engine.process_order(order, self.account_id)
+
+        # Assert: seeding skipped, so full 2 at 1000.00 should be available
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        got_fill_at_1000 = any(f.last_px == Price.from_str("1000.00") for f in fills)
+        assert got_fill_at_1000, (
+            "Should fill at 1000.00 from actual book (seeding should be skipped for "
+            "already-updated book). If all fills at 1001.00, trade seeding double-counted."
+        )
+
+    def test_trade_seeds_consumption_when_book_ts_equals_trade_ts(self) -> None:
+        # Arrange
+        engine = self._make_l2_engine()
+        self._add_book_level(engine, OrderSide.BUY, "900.00", "100.000", 100)
+        self._add_book_level(engine, OrderSide.SELL, "1000.00", "10.000", 1)
+        self._add_book_level(engine, OrderSide.SELL, "1001.00", "10.000", 2)
+
+        stop = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(5.0),
+            trigger_price=Price.from_str("1001.00"),
+            trigger_type=TriggerType.DEFAULT,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+        engine.process_order(stop, self.account_id)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Act: book.ts_last=0, trade ts_event=0. Equal so 0 > 0 is false, seeding proceeds.
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1001.0,
+            size=8.0,
+            aggressor_side=AggressorSide.BUYER,
+            ts_event=0,
+            ts_init=0,
+        )
+        engine.process_trade_tick(trade)
+
+        # Assert
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) > 0, "Stop order should have triggered and filled"
+        got_fill_at_1001 = any(f.last_px == Price.from_str("1001.00") for f in fills)
+        assert got_fill_at_1001, (
+            "Expected fill at 1001.00, seeding should proceed when book.ts_last == trade.ts_event. "
+            "If all fills at 1000.00, the guard incorrectly skipped seeding on equal timestamps."
+        )
+
+    def test_trade_seeds_consumption_for_seller_side(self) -> None:
+        # Arrange
+        engine = self._make_l2_engine()
+        self._add_book_level(engine, OrderSide.SELL, "1100.00", "100.000", 100)
+        self._add_book_level(engine, OrderSide.BUY, "1000.00", "10.000", 1)
+        self._add_book_level(engine, OrderSide.BUY, "999.00", "10.000", 2)
+
+        stop = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.SELL,
+            quantity=self.instrument.make_qty(5.0),
+            trigger_price=Price.from_str("999.00"),
+            trigger_type=TriggerType.DEFAULT,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+        engine.process_order(stop, self.account_id)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Act: SELL trade consumes 8 from best bid at 1000.00, triggers stop.
+        # ts_event=2 > book.ts_last=0, so seeding proceeds.
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=999.0,
+            size=8.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=2,
+            ts_init=2,
+        )
+        engine.process_trade_tick(trade)
+
+        # Assert
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) > 0, "Stop order should have triggered and filled"
+        total_qty = sum(f.last_qty.as_double() for f in fills)
+        assert abs(total_qty - 5.0) < 0.001, f"Total fill qty should be 5.0, was {total_qty}"
+        got_fill_at_999 = any(f.last_px == Price.from_str("999.00") for f in fills)
+        assert got_fill_at_999, (
+            "Expected fill at 999.00 due to consumed bid liquidity at 1000.00, "
+            "but all fills were at 1000.00. Seller-side trade consumption was not applied."
+        )

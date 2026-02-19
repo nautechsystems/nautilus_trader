@@ -92,6 +92,8 @@ from nautilus_trader.core.rust.common cimport time_event_handler_drop
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport FIXED_PRECISION
+from nautilus_trader.core.rust.model cimport PRICE_RAW_MAX
+from nautilus_trader.core.rust.model cimport PRICE_RAW_MIN
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
@@ -115,10 +117,13 @@ from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.core.rust.model cimport level_price
+from nautilus_trader.core.rust.model cimport level_size_raw
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
 from nautilus_trader.core.rust.model cimport orderbook_best_bid_price
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
+from nautilus_trader.core.rust.model cimport orderbook_ts_last
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
@@ -138,6 +143,7 @@ from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
+from nautilus_trader.model.book cimport BookLevel
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
@@ -4379,6 +4385,9 @@ cdef class OrderMatchingEngine:
         self._last_trade_size = tick.size
         self._trade_consumption = 0
 
+        if self._liquidity_consumption and self.book_type != BookType.L1_MBP:
+            self._seed_trade_consumption(price_raw, tick._mem.size.raw, tick._mem.ts_event, aggressor_side)
+
         # Buyer trades consume ask-side (SELL orders), seller trades consume bid-side (BUY orders)
         if self._queue_position:
             self._decrement_queue_on_trade(price_raw, tick._mem.size.raw, aggressor_side)
@@ -5841,6 +5850,74 @@ cdef class OrderMatchingEngine:
             # Fall back to standard logic
             return self.determine_market_price_and_volume(order)
 
+    cdef void _seed_trade_consumption(
+        self,
+        PriceRaw trade_price_raw,
+        QuantityRaw trade_size_raw,
+        uint64_t trade_ts_event,
+        AggressorSide aggressor_side,
+    ):
+        if trade_size_raw == 0:
+            return
+
+        # If the book was updated after the trade's event time, depth deltas
+        # already reflect this trade's consumed volume, skip to avoid double-counting
+        if orderbook_ts_last(&self._book._mem) > trade_ts_event:
+            return
+
+        cdef:
+            list all_levels
+            list levels
+            dict consumption
+            QuantityRaw level_size
+            QuantityRaw available
+            QuantityRaw consume
+            QuantityRaw already_consumed
+            QuantityRaw remaining
+            PriceRaw level_price_raw
+            tuple level_state
+
+        if aggressor_side == AggressorSide.BUYER:
+            all_levels = self._book.asks()
+            consumption = self._ask_consumption
+        elif aggressor_side == AggressorSide.SELLER:
+            all_levels = self._book.bids()
+            consumption = self._bid_consumption
+        else:
+            return
+
+        cdef BookLevel level
+        levels = []
+        for level in all_levels:
+            level_price_raw = level_price(&level._mem).raw
+            if aggressor_side == AggressorSide.BUYER and level_price_raw > trade_price_raw:
+                break
+            if aggressor_side == AggressorSide.SELLER and level_price_raw < trade_price_raw:
+                break
+            levels.append(level)
+
+        remaining = trade_size_raw
+        for level in levels:
+            if remaining == 0:
+                break
+            level_size = level_size_raw(&level._mem)
+
+            level_price_raw = level_price(&level._mem).raw
+            level_state = consumption.get(level_price_raw)
+            if level_state is not None:
+                # Reconcile stale level size to prevent reset in _apply_liquidity_consumption
+                if level_state[0] != level_size:
+                    already_consumed = 0
+                else:
+                    already_consumed = level_state[1]
+            else:
+                already_consumed = 0
+
+            available = level_size - already_consumed if level_size > already_consumed else 0
+            consume = min(remaining, available)
+            consumption[level_price_raw] = (level_size, already_consumed + consume)
+            remaining -= consume
+
     cdef list[tuple[Price, Quantity]] _apply_liquidity_consumption(
         self,
         list[tuple[Price, Quantity]] fills,
@@ -5998,16 +6075,31 @@ cdef class OrderMatchingEngine:
         list[tuple[Price, Quantity]]
 
         """
-        cdef list[tuple[Price, Quantity]] fills = self._book.simulate_fills(
-            order,
-            price_prec=self._price_prec,
-            size_prec=self._size_prec,
-            is_aggressive=True,
-        )
+        cdef Price price
+        cdef list[tuple[Price, Quantity]] fills
+
+        # When liquidity consumption is enabled, get ALL crossed levels so that
+        # consumed levels can be filtered out while still finding valid ones
+        if self._liquidity_consumption:
+            if order.side == OrderSide.BUY:
+                price = Price.from_raw_c(PRICE_RAW_MAX, FIXED_PRECISION)
+            else:
+                price = Price.from_raw_c(PRICE_RAW_MIN, FIXED_PRECISION)
+            fills = self._book.get_all_crossed_levels(order.side, price, self._size_prec)
+        else:
+            fills = self._book.simulate_fills(
+                order,
+                price_prec=self._price_prec,
+                size_prec=self._size_prec,
+                is_aggressive=True,
+            )
 
         # For stop market and market-if-touched orders during bar H/L/C processing, fill at trigger price
         # (market moved through the trigger). For gaps/immediate triggers, fill at market.
         cdef Price triggered_price
+        cdef QuantityRaw remaining_qty
+        cdef QuantityRaw capped_qty_raw
+        cdef list[tuple[Price, Quantity]] capped_fills
         if (
             not self._fill_at_market
             and self._book.book_type == BookType.L1_MBP
@@ -6021,6 +6113,19 @@ cdef class OrderMatchingEngine:
             triggered_price = order.get_triggered_price_c()
             if triggered_price is not None:
                 fills[0] = (triggered_price, fills[0][1])
+
+                # Skip liquidity consumption for trigger price fills (gap price may not exist in book)
+                remaining_qty = order.leaves_qty._mem.raw
+                capped_fills = []
+                for fill_price, fill_qty in fills:
+                    if remaining_qty == 0:
+                        break
+                    capped_qty_raw = min((<Quantity>fill_qty)._mem.raw, remaining_qty)
+                    if capped_qty_raw == 0:
+                        continue
+                    remaining_qty -= capped_qty_raw
+                    capped_fills.append((fill_price, Quantity.from_raw_c(capped_qty_raw, (<Quantity>fill_qty)._mem.precision)))
+                return capped_fills
 
         return fills
 

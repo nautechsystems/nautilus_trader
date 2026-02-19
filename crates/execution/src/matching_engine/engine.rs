@@ -291,6 +291,66 @@ impl OrderMatchingEngine {
         adjusted_fills
     }
 
+    fn seed_trade_consumption(
+        &mut self,
+        trade_price_raw: PriceRaw,
+        trade_size_raw: QuantityRaw,
+        trade_ts_event: UnixNanos,
+        aggressor_side: AggressorSide,
+    ) {
+        if trade_size_raw == 0 {
+            return;
+        }
+
+        // If the book was updated after the trade's event time, depth deltas
+        // already reflect this trade's consumed volume, skip to avoid double-counting
+        if self.book.ts_last > trade_ts_event {
+            return;
+        }
+
+        let consumption = match aggressor_side {
+            AggressorSide::Buyer => &mut self.ask_consumption,
+            AggressorSide::Seller => &mut self.bid_consumption,
+            AggressorSide::NoAggressor => return,
+        };
+
+        let levels: Vec<_> = match aggressor_side {
+            AggressorSide::Buyer => self
+                .book
+                .asks(None)
+                .take_while(|l| l.price.value.raw <= trade_price_raw)
+                .collect(),
+            AggressorSide::Seller => self
+                .book
+                .bids(None)
+                .take_while(|l| l.price.value.raw >= trade_price_raw)
+                .collect(),
+            _ => unreachable!(),
+        };
+
+        let mut remaining = trade_size_raw;
+        for level in &levels {
+            if remaining == 0 {
+                break;
+            }
+            let level_size = level.size_raw();
+            let entry = consumption
+                .entry(level.price.value.raw)
+                .or_insert((level_size, 0));
+
+            // Reconcile stale level size to prevent reset in apply_liquidity_consumption
+            if entry.0 != level_size {
+                entry.0 = level_size;
+                entry.1 = 0;
+            }
+
+            let available = level_size.saturating_sub(entry.1);
+            let consume = min(remaining, available);
+            entry.1 += consume;
+            remaining -= consume;
+        }
+    }
+
     /// Sets the fill model for the matching engine.
     pub fn set_fill_model(&mut self, fill_model: FillModelAny) {
         self.fill_model = fill_model;
@@ -1091,6 +1151,10 @@ impl OrderMatchingEngine {
 
         self.last_trade_size = Some(trade.size);
         self.trade_consumption = 0;
+
+        if self.config.liquidity_consumption && self.book_type != BookType::L1_MBP {
+            self.seed_trade_consumption(price_raw, trade.size.raw, trade.ts_event, aggressor_side);
+        }
 
         self.decrement_queue_on_trade(price_raw, trade.size.raw, aggressor_side);
         self.iterate(trade.ts_init, aggressor_side);

@@ -504,6 +504,7 @@ cdef class OrderMatchingEngine:
     cpdef list[tuple[Price, Quantity]] determine_market_price_and_volume(self, Order order)
     cdef list[tuple[Price, Quantity]] determine_market_fills_with_simulation(self, Order order)
     cdef list[tuple[Price, Quantity]] determine_limit_fills_with_simulation(self, Order order)
+    cdef void _seed_trade_consumption(self, PriceRaw trade_price_raw, QuantityRaw trade_size_raw, uint64_t trade_ts_event, AggressorSide aggressor_side)
     cdef list[tuple[Price, Quantity]] _apply_liquidity_consumption(self, list fills, OrderSide order_side, QuantityRaw max_qty_raw=*, list[Price] book_prices=*)
     cdef Quantity determine_trade_fill_qty(self, Order order)
     cpdef void fill_market_order(self, Order order)
