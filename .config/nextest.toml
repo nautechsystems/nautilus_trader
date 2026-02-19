@@ -1,5 +1,6 @@
 [test-groups]
 serial-tests = { max-threads = 1 }
+large-data-tests = { max-threads = 1 }
 
 [profile.default]
 # Default settings
@@ -11,6 +12,11 @@ test-group = 'serial-tests'
 [[profile.default.overrides]]
 filter = 'test(test_order_book)'
 slow-timeout = { period = "300s" }
+
+# Tests that download large data files share the same target paths across binaries
+[[profile.default.overrides]]
+filter = 'binary(grid_mm_itch) | binary(orderbook_integration)'
+test-group = 'large-data-tests'
 
 # Websocket tests can be flaky due to timing on low-spec runners, give them extra retries
 [[profile.default.overrides]]

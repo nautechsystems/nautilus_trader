@@ -91,6 +91,22 @@ For datasets requiring format conversion (e.g., binary ITCH to Parquet):
 5. Add path helper functions to `crates/testkit/src/common.rs`.
 6. Write tests that consume the dataset.
 
+## Test runner serialization
+
+Tests that download large data files share target paths across test binaries.
+Because `nextest` runs each binary in a separate process, concurrent downloads
+to the same path can race. The nextest config at `.config/nextest.toml` defines
+a `large-data-tests` group with `max-threads = 1` to serialize these binaries.
+
+When adding a new test binary that downloads large shared files, add it to the
+group filter:
+
+```toml
+[[profile.default.overrides]]
+filter = 'binary(grid_mm_itch) | binary(orderbook_integration) | binary(your_new_binary)'
+test-group = 'large-data-tests'
+```
+
 ## Regenerating datasets
 
 When a schema change invalidates a large Parquet file, regenerate it from the
