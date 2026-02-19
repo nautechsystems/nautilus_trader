@@ -49,6 +49,7 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
@@ -337,6 +338,27 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             reported=account_state.is_reported,
             ts_event=account_state.ts_event,
         )
+
+    async def _query_account(self, command: QueryAccount) -> None:
+        if not self._wallet_address:
+            self._log.warning("Cannot query account: wallet not initialized")
+            return
+
+        try:
+            pyo3_account_state = await self._http_client.request_account_state(
+                address=self._wallet_address,
+                subaccount_number=self._subaccount,
+                account_id=self.pyo3_account_id,
+            )
+            account_state = AccountState.from_dict(pyo3_account_state.to_dict())
+            self.generate_account_state(
+                balances=account_state.balances,
+                margins=account_state.margins,
+                reported=account_state.is_reported,
+                ts_event=account_state.ts_event,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to query account state: {e}")
 
     _TERMINAL_STATUSES = frozenset(
         {

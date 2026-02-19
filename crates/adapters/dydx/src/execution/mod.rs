@@ -2041,10 +2041,72 @@ impl ExecutionClient for DydxExecutionClient {
     }
 
     fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+        let http_client = self.http_client.clone();
+        let wallet_address = self.wallet_address.clone();
+        let subaccount_number = self.subaccount_number;
+        let account_id = self.core.account_id;
+        let emitter = self.emitter.clone();
+
+        self.spawn_task("query_account", async move {
+            let account_state = http_client
+                .request_account_state(&wallet_address, subaccount_number, account_id)
+                .await
+                .context("failed to query account state")?;
+
+            emitter.emit_account_state(
+                account_state.balances.clone(),
+                account_state.margins.clone(),
+                account_state.is_reported,
+                account_state.ts_event,
+            );
+            Ok(())
+        });
+
         Ok(())
     }
 
-    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+        log::debug!("Querying order: client_order_id={}", cmd.client_order_id);
+
+        let http_client = self.http_client.clone();
+        let wallet_address = self.wallet_address.clone();
+        let subaccount_number = self.subaccount_number;
+        let account_id = self.core.account_id;
+        let emitter = self.emitter.clone();
+        let client_order_id = cmd.client_order_id;
+        let venue_order_id = cmd.venue_order_id;
+        let instrument_id = cmd.instrument_id;
+
+        self.spawn_task("query_order", async move {
+            let reports = http_client
+                .request_order_status_reports(
+                    &wallet_address,
+                    subaccount_number,
+                    account_id,
+                    Some(instrument_id),
+                )
+                .await
+                .context("failed to query order status")?;
+
+            // Find matching report by client_order_id or venue_order_id
+            let report = reports.into_iter().find(|r| {
+                if venue_order_id.is_some_and(|vid| r.venue_order_id == vid) {
+                    return true;
+                }
+                r.client_order_id.is_some_and(|cid| cid == client_order_id)
+            });
+
+            if let Some(report) = report {
+                emitter.send_order_status_report(report);
+            } else {
+                log::warn!(
+                    "No order found for client_order_id={client_order_id}, venue_order_id={venue_order_id:?}"
+                );
+            }
+
+            Ok(())
+        });
+
         Ok(())
     }
 
