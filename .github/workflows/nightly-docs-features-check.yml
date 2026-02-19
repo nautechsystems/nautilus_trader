@@ -1,4 +1,4 @@
-name: docs-features-check
+name: nightly-docs-features-check
 
 # Documentation and feature compatibility checks - runs nightly and on-demand.
 #
@@ -41,7 +41,7 @@ jobs:
           override: true
 
       - name: Install Rust nightly
-        run: rustup toolchain install nightly --profile minimal --component rustdoc
+        run: rustup toolchain install nightly
 
       # https://github.com/taiki-e/install-action
       - name: Install cargo-hack
@@ -51,6 +51,7 @@ jobs:
 
       - name: Run docsrs-check
         env:
+          DOCS_RS: "1"
           RUSTDOCFLAGS: "--cfg docsrs -D warnings"
         run: cargo +nightly hack --workspace doc --no-deps --all-features
 
@@ -77,6 +78,9 @@ jobs:
         with:
           toolchain: ${{ env.TOOLCHAIN }}
           override: true
+
+      - name: Install Cap'n Proto
+        uses: ./.github/actions/install-capnp
 
       # https://github.com/taiki-e/install-action
       - name: Install cargo-hack
