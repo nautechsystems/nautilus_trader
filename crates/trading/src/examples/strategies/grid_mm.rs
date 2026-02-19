@@ -311,6 +311,11 @@ impl DataActor for GridMarketMaker {
 
         let instrument_id = self.config.instrument_id;
 
+        log::info!(
+            "Requoting grid: mid={mid}, last_mid={:?}, instrument={instrument_id}",
+            self.last_quoted_mid,
+        );
+
         if self.config.on_cancel_resubmit {
             let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
             let inst = Some(&instrument_id);
