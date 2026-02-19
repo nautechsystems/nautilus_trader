@@ -45,7 +45,10 @@ use super::consts::{
 };
 use crate::{
     common::credential::EvmPrivateKey,
-    http::{error::Result, models::HyperliquidExecBuilderFee},
+    http::{
+        error::Result,
+        models::{HyperliquidExecBuilderFee, RESPONSE_STATUS_OK},
+    },
 };
 
 /// Builder fee approval rate (0.01% = 1 basis point).
@@ -284,7 +287,7 @@ pub async fn approve_builder_fee(
         .unwrap_or("unknown")
         .to_string();
 
-    let success = status == "ok";
+    let success = status == RESPONSE_STATUS_OK;
     let message = response_json.get("response").map(|v: &serde_json::Value| {
         if v.is_string() {
             v.as_str().unwrap().to_string()
@@ -497,7 +500,7 @@ pub async fn revoke_builder_fee(
         .unwrap_or("unknown")
         .to_string();
 
-    let success = status == "ok";
+    let success = status == RESPONSE_STATUS_OK;
     let message = response_json.get("response").map(|v: &serde_json::Value| {
         if v.is_string() {
             v.as_str().unwrap().to_string()

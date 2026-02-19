@@ -376,8 +376,14 @@ impl ExchangeAction {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
+    use crate::http::models::{
+        Cloid, HyperliquidExecCancelByCloidRequest, HyperliquidExecLimitParams,
+        HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
+        HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+    };
 
     #[rstest]
     fn test_info_request_meta() {
@@ -398,13 +404,6 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_order() {
-        use rust_decimal::Decimal;
-
-        use crate::http::models::{
-            HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
-            HyperliquidExecTif,
-        };
-
         let order = HyperliquidExecPlaceOrderRequest {
             asset: 0,
             is_buy: true,
@@ -428,8 +427,6 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_cancel() {
-        use crate::http::models::{Cloid, HyperliquidExecCancelByCloidRequest};
-
         let cancel = HyperliquidExecCancelByCloidRequest {
             asset: 0,
             cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
@@ -442,13 +439,6 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_serialization() {
-        use rust_decimal::Decimal;
-
-        use crate::http::models::{
-            HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
-            HyperliquidExecTif,
-        };
-
         let order = HyperliquidExecPlaceOrderRequest {
             asset: 0,
             is_buy: true,
@@ -512,8 +502,6 @@ mod tests {
 
     #[rstest]
     fn test_cancel_by_cloid_serialization() {
-        use crate::http::models::{Cloid, HyperliquidExecCancelByCloidRequest};
-
         let cancel_request = HyperliquidExecCancelByCloidRequest {
             asset: 0,
             cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
@@ -527,10 +515,6 @@ mod tests {
 
     #[rstest]
     fn test_modify_serialization() {
-        use rust_decimal::Decimal;
-
-        use crate::http::models::HyperliquidExecModifyOrderRequest;
-
         let modify_request = HyperliquidExecModifyOrderRequest {
             asset: 0,
             oid: 12345,

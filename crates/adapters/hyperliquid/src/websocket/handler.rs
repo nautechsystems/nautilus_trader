@@ -39,6 +39,7 @@ use ustr::Ustr;
 
 use super::{
     client::AssetContextDataType,
+    enums::HyperliquidWsChannel,
     error::HyperliquidWsError,
     messages::{
         CandleData, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
@@ -155,7 +156,6 @@ impl FeedHandler {
         self.signal.load(Ordering::Relaxed)
     }
 
-    /// Sends a WebSocket message with retry logic.
     async fn send_with_retry(&self, payload: String) -> anyhow::Result<()> {
         if let Some(client) = &self.client {
             self.retry_manager
@@ -515,12 +515,10 @@ impl FeedHandler {
         let mut exec_reports = Vec::new();
 
         for fill in fills {
-            // Skip duplicate fills (Hyperliquid sometimes sends duplicate userEvents)
             if processed_trade_ids.contains(&fill.tid) {
                 log::debug!("Skipping duplicate fill: tid={}", fill.tid);
                 continue;
             }
-            processed_trade_ids.add(fill.tid);
 
             let instrument = instruments.get(&fill.coin);
 
@@ -528,7 +526,9 @@ impl FeedHandler {
                 log::debug!("Found instrument for fill coin={}", fill.coin);
                 match parse_ws_fill_report(fill, instrument, account_id, ts_init) {
                     Ok(mut report) => {
-                        // Resolve cloid to real client_order_id if cached
+                        // Mark processed only after successful parse
+                        processed_trade_ids.add(fill.tid);
+
                         if let Some(cloid) = &fill.cloid {
                             let cloid_ustr = Ustr::from(cloid.as_str());
                             if let Some(entry) = cloid_cache.get(&cloid_ustr) {
@@ -551,6 +551,7 @@ impl FeedHandler {
                     }
                 }
             } else {
+                // Not marked as processed so fill is retried if instrument loads later
                 log::warn!(
                     "No instrument found for fill coin={}. Keys: {:?}",
                     fill.coin,
@@ -755,38 +756,79 @@ impl FeedHandler {
     }
 }
 
-/// Creates a canonical subscription key from a SubscriptionRequest for tracking.
-fn subscription_to_key(sub: &SubscriptionRequest) -> String {
+pub(crate) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
     match sub {
         SubscriptionRequest::AllMids { dex } => {
             if let Some(dex_name) = dex {
-                format!("allMids:{dex_name}")
+                format!("{}:{dex_name}", HyperliquidWsChannel::AllMids.as_str())
             } else {
-                "allMids".to_string()
+                HyperliquidWsChannel::AllMids.as_str().to_string()
             }
         }
-        SubscriptionRequest::Notification { user } => format!("notification:{user}"),
-        SubscriptionRequest::WebData2 { user } => format!("webData2:{user}"),
+        SubscriptionRequest::Notification { user } => {
+            format!("{}:{user}", HyperliquidWsChannel::Notification.as_str())
+        }
+        SubscriptionRequest::WebData2 { user } => {
+            format!("{}:{user}", HyperliquidWsChannel::WebData2.as_str())
+        }
         SubscriptionRequest::Candle { coin, interval } => {
-            format!("candle:{coin}:{}", interval.as_str())
+            format!(
+                "{}:{coin}:{}",
+                HyperliquidWsChannel::Candle.as_str(),
+                interval.as_str()
+            )
         }
-        SubscriptionRequest::L2Book { coin, .. } => format!("l2Book:{coin}"),
-        SubscriptionRequest::Trades { coin } => format!("trades:{coin}"),
-        SubscriptionRequest::OrderUpdates { user } => format!("orderUpdates:{user}"),
-        SubscriptionRequest::UserEvents { user } => format!("userEvents:{user}"),
-        SubscriptionRequest::UserFills { user, .. } => format!("userFills:{user}"),
-        SubscriptionRequest::UserFundings { user } => format!("userFundings:{user}"),
+        SubscriptionRequest::L2Book { coin, .. } => {
+            format!("{}:{coin}", HyperliquidWsChannel::L2Book.as_str())
+        }
+        SubscriptionRequest::Trades { coin } => {
+            format!("{}:{coin}", HyperliquidWsChannel::Trades.as_str())
+        }
+        SubscriptionRequest::OrderUpdates { user } => {
+            format!("{}:{user}", HyperliquidWsChannel::OrderUpdates.as_str())
+        }
+        SubscriptionRequest::UserEvents { user } => {
+            format!("{}:{user}", HyperliquidWsChannel::UserEvents.as_str())
+        }
+        SubscriptionRequest::UserFills { user, .. } => {
+            format!("{}:{user}", HyperliquidWsChannel::UserFills.as_str())
+        }
+        SubscriptionRequest::UserFundings { user } => {
+            format!("{}:{user}", HyperliquidWsChannel::UserFundings.as_str())
+        }
         SubscriptionRequest::UserNonFundingLedgerUpdates { user } => {
-            format!("userNonFundingLedgerUpdates:{user}")
+            format!(
+                "{}:{user}",
+                HyperliquidWsChannel::UserNonFundingLedgerUpdates.as_str()
+            )
         }
-        SubscriptionRequest::ActiveAssetCtx { coin } => format!("activeAssetCtx:{coin}"),
-        SubscriptionRequest::ActiveSpotAssetCtx { coin } => format!("activeSpotAssetCtx:{coin}"),
+        SubscriptionRequest::ActiveAssetCtx { coin } => {
+            format!("{}:{coin}", HyperliquidWsChannel::ActiveAssetCtx.as_str())
+        }
+        SubscriptionRequest::ActiveSpotAssetCtx { coin } => {
+            format!(
+                "{}:{coin}",
+                HyperliquidWsChannel::ActiveSpotAssetCtx.as_str()
+            )
+        }
         SubscriptionRequest::ActiveAssetData { user, coin } => {
-            format!("activeAssetData:{user}:{coin}")
+            format!(
+                "{}:{user}:{coin}",
+                HyperliquidWsChannel::ActiveAssetData.as_str()
+            )
         }
-        SubscriptionRequest::UserTwapSliceFills { user } => format!("userTwapSliceFills:{user}"),
-        SubscriptionRequest::UserTwapHistory { user } => format!("userTwapHistory:{user}"),
-        SubscriptionRequest::Bbo { coin } => format!("bbo:{coin}"),
+        SubscriptionRequest::UserTwapSliceFills { user } => {
+            format!(
+                "{}:{user}",
+                HyperliquidWsChannel::UserTwapSliceFills.as_str()
+            )
+        }
+        SubscriptionRequest::UserTwapHistory { user } => {
+            format!("{}:{user}", HyperliquidWsChannel::UserTwapHistory.as_str())
+        }
+        SubscriptionRequest::Bbo { coin } => {
+            format!("{}:{coin}", HyperliquidWsChannel::Bbo.as_str())
+        }
     }
 }
 

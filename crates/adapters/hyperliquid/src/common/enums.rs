@@ -709,44 +709,6 @@ impl From<HyperliquidOrderStatus> for OrderStatus {
     }
 }
 
-pub fn hyperliquid_status_to_order_status(status: &str) -> OrderStatus {
-    match status {
-        "open" | "accepted" => OrderStatus::Accepted,
-        "triggered" => OrderStatus::Triggered,
-        "filled" => OrderStatus::Filled,
-        // All cancel variants
-        "canceled"
-        | "marginCanceled"
-        | "vaultWithdrawalCanceled"
-        | "openInterestCapCanceled"
-        | "selfTradeCanceled"
-        | "reduceOnlyCanceled"
-        | "siblingFilledCanceled"
-        | "delistedCanceled"
-        | "liquidatedCanceled"
-        | "scheduledCancel" => OrderStatus::Canceled,
-        // All reject variants
-        "rejected"
-        | "tickRejected"
-        | "minTradeNtlRejected"
-        | "perpMarginRejected"
-        | "reduceOnlyRejected"
-        | "badAloPxRejected"
-        | "iocCancelRejected"
-        | "badTriggerPxRejected"
-        | "marketOrderNoLiquidityRejected"
-        | "positionIncreaseAtOpenInterestCapRejected"
-        | "positionFlipAtOpenInterestCapRejected"
-        | "tooAggressiveAtOpenInterestCapRejected"
-        | "openInterestIncreaseRejected"
-        | "insufficientSpotBalanceRejected"
-        | "oracleRejected"
-        | "perpMaxPositionRejected" => OrderStatus::Rejected,
-        // Default to rejected for unknown statuses
-        _ => OrderStatus::Rejected,
-    }
-}
-
 /// Represents the direction of a fill (open/close position).
 ///
 /// For perpetuals:
@@ -834,8 +796,12 @@ pub enum HyperliquidInfoRequestType {
     SpotMetaAndAssetCtxs,
     /// Get L2 order book for a coin.
     L2Book,
+    /// Get all mid prices.
+    AllMids,
     /// Get user fills.
     UserFills,
+    /// Get user fills by time range.
+    UserFillsByTime,
     /// Get order status for a user.
     OrderStatus,
     /// Get all open orders for a user.
@@ -844,8 +810,40 @@ pub enum HyperliquidInfoRequestType {
     FrontendOpenOrders,
     /// Get user state (balances, positions, margin).
     ClearinghouseState,
-    /// Get candle/bar data.
+    /// Get spot clearinghouse state.
+    SpotClearinghouseState,
+    /// Get exchange status.
+    ExchangeStatus,
+    /// Get candle/bar data snapshot.
     CandleSnapshot,
+    /// Get candle/bar data (WS post).
+    Candle,
+    /// Get recent trades.
+    RecentTrades,
+    /// Get historical orders.
+    HistoricalOrders,
+    /// Get funding history.
+    FundingHistory,
+    /// Get user funding.
+    UserFunding,
+    /// Get non-user funding updates.
+    NonUserFundingUpdates,
+    /// Get TWAP history.
+    TwapHistory,
+    /// Get user TWAP slice fills.
+    UserTwapSliceFills,
+    /// Get user TWAP slice fills by time range.
+    UserTwapSliceFillsByTime,
+    /// Get user rate limit.
+    UserRateLimit,
+    /// Get user role.
+    UserRole,
+    /// Get delegator history.
+    DelegatorHistory,
+    /// Get delegator rewards.
+    DelegatorRewards,
+    /// Get validator stats.
+    ValidatorStats,
 }
 
 impl HyperliquidInfoRequestType {
@@ -856,14 +854,44 @@ impl HyperliquidInfoRequestType {
             Self::MetaAndAssetCtxs => "metaAndAssetCtxs",
             Self::SpotMetaAndAssetCtxs => "spotMetaAndAssetCtxs",
             Self::L2Book => "l2Book",
+            Self::AllMids => "allMids",
             Self::UserFills => "userFills",
+            Self::UserFillsByTime => "userFillsByTime",
             Self::OrderStatus => "orderStatus",
             Self::OpenOrders => "openOrders",
             Self::FrontendOpenOrders => "frontendOpenOrders",
             Self::ClearinghouseState => "clearinghouseState",
+            Self::SpotClearinghouseState => "spotClearinghouseState",
+            Self::ExchangeStatus => "exchangeStatus",
             Self::CandleSnapshot => "candleSnapshot",
+            Self::Candle => "candle",
+            Self::RecentTrades => "recentTrades",
+            Self::HistoricalOrders => "historicalOrders",
+            Self::FundingHistory => "fundingHistory",
+            Self::UserFunding => "userFunding",
+            Self::NonUserFundingUpdates => "nonUserFundingUpdates",
+            Self::TwapHistory => "twapHistory",
+            Self::UserTwapSliceFills => "userTwapSliceFills",
+            Self::UserTwapSliceFillsByTime => "userTwapSliceFillsByTime",
+            Self::UserRateLimit => "userRateLimit",
+            Self::UserRole => "userRole",
+            Self::DelegatorHistory => "delegatorHistory",
+            Self::DelegatorRewards => "delegatorRewards",
+            Self::ValidatorStats => "validatorStats",
         }
     }
+}
+
+#[derive(
+    Clone, Copy, Debug, Display, PartialEq, Eq, Hash, Serialize, Deserialize, AsRefStr, EnumString,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum HyperliquidLeverageType {
+    Cross,
+    Isolated,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Hyperliquid product type.
@@ -1129,69 +1157,6 @@ mod tests {
         );
         assert_eq!(
             OrderStatus::from(HyperliquidOrderStatus::PerpMarginRejected),
-            OrderStatus::Rejected
-        );
-    }
-
-    #[rstest]
-    fn test_order_status_string_mapping() {
-        // Test direct string to OrderStatus conversion
-        assert_eq!(
-            hyperliquid_status_to_order_status("open"),
-            OrderStatus::Accepted
-        );
-        assert_eq!(
-            hyperliquid_status_to_order_status("accepted"),
-            OrderStatus::Accepted
-        );
-        assert_eq!(
-            hyperliquid_status_to_order_status("triggered"),
-            OrderStatus::Triggered
-        );
-        assert_eq!(
-            hyperliquid_status_to_order_status("filled"),
-            OrderStatus::Filled
-        );
-        assert_eq!(
-            hyperliquid_status_to_order_status("canceled"),
-            OrderStatus::Canceled
-        );
-        assert_eq!(
-            hyperliquid_status_to_order_status("rejected"),
-            OrderStatus::Rejected
-        );
-
-        // Test camelCase cancel reasons
-        assert_eq!(
-            hyperliquid_status_to_order_status("marginCanceled"),
-            OrderStatus::Canceled
-        );
-        assert_eq!(
-            hyperliquid_status_to_order_status("selfTradeCanceled"),
-            OrderStatus::Canceled
-        );
-        assert_eq!(
-            hyperliquid_status_to_order_status("reduceOnlyCanceled"),
-            OrderStatus::Canceled
-        );
-        assert_eq!(
-            hyperliquid_status_to_order_status("liquidatedCanceled"),
-            OrderStatus::Canceled
-        );
-
-        // Test camelCase reject reasons
-        assert_eq!(
-            hyperliquid_status_to_order_status("tickRejected"),
-            OrderStatus::Rejected
-        );
-        assert_eq!(
-            hyperliquid_status_to_order_status("perpMarginRejected"),
-            OrderStatus::Rejected
-        );
-
-        // Unknown status defaults to Rejected
-        assert_eq!(
-            hyperliquid_status_to_order_status("unknown_status"),
             OrderStatus::Rejected
         );
     }

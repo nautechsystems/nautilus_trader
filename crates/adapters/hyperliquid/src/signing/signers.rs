@@ -190,10 +190,17 @@ impl HyperliquidEip712Signer {
 #[cfg(test)]
 mod tests {
     use alloy_sol_types::SolStruct;
+    use nautilus_model::{identifiers::ClientOrderId, types::Price};
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use serde_json::json;
 
     use super::*;
+    use crate::http::models::{
+        Cloid, HyperliquidExecAction, HyperliquidExecBuilderFee, HyperliquidExecGrouping,
+        HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
+        HyperliquidExecTif,
+    };
 
     #[rstest]
     fn test_sign_request_l1_action() {
@@ -244,13 +251,6 @@ mod tests {
 
     #[rstest]
     fn test_connection_id_matches_python() {
-        use rust_decimal_macros::dec;
-
-        use crate::http::models::{
-            HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
-            HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
-        };
-
         // Test that our connection_id computation matches Python SDK exactly.
         // Python expected output for this test case:
         // MsgPack bytes: 83a474797065a56f72646572a66f72646572739186a16100a162c3a170a53530303030a173a3302e31a172c2a17481a56c696d697481a3746966a3477463a867726f7570696e67a26e61
@@ -378,14 +378,6 @@ mod tests {
 
     #[rstest]
     fn test_connection_id_matches_python_with_builder_fee() {
-        use rust_decimal_macros::dec;
-
-        use crate::http::models::{
-            HyperliquidExecAction, HyperliquidExecBuilderFee, HyperliquidExecGrouping,
-            HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
-            HyperliquidExecTif,
-        };
-
         // Test with builder fee included (what production uses).
         // Python expected output:
         // MsgPack bytes (132): 84a474797065a56f72646572a66f72646572739186a16100a162c3a170a53530303030a173a3302e31a172c2a17481a56c696d697481a3746966a3477463a867726f7570696e67a26e61a76275696c64657282a162d92a307839623665326665343132346564336537613662346638356537383630653033323232326234333136a16601
@@ -501,14 +493,6 @@ mod tests {
 
     #[rstest]
     fn test_connection_id_with_cloid() {
-        use rust_decimal_macros::dec;
-
-        use crate::http::models::{
-            Cloid, HyperliquidExecAction, HyperliquidExecBuilderFee, HyperliquidExecGrouping,
-            HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
-            HyperliquidExecTif,
-        };
-
         // Test with CLOID included - this is what production actually sends.
         // The key difference: production always includes a cloid field.
 
@@ -575,10 +559,6 @@ mod tests {
 
     #[rstest]
     fn test_cloid_from_client_order_id() {
-        use nautilus_model::identifiers::ClientOrderId;
-
-        use crate::http::models::Cloid;
-
         // Test that Cloid::from_client_order_id produces valid hex format
         // This is how production creates cloids
         let client_order_id = ClientOrderId::from("O-20241210-123456-001-001-1");
@@ -605,15 +585,6 @@ mod tests {
 
     #[rstest]
     fn test_production_like_order_with_hashed_cloid() {
-        use nautilus_model::identifiers::ClientOrderId;
-        use rust_decimal_macros::dec;
-
-        use crate::http::models::{
-            Cloid, HyperliquidExecAction, HyperliquidExecBuilderFee, HyperliquidExecGrouping,
-            HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
-            HyperliquidExecTif,
-        };
-
         // Full production-like test with cloid from ClientOrderId
 
         let private_key = EvmPrivateKey::new(
@@ -706,9 +677,6 @@ mod tests {
 
     #[rstest]
     fn test_price_decimal_formatting() {
-        use nautilus_model::types::Price;
-        use rust_decimal_macros::dec;
-
         // Compare how Price::as_decimal() formats vs dec!() macro
         // Test various price formats
         let test_cases = [

@@ -148,8 +148,6 @@ class HyperliquidDataClient(LiveMarketDataClient):
                 LogColor.BLUE,
             )
 
-        self._log.info("Disconnected from Hyperliquid", LogColor.GREEN)
-
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses

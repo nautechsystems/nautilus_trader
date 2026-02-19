@@ -42,6 +42,7 @@ use ustr::Ustr;
 use crate::{
     common::{enums::HyperliquidBarInterval, parse::bar_type_to_interval},
     websocket::{
+        enums::HyperliquidWsChannel,
         handler::{FeedHandler, HandlerCommand},
         messages::{NautilusWsMessage, SubscriptionRequest},
     },
@@ -858,26 +859,27 @@ impl HyperliquidWebSocketClient {
     }
 }
 
-/// Reconstructs a subscription request from a topic string.
-///
-/// Uses `split_once`/`rsplit_once` rather than `split(':')` because
-/// coin names can contain colons (e.g., vault tokens `vntls:vCURSOR`).
+// Uses split_once/rsplit_once because coin names can contain colons
+// (e.g., vault tokens `vntls:vCURSOR`)
 fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
     let (kind, rest) = topic
         .split_once(':')
         .map_or((topic, None), |(k, r)| (k, Some(r)));
 
-    match kind {
-        "allMids" => Ok(SubscriptionRequest::AllMids {
+    let channel = HyperliquidWsChannel::from_wire_str(kind)
+        .ok_or_else(|| anyhow::anyhow!("Unknown subscription channel: {kind}"))?;
+
+    match channel {
+        HyperliquidWsChannel::AllMids => Ok(SubscriptionRequest::AllMids {
             dex: rest.map(|s| s.to_string()),
         }),
-        "notification" => Ok(SubscriptionRequest::Notification {
+        HyperliquidWsChannel::Notification => Ok(SubscriptionRequest::Notification {
             user: rest.context("Missing user")?.to_string(),
         }),
-        "webData2" => Ok(SubscriptionRequest::WebData2 {
+        HyperliquidWsChannel::WebData2 => Ok(SubscriptionRequest::WebData2 {
             user: rest.context("Missing user")?.to_string(),
         }),
-        "candle" => {
+        HyperliquidWsChannel::Candle => {
             // Format: candle:{coin}:{interval} - interval is last segment
             let rest = rest.context("Missing candle params")?;
             let (coin, interval_str) = rest.rsplit_once(':').context("Missing interval")?;
@@ -887,37 +889,39 @@ fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
                 interval,
             })
         }
-        "l2Book" => Ok(SubscriptionRequest::L2Book {
+        HyperliquidWsChannel::L2Book => Ok(SubscriptionRequest::L2Book {
             coin: Ustr::from(rest.context("Missing coin")?),
             mantissa: None,
             n_sig_figs: None,
         }),
-        "trades" => Ok(SubscriptionRequest::Trades {
+        HyperliquidWsChannel::Trades => Ok(SubscriptionRequest::Trades {
             coin: Ustr::from(rest.context("Missing coin")?),
         }),
-        "orderUpdates" => Ok(SubscriptionRequest::OrderUpdates {
+        HyperliquidWsChannel::OrderUpdates => Ok(SubscriptionRequest::OrderUpdates {
             user: rest.context("Missing user")?.to_string(),
         }),
-        "userEvents" => Ok(SubscriptionRequest::UserEvents {
+        HyperliquidWsChannel::UserEvents => Ok(SubscriptionRequest::UserEvents {
             user: rest.context("Missing user")?.to_string(),
         }),
-        "userFills" => Ok(SubscriptionRequest::UserFills {
+        HyperliquidWsChannel::UserFills => Ok(SubscriptionRequest::UserFills {
             user: rest.context("Missing user")?.to_string(),
             aggregate_by_time: None,
         }),
-        "userFundings" => Ok(SubscriptionRequest::UserFundings {
+        HyperliquidWsChannel::UserFundings => Ok(SubscriptionRequest::UserFundings {
             user: rest.context("Missing user")?.to_string(),
         }),
-        "userNonFundingLedgerUpdates" => Ok(SubscriptionRequest::UserNonFundingLedgerUpdates {
-            user: rest.context("Missing user")?.to_string(),
-        }),
-        "activeAssetCtx" => Ok(SubscriptionRequest::ActiveAssetCtx {
+        HyperliquidWsChannel::UserNonFundingLedgerUpdates => {
+            Ok(SubscriptionRequest::UserNonFundingLedgerUpdates {
+                user: rest.context("Missing user")?.to_string(),
+            })
+        }
+        HyperliquidWsChannel::ActiveAssetCtx => Ok(SubscriptionRequest::ActiveAssetCtx {
             coin: Ustr::from(rest.context("Missing coin")?),
         }),
-        "activeSpotAssetCtx" => Ok(SubscriptionRequest::ActiveSpotAssetCtx {
+        HyperliquidWsChannel::ActiveSpotAssetCtx => Ok(SubscriptionRequest::ActiveSpotAssetCtx {
             coin: Ustr::from(rest.context("Missing coin")?),
         }),
-        "activeAssetData" => {
+        HyperliquidWsChannel::ActiveAssetData => {
             // Format: activeAssetData:{user}:{coin} - user is eth addr (no colons)
             let rest = rest.context("Missing params")?;
             let (user, coin) = rest.split_once(':').context("Missing coin")?;
@@ -926,16 +930,24 @@ fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
                 coin: coin.to_string(),
             })
         }
-        "userTwapSliceFills" => Ok(SubscriptionRequest::UserTwapSliceFills {
+        HyperliquidWsChannel::UserTwapSliceFills => Ok(SubscriptionRequest::UserTwapSliceFills {
             user: rest.context("Missing user")?.to_string(),
         }),
-        "userTwapHistory" => Ok(SubscriptionRequest::UserTwapHistory {
+        HyperliquidWsChannel::UserTwapHistory => Ok(SubscriptionRequest::UserTwapHistory {
             user: rest.context("Missing user")?.to_string(),
         }),
-        "bbo" => Ok(SubscriptionRequest::Bbo {
+        HyperliquidWsChannel::Bbo => Ok(SubscriptionRequest::Bbo {
             coin: Ustr::from(rest.context("Missing coin")?),
         }),
-        _ => anyhow::bail!("Unknown subscription channel: {kind}"),
+
+        // Response-only channels are not valid subscription topics
+        HyperliquidWsChannel::SubscriptionResponse
+        | HyperliquidWsChannel::User
+        | HyperliquidWsChannel::Post
+        | HyperliquidWsChannel::Pong
+        | HyperliquidWsChannel::Error => {
+            anyhow::bail!("Not a subscription channel: {kind}")
+        }
     }
 }
 
@@ -948,41 +960,7 @@ mod tests {
 
     /// Generates a unique topic key for a subscription request.
     fn subscription_topic(sub: &SubscriptionRequest) -> String {
-        match sub {
-            SubscriptionRequest::AllMids { dex } => {
-                if let Some(dex) = dex {
-                    format!("allMids:{dex}")
-                } else {
-                    "allMids".to_string()
-                }
-            }
-            SubscriptionRequest::Notification { user } => format!("notification:{user}"),
-            SubscriptionRequest::WebData2 { user } => format!("webData2:{user}"),
-            SubscriptionRequest::Candle { coin, interval } => {
-                format!("candle:{coin}:{}", interval.as_str())
-            }
-            SubscriptionRequest::L2Book { coin, .. } => format!("l2Book:{coin}"),
-            SubscriptionRequest::Trades { coin } => format!("trades:{coin}"),
-            SubscriptionRequest::OrderUpdates { user } => format!("orderUpdates:{user}"),
-            SubscriptionRequest::UserEvents { user } => format!("userEvents:{user}"),
-            SubscriptionRequest::UserFills { user, .. } => format!("userFills:{user}"),
-            SubscriptionRequest::UserFundings { user } => format!("userFundings:{user}"),
-            SubscriptionRequest::UserNonFundingLedgerUpdates { user } => {
-                format!("userNonFundingLedgerUpdates:{user}")
-            }
-            SubscriptionRequest::ActiveAssetCtx { coin } => format!("activeAssetCtx:{coin}"),
-            SubscriptionRequest::ActiveSpotAssetCtx { coin } => {
-                format!("activeSpotAssetCtx:{coin}")
-            }
-            SubscriptionRequest::ActiveAssetData { user, coin } => {
-                format!("activeAssetData:{user}:{coin}")
-            }
-            SubscriptionRequest::UserTwapSliceFills { user } => {
-                format!("userTwapSliceFills:{user}")
-            }
-            SubscriptionRequest::UserTwapHistory { user } => format!("userTwapHistory:{user}"),
-            SubscriptionRequest::Bbo { coin } => format!("bbo:{coin}"),
-        }
+        crate::websocket::handler::subscription_to_key(sub)
     }
 
     #[rstest]

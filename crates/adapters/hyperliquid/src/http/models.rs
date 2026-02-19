@@ -22,8 +22,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
 
 use crate::common::enums::{
-    HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
-    HyperliquidPositionType, HyperliquidSide,
+    HyperliquidFillDirection, HyperliquidLeverageType,
+    HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidPositionType, HyperliquidSide,
 };
 
 /// Response from candleSnapshot endpoint (returns array directly).
@@ -389,6 +389,9 @@ pub struct HyperliquidFill {
     pub crossed: bool,
     /// Fee paid for this fill.
     pub fee: String,
+    /// Token the fee was paid in (e.g. "USDC", "HYPE").
+    #[serde(rename = "feeToken")]
+    pub fee_token: Ustr,
 }
 
 /// Represents order status response from `POST /info`.
@@ -538,6 +541,15 @@ pub enum HyperliquidExchangeResponse {
     },
 }
 
+impl HyperliquidExchangeResponse {
+    pub fn is_ok(&self) -> bool {
+        matches!(self, Self::Status { status, .. } if status == RESPONSE_STATUS_OK)
+    }
+}
+
+/// The success status string returned by the Hyperliquid exchange API.
+pub const RESPONSE_STATUS_OK: &str = "ok";
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -571,11 +583,7 @@ mod tests {
         let json = r#"{"status": "ok", "response": {"type": "order"}}"#;
 
         let response: HyperliquidExchangeResponse = serde_json::from_str(json).unwrap();
-
-        match response {
-            HyperliquidExchangeResponse::Status { status, .. } => assert_eq!(status, "ok"),
-            _ => panic!("Expected status response"),
-        }
+        assert!(response.is_ok());
     }
 
     #[rstest]
@@ -1152,9 +1160,8 @@ pub struct AssetPosition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeverageInfo {
-    /// Leverage type (e.g., "cross", "isolated").
     #[serde(rename = "type")]
-    pub leverage_type: String,
+    pub leverage_type: HyperliquidLeverageType,
     /// Leverage value.
     pub value: u32,
 }
@@ -1191,7 +1198,7 @@ pub struct CumFundingInfo {
 #[serde(rename_all = "camelCase")]
 pub struct PositionData {
     /// Asset symbol/coin (e.g., "BTC").
-    pub coin: String,
+    pub coin: Ustr,
     /// Cumulative funding breakdown.
     #[serde(rename = "cumFunding")]
     pub cum_funding: CumFundingInfo,

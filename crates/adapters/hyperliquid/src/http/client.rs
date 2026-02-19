@@ -75,7 +75,8 @@ use crate::{
             HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
             HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
             HyperliquidExecTriggerParams, HyperliquidFills, HyperliquidL2Book, HyperliquidMeta,
-            HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
+            HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotMeta,
+            SpotMetaAndCtxs,
         },
         parse::{
             HyperliquidInstrumentDef, instruments_from_defs_owned, parse_perp_instruments,
@@ -263,7 +264,6 @@ impl HyperliquidRawHttpClient {
         }
     }
 
-    /// Builds the default headers to include with each request (e.g., `User-Agent`).
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([
             (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
@@ -275,7 +275,6 @@ impl HyperliquidRawHttpClient {
         Ok(SignerId("hyperliquid:default".into()))
     }
 
-    /// Parse Retry-After from response headers
     fn parse_retry_after_simple(&self, headers: &HashMap<String, String>) -> Option<u64> {
         let retry_after = headers.get("retry-after")?;
         retry_after.parse::<u64>().ok().map(|s| s * 1000) // convert seconds to ms
@@ -379,7 +378,6 @@ impl HyperliquidRawHttpClient {
         self.send_info_request(request).await
     }
 
-    /// Send a raw info request and return the JSON response.
     async fn send_info_request(&self, request: &InfoRequest) -> Result<Value> {
         let base_w = info_base_weight(request);
         self.rest_limiter.acquire(base_w).await;
@@ -458,7 +456,6 @@ impl HyperliquidRawHttpClient {
         }
     }
 
-    /// Raw HTTP roundtrip for info requests - returns the original HttpResponse.
     async fn http_roundtrip_info(&self, request: &InfoRequest) -> Result<HttpResponse> {
         let url = &self.base_info;
         let body = serde_json::to_value(request).map_err(Error::Serde)?;
@@ -973,21 +970,6 @@ impl HyperliquidHttpClient {
         }
     }
 
-    /// Get an instrument from cache, or create a synthetic one for vault tokens.
-    ///
-    /// Vault tokens (starting with "vntls:") are not available in the standard spotMeta API.
-    /// This method creates synthetic CurrencyPair instruments for vault tokens on-the-fly
-    /// to allow order/fill/position parsing to continue.
-    ///
-    /// For non-vault tokens that are not in cache, returns None and logs a warning.
-    /// This can happen if instruments weren't loaded properly or if there are new instruments
-    /// that weren't present during initialization.
-    ///
-    /// The synthetic instruments use reasonable defaults:
-    /// - Quote currency: USDC (most common quote for vault tokens)
-    /// - Price/size decimals: 8 (standard precision)
-    /// - Price increment: 0.00000001
-    /// - Size increment: 0.00000001
     fn get_or_create_instrument(
         &self,
         coin: &Ustr,
@@ -1374,7 +1356,7 @@ impl HyperliquidHttpClient {
 
         // Check response - only check for error status
         match response {
-            HyperliquidExchangeResponse::Status { status, .. } if status == "ok" => Ok(()),
+            ref r @ HyperliquidExchangeResponse::Status { .. } if r.is_ok() => Ok(()),
             HyperliquidExchangeResponse::Status {
                 status,
                 response: error_data,
@@ -1417,7 +1399,7 @@ impl HyperliquidHttpClient {
             .map_err(|e| Error::bad_request(format!("Failed to parse orders: {e}")))?;
 
         let mut reports = Vec::new();
-        let ts_init = UnixNanos::default();
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         for order_value in orders {
             // Parse the order data
@@ -1486,7 +1468,7 @@ impl HyperliquidHttpClient {
         let fills_response = self.info_user_fills(user).await?;
 
         let mut reports = Vec::new();
-        let ts_init = UnixNanos::default();
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         for fill in fills_response {
             // Get instrument from cache or create synthetic for vault tokens
@@ -1543,7 +1525,7 @@ impl HyperliquidHttpClient {
             .clone();
 
         let mut reports = Vec::new();
-        let ts_init = UnixNanos::default();
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         for position_value in asset_positions {
             // Extract coin from position data
@@ -1901,7 +1883,7 @@ impl HyperliquidHttpClient {
             HyperliquidExchangeResponse::Status {
                 status,
                 response: response_data,
-            } if status == "ok" => {
+            } if status == RESPONSE_STATUS_OK => {
                 let data_value = if let Some(data) = response_data.get("data") {
                     data.clone()
                 } else {
@@ -1932,7 +1914,7 @@ impl HyperliquidHttpClient {
                 let account_id = self
                     .account_id
                     .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-                let ts_init = UnixNanos::default();
+                let ts_init = get_atomic_clock_realtime().get_time_ns();
 
                 match order_status {
                     HyperliquidExecOrderStatus::Resting { resting } => self
@@ -2005,7 +1987,6 @@ impl HyperliquidHttpClient {
         .await
     }
 
-    /// Create an OrderStatusReport from order submission details.
     #[allow(clippy::too_many_arguments)]
     fn create_order_status_report(
         &self,
@@ -2104,7 +2085,7 @@ impl HyperliquidHttpClient {
             HyperliquidExchangeResponse::Status {
                 status,
                 response: response_data,
-            } if status == "ok" => {
+            } if status == RESPONSE_STATUS_OK => {
                 // Extract the 'data' field from the response if it exists (new format)
                 // Otherwise use response_data directly (old format)
                 let data_value = if let Some(data) = response_data.get("data") {
@@ -2122,7 +2103,7 @@ impl HyperliquidHttpClient {
                 let account_id = self
                     .account_id
                     .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-                let ts_init = UnixNanos::default();
+                let ts_init = get_atomic_clock_realtime().get_time_ns();
 
                 // Validate we have the same number of statuses as orders submitted
                 if order_response.statuses.len() != orders.len() {
@@ -2217,8 +2198,14 @@ impl HyperliquidHttpClient {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::MUTEX_POISONED;
-    use nautilus_model::instruments::{Instrument, InstrumentAny};
+    use nautilus_core::{MUTEX_POISONED, time::get_atomic_clock_realtime};
+    use nautilus_model::{
+        currencies::CURRENCY_MAP,
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CurrencyPair, Instrument, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -2247,15 +2234,6 @@ mod tests {
 
     #[rstest]
     fn test_cache_instrument_by_raw_symbol() {
-        use nautilus_core::time::get_atomic_clock_realtime;
-        use nautilus_model::{
-            currencies::CURRENCY_MAP,
-            enums::CurrencyType,
-            identifiers::{InstrumentId, Symbol},
-            instruments::CurrencyPair,
-            types::{Currency, Price, Quantity},
-        };
-
         let client = HyperliquidHttpClient::new(true, None, None).unwrap();
 
         // Create a test instrument with base currency "vntls:vCURSOR"

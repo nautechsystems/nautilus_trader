@@ -25,7 +25,6 @@ class TestHyperliquidDataClientConfig:
         config = HyperliquidDataClientConfig()
 
         # Assert
-        assert config.base_url_http is None
         assert config.base_url_ws is None
         assert config.testnet is False
         assert config.http_timeout_secs == 10
@@ -47,12 +46,10 @@ class TestHyperliquidDataClientConfig:
     def test_custom_base_urls(self):
         # Arrange & Act
         config = HyperliquidDataClientConfig(
-            base_url_http="https://custom.api.com",
             base_url_ws="wss://custom.ws.com",
         )
 
         # Assert
-        assert config.base_url_http == "https://custom.api.com"
         assert config.base_url_ws == "wss://custom.ws.com"
 
     def test_proxy_config(self):
@@ -117,12 +114,10 @@ class TestHyperliquidExecClientConfig:
     def test_custom_base_urls(self):
         # Arrange & Act
         config = HyperliquidExecClientConfig(
-            base_url_http="https://custom.api.com",
             base_url_ws="wss://custom.ws.com",
         )
 
         # Assert
-        assert config.base_url_http == "https://custom.api.com"
         assert config.base_url_ws == "wss://custom.ws.com"
 
 

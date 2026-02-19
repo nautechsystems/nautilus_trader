@@ -27,13 +27,10 @@ use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
     live::{runner::get_exec_event_sender, runtime::get_runtime},
-    messages::{
-        ExecutionEvent, ExecutionReport as NautilusExecutionReport,
-        execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
-        },
+    messages::execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -59,8 +56,7 @@ use crate::{
         credential::Secrets,
         parse::{
             client_order_id_to_cancel_request_with_asset, extract_error_message,
-            is_response_successful, order_to_hyperliquid_request_with_asset,
-            parse_account_balances_and_margins,
+            order_to_hyperliquid_request_with_asset, parse_account_balances_and_margins,
         },
     },
     config::HyperliquidExecClientConfig,
@@ -160,10 +156,11 @@ impl HyperliquidExecutionClient {
             anyhow::bail!("Hyperliquid execution client requires private key");
         }
 
-        let secrets = Secrets::from_json(&format!(
-            r#"{{"privateKey": "{}", "isTestnet": {}}}"#,
-            config.private_key, config.is_testnet
-        ))
+        let secrets = Secrets::from_private_key(
+            &config.private_key,
+            config.vault_address.as_deref(),
+            config.is_testnet,
+        )
         .context("failed to create secrets from private key")?;
 
         let mut http_client = HyperliquidHttpClient::with_secrets(
@@ -489,7 +486,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
             match http_client.post_action_exec(&action).await {
                 Ok(response) => {
-                    if is_response_successful(&response) {
+                    if response.is_ok() {
                         log::info!("Order submitted successfully: {response:?}");
                     } else {
                         let error_msg = extract_error_message(&response);
@@ -586,7 +583,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             };
             match http_client.post_action_exec(&action).await {
                 Ok(response) => {
-                    if is_response_successful(&response) {
+                    if response.is_ok() {
                         log::info!("Order list submitted successfully: {response:?}");
                     } else {
                         // Hyperliquid batch endpoint rejects all-or-nothing
@@ -667,7 +664,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
             match http_client.post_action_exec(&action).await {
                 Ok(response) => {
-                    if is_response_successful(&response) {
+                    if response.is_ok() {
                         log::info!("Order modified successfully: {response:?}");
                         // Order update events will be generated from WebSocket updates
                     } else {
@@ -714,7 +711,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
             match http_client.post_action_exec(&action).await {
                 Ok(response) => {
-                    if is_response_successful(&response) {
+                    if response.is_ok() {
                         log::info!("Order cancelled successfully: {response:?}");
                     } else {
                         let error_msg = extract_error_message(&response);
@@ -1154,6 +1151,7 @@ impl HyperliquidExecutionClient {
             self.ws_client.set_task_handle(handle);
         }
 
+        let emitter = self.emitter.clone();
         let runtime = get_runtime();
         let handle = runtime.spawn(async move {
             // Deferred cloid cleanup for FILLED orders. We keep the
@@ -1195,7 +1193,14 @@ impl HyperliquidExecutionClient {
                                 }
 
                                 for report in reports {
-                                    dispatch_execution_report(report);
+                                    match report {
+                                        ExecutionReport::Order(r) => {
+                                            emitter.send_order_status_report(r);
+                                        }
+                                        ExecutionReport::Fill(r) => {
+                                            emitter.send_fill_report(r);
+                                        }
+                                    }
                                 }
 
                                 for id in immediate_cleanup {
@@ -1230,23 +1235,5 @@ impl HyperliquidExecutionClient {
         *self.ws_stream_handle.lock().expect(MUTEX_POISONED) = Some(handle);
         log::info!("Hyperliquid WebSocket execution stream started");
         Ok(())
-    }
-}
-
-fn dispatch_execution_report(report: ExecutionReport) {
-    let sender = get_exec_event_sender();
-    match report {
-        ExecutionReport::Order(order_report) => {
-            let exec_report = NautilusExecutionReport::Order(Box::new(order_report));
-            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-                log::warn!("Failed to send order status report: {e}");
-            }
-        }
-        ExecutionReport::Fill(fill_report) => {
-            let exec_report = NautilusExecutionReport::Fill(Box::new(fill_report));
-            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-                log::warn!("Failed to send fill report: {e}");
-            }
-        }
     }
 }

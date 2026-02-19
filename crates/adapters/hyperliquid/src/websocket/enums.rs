@@ -55,6 +55,18 @@ pub enum HyperliquidWsChannel {
     UserFundings,
     #[serde(rename = "userNonFundingLedgerUpdates")]
     UserNonFundingLedgerUpdates,
+    #[serde(rename = "activeAssetCtx")]
+    ActiveAssetCtx,
+    #[serde(rename = "activeSpotAssetCtx")]
+    ActiveSpotAssetCtx,
+    #[serde(rename = "activeAssetData")]
+    ActiveAssetData,
+    #[serde(rename = "userTwapSliceFills")]
+    UserTwapSliceFills,
+    #[serde(rename = "userTwapHistory")]
+    UserTwapHistory,
+    #[serde(rename = "webData2")]
+    WebData2,
     /// Generic user channel - Hyperliquid sends fills/events on this channel.
     #[serde(rename = "user")]
     User,
@@ -82,6 +94,12 @@ impl HyperliquidWsChannel {
             Self::UserFills => "userFills",
             Self::UserFundings => "userFundings",
             Self::UserNonFundingLedgerUpdates => "userNonFundingLedgerUpdates",
+            Self::ActiveAssetCtx => "activeAssetCtx",
+            Self::ActiveSpotAssetCtx => "activeSpotAssetCtx",
+            Self::ActiveAssetData => "activeAssetData",
+            Self::UserTwapSliceFills => "userTwapSliceFills",
+            Self::UserTwapHistory => "userTwapHistory",
+            Self::WebData2 => "webData2",
             Self::User => "user",
             Self::Post => "post",
             Self::Pong => "pong",
@@ -99,6 +117,8 @@ impl HyperliquidWsChannel {
                 | Self::Bbo
                 | Self::Candle
                 | Self::AllMids
+                | Self::ActiveAssetCtx
+                | Self::ActiveSpotAssetCtx
                 | Self::Notification
                 | Self::Pong
                 | Self::Error
@@ -109,12 +129,20 @@ impl HyperliquidWsChannel {
     pub fn is_private(&self) -> bool {
         !self.is_public()
     }
+
+    /// Parses a channel from its wire-format string (e.g., "allMids").
+    pub fn from_wire_str(s: &str) -> Option<Self> {
+        serde_json::from_value(serde_json::Value::String(s.to_string())).ok()
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use rstest::rstest;
     use serde_json;
+    use strum::IntoEnumIterator;
 
     use super::*;
 
@@ -196,10 +224,8 @@ mod tests {
 
     #[rstest]
     fn test_enum_iter() {
-        use strum::IntoEnumIterator;
-
         let channels: Vec<HyperliquidWsChannel> = HyperliquidWsChannel::iter().collect();
-        assert_eq!(channels.len(), 16);
+        assert_eq!(channels.len(), 22);
         assert!(channels.contains(&HyperliquidWsChannel::Trades));
         assert!(channels.contains(&HyperliquidWsChannel::L2Book));
         assert!(channels.contains(&HyperliquidWsChannel::UserFills));
@@ -210,8 +236,6 @@ mod tests {
 
     #[rstest]
     fn test_from_str() {
-        use std::str::FromStr;
-
         assert_eq!(
             HyperliquidWsChannel::from_str("Trades").unwrap(),
             HyperliquidWsChannel::Trades

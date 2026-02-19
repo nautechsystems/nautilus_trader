@@ -38,9 +38,10 @@ use rust_decimal::{Decimal, prelude::FromPrimitive};
 use super::messages::{
     CandleData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData,
 };
-use crate::common::parse::{is_conditional_order_data, millis_to_nanos, parse_trigger_order_type};
+use crate::common::parse::{
+    is_conditional_order_data, make_fill_trade_id, millis_to_nanos, parse_trigger_order_type,
+};
 
-/// Helper to parse a price string with instrument precision.
 fn parse_price(
     price_str: &str,
     instrument: &InstrumentAny,
@@ -53,7 +54,6 @@ fn parse_price(
         .with_context(|| format!("Failed to create price from '{price_str}' for {field_name}"))
 }
 
-/// Helper to parse a quantity string with instrument precision.
 fn parse_quantity(
     quantity_str: &str,
     instrument: &InstrumentAny,
@@ -294,8 +294,14 @@ pub fn parse_ws_fill_report(
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(fill.oid.to_string());
-    let trade_id = TradeId::new_checked(fill.tid.to_string())
-        .context("invalid trade identifier in Hyperliquid fill message")?;
+    let trade_id = make_fill_trade_id(
+        &fill.hash,
+        fill.oid,
+        &fill.px,
+        &fill.sz,
+        fill.time,
+        &fill.start_position,
+    );
 
     let order_side = OrderSide::from(fill.side);
     let last_qty = parse_quantity(&fill.sz, instrument, "fill.sz")?;
@@ -309,11 +315,8 @@ pub fn parse_ws_fill_report(
     let fee_amount = Decimal::from_str(&fill.fee)
         .with_context(|| format!("Failed to parse fee='{}' as decimal", fill.fee))?;
 
-    let commission_currency = if fill.fee_token == "USDC" {
-        Currency::from("USDC")
-    } else {
-        instrument.quote_currency()
-    };
+    let commission_currency = Currency::from_str(fill.fee_token.as_str())
+        .with_context(|| format!("Unknown fee token '{}'", fill.fee_token))?;
 
     let commission = Money::from_decimal(fee_amount, commission_currency)
         .with_context(|| format!("Failed to create commission from fee='{}'", fill.fee))?;
@@ -410,7 +413,6 @@ pub fn parse_ws_asset_context(
     }
 }
 
-/// Helper to parse an f64 price into a Price with instrument precision.
 fn parse_f64_price(
     price: f64,
     instrument: &InstrumentAny,
@@ -531,7 +533,7 @@ mod tests {
             fee: "0.05".to_string(),
             tid: 98765,
             liquidation: None,
-            fee_token: "USDC".to_string(),
+            fee_token: Ustr::from("USDC"),
             builder_fee: None,
             cloid: Some("0xd211f1c27288259290850338d22132a0".to_string()),
             twap_id: None,

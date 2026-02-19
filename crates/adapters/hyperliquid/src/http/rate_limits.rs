@@ -21,6 +21,8 @@ use std::{
 
 use serde_json::Value;
 
+use crate::{common::enums::HyperliquidInfoRequestType, http::query::ExchangeActionParams};
+
 #[derive(Debug)]
 pub struct WeightedLimiter {
     capacity: f64,       // tokens per minute (e.g., 1200)
@@ -118,20 +120,16 @@ pub fn backoff_full_jitter(attempt: u32, base: Duration, cap: Duration) -> Durat
     Duration::from_millis((hash % max).max(1))
 }
 
-/// Classify Info requests into weight classes based on request_type.
-/// Since InfoRequest uses struct with request_type string, we match on that.
+/// Classify Info requests into weight classes based on request type.
 pub fn info_base_weight(req: &crate::http::query::InfoRequest) -> u32 {
-    match req.request_type.as_str() {
-        // Cheap (2)
-        "l2Book"
-        | "allMids"
-        | "clearinghouseState"
-        | "orderStatus"
-        | "spotClearinghouseState"
-        | "exchangeStatus" => 2,
-        // Very expensive (60)
-        "userRole" => 60,
-        // Default (20)
+    match req.request_type {
+        HyperliquidInfoRequestType::L2Book
+        | HyperliquidInfoRequestType::AllMids
+        | HyperliquidInfoRequestType::ClearinghouseState
+        | HyperliquidInfoRequestType::OrderStatus
+        | HyperliquidInfoRequestType::SpotClearinghouseState
+        | HyperliquidInfoRequestType::ExchangeStatus => 2,
+        HyperliquidInfoRequestType::UserRole => 60,
         _ => 20,
     }
 }
@@ -149,21 +147,21 @@ pub fn info_extra_weight(req: &crate::http::query::InfoRequest, json: &Value) ->
         _ => 0,
     };
 
-    let unit = match req.request_type.as_str() {
-        "candleSnapshot" => 60usize, // +1 per 60
-        "recentTrades"
-        | "historicalOrders"
-        | "userFills"
-        | "userFillsByTime"
-        | "fundingHistory"
-        | "userFunding"
-        | "nonUserFundingUpdates"
-        | "twapHistory"
-        | "userTwapSliceFills"
-        | "userTwapSliceFillsByTime"
-        | "delegatorHistory"
-        | "delegatorRewards"
-        | "validatorStats" => 20usize, // +1 per 20
+    let unit = match req.request_type {
+        HyperliquidInfoRequestType::CandleSnapshot => 60usize,
+        HyperliquidInfoRequestType::RecentTrades
+        | HyperliquidInfoRequestType::HistoricalOrders
+        | HyperliquidInfoRequestType::UserFills
+        | HyperliquidInfoRequestType::UserFillsByTime
+        | HyperliquidInfoRequestType::FundingHistory
+        | HyperliquidInfoRequestType::UserFunding
+        | HyperliquidInfoRequestType::NonUserFundingUpdates
+        | HyperliquidInfoRequestType::TwapHistory
+        | HyperliquidInfoRequestType::UserTwapSliceFills
+        | HyperliquidInfoRequestType::UserTwapSliceFillsByTime
+        | HyperliquidInfoRequestType::DelegatorHistory
+        | HyperliquidInfoRequestType::DelegatorRewards
+        | HyperliquidInfoRequestType::ValidatorStats => 20usize,
         _ => return 0,
     };
     (items / unit) as u32
@@ -171,8 +169,6 @@ pub fn info_extra_weight(req: &crate::http::query::InfoRequest, json: &Value) ->
 
 /// Exchange: 1 + floor(batch_len / 40)
 pub fn exchange_weight(action: &crate::http::query::ExchangeAction) -> u32 {
-    use crate::http::query::ExchangeActionParams;
-
     // Extract batch size from typed params
     let batch_size = match &action.params {
         ExchangeActionParams::Order(params) => params.orders.len(),
@@ -191,8 +187,16 @@ pub fn exchange_weight(action: &crate::http::query::ExchangeAction) -> u32 {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
-    use super::*;
+    use super::{
+        super::models::{
+            Cloid, HyperliquidExecCancelByCloidRequest, HyperliquidExecGrouping,
+            HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
+            HyperliquidExecTif,
+        },
+        *,
+    };
     use crate::http::query::{
         CancelParams, ExchangeAction, ExchangeActionParams, ExchangeActionType, OrderParams,
         UpdateLeverageParams,
@@ -208,13 +212,6 @@ mod tests {
         #[case] array_len: usize,
         #[case] expected_weight: u32,
     ) {
-        use rust_decimal::Decimal;
-
-        use super::super::models::{
-            Cloid, HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
-            HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
-        };
-
         let orders: Vec<HyperliquidExecPlaceOrderRequest> = (0..array_len)
             .map(|_| HyperliquidExecPlaceOrderRequest {
                 asset: 0,
@@ -244,8 +241,6 @@ mod tests {
 
     #[rstest]
     fn test_exchange_weight_cancel() {
-        use super::super::models::{Cloid, HyperliquidExecCancelByCloidRequest};
-
         let cancels: Vec<HyperliquidExecCancelByCloidRequest> = (0..40)
             .map(|_| HyperliquidExecCancelByCloidRequest {
                 asset: 0,

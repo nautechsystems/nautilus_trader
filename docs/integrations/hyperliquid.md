@@ -455,7 +455,6 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 
 | Option              | Default | Description                                    |
 |---------------------|---------|------------------------------------------------|
-| `base_url_http`     | `None`  | Override for the REST base URL.                |
 | `base_url_ws`       | `None`  | Override for the WebSocket base URL.           |
 | `testnet`           | `False` | Connect to the Hyperliquid testnet when `True`.|
 | `http_timeout_secs` | `10`    | Timeout (seconds) applied to REST calls.       |
@@ -468,10 +467,9 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 |--------------------------|---------|--------------------------------------------------------------------------------------------|
 | `private_key`            | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.    |
 | `vault_address`          | `None`  | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted.  |
-| `base_url_http`          | `None`  | Override for the REST base URL.                                                            |
 | `base_url_ws`            | `None`  | Override for the WebSocket base URL.                                                       |
 | `testnet`                | `False` | Connect to the Hyperliquid testnet when `True`.                                            |
-| `max_retries`            | `None`  | Maximum retry attempts for info requests.                                                  |
+| `max_retries`            | `None`  | Maximum retry attempts for submit, cancel, or modify order requests.                       |
 | `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries.                                              |
 | `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries.                                              |
 | `http_timeout_secs`      | `10`    | Timeout (seconds) applied to REST calls.                                                   |

@@ -603,6 +603,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
             self._terminal_orders.add(order.client_order_id.value)
 
+            # Only clean up cloid on confirmed rejections, not transport
+            # failures where the exchange may have accepted the order
+            if not isinstance(e, (TimeoutError, OSError)):
+                self._cleanup_cloid_mapping(order.client_order_id)
+
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -650,8 +655,13 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             error_str = str(e)
             due_post_only = HYPERLIQUID_POST_ONLY_WOULD_MATCH in error_str
 
+            is_transport_error = isinstance(e, (TimeoutError, OSError))
+
             for order in orders:
                 self._terminal_orders.add(order.client_order_id.value)
+
+                if not is_transport_error:
+                    self._cleanup_cloid_mapping(order.client_order_id)
 
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
@@ -995,13 +1005,16 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 return
 
             self._terminal_orders.add(key)
-            self._pending_filled.add(key)
 
-            # FILLED status often arrives before the fill event
-            self._log.debug(
-                f"Received FILLED status for {report.client_order_id!r} "
-                f"(order is {order.status_string()}) - fill event expected shortly",
-            )
+            # If fill already arrived (order already closed), clean up now
+            if order.is_closed:
+                self._cleanup_cloid_mapping(report.client_order_id)
+            else:
+                self._pending_filled.add(key)
+                self._log.debug(
+                    f"Received FILLED status for {report.client_order_id!r} "
+                    f"(order is {order.status_string()}) - fill event expected shortly",
+                )
         elif report.order_status == OrderStatus.TRIGGERED:
             # Only STOP_LIMIT, TRAILING_STOP_LIMIT, LIMIT_IF_TOUCHED can be triggered
             if order.order_type not in (
@@ -1038,13 +1051,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             f"trade_id={report.trade_id}, qty={report.last_qty}, px={report.last_px}",
         )
 
-        # Skip duplicate fills (Hyperliquid sometimes sends duplicate userEvents)
         trade_id_str = report.trade_id.value
         if trade_id_str in self._processed_trade_ids:
             self._log.debug(f"Skipping duplicate fill: trade_id={report.trade_id}")
             return
-
-        self._processed_trade_ids.add(trade_id_str)
 
         client_order_id = self._resolve_cloid(report.client_order_id)
         report.client_order_id = client_order_id
@@ -1056,11 +1066,13 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 report.client_order_id = client_order_id
 
         if self._is_external_order(client_order_id):
+            self._processed_trade_ids.add(trade_id_str)
             self._send_fill_report(report)
             return
 
         order = self._cache.order(client_order_id)
         if order is None:
+            # Don't mark as processed - order may arrive later
             self._log.error(
                 f"Cannot process fill report - order for {client_order_id!r} not found",
             )
@@ -1068,10 +1080,13 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
+            self._processed_trade_ids.add(trade_id_str)
             self._log.error(
                 f"Cannot process fill report - instrument {order.instrument_id} not found",
             )
             return
+
+        self._processed_trade_ids.add(trade_id_str)
 
         key = order.client_order_id.value
 

@@ -396,7 +396,7 @@ pub struct CandleData {
     /// Symbol.
     pub s: Ustr,
     /// Interval.
-    pub i: String,
+    pub i: Ustr,
     /// Open price.
     pub o: String,
     /// Close price.
@@ -567,7 +567,7 @@ pub struct WsFillData {
     #[serde(default)]
     pub liquidation: Option<FillLiquidationData>,
     #[serde(rename = "feeToken")]
-    pub fee_token: String,
+    pub fee_token: Ustr,
     #[serde(rename = "builderFee")]
     pub builder_fee: Option<String>,
     /// Client order ID (hex string with 0x prefix).
