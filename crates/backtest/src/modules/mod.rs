@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Simulation module trait for extending backtesting with custom venue behaviors.
+
 use nautilus_core::UnixNanos;
 use nautilus_model::data::Data;
 

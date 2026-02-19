@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Configuration types for the backtest engine, venues, data, and run parameters.
+
 use std::time::Duration;
 
 use ahash::AHashMap;

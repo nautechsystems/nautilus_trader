@@ -272,6 +272,7 @@ impl BacktestEngine {
         Ok(())
     }
 
+    /// Changes the fill model for the specified venue.
     pub fn change_fill_model(&mut self, venue: Venue, fill_model: FillModelAny) {
         if let Some(exchange) = self.venues.get_mut(&venue) {
             exchange.borrow_mut().set_fill_model(fill_model);
@@ -304,10 +305,7 @@ impl BacktestEngine {
                     "Cannot add a `CurrencyPair` instrument {instrument_id} for a venue with a single-currency CASH account"
                 )
             }
-            exchange
-                .borrow_mut()
-                .add_instrument(instrument.clone())
-                .unwrap();
+            exchange.borrow_mut().add_instrument(instrument.clone())?;
         } else {
             anyhow::bail!(
                 "Cannot add an `Instrument` object without first adding its associated venue {}",
@@ -329,6 +327,7 @@ impl BacktestEngine {
         Ok(())
     }
 
+    /// Adds market data to the engine for replay during the backtest run.
     pub fn add_data(
         &mut self,
         data: Vec<Data>,
@@ -469,6 +468,7 @@ impl BacktestEngine {
         anyhow::ensure!(start_ns <= end_ns, "start was > end");
         self.end_ns = end_ns;
         self.last_ns = start_ns;
+        self.last_module_ns = None;
 
         // Set all component clocks to start
         let clocks = self.collect_all_clocks();
@@ -724,7 +724,9 @@ impl BacktestEngine {
         };
 
         let cache = self.kernel.cache.borrow();
-        let total_orders = cache.orders_total_count(None, None, None, None, None);
+        let orders = cache.orders(None, None, None, None, None);
+        let total_events: usize = orders.iter().map(|o| o.event_count()).sum();
+        let total_orders = orders.len();
         let positions = cache.positions(None, None, None, None, None);
         let total_positions = positions.len();
 
@@ -751,7 +753,7 @@ impl BacktestEngine {
             backtest_end: self.backtest_end,
             elapsed_time_secs,
             iterations: self.iteration,
-            total_events: self.iteration,
+            total_events,
             total_orders,
             total_positions,
             stats_pnls,
@@ -1100,6 +1102,7 @@ impl BacktestEngine {
         log_portfolio_performance(&analyzer);
     }
 
+    /// Registers a data client for the given `client_id` if one does not already exist.
     pub fn add_data_client_if_not_exists(&mut self, client_id: ClientId) {
         if self
             .kernel
@@ -1127,6 +1130,7 @@ impl BacktestEngine {
             .register_client(data_client_adapter, None);
     }
 
+    /// Registers a market data client for the given `venue` if one does not already exist.
     pub fn add_market_data_client_if_not_exists(&mut self, venue: Venue) {
         let client_id = ClientId::from(venue.as_str());
         if !self

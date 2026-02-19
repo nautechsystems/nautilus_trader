@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Multi-stream, time-ordered data iterator for replaying historical market data.
+
 use std::collections::BinaryHeap;
 
 use ahash::AHashMap;
@@ -57,7 +59,7 @@ pub struct BacktestDataIterator {
 }
 
 impl BacktestDataIterator {
-    /// Create an empty [`BacktestDataIterator`].
+    /// Creates a new empty [`BacktestDataIterator`].
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -71,8 +73,10 @@ impl BacktestDataIterator {
         }
     }
 
-    /// Add (or replace) a named data stream.  `append_data=true` gives the stream
-    /// lower priority when timestamps tie, mirroring the original behaviour.
+    /// Adds (or replaces) a named data stream.
+    ///
+    /// When `append_data` is true the stream gets lower priority on timestamp
+    /// ties; when false (prepend) it wins ties.
     pub fn add_data(&mut self, name: &str, mut data: Vec<Data>, append_data: bool) {
         if data.is_empty() {
             return;
@@ -101,8 +105,7 @@ impl BacktestDataIterator {
         self.rebuild_heap();
     }
 
-    /// Remove a stream.  `complete_remove` also discards placeholder generator
-    /// (not implemented yet).
+    /// Removes a named data stream.
     pub fn remove_data(&mut self, name: &str, complete_remove: bool) {
         if let Some(priority) = self.priorities.remove(name) {
             self.streams.remove(&priority);
@@ -121,7 +124,7 @@ impl BacktestDataIterator {
         }
     }
 
-    /// Move cursor of stream to `index` (0-based).
+    /// Sets the cursor of a named stream to `index` (0-based).
     pub fn set_index(&mut self, name: &str, index: usize) {
         if let Some(priority) = self.priorities.get(name) {
             self.indices.insert(*priority, index);
@@ -129,7 +132,7 @@ impl BacktestDataIterator {
         }
     }
 
-    /// Reset all stream cursors to the beginning.
+    /// Resets all stream cursors to the beginning.
     pub fn reset_all_cursors(&mut self) {
         for idx in self.indices.values_mut() {
             *idx = 0;
@@ -137,7 +140,7 @@ impl BacktestDataIterator {
         self.rebuild_heap();
     }
 
-    /// Return next Data element across all streams in chronological order.
+    /// Returns the next [`Data`] element across all streams in chronological order.
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<Data> {
         // Fast path for single stream
@@ -171,6 +174,7 @@ impl BacktestDataIterator {
         Some(element)
     }
 
+    /// Returns whether all streams have been fully consumed.
     #[must_use]
     pub fn is_done(&self) -> bool {
         if let Some(p) = self.single_priority {

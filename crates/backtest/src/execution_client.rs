@@ -76,6 +76,8 @@ impl Debug for BacktestExecutionClient {
 }
 
 impl BacktestExecutionClient {
+    /// Creates a new [`BacktestExecutionClient`] instance.
+    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

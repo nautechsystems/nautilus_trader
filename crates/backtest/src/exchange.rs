@@ -104,14 +104,18 @@ impl PartialOrd for InflightCommand {
 /// - Market data processing and order book maintenance
 /// - Simulation modules for custom venue behaviors
 pub struct SimulatedExchange {
+    /// The venue identifier.
     pub id: Venue,
+    /// The order management system type.
     pub oms_type: OmsType,
+    /// The account type for the venue.
     pub account_type: AccountType,
+    /// The optional base currency for single-currency accounts.
+    pub base_currency: Option<Currency>,
     starting_balances: Vec<Money>,
     book_type: BookType,
     default_leverage: Decimal,
     exec_client: Option<Rc<dyn ExecutionClient>>,
-    pub base_currency: Option<Currency>,
     fee_model: FeeModelAny,
     fill_model: FillModelAny,
     latency_model: Option<Box<dyn LatencyModel>>,
@@ -201,11 +205,11 @@ impl SimulatedExchange {
             id: venue,
             oms_type,
             account_type,
+            base_currency,
             starting_balances,
             book_type,
             default_leverage,
             exec_client: None,
-            base_currency,
             fee_model,
             fill_model,
             latency_model,
@@ -237,10 +241,12 @@ impl SimulatedExchange {
         })
     }
 
+    /// Registers the execution client for the exchange.
     pub fn register_client(&mut self, client: Rc<dyn ExecutionClient>) {
         self.exec_client = Some(client);
     }
 
+    /// Sets the fill model for the exchange.
     pub fn set_fill_model(&mut self, fill_model: FillModelAny) {
         for matching_engine in self.matching_engines.values_mut() {
             matching_engine.set_fill_model(fill_model.clone());
@@ -253,14 +259,17 @@ impl SimulatedExchange {
         self.fill_model = fill_model;
     }
 
+    /// Sets the latency model for the exchange.
     pub fn set_latency_model(&mut self, latency_model: Box<dyn LatencyModel>) {
         self.latency_model = Some(latency_model);
     }
 
+    /// Sets the settlement price for the given instrument.
     pub fn set_settlement_price(&mut self, instrument_id: InstrumentId, price: Price) {
         self.settlement_prices.insert(instrument_id, price);
     }
 
+    /// Initializes the exchange account with starting balances.
     pub fn initialize_account(&mut self) {
         self.generate_fresh_account_state();
     }
@@ -331,6 +340,7 @@ impl SimulatedExchange {
         Ok(())
     }
 
+    /// Returns the best bid price for the given instrument, if available.
     #[must_use]
     pub fn best_bid_price(&self, instrument_id: InstrumentId) -> Option<Price> {
         self.matching_engines
@@ -338,6 +348,7 @@ impl SimulatedExchange {
             .and_then(OrderMatchingEngine::best_bid_price)
     }
 
+    /// Returns the best ask price for the given instrument, if available.
     #[must_use]
     pub fn best_ask_price(&self, instrument_id: InstrumentId) -> Option<Price> {
         self.matching_engines
@@ -345,12 +356,14 @@ impl SimulatedExchange {
             .and_then(OrderMatchingEngine::best_ask_price)
     }
 
+    /// Returns a reference to the order book for the given instrument, if available.
     pub fn get_book(&self, instrument_id: InstrumentId) -> Option<&OrderBook> {
         self.matching_engines
             .get(&instrument_id)
             .map(OrderMatchingEngine::get_book)
     }
 
+    /// Returns a reference to the matching engine for the given instrument, if available.
     #[must_use]
     pub fn get_matching_engine(
         &self,
@@ -359,11 +372,13 @@ impl SimulatedExchange {
         self.matching_engines.get(instrument_id)
     }
 
+    /// Returns a reference to all matching engines keyed by instrument ID.
     #[must_use]
     pub const fn get_matching_engines(&self) -> &AHashMap<InstrumentId, OrderMatchingEngine> {
         &self.matching_engines
     }
 
+    /// Returns all order books keyed by instrument ID.
     #[must_use]
     pub fn get_books(&self) -> AHashMap<InstrumentId, OrderBook> {
         let mut books = AHashMap::new();
@@ -373,6 +388,7 @@ impl SimulatedExchange {
         books
     }
 
+    /// Returns all open orders, optionally filtered by instrument ID.
     #[must_use]
     pub fn get_open_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
         instrument_id
@@ -389,6 +405,7 @@ impl SimulatedExchange {
             })
     }
 
+    /// Returns all open bid orders, optionally filtered by instrument ID.
     #[must_use]
     pub fn get_open_bid_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
         instrument_id
@@ -405,6 +422,7 @@ impl SimulatedExchange {
             })
     }
 
+    /// Returns all open ask orders, optionally filtered by instrument ID.
     #[must_use]
     pub fn get_open_ask_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
         instrument_id
@@ -421,14 +439,12 @@ impl SimulatedExchange {
             })
     }
 
-    /// # Panics
-    ///
-    /// Panics if retrieving the account from the execution client fails.
+    /// Returns the account for this exchange, if an execution client is registered.
     #[must_use]
     pub fn get_account(&self) -> Option<AccountAny> {
         self.exec_client
             .as_ref()
-            .map(|client| client.get_account().unwrap())
+            .and_then(|client| client.get_account())
     }
 
     /// Returns a reference to the cache.
@@ -437,6 +453,8 @@ impl SimulatedExchange {
         &self.cache
     }
 
+    /// Adjusts the account balance by the given amount.
+    ///
     /// # Panics
     ///
     /// Panics if generating account state fails during adjustment.
@@ -448,7 +466,7 @@ impl SimulatedExchange {
 
         if let Some(exec_client) = &self.exec_client {
             let venue = exec_client.venue();
-            println!("Adjusting account for venue {venue}");
+            log::debug!("Adjusting account for venue {venue}");
             if let Some(account) = self.cache.borrow().account_for_venue(&venue) {
                 match account.balance(Some(adjustment.currency)) {
                     Some(balance) => {
@@ -485,6 +503,7 @@ impl SimulatedExchange {
         }
     }
 
+    /// Returns whether there are pending commands at or before `ts_now`.
     #[must_use]
     pub fn has_pending_commands(&self, ts_now: UnixNanos) -> bool {
         if !self.message_queue.is_empty() {
@@ -495,6 +514,7 @@ impl SimulatedExchange {
             .is_some_and(|inflight| inflight.timestamp <= ts_now)
     }
 
+    /// Sends a trading command to the exchange for processing.
     pub fn send(&mut self, command: TradingCommand) {
         if !self.use_message_queue {
             self.process_trading_command(command);
@@ -507,10 +527,7 @@ impl SimulatedExchange {
         }
     }
 
-    /// # Panics
-    ///
-    /// Panics if the command is invalid when generating inflight command.
-    pub fn generate_inflight_command(&mut self, command: &TradingCommand) -> (UnixNanos, u32) {
+    fn generate_inflight_command(&mut self, command: &TradingCommand) -> (UnixNanos, u32) {
         if let Some(latency_model) = &self.latency_model {
             let ts = match command {
                 TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_) => {
@@ -539,6 +556,8 @@ impl SimulatedExchange {
         }
     }
 
+    /// Processes a single order book delta.
+    ///
     /// # Panics
     ///
     /// Panics if adding a missing instrument during delta processing fails.
@@ -570,6 +589,8 @@ impl SimulatedExchange {
         }
     }
 
+    /// Processes a batch of order book deltas.
+    ///
     /// # Panics
     ///
     /// Panics if adding a missing instrument during deltas processing fails.
@@ -601,6 +622,8 @@ impl SimulatedExchange {
         }
     }
 
+    /// Processes an L2 order book depth snapshot.
+    ///
     /// # Panics
     ///
     /// Panics if adding a missing instrument during depth10 processing fails.
@@ -632,12 +655,14 @@ impl SimulatedExchange {
         }
     }
 
+    /// Processes a quote tick and updates the matching engine.
+    ///
     /// # Panics
     ///
     /// Panics if adding a missing instrument during quote tick processing fails.
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         for module in &self.modules {
-            module.pre_process(Data::Quote(quote.to_owned()));
+            module.pre_process(Data::Quote(*quote));
         }
 
         if !self.matching_engines.contains_key(&quote.instrument_id) {
@@ -663,12 +688,14 @@ impl SimulatedExchange {
         }
     }
 
+    /// Processes a trade tick and updates the matching engine.
+    ///
     /// # Panics
     ///
     /// Panics if adding a missing instrument during trade tick processing fails.
     pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         for module in &self.modules {
-            module.pre_process(Data::Trade(trade.to_owned()));
+            module.pre_process(Data::Trade(*trade));
         }
 
         if !self.matching_engines.contains_key(&trade.instrument_id) {
@@ -694,6 +721,8 @@ impl SimulatedExchange {
         }
     }
 
+    /// Processes a bar and updates the matching engine.
+    ///
     /// # Panics
     ///
     /// Panics if adding a missing instrument during bar processing fails.
@@ -725,6 +754,8 @@ impl SimulatedExchange {
         }
     }
 
+    /// Processes an instrument status update.
+    ///
     /// # Panics
     ///
     /// Panics if adding a missing instrument during instrument status processing fails.
@@ -752,6 +783,8 @@ impl SimulatedExchange {
         }
     }
 
+    /// Processes an instrument close event.
+    ///
     /// # Panics
     ///
     /// Panics if adding a missing instrument during instrument close processing fails.
@@ -786,6 +819,8 @@ impl SimulatedExchange {
         }
     }
 
+    /// Processes all pending inflight and queued trading commands up to `ts_now`.
+    ///
     /// # Panics
     ///
     /// Panics if popping an inflight command fails during processing.
@@ -819,6 +854,7 @@ impl SimulatedExchange {
         }
     }
 
+    /// Resets the exchange to its initial state.
     pub fn reset(&mut self) {
         for module in &self.modules {
             module.reset();
@@ -837,16 +873,14 @@ impl SimulatedExchange {
         log::info!("Resetting exchange state");
     }
 
+    /// Logs diagnostic information from all simulation modules.
     pub fn log_diagnostics(&self) {
         for module in &self.modules {
             module.log_diagnostics();
         }
     }
 
-    /// # Panics
-    ///
-    /// Panics if execution client is uninitialized when processing trading command.
-    pub fn process_trading_command(&mut self, command: TradingCommand) {
+    fn process_trading_command(&mut self, command: TradingCommand) {
         if let Some(matching_engine) = self.matching_engines.get_mut(&command.instrument_id()) {
             let account_id = if let Some(exec_client) = &self.exec_client {
                 exec_client.account_id()
@@ -895,10 +929,7 @@ impl SimulatedExchange {
         }
     }
 
-    /// # Panics
-    ///
-    /// Panics if generating fresh account state fails.
-    pub fn generate_fresh_account_state(&self) {
+    fn generate_fresh_account_state(&self) {
         let balances: Vec<AccountBalance> = self
             .starting_balances
             .iter()

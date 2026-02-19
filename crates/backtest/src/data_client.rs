@@ -47,6 +47,8 @@ pub struct BacktestDataClient {
 }
 
 impl BacktestDataClient {
+    /// Creates a new [`BacktestDataClient`] instance.
+    #[must_use]
     pub const fn new(client_id: ClientId, venue: Venue, cache: Rc<RefCell<Cache>>) -> Self {
         Self {
             client_id,
