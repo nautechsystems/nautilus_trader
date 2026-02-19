@@ -188,6 +188,15 @@ def test_enforce_monotonic_ts_unsorted_returns_sorted_by_ts_init() -> None:
     assert result.column("x")[2].as_py() == 3
 
 
+def test_enforce_monotonic_ts_single_row_missing_ts_init_raises_error() -> None:
+    # Arrange
+    table = pa.table({"x": pa.array([1])})
+
+    # Act, Assert
+    with pytest.raises(ValueError, match="no 'ts_init' column"):
+        ParquetDataCatalog._enforce_monotonic_ts(table)
+
+
 def test_enforce_monotonic_ts_chunked_array_unsorted_returns_sorted() -> None:
     # Tables from concat can have ChunkedArray ts_init; ensure we sort correctly
     t1 = pa.table(

@@ -2562,13 +2562,13 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     @staticmethod
     def _enforce_monotonic_ts(table: pa.Table) -> pa.Table:
-        if len(table) <= 1:
-            return table
-
-        if "ts_init" not in table.schema.names:
+        if len(table) > 0 and "ts_init" not in table.schema.names:
             raise ValueError(
                 "Table has no 'ts_init' column; cannot enforce monotonicity",
             )
+
+        if len(table) <= 1:
+            return table
 
         ts_col = table.column("ts_init")
         if isinstance(ts_col, pa.ChunkedArray):
