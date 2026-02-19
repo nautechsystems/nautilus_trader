@@ -1705,12 +1705,23 @@ impl OrderMatchingEngine {
                 self.snapshot_queue_position(order, price);
             }
 
-            if let Err(e) = self
+            let add_result = self
                 .cache
                 .borrow_mut()
-                .add_order(order.clone(), None, None, false)
-            {
-                log::debug!("Order already in cache: {e}");
+                .add_order(order.clone(), None, None, false);
+            if let Err(e) = add_result {
+                log::debug!("Failed to add order to cache: {e}");
+
+                // Persist Maker side on the cached copy when exec engine
+                // already cached the order (only if not already Maker/Taker)
+                if let Some(cached) = self.cache.borrow_mut().mut_order(&order.client_order_id())
+                    && !matches!(
+                        cached.liquidity_side(),
+                        Some(LiquiditySide::Maker | LiquiditySide::Taker)
+                    )
+                {
+                    cached.set_liquidity_side(LiquiditySide::Maker);
+                }
             }
         }
     }

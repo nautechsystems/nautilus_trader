@@ -23,6 +23,7 @@ crate-type = ["rlib", "staticlib"]
 [features]
 default = []
 examples = ["nautilus-trading/examples"]
+high-precision = ["nautilus-model/high-precision"]
 streaming = ["nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
   "nautilus-common/extension-module",
@@ -77,7 +78,10 @@ pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-indicators = { workspace = true }
+nautilus-persistence = { workspace = true }
+nautilus-testkit = { workspace = true }
 nautilus-trading = { workspace = true, features = ["examples"] }
+
 rstest = { workspace = true }
 tempfile = { workspace = true }
 

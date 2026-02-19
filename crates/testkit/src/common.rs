@@ -13,9 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::path::PathBuf;
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 use nautilus_core::paths::get_test_data_path;
+use nautilus_model::data::OrderBookDelta;
+use nautilus_serialization::arrow::DecodeFromRecordBatch;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
 use crate::files::ensure_file_exists_or_download_http;
 
@@ -138,4 +145,42 @@ pub fn get_tardis_bitmex_trades_path() -> PathBuf {
     get_test_data_path()
         .join("tardis")
         .join("bitmex_trades_XBTUSD.csv")
+}
+
+/// Loads ITCH AAPL order book deltas from the parquet test dataset.
+///
+/// Downloads the file on first access. Pass `limit` to subsample.
+#[must_use]
+pub fn load_itch_aapl_deltas(limit: Option<usize>) -> Vec<OrderBookDelta> {
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    let filepath = PATH.get_or_init(ensure_itch_aapl_deltas_parquet);
+    load_deltas_from_parquet(filepath, limit)
+}
+
+/// Loads Tardis Deribit BTC-PERPETUAL order book deltas from the parquet test dataset.
+///
+/// Downloads the file on first access. Pass `limit` to subsample.
+#[must_use]
+pub fn load_tardis_deribit_deltas(limit: Option<usize>) -> Vec<OrderBookDelta> {
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    let filepath = PATH.get_or_init(ensure_tardis_deribit_deltas_parquet);
+    load_deltas_from_parquet(filepath, limit)
+}
+
+fn load_deltas_from_parquet(filepath: &Path, limit: Option<usize>) -> Vec<OrderBookDelta> {
+    let file = File::open(filepath).unwrap();
+    let mut builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
+    let metadata = builder.schema().metadata().clone();
+    if let Some(limit) = limit {
+        builder = builder.with_limit(limit);
+    }
+    let reader = builder.build().unwrap();
+
+    let mut deltas = Vec::new();
+    for batch_result in reader {
+        let batch = batch_result.unwrap();
+        let batch_deltas = OrderBookDelta::decode_batch(&metadata, batch).unwrap();
+        deltas.extend(batch_deltas);
+    }
+    deltas
 }

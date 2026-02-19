@@ -45,6 +45,7 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-network = { workspace = true }
 nautilus-portfolio = { workspace = true }
+nautilus-serialization = { workspace = true }
 nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
@@ -55,6 +56,7 @@ hex = { workspace = true }
 indexmap = { workspace = true }
 itchy = { workspace = true }
 log = { workspace = true }
+parquet = { workspace = true, features = ["zstd"] }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
@@ -66,8 +68,6 @@ pyo3 = { workspace = true, optional = true }
 [dev-dependencies]
 arrow = { workspace = true }
 axum = { workspace = true }
-nautilus-serialization = { workspace = true }
-parquet = { workspace = true, features = ["zstd"] }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }

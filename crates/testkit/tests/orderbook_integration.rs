@@ -15,53 +15,22 @@
 
 //! Integration tests for OrderBook using real market data.
 
-use std::{fs::File, path::PathBuf, sync::OnceLock};
-
 use indexmap::IndexMap;
 use nautilus_model::{
-    data::OrderBookDelta,
     enums::{BookAction, BookType},
     identifiers::InstrumentId,
     orderbook::{OrderBook, analysis::book_check_integrity},
 };
-use nautilus_serialization::arrow::DecodeFromRecordBatch;
-use nautilus_testkit::common::{
-    ensure_itch_aapl_deltas_parquet, ensure_tardis_deribit_deltas_parquet,
-};
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use nautilus_testkit::common::{load_itch_aapl_deltas, load_tardis_deribit_deltas};
 use rstest::rstest;
 use rust_decimal_macros::dec;
-
-// Nextest runs tests within a binary in parallel; serialize the downloads
-static TARDIS_PARQUET_PATH: OnceLock<PathBuf> = OnceLock::new();
-static ITCH_PARQUET_PATH: OnceLock<PathBuf> = OnceLock::new();
-
-fn load_tardis_deltas(limit: Option<usize>) -> Vec<OrderBookDelta> {
-    let filepath = TARDIS_PARQUET_PATH.get_or_init(ensure_tardis_deribit_deltas_parquet);
-    let file = File::open(filepath).unwrap();
-    let mut builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
-    let metadata = builder.schema().metadata().clone();
-
-    if let Some(limit) = limit {
-        builder = builder.with_limit(limit);
-    }
-    let reader = builder.build().unwrap();
-
-    let mut deltas = Vec::new();
-    for batch_result in reader {
-        let batch = batch_result.unwrap();
-        let batch_deltas = OrderBookDelta::decode_batch(&metadata, batch).unwrap();
-        deltas.extend(batch_deltas);
-    }
-    deltas
-}
 
 // Subsample size for routine CI (first ~100K deltas covers initial snapshot + trading)
 const CI_DELTA_LIMIT: usize = 100_000;
 
 #[rstest]
 fn test_apply_tardis_deribit_deltas_full_replay() {
-    let deltas = load_tardis_deltas(Some(CI_DELTA_LIMIT));
+    let deltas = load_tardis_deribit_deltas(Some(CI_DELTA_LIMIT));
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
 
     // Validate dataset preconditions
@@ -119,31 +88,11 @@ fn test_apply_tardis_deribit_deltas_full_replay() {
     println!("{}", book.pprint(5, None));
 }
 
-fn load_itch_deltas(limit: Option<usize>) -> Vec<OrderBookDelta> {
-    let filepath = ITCH_PARQUET_PATH.get_or_init(ensure_itch_aapl_deltas_parquet);
-    let file = File::open(filepath).unwrap();
-    let mut builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
-    let metadata = builder.schema().metadata().clone();
-
-    if let Some(limit) = limit {
-        builder = builder.with_limit(limit);
-    }
-    let reader = builder.build().unwrap();
-
-    let mut deltas = Vec::new();
-    for batch_result in reader {
-        let batch = batch_result.unwrap();
-        let batch_deltas = OrderBookDelta::decode_batch(&metadata, batch).unwrap();
-        deltas.extend(batch_deltas);
-    }
-    deltas
-}
-
 const ITCH_CI_DELTA_LIMIT: usize = 100_000;
 
 #[rstest]
 fn test_apply_itch_aapl_deltas_full_replay() {
-    let deltas = load_itch_deltas(Some(ITCH_CI_DELTA_LIMIT));
+    let deltas = load_itch_aapl_deltas(Some(ITCH_CI_DELTA_LIMIT));
     let instrument_id = InstrumentId::from("AAPL.XNAS");
 
     // Validate dataset preconditions
