@@ -678,7 +678,13 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         batch = []
         for order in open_orders:
             client_order_id_u32, _ = self._encoder.encode(str(order.client_order_id))
-            tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
+            if client_order_id_u32 not in self._order_contexts:
+                self._log.debug(
+                    f"Skipping cancel for {order.client_order_id}: "
+                    "order context already cleaned up (terminal)",
+                )
+                continue
+            tif_value, expire_ns = self._order_contexts[client_order_id_u32]
             batch.append((str(order.instrument_id), client_order_id_u32, tif_value, expire_ns))
 
         if batch:
@@ -711,7 +717,13 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 )
                 continue
             client_order_id_u32, _ = self._encoder.encode(str(cancel.client_order_id))
-            tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
+            if client_order_id_u32 not in self._order_contexts:
+                self._log.debug(
+                    f"Skipping cancel for {cancel.client_order_id}: "
+                    "order context already cleaned up (terminal)",
+                )
+                continue
+            tif_value, expire_ns = self._order_contexts[client_order_id_u32]
             batch.append((str(order.instrument_id), client_order_id_u32, tif_value, expire_ns))
 
         if batch:

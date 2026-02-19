@@ -1922,33 +1922,21 @@ impl ExecutionClient for DydxExecutionClient {
         // Collect (instrument_id, client_id, order_flags) tuples for cancel
         // Use stored order_flags from order context to ensure correct cancellation
         let mut orders_to_cancel = Vec::new();
-        for (client_order_id, time_in_force, expire_time) in &order_data {
-            if let Some(encoded) = self.encoder.get(client_order_id) {
-                let client_id_u32 = encoded.client_id;
-                // Get stored order_flags from order context
-                let order_flags = self.get_order_context(client_id_u32).map_or_else(
-                    || {
-                        // Fallback: derive from order parameters if context not found
-                        log::warn!(
-                            "Order context not found for {client_order_id}, deriving flags from order"
-                        );
-                        let expire_secs = expire_time.map(nanos_to_secs_i64);
-                        types::OrderLifetime::from_time_in_force(
-                            *time_in_force,
-                            expire_secs,
-                            false,
-                            order_builder.max_short_term_secs(),
-                        )
-                        .order_flags()
-                    },
-                    |ctx| ctx.order_flags,
+        for (client_order_id, _time_in_force, _expire_time) in &order_data {
+            let Some(encoded) = self.encoder.get(client_order_id) else {
+                log::warn!("Cannot cancel order {client_order_id}: not found in encoder");
+                continue;
+            };
+            let client_id_u32 = encoded.client_id;
+
+            // Skip if context already cleaned up (terminal WS event received)
+            let Some(ctx) = self.get_order_context(client_id_u32) else {
+                log::debug!(
+                    "Skipping cancel for {client_order_id}: order context already cleaned up (terminal)"
                 );
-                orders_to_cancel.push((instrument_id, client_id_u32, order_flags));
-            } else {
-                log::warn!(
-                    "Cannot cancel order {client_order_id}: client_order_id not found in cache"
-                );
-            }
+                continue;
+            };
+            orders_to_cancel.push((instrument_id, client_id_u32, ctx.order_flags));
         }
 
         if orders_to_cancel.is_empty() {
@@ -1991,7 +1979,7 @@ impl ExecutionClient for DydxExecutionClient {
             anyhow::bail!("Cannot cancel orders: not connected");
         }
 
-        // Get execution components early for order_flags derivation
+        // Get execution components for broadcasting
         let (tx_manager, broadcaster, order_builder) = match self.get_execution_components() {
             Ok(components) => components,
             Err(e) => {
@@ -2001,8 +1989,6 @@ impl ExecutionClient for DydxExecutionClient {
         };
 
         // Convert ClientOrderIds to u32 and get order_flags
-        let cache = self.core.cache();
-
         let mut orders_to_cancel = Vec::with_capacity(cmd.cancels.len());
         for cancel in &cmd.cancels {
             let client_order_id = cancel.client_order_id;
@@ -2017,33 +2003,16 @@ impl ExecutionClient for DydxExecutionClient {
             };
             let client_id_u32 = encoded.client_id;
 
-            // Get stored order_flags from order context
-            let order_flags = self.get_order_context(client_id_u32).map_or_else(
-                || {
-                    // Fallback: derive from order parameters if context not found
-                    log::warn!(
-                        "Order context not found for {client_order_id}, deriving flags from order"
-                    );
-                    match cache.order(&client_order_id) {
-                        Some(order) => {
-                            let expire_time = order.expire_time().map(nanos_to_secs_i64);
-                            types::OrderLifetime::from_time_in_force(
-                                order.time_in_force(),
-                                expire_time,
-                                false,
-                                order_builder.max_short_term_secs(),
-                            )
-                            .order_flags()
-                        }
-                        None => types::ORDER_FLAG_LONG_TERM, // Default to long-term if not found
-                    }
-                },
-                |ctx| ctx.order_flags,
-            );
+            // Skip if context already cleaned up (terminal WS event received)
+            let Some(ctx) = self.get_order_context(client_id_u32) else {
+                log::debug!(
+                    "Skipping cancel for {client_order_id}: order context already cleaned up (terminal)"
+                );
+                continue;
+            };
 
-            orders_to_cancel.push((cancel.instrument_id, client_id_u32, order_flags));
+            orders_to_cancel.push((cancel.instrument_id, client_id_u32, ctx.order_flags));
         }
-        drop(cache);
 
         if orders_to_cancel.is_empty() {
             log::warn!("No valid orders to cancel in batch");
