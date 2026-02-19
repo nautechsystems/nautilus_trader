@@ -6127,3 +6127,42 @@ async fn test_check_open_orders_proceeds_without_local_activity() {
         panic!("Expected OrderFilled event, was {:?}", events[0]);
     }
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() {
+    // A SUBMITTED order with no venue_order_id that the venue doesn't know
+    // about should eventually be rejected after retries are exhausted.
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 1,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let order = create_submitted_order(
+        "O-001",
+        test_instrument_id(),
+        OrderSide::Buy,
+        "10.0",
+        "100.0",
+    );
+    ctx.add_order(order.clone());
+    ctx.cache.borrow_mut().update_order(&order).unwrap();
+
+    // Venue returns no reports - order was never placed
+    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
+    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert_eq!(events.len(), 1);
+    if let OrderEventAny::Rejected(rejected) = &events[0] {
+        assert_eq!(rejected.client_order_id, ClientOrderId::from("O-001"));
+        assert_eq!(rejected.reason.as_str(), "NOT_FOUND_AT_VENUE");
+    } else {
+        panic!("Expected OrderRejected event, was {:?}", events[0]);
+    }
+}

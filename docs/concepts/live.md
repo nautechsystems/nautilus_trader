@@ -222,6 +222,7 @@ If an order's status cannot be reconciled after exhausting all retries, the engi
 
 | Cache status       | Venue status | Resolution  | Rationale                                                           |
 |--------------------|--------------|-------------|---------------------------------------------------------------------|
+| `SUBMITTED`        | Not found    | `REJECTED`  | Order never confirmed by venue (e.g., lost during network error).   |
 | `ACCEPTED`         | Not found    | `REJECTED`  | Order doesn't exist at venue, likely was never successfully placed. |
 | `ACCEPTED`         | `CANCELED`   | `CANCELED`  | Venue canceled the order (user action or venue-initiated).          |
 | `ACCEPTED`         | `EXPIRED`    | `EXPIRED`   | Order reached GTD expiration at venue.                              |
@@ -521,7 +522,7 @@ The scenarios below are split between startup reconciliation (mass status) and r
 | **Position quantity mismatch (short)** | Internal short position differs from external (e.g., internal: -100, external: -150).             | Generates SELL LIMIT order with calculated price when `generate_missing_orders=True`. |
 | **Position reduction**                 | External position smaller than internal (e.g., internal: 150 long, external: 100 long).           | Generates opposite side LIMIT order with calculated price to reduce position.             |
 | **Position side flip**                 | Internal position opposite of external (e.g., internal: 100 long, external: 50 short).            | Generates LIMIT order with calculated price to close internal and open external position. |
-| **Internal reconciliation orders**     | Position reconciliation orders with strategy ID "EXTERNAL" and tag "RECONCILIATION".                    | Never filtered, regardless of `filter_unclaimed_external_orders` (filtered by tag check). |
+| **Internal reconciliation orders**     | Position reconciliation orders with strategy ID "EXTERNAL" and tag "RECONCILIATION".              | Never filtered, regardless of `filter_unclaimed_external_orders` (filtered by tag check). |
 
 #### Runtime/continuous checks
 

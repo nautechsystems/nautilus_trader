@@ -279,10 +279,10 @@ The adapter handles several edge cases when processing fills from the stream:
 - **Race conditions**: When stream fills arrive before the HTTP order response, the adapter caches
   the venue order ID immediately to ensure correct order matching.
 - **Network error recovery**: When an HTTP order submission fails with a network error (timeout,
-  connection reset), the order may still have been placed on the venue. The adapter defers
-  rejection for `submit_rejection_delay_secs` to allow the stream to confirm the order. Any
-  stream update for the order cancels the deferred rejection and generates acceptance. Set to
-  `0` to reject immediately.
+  connection reset), the order may still have been placed on the venue. The adapter leaves the
+  order in SUBMITTED status and retains the customer order reference so the stream can confirm
+  the order when it reconnects. API errors (where Betfair explicitly rejected) still reject
+  immediately.
 
 ## Rate limiting
 
@@ -447,7 +447,9 @@ for data in parse_betfair_rcm_file("path/to/rcm_data.json"):
 | `instrument_config`       | `None`    | Optional `BetfairInstrumentProviderConfig` to scope available markets. |
 | `subscription_delay_secs` | `3`       | Delay (seconds) before initial market subscription request is sent. |
 | `keep_alive_secs`         | `36,000`  | Keep-alive interval (seconds) for the Betfair session. |
+| `subscribe_race_data`     | `False`   | When `True`, subscribe to Race Change Messages (RCM) for live GPS tracking data. |
 | `stream_conflate_ms`      | `None`    | Explicit stream conflation interval in milliseconds (`0` disables conflation). |
+| `stream_heartbeat_ms`     | `5,000`    | Stream heartbeat interval in milliseconds (500-5000). `None` to omit. |
 | `proxy_url`               | `None`    | Optional proxy URL for HTTP requests. |
 
 :::warning
@@ -470,9 +472,9 @@ Set `stream_conflate_ms=0` explicitly to guarantee no conflation and receive eve
 | `reconcile_market_ids_only`  | `False`  | When `True`, reconciliation only covers `instrument_config.market_ids` (no effect if unset). |
 | `stream_market_ids_filter`   | `None`   | List of market IDs to process from stream; others are silently skipped. |
 | `ignore_external_orders`     | `False`  | When `True`, ignore stream orders missing from the local cache. |
-| `submit_rejection_delay_secs`| `10`     | Grace period (seconds) before rejecting after a network error during submission. |
 | `use_market_version`         | `False`  | When `True`, attach the latest market version to order requests for price protection. |
 | `order_request_rate_per_second` | `20`  | Rate limit (requests/second) for order endpoints, separate from general API endpoints. |
+| `stream_heartbeat_ms`        | `5,000`   | Order stream heartbeat interval in milliseconds (500-5000). `None` to omit. |
 | `proxy_url`                  | `None`   | Optional proxy URL for HTTP requests. |
 
 :::warning

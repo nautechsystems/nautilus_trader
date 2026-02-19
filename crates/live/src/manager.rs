@@ -902,12 +902,13 @@ impl ExecutionManager {
 
         let filtered_orders: Vec<OrderAny> = {
             let cache = self.cache.borrow();
-            let open_orders = cache.orders_open(None, None, None, None, None);
+            let mut orders = cache.orders_open(None, None, None, None, None);
+            orders.extend(cache.orders_inflight(None, None, None, None, None));
 
             if self.config.reconciliation_instrument_ids.is_empty() {
-                open_orders.iter().map(|o| (*o).clone()).collect()
+                orders.iter().map(|o| (*o).clone()).collect()
             } else {
-                open_orders
+                orders
                     .iter()
                     .filter(|o| {
                         self.config
