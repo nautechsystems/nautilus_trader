@@ -32,7 +32,6 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
-
 use crate::{
     error::DydxError,
     execution::{
@@ -435,9 +434,11 @@ impl OrderSubmitter {
         Ok(tx_hash)
     }
 
-    /// Cancels multiple orders in a single blockchain transaction.
+    /// Cancels multiple orders with optimal partitioned broadcasting.
     ///
-    /// Batches all cancellation messages into one transaction for efficiency.
+    /// Partitions orders into short-term and long-term groups:
+    /// - Short-term orders: single `MsgBatchCancel` via `broadcast_short_term()`
+    /// - Long-term orders: batched `MsgCancelOrder` messages via `broadcast_with_retry()`
     ///
     /// # Arguments
     ///
@@ -445,7 +446,7 @@ impl OrderSubmitter {
     ///
     /// # Returns
     ///
-    /// The transaction hash on success.
+    /// Comma-separated transaction hashes on success (one per partition).
     ///
     /// # Errors
     ///
@@ -463,26 +464,64 @@ impl OrderSubmitter {
             return Err(DydxError::Order("No orders to cancel".to_string()));
         }
 
-        log::info!(
-            "Batch cancelling {} orders in single transaction",
-            orders.len()
-        );
-
         let block_height = self.current_block_height();
 
-        // Build all cancel messages
-        let msgs = self
-            .order_builder
-            .build_cancel_orders_batch(orders, block_height)?;
+        // Partition into short-term and long-term orders
+        let (short_term, long_term): (Vec<_>, Vec<_>) =
+            orders.iter().partition(|(_, _, tif, expire_ns)| {
+                self.order_builder.is_short_term_cancel(*tif, *expire_ns)
+            });
 
-        // Broadcast with retry
-        let operation = format!("Cancel batch of {} orders", msgs.len());
-        let tx_hash = self
-            .broadcaster
-            .broadcast_with_retry(&self.tx_manager, msgs, &operation)
-            .await?;
+        log::info!(
+            "Batch cancelling {} orders (short_term={}, long_term={})",
+            orders.len(),
+            short_term.len(),
+            long_term.len(),
+        );
 
-        Ok(tx_hash)
+        let mut tx_hashes = Vec::new();
+
+        // Cancel short-term orders with MsgBatchCancel (single gRPC call)
+        if !short_term.is_empty() {
+            let st_pairs: Vec<_> = short_term
+                .iter()
+                .map(|(inst_id, client_id, _, _)| (*inst_id, *client_id))
+                .collect();
+
+            let msg = self
+                .order_builder
+                .build_batch_cancel_short_term(&st_pairs, block_height)?;
+
+            let operation = format!("BatchCancel {} short-term orders", st_pairs.len());
+            let tx_hash = self
+                .broadcaster
+                .broadcast_short_term(&self.tx_manager, vec![msg], &operation)
+                .await?;
+            tx_hashes.push(tx_hash);
+        }
+
+        // Cancel long-term orders with batched MsgCancelOrder (single gRPC call)
+        if !long_term.is_empty() {
+            let lt_orders: Vec<_> = long_term
+                .iter()
+                .map(|(inst_id, client_id, tif, expire_ns)| {
+                    (*inst_id, *client_id, *tif, *expire_ns)
+                })
+                .collect();
+
+            let msgs = self
+                .order_builder
+                .build_cancel_orders_batch(&lt_orders, block_height)?;
+
+            let operation = format!("BatchCancel {} long-term orders", lt_orders.len());
+            let tx_hash = self
+                .broadcaster
+                .broadcast_with_retry(&self.tx_manager, msgs, &operation)
+                .await?;
+            tx_hashes.push(tx_hash);
+        }
+
+        Ok(tx_hashes.join(","))
     }
 
     /// Submits a stop market order to dYdX via gRPC.

@@ -672,26 +672,23 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._log.info("No open orders to cancel")
             return
 
-        # Cancel each order individually (dYdX does not allow batching short-term cancels)
+        # Collect all open orders into batch list
         assert self._encoder is not None
-        self._log.debug(
-            f"Cancelling {len(open_orders)} orders individually for "
-            f"{command.instrument_id or 'all instruments'}",
-        )
+        batch = []
         for order in open_orders:
             client_order_id_u32, _ = self._encoder.encode(str(order.client_order_id))
             tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
+            batch.append((str(order.instrument_id), client_order_id_u32, tif_value, expire_ns))
+
+        if batch:
             try:
-                await self._order_submitter.cancel_order(
-                    instrument_id=str(order.instrument_id),
-                    client_order_id=client_order_id_u32,
-                    time_in_force=tif_value,
-                    expire_time_ns=expire_ns,
+                await self._order_submitter.cancel_orders_batch(batch)
+                self._log.info(
+                    f"Batch cancelled {len(batch)} orders in single transaction"
+                    f" for {command.instrument_id or 'all instruments'}",
                 )
             except Exception as e:
-                self._log.error(
-                    f"Failed to cancel order {order.client_order_id}: {e}",
-                )
+                self._log.error(f"Batch cancel failed: {e}")
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         if self._order_submitter is None:
@@ -702,9 +699,9 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._log.info("No orders to cancel in batch")
             return
 
-        # Cancel each order individually (dYdX does not allow batching short-term cancels)
+        # Collect all orders into batch list
         assert self._encoder is not None
-        self._log.debug(f"Cancelling {len(command.cancels)} orders individually")
+        batch = []
         for cancel in command.cancels:
             order = self._cache.order(cancel.client_order_id)
             if order is None:
@@ -714,17 +711,14 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 continue
             client_order_id_u32, _ = self._encoder.encode(str(cancel.client_order_id))
             tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
+            batch.append((str(order.instrument_id), client_order_id_u32, tif_value, expire_ns))
+
+        if batch:
             try:
-                await self._order_submitter.cancel_order(
-                    instrument_id=str(order.instrument_id),
-                    client_order_id=client_order_id_u32,
-                    time_in_force=tif_value,
-                    expire_time_ns=expire_ns,
-                )
+                await self._order_submitter.cancel_orders_batch(batch)
+                self._log.info(f"Batch cancelled {len(batch)} orders in single transaction")
             except Exception as e:
-                self._log.error(
-                    f"Failed to cancel order {cancel.client_order_id}: {e}",
-                )
+                self._log.error(f"Batch cancel failed: {e}")
 
     async def generate_order_status_report(
         self,
