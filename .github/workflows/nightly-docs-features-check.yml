@@ -50,10 +50,7 @@ jobs:
           tool: cargo-hack
 
       - name: Run docsrs-check
-        env:
-          DOCS_RS: "1"
-          RUSTDOCFLAGS: "--cfg docsrs -D warnings"
-        run: cargo +nightly hack --workspace doc --no-deps --all-features
+        run: make docsrs-check
 
   check-features:
     name: check-features
@@ -89,4 +86,4 @@ jobs:
           tool: cargo-hack
 
       - name: Run check-features
-        run: cargo hack --workspace check --each-feature
+        run: make check-features

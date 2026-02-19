@@ -18,9 +18,10 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+#[cfg(feature = "python")]
+use nautilus_core::correctness::FAILED;
 use nautilus_core::{
     UnixNanos,
-    correctness::FAILED,
     ffi::{
         cvec::CVec,
         parsing::u8_as_bool,
@@ -31,10 +32,12 @@ use nautilus_core::{
 use pyo3::{ffi, prelude::*};
 
 use super::timer::TimeEventHandler_API;
+#[cfg(feature = "python")]
+use crate::timer::TimeEventCallback;
 use crate::{
     clock::{Clock, TestClock},
     live::clock::LiveClock,
-    timer::{TimeEvent, TimeEventCallback},
+    timer::TimeEvent,
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
