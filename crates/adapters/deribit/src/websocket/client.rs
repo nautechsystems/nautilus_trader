@@ -384,6 +384,7 @@ impl DeribitWebSocketClient {
             reconnect_backoff_factor: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Configure rate limits

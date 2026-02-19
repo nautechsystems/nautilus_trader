@@ -315,6 +315,7 @@ impl CoinbaseIntxFixClient {
             reconnect_jitter_ms: Some(500),
             reconnect_max_attempts: None,
             connection_max_retries: None,
+            idle_timeout_ms: None,
             certs_dir: None,
         };
 

@@ -47,6 +47,10 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
         set for the conflation interval. Betfair interprets this as using its default behaviour for
         conflation. The default typically applies conflation, so you need to ensure
         stream_conflate_ms=0 is explicitly set to guarantee no conflation.
+    stream_heartbeat_ms : PositiveInt, default 5000
+        The Betfair stream heartbeat interval (milliseconds). Betfair will send
+        heartbeat messages at this interval during quiet periods, preventing
+        silent connection drops. Valid range is 500-5000. Set to `None` to omit.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
 
@@ -61,6 +65,7 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     subscription_delay_secs: PositiveInt | None = 3
     keep_alive_secs: PositiveInt = 36_000  # 10 hours
     stream_conflate_ms: PositiveInt | None = None
+    stream_heartbeat_ms: PositiveInt | None = 5000
     proxy_url: str | None = None
 
 
@@ -117,6 +122,10 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
         replaceOrders, cancelOrders). Order endpoints use a separate rate
         limit bucket from general API endpoints (5/sec) so order placement
         is not throttled by account state polling or reconciliation queries.
+    stream_heartbeat_ms : PositiveInt, default 5000
+        The Betfair order stream heartbeat interval (milliseconds). Betfair will
+        send heartbeat messages at this interval during quiet periods, preventing
+        silent connection drops. Valid range is 500-5000. Set to `None` to omit.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
 
@@ -136,4 +145,5 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     submit_rejection_delay_secs: NonNegativeInt = 10
     use_market_version: bool = False
     order_request_rate_per_second: PositiveInt = 20
+    stream_heartbeat_ms: PositiveInt | None = 5000
     proxy_url: str | None = None

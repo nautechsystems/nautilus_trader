@@ -28,7 +28,7 @@ use crate::{
 impl SocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, connection_max_retries=5, certs_dir=None, reconnect_max_attempts=None))]
+    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, connection_max_retries=5, reconnect_max_attempts=None, idle_timeout_ms=None, certs_dir=None))]
     fn py_new(
         url: String,
         ssl: bool,
@@ -41,8 +41,9 @@ impl SocketConfig {
         reconnect_backoff_factor: Option<f64>,
         reconnect_jitter_ms: Option<u64>,
         connection_max_retries: Option<u32>,
-        certs_dir: Option<String>,
         reconnect_max_attempts: Option<u32>,
+        idle_timeout_ms: Option<u64>,
+        certs_dir: Option<String>,
     ) -> Self {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
 
@@ -68,8 +69,9 @@ impl SocketConfig {
             reconnect_backoff_factor,
             reconnect_jitter_ms,
             connection_max_retries,
-            certs_dir,
             reconnect_max_attempts,
+            idle_timeout_ms,
+            certs_dir,
         }
     }
 }

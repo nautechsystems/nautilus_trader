@@ -57,6 +57,7 @@ impl WebSocketConfig {
         reconnect_backoff_factor=1.5,
         reconnect_jitter_ms=100,
         reconnect_max_attempts=None,
+        idle_timeout_ms=None,
     ))]
     fn py_new(
         url: String,
@@ -69,6 +70,7 @@ impl WebSocketConfig {
         reconnect_backoff_factor: Option<f64>,
         reconnect_jitter_ms: Option<u64>,
         reconnect_max_attempts: Option<u32>,
+        idle_timeout_ms: Option<u64>,
     ) -> Self {
         Self {
             url,
@@ -81,6 +83,7 @@ impl WebSocketConfig {
             reconnect_backoff_factor,
             reconnect_jitter_ms,
             reconnect_max_attempts,
+            idle_timeout_ms,
         }
     }
 }

@@ -189,6 +189,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             http_client=self._client,
             message_handler=self.handle_order_stream_update,
             certs_dir=config.certs_dir,
+            heartbeat_ms=config.stream_heartbeat_ms,
         )
         self._is_reconnecting = (
             False  # Necessary for coordination, as the clients rely on each other

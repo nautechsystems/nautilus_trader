@@ -199,6 +199,7 @@ impl BinanceSpotWebSocketClient {
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Configure rate limits for subscription operations

@@ -163,6 +163,7 @@ impl HyperliquidWebSocketClient {
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
         let client =
             WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;

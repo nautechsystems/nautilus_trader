@@ -82,7 +82,7 @@ async def main(
             reconciliation=True,
             open_check_interval_secs=5.0,
             open_check_open_only=False,
-            position_check_interval_secs=5.0,
+            position_check_interval_secs=None,  # Not supported by Betfair
             snapshot_orders=True,
             snapshot_positions=True,
             snapshot_positions_interval_secs=5.0,
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
         account_currency="AUD",
-        market_ids=["1.254128652"],
+        market_ids=["1.254166661"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="INFO"))
     node.dispose()

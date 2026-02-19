@@ -175,6 +175,7 @@ class BetfairDataClient(LiveMarketDataClient):
             country_codes=self.instrument_provider.config.country_codes,
             market_types=self.instrument_provider.config.market_types,
             conflate_ms=self.config.stream_conflate_ms,
+            heartbeat_ms=self.config.stream_heartbeat_ms,
         )
 
     async def _keep_alive(self) -> None:
@@ -198,7 +199,6 @@ class BetfairDataClient(LiveMarketDataClient):
         self._is_reconnecting = True
         await self._client.reconnect()
         await self._stream.reconnect()
-        await self.stream_subscribe()
         self._is_reconnecting = False
 
     async def _disconnect(self) -> None:

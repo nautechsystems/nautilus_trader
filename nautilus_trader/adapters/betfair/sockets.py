@@ -79,6 +79,7 @@ class BetfairStreamClient:
             suffix=self.crlf,
             handler=self.handler,
             heartbeat=(10, msgspec.json.encode({"op": "heartbeat"})),
+            idle_timeout_ms=60_000,
             certs_dir=self.certs_dir,
         )
         self._client = await SocketClient.connect(
@@ -230,6 +231,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
         partition_matched_by_strategy_ref: bool = True,
         include_overall_position: str | None = None,
         customer_strategy_refs: str | None = None,
+        heartbeat_ms: int | None = 5000,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -238,6 +240,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
             certs_dir=certs_dir,
             **kwargs,
         )
+        self.heartbeat_ms = heartbeat_ms
         self.order_filter = {
             "includeOverallPosition": include_overall_position,
             "customerStrategyRefs": customer_strategy_refs,
@@ -261,12 +264,18 @@ class BetfairOrderStreamClient(BetfairStreamClient):
                     "initialClk": None,
                     "clk": None,
                 }
+                if self.heartbeat_ms is not None:
+                    subscribe_msg["heartbeatMs"] = self.heartbeat_ms
                 await self.send(msgspec.json.encode(self.auth_message()))
                 await self.send(msgspec.json.encode(subscribe_msg))
                 return
             except Exception as e:
                 self._log.error(f"Failed to send auth message({e}), retrying {i + 1}/{retries}...")
                 await asyncio.sleep(1.0)
+
+        self._log.error(
+            f"Failed to authenticate after {retries} attempts, connection may be unusable",
+        )
 
 
 class BetfairMarketStreamClient(BetfairStreamClient):
@@ -287,9 +296,10 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             certs_dir=certs_dir,
             **kwargs,
         )
+        self._subscription_message: bytes | None = None
 
     # TODO - Add support for initial_clk/clk reconnection
-    async def send_subscription_message(
+    async def send_subscription_message(  # noqa: C901 (too complex)
         self,
         market_ids: list | None = None,
         betting_types: list | None = None,
@@ -370,11 +380,14 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             "marketDataFilter": {"fields": data_fields},
             "initialClk": initial_clk,
             "clk": clk,
-            "conflateMs": conflate_ms,
-            "heartbeatMs": heartbeat_ms,
             "segmentationEnabled": segmentation_enabled,
         }
-        await self.send(msgspec.json.encode(message))
+        if conflate_ms is not None:
+            message["conflateMs"] = conflate_ms
+        if heartbeat_ms is not None:
+            message["heartbeatMs"] = heartbeat_ms
+        self._subscription_message = msgspec.json.encode(message)
+        await self.send(self._subscription_message)
 
     def post_connection(self) -> None:
         self._loop.create_task(self._post_connection())
@@ -388,7 +401,13 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         for i in range(retries):
             try:
                 await self.send(msgspec.json.encode(self.auth_message()))
+                if self._subscription_message is not None:
+                    await self.send(self._subscription_message)
                 return
             except Exception as e:
                 self._log.error(f"Failed to send auth message({e}), retrying {i + 1}/{retries}...")
                 await asyncio.sleep(1.0)
+
+        self._log.error(
+            f"Failed to authenticate after {retries} attempts, connection may be unusable",
+        )

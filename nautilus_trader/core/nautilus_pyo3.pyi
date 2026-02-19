@@ -4612,6 +4612,7 @@ class WebSocketConfig:
         reconnect_backoff_factor: float | None = 1.5,
         reconnect_jitter_ms: int | None = 100,
         reconnect_max_attempts: int | None = None,
+        idle_timeout_ms: int | None = None,
     ) -> None: ...
 
 class WebSocketClient:
@@ -4648,6 +4649,9 @@ class SocketConfig:
         reconnect_delay_max_ms: int | None = 30_000,
         reconnect_backoff_factor: float | None = 1.5,
         reconnect_jitter_ms: int | None = 100,
+        connection_max_retries: int | None = 5,
+        reconnect_max_attempts: int | None = None,
+        idle_timeout_ms: int | None = None,
         certs_dir: str | None = None,
     ) -> None: ...
 

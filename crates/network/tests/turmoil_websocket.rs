@@ -42,6 +42,7 @@ fn websocket_config() -> WebSocketConfig {
         reconnect_backoff_factor: Some(1.5),
         reconnect_jitter_ms: Some(10),
         reconnect_max_attempts: None,
+        idle_timeout_ms: None,
     }
 }
 
