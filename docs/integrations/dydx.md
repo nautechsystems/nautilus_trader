@@ -19,6 +19,7 @@ compiled into the core `nautilus_trader` package automatically during the build.
 ## Examples
 
 You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/).
+
 ## Overview
 
 This adapter is implemented in Rust with Python bindings via PyO3. It provides direct integration
@@ -721,16 +722,54 @@ resolved automatically from environment variables based on the `is_testnet` sett
 
 ### Permissioned key trading
 
-For institutional setups with separated hot/cold wallet architectures, the adapter supports
-permissioned key trading via authenticator IDs. When provided, transactions include a TxExtension
-to enable trading via sub-accounts using delegated signing keys.
+#### What are API Trading Keys
+
+API Trading Keys let you delegate trading to a separate signing key without sharing your main
+wallet's seed phrase. The API key can place trades using all available margin in the owner's
+cross-margin account, but cannot withdraw funds or transfer assets.
+
+#### Creating an API key
+
+1. In the dYdX web app, navigate to **More → API Trading Keys**
+2. Click **Generate New API Key**
+3. Save the **API Wallet Address** and **Private Key** (shown once, not stored by dYdX)
+4. Click **Authorize API Key** — this registers the key on-chain as an authenticator
+5. The key is now active and can be used for trading
+
+See the [dYdX API Trading Keys guide](https://help.dydx.trade/en/articles/267486-api-trading-keys-creating-a-new-key-on-the-front-end) for full details on creating and managing API keys.
+
+#### Adapter configuration
+
+There are two ways to configure the adapter for API Trading Key usage:
+
+**Auto-resolution (recommended):** Set the API key's private key as `DYDX_PRIVATE_KEY` and the
+owner's wallet address as `DYDX_WALLET_ADDRESS`. The adapter detects the mismatch during connect
+and automatically queries the chain for matching authenticator IDs. No manual ID configuration
+needed.
 
 ```python
 config = DydxExecClientConfig(
-    authenticator_ids=[1, 2],  # Your authenticator IDs
-    is_testnet=False,
+    wallet_address="dydx1owner...",   # Owner account (holds margin)
+    private_key="0xapikey...",         # API Trading Key private key
+    # authenticator_ids resolved automatically
 )
 ```
+
+**Manual override:** If you know the authenticator IDs (e.g., from the dYdX TypeScript client),
+pass them directly to skip auto-resolution:
+
+```python
+config = DydxExecClientConfig(
+    wallet_address="dydx1owner...",
+    private_key="0xapikey...",
+    authenticator_ids=[1, 2],  # Skip auto-resolution
+)
+```
+
+:::note
+API Trading Keys only work with **cross-margin** accounts and cross markets. Isolated margin
+is not supported.
+:::
 
 ## Order books
 

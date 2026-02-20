@@ -98,6 +98,11 @@ The strategy enforces position limits through two mechanisms:
 2. **Projected exposure tracking** — Before placing each level, the strategy tracks the
    worst-case per-side exposure (current position + all pending orders) to prevent over-committing.
 
+Because `cancel_all_orders()` is asynchronous, pending orders may still fill between the cancel
+request and acknowledgement. The strategy accounts for this by tracking worst-case per-side
+exposure (current position + all pending buy/sell orders) before placing new grid levels. This
+prevents momentary over-exposure during cancel-requote transitions.
+
 ### Requote threshold
 
 The `requote_threshold_bps` parameter controls how much the mid-price must move (in basis points)
@@ -154,6 +159,7 @@ When `expire_time_secs=8`, orders are classified as short-term by the adapter:
 3. The order expires silently after ~8 seconds if not filled
 
 This is the recommended configuration for market making because:
+
 - Short-term orders have lower latency
 - No gas fees for expiry (GTB replay protection handles it)
 - The `on_cancel_resubmit` mechanism keeps the grid fresh
@@ -176,20 +182,41 @@ cancels:
 This prevents the strategy from re-quoting unnecessarily during its own cancel waves while
 still responding to protocol expiry events.
 
+`on_order_filled` also removes the order from `pending_self_cancels` — if an order fills
+before the cancel acknowledgement arrives, this prevents stale entries from accumulating
+in the set.
+
 ### Order quantization
 
 All price and size quantization for dYdX markets is handled automatically by the adapter's
 `OrderMessageBuilder`. No manual rounding or conversion is needed. See
 [Price and size quantization](../integrations/dydx.md#price-and-size-quantization) for details.
 
-## Running the example
+### Post-only orders
+
+All grid orders are submitted with `post_only=true`. This ensures every order enters the
+book as a maker order (never crosses the spread). If a grid price has moved through the
+book by the time it reaches the matching engine, the order is rejected rather than filling
+as a taker. This guarantees maker fee rates and prevents unintended crossing during
+requote transitions.
+
+## Running and stopping
 
 ### Environment setup
 
+Credentials can be set via environment variables or a `.env` file in the project root
+(loaded automatically via `dotenvy`):
+
 ```bash
-# Load credentials (create a .env file or export directly)
+# Export directly
 export DYDX_PRIVATE_KEY="0x..."
 export DYDX_WALLET_ADDRESS="dydx1..."
+```
+
+```bash
+# Or use a .env file (alternative to shell exports)
+DYDX_PRIVATE_KEY=0x...
+DYDX_WALLET_ADDRESS=dydx1...
 ```
 
 ### Run the example
@@ -198,29 +225,129 @@ export DYDX_WALLET_ADDRESS="dydx1..."
 cargo run --example dydx-grid-mm --package nautilus-dydx
 ```
 
+### Graceful shutdown
+
+Press **Ctrl+C** to stop the node. The shutdown sequence:
+
+1. SIGINT received → trader stops → `on_stop()` fires
+2. Strategy cancels all orders and closes positions
+3. 5-second grace period (`delay_post_stop_secs`) processes residual events
+4. Clients disconnect, node exits
+
 ## Code walkthrough
 
 ### Node setup
 
-The example configures a `LiveNode` with dYdX data and execution clients:
-
-1. **`DydxDataClientConfig`** — Minimal config; `is_testnet` selects the correct endpoints
-2. **`DydxExecClientConfig`** — Includes trader ID, account ID, network, credentials, and
-   rate limiting (`grpc_rate_limit_per_second: Some(4)`)
-3. **`LiveNode::builder()`** — The builder pattern wires up logging, data/execution clients,
-   and optional features like reconciliation
-
-### Strategy registration
+The complete `main()` function from the example (`node_grid_mm.rs`):
 
 ```rust
-let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("0.10"))
-    .with_num_levels(3)           // 3 buy + 3 sell levels
-    .with_grid_step_bps(100)      // 1% spacing
-    .with_skew_factor(0.5)        // Moderate inventory skew
-    .with_requote_threshold_bps(10) // Requote on 10bps mid move
-    .with_expire_time_secs(8)     // Short-term orders (~8s)
-    .with_on_cancel_resubmit(true); // Refresh grid on protocol cancel
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok(); // Load .env file if present
+
+    // Configuration
+    let is_testnet = false;
+    let network = if is_testnet {
+        DydxNetwork::Testnet
+    } else {
+        DydxNetwork::Mainnet
+    };
+
+    let environment = Environment::Live;
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("DYDX-001");
+    let node_name = "DYDX-GRID-MM-001".to_string();
+    let instrument_id = InstrumentId::from("ETH-USD-PERP.DYDX");
+
+    // Load credentials from environment (testnet/mainnet-aware)
+    let private_key_env = if is_testnet {
+        "DYDX_TESTNET_PRIVATE_KEY"
+    } else {
+        "DYDX_PRIVATE_KEY"
+    };
+    let private_key = get_env_option(private_key_env);
+    let wallet_env = if is_testnet {
+        "DYDX_TESTNET_WALLET_ADDRESS"
+    } else {
+        "DYDX_WALLET_ADDRESS"
+    };
+    let wallet_address = get_env_option(wallet_env);
+
+    if private_key.is_none() && wallet_address.is_none() {
+        return Err(
+            format!("Set {private_key_env} or {wallet_env} environment variable").into(),
+        );
+    }
+
+    // Minimal data client config — is_testnet selects the correct endpoints
+    let data_config = DydxDataClientConfig {
+        is_testnet,
+        ..Default::default()
+    };
+
+    // Execution client with trader ID, network, credentials, and rate limiting
+    let exec_config = DYDXExecClientConfig {
+        trader_id,
+        account_id,
+        network,
+        private_key,
+        wallet_address,
+        subaccount_number: 0,
+        grpc_endpoint: None,
+        grpc_urls: vec![],
+        ws_endpoint: None,
+        http_endpoint: None,
+        authenticator_ids: vec![],
+        http_timeout_secs: Some(30),
+        max_retries: Some(3),
+        retry_delay_initial_ms: Some(1000),
+        retry_delay_max_ms: Some(10000),
+        grpc_rate_limit_per_second: Some(4), // Conservative for public providers
+    };
+
+    let data_factory = DydxDataClientFactory::new();
+    let exec_factory = DydxExecutionClientFactory::new();
+
+    let log_config = LoggerConfig {
+        stdout_level: LevelFilter::Info,
+        ..Default::default()
+    };
+
+    // Builder pattern wires up logging, data/execution clients, and node options
+    let mut node = LiveNode::builder(trader_id, environment)?
+        .with_name(node_name)
+        .with_logging(log_config)
+        .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
+        .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
+        .with_reconciliation(false)   // Disabled for simplicity; enable in production
+                                      // to resume state across restarts
+        .with_delay_post_stop_secs(5) // Grace period for pending cancel/close events
+        .build()?;
+
+    // Strategy configuration and registration
+    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("0.10"))
+        .with_num_levels(3)
+        .with_grid_step_bps(100)
+        .with_skew_factor(0.5)
+        .with_requote_threshold_bps(10)
+        .with_expire_time_secs(8)
+        .with_on_cancel_resubmit(true);
+    let strategy = GridMarketMaker::new(config);
+
+    node.add_strategy(strategy)?;
+    node.run().await?;
+
+    Ok(())
+}
 ```
+
+Key configuration points:
+
+- **`dotenvy::dotenv().ok()`** — loads a `.env` file from the project root (if present)
+- **`with_reconciliation(false)`** — disabled for simplicity; enable in production to resume
+  state across restarts
+- **`with_delay_post_stop_secs(5)`** — grace period for pending cancel/close events to finalize
+  during shutdown
 
 ### Event flow
 
@@ -250,6 +377,152 @@ LiveNode starts
         ├── cancel_all_orders()
         ├── close_all_positions()
         └── unsubscribe_quotes()
+```
+
+## Strategy internals
+
+This section shows the key Rust code from `grid_mm.rs` so you can see exactly how the
+strategy works without reading the full source.
+
+### Trade size resolution (`on_start`)
+
+When the strategy starts, it resolves the trade size from the instrument cache. The fallback
+chain is: config value → instrument `min_quantity` → `1.0`:
+
+```rust
+fn on_start(&mut self) -> anyhow::Result<()> {
+    let instrument_id = self.config.instrument_id;
+    let (price_precision, size_precision, min_quantity) = {
+        let cache = self.cache();
+        let instrument = cache
+            .instrument(&instrument_id)
+            .expect("Instrument should be in cache");
+        (
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.min_quantity(),
+        )
+    };
+    self.price_precision = price_precision;
+
+    // Resolve trade_size from instrument when not explicitly provided
+    if self.trade_size.is_none() {
+        self.trade_size =
+            Some(min_quantity.unwrap_or_else(|| Quantity::new(1.0, size_precision)));
+    }
+
+    self.subscribe_quotes(instrument_id, None, None);
+    Ok(())
+}
+```
+
+### Quote handler (`on_quote`, abbreviated)
+
+This is the heart of the strategy. On each quote tick it computes the mid-price,
+checks whether a requote is needed, cancels stale orders, computes worst-case exposure,
+and places new grid orders with GTD + post_only:
+
+```rust
+fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+    let mid_f64 = (quote.bid_price.as_f64() + quote.ask_price.as_f64()) / 2.0;
+    let mid = Price::new(mid_f64, self.price_precision);
+
+    if !self.should_requote(mid) {
+        return Ok(()); // Mid hasn't moved enough — keep existing grid
+    }
+
+    // ... record open order IDs in pending_self_cancels (for on_cancel_resubmit) ...
+
+    self.cancel_all_orders(instrument_id, None, None)?;
+
+    // Compute worst-case per-side exposure (position + all pending orders)
+    // since cancels are async and pending orders may still fill
+    let (net_position, worst_long, worst_short) = { /* ... */ };
+
+    let grid = self.grid_orders(mid, net_position, worst_long, worst_short);
+
+    if grid.is_empty() {
+        return Ok(()); // Don't advance requote anchor when fully constrained
+    }
+
+    // Compute time-in-force from config
+    let (tif, expire_time) = match self.config.expire_time_secs {
+        Some(secs) => {
+            let now_ns = self.core.clock().timestamp_ns();
+            let expire_ns = now_ns + secs * 1_000_000_000;
+            (Some(TimeInForce::Gtd), Some(expire_ns))
+        }
+        None => (None, None),
+    };
+
+    for (side, price) in grid {
+        let order = self.core.order_factory().limit(
+            instrument_id,
+            side,
+            trade_size,
+            price,
+            tif,
+            expire_time,
+            Some(true), // post_only — always maker
+            // ... remaining None fields ...
+        );
+        self.submit_order(order, None, None)?;
+    }
+
+    self.last_quoted_mid = Some(mid);
+    Ok(())
+}
+```
+
+### Grid pricing (`grid_orders`)
+
+Computes geometric grid prices and enforces max_position per-level. This is the function
+behind the ASCII diagrams in the [Strategy overview](#geometric-grid-pricing) section:
+
+```rust
+fn grid_orders(
+    &self,
+    mid: Price,
+    net_position: f64,
+    worst_long: Decimal,
+    worst_short: Decimal,
+) -> Vec<(OrderSide, Price)> {
+    let mid_f64 = mid.as_f64();
+    let skew_f64 = self.config.skew_factor * net_position;
+    let pct = self.config.grid_step_bps as f64 / 10_000.0;
+    let trade_size = self.trade_size
+        .expect("trade_size should be resolved in on_start")
+        .as_decimal();
+    let max_pos = self.config.max_position.as_decimal();
+    let mut projected_long = worst_long;
+    let mut projected_short = worst_short;
+    let mut orders = Vec::new();
+
+    for level in 1..=self.config.num_levels {
+        let buy_price = Price::new(
+            mid_f64 * (1.0 - pct).powi(level as i32) - skew_f64,
+            precision,
+        );
+        let sell_price = Price::new(
+            mid_f64 * (1.0 + pct).powi(level as i32) - skew_f64,
+            precision,
+        );
+
+        // Only place buy if projected long exposure stays within max_position
+        if projected_long + trade_size <= max_pos {
+            orders.push((OrderSide::Buy, buy_price));
+            projected_long += trade_size;
+        }
+
+        // Only place sell if projected short exposure stays within max_position
+        if projected_short - trade_size >= -max_pos {
+            orders.push((OrderSide::Sell, sell_price));
+            projected_short -= trade_size;
+        }
+    }
+
+    orders
+}
 ```
 
 ## Monitoring and understanding output
