@@ -31,7 +31,6 @@ use crate::{
     orderbook::{
         BinaryMarketBookViewError, BookIntegrityError, BookPrice, OrderBook, OwnBookOrder,
         analysis::book_check_integrity,
-        binary_book_view::BinaryMarketBookView,
         own::{OwnBookLadder, OwnBookLevel, OwnOrderBook},
     },
     stubs::TestDefault,
@@ -1671,17 +1670,16 @@ fn test_book_filtered_with_synthetic_orders() {
     synthetic_book.add(synthetic_ask_order);
     synthetic_book.add(synthetic_bid_order);
 
-    let view = BinaryMarketBookView::new(
-        book,
-        Some(own_book),
-        Some(synthetic_book),
+    let filtered = book.filtered_view(
+        Some(&own_book),
         Some(10),
         None,
         None,
         None,
+        Some(&synthetic_book),
     );
-    let bids_filtered = view.book.bids_as_map(None);
-    let asks_filtered = view.book.asks_as_map(None);
+    let bids_filtered = filtered.bids_as_map(None);
+    let asks_filtered = filtered.asks_as_map(None);
 
     assert_eq!(bids_filtered.get(&dec!(0.40)), Some(&dec!(70))); // 100 - 30
     assert_eq!(asks_filtered.get(&dec!(0.60)), Some(&dec!(80))); // 100 - 20
@@ -1774,39 +1772,121 @@ fn test_book_filtered_with_own_and_synthetic_orders() {
     synthetic_book.add(synthetic_ask_order);
     synthetic_book.add(synthetic_bid_order);
 
-    let view = BinaryMarketBookView::new(
-        book,
-        Some(own_book),
-        Some(synthetic_book),
+    let filtered = book.filtered_view(
+        Some(&own_book),
         Some(10),
         None,
         None,
         None,
+        Some(&synthetic_book),
     );
-    let bids_filtered = view.book.bids_as_map(None);
-    let asks_filtered = view.book.asks_as_map(None);
+    let bids_filtered = filtered.bids_as_map(None);
+    let asks_filtered = filtered.asks_as_map(None);
 
     assert_eq!(bids_filtered.get(&dec!(0.40)), Some(&dec!(60))); // 100 - 10 - 30
     assert_eq!(asks_filtered.get(&dec!(0.60)), Some(&dec!(75))); // 100 - 5 - 20
 }
 
 #[rstest]
-fn test_binary_market_book_view_book_and_own_book_instrument_mismatch() {
+fn test_order_book_filtered_view_with_combined_own_orders() {
+    let instrument_yes_id = InstrumentId::from("YES.XNAS");
+    let instrument_no_id = InstrumentId::from("NO.XNAS");
+    let mut public_book = OrderBook::new(instrument_yes_id, BookType::L2_MBP);
+    let mut own_yes = OwnOrderBook::new(instrument_yes_id);
+    let mut own_no = OwnOrderBook::new(instrument_no_id);
+
+    public_book.add(
+        BookOrder::new(OrderSide::Buy, Price::from("0.40"), Quantity::from(100), 1),
+        0,
+        1,
+        1.into(),
+    );
+    public_book.add(
+        BookOrder::new(OrderSide::Sell, Price::from("0.60"), Quantity::from(100), 2),
+        0,
+        2,
+        2.into(),
+    );
+
+    own_yes.add(OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("OWN-BID-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("0.40"),
+        Quantity::from(10),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        1.into(),
+        1.into(),
+        1.into(),
+        1.into(),
+    ));
+    own_yes.add(OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("OWN-ASK-1"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Sell,
+        Price::from("0.60"),
+        Quantity::from(5),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        2.into(),
+        2.into(),
+        2.into(),
+        2.into(),
+    ));
+
+    own_no.add(OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("NO-ASK-1"),
+        Some(VenueOrderId::from("3")),
+        OrderSideSpecified::Sell,
+        Price::from("0.60"),
+        Quantity::from(30),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        3.into(),
+        3.into(),
+        3.into(),
+        3.into(),
+    ));
+    own_no.add(OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("NO-BID-1"),
+        Some(VenueOrderId::from("4")),
+        OrderSideSpecified::Buy,
+        Price::from("0.40"),
+        Quantity::from(20),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        4.into(),
+        4.into(),
+        4.into(),
+        4.into(),
+    ));
+
+    let filtered =
+        public_book.filtered_view(Some(&own_yes), Some(10), None, None, None, Some(&own_no));
+    let bids = filtered.bids_as_map(None);
+    let asks = filtered.asks_as_map(None);
+
+    assert_eq!(bids.get(&dec!(0.40)), Some(&dec!(60))); // 100 - 10 - 30
+    assert_eq!(asks.get(&dec!(0.60)), Some(&dec!(75))); // 100 - 5 - 20
+}
+
+#[rstest]
+fn test_order_book_filtered_view_book_and_own_book_instrument_mismatch() {
     let instrument_yes_id = InstrumentId::from("YES.XNAS");
     let instrument_no_id = InstrumentId::from("NO.XNAS");
     let book = OrderBook::new(instrument_yes_id, BookType::L2_MBP);
     let own_book = OwnOrderBook::new(instrument_no_id);
-    let synthetic_book = OwnOrderBook::new(instrument_no_id);
 
-    let result = BinaryMarketBookView::new_checked(
-        book,
-        Some(own_book),
-        Some(synthetic_book),
-        Some(10),
-        None,
-        None,
-        None,
-    );
+    let result = book.filtered_view_checked(Some(&own_book), Some(10), None, None, None, None);
 
     assert!(result.is_err());
 
@@ -1820,20 +1900,19 @@ fn test_binary_market_book_view_book_and_own_book_instrument_mismatch() {
 }
 
 #[rstest]
-fn test_binary_market_book_view_book_and_own_synthetic_book_instrument_must_differ() {
+fn test_own_order_book_combined_with_opposite_instrument_must_differ() {
     let instrument_yes_id = InstrumentId::from("YES.XNAS");
     let book = OrderBook::new(instrument_yes_id, BookType::L2_MBP);
     let own_book = OwnOrderBook::new(instrument_yes_id);
     let synthetic_book = OwnOrderBook::new(instrument_yes_id);
 
-    let result = BinaryMarketBookView::new_checked(
-        book,
-        Some(own_book),
-        Some(synthetic_book),
+    let result = book.filtered_view_checked(
+        Some(&own_book),
         Some(10),
         None,
         None,
         None,
+        Some(&synthetic_book),
     );
 
     assert!(result.is_err());
@@ -1853,7 +1932,7 @@ fn test_binary_market_book_view_book_and_own_synthetic_book_instrument_must_diff
 }
 
 #[rstest]
-fn test_binary_market_book_view_optional_books() {
+fn test_order_book_filtered_view_optional_books() {
     let instrument_id = InstrumentId::from("YES.XNAS");
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
@@ -1863,10 +1942,12 @@ fn test_binary_market_book_view_optional_books() {
     book.add(bid_order, 0, 1, 1.into());
     book.add(ask_order, 0, 2, 2.into());
 
-    let view = BinaryMarketBookView::new_checked(book, None, None, None, None, None, None).unwrap();
+    let filtered = book
+        .filtered_view_checked(None, None, None, None, None, None)
+        .unwrap();
 
-    assert_eq!(view.book.best_bid_size(), Some(Quantity::from(100)));
-    assert_eq!(view.book.best_ask_size(), Some(Quantity::from(200)));
+    assert_eq!(filtered.best_bid_size(), Some(Quantity::from(100)));
+    assert_eq!(filtered.best_ask_size(), Some(Quantity::from(200)));
 }
 
 #[rstest]

@@ -17,7 +17,6 @@
 
 pub mod aggregation;
 pub mod analysis;
-pub mod binary_book_view;
 pub mod book;
 pub mod display;
 pub mod error;
@@ -30,7 +29,6 @@ mod tests;
 
 // Re-exports
 pub use crate::orderbook::{
-    binary_book_view::BinaryMarketBookView,
     book::OrderBook,
     error::{BinaryMarketBookViewError, BookIntegrityError, InvalidBookOperation},
     ladder::BookPrice,
