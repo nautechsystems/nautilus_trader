@@ -41,6 +41,32 @@ use super::{
 };
 use crate::{decode::decode_instrument_def_msg, symbology::MetadataCache};
 
+/// Applies default venue-to-dataset mappings for consolidated Databento feeds.
+/// GLBX.MDP3 covers CME Globex exchange MICs; OPRA.PILLAR covers OPRA option venues.
+fn apply_default_venue_dataset_mappings(venue_dataset_map: &mut IndexMap<Venue, Dataset>) {
+    let glbx = Dataset::from("GLBX.MDP3");
+    for venue in [
+        Venue::CBCM(),
+        Venue::GLBX(),
+        Venue::NYUM(),
+        Venue::XCBT(),
+        Venue::XCEC(),
+        Venue::XCME(),
+        Venue::XFXS(),
+        Venue::XNYM(),
+    ] {
+        _ = venue_dataset_map.insert(venue, glbx);
+    }
+
+    let opra = Dataset::from("OPRA.PILLAR");
+    for venue_code in [
+        "AMXO", "XBOX", "XCBO", "EMLD", "EDGO", "GMNI", "XISX", "MCRY", "XMIO", "ARCO", "OPRA",
+        "MPRL", "XNDQ", "XBXO", "C2OX", "XPHL", "BATO", "MXOP", "SPHR",
+    ] {
+        _ = venue_dataset_map.insert(Venue::from(venue_code), opra);
+    }
+}
+
 /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
 /// # Supported Schemas
@@ -137,17 +163,7 @@ impl DatabentoDataLoader {
         }
 
         self.venue_dataset_map = venue_dataset_map;
-
-        // Insert CME Globex exchanges
-        let glbx = Dataset::from("GLBX.MDP3");
-        self.venue_dataset_map.insert(Venue::CBCM(), glbx);
-        self.venue_dataset_map.insert(Venue::GLBX(), glbx);
-        self.venue_dataset_map.insert(Venue::NYUM(), glbx);
-        self.venue_dataset_map.insert(Venue::XCBT(), glbx);
-        self.venue_dataset_map.insert(Venue::XCEC(), glbx);
-        self.venue_dataset_map.insert(Venue::XCME(), glbx);
-        self.venue_dataset_map.insert(Venue::XFXS(), glbx);
-        self.venue_dataset_map.insert(Venue::XNYM(), glbx);
+        apply_default_venue_dataset_mappings(&mut self.venue_dataset_map);
 
         self.publisher_venue_map = publishers
             .into_iter()
@@ -808,6 +824,17 @@ mod tests {
 
         let result = loader.get_dataset_for_venue(&venue).unwrap();
         assert_eq!(*result, dataset);
+    }
+
+    #[rstest]
+    fn test_default_venue_dataset_mappings(loader: DatabentoDataLoader) {
+        let xcme = Venue::XCME();
+        let result = loader.get_dataset_for_venue(&xcme).unwrap();
+        assert_eq!(*result, Ustr::from("GLBX.MDP3"));
+
+        let xcbo = Venue::from("XCBO");
+        let result = loader.get_dataset_for_venue(&xcbo).unwrap();
+        assert_eq!(*result, Ustr::from("OPRA.PILLAR"));
     }
 
     #[rstest]
