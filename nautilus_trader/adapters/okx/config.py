@@ -36,7 +36,7 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
         If ``None`` then will source the `OKX_API_SECRET` environment variable.
     api_passphrase : str, [default=None]
         The passphrase used when creating the OKX API keys.
-        If ``None`` then will source the `OKX_PASSPHRASE` environment variable.
+        If ``None`` then will source the `OKX_API_PASSPHRASE` environment variable.
     instrument_types : tuple[OKXInstrumentType], default `(OKXInstrumentType.SPOT,)`
         The OKX instrument types of instruments to load.
         If None, all instrument types are loaded (subject to contract types and their compatibility with instrument types).
@@ -103,7 +103,7 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
         If ``None`` then will source the `OKX_API_SECRET` environment variable.
     api_passphrase : str, [default=None]
         The passphrase used when creating the OKX API keys.
-        If ``None`` then will source the `OKX_PASSPHRASE` environment variable.
+        If ``None`` then will source the `OKX_API_PASSPHRASE` environment variable.
     instrument_types : tuple[OKXInstrumentType], default `(OKXInstrumentType.SPOT,)`
         The OKX instrument types of instruments to load.
         If None, all instrument types are loaded (subject to contract types and their compatibility with instrument types).

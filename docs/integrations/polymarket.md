@@ -419,12 +419,12 @@ When you attempt to subscribe to 501 or more instruments on a single WebSocket c
 
 NautilusTrader automatically manages WebSocket connections to handle this limitation:
 
-- When the subscription count exceeds 500 instruments, the adapter automatically creates additional WebSocket connections.
-- Each connection maintains up to 500 instrument subscriptions.
+- The adapter defaults to **200 instrument subscriptions per connection** (configurable via `ws_max_subscriptions_per_connection`).
+- When the subscription count exceeds this limit, additional WebSocket connections are created automatically.
 - This ensures you receive complete order book data (including initial snapshots) for all subscribed instruments.
 
 :::tip
-If you need to subscribe to a large number of instruments (e.g., 5000+), the adapter will automatically distribute these subscriptions across multiple WebSocket connections, with each connection handling up to 500 instruments.
+If you need to subscribe to a large number of instruments (e.g., 5000+), the adapter will automatically distribute these subscriptions across multiple WebSocket connections. You can tune the per-connection limit up to 500 via `ws_max_subscriptions_per_connection`.
 :::
 
 ## Rate limiting
@@ -439,11 +439,11 @@ HTTP 429 responses and requests are throttled rather than immediately rejected.
 | Public endpoints     | 100 req/min per IP | Unauthenticated market data requests.       |
 | Authenticated reads  | 300 req/min per key| Authenticated data queries.                 |
 | Trading endpoints    | 60 orders/min      | Order placement and cancellation.           |
-| Order endpoint       | 3000 req/10 min    | Rolling or fixed window (unconfirmed).      |
+| Order endpoint       | 3,000 req/10 min   | Rolling or fixed window (unconfirmed).      |
 
 ### WebSocket limits
 
-- **Subscriptions per connection**: 500 instruments maximum (handled automatically by the adapter).
+- **Subscriptions per connection**: 500 instruments maximum (adapter defaults to 200, configurable via `ws_max_subscriptions_per_connection`).
 - **Connections**: 20 subscriptions per connection for some endpoints.
 
 :::warning
@@ -495,6 +495,8 @@ The following limitations are currently known:
 | `update_instruments_interval_mins` | `60`         | Interval (minutes) between instrument catalogue refreshes. |
 | `compute_effective_deltas`         | `False`      | Compute effective order book deltas for bandwidth savings. |
 | `drop_quotes_missing_side`         | `True`       | Drop quotes with missing bid/ask prices instead of substituting boundary values. |
+| `instrument_config`                | `None`       | Optional `PolymarketInstrumentProviderConfig` for instrument loading. |
+| `ws_max_subscriptions_per_connection` | `200`     | Maximum instrument subscriptions per WebSocket connection (Polymarket limit is 500). |
 
 ### Execution client configuration options
 
@@ -515,6 +517,9 @@ The following limitations are currently known:
 | `ack_timeout_secs`                   | `5.0`        | Timeout (seconds) to wait for order/trade acknowledgment from cache. |
 | `generate_order_history_from_trades` | `False`      | Generate synthetic order history from trade reports when `True` (experimental). |
 | `log_raw_ws_messages`                | `False`      | Log raw WebSocket payloads at INFO level when `True`. |
+| `instrument_config`                  | `None`       | Optional `PolymarketInstrumentProviderConfig` for instrument loading. |
+| `ws_max_subscriptions_per_connection` | `200`       | Maximum instrument subscriptions per WebSocket connection (Polymarket limit is 500). |
+| `use_data_api`                       | `False`      | Use the Data API instead of CLOB API for fetching user positions (experimental). |
 
 ### Instrument provider configuration options
 

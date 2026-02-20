@@ -965,7 +965,7 @@ data_client_config = InteractiveBrokersDataClientConfig(
     ignore_quote_tick_size_updates=False,  # Include size-only updates
     instrument_provider=instrument_provider_config,
     connection_timeout=300,  # 5 minutes
-    request_timeout=60,      # 1 minute
+    request_timeout_secs=60,      # 1 minute
 )
 ```
 
@@ -984,7 +984,7 @@ production_data_config = InteractiveBrokersDataClientConfig(
     instrument_provider=instrument_provider_config,
     dockerized_gateway=dockerized_gateway_config,  # If using Docker
     connection_timeout=300,
-    request_timeout=60,
+    request_timeout_secs=60,
 )
 ```
 
@@ -1001,7 +1001,7 @@ production_data_config = InteractiveBrokersDataClientConfig(
 | `ignore_quote_tick_size_updates`| `False`                                         | Suppress quote ticks where only size changes when `True`. |
 | `dockerized_gateway`            | `None`                                          | Optional `DockerizedIBGatewayConfig` for containerized setups. |
 | `connection_timeout`            | `300`                                           | Seconds to wait for the initial API connection. |
-| `request_timeout`               | `60`                                            | Seconds to wait for historical data requests before timing out. |
+| `request_timeout_secs`          | `60`                                            | Seconds to wait for historical data requests before timing out. |
 
 #### Notes
 
@@ -1009,7 +1009,7 @@ production_data_config = InteractiveBrokersDataClientConfig(
 - **`ignore_quote_tick_size_updates`**: When `True`, filters out quote ticks where only the size changed (not price), reducing data volume.
 - **`handle_revised_bars`**: When `True`, processes bar revisions from IB (bars can be updated after initial publication).
 - **`connection_timeout`**: Maximum time to wait for initial connection establishment.
-- **`request_timeout`**: Maximum time to wait for historical data requests.
+- **`request_timeout_secs`**: Maximum time to wait for historical data requests.
 
 ### Execution client configuration options
 
@@ -1022,6 +1022,7 @@ production_data_config = InteractiveBrokersDataClientConfig(
 | `account_id`                            | `None`                                          | Interactive Brokers account identifier (falls back to `TWS_ACCOUNT` env var). |
 | `dockerized_gateway`                    | `None`                                          | Optional `DockerizedIBGatewayConfig` for containerized setups. |
 | `connection_timeout`                    | `300`                                           | Seconds to wait for the initial API connection. |
+| `request_timeout_secs`                  | `60`                                            | Seconds to wait for request responses (contract details, etc.). |
 | `fetch_all_open_orders`                 | `False`                                         | When `True`, pulls open orders for every API client ID (not just this session). |
 | `track_option_exercise_from_position_update` | `False`                                    | Subscribe to real-time position updates to detect option exercises when `True`. |
 
@@ -1929,7 +1930,7 @@ data_config = InteractiveBrokersDataClientConfig(
 # Set reasonable timeouts
 config = InteractiveBrokersDataClientConfig(
     connection_timeout=300,  # 5 minutes
-    request_timeout=60,      # 1 minute
+    request_timeout_secs=60,      # 1 minute
     # ... other config
 )
 ```

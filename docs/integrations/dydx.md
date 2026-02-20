@@ -30,12 +30,12 @@ submission, without requiring external client libraries.
 
 | Product Type      | Data Feed | Trading | Notes                                  |
 |-------------------|-----------|---------|----------------------------------------|
-| Perpetual Futures | ✓         | ✓       | All perpetuals are USDC-settled on v4. |
-| Spot              | -         | -       | *Not available on dYdX v4*.            |
-| Options           | -         | -       | *Not available on dYdX v4*.            |
+| Perpetual Futures | ✓         | ✓       | All perpetuals are USDC-settled.       |
+| Spot              | -         | -       | *Not available on dYdX*.               |
+| Options           | -         | -       | *Not available on dYdX*.               |
 
 :::note
-dYdX v4 exclusively supports perpetual futures contracts. All markets are quoted in USD and settled
+dYdX exclusively supports perpetual futures contracts. All markets are quoted in USD and settled
 in USDC.
 :::
 
@@ -51,27 +51,27 @@ expiration.
 The adapter communicates through three independent transport layers:
 
 ```
-                         ┌──────────────────────────────────────────────┐
-                         │              dYdX v4 Chain                   │
-                         │                                              │
- ┌──────────┐  HTTP      │   ┌─────────────────────┐                   │
- │          │───────────►│   │  Indexer (read-only) │                   │
- │          │  WebSocket │   │  - REST API          │                   │
- │ Nautilus │───────────►│   │  - Streaming API     │                   │
- │ Adapter  │            │   └─────────────────────┘                   │
- │          │  gRPC      │   ┌─────────────────────┐                   │
- │          │───────────►│   │  Validator (write)   │                   │
- └──────────┘            │   │  - Cosmos Tx submit  │                   │
-                         │   │  - Sequence mgmt     │                   │
-                         │   └─────────────────────┘                   │
-                         └──────────────────────────────────────────────┘
+                         ┌─────────────────────────────────────────────┐
+                         │              dYdX v4 Chain                  │
+                         │                                             │
+ ┌──────────┐  HTTP      │   ┌──────────────────────┐                  │
+ │          │───────────►│   │  Indexer (read-only) │                  │
+ │          │  WebSocket │   │  - REST API          │                  │
+ │ Nautilus │───────────►│   │  - Streaming API     │                  │
+ │ Adapter  │            │   └──────────────────────┘                  │
+ │          │  gRPC      │   ┌──────────────────────┐                  │
+ │          │───────────►│   │  Validator (write)   │                  │
+ └──────────┘            │   │  - Cosmos Tx submit  │                  │
+                         │   │  - Sequence mgmt     │                  │
+                         │   └──────────────────────┘                  │
+                         └─────────────────────────────────────────────┘
 ```
 
-| Layer     | Target    | Direction  | Purpose                                        |
-|-----------|-----------|------------|------------------------------------------------|
-| HTTP      | Indexer   | Read-only  | Instrument metadata, historical data, account state |
-| WebSocket | Indexer   | Read-only  | Real-time market data, order/fill/position updates  |
-| gRPC      | Validator | Write      | Order placement, cancellation, and batch operations |
+| Layer     | Target    | Direction  | Purpose                                              |
+|-----------|-----------|------------|------------------------------------------------------|
+| HTTP      | Indexer   | Read-only  | Instrument metadata, historical data, account state. |
+| WebSocket | Indexer   | Read-only  | Real-time market data, order/fill/position updates.  |
+| gRPC      | Validator | Write      | Order placement, cancellation, and batch operations. |
 
 ### Block-based settlement
 
@@ -126,13 +126,13 @@ client retries until the deposit appears.
 
 ## Symbology
 
-dYdX v4 uses specific symbol conventions for perpetual futures contracts.
+dYdX uses specific symbol conventions for perpetual futures contracts.
 
 ### Symbol format
 
 Format: `{Base}-USD-PERP`
 
-All perpetuals on dYdX v4 are:
+All perpetuals on dYdX are:
 
 - Quoted in USD
 - Settled in USDC
@@ -152,7 +152,7 @@ InstrumentId.from_str("ETH-USD-PERP.DYDX")
 ```
 
 :::info
-The `-PERP` suffix is appended for consistency with other adapters and future-proofing. While dYdX v4
+The `-PERP` suffix is appended for consistency with other adapters and future-proofing. While dYdX
 currently only supports perpetuals, this naming convention allows for potential expansion to other
 product types.
 :::
@@ -165,22 +165,22 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 
 ### Order types
 
-| Order Type             | Perpetuals | Notes                                                              |
-|------------------------|------------|--------------------------------------------------------------------|
-| `MARKET`               | ✓          | Immediate execution at best available price.                       |
-| `LIMIT`                | ✓          |                                                                    |
-| `STOP_MARKET`          | ✓          | Conditional order, always long-term.                               |
-| `STOP_LIMIT`           | ✓          | Conditional order, always long-term.                               |
-| `MARKET_IF_TOUCHED`    | ✓          | Take-profit market order, triggers on price touch.                 |
-| `LIMIT_IF_TOUCHED`     | ✓          | Take-profit limit order, triggers on price touch.                  |
-| `TRAILING_STOP_MARKET` | -          | *Not supported*.                                                   |
+| Order Type             | Perpetuals | Notes                                              |
+|------------------------|------------|----------------------------------------------------|
+| `MARKET`               | ✓          | Immediate execution at best available price.       |
+| `LIMIT`                | ✓          |                                                    |
+| `STOP_MARKET`          | ✓          | Conditional order, always long-term.               |
+| `STOP_LIMIT`           | ✓          | Conditional order, always long-term.               |
+| `MARKET_IF_TOUCHED`    | ✓          | Take-profit market order, triggers on price touch. |
+| `LIMIT_IF_TOUCHED`     | ✓          | Take-profit limit order, triggers on price touch.  |
+| `TRAILING_STOP_MARKET` | -          | *Not supported*.                                   |
 
 ### Execution instructions
 
-| Instruction   | Perpetuals | Notes                                                                       |
-|---------------|------------|-----------------------------------------------------------------------------|
-| `post_only`   | ✓          | Supported on LIMIT, STOP_LIMIT, and LIMIT_IF_TOUCHED orders.                |
-| `reduce_only` | ✓          | Supported on all order types except MARKET.                                 |
+| Instruction   | Perpetuals | Notes                                                        |
+|---------------|------------|--------------------------------------------------------------|
+| `post_only`   | ✓          | Supported on LIMIT, STOP_LIMIT, and LIMIT_IF_TOUCHED orders. |
+| `reduce_only` | ✓          | Supported on all order types except MARKET.                  |
 
 ### Time in force options
 
@@ -217,7 +217,7 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 | Margin mode      | -          | Cross margin only.            |
 
 :::note
-dYdX v4 supports netting (one position per instrument) at the venue level. The adapter currently
+dYdX supports netting (one position per instrument) at the venue level. The adapter currently
 operates in `NETTING` mode only. Hedging support is planned for a future version.
 :::
 
@@ -241,7 +241,7 @@ operates in `NETTING` mode only. Hedging support is planned for a future version
 
 ### Order classification
 
-dYdX v4 classifies every order into one of three on-chain categories. The Rust adapter
+dYdX classifies every order into one of three on-chain categories. The Rust adapter
 automatically determines the category based on time-in-force and expiry, so no manual
 configuration is required.
 
@@ -251,13 +251,13 @@ configuration is required.
 | Long-term       | On-chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond ~60 seconds.       |
 | Conditional     | On-chain    | Timestamp (UTC)   | Stop-loss and take-profit triggers.           |
 
-At the protocol level, **all dYdX v4 orders are limit orders**. The `MARKET` order type
+At the protocol level, **all dYdX orders are limit orders**. The `MARKET` order type
 is a Nautilus convenience that the adapter implements as an aggressive IOC limit order
 priced well through the book. This means market orders follow the same
 `Submitted > Accepted > Filled` lifecycle as limit orders (an `OrderAccepted` event is
 expected before the fill).
 
-See the [dYdX v4 order documentation](https://docs.dydx.exchange/api_integration-trading/short_term_vs_stateful)
+See the [dYdX order documentation](https://docs.dydx.exchange/api_integration-trading/short_term_vs_stateful)
 for full protocol-level details on short-term vs stateful order mechanics.
 
 #### Short-term orders
@@ -330,10 +330,10 @@ can be reconciled across restarts without persisted state.
 
 For the standard O-format (`O-YYYYMMDD-HHMMSS-TTT-SSS-CCC`), the encoding is deterministic:
 
-| dYdX field        | Bits | Contents                                          |
-|-------------------|------|---------------------------------------------------|
-| `client_id`       | 32   | `[trader:10][strategy:10][count:12]` (unique key).  |
-| `client_metadata` | 32   | Seconds since 2020-01-01 UTC (timestamp).           |
+| dYdX field        | Bits | Contents                                           |
+|-------------------|------|----------------------------------------------------|
+| `client_id`       | 32   | `[trader:10][strategy:10][count:12]` (unique key). |
+| `client_metadata` | 32   | Seconds since 2020-01-01 UTC (timestamp).          |
 
 Because the encoding is deterministic, the adapter can decode any reconciled order back to its
 original `ClientOrderId` string without needing a database or mapping file.
@@ -498,7 +498,7 @@ The v4 adapter supports the following data subscriptions:
 
 ## Subaccounts
 
-dYdX v4 supports multiple subaccounts per wallet address, allowing segregation of trading strategies
+dYdX supports multiple subaccounts per wallet address, allowing segregation of trading strategies
 and risk management within a single wallet.
 
 ### Key concepts
@@ -532,7 +532,7 @@ clients for different subaccounts to implement strategy segregation or risk isol
 
 ## Testnet setup
 
-The dYdX v4 testnet (`dydx-testnet-4`) is a full replica of mainnet for testing strategies
+The dYdX testnet (`dydx-testnet-4`) is a full replica of mainnet for testing strategies
 without risking real funds. All default testnet endpoints are resolved automatically when
 `is_testnet=True`.
 
@@ -620,7 +620,7 @@ Default testnet endpoints are used automatically. Override with `base_url_*` con
 
 ## Configuration
 
-Configure the dYdX v4 adapter through the trading node configuration. Both data and execution
+Configure the dYdX adapter through the trading node configuration. Both data and execution
 clients support environment variable fallbacks for credentials and network-specific settings.
 
 ### Data client configuration options
@@ -633,8 +633,8 @@ clients support environment variable fallbacks for credentials and network-speci
 | `base_url_http`           | `None`  | HTTP API endpoint override.                                                              |
 | `base_url_ws`             | `None`  | WebSocket endpoint override.                                                             |
 | `max_retries`             | `3`     | Maximum retry attempts for REST/WebSocket recovery.                                      |
-| `retry_delay_initial_ms`  | `1000`  | Initial delay (milliseconds) between retries.                                            |
-| `retry_delay_max_ms`      | `10000` | Maximum delay (milliseconds) between retries.                                            |
+| `retry_delay_initial_ms`  | `1,000`  | Initial delay (milliseconds) between retries.                                            |
+| `retry_delay_max_ms`      | `10,000` | Maximum delay (milliseconds) between retries.                                            |
 
 ### Execution client configuration options
 
@@ -649,13 +649,13 @@ clients support environment variable fallbacks for credentials and network-speci
 | `base_url_ws`                  | `None`  | WebSocket client custom endpoint override.                                                         |
 | `base_url_grpc`                | `None`  | gRPC client custom endpoint override. Supports fallback with multiple URLs.                        |
 | `max_retries`                  | `3`     | Maximum retry attempts for order operations.                                                       |
-| `retry_delay_initial_ms`       | `1000`  | Initial delay (milliseconds) between retries.                                                      |
-| `retry_delay_max_ms`           | `10000` | Maximum delay (milliseconds) between retries.                                                      |
+| `retry_delay_initial_ms`       | `1,000`  | Initial delay (milliseconds) between retries.                                                      |
+| `retry_delay_max_ms`           | `10,000` | Maximum delay (milliseconds) between retries.                                                      |
 | `grpc_rate_limit_per_second`   | `4`     | Maximum gRPC requests per second. Set to `None` to disable.                                        |
 
 ### Basic setup
 
-Configure a live `TradingNode` to include dYdX v4 data and execution clients:
+Configure a live `TradingNode` to include dYdX data and execution clients:
 
 ```python
 from nautilus_trader.adapters.dydx import DydxDataClientConfig
