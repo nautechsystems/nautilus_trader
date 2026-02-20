@@ -1762,18 +1762,829 @@ Ensure each supported product family is tested.
 
 ---
 
-## Execution testing spec
+## Data Testing Spec
 
-This section defines a comprehensive test matrix for validating adapter execution
+This section defines a rigorous test matrix for validating adapter data
+functionality using the `DataTester` actor. Both Python
+(`nautilus_trader.test_kit.strategies.tester_data`) and Rust
+(`nautilus_testkit::testers`) provide the `DataTester`. Each test case is
+identified by a prefixed ID (e.g. TC-D01) and grouped by functionality.
+
+Each adapter must pass the subset of tests matching its supported data types.
+Test groups are ordered from least derived to most derived data: instruments
+and raw book data first, then quotes, trades, bars, and derivatives data.
+An adapter that passes groups 1–4 is considered baseline data compliant.
+
+Document adapter-specific data behavior (custom channels, throttling,
+snapshot semantics, etc.) in the adapter's own guide, not here.
+
+### Prerequisites
+
+Before running data tests:
+
+- Sandbox/testnet account with valid API credentials.
+- Target instrument available and loadable via the instrument provider.
+- Environment variables set: `{VENUE}_API_KEY`, `{VENUE}_API_SECRET` (or sandbox variants).
+
+**Python node setup** (reference: `examples/live/{adapter}/{adapter}_data_tester.py`):
+
+```python
+from nautilus_trader.live.node import TradingNode
+from nautilus_trader.test_kit.strategies.tester_data import DataTester, DataTesterConfig
+
+node = TradingNode(config=config_node)
+tester = DataTester(config=config_tester)
+node.trader.add_actor(tester)
+# Register adapter factories, build, and run
+```
+
+**Rust node setup** (reference: `crates/adapters/{adapter}/examples/node_data_tester.rs`):
+
+```rust
+use nautilus_testkit::testers::{DataTester, DataTesterConfig};
+
+let tester_config = DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_quotes(true);
+let tester = DataTester::new(tester_config);
+node.add_actor(tester)?;
+node.run().await?;
+```
+
+### Test groups
+
+Each group begins with a summary table, followed by detailed test cards.
+Test IDs use spaced numbering to allow insertion without renumbering.
+
+---
+
+### Group 1: Instruments
+
+Verify instrument loading and subscription before testing market data streams.
+
+| TC      | Name                        | Description                                          | Skip when            |
+|---------|-----------------------------|------------------------------------------------------|----------------------|
+| TC-D01  | Request instruments         | Load all instruments for a venue.                    | Never.               |
+| TC-D02  | Subscribe instrument        | Subscribe to instrument updates.                     | No instrument sub.   |
+| TC-D03  | Load specific instrument    | Load a single instrument by ID.                      | Never.               |
+
+#### TC-D01: Request instruments
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected.                                                     |
+| **Action**         | DataTester requests all instruments for the venue on start.            |
+| **Event sequence** | `on_instruments` callback receives instrument list.                    |
+| **Pass criteria**  | At least one instrument received; each has valid symbol, price precision, and size increment. |
+| **Skip when**      | Never.                                                                 |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    request_instruments=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_request_instruments(true)
+```
+
+#### TC-D02: Subscribe instrument
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester subscribes to instrument updates.                           |
+| **Event sequence** | `on_instrument` callback receives instrument.                          |
+| **Pass criteria**  | Instrument received with correct `instrument_id`, valid fields.        |
+| **Skip when**      | Adapter does not support instrument subscriptions.                     |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_instrument=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_instrument(true)
+```
+
+#### TC-D03: Load specific instrument
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected.                                                     |
+| **Action**         | Load a specific instrument by `InstrumentId` via the instrument provider. |
+| **Event sequence** | Instrument available in cache after load.                              |
+| **Pass criteria**  | Instrument loaded with correct ID, price precision, size increment, and trading rules. |
+| **Skip when**      | Never.                                                                 |
+
+**Considerations:**
+
+- This tests the instrument provider's `load` / `load_async` method directly.
+- Verify the instrument is cached and available via `self.cache.instrument(instrument_id)`.
+
+---
+
+### Group 2: Order book
+
+Test order book subscription modes and snapshot requests.
+
+| TC      | Name                           | Description                                        | Skip when              |
+|---------|--------------------------------|----------------------------------------------------|------------------------|
+| TC-D10  | Subscribe book deltas          | Stream `OrderBookDeltas` updates.                  | No book support.       |
+| TC-D11  | Subscribe book at interval     | Periodic `OrderBook` snapshots.                    | No book support.       |
+| TC-D12  | Subscribe book depth           | `OrderBookDepth10` snapshots.                      | No book depth.         |
+| TC-D13  | Request book snapshot          | One-time book snapshot request.                    | No book snapshot.      |
+| TC-D14  | Managed book from deltas       | Build local book from delta stream.                | No book support.       |
+| TC-D15  | Request historical book deltas | Historical book deltas request.                    | No historical deltas.  |
+
+#### TC-D10: Subscribe book deltas
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester subscribes to order book deltas.                            |
+| **Event sequence** | `OrderBookDeltas` events received in `on_order_book_deltas`.           |
+| **Pass criteria**  | Deltas received with valid instrument ID; at least one delta contains bid/ask updates. |
+| **Skip when**      | Adapter does not support order book data.                              |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_book_deltas=True,
+    book_type=BookType.L2_MBP,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_book_deltas(true)
+    .with_book_type(BookType::L2_MBP)
+```
+
+#### TC-D11: Subscribe book at interval
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester subscribes to periodic order book snapshots.                |
+| **Event sequence** | `OrderBook` events received in `on_order_book` at configured interval. |
+| **Pass criteria**  | Book snapshots received with bid/ask levels; updates arrive at approximately the configured interval. |
+| **Skip when**      | Adapter does not support order book data.                              |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_book_at_interval=True,
+    book_type=BookType.L2_MBP,
+    book_depth=10,
+    book_interval_ms=1000,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_book_at_interval(true)
+    .with_book_type(BookType::L2_MBP)
+    .with_book_depth(Some(NonZeroUsize::new(10).unwrap()))
+    .with_book_interval_ms(NonZeroUsize::new(1000).unwrap())
+```
+
+#### TC-D12: Subscribe book depth
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester subscribes to `OrderBookDepth10` snapshots.                 |
+| **Event sequence** | `OrderBookDepth10` events received in `on_order_book_depth`.           |
+| **Pass criteria**  | Depth snapshots received with up to 10 bid/ask levels; prices are correctly ordered. |
+| **Skip when**      | Adapter does not support book depth subscriptions.                     |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_book_depth=True,
+    book_type=BookType.L2_MBP,
+    book_depth=10,
+)
+```
+
+**Rust config:** Not yet supported — book depth subscription is TODO in the Rust `DataTester`.
+
+#### TC-D13: Request book snapshot
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester requests a one-time order book snapshot.                    |
+| **Event sequence** | Book snapshot received via historical data callback.                   |
+| **Pass criteria**  | Snapshot contains bid/ask levels with valid prices and sizes.          |
+| **Skip when**      | Adapter does not support book snapshot requests.                       |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    request_book_snapshot=True,
+    book_depth=10,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_request_book_snapshot(true)
+    .with_book_depth(Some(NonZeroUsize::new(10).unwrap()))
+```
+
+#### TC-D14: Managed book from deltas
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, book deltas streaming.           |
+| **Action**         | DataTester subscribes to deltas with `manage_book=True`; builds local order book from the delta stream. |
+| **Event sequence** | `OrderBookDeltas` applied to local `OrderBook`; book logged with configured depth. |
+| **Pass criteria**  | Local book builds correctly from deltas; bid levels descend, ask levels ascend; book is not empty after initial snapshot. |
+| **Skip when**      | Adapter does not support order book data.                              |
+
+**Considerations:**
+
+- The managed book applies each delta to an `OrderBook` instance maintained by the actor.
+- Use `book_levels_to_print` to control logging verbosity.
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_book_deltas=True,
+    manage_book=True,
+    book_type=BookType.L2_MBP,
+    book_levels_to_print=10,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_book_deltas(true)
+    .with_manage_book(true)
+    .with_book_type(BookType::L2_MBP)
+```
+
+#### TC-D15: Request historical book deltas
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester requests historical order book deltas.                      |
+| **Event sequence** | Historical deltas received via callback.                               |
+| **Pass criteria**  | Deltas received with valid timestamps and book actions.                |
+| **Skip when**      | Adapter does not support historical book delta requests.               |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    request_book_deltas=True,
+)
+```
+
+**Rust config:** Not yet supported — historical book delta requests are TODO in the Rust `DataTester`.
+
+---
+
+### Group 3: Quotes
+
+Test quote tick subscriptions and historical requests.
+
+| TC      | Name                      | Description                                     | Skip when              |
+|---------|---------------------------|-------------------------------------------------|------------------------|
+| TC-D20  | Subscribe quotes          | Verify `QuoteTick` events flow after start.     | Never.                 |
+| TC-D21  | Request historical quotes | Request historical quote ticks.                 | No historical quotes.  |
+
+#### TC-D20: Subscribe quotes
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester subscribes to quotes on start.                              |
+| **Event sequence** | `QuoteTick` events received in `on_quote_tick`.                        |
+| **Pass criteria**  | At least one `QuoteTick` received with valid bid/ask prices and sizes; bid < ask. |
+| **Skip when**      | Never.                                                                 |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_quotes=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_quotes(true)
+```
+
+#### TC-D21: Request historical quotes
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester requests historical quote ticks.                            |
+| **Event sequence** | Historical quotes received via `on_historical_data` callback.          |
+| **Pass criteria**  | Quotes received with valid timestamps, bid/ask prices and sizes.       |
+| **Skip when**      | Adapter does not support historical quote requests.                    |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    request_quotes=True,
+    requests_start_delta=pd.Timedelta(hours=1),
+)
+```
+
+---
+
+### Group 4: Trades
+
+Test trade tick subscriptions and historical requests.
+
+| TC     | Name                      | Description                                     | Skip when              |
+|--------|---------------------------|-------------------------------------------------|------------------------|
+| TC-D30 | Subscribe trades          | Verify `TradeTick` events flow after start.     | Never.                 |
+| TC-D31 | Request historical trades | Request historical trade ticks.                 | No historical trades.  |
+
+#### TC-D30: Subscribe trades
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester subscribes to trades on start.                              |
+| **Event sequence** | `TradeTick` events received in `on_trade_tick`.                        |
+| **Pass criteria**  | At least one `TradeTick` received with valid price, size, and aggressor side. |
+| **Skip when**      | Never.                                                                 |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_trades=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_trades(true)
+```
+
+#### TC-D31: Request historical trades
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester requests historical trade ticks.                            |
+| **Event sequence** | Historical trades received via `on_historical_data` callback.          |
+| **Pass criteria**  | Trades received with valid timestamps, prices, sizes, and trade IDs.   |
+| **Skip when**      | Adapter does not support historical trade requests.                    |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    request_trades=True,
+    requests_start_delta=pd.Timedelta(hours=1),
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_request_trades(true)
+```
+
+---
+
+### Group 5: Bars
+
+Test bar subscriptions and historical requests.
+
+| TC      | Name                    | Description                                       | Skip when           |
+|---------|-------------------------|---------------------------------------------------|---------------------|
+| TC-D40  | Subscribe bars          | Verify `Bar` events flow after start.             | No bar support.     |
+| TC-D41  | Request historical bars | Request historical OHLCV bars.                    | No historical bars. |
+
+#### TC-D40: Subscribe bars
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, bar type configured.             |
+| **Action**         | DataTester subscribes to bars for a configured `BarType`.              |
+| **Event sequence** | `Bar` events received in `on_bar`.                                     |
+| **Pass criteria**  | At least one `Bar` received with valid OHLCV values; high >= low, high >= open, high >= close. |
+| **Skip when**      | Adapter does not support bar subscriptions.                            |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    bar_types=[BarType.from_str("BTCUSDT-PERP.VENUE-1-MINUTE-LAST-EXTERNAL")],
+    subscribe_bars=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_bar_types(vec![bar_type])
+    .with_subscribe_bars(true)
+```
+
+#### TC-D41: Request historical bars
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, bar type configured.             |
+| **Action**         | DataTester requests historical bars for a configured `BarType`.        |
+| **Event sequence** | Historical bars received via callback.                                 |
+| **Pass criteria**  | Bars received with valid OHLCV values and ascending timestamps.        |
+| **Skip when**      | Adapter does not support historical bar requests.                      |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    bar_types=[BarType.from_str("BTCUSDT-PERP.VENUE-1-MINUTE-LAST-EXTERNAL")],
+    request_bars=True,
+    requests_start_delta=pd.Timedelta(hours=1),
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_bar_types(vec![bar_type])
+    .with_request_bars(true)
+```
+
+---
+
+### Group 6: Derivatives data
+
+Test derivatives-specific data streams: mark prices, index prices, and funding rates.
+
+| TC     | Name                             | Description                                 | Skip when             |
+|--------|----------------------------------|---------------------------------------------|-----------------------|
+| TC-D50 | Subscribe mark prices            | `MarkPriceUpdate` events.                   | Not a derivative.     |
+| TC-D51 | Subscribe index prices           | `IndexPriceUpdate` events.                  | Not a derivative.     |
+| TC-D52 | Subscribe funding rates          | `FundingRateUpdate` events.                 | Not a perpetual.      |
+| TC-D53 | Request historical funding rates | Historical funding rate data.               | Not a perpetual.      |
+
+#### TC-D50: Subscribe mark prices
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, derivative instrument loaded.                       |
+| **Action**         | DataTester subscribes to mark price updates.                           |
+| **Event sequence** | `MarkPriceUpdate` events received in `on_mark_price`.                  |
+| **Pass criteria**  | At least one `MarkPriceUpdate` received with valid instrument ID and mark price. |
+| **Skip when**      | Instrument is not a derivative, or adapter does not provide mark prices. |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_mark_prices=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_mark_prices(true)
+```
+
+#### TC-D51: Subscribe index prices
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, derivative instrument loaded.                       |
+| **Action**         | DataTester subscribes to index price updates.                          |
+| **Event sequence** | `IndexPriceUpdate` events received in `on_index_price`.                |
+| **Pass criteria**  | At least one `IndexPriceUpdate` received with valid instrument ID and index price. |
+| **Skip when**      | Instrument is not a derivative, or adapter does not provide index prices. |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_index_prices=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_index_prices(true)
+```
+
+#### TC-D52: Subscribe funding rates
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, perpetual instrument loaded.                        |
+| **Action**         | DataTester subscribes to funding rate updates.                         |
+| **Event sequence** | `FundingRateUpdate` events received in `on_funding_rate`.              |
+| **Pass criteria**  | At least one `FundingRateUpdate` received with valid instrument ID and rate. |
+| **Skip when**      | Instrument is not a perpetual, or adapter does not provide funding rates. |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_funding_rates=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_funding_rates(true)
+```
+
+#### TC-D53: Request historical funding rates
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, perpetual instrument loaded.                        |
+| **Action**         | DataTester requests historical funding rates (default 7-day lookback). |
+| **Event sequence** | Historical funding rates received via callback.                        |
+| **Pass criteria**  | Funding rates received with valid timestamps and rate values.          |
+| **Skip when**      | Instrument is not a perpetual, or adapter does not support historical funding rate requests. |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    request_funding_rates=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_request_funding_rates(true)
+```
+
+---
+
+### Group 7: Instrument status
+
+Test instrument status and close event subscriptions.
+
+| TC     | Name                        | Description                                    | Skip when             |
+|--------|-----------------------------|------------------------------------------------|-----------------------|
+| TC-D60 | Subscribe instrument status | `InstrumentStatus` events.                     | No status support.    |
+| TC-D61 | Subscribe instrument close  | `InstrumentClose` events.                      | No close support.     |
+
+#### TC-D60: Subscribe instrument status
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester subscribes to instrument status updates.                    |
+| **Event sequence** | `InstrumentStatus` events received in `on_instrument_status`.          |
+| **Pass criteria**  | Status events received with valid `MarketStatusAction` (e.g. `Trading`). |
+| **Skip when**      | Adapter does not support instrument status subscriptions.              |
+
+**Considerations:**
+
+- Status events may only fire on state changes (e.g. trading halt → resume).
+- During normal trading hours, a `Trading` status may be received on subscribe.
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_instrument_status=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_instrument_status(true)
+```
+
+#### TC-D61: Subscribe instrument close
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
+| **Action**         | DataTester subscribes to instrument close events.                      |
+| **Event sequence** | `InstrumentClose` events received in `on_instrument_close`.            |
+| **Pass criteria**  | Close event received with valid close price and close type.            |
+| **Skip when**      | Adapter does not support instrument close subscriptions.               |
+
+**Considerations:**
+
+- Close events typically fire at end-of-session for traditional markets.
+- May not fire for 24/7 crypto venues unless the adapter synthesizes a daily close.
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_instrument_close=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_instrument_close(true)
+```
+
+---
+
+### Group 8: Lifecycle
+
+Test actor lifecycle behavior: unsubscribe handling and custom parameters.
+
+| TC     | Name                    | Description                                        | Skip when            |
+|--------|-------------------------|----------------------------------------------------|----------------------|
+| TC-D70 | Unsubscribe on stop     | Unsubscribe from data feeds on actor stop.         | No unsub support.    |
+| TC-D71 | Custom subscribe params | Adapter-specific subscription parameters.          | N/A.                 |
+| TC-D72 | Custom request params   | Adapter-specific request parameters.               | N/A.                 |
+
+#### TC-D70: Unsubscribe on stop
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Active data subscriptions (quotes, trades, book).                      |
+| **Action**         | Stop the actor with `can_unsubscribe=True` (default).                  |
+| **Event sequence** | Data subscriptions removed; no further data events received.           |
+| **Pass criteria**  | Clean unsubscribe; no errors in logs; no data events after stop.       |
+| **Skip when**      | Adapter does not support unsubscribe.                                  |
+
+**Python config:**
+
+```python
+DataTesterConfig(
+    instrument_ids=[instrument_id],
+    subscribe_quotes=True,
+    subscribe_trades=True,
+    can_unsubscribe=True,
+)
+```
+
+**Rust config:**
+
+```rust
+DataTesterConfig::new(client_id, vec![instrument_id])
+    .with_subscribe_quotes(true)
+    .with_subscribe_trades(true)
+    .with_can_unsubscribe(true)
+```
+
+#### TC-D71: Custom subscribe params
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, adapter accepts additional subscription parameters. |
+| **Action**         | Subscribe with `subscribe_params` dict containing adapter-specific parameters. |
+| **Event sequence** | Subscription established with custom parameters applied.               |
+| **Pass criteria**  | Data flows with adapter-specific parameters in effect.                 |
+| **Skip when**      | N/A (adapter-specific).                                                |
+
+**Considerations:**
+
+- The `subscribe_params` dict is opaque to the DataTester and passed through to the adapter.
+- Consult the adapter's guide for supported parameters.
+
+#### TC-D72: Custom request params
+
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, adapter accepts additional request parameters.      |
+| **Action**         | Request data with `request_params` dict containing adapter-specific parameters. |
+| **Event sequence** | Request fulfilled with custom parameters applied.                      |
+| **Pass criteria**  | Historical data received with adapter-specific parameters in effect.   |
+| **Skip when**      | N/A (adapter-specific).                                                |
+
+**Considerations:**
+
+- The `request_params` dict is opaque to the DataTester and passed through to the adapter.
+- Consult the adapter's guide for supported parameters.
+
+---
+
+### DataTester configuration reference
+
+Quick reference for all `DataTesterConfig` parameters. Defaults shown are for the Python config. Note: Rust `DataTesterConfig::new` sets `manage_book=true`, while Python defaults it to `False`.
+
+| Parameter                    | Type              | Default         | Affects groups |
+|------------------------------|-------------------|-----------------|----------------|
+| `instrument_ids`             | list[InstrumentId]| *required*      | All            |
+| `client_id`                  | ClientId?         | None            | All            |
+| `bar_types`                  | list[BarType]?    | None            | 5              |
+| `subscribe_book_deltas`      | bool              | False           | 2              |
+| `subscribe_book_depth`       | bool              | False           | 2              |
+| `subscribe_book_at_interval` | bool              | False           | 2              |
+| `subscribe_quotes`           | bool              | False           | 3              |
+| `subscribe_trades`           | bool              | False           | 4              |
+| `subscribe_mark_prices`      | bool              | False           | 6              |
+| `subscribe_index_prices`     | bool              | False           | 6              |
+| `subscribe_funding_rates`    | bool              | False           | 6              |
+| `subscribe_bars`             | bool              | False           | 5              |
+| `subscribe_instrument`       | bool              | False           | 1              |
+| `subscribe_instrument_status`| bool              | False           | 7              |
+| `subscribe_instrument_close` | bool              | False           | 7              |
+| `subscribe_params`           | dict?             | None            | 8              |
+| `can_unsubscribe`            | bool              | True            | 8              |
+| `request_instruments`        | bool              | False           | 1              |
+| `request_book_snapshot`      | bool              | False           | 2              |
+| `request_book_deltas`        | bool              | False           | 2              |
+| `request_quotes`             | bool              | False           | 3              |
+| `request_trades`             | bool              | False           | 4              |
+| `request_bars`               | bool              | False           | 5              |
+| `request_funding_rates`      | bool              | False           | 6              |
+| `request_params`             | dict?             | None            | 8              |
+| `requests_start_delta`       | Timedelta?        | 1 hour          | 3, 4, 5        |
+| `book_type`                  | BookType          | L2_MBP          | 2              |
+| `book_depth`                 | PositiveInt?      | None            | 2              |
+| `book_interval_ms`           | PositiveInt       | 1000            | 2              |
+| `book_levels_to_print`       | PositiveInt       | 10              | 2              |
+| `manage_book`                | bool              | False           | 2              |
+| `use_pyo3_book`              | bool              | False           | 2              |
+| `log_data`                   | bool              | True            | All            |
+
+---
+
+## Execution Testing Spec
+
+This section defines a rigorous test matrix for validating adapter execution
 functionality using the `ExecTester` strategy. Both Python
 (`nautilus_trader.test_kit.strategies.tester_exec`) and Rust
-(`nautilus_testkit::testers`) provide the `ExecTester`. Each test case (TC) is
-identified by a numeric ID (e.g. TC-10) and grouped by functionality.
+(`nautilus_testkit::testers`) provide the `ExecTester`. Each test case is
+identified by a prefixed ID (e.g. TC-E01) and grouped by functionality.
 
 Each adapter must pass the subset of tests matching its supported capabilities.
-Tests progress from simple (connectivity, single market order) to complex
-(brackets, modification chains, rejection handling). An adapter that passes
-groups 1–6 is considered baseline compliant.
+Tests progress from simple (single market order) to complex (brackets,
+modification chains, rejection handling). An adapter that passes groups 1–5 is
+considered baseline compliant. Data connectivity should be verified first using
+the data testing spec above.
 
 Document adapter-specific behavior (how a venue simulates market orders,
 handles TIF options, etc.) in the adapter's own guide, not here. Each adapter
@@ -1821,166 +2632,28 @@ Test IDs use spaced numbering to allow insertion without renumbering.
 
 ---
 
-#### Group 1: Connectivity and data
-
-Verify the adapter connects, authenticates, and delivers market data before testing order flow.
-
-| TC    | Name                 | Description                                       | Skip when            |
-|-------|----------------------|---------------------------------------------------|----------------------|
-| TC-01 | Dry run              | Start with `dry_run=True`, verify no orders sent. | Never.               |
-| TC-02 | Subscribe quotes     | Verify `QuoteTick` events flow after start.       | Never.               |
-| TC-03 | Subscribe trades     | Verify `TradeTick` events flow after start.       | Never.               |
-| TC-04 | Subscribe order book | Verify `OrderBook`/`OrderBookDeltas` events.      | No book support.     |
-
-##### TC-01: Dry run
-
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded.                                  |
-| **Action**        | ExecTester starts with `dry_run=True`; all order logic runs but no orders are submitted to the venue. |
-| **Event sequence**| No order events emitted.                                               |
-| **Pass criteria** | Strategy starts and receives market data; no `OrderSubmitted` events in logs. |
-| **Skip when**     | Never.                                                                 |
-
-**Considerations:**
-
-- Useful as a first smoke test to verify connectivity and data flow without risking real orders.
-- Verify that QuoteTick/TradeTick events appear in logs when `log_data=True`.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    dry_run=True,
-    log_data=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_dry_run(true)
-    .with_log_data(true)
-```
-
-##### TC-02: Subscribe quotes
-
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded.                                  |
-| **Action**        | ExecTester subscribes to quotes on start (default behavior).           |
-| **Event sequence**| `QuoteTick` events received in `on_quote_tick`.                        |
-| **Pass criteria** | At least one `QuoteTick` received with valid bid/ask prices and sizes. |
-| **Skip when**     | Never.                                                                 |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    subscribe_quotes=True,
-    dry_run=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_subscribe_quotes(true)
-    .with_dry_run(true)
-```
-
-##### TC-03: Subscribe trades
-
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded.                                  |
-| **Action**        | ExecTester subscribes to trades on start (default behavior).           |
-| **Event sequence**| `TradeTick` events received in `on_trade_tick`.                        |
-| **Pass criteria** | At least one `TradeTick` received with valid price, size, and aggressor side. |
-| **Skip when**     | Never.                                                                 |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    subscribe_trades=True,
-    dry_run=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_subscribe_trades(true)
-    .with_dry_run(true)
-```
-
-##### TC-04: Subscribe order book
-
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, adapter supports book data.      |
-| **Action**        | ExecTester subscribes to order book with configured depth and interval. |
-| **Event sequence**| `OrderBook` or `OrderBookDeltas` events received.                      |
-| **Pass criteria** | Book snapshot received with bid/ask levels; subsequent deltas update the book correctly. |
-| **Skip when**     | Adapter does not support order book subscriptions.                     |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    subscribe_book=True,
-    book_type=BookType.L2_MBP,
-    book_depth=10,
-    dry_run=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_subscribe_book(true)
-    .with_book_type(BookType::L2_MBP)
-    .with_book_depth(Some(NonZeroUsize::new(10).unwrap()))
-    .with_dry_run(true)
-```
-
----
-
-#### Group 2: Market orders
+### Group 1: Market orders
 
 Test market order submission and fills. Market orders should execute immediately.
 
-| TC    | Name                          | Description                                         | Skip when           |
-|-------|-------------------------------|-----------------------------------------------------|---------------------|
-| TC-10 | Market buy - submit and fill  | Open long position via market buy.                  | No market orders.   |
-| TC-11 | Market sell - submit and fill | Open short position via market sell.                | No market orders.   |
-| TC-12 | Market order with IOC TIF     | Market order explicitly using IOC time in force.    | No IOC.             |
-| TC-13 | Market order with FOK TIF     | Market order explicitly using FOK time in force.    | No FOK.             |
-| TC-14 | Market order with quote qty   | Market order using quote currency quantity.          | No quote quantity.  |
-| TC-15 | Close position via market     | Close an open position with a market order on stop. | No market orders.   |
+| TC     | Name                          | Description                                         | Skip when           |
+|--------|-------------------------------|-----------------------------------------------------|---------------------|
+| TC-E01 | Market BUY - submit and fill  | Open long position via market buy.                  | No market orders.   |
+| TC-E02 | Market SELL - submit and fill | Open short position via market sell.                | No market orders.   |
+| TC-E03 | Market order with IOC TIF     | Market order explicitly using IOC time in force.    | No IOC.             |
+| TC-E04 | Market order with FOK TIF     | Market order explicitly using FOK time in force.    | No FOK.             |
+| TC-E05 | Market order with quote qty   | Market order using quote currency quantity.         | No quote quantity.  |
+| TC-E06 | Close position via market     | Close an open position with a market order on stop. | No market orders.   |
 
-##### TC-10: Market buy - submit and fill
+#### TC-E01: Market BUY - submit and fill
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, market data flowing, no open position. |
-| **Action**        | ExecTester opens a long position via `open_position_on_start_qty`.     |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria** | Position opened with side=LONG, quantity matches config, fill price within market range, `AccountState` updated. |
-| **Skip when**     | Adapter does not support market orders.                                |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing, no open position. |
+| **Action**         | ExecTester opens a long position via `open_position_on_start_qty`.     |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Pass criteria**  | Position opened with side=LONG, quantity matches config, fill price within market range, `AccountState` updated. |
+| **Skip when**      | Adapter does not support market orders.                                |
 
 **Considerations:**
 
@@ -2010,15 +2683,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_enable_limit_sells(false)
 ```
 
-##### TC-11: Market sell - submit and fill
+#### TC-E02: Market SELL - submit and fill
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, market data flowing, no open position. |
-| **Action**        | ExecTester opens a short position via negative `open_position_on_start_qty`. |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria** | Position opened with side=SHORT, quantity matches config, fill price within market range. |
-| **Skip when**     | Adapter does not support market orders or short selling.              |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing, no open position. |
+| **Action**         | ExecTester opens a short position via negative `open_position_on_start_qty`. |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Pass criteria**  | Position opened with side=SHORT, quantity matches config, fill price within market range. |
+| **Skip when**      | Adapter does not support market orders or short selling.               |
 
 **Python config:**
 
@@ -2041,15 +2714,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_enable_limit_sells(false)
 ```
 
-##### TC-12: Market order with IOC TIF
+#### TC-E03: Market order with IOC TIF
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, market data flowing.             |
-| **Action**        | Open position with `open_position_time_in_force=IOC`.                  |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria** | Same as TC-10; the IOC TIF is explicitly set on the order.             |
-| **Skip when**     | No IOC support.                                                        |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.             |
+| **Action**         | Open position with `open_position_time_in_force=IOC`.                  |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Pass criteria**  | Same as TC-E01; the IOC TIF is explicitly set on the order.            |
+| **Skip when**      | No IOC support.                                                        |
 
 **Python config:**
 
@@ -2074,15 +2747,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.open_position_time_in_force = TimeInForce::Ioc;
 ```
 
-##### TC-13: Market order with FOK TIF
+#### TC-E04: Market order with FOK TIF
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, market data flowing.             |
-| **Action**        | Open position with `open_position_time_in_force=FOK`.                  |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria** | Same as TC-10; the FOK TIF is explicitly set on the order.             |
-| **Skip when**     | No FOK support.                                                        |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.             |
+| **Action**         | Open position with `open_position_time_in_force=FOK`.                  |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Pass criteria**  | Same as TC-E01; the FOK TIF is explicitly set on the order.            |
+| **Skip when**      | No FOK support.                                                        |
 
 **Considerations:**
 
@@ -2112,15 +2785,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.open_position_time_in_force = TimeInForce::Fok;
 ```
 
-##### TC-14: Market order with quote quantity
+#### TC-E05: Market order with quote quantity
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, adapter supports quote quantity.  |
-| **Action**        | Open position with `use_quote_quantity=True`, quantity in quote currency. |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria** | Order submitted with quote currency quantity; fill quantity is in base currency. |
-| **Skip when**     | Adapter does not support quote quantity orders.                        |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, adapter supports quote quantity. |
+| **Action**         | Open position with `use_quote_quantity=True`, quantity in quote currency. |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Pass criteria**  | Order submitted with quote currency quantity; fill quantity is in base currency. |
+| **Skip when**      | Adapter does not support quote quantity orders.                        |
 
 **Python config:**
 
@@ -2145,19 +2818,19 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("100
     .with_enable_limit_sells(false)
 ```
 
-##### TC-15: Close position via market order on stop
+#### TC-E06: Close position via market order on stop
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open position from TC-10 or TC-11.                                     |
-| **Action**        | Stop the strategy; ExecTester closes position via market order.        |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled` (closing order). |
-| **Pass criteria** | Position closed (net quantity = 0), no open orders remaining.          |
-| **Skip when**     | Adapter does not support market orders.                                |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open position from TC-E01 or TC-E02.                                   |
+| **Action**         | Stop the strategy; ExecTester closes position via market order.        |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled` (closing order). |
+| **Pass criteria**  | Position closed (net quantity = 0), no open orders remaining.          |
+| **Skip when**      | Adapter does not support market orders.                                |
 
 **Considerations:**
 
-- This test naturally follows TC-10 or TC-11 as part of the same session.
+- This test naturally follows TC-E01 or TC-E02 as part of the same session.
 - `close_positions_on_stop=True` is the default.
 - The closing order should be on the opposite side of the position.
 
@@ -2186,32 +2859,32 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 
 ---
 
-#### Group 3: Limit orders
+### Group 2: Limit orders
 
 Test limit order submission, acceptance, and behavior across time-in-force options.
 
-| TC    | Name                        | Description                                          | Skip when          |
-|-------|-----------------------------|------------------------------------------------------|--------------------|
-| TC-20 | Limit buy GTC               | Place GTC limit buy below TOB, verify accepted.      | Never.             |
-| TC-21 | Limit sell GTC              | Place GTC limit sell above TOB, verify accepted.     | Never.             |
-| TC-22 | Limit buy and sell pair     | Both sides simultaneously, verify both accepted.     | Never.             |
-| TC-23 | Limit IOC aggressive fill   | Limit IOC at aggressive price, expect fill.          | No IOC.            |
-| TC-24 | Limit IOC passive no fill   | Limit IOC away from market, expect cancel.           | No IOC.            |
-| TC-25 | Limit FOK fill              | Limit FOK at aggressive price, expect fill.          | No FOK.            |
-| TC-26 | Limit FOK no fill           | Limit FOK away from market, expect cancel.           | No FOK.            |
-| TC-27 | Limit GTD                   | Limit with expiry time, verify accepted.             | No GTD.            |
-| TC-28 | Limit GTD expiry            | Wait for GTD expiry, verify `OrderExpired`.          | No GTD.            |
-| TC-29 | Limit DAY                   | Limit with DAY TIF, verify accepted.                 | No DAY.            |
+| TC     | Name                       | Description                                      | Skip when          |
+|--------|----------------------------|--------------------------------------------------|--------------------|
+| TC-E10 | Limit BUY GTC              | Place GTC limit buy below TOB, verify accepted.  | Never.             |
+| TC-E11 | Limit SELL GTC             | Place GTC limit sell above TOB, verify accepted. | Never.             |
+| TC-E12 | Limit BUY and SELL pair    | Both sides simultaneously, verify both accepted. | Never.             |
+| TC-E13 | Limit IOC aggressive fill  | Limit IOC at aggressive price, expect fill.      | No IOC.            |
+| TC-E14 | Limit IOC passive no fill  | Limit IOC away from market, expect cancel.       | No IOC.            |
+| TC-E15 | Limit FOK fill             | Limit FOK at aggressive price, expect fill.      | No FOK.            |
+| TC-E16 | Limit FOK no fill          | Limit FOK away from market, expect cancel.       | No FOK.            |
+| TC-E17 | Limit GTD                  | Limit with expiry time, verify accepted.         | No GTD.            |
+| TC-E18 | Limit GTD expiry           | Wait for GTD expiry, verify `OrderExpired`.      | No GTD.            |
+| TC-E19 | Limit DAY                  | Limit with DAY TIF, verify accepted.             | No DAY.            |
 
-##### TC-20: Limit buy GTC - submit and accept
+#### TC-E10: Limit BUY GTC - submit and accept
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester places a limit buy at `best_bid - tob_offset_ticks`.        |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Order is open on the venue with correct price, quantity, side=BUY, TIF=GTC. |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester places a limit buy at `best_bid - tob_offset_ticks`.        |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Order is open on the venue with correct price, quantity, side=BUY, TIF=GTC. |
+| **Skip when**      | Never.                                                                 |
 
 **Considerations:**
 
@@ -2238,15 +2911,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_enable_limit_sells(false)
 ```
 
-##### TC-21: Limit sell GTC - submit and accept
+#### TC-E11: Limit SELL GTC - submit and accept
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester places a limit sell at `best_ask + tob_offset_ticks`.       |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Order is open on the venue with correct price, quantity, side=SELL, TIF=GTC. |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester places a limit sell at `best_ask + tob_offset_ticks`.       |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Order is open on the venue with correct price, quantity, side=SELL, TIF=GTC. |
+| **Skip when**      | Never.                                                                 |
 
 **Python config:**
 
@@ -2267,15 +2940,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_enable_limit_sells(true)
 ```
 
-##### TC-22: Limit buy and sell pair
+#### TC-E12: Limit BUY and SELL pair
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester places both a limit buy and limit sell.                     |
-| **Event sequence**| Two independent sequences: each `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
-| **Pass criteria** | Both orders open on venue, buy below bid, sell above ask.              |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester places both a limit buy and limit sell.                     |
+| **Event sequence** | Two independent sequences: each `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
+| **Pass criteria**  | Both orders open on venue, buy below bid, sell above ask.              |
+| **Skip when**      | Never.                                                                 |
 
 **Python config:**
 
@@ -2296,68 +2969,68 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_enable_limit_sells(true)
 ```
 
-##### TC-23: Limit IOC aggressive fill
+#### TC-E13: Limit IOC aggressive fill
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | Submit a limit buy IOC at or above the best ask (aggressive price).    |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria** | Order fills immediately; position opened.                              |
-| **Skip when**     | Adapter does not support IOC TIF.                                      |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | Submit a limit buy IOC at or above the best ask (aggressive price).    |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Pass criteria**  | Order fills immediately; position opened.                              |
+| **Skip when**      | Adapter does not support IOC TIF.                                      |
 
 **Considerations:**
 
 - This test requires manual order creation or adapter-specific configuration, as ExecTester's default limit order placement uses GTC TIF.
 - IOC orders that don't fill immediately are canceled by the venue.
 
-##### TC-24: Limit IOC passive - no fill
+#### TC-E14: Limit IOC passive - no fill
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | Submit a limit buy IOC well below the market (passive price).          |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderCanceled`. |
-| **Pass criteria** | Order is immediately canceled by venue with no fill.                   |
-| **Skip when**     | Adapter does not support IOC TIF.                                      |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | Submit a limit buy IOC well below the market (passive price).          |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderCanceled`. |
+| **Pass criteria**  | Order is immediately canceled by venue with no fill.                   |
+| **Skip when**      | Adapter does not support IOC TIF.                                      |
 
 **Considerations:**
 
 - The venue should cancel the unfilled IOC order; verify `OrderCanceled` event (not `OrderExpired`).
 
-##### TC-25: Limit FOK fill
+#### TC-E15: Limit FOK fill
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing, sufficient book depth. |
-| **Action**        | Submit a limit buy FOK at aggressive price with quantity within top-of-book depth. |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria** | Order fills completely in a single fill event.                         |
-| **Skip when**     | Adapter does not support FOK TIF.                                      |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing, sufficient book depth. |
+| **Action**         | Submit a limit buy FOK at aggressive price with quantity within top-of-book depth. |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Pass criteria**  | Order fills completely in a single fill event.                         |
+| **Skip when**      | Adapter does not support FOK TIF.                                      |
 
 **Considerations:**
 
 - FOK requires the entire quantity to be fillable; test with small quantities to ensure book depth is sufficient.
 
-##### TC-26: Limit FOK no fill
+#### TC-E16: Limit FOK no fill
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | Submit a limit buy FOK at passive price (well below market).           |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderCanceled`. |
-| **Pass criteria** | Order is immediately canceled by venue with no fill.                   |
-| **Skip when**     | Adapter does not support FOK TIF.                                      |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | Submit a limit buy FOK at passive price (well below market).           |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderCanceled`. |
+| **Pass criteria**  | Order is immediately canceled by venue with no fill.                   |
+| **Skip when**      | Adapter does not support FOK TIF.                                      |
 
-##### TC-27: Limit GTD - submit and accept
+#### TC-E17: Limit GTD - submit and accept
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | Place limit buy with `order_expire_time_delta_mins` set (e.g., 60 minutes). |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Order accepted with GTD TIF and correct expiry timestamp.              |
-| **Skip when**     | Adapter does not support GTD TIF.                                      |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | Place limit buy with `order_expire_time_delta_mins` set (e.g., 60 minutes). |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Order accepted with GTD TIF and correct expiry timestamp.              |
+| **Skip when**      | Adapter does not support GTD TIF.                                      |
 
 **Python config:**
 
@@ -2380,30 +3053,30 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.order_expire_time_delta_mins = Some(60);
 ```
 
-##### TC-28: Limit GTD expiry
+#### TC-E18: Limit GTD expiry
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open GTD limit order from TC-27 (or use a very short expiry).          |
-| **Action**        | Wait for the GTD expiry time to elapse.                                |
-| **Event sequence**| `OrderExpired`.                                                        |
-| **Pass criteria** | Order transitions to expired status; `OrderExpired` event received.    |
-| **Skip when**     | Adapter does not support GTD TIF.                                      |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open GTD limit order from TC-E17 (or use a very short expiry).         |
+| **Action**         | Wait for the GTD expiry time to elapse.                                |
+| **Event sequence** | `OrderExpired`.                                                        |
+| **Pass criteria**  | Order transitions to expired status; `OrderExpired` event received.    |
+| **Skip when**      | Adapter does not support GTD TIF.                                      |
 
 **Considerations:**
 
 - Use a short `order_expire_time_delta_mins` (e.g., 1–2 minutes) to avoid long waits.
 - Some venues may report expiry as a cancel; verify the adapter maps this to `OrderExpired`.
 
-##### TC-29: Limit DAY - submit and accept
+#### TC-E19: Limit DAY - submit and accept
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, market is in trading hours.      |
-| **Action**        | Submit limit buy with DAY TIF.                                         |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Order accepted with DAY TIF; will be automatically canceled at end of trading day. |
-| **Skip when**     | Adapter does not support DAY TIF.                                      |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, market is in trading hours.      |
+| **Action**         | Submit limit buy with DAY TIF.                                         |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Order accepted with DAY TIF; will be automatically canceled at end of trading day. |
+| **Skip when**      | Adapter does not support DAY TIF.                                      |
 
 **Considerations:**
 
@@ -2412,30 +3085,30 @@ config.order_expire_time_delta_mins = Some(60);
 
 ---
 
-#### Group 4: Stop and conditional orders
+### Group 3: Stop and conditional orders
 
 Test stop and conditional order types. These orders rest on the venue until a trigger condition is met.
 
-| TC    | Name                   | Description                                           | Skip when           |
-|-------|------------------------|-------------------------------------------------------|---------------------|
-| TC-30 | StopMarket buy         | Stop buy above ask, verify accepted.                  | No `STOP_MARKET`.   |
-| TC-31 | StopMarket sell        | Stop sell below bid, verify accepted.                 | No `STOP_MARKET`.   |
-| TC-32 | StopLimit buy          | Stop-limit buy with trigger + limit price.            | No `STOP_LIMIT`.    |
-| TC-33 | StopLimit sell         | Stop-limit sell with trigger + limit price.           | No `STOP_LIMIT`.    |
-| TC-34 | MarketIfTouched buy    | MIT buy below bid.                                    | No `MIT`.           |
-| TC-35 | MarketIfTouched sell   | MIT sell above ask.                                   | No `MIT`.           |
-| TC-36 | LimitIfTouched buy     | LIT buy with trigger + limit price.                   | No `LIT`.           |
-| TC-37 | LimitIfTouched sell    | LIT sell with trigger + limit price.                  | No `LIT`.           |
+| TC     | Name                   | Description                                           | Skip when           |
+|--------|------------------------|-------------------------------------------------------|---------------------|
+| TC-E20 | StopMarket BUY         | Stop buy above ask, verify accepted.                  | No `STOP_MARKET`.   |
+| TC-E21 | StopMarket SELL        | Stop sell below bid, verify accepted.                 | No `STOP_MARKET`.   |
+| TC-E22 | StopLimit BUY          | Stop-limit buy with trigger + limit price.            | No `STOP_LIMIT`.    |
+| TC-E23 | StopLimit SELL         | Stop-limit sell with trigger + limit price.           | No `STOP_LIMIT`.    |
+| TC-E24 | MarketIfTouched BUY    | MIT buy below bid.                                    | No `MIT`.           |
+| TC-E25 | MarketIfTouched SELL   | MIT sell above ask.                                   | No `MIT`.           |
+| TC-E26 | LimitIfTouched BUY     | LIT buy with trigger + limit price.                   | No `LIT`.           |
+| TC-E27 | LimitIfTouched SELL    | LIT sell with trigger + limit price.                  | No `LIT`.           |
 
-##### TC-30: StopMarket buy
+#### TC-E20: StopMarket BUY
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester places a stop-market buy above the current ask.             |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Stop order accepted on venue with correct trigger price and side=BUY.  |
-| **Skip when**     | Adapter does not support `StopMarket` orders.                          |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester places a stop-market buy above the current ask.             |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=BUY.  |
+| **Skip when**      | Adapter does not support `StopMarket` orders.                          |
 
 **Considerations:**
 
@@ -2468,15 +3141,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_stop_order_type(OrderType::StopMarket)
 ```
 
-##### TC-31: StopMarket sell
+#### TC-E21: StopMarket SELL
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester places a stop-market sell below the current bid.            |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Stop order accepted on venue with correct trigger price and side=SELL. |
-| **Skip when**     | Adapter does not support `StopMarket` orders.                          |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester places a stop-market sell below the current bid.            |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=SELL. |
+| **Skip when**      | Adapter does not support `StopMarket` orders.                          |
 
 **Python config:**
 
@@ -2503,15 +3176,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_stop_order_type(OrderType::StopMarket)
 ```
 
-##### TC-32: StopLimit buy
+#### TC-E22: StopLimit BUY
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester places a stop-limit buy with trigger price above ask and limit offset. |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Stop-limit order accepted with correct trigger price, limit price, and side=BUY. |
-| **Skip when**     | Adapter does not support `StopLimit` orders.                           |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester places a stop-limit buy with trigger price above ask and limit offset. |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Stop-limit order accepted with correct trigger price, limit price, and side=BUY. |
+| **Skip when**      | Adapter does not support `StopLimit` orders.                           |
 
 **Considerations:**
 
@@ -2544,15 +3217,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.stop_limit_offset_ticks = Some(50);
 ```
 
-##### TC-33: StopLimit sell
+#### TC-E23: StopLimit SELL
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester places a stop-limit sell with trigger price below bid.      |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Stop-limit order accepted with correct trigger price, limit price, and side=SELL. |
-| **Skip when**     | Adapter does not support `StopLimit` orders.                           |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester places a stop-limit sell with trigger price below bid.      |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Stop-limit order accepted with correct trigger price, limit price, and side=SELL. |
+| **Skip when**      | Adapter does not support `StopLimit` orders.                           |
 
 **Python config:**
 
@@ -2581,71 +3254,71 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.stop_limit_offset_ticks = Some(50);
 ```
 
-##### TC-34: MarketIfTouched buy
+#### TC-E24: MarketIfTouched BUY
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | Place MIT buy with trigger below current bid (buy on dip).             |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | MIT order accepted on venue with correct trigger price.                |
-| **Skip when**     | Adapter does not support `MarketIfTouched` orders.                     |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | Place MIT buy with trigger below current bid (buy on dip).             |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | MIT order accepted on venue with correct trigger price.                |
+| **Skip when**      | Adapter does not support `MarketIfTouched` orders.                     |
 
-##### TC-35: MarketIfTouched sell
+#### TC-E25: MarketIfTouched SELL
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | Place MIT sell with trigger above current ask (sell on rally).          |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | MIT order accepted on venue with correct trigger price.                |
-| **Skip when**     | Adapter does not support `MarketIfTouched` orders.                     |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | Place MIT sell with trigger above current ask (sell on rally).         |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | MIT order accepted on venue with correct trigger price.                |
+| **Skip when**      | Adapter does not support `MarketIfTouched` orders.                     |
 
-##### TC-36: LimitIfTouched buy
+#### TC-E26: LimitIfTouched BUY
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | Place LIT buy with trigger below bid and limit price offset.           |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | LIT order accepted with correct trigger price and limit price.         |
-| **Skip when**     | Adapter does not support `LimitIfTouched` orders.                      |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | Place LIT buy with trigger below bid and limit price offset.           |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | LIT order accepted with correct trigger price and limit price.         |
+| **Skip when**      | Adapter does not support `LimitIfTouched` orders.                      |
 
-##### TC-37: LimitIfTouched sell
+#### TC-E27: LimitIfTouched SELL
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | Place LIT sell with trigger above ask and limit price offset.          |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | LIT order accepted with correct trigger price and limit price.         |
-| **Skip when**     | Adapter does not support `LimitIfTouched` orders.                      |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | Place LIT sell with trigger above ask and limit price offset.          |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | LIT order accepted with correct trigger price and limit price.         |
+| **Skip when**      | Adapter does not support `LimitIfTouched` orders.                      |
 
 ---
 
-#### Group 5: Order modification
+### Group 4: Order modification
 
 Test order modification (amend) and cancel-replace workflows.
 
 | TC    | Name                         | Description                                         | Skip when                   |
 |-------|------------------------------|-----------------------------------------------------|-----------------------------|
-| TC-40 | Modify limit buy price       | Amend open limit buy to new price.                  | No modify support.          |
-| TC-41 | Modify limit sell price      | Amend open limit sell to new price.                 | No modify support.          |
-| TC-42 | Cancel-replace limit buy     | Cancel and resubmit limit buy at new price.         | Never.                      |
-| TC-43 | Cancel-replace limit sell    | Cancel and resubmit limit sell at new price.        | Never.                      |
-| TC-44 | Modify stop trigger price    | Amend stop order trigger price.                     | No modify or no stop.       |
-| TC-45 | Cancel-replace stop order    | Cancel and resubmit stop at new trigger price.      | No stop orders.             |
-| TC-46 | Modify rejected              | Modify on unsupported adapter.                      | Adapter supports modify.    |
+| TC-E30 | Modify limit BUY price       | Amend open limit buy to new price.                  | No modify support.          |
+| TC-E31 | Modify limit SELL price      | Amend open limit sell to new price.                 | No modify support.          |
+| TC-E32 | Cancel-replace limit BUY     | Cancel and resubmit limit buy at new price.         | Never.                      |
+| TC-E33 | Cancel-replace limit SELL    | Cancel and resubmit limit sell at new price.        | Never.                      |
+| TC-E34 | Modify stop trigger price    | Amend stop order trigger price.                     | No modify or no stop.       |
+| TC-E35 | Cancel-replace stop order    | Cancel and resubmit stop at new trigger price.      | No stop orders.             |
+| TC-E36 | Modify rejected              | Modify on unsupported adapter.                      | Adapter supports modify.    |
 
-##### TC-40: Modify limit buy price
+#### TC-E30: Modify limit BUY price
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open GTC limit buy from TC-20.                                         |
-| **Action**        | ExecTester modifies limit buy to a new price as market moves (`modify_orders_to_maintain_tob_offset=True`). |
-| **Event sequence**| `OrderPendingUpdate` → `OrderUpdated`.                                 |
-| **Pass criteria** | Order price updated on venue; `OrderUpdated` event contains new price. |
-| **Skip when**     | Adapter does not support order modification.                           |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open GTC limit buy from TC-E10.                                        |
+| **Action**         | ExecTester modifies limit buy to a new price as market moves (`modify_orders_to_maintain_tob_offset=True`). |
+| **Event sequence** | `OrderPendingUpdate` → `OrderUpdated`.                                 |
+| **Pass criteria**  | Order price updated on venue; `OrderUpdated` event contains new price. |
+| **Skip when**      | Adapter does not support order modification.                           |
 
 **Considerations:**
 
@@ -2673,15 +3346,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.modify_orders_to_maintain_tob_offset = true;
 ```
 
-##### TC-41: Modify limit sell price
+#### TC-E31: Modify limit SELL price
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open GTC limit sell from TC-21.                                        |
-| **Action**        | ExecTester modifies limit sell to new price as market moves.           |
-| **Event sequence**| `OrderPendingUpdate` → `OrderUpdated`.                                 |
-| **Pass criteria** | Order price updated on venue; `OrderUpdated` event contains new price. |
-| **Skip when**     | Adapter does not support order modification.                           |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open GTC limit sell from TC-E11.                                       |
+| **Action**         | ExecTester modifies limit sell to new price as market moves.           |
+| **Event sequence** | `OrderPendingUpdate` → `OrderUpdated`.                                 |
+| **Pass criteria**  | Order price updated on venue; `OrderUpdated` event contains new price. |
+| **Skip when**      | Adapter does not support order modification.                           |
 
 **Python config:**
 
@@ -2704,15 +3377,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.modify_orders_to_maintain_tob_offset = true;
 ```
 
-##### TC-42: Cancel-replace limit buy
+#### TC-E32: Cancel-replace limit BUY
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open GTC limit buy.                                                    |
-| **Action**        | ExecTester cancels and resubmits limit buy at new price as market moves. |
-| **Event sequence**| `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
-| **Pass criteria** | Original order canceled, new order accepted at updated price.          |
-| **Skip when**     | Never (cancel-replace is always available).                            |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open GTC limit buy.                                                    |
+| **Action**         | ExecTester cancels and resubmits limit buy at new price as market moves. |
+| **Event sequence** | `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
+| **Pass criteria**  | Original order canceled, new order accepted at updated price.          |
+| **Skip when**      | Never (cancel-replace is always available).                            |
 
 **Considerations:**
 
@@ -2740,15 +3413,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.cancel_replace_orders_to_maintain_tob_offset = true;
 ```
 
-##### TC-43: Cancel-replace limit sell
+#### TC-E33: Cancel-replace limit SELL
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open GTC limit sell.                                                   |
-| **Action**        | ExecTester cancels and resubmits limit sell at new price.              |
-| **Event sequence**| `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
-| **Pass criteria** | Original order canceled, new order accepted at updated price.          |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open GTC limit sell.                                                   |
+| **Action**         | ExecTester cancels and resubmits limit sell at new price.              |
+| **Event sequence** | `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
+| **Pass criteria**  | Original order canceled, new order accepted at updated price.          |
+| **Skip when**      | Never.                                                                 |
 
 **Python config:**
 
@@ -2771,15 +3444,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.cancel_replace_orders_to_maintain_tob_offset = true;
 ```
 
-##### TC-44: Modify stop trigger price
+#### TC-E34: Modify stop trigger price
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open stop order from TC-30 or TC-32.                                   |
-| **Action**        | ExecTester modifies stop trigger price as market moves (`modify_stop_orders_to_maintain_offset=True`). |
-| **Event sequence**| `OrderPendingUpdate` → `OrderUpdated`.                                 |
-| **Pass criteria** | Stop order trigger price updated on venue.                             |
-| **Skip when**     | Adapter does not support modify, or no stop order support.             |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open stop order from TC-E20 or TC-E22.                                 |
+| **Action**         | ExecTester modifies stop trigger price as market moves (`modify_stop_orders_to_maintain_offset=True`). |
+| **Event sequence** | `OrderPendingUpdate` → `OrderUpdated`.                                 |
+| **Pass criteria**  | Stop order trigger price updated on venue.                             |
+| **Skip when**      | Adapter does not support modify, or no stop order support.             |
 
 **Python config:**
 
@@ -2800,15 +3473,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.modify_stop_orders_to_maintain_offset = true;
 ```
 
-##### TC-45: Cancel-replace stop order
+#### TC-E35: Cancel-replace stop order
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open stop order.                                                       |
-| **Action**        | ExecTester cancels and resubmits stop at new trigger price.            |
-| **Event sequence**| `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
-| **Pass criteria** | Original stop canceled, new stop accepted at updated trigger price.    |
-| **Skip when**     | No stop order support.                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open stop order.                                                       |
+| **Action**         | ExecTester cancels and resubmits stop at new trigger price.            |
+| **Event sequence** | `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
+| **Pass criteria**  | Original stop canceled, new stop accepted at updated trigger price.    |
+| **Skip when**      | No stop order support.                                                 |
 
 **Python config:**
 
@@ -2829,15 +3502,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.cancel_replace_stop_orders_to_maintain_offset = true;
 ```
 
-##### TC-46: Modify rejected
+#### TC-E36: Modify rejected
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open limit order, adapter does NOT support modify.                     |
-| **Action**        | Attempt to modify the order (programmatically, not via ExecTester auto-maintain). |
-| **Event sequence**| `OrderModifyRejected`.                                                 |
-| **Pass criteria** | Modify attempt results in `OrderModifyRejected` event with reason; original order remains unchanged. |
-| **Skip when**     | Adapter supports order modification.                                   |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open limit order, adapter does NOT support modify.                     |
+| **Action**         | Attempt to modify the order (programmatically, not via ExecTester auto-maintain). |
+| **Event sequence** | `OrderModifyRejected`.                                                 |
+| **Pass criteria**  | Modify attempt results in `OrderModifyRejected` event with reason; original order remains unchanged. |
+| **Skip when**      | Adapter supports order modification.                                   |
 
 **Considerations:**
 
@@ -2846,27 +3519,27 @@ config.cancel_replace_stop_orders_to_maintain_offset = true;
 
 ---
 
-#### Group 6: Order cancellation
+### Group 5: Order cancellation
 
 Test order cancellation workflows.
 
 | TC    | Name                       | Description                                          | Skip when            |
 |-------|----------------------------|------------------------------------------------------|----------------------|
-| TC-50 | Cancel single limit order  | Cancel an open limit order.                          | Never.               |
-| TC-51 | Cancel all on stop         | Strategy stop cancels all open orders (default).     | Never.               |
-| TC-52 | Individual cancels on stop | Cancel orders one-by-one on stop.                    | Never.               |
-| TC-53 | Batch cancel on stop       | Cancel orders via batch API on stop.                 | No batch cancel.     |
-| TC-54 | Cancel already-canceled    | Cancel a non-open order.                             | Never.               |
+| TC-E40 | Cancel single limit order  | Cancel an open limit order.                          | Never.               |
+| TC-E41 | Cancel all on stop         | Strategy stop cancels all open orders (default).     | Never.               |
+| TC-E42 | Individual cancels on stop | Cancel orders one-by-one on stop.                    | Never.               |
+| TC-E43 | Batch cancel on stop       | Cancel orders via batch API on stop.                 | No batch cancel.     |
+| TC-E44 | Cancel already-canceled    | Cancel a non-open order.                             | Never.               |
 
-##### TC-50: Cancel single limit order
+#### TC-E40: Cancel single limit order
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open GTC limit order from TC-20 or TC-21.                              |
-| **Action**        | Stop the strategy; ExecTester cancels the open limit order.            |
-| **Event sequence**| `OrderPendingCancel` → `OrderCanceled`.                                |
-| **Pass criteria** | Order status transitions to CANCELED; no open orders remaining.        |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open GTC limit order from TC-E10 or TC-E11.                            |
+| **Action**         | Stop the strategy; ExecTester cancels the open limit order.            |
+| **Event sequence** | `OrderPendingCancel` → `OrderCanceled`.                                |
+| **Pass criteria**  | Order status transitions to CANCELED; no open orders remaining.        |
+| **Skip when**      | Never.                                                                 |
 
 **Considerations:**
 
@@ -2894,15 +3567,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_cancel_orders_on_stop(true)
 ```
 
-##### TC-51: Cancel all on stop
+#### TC-E41: Cancel all on stop
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Multiple open orders (limit buy + limit sell from TC-22).              |
-| **Action**        | Stop the strategy with `cancel_orders_on_stop=True` (default).         |
-| **Event sequence**| For each order: `OrderPendingCancel` → `OrderCanceled`.                |
-| **Pass criteria** | All open orders canceled; no open orders remaining.                    |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Multiple open orders (limit buy + limit sell from TC-E12).             |
+| **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default).         |
+| **Event sequence** | For each order: `OrderPendingCancel` → `OrderCanceled`.                |
+| **Pass criteria**  | All open orders canceled; no open orders remaining.                    |
+| **Skip when**      | Never.                                                                 |
 
 **Python config:**
 
@@ -2925,15 +3598,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_cancel_orders_on_stop(true)
 ```
 
-##### TC-52: Individual cancels on stop
+#### TC-E42: Individual cancels on stop
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Multiple open orders.                                                  |
-| **Action**        | Stop with `use_individual_cancels_on_stop=True`.                       |
-| **Event sequence**| Individual `OrderPendingCancel` → `OrderCanceled` for each order.      |
-| **Pass criteria** | Each order canceled individually; all orders reach CANCELED status.    |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Multiple open orders.                                                  |
+| **Action**         | Stop with `use_individual_cancels_on_stop=True`.                       |
+| **Event sequence** | Individual `OrderPendingCancel` → `OrderCanceled` for each order.      |
+| **Pass criteria**  | Each order canceled individually; all orders reach CANCELED status.    |
+| **Skip when**      | Never.                                                                 |
 
 **Python config:**
 
@@ -2956,15 +3629,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.use_individual_cancels_on_stop = true;
 ```
 
-##### TC-53: Batch cancel on stop
+#### TC-E43: Batch cancel on stop
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Multiple open orders, adapter supports batch cancel.                   |
-| **Action**        | Stop with `use_batch_cancel_on_stop=True`.                             |
-| **Event sequence**| Batch `OrderPendingCancel` → `OrderCanceled` for all orders.           |
-| **Pass criteria** | All orders canceled via single batch request; all reach CANCELED status. |
-| **Skip when**     | Adapter does not support batch cancel.                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Multiple open orders, adapter supports batch cancel.                   |
+| **Action**         | Stop with `use_batch_cancel_on_stop=True`.                             |
+| **Event sequence** | Batch `OrderPendingCancel` → `OrderCanceled` for all orders.           |
+| **Pass criteria**  | All orders canceled via single batch request; all reach CANCELED status. |
+| **Skip when**      | Adapter does not support batch cancel.                                 |
 
 **Python config:**
 
@@ -2987,15 +3660,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_use_batch_cancel_on_stop(true)
 ```
 
-##### TC-54: Cancel already-canceled order
+#### TC-E44: Cancel already-canceled order
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | A previously canceled order (from TC-50).                              |
-| **Action**        | Attempt to cancel the same order again.                                |
-| **Event sequence**| `OrderCancelRejected`.                                                 |
-| **Pass criteria** | Cancel attempt is rejected; `OrderCancelRejected` event received with reason. |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | A previously canceled order (from TC-E40).                             |
+| **Action**         | Attempt to cancel the same order again.                                |
+| **Event sequence** | `OrderCancelRejected`.                                                 |
+| **Pass criteria**  | Cancel attempt is rejected; `OrderCancelRejected` event received with reason. |
+| **Skip when**      | Never.                                                                 |
 
 **Considerations:**
 
@@ -3004,26 +3677,26 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 
 ---
 
-#### Group 7: Bracket orders
+### Group 6: Bracket orders
 
 Test bracket order submission (entry + take-profit + stop-loss).
 
 | TC    | Name                          | Description                                       | Skip when            |
 |-------|-------------------------------|---------------------------------------------------|----------------------|
-| TC-60 | Bracket buy                   | Entry limit buy + TP limit sell + SL stop sell.   | No bracket support.  |
-| TC-61 | Bracket sell                  | Entry limit sell + TP limit buy + SL stop buy.    | No bracket support.  |
-| TC-62 | Bracket entry fill activates  | Verify TP/SL become active after entry fill.      | No bracket support.  |
-| TC-63 | Bracket with post-only entry  | Entry order uses post-only flag.                  | No bracket or PO.    |
+| TC-E50 | Bracket BUY                   | Entry limit buy + TP limit sell + SL stop sell.   | No bracket support.  |
+| TC-E51 | Bracket SELL                  | Entry limit sell + TP limit buy + SL stop buy.    | No bracket support.  |
+| TC-E52 | Bracket entry fill activates  | Verify TP/SL become active after entry fill.      | No bracket support.  |
+| TC-E53 | Bracket with post-only entry  | Entry order uses post-only flag.                  | No bracket or PO.    |
 
-##### TC-60: Bracket buy
+#### TC-E50: Bracket BUY
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester submits a bracket order: limit buy entry + take-profit sell + stop-loss sell. |
-| **Event sequence**| Entry: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`; TP and SL: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
-| **Pass criteria** | Three orders created and accepted: entry below bid, TP above ask, SL below entry. |
-| **Skip when**     | Adapter does not support bracket orders.                               |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester submits a bracket order: limit buy entry + take-profit sell + stop-loss sell. |
+| **Event sequence** | Entry: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`; TP and SL: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
+| **Pass criteria**  | Three orders created and accepted: entry below bid, TP above ask, SL below entry. |
+| **Skip when**      | Adapter does not support bracket orders.                               |
 
 **Python config:**
 
@@ -3050,63 +3723,63 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_enable_limit_sells(false)
 ```
 
-##### TC-61: Bracket sell
+#### TC-E51: Bracket SELL
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester submits bracket: limit sell entry + TP buy + SL buy.        |
-| **Event sequence**| Same pattern as TC-60 but for sell side.                               |
-| **Pass criteria** | Three orders created and accepted on sell side.                        |
-| **Skip when**     | Adapter does not support bracket orders.                               |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester submits bracket: limit sell entry + TP buy + SL buy.        |
+| **Event sequence** | Same pattern as TC-E50 but for sell side.                              |
+| **Pass criteria**  | Three orders created and accepted on sell side.                        |
+| **Skip when**      | Adapter does not support bracket orders.                               |
 
-##### TC-62: Bracket entry fill activates TP/SL
+#### TC-E52: Bracket entry fill activates TP/SL
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Bracket order from TC-60 where entry order fills.                      |
-| **Action**        | Entry order fills; verify contingent TP and SL orders activate.        |
-| **Event sequence**| Entry: `OrderFilled`; TP and SL transition from contingent to active.  |
-| **Pass criteria** | After entry fill, TP and SL orders are live on the venue.              |
-| **Skip when**     | Adapter does not support bracket orders.                               |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Bracket order from TC-E50 where entry order fills.                     |
+| **Action**         | Entry order fills; verify contingent TP and SL orders activate.        |
+| **Event sequence** | Entry: `OrderFilled`; TP and SL transition from contingent to active.  |
+| **Pass criteria**  | After entry fill, TP and SL orders are live on the venue.              |
+| **Skip when**      | Adapter does not support bracket orders.                               |
 
 **Considerations:**
 
 - This requires the entry order to actually fill, which may need aggressive pricing.
 - The TP/SL activation mechanism varies by venue (some activate immediately, some are OCA groups).
 
-##### TC-63: Bracket with post-only entry
+#### TC-E53: Bracket with post-only entry
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter supports brackets and post-only.                               |
-| **Action**        | Submit bracket with `use_post_only=True` (applied to entry and TP).    |
-| **Event sequence**| Same as TC-60 with post-only flag on entry.                            |
-| **Pass criteria** | Entry and TP orders accepted as post-only (maker); SL is not post-only. |
-| **Skip when**     | No bracket support or no post-only support.                            |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter supports brackets and post-only.                               |
+| **Action**         | Submit bracket with `use_post_only=True` (applied to entry and TP).    |
+| **Event sequence** | Same as TC-E50 with post-only flag on entry.                           |
+| **Pass criteria**  | Entry and TP orders accepted as post-only (maker); SL is not post-only. |
+| **Skip when**      | No bracket support or no post-only support.                            |
 
 ---
 
-#### Group 8: Order flags
+### Group 7: Order flags
 
 Test order-level flags and special parameters.
 
 | TC    | Name                 | Description                                            | Skip when            |
 |-------|----------------------|--------------------------------------------------------|----------------------|
-| TC-70 | PostOnly accepted    | Limit with post-only, placed away from TOB.            | No post-only.        |
-| TC-71 | ReduceOnly on close  | Close position with reduce-only flag.                  | No reduce-only.      |
-| TC-72 | Display quantity     | Iceberg order with visible quantity < total.           | No display quantity.  |
-| TC-73 | Custom order params  | Adapter-specific params via `order_params`.            | N/A.                 |
+| TC-E60 | PostOnly accepted    | Limit with post-only, placed away from TOB.            | No post-only.        |
+| TC-E61 | ReduceOnly on close  | Close position with reduce-only flag.                  | No reduce-only.      |
+| TC-E62 | Display quantity     | Iceberg order with visible quantity < total.           | No display quantity.  |
+| TC-E63 | Custom order params  | Adapter-specific params via `order_params`.            | N/A.                 |
 
-##### TC-70: PostOnly accepted
+#### TC-E60: PostOnly accepted
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester places limit buy with `use_post_only=True` at passive price. |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Order accepted as a maker order; post-only flag acknowledged by venue. |
-| **Skip when**     | Adapter does not support post-only flag.                               |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester places limit buy with `use_post_only=True` at passive price. |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Order accepted as a maker order; post-only flag acknowledged by venue. |
+| **Skip when**      | Adapter does not support post-only flag.                               |
 
 **Python config:**
 
@@ -3129,15 +3802,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_use_post_only(true)
 ```
 
-##### TC-71: ReduceOnly on close
+#### TC-E61: ReduceOnly on close
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open position (from TC-10).                                            |
-| **Action**        | Stop strategy with `reduce_only_on_stop=True`; closing order uses reduce-only flag. |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled` (with reduce-only). |
-| **Pass criteria** | Closing order has reduce-only flag; position fully closed.             |
-| **Skip when**     | Adapter does not support reduce-only flag.                             |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open position (from TC-E01).                                           |
+| **Action**         | Stop strategy with `reduce_only_on_stop=True`; closing order uses reduce-only flag. |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled` (with reduce-only). |
+| **Pass criteria**  | Closing order has reduce-only flag; position fully closed.             |
+| **Skip when**      | Adapter does not support reduce-only flag.                             |
 
 **Python config:**
 
@@ -3163,15 +3836,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_enable_limit_sells(false)
 ```
 
-##### TC-72: Display quantity (iceberg)
+#### TC-E62: Display quantity (iceberg)
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, adapter supports display quantity.                   |
-| **Action**        | Place limit order with `order_display_qty` < `order_qty`.              |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Order accepted with display quantity set; only display qty visible on the book. |
-| **Skip when**     | Adapter does not support display quantity / iceberg orders.             |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, adapter supports display quantity.                  |
+| **Action**         | Place limit order with `order_display_qty` < `order_qty`.              |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Order accepted with display quantity set; only display qty visible on the book. |
+| **Skip when**      | Adapter does not support display quantity / iceberg orders.            |
 
 **Python config:**
 
@@ -3194,15 +3867,15 @@ let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Qu
 config.order_display_qty = Some(Quantity::from("0.1"));
 ```
 
-##### TC-73: Custom order params
+#### TC-E63: Custom order params
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, adapter accepts additional parameters.              |
-| **Action**        | Place order with `order_params` dict containing adapter-specific parameters. |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.              |
-| **Pass criteria** | Order accepted; adapter-specific parameters passed through to venue.   |
-| **Skip when**     | N/A (adapter-specific).                                                |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, adapter accepts additional parameters.              |
+| **Action**         | Place order with `order_params` dict containing adapter-specific parameters. |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
+| **Pass criteria**  | Order accepted; adapter-specific parameters passed through to venue.   |
+| **Skip when**      | N/A (adapter-specific).                                                |
 
 **Considerations:**
 
@@ -3211,26 +3884,26 @@ config.order_display_qty = Some(Quantity::from("0.1"));
 
 ---
 
-#### Group 9: Rejection handling
+### Group 8: Rejection handling
 
 Test that the adapter correctly handles and reports order rejections.
 
 | TC    | Name                    | Description                                          | Skip when               |
 |-------|-------------------------|------------------------------------------------------|-------------------------|
-| TC-80 | PostOnly rejection      | Post-only order that would cross the spread.         | No post-only.           |
-| TC-81 | ReduceOnly rejection    | Reduce-only order with no position to reduce.        | No reduce-only.         |
-| TC-82 | Unsupported order type  | Submit order type not supported by adapter.           | Never.                  |
-| TC-83 | Unsupported TIF         | Submit order with unsupported time in force.          | Never.                  |
+| TC-E70 | PostOnly rejection      | Post-only order that would cross the spread.         | No post-only.           |
+| TC-E71 | ReduceOnly rejection    | Reduce-only order with no position to reduce.        | No reduce-only.         |
+| TC-E72 | Unsupported order type  | Submit order type not supported by adapter.           | Never.                  |
+| TC-E73 | Unsupported TIF         | Submit order with unsupported time in force.          | Never.                  |
 
-##### TC-80: PostOnly rejection
+#### TC-E70: PostOnly rejection
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**        | ExecTester places post-only order on the wrong side of the book (`test_reject_post_only=True`), causing it to cross the spread. |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderRejected`.              |
-| **Pass criteria** | Order rejected by venue; `OrderRejected` event received with reason indicating post-only violation. |
-| **Skip when**     | Adapter does not support post-only flag.                               |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
+| **Action**         | ExecTester places post-only order on the wrong side of the book (`test_reject_post_only=True`), causing it to cross the spread. |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderRejected`.               |
+| **Pass criteria**  | Order rejected by venue; `OrderRejected` event received with reason indicating post-only violation. |
+| **Skip when**      | Adapter does not support post-only flag.                               |
 
 **Considerations:**
 
@@ -3260,15 +3933,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_test_reject_post_only(true)
 ```
 
-##### TC-81: ReduceOnly rejection
+#### TC-E71: ReduceOnly rejection
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, no open position for the instrument.                |
-| **Action**        | ExecTester opens a market position with `reduce_only=True` via `test_reject_reduce_only=True` and `open_position_on_start_qty`, when no position exists to reduce. |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderRejected`.              |
-| **Pass criteria** | Order rejected; `OrderRejected` event with reason indicating reduce-only violation. |
-| **Skip when**     | Adapter does not support reduce-only flag.                             |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, no open position for the instrument.                |
+| **Action**         | ExecTester opens a market position with `reduce_only=True` via `test_reject_reduce_only=True` and `open_position_on_start_qty`, when no position exists to reduce. |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderRejected`.               |
+| **Pass criteria**  | Order rejected; `OrderRejected` event with reason indicating reduce-only violation. |
+| **Skip when**      | Adapter does not support reduce-only flag.                             |
 
 **Considerations:**
 
@@ -3298,15 +3971,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_enable_limit_sells(false)
 ```
 
-##### TC-82: Unsupported order type
+#### TC-E72: Unsupported order type
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, order type not in adapter's supported set.          |
-| **Action**        | Submit an order type the adapter does not support.                     |
-| **Event sequence**| `OrderDenied` (pre-submission rejection by adapter).                   |
-| **Pass criteria** | Order denied before reaching venue; `OrderDenied` event with reason.   |
-| **Skip when**     | Never (every adapter has unsupported order types to test).             |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, order type not in adapter's supported set.          |
+| **Action**         | Submit an order type the adapter does not support.                     |
+| **Event sequence** | `OrderDenied` (pre-submission rejection by adapter).                   |
+| **Pass criteria**  | Order denied before reaching venue; `OrderDenied` event with reason.   |
+| **Skip when**      | Never (every adapter has unsupported order types to test).             |
 
 **Considerations:**
 
@@ -3314,47 +3987,47 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 - This differs from `OrderRejected` which comes from the venue.
 - Test by configuring a stop order type that the adapter does not support.
 
-##### TC-83: Unsupported TIF
+#### TC-E73: Unsupported TIF
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, TIF not in adapter's supported set.                 |
-| **Action**        | Submit an order with a TIF the adapter does not support.               |
-| **Event sequence**| `OrderDenied` (pre-submission rejection by adapter).                   |
-| **Pass criteria** | Order denied before reaching venue; `OrderDenied` event with reason.   |
-| **Skip when**     | Never (every adapter has unsupported TIF options to test).             |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, TIF not in adapter's supported set.                 |
+| **Action**         | Submit an order with a TIF the adapter does not support.               |
+| **Event sequence** | `OrderDenied` (pre-submission rejection by adapter).                   |
+| **Pass criteria**  | Order denied before reaching venue; `OrderDenied` event with reason.   |
+| **Skip when**      | Never (every adapter has unsupported TIF options to test).             |
 
 **Considerations:**
 
-- Similar to TC-82 but for time-in-force options.
+- Similar to TC-E72 but for time-in-force options.
 - Test with TIF values from the Nautilus enum that the adapter does not map.
 
 ---
 
-#### Group 10: Lifecycle (start/stop)
+### Group 9: Lifecycle (start/stop)
 
 Test strategy lifecycle behavior and state management on start and stop.
 
 | TC    | Name                        | Description                                            | Skip when            |
 |-------|-----------------------------|--------------------------------------------------------|----------------------|
-| TC-90 | Open position on start      | Open a position immediately when strategy starts.      | No market orders.    |
-| TC-91 | Cancel orders on stop       | Cancel all open orders when strategy stops.             | Never.               |
-| TC-92 | Close positions on stop     | Close open positions when strategy stops.               | No market orders.    |
-| TC-93 | Unsubscribe on stop         | Unsubscribe from data feeds on strategy stop.           | No unsub support.    |
-| TC-94 | Reconcile open orders       | Reconcile existing open orders from a prior session.    | Never.               |
-| TC-95 | Reconcile filled orders     | Reconcile previously filled orders from a prior session.| Never.               |
-| TC-96 | Reconcile open long         | Reconcile existing open long position.                  | Never.               |
-| TC-97 | Reconcile open short        | Reconcile existing open short position.                 | Never.               |
+| TC-E80 | Open position on start      | Open a position immediately when strategy starts.      | No market orders.    |
+| TC-E81 | Cancel orders on stop       | Cancel all open orders when strategy stops.             | Never.               |
+| TC-E82 | Close positions on stop     | Close open positions when strategy stops.               | No market orders.    |
+| TC-E83 | Unsubscribe on stop         | Unsubscribe from data feeds on strategy stop.           | No unsub support.    |
+| TC-E84 | Reconcile open orders       | Reconcile existing open orders from a prior session.    | Never.               |
+| TC-E85 | Reconcile filled orders     | Reconcile previously filled orders from a prior session.| Never.               |
+| TC-E86 | Reconcile open long         | Reconcile existing open long position.                  | Never.               |
+| TC-E87 | Reconcile open short        | Reconcile existing open short position.                 | Never.               |
 
-##### TC-90: Open position on start
+#### TC-E80: Open position on start
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Adapter connected, instrument loaded, no existing position.            |
-| **Action**        | Strategy starts with `open_position_on_start_qty` set.                 |
-| **Event sequence**| `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria** | Position opened on start; market order submitted and filled before limit order maintenance begins. |
-| **Skip when**     | Adapter does not support market orders.                                |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Adapter connected, instrument loaded, no existing position.            |
+| **Action**         | Strategy starts with `open_position_on_start_qty` set.                 |
+| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Pass criteria**  | Position opened on start; market order submitted and filled before limit order maintenance begins. |
+| **Skip when**      | Adapter does not support market orders.                                |
 
 **Python config:**
 
@@ -3373,35 +4046,35 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_open_position_on_start(Some(Decimal::new(1, 2)))
 ```
 
-##### TC-91: Cancel orders on stop
+#### TC-E81: Cancel orders on stop
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open limit orders from the strategy session.                           |
-| **Action**        | Stop the strategy with `cancel_orders_on_stop=True` (default).         |
-| **Event sequence**| For each open order: `OrderPendingCancel` → `OrderCanceled`.           |
-| **Pass criteria** | All strategy-owned open orders canceled on stop.                       |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open limit orders from the strategy session.                           |
+| **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default).         |
+| **Event sequence** | For each open order: `OrderPendingCancel` → `OrderCanceled`.           |
+| **Pass criteria**  | All strategy-owned open orders canceled on stop.                       |
+| **Skip when**      | Never.                                                                 |
 
-##### TC-92: Close positions on stop
+#### TC-E82: Close positions on stop
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Open position from the strategy session.                               |
-| **Action**        | Stop the strategy with `close_positions_on_stop=True` (default).       |
-| **Event sequence**| Closing order: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria** | All strategy-owned positions closed; net position = 0.                 |
-| **Skip when**     | Adapter does not support market orders.                                |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Open position from the strategy session.                               |
+| **Action**         | Stop the strategy with `close_positions_on_stop=True` (default).       |
+| **Event sequence** | Closing order: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
+| **Pass criteria**  | All strategy-owned positions closed; net position = 0.                 |
+| **Skip when**      | Adapter does not support market orders.                                |
 
-##### TC-93: Unsubscribe on stop
+#### TC-E83: Unsubscribe on stop
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | Active data subscriptions (quotes, trades, book).                      |
-| **Action**        | Stop the strategy with `can_unsubscribe=True` (default).               |
-| **Event sequence**| Data subscriptions removed.                                            |
-| **Pass criteria** | No further data events received after stop; clean disconnection.       |
-| **Skip when**     | Adapter does not support unsubscribe.                                  |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | Active data subscriptions (quotes, trades, book).                      |
+| **Action**         | Stop the strategy with `can_unsubscribe=True` (default).               |
+| **Event sequence** | Data subscriptions removed.                                            |
+| **Pass criteria**  | No further data events received after stop; clean disconnection.       |
+| **Skip when**      | Adapter does not support unsubscribe.                                  |
 
 **Python config:**
 
@@ -3420,15 +4093,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
     .with_can_unsubscribe(true)
 ```
 
-##### TC-94: Reconcile open orders
+#### TC-E84: Reconcile open orders
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | One or more open limit orders on the venue from a prior session.       |
-| **Action**        | Start the node with `reconciliation=True`.                             |
-| **Event sequence**| `OrderStatusReport` generated for each open order.                     |
-| **Pass criteria** | Each open order is loaded into the cache with correct `venue_order_id`, status=ACCEPTED, price, quantity, side, and order type. |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | One or more open limit orders on the venue from a prior session.       |
+| **Action**         | Start the node with `reconciliation=True`.                             |
+| **Event sequence** | `OrderStatusReport` generated for each open order.                     |
+| **Pass criteria**  | Each open order is loaded into the cache with correct `venue_order_id`, status=ACCEPTED, price, quantity, side, and order type. |
+| **Skip when**      | Never.                                                                 |
 
 **Considerations:**
 
@@ -3436,15 +4109,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 - Use `external_order_claims` to claim the instrument so the adapter reconciles orders for it.
 - Verify that the reconciled order count matches the venue-reported count.
 
-##### TC-95: Reconcile filled orders
+#### TC-E85: Reconcile filled orders
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | One or more filled orders on the venue from a prior session.           |
-| **Action**        | Start the node with `reconciliation=True`.                             |
-| **Event sequence**| `FillReport` generated for each historical fill.                       |
-| **Pass criteria** | Each filled order is loaded into the cache with correct `venue_order_id`, status=FILLED, fill price, fill quantity, and commission. |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | One or more filled orders on the venue from a prior session.           |
+| **Action**         | Start the node with `reconciliation=True`.                             |
+| **Event sequence** | `FillReport` generated for each historical fill.                       |
+| **Pass criteria**  | Each filled order is loaded into the cache with correct `venue_order_id`, status=FILLED, fill price, fill quantity, and commission. |
+| **Skip when**      | Never.                                                                 |
 
 **Considerations:**
 
@@ -3452,15 +4125,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 - Verify fill price, quantity, and commission match the venue's reported values.
 - Some adapters may only report fills within a lookback window.
 
-##### TC-96: Reconcile open long position
+#### TC-E86: Reconcile open long position
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | An open long position on the venue from a prior session.               |
-| **Action**        | Start the node with `reconciliation=True`.                             |
-| **Event sequence**| `PositionStatusReport` generated for the long position.                |
-| **Pass criteria** | Position loaded into cache with correct instrument, side=LONG, quantity, and entry price matching the venue. |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | An open long position on the venue from a prior session.               |
+| **Action**         | Start the node with `reconciliation=True`.                             |
+| **Event sequence** | `PositionStatusReport` generated for the long position.                |
+| **Pass criteria**  | Position loaded into cache with correct instrument, side=LONG, quantity, and entry price matching the venue. |
+| **Skip when**      | Never.                                                                 |
 
 **Considerations:**
 
@@ -3469,15 +4142,15 @@ ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.0
 - Verify the reconciled position quantity and average entry price match the venue.
 - After reconciliation, the strategy should be able to manage or close this position.
 
-##### TC-97: Reconcile open short position
+#### TC-E87: Reconcile open short position
 
-| Field             | Value                                                                  |
-|-------------------|------------------------------------------------------------------------|
-| **Prerequisite**  | An open short position on the venue from a prior session.              |
-| **Action**        | Start the node with `reconciliation=True`.                             |
-| **Event sequence**| `PositionStatusReport` generated for the short position.               |
-| **Pass criteria** | Position loaded into cache with correct instrument, side=SHORT, quantity, and entry price matching the venue. |
-| **Skip when**     | Never.                                                                 |
+| Field              | Value                                                                  |
+|--------------------|------------------------------------------------------------------------|
+| **Prerequisite**   | An open short position on the venue from a prior session.              |
+| **Action**         | Start the node with `reconciliation=True`.                             |
+| **Event sequence** | `PositionStatusReport` generated for the short position.               |
+| **Pass criteria**  | Position loaded into cache with correct instrument, side=SHORT, quantity, and entry price matching the venue. |
+| **Skip when**      | Never.                                                                 |
 
 **Considerations:**
 
@@ -3496,48 +4169,48 @@ Quick reference for all `ExecTesterConfig` parameters. Defaults shown are for th
 |-------------------------------------------------|-------------------|-----------------|----------------|
 | `instrument_id`                                 | InstrumentId      | *required*      | All            |
 | `order_qty`                                     | Decimal           | *required*      | All            |
-| `order_display_qty`                             | Decimal?          | None            | 3, 8           |
-| `order_expire_time_delta_mins`                  | PositiveInt?      | None            | 3              |
-| `order_params`                                  | dict?             | None            | 8              |
+| `order_display_qty`                             | Decimal?          | None            | 2, 7           |
+| `order_expire_time_delta_mins`                  | PositiveInt?      | None            | 2              |
+| `order_params`                                  | dict?             | None            | 7              |
 | `client_id`                                     | ClientId?         | None            | All            |
-| `subscribe_quotes`                              | bool              | True            | 1              |
-| `subscribe_trades`                              | bool              | True            | 1              |
-| `subscribe_book`                                | bool              | False           | 1              |
-| `book_type`                                     | BookType          | L2_MBP          | 1              |
-| `book_depth`                                    | PositiveInt?      | None            | 1              |
-| `book_interval_ms`                              | PositiveInt       | 1000            | 1              |
-| `book_levels_to_print`                          | PositiveInt       | 10              | 1              |
-| `open_position_on_start_qty`                    | Decimal?          | None            | 2, 10          |
-| `open_position_time_in_force`                   | TimeInForce       | GTC             | 2              |
-| `enable_limit_buys`                             | bool              | True            | 3, 5, 6, 7     |
-| `enable_limit_sells`                            | bool              | True            | 3, 5, 6, 7     |
-| `enable_stop_buys`                              | bool              | False           | 4, 5           |
-| `enable_stop_sells`                             | bool              | False           | 4, 5           |
-| `limit_time_in_force`                           | TimeInForce?      | None            | 3, 7           |
-| `tob_offset_ticks`                              | PositiveInt       | 500             | 3, 5           |
-| `stop_order_type`                               | OrderType         | STOP_MARKET     | 4              |
-| `stop_offset_ticks`                             | PositiveInt       | 100             | 4              |
-| `stop_limit_offset_ticks`                       | PositiveInt?      | None            | 4              |
-| `stop_time_in_force`                            | TimeInForce?      | None            | 4              |
-| `stop_trigger_type`                             | TriggerType?      | None            | 4              |
-| `enable_brackets`                               | bool              | False           | 7              |
-| `bracket_entry_order_type`                      | OrderType         | LIMIT           | 7              |
-| `bracket_offset_ticks`                          | PositiveInt       | 500             | 7              |
-| `modify_orders_to_maintain_tob_offset`          | bool              | False           | 5              |
-| `modify_stop_orders_to_maintain_offset`         | bool              | False           | 5              |
-| `cancel_replace_orders_to_maintain_tob_offset`  | bool              | False           | 5              |
-| `cancel_replace_stop_orders_to_maintain_offset` | bool              | False           | 5              |
-| `use_post_only`                                 | bool              | False           | 3, 7, 8, 9     |
-| `use_quote_quantity`                            | bool              | False           | 2, 8           |
-| `emulation_trigger`                             | TriggerType?      | None            | 3, 4           |
-| `cancel_orders_on_stop`                         | bool              | True            | 6, 10          |
-| `close_positions_on_stop`                       | bool              | True            | 10             |
-| `close_positions_time_in_force`                 | TimeInForce?      | None            | 10             |
-| `reduce_only_on_stop`                           | bool              | True            | 8, 10          |
-| `use_individual_cancels_on_stop`                | bool              | False           | 6              |
-| `use_batch_cancel_on_stop`                      | bool              | False           | 6              |
-| `dry_run`                                       | bool              | False           | 1              |
-| `log_data`                                      | bool              | True            | 1              |
-| `test_reject_post_only`                         | bool              | False           | 9              |
-| `test_reject_reduce_only`                       | bool              | False           | 9              |
-| `can_unsubscribe`                               | bool              | True            | 10             |
+| `subscribe_quotes`                              | bool              | True            | —              |
+| `subscribe_trades`                              | bool              | True            | —              |
+| `subscribe_book`                                | bool              | False           | —              |
+| `book_type`                                     | BookType          | L2_MBP          | —              |
+| `book_depth`                                    | PositiveInt?      | None            | —              |
+| `book_interval_ms`                              | PositiveInt       | 1000            | —              |
+| `book_levels_to_print`                          | PositiveInt       | 10              | —              |
+| `open_position_on_start_qty`                    | Decimal?          | None            | 1, 9           |
+| `open_position_time_in_force`                   | TimeInForce       | GTC             | 1              |
+| `enable_limit_buys`                             | bool              | True            | 2, 4, 5, 6     |
+| `enable_limit_sells`                            | bool              | True            | 2, 4, 5, 6     |
+| `enable_stop_buys`                              | bool              | False           | 3, 4           |
+| `enable_stop_sells`                             | bool              | False           | 3, 4           |
+| `limit_time_in_force`                           | TimeInForce?      | None            | 2, 6           |
+| `tob_offset_ticks`                              | PositiveInt       | 500             | 2, 4           |
+| `stop_order_type`                               | OrderType         | STOP_MARKET     | 3              |
+| `stop_offset_ticks`                             | PositiveInt       | 100             | 3              |
+| `stop_limit_offset_ticks`                       | PositiveInt?      | None            | 3              |
+| `stop_time_in_force`                            | TimeInForce?      | None            | 3              |
+| `stop_trigger_type`                             | TriggerType?      | None            | 3              |
+| `enable_brackets`                               | bool              | False           | 6              |
+| `bracket_entry_order_type`                      | OrderType         | LIMIT           | 6              |
+| `bracket_offset_ticks`                          | PositiveInt       | 500             | 6              |
+| `modify_orders_to_maintain_tob_offset`          | bool              | False           | 4              |
+| `modify_stop_orders_to_maintain_offset`         | bool              | False           | 4              |
+| `cancel_replace_orders_to_maintain_tob_offset`  | bool              | False           | 4              |
+| `cancel_replace_stop_orders_to_maintain_offset` | bool              | False           | 4              |
+| `use_post_only`                                 | bool              | False           | 2, 6, 7, 8     |
+| `use_quote_quantity`                            | bool              | False           | 1, 7           |
+| `emulation_trigger`                             | TriggerType?      | None            | 2, 3           |
+| `cancel_orders_on_stop`                         | bool              | True            | 5, 9           |
+| `close_positions_on_stop`                       | bool              | True            | 9              |
+| `close_positions_time_in_force`                 | TimeInForce?      | None            | 9              |
+| `reduce_only_on_stop`                           | bool              | True            | 7, 9           |
+| `use_individual_cancels_on_stop`                | bool              | False           | 5              |
+| `use_batch_cancel_on_stop`                      | bool              | False           | 5              |
+| `dry_run`                                       | bool              | False           | —              |
+| `log_data`                                      | bool              | True            | —              |
+| `test_reject_post_only`                         | bool              | False           | 8              |
+| `test_reject_reduce_only`                       | bool              | False           | 8              |
+| `can_unsubscribe`                               | bool              | True            | 9              |
