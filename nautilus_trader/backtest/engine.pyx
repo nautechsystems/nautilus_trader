@@ -190,6 +190,7 @@ from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.index cimport IndexInstrument
 from nautilus_trader.model.instruments.option_contract cimport OptionContract
+from nautilus_trader.model.instruments.perpetual_contract cimport PerpetualContract
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
@@ -2898,7 +2899,7 @@ cdef class SimulatedExchange:
         Condition.equal(instrument.id.venue, self.id, "instrument.id.venue", "self.id")
 
         # Validate instrument
-        if isinstance(instrument, (CryptoPerpetual, CryptoFuture)):
+        if isinstance(instrument, (CryptoPerpetual, CryptoFuture, PerpetualContract)):
             if self.account_type == AccountType.CASH:
                 raise InvalidConfiguration(
                     f"Cannot add a `{type(instrument).__name__}` type instrument "

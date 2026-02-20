@@ -78,6 +78,7 @@ flowchart TD
     Futures --> FuturesSpread
     Futures --> CryptoFuture
     Futures --> CryptoPerpetual
+    Futures --> PerpetualContract
 
     Options --> OptionContract
     Options --> OptionSpread
@@ -98,6 +99,7 @@ flowchart TD
 | `FuturesSpread`      | Deliverable futures spread.                                                      |
 | `CryptoFuture`       | Deliverable futures with crypto assets as underlying and settlement.             |
 | `CryptoPerpetual`    | Crypto perpetual futures (perpetual swap).                                       |
+| `PerpetualContract`  | Asset-class agnostic perpetual swap (any underlying).                            |
 | `OptionContract`     | Generic option contract.                                                         |
 | `OptionSpread`       | Generic option spread.                                                           |
 | `CryptoOption`       | Crypto option contract.                                                          |

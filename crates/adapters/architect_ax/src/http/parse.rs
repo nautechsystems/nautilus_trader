@@ -16,20 +16,22 @@
 //! Parsing functions to convert Ax HTTP responses to Nautilus domain types.
 
 use anyhow::Context;
-use nautilus_core::{UUID4, nanos::UnixNanos};
+use nautilus_core::{Params, UUID4, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType, FundingRateUpdate, TradeTick},
     enums::{
-        AccountType, AggregationSource, AggressorSide, BarAggregation, CurrencyType, LiquiditySide,
-        OrderSide, OrderType, PositionSideSpecified, PriceType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, CurrencyType,
+        LiquiditySide, OrderSide, OrderType, PositionSideSpecified, PriceType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
-    instruments::{CryptoPerpetual, Instrument, any::InstrumentAny},
+    instruments::{Instrument, PerpetualContract, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
+use serde_json::json;
+use ustr::Ustr;
 
 use super::models::{
     AxBalancesResponse, AxCandle, AxFill, AxFundingRate, AxInstrument, AxOpenOrder, AxPosition,
@@ -57,9 +59,6 @@ fn decimal_to_price_dp(value: Decimal, precision: u8, field: &str) -> anyhow::Re
     })
 }
 
-// TODO: Define a new instrument type for equity perpetuals rather than using CryptoPerpetual
-// with a synthetic currency for the underlying stock. CurrencyType has no Equity variant,
-// so we use Crypto as a placeholder for these synthetic assets.
 fn get_currency(code: &str) -> Currency {
     Currency::try_from_str(code).unwrap_or_else(|| {
         // Create new currency with precision 0 (whole units for equity perps)
@@ -144,7 +143,7 @@ pub fn parse_funding_rate(
     ))
 }
 
-/// Parses an Ax perpetual futures instrument into a Nautilus CryptoPerpetual.
+/// Parses an Ax perpetual futures instrument into a Nautilus [`PerpetualContract`].
 ///
 /// # Errors
 ///
@@ -160,14 +159,15 @@ pub fn parse_perp_instrument(
     let raw_symbol = Symbol::new(raw_symbol_str);
     let instrument_id = InstrumentId::new(raw_symbol, *AX_VENUE);
 
-    // Extract base currency from symbol:
-    // - Crypto: BTC-PERP → base=BTC
-    // - FX: JPYUSD-PERP → base=JPY (strip quote currency suffix)
     let symbol_prefix = raw_symbol_str
         .split('-')
         .next()
         .context("Failed to extract symbol prefix")?;
 
+    let underlying = Ustr::from(symbol_prefix);
+
+    // Derive base code by stripping quote currency suffix if present
+    // e.g. JPYUSD-PERP → base=JPY, BTC-PERP → base=BTC
     let quote_code = definition.quote_currency.as_str();
     let base_code = if symbol_prefix.ends_with(quote_code) && symbol_prefix.len() > quote_code.len()
     {
@@ -175,9 +175,27 @@ pub fn parse_perp_instrument(
     } else {
         symbol_prefix
     };
-    let base_currency = get_currency(base_code);
+
+    let asset_class = match definition.category {
+        Some(category) => AssetClass::from(category),
+        None => match Currency::try_from_str(base_code) {
+            Some(currency) => match currency.currency_type {
+                CurrencyType::Fiat => AssetClass::FX,
+                CurrencyType::Crypto => AssetClass::Cryptocurrency,
+                CurrencyType::CommodityBacked => AssetClass::Commodity,
+            },
+            None => AssetClass::Alternative,
+        },
+    };
+
+    // Only resolve base currency for FX/crypto where the base code is a currency
+    let base_currency = match asset_class {
+        AssetClass::FX | AssetClass::Cryptocurrency => Some(get_currency(base_code)),
+        _ => None,
+    };
+
     let quote_currency = get_currency(quote_code);
-    let settlement_currency = quote_currency;
+    let settlement_currency = get_currency(definition.funding_settlement_currency.as_str());
 
     let price_increment = decimal_to_price(definition.tick_size, "tick_size")?;
     let size_increment = decimal_to_quantity(definition.minimum_order_size, "minimum_order_size")?;
@@ -188,13 +206,59 @@ pub fn parse_perp_instrument(
     let margin_init = definition.initial_margin_pct;
     let margin_maint = definition.maintenance_margin_pct;
 
-    let instrument = CryptoPerpetual::new(
+    let mut info = Params::new();
+    if let Some(ref desc) = definition.description {
+        info.insert("description".to_string(), json!(desc));
+    }
+    if let Some(ref s) = definition.contract_size {
+        info.insert("contract_size".to_string(), json!(s));
+    }
+    if let Some(ref s) = definition.contract_mark_price {
+        info.insert("contract_mark_price".to_string(), json!(s));
+    }
+    if let Some(ref s) = definition.price_quotation {
+        info.insert("price_quotation".to_string(), json!(s));
+    }
+    if let Some(ref s) = definition.underlying_benchmark_price {
+        info.insert("underlying_benchmark_price".to_string(), json!(s));
+    }
+    if let Some(ref s) = definition.price_bands {
+        info.insert("price_bands".to_string(), json!(s));
+    }
+    if let Some(v) = definition.funding_rate_cap_upper_pct {
+        info.insert(
+            "funding_rate_cap_upper_pct".to_string(),
+            json!(v.to_string()),
+        );
+    }
+    if let Some(v) = definition.funding_rate_cap_lower_pct {
+        info.insert(
+            "funding_rate_cap_lower_pct".to_string(),
+            json!(v.to_string()),
+        );
+    }
+    if let Some(v) = definition.price_band_upper_deviation_pct {
+        info.insert(
+            "price_band_upper_deviation_pct".to_string(),
+            json!(v.to_string()),
+        );
+    }
+    if let Some(v) = definition.price_band_lower_deviation_pct {
+        info.insert(
+            "price_band_lower_deviation_pct".to_string(),
+            json!(v.to_string()),
+        );
+    }
+
+    let instrument = PerpetualContract::new(
         instrument_id,
         raw_symbol,
+        underlying,
+        asset_class,
         base_currency,
         quote_currency,
         settlement_currency,
-        false, // Ax perps are linear/USDT-margined
+        false,
         price_increment.precision,
         size_increment.precision,
         price_increment,
@@ -211,12 +275,12 @@ pub fn parse_perp_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
-        None, // info: Option<Params>
+        Some(info),
         ts_event,
         ts_init,
     );
 
-    Ok(InstrumentAny::CryptoPerpetual(instrument))
+    Ok(InstrumentAny::PerpetualContract(instrument))
 }
 
 /// Parses an Ax balances response into a Nautilus [`AccountState`].
@@ -516,33 +580,90 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::AxInstrumentState,
+        common::enums::{AxCategory, AxInstrumentState},
         http::models::{AxFundingRatesResponse, AxInstrumentsResponse},
     };
 
-    fn create_test_instrument() -> AxInstrument {
+    fn create_eurusd_instrument() -> AxInstrument {
         AxInstrument {
-            symbol: Ustr::from("BTC-PERP"),
+            symbol: Ustr::from("EURUSD-PERP"),
             state: AxInstrumentState::Open,
-            multiplier: dec!(1.0),
-            minimum_order_size: dec!(0.001),
-            tick_size: dec!(0.5),
+            multiplier: dec!(1),
+            minimum_order_size: dec!(100),
+            tick_size: dec!(0.0001),
             quote_currency: Ustr::from("USD"),
             funding_settlement_currency: Ustr::from("USD"),
-            maintenance_margin_pct: dec!(0.005),
-            initial_margin_pct: dec!(0.01),
-            contract_mark_price: Some("45000.50".to_string()),
-            contract_size: Some("1 BTC per contract".to_string()),
-            description: Some("Bitcoin Perpetual Futures".to_string()),
-            funding_calendar_schedule: Some("0,8,16".to_string()),
-            funding_frequency: Some("8h".to_string()),
-            funding_rate_cap_lower_pct: Some(dec!(-0.0075)),
-            funding_rate_cap_upper_pct: Some(dec!(0.0075)),
-            price_band_lower_deviation_pct: Some(dec!(0.05)),
-            price_band_upper_deviation_pct: Some(dec!(0.05)),
-            price_bands: Some("dynamic".to_string()),
-            price_quotation: Some("USD".to_string()),
-            underlying_benchmark_price: Some("CME CF BRR".to_string()),
+            category: Some(AxCategory::Fx),
+            maintenance_margin_pct: dec!(4.0),
+            initial_margin_pct: dec!(8.0),
+            contract_mark_price: Some("Average price on AX at London 4pm".to_string()),
+            contract_size: Some("1 Euro per contract".to_string()),
+            description: Some("Euro / US Dollar FX Perpetual Future".to_string()),
+            funding_calendar_schedule: None,
+            funding_frequency: None,
+            funding_rate_cap_lower_pct: Some(dec!(-1.0)),
+            funding_rate_cap_upper_pct: Some(dec!(1.0)),
+            price_band_lower_deviation_pct: Some(dec!(10)),
+            price_band_upper_deviation_pct: Some(dec!(10)),
+            price_bands: Some("+/- 10% from prior Contract Mark Price".to_string()),
+            price_quotation: Some("U.S. dollars per Euro".to_string()),
+            underlying_benchmark_price: Some("WMR London 4pm Closing Spot Rate".to_string()),
+        }
+    }
+
+    fn create_nvda_instrument() -> AxInstrument {
+        AxInstrument {
+            symbol: Ustr::from("NVDA-PERP"),
+            state: AxInstrumentState::Open,
+            multiplier: dec!(1),
+            minimum_order_size: dec!(1),
+            tick_size: dec!(0.01),
+            quote_currency: Ustr::from("USD"),
+            funding_settlement_currency: Ustr::from("USD"),
+            category: Some(AxCategory::Equities),
+            maintenance_margin_pct: dec!(10),
+            initial_margin_pct: dec!(20),
+            contract_mark_price: Some(
+                "Average price on ArchitectX at 4pm New York Time".to_string(),
+            ),
+            contract_size: Some("1 share per contract".to_string()),
+            description: Some("NVIDIA Corp US Equity Perpetual Future".to_string()),
+            funding_calendar_schedule: None,
+            funding_frequency: None,
+            funding_rate_cap_lower_pct: Some(dec!(-1)),
+            funding_rate_cap_upper_pct: Some(dec!(1)),
+            price_band_lower_deviation_pct: Some(dec!(10)),
+            price_band_upper_deviation_pct: Some(dec!(10)),
+            price_bands: Some("+/- 10% from prior Contract Mark Price".to_string()),
+            price_quotation: Some("U.S. dollars per share".to_string()),
+            underlying_benchmark_price: Some("Nasdaq Official Closing Price".to_string()),
+        }
+    }
+
+    fn create_xau_instrument() -> AxInstrument {
+        AxInstrument {
+            symbol: Ustr::from("XAU-PERP"),
+            state: AxInstrumentState::Open,
+            multiplier: dec!(1),
+            minimum_order_size: dec!(1),
+            tick_size: dec!(0.1),
+            quote_currency: Ustr::from("USD"),
+            funding_settlement_currency: Ustr::from("USD"),
+            category: Some(AxCategory::Metals),
+            maintenance_margin_pct: dec!(5),
+            initial_margin_pct: dec!(10),
+            contract_mark_price: Some("Average price on ArchitectX at London 4pm".to_string()),
+            contract_size: Some("1 ounce per contract".to_string()),
+            description: Some("Gold Metals Perpetual Future".to_string()),
+            funding_calendar_schedule: None,
+            funding_frequency: None,
+            funding_rate_cap_lower_pct: Some(dec!(-1)),
+            funding_rate_cap_upper_pct: Some(dec!(1)),
+            price_band_lower_deviation_pct: Some(dec!(10)),
+            price_band_upper_deviation_pct: Some(dec!(10)),
+            price_bands: Some("+/- 10% from prior Contract Mark Price".to_string()),
+            price_quotation: Some("U.S. dollars per ounce".to_string()),
+            underlying_benchmark_price: Some("XAU WMR Metals Daily Closing Rate".to_string()),
         }
     }
 
@@ -567,17 +688,16 @@ mod tests {
 
     #[rstest]
     fn test_get_currency_unknown_creates_new() {
-        // Unknown currencies (like stock tickers) should be created with precision 0
         let currency = get_currency("NVDA");
         assert_eq!(currency.code, Ustr::from("NVDA"));
         assert_eq!(currency.precision, 0);
     }
 
     #[rstest]
-    fn test_parse_perp_instrument() {
-        let definition = create_test_instrument();
-        let maker_fee = Decimal::new(2, 4);
-        let taker_fee = Decimal::new(5, 4);
+    fn test_parse_fx_instrument() {
+        let definition = create_eurusd_instrument();
+        let maker_fee = Decimal::new(2, 5);
+        let taker_fee = Decimal::new(2, 5);
         let ts_now = UnixNanos::default();
 
         let result = parse_perp_instrument(&definition, maker_fee, taker_fee, ts_now, ts_now);
@@ -585,14 +705,100 @@ mod tests {
 
         let instrument = result.unwrap();
         match instrument {
-            InstrumentAny::CryptoPerpetual(perp) => {
-                assert_eq!(perp.id.symbol.as_str(), "BTC-PERP");
+            InstrumentAny::PerpetualContract(perp) => {
+                assert_eq!(perp.id.symbol.as_str(), "EURUSD-PERP");
                 assert_eq!(perp.id.venue, *AX_VENUE);
-                assert_eq!(perp.base_currency.code.as_str(), "BTC");
+                assert_eq!(perp.underlying.as_str(), "EURUSD");
+                assert_eq!(perp.asset_class, AssetClass::FX);
+                assert_eq!(perp.base_currency.unwrap().code.as_str(), "EUR");
                 assert_eq!(perp.quote_currency.code.as_str(), "USD");
+                assert_eq!(perp.settlement_currency.code.as_str(), "USD");
+                assert_eq!(perp.price_precision, 4);
                 assert!(!perp.is_inverse);
             }
-            _ => panic!("Expected CryptoPerpetual instrument"),
+            _ => panic!("Expected PerpetualContract instrument"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_equity_instrument() {
+        let definition = create_nvda_instrument();
+        let maker_fee = Decimal::new(2, 5);
+        let taker_fee = Decimal::new(2, 5);
+        let ts_now = UnixNanos::default();
+
+        let result = parse_perp_instrument(&definition, maker_fee, taker_fee, ts_now, ts_now);
+        assert!(result.is_ok());
+
+        let instrument = result.unwrap();
+        match instrument {
+            InstrumentAny::PerpetualContract(perp) => {
+                assert_eq!(perp.id.symbol.as_str(), "NVDA-PERP");
+                assert_eq!(perp.id.venue, *AX_VENUE);
+                assert_eq!(perp.underlying.as_str(), "NVDA");
+                assert_eq!(perp.asset_class, AssetClass::Equity);
+                assert_eq!(perp.quote_currency.code.as_str(), "USD");
+                assert_eq!(perp.settlement_currency.code.as_str(), "USD");
+                assert_eq!(perp.price_precision, 2);
+                assert!(!perp.is_inverse);
+            }
+            _ => panic!("Expected PerpetualContract instrument"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_metals_instrument() {
+        let definition = create_xau_instrument();
+        let ts_now = UnixNanos::default();
+
+        let result =
+            parse_perp_instrument(&definition, Decimal::ZERO, Decimal::ZERO, ts_now, ts_now);
+        let instrument = result.unwrap();
+        match instrument {
+            InstrumentAny::PerpetualContract(perp) => {
+                assert_eq!(perp.id.symbol.as_str(), "XAU-PERP");
+                assert_eq!(perp.underlying.as_str(), "XAU");
+                assert_eq!(perp.asset_class, AssetClass::Commodity);
+                assert!(perp.base_currency.is_none());
+                assert_eq!(perp.quote_currency.code.as_str(), "USD");
+                assert_eq!(perp.price_precision, 1);
+            }
+            _ => panic!("Expected PerpetualContract instrument"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_settlement_differs_from_quote() {
+        let mut definition = create_eurusd_instrument();
+        definition.funding_settlement_currency = Ustr::from("EUR");
+        let ts_now = UnixNanos::default();
+
+        let result =
+            parse_perp_instrument(&definition, Decimal::ZERO, Decimal::ZERO, ts_now, ts_now);
+        let instrument = result.unwrap();
+        match instrument {
+            InstrumentAny::PerpetualContract(perp) => {
+                assert_eq!(perp.quote_currency.code.as_str(), "USD");
+                assert_eq!(perp.settlement_currency.code.as_str(), "EUR");
+            }
+            _ => panic!("Expected PerpetualContract instrument"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_unknown_category_falls_back_to_alternative() {
+        let mut definition = create_eurusd_instrument();
+        definition.category = Some(AxCategory::Unknown);
+        let ts_now = UnixNanos::default();
+
+        let result =
+            parse_perp_instrument(&definition, Decimal::ZERO, Decimal::ZERO, ts_now, ts_now);
+        let instrument = result.unwrap();
+        match instrument {
+            InstrumentAny::PerpetualContract(perp) => {
+                assert_eq!(perp.asset_class, AssetClass::Alternative);
+            }
+            _ => panic!("Expected PerpetualContract instrument"),
         }
     }
 
@@ -602,29 +808,21 @@ mod tests {
         let response: AxInstrumentsResponse =
             serde_json::from_str(test_data).expect("Failed to deserialize test data");
 
-        assert_eq!(response.instruments.len(), 4);
+        assert_eq!(response.instruments.len(), 3);
 
-        let btcusd = &response.instruments[0];
-        assert_eq!(btcusd.symbol.as_str(), "BTCUSD-PERP");
-        assert_eq!(btcusd.state, AxInstrumentState::Open);
+        let eurusd = &response.instruments[0];
+        assert_eq!(eurusd.symbol.as_str(), "EURUSD-PERP");
+        assert_eq!(eurusd.category, Some(AxCategory::Fx));
+        assert_eq!(eurusd.tick_size, dec!(0.0001));
+        assert_eq!(eurusd.minimum_order_size, dec!(100));
 
-        let btc = &response.instruments[1];
-        assert_eq!(btc.symbol.as_str(), "BTC-PERP");
-        assert_eq!(btc.state, AxInstrumentState::Open);
-        assert_eq!(btc.tick_size, dec!(0.5));
-        assert_eq!(btc.minimum_order_size, dec!(0.001));
-        assert!(btc.contract_mark_price.is_some());
+        let xau = &response.instruments[1];
+        assert_eq!(xau.symbol.as_str(), "XAU-PERP");
+        assert_eq!(xau.category, Some(AxCategory::Metals));
 
-        let eth = &response.instruments[2];
-        assert_eq!(eth.symbol.as_str(), "ETH-PERP");
-        assert_eq!(eth.state, AxInstrumentState::Open);
-
-        // SOL-PERP is suspended with null optional fields
-        let sol = &response.instruments[3];
-        assert_eq!(sol.symbol.as_str(), "SOL-PERP");
-        assert_eq!(sol.state, AxInstrumentState::Suspended);
-        assert!(sol.contract_mark_price.is_none());
-        assert!(sol.funding_frequency.is_none());
+        let nvda = &response.instruments[2];
+        assert_eq!(nvda.symbol.as_str(), "NVDA-PERP");
+        assert_eq!(nvda.category, Some(AxCategory::Equities));
     }
 
     #[rstest]

@@ -40,7 +40,10 @@ use nautilus_common::{
     },
 };
 use nautilus_core::UUID4;
-use nautilus_model::{data::Data, identifiers::ClientId, instruments::Instrument};
+use nautilus_model::{
+    data::Data,
+    identifiers::{ClientId, InstrumentId},
+};
 use rstest::rstest;
 
 use crate::common::server::{create_test_instrument, start_test_server, wait_for_connection};
@@ -59,7 +62,7 @@ async fn test_handler_parses_l1_to_quote_tick() {
     let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
 
     // Cache instrument before connect
-    let instrument = create_test_instrument("BTCUSD-PERP");
+    let instrument = create_test_instrument("EURUSD-PERP");
     client.cache_instrument(instrument);
 
     client.connect().await.expect("Failed to connect");
@@ -67,7 +70,7 @@ async fn test_handler_parses_l1_to_quote_tick() {
 
     // Subscribe triggers mock server to send L1 book message
     client
-        .subscribe_quotes("BTCUSD-PERP")
+        .subscribe_quotes("EURUSD-PERP")
         .await
         .expect("Subscribe failed");
 
@@ -82,7 +85,7 @@ async fn test_handler_parses_l1_to_quote_tick() {
             assert!(!data_vec.is_empty(), "Expected at least one data item");
             match &data_vec[0] {
                 Data::Quote(quote) => {
-                    assert_eq!(quote.instrument_id.symbol.as_str(), "BTCUSD-PERP");
+                    assert_eq!(quote.instrument_id.symbol.as_str(), "EURUSD-PERP");
                     assert!(quote.bid_price.as_f64() > 0.0);
                     assert!(quote.ask_price.as_f64() > 0.0);
                 }
@@ -104,14 +107,14 @@ async fn test_handler_parses_trade_tick() {
     let ws_url = format!("ws://{addr}/md/ws");
     let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
 
-    let instrument = create_test_instrument("BTCUSD-PERP");
+    let instrument = create_test_instrument("EURUSD-PERP");
     client.cache_instrument(instrument);
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
     client
-        .subscribe_trades("BTCUSD-PERP")
+        .subscribe_trades("EURUSD-PERP")
         .await
         .expect("Subscribe failed");
 
@@ -126,7 +129,7 @@ async fn test_handler_parses_trade_tick() {
             Ok(Some(NautilusDataWsMessage::Data(data_vec))) => {
                 for data in data_vec {
                     if let Data::Trade(trade) = data {
-                        assert_eq!(trade.instrument_id.symbol.as_str(), "BTCUSD-PERP");
+                        assert_eq!(trade.instrument_id.symbol.as_str(), "EURUSD-PERP");
                         assert!(trade.price.as_f64() > 0.0);
                         assert!(trade.size.as_f64() > 0.0);
                         found_trade = true;
@@ -153,14 +156,14 @@ async fn test_handler_parses_l2_to_order_book_deltas() {
     let ws_url = format!("ws://{addr}/md/ws");
     let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
 
-    let instrument = create_test_instrument("BTCUSD-PERP");
+    let instrument = create_test_instrument("EURUSD-PERP");
     client.cache_instrument(instrument);
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level2)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level2)
         .await
         .expect("Subscribe failed");
 
@@ -171,7 +174,7 @@ async fn test_handler_parses_l2_to_order_book_deltas() {
 
     match result {
         Ok(Some(NautilusDataWsMessage::Deltas(deltas))) => {
-            assert_eq!(deltas.instrument_id.symbol.as_str(), "BTCUSD-PERP");
+            assert_eq!(deltas.instrument_id.symbol.as_str(), "EURUSD-PERP");
         }
         Ok(Some(other)) => panic!("Expected Deltas message, was {other:?}"),
         Ok(None) => panic!("Stream ended unexpectedly"),
@@ -188,14 +191,14 @@ async fn test_handler_parses_candle_to_bar() {
     let ws_url = format!("ws://{addr}/md/ws");
     let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
 
-    let instrument = create_test_instrument("BTCUSD-PERP");
+    let instrument = create_test_instrument("EURUSD-PERP");
     client.cache_instrument(instrument);
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
     client
-        .subscribe_candles("BTCUSD-PERP", AxCandleWidth::Minutes1)
+        .subscribe_candles("EURUSD-PERP", AxCandleWidth::Minutes1)
         .await
         .expect("Subscribe candles failed");
 
@@ -209,7 +212,7 @@ async fn test_handler_parses_candle_to_bar() {
         let result = tokio::time::timeout(Duration::from_millis(500), stream.next()).await;
         match result {
             Ok(Some(NautilusDataWsMessage::Bar(bar))) => {
-                assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "BTCUSD-PERP");
+                assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "EURUSD-PERP");
                 assert!(bar.open.as_f64() > 0.0);
                 assert!(bar.high.as_f64() > 0.0);
                 assert!(bar.low.as_f64() > 0.0);
@@ -239,7 +242,7 @@ async fn test_handler_ignores_unknown_symbol() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .expect("Subscribe failed");
 
@@ -275,17 +278,11 @@ async fn test_data_client_emits_quote_tick_via_channel() {
     let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
         .expect("Failed to create data client");
 
-    // Cache instrument before connect
-    let instrument = create_test_instrument("BTCUSD-PERP");
-    client
-        .instruments()
-        .insert(ustr::ustr("BTCUSD-PERP"), instrument.clone());
-
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
-    // Subscribe to quotes
-    let instrument_id = instrument.id();
+    // Use first instrument from HTTP fixture (EURUSD-PERP)
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
     let subscribe_cmd = SubscribeQuotes {
         instrument_id,
         client_id: Some(client_id),
@@ -307,7 +304,7 @@ async fn test_data_client_emits_quote_tick_via_channel() {
 
         match tokio::time::timeout(timeout, rx.recv()).await {
             Ok(Some(DataEvent::Data(Data::Quote(quote)))) => {
-                assert_eq!(quote.instrument_id.symbol.as_str(), "BTCUSD-PERP");
+                assert_eq!(quote.instrument_id.symbol.as_str(), "EURUSD-PERP");
                 assert!(quote.bid_price.as_f64() > 0.0);
                 assert!(quote.ask_price.as_f64() > 0.0);
                 break;
@@ -340,16 +337,11 @@ async fn test_data_client_emits_trade_tick_via_channel() {
     let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
         .expect("Failed to create data client");
 
-    let instrument = create_test_instrument("BTCUSD-PERP");
-    client
-        .instruments()
-        .insert(ustr::ustr("BTCUSD-PERP"), instrument.clone());
-
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
-    // Subscribe to trades
-    let instrument_id = instrument.id();
+    // Use first instrument from HTTP fixture (EURUSD-PERP)
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
     let subscribe_cmd = SubscribeTrades {
         instrument_id,
         client_id: Some(client_id),
@@ -369,7 +361,7 @@ async fn test_data_client_emits_trade_tick_via_channel() {
         let result = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await;
         match result {
             Ok(Some(DataEvent::Data(Data::Trade(trade)))) => {
-                assert_eq!(trade.instrument_id.symbol.as_str(), "BTCUSD-PERP");
+                assert_eq!(trade.instrument_id.symbol.as_str(), "EURUSD-PERP");
                 assert!(trade.price.as_f64() > 0.0);
                 assert!(trade.size.as_f64() > 0.0);
                 found_trade = true;

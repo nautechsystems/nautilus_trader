@@ -39,13 +39,16 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::error::AxWsErrorResponse;
-use crate::common::{
-    enums::{
-        AxCancelReason, AxCancelRejectionReason, AxCandleWidth, AxMarketDataLevel, AxMdRequestType,
-        AxOrderRequestType, AxOrderSide, AxOrderStatus, AxOrderType, AxOrderWsMessageType,
-        AxTimeInForce,
+use crate::{
+    common::{
+        enums::{
+            AxCancelReason, AxCancelRejectionReason, AxCandleWidth, AxMarketDataLevel,
+            AxMdRequestType, AxOrderRequestType, AxOrderSide, AxOrderStatus, AxOrderType,
+            AxOrderWsMessageType, AxTimeInForce,
+        },
+        parse::{deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero},
     },
-    parse::{deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero},
+    http::models::AxOrderRejectReason,
 };
 
 /// Nautilus domain message emitted after parsing Ax WebSocket events.
@@ -724,9 +727,9 @@ pub struct AxWsOrderRejected {
     pub eid: String,
     /// Order details.
     pub o: AxWsOrder,
-    /// Rejection reason code (can be null, defaults to txt or "UNKNOWN").
+    /// Rejection reason code.
     #[serde(default)]
-    pub r: Option<String>,
+    pub r: Option<AxOrderRejectReason>,
     /// Rejection text/description.
     #[serde(default)]
     pub txt: Option<String>,
@@ -978,7 +981,7 @@ mod tests {
         let msg = AxMdSubscribe {
             rid: 2,
             msg_type: AxMdRequestType::Subscribe,
-            symbol: Ustr::from("BTCUSD-PERP"),
+            symbol: Ustr::from("EURUSD-PERP"),
             level: AxMarketDataLevel::Level2,
         };
         let json = serde_json::to_string(&msg).unwrap();
@@ -986,7 +989,7 @@ mod tests {
 
         assert_eq!(parsed["rid"], 2);
         assert_eq!(parsed["type"], "subscribe");
-        assert_eq!(parsed["symbol"], "BTCUSD-PERP");
+        assert_eq!(parsed["symbol"], "EURUSD-PERP");
         assert_eq!(parsed["level"], "LEVEL_2");
     }
 
@@ -995,14 +998,14 @@ mod tests {
         let msg = AxMdUnsubscribe {
             rid: 3,
             msg_type: AxMdRequestType::Unsubscribe,
-            symbol: Ustr::from("BTCUSD-PERP"),
+            symbol: Ustr::from("EURUSD-PERP"),
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed["rid"], 3);
         assert_eq!(parsed["type"], "unsubscribe");
-        assert_eq!(parsed["symbol"], "BTCUSD-PERP");
+        assert_eq!(parsed["symbol"], "EURUSD-PERP");
     }
 
     #[rstest]
@@ -1010,7 +1013,7 @@ mod tests {
         let msg = AxMdSubscribeCandles {
             rid: 4,
             msg_type: AxMdRequestType::SubscribeCandles,
-            symbol: Ustr::from("BTCUSD-PERP"),
+            symbol: Ustr::from("EURUSD-PERP"),
             width: AxCandleWidth::Minutes1,
         };
         let json = serde_json::to_string(&msg).unwrap();
@@ -1018,7 +1021,7 @@ mod tests {
 
         assert_eq!(parsed["rid"], 4);
         assert_eq!(parsed["type"], "subscribe_candles");
-        assert_eq!(parsed["symbol"], "BTCUSD-PERP");
+        assert_eq!(parsed["symbol"], "EURUSD-PERP");
         assert_eq!(parsed["width"], "1m");
     }
 
@@ -1027,7 +1030,7 @@ mod tests {
         let msg = AxMdUnsubscribeCandles {
             rid: 5,
             msg_type: AxMdRequestType::UnsubscribeCandles,
-            symbol: Ustr::from("BTCUSD-PERP"),
+            symbol: Ustr::from("EURUSD-PERP"),
             width: AxCandleWidth::Minutes1,
         };
         let json = serde_json::to_string(&msg).unwrap();
@@ -1035,7 +1038,7 @@ mod tests {
 
         assert_eq!(parsed["rid"], 5);
         assert_eq!(parsed["type"], "unsubscribe_candles");
-        assert_eq!(parsed["symbol"], "BTCUSD-PERP");
+        assert_eq!(parsed["symbol"], "EURUSD-PERP");
         assert_eq!(parsed["width"], "1m");
     }
 
@@ -1044,7 +1047,7 @@ mod tests {
         let msg = AxWsPlaceOrder {
             rid: 1,
             t: AxOrderRequestType::PlaceOrder,
-            s: Ustr::from("BTCUSD-PERP"),
+            s: Ustr::from("EURUSD-PERP"),
             d: AxOrderSide::Buy,
             q: 100,
             p: dec!(50000.50),
@@ -1061,7 +1064,7 @@ mod tests {
 
         assert_eq!(parsed["rid"], 1);
         assert_eq!(parsed["t"], "p");
-        assert_eq!(parsed["s"], "BTCUSD-PERP");
+        assert_eq!(parsed["s"], "EURUSD-PERP");
         assert_eq!(parsed["d"], "B");
         assert_eq!(parsed["q"], 100);
         assert_eq!(parsed["p"], "50000.50");
@@ -1078,7 +1081,7 @@ mod tests {
         let msg = AxWsPlaceOrder {
             rid: 2,
             t: AxOrderRequestType::PlaceOrder,
-            s: Ustr::from("BTCUSD-PERP"),
+            s: Ustr::from("EURUSD-PERP"),
             d: AxOrderSide::Sell,
             q: 50,
             p: dec!(48000.00),
@@ -1137,7 +1140,7 @@ mod tests {
     fn test_load_md_ticker_from_file() {
         let json = include_str!("../../test_data/ws_md_ticker.json");
         let msg: AxMdTicker = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.s.as_str(), "BTCUSD-PERP");
+        assert_eq!(msg.s.as_str(), "EURUSD-PERP");
     }
 
     #[rstest]
@@ -1238,7 +1241,7 @@ mod tests {
     fn test_load_order_rejected_from_file() {
         let json = include_str!("../../test_data/ws_order_rejected.json");
         let msg: AxWsOrderRejected = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.r, Some("INSUFFICIENT_MARGIN".to_string()));
+        assert_eq!(msg.r, Some(AxOrderRejectReason::InsufficientMargin));
     }
 
     #[rstest]

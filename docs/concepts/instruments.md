@@ -11,6 +11,7 @@ currently a number of subclasses representing a range of *asset classes* and *in
 - `FuturesSpread`: Exchange-defined multi-leg futures strategy (e.g., calendar or inter-commodity) quoted as one instrument.
 - `CryptoFuture`: Dated, deliverable crypto futures contract with fixed expiry, underlying crypto, and settlement currency.
 - `CryptoPerpetual`: Perpetual futures contract (perpetual swap) on crypto with no expiry; can be inverse or quanto-settled.
+- `PerpetualContract`: Asset-class agnostic perpetual swap for any underlying (FX, equities, commodities, indexes, crypto).
 - `OptionContract`: Exchange-traded option (put or call) on an underlying with strike and expiry.
 - `OptionSpread`: Exchange-defined multi-leg options strategy (e.g., vertical, calendar, straddle) quoted as one instrument.
 - `CryptoOption`: Option on a crypto underlying with crypto quote/settlement; supports inverse or quanto styles.

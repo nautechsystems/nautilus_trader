@@ -30,11 +30,13 @@ use nautilus_architect_ax::{
 };
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
+    enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
-    instruments::{CryptoPerpetual, any::InstrumentAny},
+    instruments::{PerpetualContract, any::InstrumentAny},
     types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 fn create_eurusd_instrument() -> InstrumentAny {
     let price_precision = 4_u8;
@@ -46,10 +48,12 @@ fn create_eurusd_instrument() -> InstrumentAny {
     let size_increment =
         Quantity::from_decimal_dp(Decimal::new(1, size_precision as u32), size_precision).unwrap();
 
-    let instrument = CryptoPerpetual::new(
+    let instrument = PerpetualContract::new(
         InstrumentId::new(Symbol::new(symbol), *AX_VENUE),
         Symbol::new(symbol),
-        Currency::USD(),
+        Ustr::from("EURUSD"),
+        AssetClass::FX,
+        None,
         Currency::USD(),
         Currency::USD(),
         false,
@@ -73,7 +77,7 @@ fn create_eurusd_instrument() -> InstrumentAny {
         UnixNanos::default(),
         UnixNanos::default(),
     );
-    InstrumentAny::CryptoPerpetual(instrument)
+    InstrumentAny::PerpetualContract(instrument)
 }
 
 fn bench_parse_book_l1_quote(c: &mut Criterion) {
@@ -128,20 +132,22 @@ fn bench_parse_candle_bar(c: &mut Criterion) {
     let json = include_str!("../test_data/ws_md_candle.json");
     let candle: AxMdCandle = serde_json::from_str(json).unwrap();
 
-    // Candle test data uses BTCUSD-PERP
+    // Candle test data uses EURUSD-PERP
     let price_precision = 2_u8;
     let size_precision = 3_u8;
-    let symbol = "BTCUSD-PERP";
+    let symbol = "EURUSD-PERP";
 
     let price_increment =
         Price::from_decimal_dp(Decimal::new(1, price_precision as u32), price_precision).unwrap();
     let size_increment =
         Quantity::from_decimal_dp(Decimal::new(1, size_precision as u32), size_precision).unwrap();
 
-    let instrument = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+    let instrument = InstrumentAny::PerpetualContract(PerpetualContract::new(
         InstrumentId::new(Symbol::new(symbol), *AX_VENUE),
         Symbol::new(symbol),
-        Currency::USD(),
+        Ustr::from("EURUSD"),
+        AssetClass::Cryptocurrency,
+        None,
         Currency::USD(),
         Currency::USD(),
         false,

@@ -101,6 +101,14 @@
 ```
 
 ```{eval-rst}
+.. automodule:: nautilus_trader.model.instruments.perpetual_contract
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+```{eval-rst}
 .. automodule:: nautilus_trader.model.instruments.option_contract
    :show-inheritance:
    :inherited-members:

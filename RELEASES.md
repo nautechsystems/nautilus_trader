@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Added `request_funding_rates` and `FundingRateUpdate` Arrow serialization (#3467), thanks @dxwil
 - Added `optimize_file_loading` as BacktestDataConfig parameter (#3518), thanks @faysou
 - Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads (#3535), thanks @shzhng
+- Added `PerpetualContract` instrument for asset-class agnostic perpetual swaps
 - Added Ichimoku Cloud indicator (#3552), thanks @faysou
 - Added Betfair RCM parsing for TPD race data
 - Added Betfair race stream subscription via `subscribe_race_data` config

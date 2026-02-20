@@ -375,8 +375,9 @@ pub fn parse_candle_bar(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
+        enums::AssetClass,
         identifiers::{InstrumentId, Symbol},
-        instruments::CryptoPerpetual,
+        instruments::PerpetualContract,
         types::Currency,
     };
     use rstest::rstest;
@@ -403,6 +404,7 @@ mod tests {
         price_precision: u8,
         size_precision: u8,
     ) -> InstrumentAny {
+        let underlying = Ustr::from(symbol.split('-').next().unwrap_or(symbol));
         let price_increment =
             Price::from_decimal_dp(Decimal::new(1, price_precision as u32), price_precision)
                 .unwrap();
@@ -410,10 +412,12 @@ mod tests {
             Quantity::from_decimal_dp(Decimal::new(1, size_precision as u32), size_precision)
                 .unwrap();
 
-        let instrument = CryptoPerpetual::new(
+        let instrument = PerpetualContract::new(
             InstrumentId::new(Symbol::new(symbol), *AX_VENUE),
             Symbol::new(symbol),
-            Currency::USD(),
+            underlying,
+            AssetClass::Cryptocurrency,
+            None,
             Currency::USD(),
             Currency::USD(),
             false,
@@ -433,11 +437,11 @@ mod tests {
             Some(Decimal::new(5, 3)),
             Some(Decimal::new(2, 4)),
             Some(Decimal::new(5, 4)),
-            None, // info: Option<Params>
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
-        InstrumentAny::CryptoPerpetual(instrument)
+        InstrumentAny::PerpetualContract(instrument)
     }
 
     #[rstest]
@@ -747,11 +751,11 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_candle.json");
         let candle: AxMdCandle = serde_json::from_str(json).unwrap();
 
-        assert_eq!(candle.symbol.as_str(), "BTCUSD-PERP");
+        assert_eq!(candle.symbol.as_str(), "EURUSD-PERP");
         assert_eq!(candle.open, dec!(49500.00));
         assert_eq!(candle.close, dec!(50000.00));
 
-        let instrument = create_instrument_with_precision("BTCUSD-PERP", 2, 3);
+        let instrument = create_instrument_with_precision("EURUSD-PERP", 2, 3);
         let ts_init = UnixNanos::default();
 
         let bar = parse_candle_bar(&candle, &instrument, ts_init).unwrap();
@@ -761,6 +765,6 @@ mod tests {
         assert_eq!(bar.low.as_f64(), 49000.00);
         assert_eq!(bar.close.as_f64(), 50000.00);
         assert_eq!(bar.volume.as_f64(), 5000.0);
-        assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "BTCUSD-PERP");
+        assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "EURUSD-PERP");
     }
 }

@@ -165,6 +165,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::instruments::IndexInstrument>()?;
     m.add_class::<crate::instruments::OptionContract>()?;
     m.add_class::<crate::instruments::OptionSpread>()?;
+    m.add_class::<crate::instruments::PerpetualContract>()?;
     m.add_class::<crate::instruments::SyntheticInstrument>()?;
     // Order book
     m.add_class::<crate::orderbook::book::OrderBook>()?;

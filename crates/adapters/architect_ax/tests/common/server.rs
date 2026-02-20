@@ -37,12 +37,14 @@ use axum::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
+    enums::AssetClass,
     identifiers::{InstrumentId, Symbol, Venue},
-    instruments::{CryptoPerpetual, InstrumentAny},
+    instruments::{InstrumentAny, PerpetualContract},
     types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde_json::json;
+use ustr::Ustr;
 
 #[derive(Clone)]
 pub struct TestServerState {
@@ -232,12 +234,12 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
 
                         // Send two candles with different timestamps to trigger bar emission
                         // (handler only emits when a candle closes, i.e., timestamp changes)
-                        let candle1 = r#"{"t":"c","symbol":"BTCUSD-PERP","width":"1m","open":"50000","high":"50100","low":"49900","close":"50050","volume":100,"buy_volume":60,"sell_volume":40,"ts":1234567890}"#;
+                        let candle1 = r#"{"t":"c","symbol":"EURUSD-PERP","width":"1m","open":"50000","high":"50100","low":"49900","close":"50050","volume":100,"buy_volume":60,"sell_volume":40,"ts":1234567890}"#;
                         if socket.send(Message::Text(candle1.into())).await.is_err() {
                             break;
                         }
 
-                        let candle2 = r#"{"t":"c","symbol":"BTCUSD-PERP","width":"1m","open":"50050","high":"50150","low":"49950","close":"50100","volume":110,"buy_volume":65,"sell_volume":45,"ts":1234567950}"#;
+                        let candle2 = r#"{"t":"c","symbol":"EURUSD-PERP","width":"1m","open":"50050","high":"50150","low":"49950","close":"50100","volume":110,"buy_volume":65,"sell_volume":45,"ts":1234567950}"#;
                         if socket.send(Message::Text(candle2.into())).await.is_err() {
                             break;
                         }
@@ -392,11 +394,11 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
 pub fn load_test_data(filename: &str) -> serde_json::Value {
     let path = format!("{}/test_data/{filename}", env!("CARGO_MANIFEST_DIR"));
     let content = std::fs::read_to_string(&path).unwrap_or_else(|_| match filename {
-        "ws_md_book_l1.json" => r#"{"t":"1","s":"BTCUSD-PERP","b":"50000.00","B":"1.0","a":"50001.00","A":"1.0","ts":"1234567890000000000"}"#.to_string(),
-        "ws_md_book_l2.json" => r#"{"t":"2","s":"BTCUSD-PERP","b":[],"a":[],"ts":"1234567890000000000"}"#.to_string(),
-        "ws_md_book_l3.json" => r#"{"t":"3","s":"BTCUSD-PERP","b":[],"a":[],"ts":"1234567890000000000"}"#.to_string(),
-        "ws_md_trade.json" => r#"{"t":"s","s":"BTCUSD-PERP","p":"50000.00","q":1,"d":"BUY","tx":"123","ts":"1234567890000000000"}"#.to_string(),
-        "ws_md_candle.json" => r#"{"t":"c","s":"BTCUSD-PERP","o":"50000","h":"50100","l":"49900","c":"50050","v":100,"ts":"1234567890000000000"}"#.to_string(),
+        "ws_md_book_l1.json" => r#"{"t":"1","s":"EURUSD-PERP","b":"50000.00","B":"1.0","a":"50001.00","A":"1.0","ts":"1234567890000000000"}"#.to_string(),
+        "ws_md_book_l2.json" => r#"{"t":"2","s":"EURUSD-PERP","b":[],"a":[],"ts":"1234567890000000000"}"#.to_string(),
+        "ws_md_book_l3.json" => r#"{"t":"3","s":"EURUSD-PERP","b":[],"a":[],"ts":"1234567890000000000"}"#.to_string(),
+        "ws_md_trade.json" => r#"{"t":"s","s":"EURUSD-PERP","p":"50000.00","q":1,"d":"BUY","tx":"123","ts":"1234567890000000000"}"#.to_string(),
+        "ws_md_candle.json" => r#"{"t":"c","s":"EURUSD-PERP","o":"50000","h":"50100","l":"49900","c":"50050","v":100,"ts":"1234567890000000000"}"#.to_string(),
         "ws_orders_open_orders.json" => r#"{"t":"O","orders":[]}"#.to_string(),
         _ => "{}".to_string(),
     });
@@ -463,10 +465,13 @@ pub async fn wait_for_connection(state: &TestServerState) {
 }
 
 pub fn create_test_instrument(symbol: &str) -> InstrumentAny {
-    let instrument = CryptoPerpetual::new(
+    let underlying = Ustr::from(symbol.split('-').next().unwrap_or(symbol));
+    let instrument = PerpetualContract::new(
         InstrumentId::new(Symbol::new(symbol), Venue::new("AX")),
         Symbol::new(symbol),
-        Currency::USD(),
+        underlying,
+        AssetClass::Cryptocurrency,
+        None,
         Currency::USD(),
         Currency::USD(),
         false,
@@ -486,9 +491,9 @@ pub fn create_test_instrument(symbol: &str) -> InstrumentAny {
         Some(Decimal::new(5, 3)),
         Some(Decimal::new(2, 4)),
         Some(Decimal::new(5, 4)),
-        None, // info: Option<Params>
+        None,
         0.into(),
         0.into(),
     );
-    InstrumentAny::CryptoPerpetual(instrument)
+    InstrumentAny::PerpetualContract(instrument)
 }

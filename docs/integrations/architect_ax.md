@@ -53,8 +53,9 @@ contracts never expire, eliminating rollover costs associated with standard futu
 | Interest rates   | SOFR, treasury yields.              | Rate perpetuals.             |
 
 :::info
-All instruments on AX Exchange are perpetual futures using a netting account model with
-cross-margin. The adapter uses `MARGIN` account type and `NETTING` order management.
+All instruments on AX Exchange are loaded as `PerpetualContract`, an asset-class agnostic
+perpetual swap type. The asset class (FX, commodity, etc.) is inferred automatically from
+the underlying. The adapter uses `MARGIN` account type and `NETTING` order management.
 :::
 
 ## Symbology

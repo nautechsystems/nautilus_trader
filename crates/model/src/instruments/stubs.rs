@@ -23,7 +23,8 @@ use ustr::Ustr;
 use super::{
     CryptoOption, betting::BettingInstrument, binary_option::BinaryOption, cfd::Cfd,
     commodity::Commodity, futures_spread::FuturesSpread, index_instrument::IndexInstrument,
-    option_spread::OptionSpread, synthetic::SyntheticInstrument,
+    option_spread::OptionSpread, perpetual_contract::PerpetualContract,
+    synthetic::SyntheticInstrument,
 };
 use crate::{
     enums::{AssetClass, OptionKind},
@@ -780,6 +781,43 @@ pub fn cfd_gold() -> Cfd {
         None,
         None,
         None,
+        None, // info
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// PerpetualContract
+////////////////////////////////////////////////////////////////////////////////
+
+#[fixture]
+pub fn perpetual_contract_eurusd() -> PerpetualContract {
+    PerpetualContract::new(
+        InstrumentId::from("EURUSD-PERP.AX"),
+        Symbol::from("EURUSD-PERP"),
+        Ustr::from("EURUSD"),
+        AssetClass::FX,
+        Some(Currency::from("EUR")),
+        Currency::from("USD"),
+        Currency::from("USD"),
+        false,
+        5,
+        0,
+        Price::from("0.00001"),
+        Quantity::from("1"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(dec!(0.03)),
+        Some(dec!(0.03)),
+        Some(dec!(0.00002)),
+        Some(dec!(0.00002)),
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),

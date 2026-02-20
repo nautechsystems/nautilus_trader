@@ -275,6 +275,14 @@ impl AccountsManager {
                         None,
                     )
                     .ok()?,
+                InstrumentAny::PerpetualContract(i) => account
+                    .calculate_maintenance_margin(
+                        i,
+                        position.quantity,
+                        instrument.make_price(position.avg_px_open),
+                        None,
+                    )
+                    .ok()?,
             };
 
             let mut margin_maint = margin_maint.as_f64();
@@ -496,6 +504,9 @@ impl AccountsManager {
                     .calculate_initial_margin(i, order.quantity(), price?, None)
                     .ok()?,
                 InstrumentAny::OptionSpread(i) => account
+                    .calculate_initial_margin(i, order.quantity(), price?, None)
+                    .ok()?,
+                InstrumentAny::PerpetualContract(i) => account
                     .calculate_initial_margin(i, order.quantity(), price?, None)
                     .ok()?,
             };

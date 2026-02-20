@@ -1023,6 +1023,14 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                     DatabaseQueries::add_instrument(pool, "OPTION_SPREAD", Box::new(instrument))
                         .await
                 }
+                InstrumentAny::PerpetualContract(instrument) => {
+                    DatabaseQueries::add_instrument(
+                        pool,
+                        "PERPETUAL_CONTRACT",
+                        Box::new(instrument),
+                    )
+                    .await
+                }
             },
             DatabaseQuery::AddOrder(order_any, client_id, updated) => match order_any {
                 OrderAny::Limit(order) => {

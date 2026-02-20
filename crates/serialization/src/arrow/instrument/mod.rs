@@ -28,7 +28,7 @@ use nautilus_model::instruments::{
     crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
     futures_contract::FuturesContract, futures_spread::FuturesSpread,
     index_instrument::IndexInstrument, option_contract::OptionContract,
-    option_spread::OptionSpread,
+    option_spread::OptionSpread, perpetual_contract::PerpetualContract,
 };
 
 #[allow(unused)]
@@ -51,6 +51,7 @@ pub mod futures_spread;
 pub mod index_instrument;
 pub mod option_contract;
 pub mod option_spread;
+pub mod perpetual_contract;
 
 impl ArrowSchemaProvider for InstrumentAny {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -74,6 +75,7 @@ impl ArrowSchemaProvider for InstrumentAny {
             "IndexInstrument" => IndexInstrument::get_schema(metadata),
             "OptionContract" => OptionContract::get_schema(metadata),
             "OptionSpread" => OptionSpread::get_schema(metadata),
+            "PerpetualContract" => PerpetualContract::get_schema(metadata),
             _ => {
                 // Fallback to CurrencyPair schema if type is unknown
                 CurrencyPair::get_schema(metadata)
@@ -110,6 +112,7 @@ impl EncodeToRecordBatch for InstrumentAny {
                 Self::OptionSpread(_) => "OptionSpread",
                 Self::BinaryOption(_) => "BinaryOption",
                 Self::Betting(_) => "BettingInstrument",
+                Self::PerpetualContract(_) => "PerpetualContract",
             };
             by_type
                 .entry(type_name.to_string())
@@ -321,6 +324,20 @@ impl EncodeToRecordBatch for InstrumentAny {
                     .collect();
                 OptionSpread::encode_batch(metadata, &option_spreads)
             }
+            "PerpetualContract" => {
+                let perpetual_contracts: Vec<_> = instruments
+                    .iter()
+                    .map(|i| {
+                        if let Self::PerpetualContract(pc) = i {
+                            pc
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .cloned()
+                    .collect();
+                PerpetualContract::encode_batch(metadata, &perpetual_contracts)
+            }
             _ => Err(ArrowError::InvalidArgumentError(format!(
                 "Instrument type {type_name} serialization not yet implemented"
             ))),
@@ -349,6 +366,7 @@ impl EncodeToRecordBatch for InstrumentAny {
             Self::OptionSpread(_) => "OptionSpread",
             Self::BinaryOption(_) => "BinaryOption",
             Self::Betting(_) => "BettingInstrument",
+            Self::PerpetualContract(_) => "PerpetualContract",
         };
         metadata.insert("class".to_string(), type_name.to_string());
         metadata
@@ -463,6 +481,14 @@ pub fn decode_instrument_any_batch(
             Ok(option_spreads
                 .into_iter()
                 .map(InstrumentAny::OptionSpread)
+                .collect())
+        }
+        "PerpetualContract" => {
+            let perpetual_contracts =
+                perpetual_contract::decode_perpetual_contract_batch(metadata, record_batch)?;
+            Ok(perpetual_contracts
+                .into_iter()
+                .map(InstrumentAny::PerpetualContract)
                 .collect())
         }
         _ => Err(EncodingError::ParseError(

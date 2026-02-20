@@ -39,11 +39,11 @@ use nautilus_architect_ax::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{AssetClass, OrderSide, OrderType, TimeInForce},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
     },
-    instruments::{CryptoPerpetual, Instrument, InstrumentAny},
+    instruments::{Instrument, InstrumentAny, PerpetualContract},
     types::{Currency, Price, Quantity},
 };
 use rstest::rstest;
@@ -398,11 +398,11 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
 fn load_test_data(filename: &str) -> serde_json::Value {
     let path = format!("{}/test_data/{filename}", env!("CARGO_MANIFEST_DIR"));
     let content = std::fs::read_to_string(&path).unwrap_or_else(|_| match filename {
-            "ws_md_book_l1.json" => r#"{"t":"1","s":"BTCUSD-PERP","b":"50000.00","B":"1.0","a":"50001.00","A":"1.0","ts":"1234567890000000000"}"#.to_string(),
-            "ws_md_book_l2.json" => r#"{"t":"2","s":"BTCUSD-PERP","b":[],"a":[],"ts":"1234567890000000000"}"#.to_string(),
-            "ws_md_book_l3.json" => r#"{"t":"3","s":"BTCUSD-PERP","b":[],"a":[],"ts":"1234567890000000000"}"#.to_string(),
-            "ws_md_trade.json" => r#"{"t":"s","s":"BTCUSD-PERP","p":"50000.00","q":"0.1","d":"BUY","tx":"123","ts":"1234567890000000000"}"#.to_string(),
-            "ws_md_candle.json" => r#"{"t":"c","s":"BTCUSD-PERP","o":"50000","h":"50100","l":"49900","c":"50050","v":"100","ts":"1234567890000000000"}"#.to_string(),
+            "ws_md_book_l1.json" => r#"{"t":"1","s":"EURUSD-PERP","b":"50000.00","B":"1.0","a":"50001.00","A":"1.0","ts":"1234567890000000000"}"#.to_string(),
+            "ws_md_book_l2.json" => r#"{"t":"2","s":"EURUSD-PERP","b":[],"a":[],"ts":"1234567890000000000"}"#.to_string(),
+            "ws_md_book_l3.json" => r#"{"t":"3","s":"EURUSD-PERP","b":[],"a":[],"ts":"1234567890000000000"}"#.to_string(),
+            "ws_md_trade.json" => r#"{"t":"s","s":"EURUSD-PERP","p":"50000.00","q":"0.1","d":"BUY","tx":"123","ts":"1234567890000000000"}"#.to_string(),
+            "ws_md_candle.json" => r#"{"t":"c","s":"EURUSD-PERP","o":"50000","h":"50100","l":"49900","c":"50050","v":"100","ts":"1234567890000000000"}"#.to_string(),
             "ws_orders_open_orders.json" => r#"{"t":"O","orders":[]}"#.to_string(),
             _ => "{}".to_string(),
     });
@@ -445,10 +445,13 @@ async fn wait_for_connection(state: &TestServerState) {
 }
 
 fn create_test_instrument(symbol: &str) -> InstrumentAny {
-    let instrument = CryptoPerpetual::new(
+    let underlying = Ustr::from(symbol.split('-').next().unwrap_or(symbol));
+    let instrument = PerpetualContract::new(
         InstrumentId::new(Symbol::new(symbol), Venue::new("AX")),
         Symbol::new(symbol),
-        Currency::USD(),
+        underlying,
+        AssetClass::Cryptocurrency,
+        None,
         Currency::USD(),
         Currency::USD(),
         false,
@@ -468,11 +471,11 @@ fn create_test_instrument(symbol: &str) -> InstrumentAny {
         Some(Decimal::new(5, 3)),
         Some(Decimal::new(2, 4)),
         Some(Decimal::new(5, 4)),
-        None, // info: Option<Params>
+        None,
         0.into(),
         0.into(),
     );
-    InstrumentAny::CryptoPerpetual(instrument)
+    InstrumentAny::PerpetualContract(instrument)
 }
 
 #[rstest]
@@ -578,7 +581,7 @@ async fn test_md_subscribe_l1() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -591,7 +594,7 @@ async fn test_md_subscribe_l1() {
     let subs = state.subscriptions.lock().await.clone();
     assert!(
         subs.iter()
-            .any(|s| s.contains("BTCUSD-PERP") && s.contains("LEVEL_1"))
+            .any(|s| s.contains("EURUSD-PERP") && s.contains("LEVEL_1"))
     );
 
     client.close().await;
@@ -609,7 +612,7 @@ async fn test_md_subscribe_l2() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level2)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level2)
         .await
         .unwrap();
 
@@ -622,7 +625,7 @@ async fn test_md_subscribe_l2() {
     let subs = state.subscriptions.lock().await.clone();
     assert!(
         subs.iter()
-            .any(|s| s.contains("BTCUSD-PERP") && s.contains("LEVEL_2"))
+            .any(|s| s.contains("EURUSD-PERP") && s.contains("LEVEL_2"))
     );
 
     client.close().await;
@@ -640,7 +643,7 @@ async fn test_md_subscribe_l3() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level3)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level3)
         .await
         .unwrap();
 
@@ -653,7 +656,7 @@ async fn test_md_subscribe_l3() {
     let subs = state.subscriptions.lock().await.clone();
     assert!(
         subs.iter()
-            .any(|s| s.contains("BTCUSD-PERP") && s.contains("LEVEL_3"))
+            .any(|s| s.contains("EURUSD-PERP") && s.contains("LEVEL_3"))
     );
 
     client.close().await;
@@ -671,7 +674,7 @@ async fn test_md_subscribe_multiple_symbols() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
     client
@@ -679,7 +682,7 @@ async fn test_md_subscribe_multiple_symbols() {
         .await
         .unwrap();
     client
-        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("GBPUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -690,9 +693,9 @@ async fn test_md_subscribe_multiple_symbols() {
     .await;
 
     let subs = state.subscriptions.lock().await.clone();
-    assert!(subs.iter().any(|s| s.contains("BTCUSD-PERP")));
-    assert!(subs.iter().any(|s| s.contains("ETHUSD-PERP")));
     assert!(subs.iter().any(|s| s.contains("EURUSD-PERP")));
+    assert!(subs.iter().any(|s| s.contains("ETHUSD-PERP")));
+    assert!(subs.iter().any(|s| s.contains("GBPUSD-PERP")));
 
     client.close().await;
 }
@@ -709,7 +712,7 @@ async fn test_md_unsubscribe() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -719,7 +722,7 @@ async fn test_md_unsubscribe() {
     )
     .await;
 
-    client.unsubscribe_book_deltas("BTCUSD-PERP").await.unwrap();
+    client.unsubscribe_book_deltas("EURUSD-PERP").await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.is_empty() },
@@ -744,7 +747,7 @@ async fn test_md_subscribe_candles() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_candles("BTCUSD-PERP", AxCandleWidth::Minutes1)
+        .subscribe_candles("EURUSD-PERP", AxCandleWidth::Minutes1)
         .await
         .unwrap();
 
@@ -757,7 +760,7 @@ async fn test_md_subscribe_candles() {
     let subs = state.subscriptions.lock().await.clone();
     assert!(
         subs.iter()
-            .any(|s| s.contains("BTCUSD-PERP") && s.contains("candle"))
+            .any(|s| s.contains("EURUSD-PERP") && s.contains("candle"))
     );
 
     client.close().await;
@@ -775,7 +778,7 @@ async fn test_md_unsubscribe_candles() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_candles("BTCUSD-PERP", AxCandleWidth::Minutes1)
+        .subscribe_candles("EURUSD-PERP", AxCandleWidth::Minutes1)
         .await
         .unwrap();
 
@@ -786,7 +789,7 @@ async fn test_md_unsubscribe_candles() {
     .await;
 
     client
-        .unsubscribe_candles("BTCUSD-PERP", AxCandleWidth::Minutes1)
+        .unsubscribe_candles("EURUSD-PERP", AxCandleWidth::Minutes1)
         .await
         .unwrap();
 
@@ -822,10 +825,10 @@ async fn test_md_cache_instrument() {
         None,
     );
 
-    let instrument = create_test_instrument("BTCUSD-PERP");
+    let instrument = create_test_instrument("EURUSD-PERP");
     client.cache_instrument(instrument);
 
-    let cached = client.get_cached_instrument(&Ustr::from("BTCUSD-PERP"));
+    let cached = client.get_cached_instrument(&Ustr::from("EURUSD-PERP"));
     assert!(cached.is_some());
 }
 
@@ -838,13 +841,13 @@ async fn test_md_cache_multiple_instruments() {
         None,
     );
 
-    client.cache_instrument(create_test_instrument("BTCUSD-PERP"));
+    client.cache_instrument(create_test_instrument("EURUSD-PERP"));
     client.cache_instrument(create_test_instrument("ETHUSD-PERP"));
     client.cache_instrument(create_test_instrument("EURUSD-PERP"));
 
     assert!(
         client
-            .get_cached_instrument(&Ustr::from("BTCUSD-PERP"))
+            .get_cached_instrument(&Ustr::from("EURUSD-PERP"))
             .is_some()
     );
     assert!(
@@ -910,7 +913,7 @@ async fn test_md_server_disconnect_handling() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -979,14 +982,14 @@ async fn test_md_rapid_subscribe_unsubscribe() {
 
     for _ in 0..5 {
         client
-            .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
+            .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
             .await
             .unwrap();
-        client.unsubscribe_book_deltas("BTCUSD-PERP").await.unwrap();
+        client.unsubscribe_book_deltas("EURUSD-PERP").await.unwrap();
     }
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -1013,11 +1016,11 @@ async fn test_md_subscribe_same_symbol_different_levels() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level2)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level2)
         .await
         .unwrap();
 
@@ -1144,7 +1147,7 @@ async fn test_orders_submit_order() {
     let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
 
     // Cache instrument before submitting order
-    let instrument = create_test_instrument("BTCUSD-PERP");
+    let instrument = create_test_instrument("EURUSD-PERP");
     client.cache_instrument(instrument.clone());
 
     client.connect("test_token").await.unwrap();
@@ -1273,10 +1276,10 @@ async fn test_orders_cache_instrument() {
         None,
     );
 
-    let instrument = create_test_instrument("BTCUSD-PERP");
+    let instrument = create_test_instrument("EURUSD-PERP");
     client.cache_instrument(instrument);
 
-    let cached = client.get_cached_instrument(&Ustr::from("BTCUSD-PERP"));
+    let cached = client.get_cached_instrument(&Ustr::from("EURUSD-PERP"));
     assert!(cached.is_some());
 }
 
@@ -1308,7 +1311,7 @@ async fn test_md_subscription_events_tracking() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -1322,7 +1325,7 @@ async fn test_md_subscription_events_tracking() {
     assert!(
         events
             .iter()
-            .any(|(topic, success)| topic.contains("BTCUSD-PERP") && *success)
+            .any(|(topic, success)| topic.contains("EURUSD-PERP") && *success)
     );
 
     client.close().await;
@@ -1462,9 +1465,9 @@ async fn test_md_many_subscriptions() {
     wait_for_connection(&state).await;
 
     let symbols = [
-        "BTCUSD-PERP",
-        "ETHUSD-PERP",
         "EURUSD-PERP",
+        "ETHUSD-PERP",
+        "AUDUSD-PERP",
         "GBPUSD-PERP",
         "USDJPY-PERP",
     ];

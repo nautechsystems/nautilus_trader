@@ -50,6 +50,7 @@ use crate::{
         enums::{AxOrderRequestType, AxOrderSide, AxTimeInForce},
         parse::{ax_timestamp_s_to_unix_nanos, cid_to_client_order_id},
     },
+    http::models::AxOrderRejectReason,
     websocket::{
         messages::{
             AxOrdersWsMessage, AxWsCancelOrder, AxWsCancelRejected, AxWsError, AxWsGetOpenOrders,
@@ -598,8 +599,12 @@ impl FeedHandler {
     }
 
     fn handle_order_rejected(&mut self, msg: AxWsOrderRejected) -> Option<Vec<AxOrdersWsMessage>> {
-        // Use r, or txt, or "UNKNOWN" as fallback
-        let reason = msg.r.as_deref().or(msg.txt.as_deref()).unwrap_or("UNKNOWN");
+        let known_reason = msg.r.filter(|r| !matches!(r, AxOrderRejectReason::Unknown));
+        let reason = known_reason
+            .as_ref()
+            .map(AsRef::as_ref)
+            .or(msg.txt.as_deref())
+            .unwrap_or("UNKNOWN");
 
         let message = if let Some(event) = self.create_order_rejected(&msg.o, reason, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
@@ -1085,6 +1090,7 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::{AxOrderSide, AxOrderStatus, AxTimeInForce},
+        http::models::AxOrderRejectReason,
         websocket::messages::{AxWsOrderRejected, AxWsPlaceOrderResponse, AxWsPlaceOrderResult},
     };
 
@@ -1107,7 +1113,7 @@ mod tests {
         AxWsOrder {
             oid: "OID-1".to_string(),
             u: "user-1".to_string(),
-            s: Ustr::from("BTCUSD-PERP"),
+            s: Ustr::from("EURUSD-PERP"),
             p: dec!(50000),
             q: 100,
             xq: 100,
@@ -1130,7 +1136,7 @@ mod tests {
         OrderMetadata {
             trader_id: TraderId::from("TRADER-001"),
             strategy_id: StrategyId::from("S-001"),
-            instrument_id: InstrumentId::from("BTCUSD-PERP.AX"),
+            instrument_id: InstrumentId::from("EURUSD-PERP.AX"),
             client_order_id,
             venue_order_id: Some(venue_order_id),
             ts_init: UnixNanos::from(1_700_000_000_000_000_000u64),
@@ -1148,7 +1154,7 @@ mod tests {
             request_id,
             WsOrderInfo {
                 client_order_id: ClientOrderId::from("CID-11"),
-                symbol: Ustr::from("BTCUSD-PERP"),
+                symbol: Ustr::from("EURUSD-PERP"),
             },
         );
 
@@ -1188,7 +1194,7 @@ mod tests {
             o: sample_order(cid),
             xs: AxWsTradeExecution {
                 tid: "T-1".to_string(),
-                s: Ustr::from("BTCUSD-PERP"),
+                s: Ustr::from("EURUSD-PERP"),
                 q: 100,
                 p: dec!(50000),
                 d: AxOrderSide::Buy,
@@ -1225,7 +1231,7 @@ mod tests {
             tn: 3,
             eid: "EID-3".to_string(),
             o: sample_order(cid),
-            r: Some("rejected".to_string()),
+            r: Some(AxOrderRejectReason::InsufficientMargin),
             txt: None,
         };
 

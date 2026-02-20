@@ -38,6 +38,7 @@ from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import OptionContract
 from nautilus_trader.core.nautilus_pyo3 import OptionKind
 from nautilus_trader.core.nautilus_pyo3 import OptionSpread
+from nautilus_trader.core.nautilus_pyo3 import PerpetualContract
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import Symbol
@@ -545,6 +546,29 @@ class TestInstrumentProviderPyo3:
             size_increment=Quantity.from_int(1),
             ts_event=0,
             ts_init=0,
+        )
+
+    @staticmethod
+    def perpetual_contract_eurusd() -> PerpetualContract:
+        return PerpetualContract(
+            instrument_id=InstrumentId.from_str("EURUSD-PERP.AX"),
+            raw_symbol=Symbol("EURUSD-PERP"),
+            underlying="EURUSD",
+            asset_class=AssetClass.FX,
+            quote_currency=_USD,
+            settlement_currency=_USD,
+            is_inverse=False,
+            price_precision=5,
+            size_precision=0,
+            price_increment=Price.from_str("0.00001"),
+            size_increment=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+            base_currency=Currency.from_str("EUR"),
+            margin_init=Decimal("0.03"),
+            margin_maint=Decimal("0.03"),
+            maker_fee=Decimal("0.00002"),
+            taker_fee=Decimal("0.00002"),
         )
 
     @staticmethod

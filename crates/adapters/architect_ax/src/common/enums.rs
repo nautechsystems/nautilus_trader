@@ -18,10 +18,11 @@
 use nautilus_model::{
     data::BarSpecification,
     enums::{
-        AggressorSide, BarAggregation, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        AggressorSide, AssetClass, BarAggregation, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce,
     },
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
 use super::consts::{
@@ -149,6 +150,60 @@ pub enum AxInstrumentState {
     Delisted,
     /// Instrument state is unknown.
     Unknown,
+}
+
+/// Instrument category as returned by the AX Exchange API.
+///
+/// Deserialization is case-insensitive; unrecognized values map to `Unknown`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/symbols-instruments/get-instruments>
+#[derive(
+    Clone, Copy, Debug, Display, Eq, PartialEq, Hash, AsRefStr, EnumIter, EnumString, Serialize,
+)]
+#[strum(serialize_all = "lowercase")]
+pub enum AxCategory {
+    Fx,
+    Equities,
+    Metals,
+    Energy,
+    Crypto,
+    Rates,
+    Indexes,
+    Unknown,
+}
+
+impl<'de> Deserialize<'de> for AxCategory {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(match s.to_ascii_lowercase().as_str() {
+            "fx" => Self::Fx,
+            "equities" => Self::Equities,
+            "metals" => Self::Metals,
+            "energy" => Self::Energy,
+            "crypto" => Self::Crypto,
+            "rates" => Self::Rates,
+            "indexes" => Self::Indexes,
+            _ => Self::Unknown,
+        })
+    }
+}
+
+impl From<AxCategory> for AssetClass {
+    fn from(category: AxCategory) -> Self {
+        match category {
+            AxCategory::Fx => Self::FX,
+            AxCategory::Equities => Self::Equity,
+            AxCategory::Metals | AxCategory::Energy => Self::Commodity,
+            AxCategory::Crypto => Self::Cryptocurrency,
+            AxCategory::Rates => Self::Debt,
+            AxCategory::Indexes => Self::Index,
+            AxCategory::Unknown => Self::Alternative,
+        }
+    }
 }
 
 /// Order side for trading operations.
@@ -1038,5 +1093,26 @@ mod tests {
 
         let parsed: AxOrderRequestType = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, request_type);
+    }
+
+    #[rstest]
+    #[case("\"fx\"", AxCategory::Fx)]
+    #[case("\"FX\"", AxCategory::Fx)]
+    #[case("\"Fx\"", AxCategory::Fx)]
+    #[case("\"equities\"", AxCategory::Equities)]
+    #[case("\"EQUITIES\"", AxCategory::Equities)]
+    #[case("\"metals\"", AxCategory::Metals)]
+    #[case("\"Metals\"", AxCategory::Metals)]
+    #[case("\"energy\"", AxCategory::Energy)]
+    #[case("\"crypto\"", AxCategory::Crypto)]
+    #[case("\"rates\"", AxCategory::Rates)]
+    #[case("\"indexes\"", AxCategory::Indexes)]
+    #[case("\"something_new\"", AxCategory::Unknown)]
+    fn test_category_deserialization_case_insensitive(
+        #[case] json: &str,
+        #[case] expected: AxCategory,
+    ) {
+        let parsed: AxCategory = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed, expected);
     }
 }
