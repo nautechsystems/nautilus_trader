@@ -214,7 +214,7 @@ def race_change_to_updates(
         )
         updates.append(
             CustomData(
-                DataType(BetfairRaceProgress),
+                DataType(BetfairRaceProgress, {"race_id": rc.id}),
                 progress,
             ),
         )

@@ -395,8 +395,14 @@ class MyStrategy(Strategy):
             client_id=BETFAIR_CLIENT_ID,
         )
 
-        # Subscribe to race progress updates
+        # Subscribe to ALL race progress updates (wildcard)
         self.subscribe_data(DataType(BetfairRaceProgress), client_id=BETFAIR_CLIENT_ID)
+
+        # Or subscribe to a specific race by race_id
+        self.subscribe_data(
+            DataType(BetfairRaceProgress, metadata={"race_id": "35278018.1617"}),
+            client_id=BETFAIR_CLIENT_ID,
+        )
 
     def on_data(self, data):
         if isinstance(data, BetfairRaceRunnerData):
@@ -413,9 +419,8 @@ class MyStrategy(Strategy):
 :::info
 Subscribing with `DataType(BetfairRaceRunnerData)` (no metadata) receives data for
 **all** runners. Adding `metadata={"selection_id": <id>}` filters to a specific runner.
-The `race_id` field is available on each data object for filtering in handlers, but should
-not be included in subscription metadata since it changes per race and is unknown at
-subscription time.
+Similarly, `DataType(BetfairRaceProgress)` receives progress for all races, while
+`metadata={"race_id": <id>}` filters to a specific race.
 
 Race data (RCM messages) requires Total Performance Data (TPD) coverage and a Betfair
 API key with TPD access. Not all races have GPS tracking enabled.

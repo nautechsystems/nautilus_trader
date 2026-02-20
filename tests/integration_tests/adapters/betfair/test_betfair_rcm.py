@@ -485,13 +485,13 @@ def test_runner_data_type_metadata_excludes_race_id(
     assert "race_id" not in runner_update.data_type.metadata
 
 
-def test_progress_data_type_has_no_metadata(
+def test_progress_data_type_has_race_id_metadata(
     rcm_raw: bytes,
     rcm_parser: BetfairRCMParser,
 ):
     """
-    Published progress DataType should have no metadata so subscribers can receive all
-    race progress updates without filtering.
+    Published progress DataType should include race_id metadata so subscribers can
+    filter to a specific race.
     """
     # Arrange, Act
     rcm = rcm_decode(rcm_raw)
@@ -499,7 +499,7 @@ def test_progress_data_type_has_no_metadata(
 
     # Assert
     progress_update = updates[1]
-    assert progress_update.data_type.metadata == {}
+    assert progress_update.data_type.metadata == {"race_id": "28587288.1650"}
 
 
 def test_runner_subscription_topic_matches_published_topic(
@@ -530,16 +530,16 @@ def test_progress_subscription_topic_matches_published_topic(
     rcm_parser: BetfairRCMParser,
 ):
     """
-    An actor subscribing with DataType(BetfairRaceProgress) must produce a topic that
-    matches the published data's topic.
+    An actor subscribing with DataType(BetfairRaceProgress, {"race_id": ...}) must
+    produce a topic that matches the published data's topic.
     """
     # Arrange
     rcm = rcm_decode(rcm_raw)
     updates = rcm_parser.parse(rcm)
     published_data_type = updates[1].data_type
 
-    # Act - simulate actor subscription
-    subscription_data_type = DataType(BetfairRaceProgress)
+    # Act
+    subscription_data_type = DataType(BetfairRaceProgress, {"race_id": "28587288.1650"})
 
     # Assert
     assert subscription_data_type.topic == published_data_type.topic
