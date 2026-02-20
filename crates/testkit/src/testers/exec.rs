@@ -300,8 +300,8 @@ impl ExecTesterConfig {
     }
 
     #[must_use]
-    pub fn with_open_position_on_start(mut self, qty: Option<Decimal>) -> Self {
-        self.open_position_on_start_qty = qty;
+    pub fn with_open_position_on_start(mut self, qty: Decimal) -> Self {
+        self.open_position_on_start_qty = Some(qty);
         self
     }
 

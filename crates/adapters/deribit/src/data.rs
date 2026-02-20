@@ -104,6 +104,7 @@ impl DeribitDataClient {
             DeribitHttpClient::new_with_env(
                 config.api_key.clone(),
                 config.api_secret.clone(),
+                config.base_url_http.clone(),
                 config.use_testnet,
                 config.http_timeout_secs,
                 config.max_retries,

@@ -34,12 +34,12 @@ and won't need to work directly with these lower-level components.
 
 | Product Type      | Data Feed | Trading | Notes                            |
 |-------------------|-----------|---------|----------------------------------|
-| Perpetual futures | ✓         | ✓       | BTC-PERPETUAL, ETH-PERPETUAL.    |
-| Dated futures     | ✓         | ✓       | Futures with fixed expiry dates. |
+| Perpetual Futures | ✓         | ✓       | BTC-PERPETUAL, ETH-PERPETUAL.    |
+| Dated Futures     | ✓         | ✓       | Futures with fixed expiry dates. |
 | Options           | ✓         | ✓       | BTC and ETH options.             |
 | Spot              | ✓         | ✓       | BTC_USDC, ETH_USDC pairs.        |
-| Future combos     | ✓         | ✓       | Calendar spreads for futures.    |
-| Option combos     | ✓         | ✓       | Option spread strategies.        |
+| Future Combos     | ✓         | ✓       | Calendar spreads for futures.    |
+| Option Combos     | ✓         | ✓       | Option spread strategies.        |
 
 ## Symbology
 
@@ -47,7 +47,7 @@ Deribit uses specific symbol conventions for different instrument types.
 All instrument IDs should include the `.DERIBIT` suffix when referencing them
 (e.g., `BTC-PERPETUAL.DERIBIT` for BTC perpetual).
 
-### Perpetual futures
+### Perpetual Futures
 
 Format: `{Currency}-PERPETUAL`
 
@@ -62,7 +62,7 @@ To subscribe to BTC perpetual in your strategy:
 InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
 ```
 
-### Dated futures
+### Dated Futures
 
 Format: `{Currency}-{DDMMMYY}`
 

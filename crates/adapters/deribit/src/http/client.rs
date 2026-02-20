@@ -305,6 +305,7 @@ impl DeribitRawHttpClient {
     pub fn new_with_env(
         api_key: Option<String>,
         api_secret: Option<String>,
+        base_url: Option<String>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         max_retries: Option<u32>,
@@ -328,7 +329,7 @@ impl DeribitRawHttpClient {
             Self::with_credentials(
                 key,
                 secret,
-                None,
+                base_url,
                 is_testnet,
                 timeout_secs,
                 max_retries,
@@ -339,7 +340,7 @@ impl DeribitRawHttpClient {
         } else {
             // No credentials - create unauthenticated client
             Self::new(
-                None,
+                base_url,
                 is_testnet,
                 timeout_secs,
                 max_retries,
@@ -823,6 +824,7 @@ impl DeribitHttpClient {
     pub fn new_with_env(
         api_key: Option<String>,
         api_secret: Option<String>,
+        base_url: Option<String>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         max_retries: Option<u32>,
@@ -833,6 +835,7 @@ impl DeribitHttpClient {
         let raw_client = Arc::new(DeribitRawHttpClient::new_with_env(
             api_key,
             api_secret,
+            base_url,
             is_testnet,
             timeout_secs,
             max_retries,

@@ -60,6 +60,7 @@ impl DeribitHttpClient {
         Self::new_with_env(
             api_key,
             api_secret,
+            base_url,
             is_testnet,
             timeout_secs,
             max_retries,

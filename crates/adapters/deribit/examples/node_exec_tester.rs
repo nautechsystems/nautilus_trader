@@ -79,14 +79,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
+    let order_qty = Quantity::from(10); // 10 USD contracts (Deribit minimum)
+
     let mut tester_config = ExecTesterConfig::new(
         StrategyId::from("EXEC_TESTER-001"),
         instrument_id,
         client_id,
-        Quantity::from("10"), // 10 USD contracts (Deribit minimum)
+        order_qty,
     )
     .with_subscribe_trades(true)
     .with_subscribe_quotes(true)
+    .with_open_position_on_start(order_qty.as_decimal())
     .with_use_post_only(true)
     .with_log_data(false);
 
