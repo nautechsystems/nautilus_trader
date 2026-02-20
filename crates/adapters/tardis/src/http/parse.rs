@@ -110,7 +110,7 @@ fn parse_spot_instrument(
     if let Some(changes) = &info.changes {
         // Sort changes newest to oldest
         let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+        sorted_changes.sort_by_key(|b| std::cmp::Reverse(b.until));
 
         if let Some(effective_time) = effective {
             // Apply changes where change.until >= effective_time
@@ -258,7 +258,7 @@ fn parse_perp_instrument(
     if let Some(changes) = &info.changes {
         // Sort changes newest to oldest
         let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+        sorted_changes.sort_by_key(|b| std::cmp::Reverse(b.until));
 
         if let Some(effective_time) = effective {
             // Apply changes where change.until >= effective_time
@@ -410,7 +410,7 @@ fn parse_future_instrument(
     if let Some(changes) = &info.changes {
         // Sort changes newest to oldest
         let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+        sorted_changes.sort_by_key(|b| std::cmp::Reverse(b.until));
 
         if let Some(effective_time) = effective {
             // Apply changes where change.until >= effective_time
@@ -566,7 +566,7 @@ fn parse_option_instrument(
     if let Some(changes) = &info.changes {
         // Sort changes newest to oldest
         let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+        sorted_changes.sort_by_key(|b| std::cmp::Reverse(b.until));
 
         if let Some(effective_time) = effective {
             // Apply changes where change.until >= effective_time

@@ -362,7 +362,7 @@ impl Logger {
         // Pre-sort module filters by descending path length for O(n) longest-prefix lookup
         let mut module_filters_sorted: Vec<(Ustr, LevelFilter)> =
             module_level.into_iter().collect();
-        module_filters_sorted.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        module_filters_sorted.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
 
         let trader_id_cache = Ustr::from(&trader_id);
 
@@ -878,7 +878,7 @@ mod tests {
     /// Helper to convert module level map to sorted vec (descending by path length)
     fn sorted_module_filters(map: AHashMap<Ustr, LevelFilter>) -> Vec<(Ustr, LevelFilter)> {
         let mut v: Vec<_> = map.into_iter().collect();
-        v.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        v.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
         v
     }
 
