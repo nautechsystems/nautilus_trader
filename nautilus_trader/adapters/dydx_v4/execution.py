@@ -49,6 +49,7 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
@@ -235,6 +236,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             wallet_address=self._wallet_address,
             subaccount_number=self._subaccount,
             chain_id=chain_id,
+            grpc_rate_limit_per_second=self._config.grpc_rate_limit_per_second,
         )
 
         # Resolve authenticators for permissioned key trading
@@ -336,6 +338,27 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             reported=account_state.is_reported,
             ts_event=account_state.ts_event,
         )
+
+    async def _query_account(self, command: QueryAccount) -> None:
+        if not self._wallet_address:
+            self._log.warning("Cannot query account: wallet not initialized")
+            return
+
+        try:
+            pyo3_account_state = await self._http_client.request_account_state(
+                address=self._wallet_address,
+                subaccount_number=self._subaccount,
+                account_id=self.pyo3_account_id,
+            )
+            account_state = AccountState.from_dict(pyo3_account_state.to_dict())
+            self.generate_account_state(
+                balances=account_state.balances,
+                margins=account_state.margins,
+                reported=account_state.is_reported,
+                ts_event=account_state.ts_event,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to query account state: {e}")
 
     _TERMINAL_STATUSES = frozenset(
         {
@@ -672,26 +695,29 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._log.info("No open orders to cancel")
             return
 
-        # Cancel each order individually (dYdX does not allow batching short-term cancels)
+        # Collect all open orders into batch list
         assert self._encoder is not None
-        self._log.debug(
-            f"Cancelling {len(open_orders)} orders individually for "
-            f"{command.instrument_id or 'all instruments'}",
-        )
+        batch = []
         for order in open_orders:
             client_order_id_u32, _ = self._encoder.encode(str(order.client_order_id))
-            tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
+            if client_order_id_u32 not in self._order_contexts:
+                self._log.debug(
+                    f"Skipping cancel for {order.client_order_id}: "
+                    "order context already cleaned up (terminal)",
+                )
+                continue
+            tif_value, expire_ns = self._order_contexts[client_order_id_u32]
+            batch.append((str(order.instrument_id), client_order_id_u32, tif_value, expire_ns))
+
+        if batch:
             try:
-                await self._order_submitter.cancel_order(
-                    instrument_id=str(order.instrument_id),
-                    client_order_id=client_order_id_u32,
-                    time_in_force=tif_value,
-                    expire_time_ns=expire_ns,
+                await self._order_submitter.cancel_orders_batch(batch)
+                self._log.info(
+                    f"Batch cancelled {len(batch)} orders in single transaction"
+                    f" for {command.instrument_id or 'all instruments'}",
                 )
             except Exception as e:
-                self._log.error(
-                    f"Failed to cancel order {order.client_order_id}: {e}",
-                )
+                self._log.error(f"Batch cancel failed: {e}")
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         if self._order_submitter is None:
@@ -702,9 +728,9 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._log.info("No orders to cancel in batch")
             return
 
-        # Cancel each order individually (dYdX does not allow batching short-term cancels)
+        # Collect all orders into batch list
         assert self._encoder is not None
-        self._log.debug(f"Cancelling {len(command.cancels)} orders individually")
+        batch = []
         for cancel in command.cancels:
             order = self._cache.order(cancel.client_order_id)
             if order is None:
@@ -713,18 +739,21 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 )
                 continue
             client_order_id_u32, _ = self._encoder.encode(str(cancel.client_order_id))
-            tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
+            if client_order_id_u32 not in self._order_contexts:
+                self._log.debug(
+                    f"Skipping cancel for {cancel.client_order_id}: "
+                    "order context already cleaned up (terminal)",
+                )
+                continue
+            tif_value, expire_ns = self._order_contexts[client_order_id_u32]
+            batch.append((str(order.instrument_id), client_order_id_u32, tif_value, expire_ns))
+
+        if batch:
             try:
-                await self._order_submitter.cancel_order(
-                    instrument_id=str(order.instrument_id),
-                    client_order_id=client_order_id_u32,
-                    time_in_force=tif_value,
-                    expire_time_ns=expire_ns,
-                )
+                await self._order_submitter.cancel_orders_batch(batch)
+                self._log.info(f"Batch cancelled {len(batch)} orders in single transaction")
             except Exception as e:
-                self._log.error(
-                    f"Failed to cancel order {cancel.client_order_id}: {e}",
-                )
+                self._log.error(f"Batch cancel failed: {e}")
 
     async def generate_order_status_report(
         self,

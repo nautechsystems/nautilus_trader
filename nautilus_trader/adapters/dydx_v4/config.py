@@ -103,6 +103,10 @@ class DYDXv4ExecClientConfig(LiveExecClientConfig, frozen=True):
         The initial delay (milliseconds) between retries.
     retry_delay_max_ms : PositiveInt, optional
         The maximum delay (milliseconds) between retries.
+    grpc_rate_limit_per_second : PositiveInt, optional
+        The maximum number of gRPC requests per second.
+        Default ``4`` is safe for all known providers (Polkachu 5/s, KingNodes ~4.2/s, AutoStake 4/s).
+        Set to ``None`` to disable rate limiting.
 
     """
 
@@ -117,3 +121,4 @@ class DYDXv4ExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000
+    grpc_rate_limit_per_second: PositiveInt | None = 4

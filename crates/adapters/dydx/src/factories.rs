@@ -212,6 +212,7 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             max_retries: dydx_config.max_retries.unwrap_or(3),
             retry_delay_initial_ms: dydx_config.retry_delay_initial_ms.unwrap_or(1000),
             retry_delay_max_ms: dydx_config.retry_delay_max_ms.unwrap_or(10000),
+            grpc_rate_limit_per_second: dydx_config.grpc_rate_limit_per_second,
         };
 
         log::info!(
@@ -332,6 +333,7 @@ mod tests {
             max_retries: None,
             retry_delay_initial_ms: None,
             retry_delay_max_ms: None,
+            grpc_rate_limit_per_second: Some(4),
         };
 
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
@@ -359,6 +361,7 @@ mod tests {
             max_retries: None,
             retry_delay_initial_ms: None,
             retry_delay_max_ms: None,
+            grpc_rate_limit_per_second: Some(4),
         };
 
         let cache = Rc::new(RefCell::new(Cache::default()));

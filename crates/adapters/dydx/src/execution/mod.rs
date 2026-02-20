@@ -847,6 +847,100 @@ impl DydxExecutionClient {
     }
 }
 
+/// Broadcasts cancel orders with optimal partitioned strategy.
+///
+/// Partitions orders into short-term and long-term/conditional groups:
+/// - Short-term → single `MsgBatchCancel` via `broadcast_short_term()`
+/// - Long-term/conditional → batched `MsgCancelOrder` via `broadcast_with_retry()`
+///
+/// At most 2 gRPC calls regardless of order count or mix.
+async fn broadcast_partitioned_cancels(
+    orders: Vec<(InstrumentId, u32, u32)>,
+    block_height: u32,
+    tx_manager: Arc<TransactionManager>,
+    broadcaster: Arc<TxBroadcaster>,
+    order_builder: Arc<OrderMessageBuilder>,
+) -> anyhow::Result<()> {
+    if orders.is_empty() {
+        return Ok(());
+    }
+
+    let (short_term_orders, long_term_orders): (Vec<_>, Vec<_>) = orders
+        .into_iter()
+        .partition(|(_, _, flags)| *flags == types::ORDER_FLAG_SHORT_TERM);
+
+    // Cancel short-term orders with MsgBatchCancel (single gRPC call)
+    if !short_term_orders.is_empty() {
+        let st_pairs: Vec<_> = short_term_orders
+            .iter()
+            .map(|(inst_id, client_id, _)| (*inst_id, *client_id))
+            .collect();
+
+        log::debug!(
+            "Batch cancelling {} short-term orders with MsgBatchCancel",
+            st_pairs.len()
+        );
+
+        match order_builder.build_batch_cancel_short_term(&st_pairs, block_height) {
+            Ok(msg) => {
+                let operation = format!("BatchCancel {} short-term orders", st_pairs.len());
+                match broadcaster
+                    .broadcast_short_term(&tx_manager, vec![msg], &operation)
+                    .await
+                {
+                    Ok(tx_hash) => {
+                        log::debug!(
+                            "Successfully batch cancelled {} short-term orders, tx_hash: {}",
+                            st_pairs.len(),
+                            tx_hash
+                        );
+                    }
+                    Err(e) => {
+                        log::error!("Short-term batch cancel failed: {e:?}");
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to build MsgBatchCancel: {e:?}");
+            }
+        }
+    }
+
+    // Cancel long-term/conditional orders with batched MsgCancelOrder (single gRPC call)
+    if !long_term_orders.is_empty() {
+        log::debug!(
+            "Batch cancelling {} long-term orders",
+            long_term_orders.len(),
+        );
+
+        match order_builder.build_cancel_orders_batch_with_flags(&long_term_orders, block_height) {
+            Ok(cancel_msgs) => {
+                let operation = format!("BatchCancel {} long-term orders", long_term_orders.len());
+                match broadcaster
+                    .broadcast_with_retry(&tx_manager, cancel_msgs, &operation)
+                    .await
+                {
+                    Ok(tx_hash) => {
+                        log::debug!(
+                            "Successfully batch cancelled {} long-term orders, tx_hash: {}",
+                            long_term_orders.len(),
+                            tx_hash
+                        );
+                    }
+                    Err(e) => {
+                        log::error!("Long-term batch cancel failed: {e:?}");
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to build long-term cancel messages: {e:?}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for DydxExecutionClient {
     fn is_connected(&self) -> bool {
@@ -1828,156 +1922,50 @@ impl ExecutionClient for DydxExecutionClient {
         // Collect (instrument_id, client_id, order_flags) tuples for cancel
         // Use stored order_flags from order context to ensure correct cancellation
         let mut orders_to_cancel = Vec::new();
-        for (client_order_id, time_in_force, expire_time) in &order_data {
-            if let Some(encoded) = self.encoder.get(client_order_id) {
-                let client_id_u32 = encoded.client_id;
-                // Get stored order_flags from order context
-                let order_flags = self.get_order_context(client_id_u32).map_or_else(
-                    || {
-                        // Fallback: derive from order parameters if context not found
-                        log::warn!(
-                            "Order context not found for {client_order_id}, deriving flags from order"
-                        );
-                        let expire_secs = expire_time.map(nanos_to_secs_i64);
-                        types::OrderLifetime::from_time_in_force(
-                            *time_in_force,
-                            expire_secs,
-                            false,
-                            order_builder.max_short_term_secs(),
-                        )
-                        .order_flags()
-                    },
-                    |ctx| ctx.order_flags,
+        for (client_order_id, _time_in_force, _expire_time) in &order_data {
+            let Some(encoded) = self.encoder.get(client_order_id) else {
+                log::warn!("Cannot cancel order {client_order_id}: not found in encoder");
+                continue;
+            };
+            let client_id_u32 = encoded.client_id;
+
+            // Skip if context already cleaned up (terminal WS event received)
+            let Some(ctx) = self.get_order_context(client_id_u32) else {
+                log::debug!(
+                    "Skipping cancel for {client_order_id}: order context already cleaned up (terminal)"
                 );
-                orders_to_cancel.push((instrument_id, client_id_u32, order_flags));
-            } else {
-                log::warn!(
-                    "Cannot cancel order {client_order_id}: client_order_id not found in cache"
-                );
-            }
+                continue;
+            };
+            orders_to_cancel.push((instrument_id, client_id_u32, ctx.order_flags));
         }
 
         if orders_to_cancel.is_empty() {
             return Ok(());
         }
 
-        // Check if any orders are short-term (order_flags == 0)
-        // dYdX protocol restriction: short-term MsgCancelOrder cannot be batched
-        let has_short_term = orders_to_cancel
-            .iter()
-            .any(|(_, _, flags)| *flags == types::ORDER_FLAG_SHORT_TERM);
+        log::debug!(
+            "Cancel all: {} orders (short_term={}, long_term={}), instrument_id={instrument_id}, order_side={order_side_filter:?}",
+            orders_to_cancel.len(),
+            orders_to_cancel
+                .iter()
+                .filter(|(_, _, f)| *f == types::ORDER_FLAG_SHORT_TERM)
+                .count(),
+            orders_to_cancel
+                .iter()
+                .filter(|(_, _, f)| *f != types::ORDER_FLAG_SHORT_TERM)
+                .count(),
+        );
 
-        if has_short_term {
-            // Cancel each order individually (short-term cancels cannot be batched)
-            log::info!(
-                "Cancelling {} orders individually (short-term cancels cannot be batched)",
-                orders_to_cancel.len()
-            );
-
-            self.spawn_task("cancel_all_orders", async move {
-                let mut handles = Vec::with_capacity(orders_to_cancel.len());
-
-                for (inst_id, client_id, order_flags) in orders_to_cancel {
-                    let tx_manager = tx_manager.clone();
-                    let broadcaster = broadcaster.clone();
-                    let order_builder = order_builder.clone();
-
-                    let handle = get_runtime().spawn(async move {
-                        // Build cancel message using stored order_flags
-                        let msg = match order_builder.build_cancel_order_with_flags(
-                            inst_id,
-                            client_id,
-                            order_flags,
-                            block_height,
-                        ) {
-                            Ok(m) => m,
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to build cancel message for client_id={client_id}: {e:?}"
-                                );
-                                return;
-                            }
-                        };
-
-                        // Short-term: cached sequence, no retry. Stateful: proper sequence management.
-                        let cancel_op = format!("Cancel order {client_id}");
-                        let result = if order_flags == types::ORDER_FLAG_SHORT_TERM {
-                            broadcaster
-                                .broadcast_short_term(&tx_manager, vec![msg], &cancel_op)
-                                .await
-                        } else {
-                            broadcaster
-                                .broadcast_with_retry(&tx_manager, vec![msg], &cancel_op)
-                                .await
-                        };
-                        if let Err(e) = result {
-                            log::error!("Failed to cancel order client_id={client_id}: {e:?}");
-                        }
-                    });
-
-                    handles.push(handle);
-                }
-
-                // Wait for all cancels to complete
-                for handle in handles {
-                    let _ = handle.await;
-                }
-
-                Ok(())
-            });
-        } else {
-            // All orders are long-term - can batch cancels
-            log::info!(
-                "Batch cancelling {} long-term orders in single transaction",
-                orders_to_cancel.len()
-            );
-
-            self.spawn_task("cancel_all_orders", async move {
-                // Build all cancel messages using stored order_flags
-                let msgs: Result<Vec<_>, _> = orders_to_cancel
-                    .iter()
-                    .map(|(inst_id, client_id, order_flags)| {
-                        order_builder.build_cancel_order_with_flags(
-                            *inst_id,
-                            *client_id,
-                            *order_flags,
-                            block_height,
-                        )
-                    })
-                    .collect();
-
-                let msgs = match msgs {
-                    Ok(m) => m,
-                    Err(e) => {
-                        log::error!("Failed to build cancel messages: {e:?}");
-                        return Ok(());
-                    }
-                };
-
-                if msgs.is_empty() {
-                    return Ok(());
-                }
-
-                // Broadcast batch cancel
-                match broadcaster
-                    .broadcast_with_retry(
-                        &tx_manager,
-                        msgs,
-                        &format!("Cancel {} orders", orders_to_cancel.len()),
-                    )
-                    .await
-                {
-                    Ok(_) => {
-                        log::debug!("Successfully cancelled {} orders", orders_to_cancel.len());
-                    }
-                    Err(e) => {
-                        log::error!("Batch cancel failed: {e:?}");
-                    }
-                }
-
-                Ok(())
-            });
-        }
+        self.spawn_task("cancel_all_orders", async move {
+            broadcast_partitioned_cancels(
+                orders_to_cancel,
+                block_height,
+                tx_manager,
+                broadcaster,
+                order_builder,
+            )
+            .await
+        });
 
         Ok(())
     }
@@ -1991,7 +1979,7 @@ impl ExecutionClient for DydxExecutionClient {
             anyhow::bail!("Cannot cancel orders: not connected");
         }
 
-        // Get execution components early for order_flags derivation
+        // Get execution components for broadcasting
         let (tx_manager, broadcaster, order_builder) = match self.get_execution_components() {
             Ok(components) => components,
             Err(e) => {
@@ -2001,8 +1989,6 @@ impl ExecutionClient for DydxExecutionClient {
         };
 
         // Convert ClientOrderIds to u32 and get order_flags
-        let cache = self.core.cache();
-
         let mut orders_to_cancel = Vec::with_capacity(cmd.cancels.len());
         for cancel in &cmd.cancels {
             let client_order_id = cancel.client_order_id;
@@ -2017,33 +2003,16 @@ impl ExecutionClient for DydxExecutionClient {
             };
             let client_id_u32 = encoded.client_id;
 
-            // Get stored order_flags from order context
-            let order_flags = self.get_order_context(client_id_u32).map_or_else(
-                || {
-                    // Fallback: derive from order parameters if context not found
-                    log::warn!(
-                        "Order context not found for {client_order_id}, deriving flags from order"
-                    );
-                    match cache.order(&client_order_id) {
-                        Some(order) => {
-                            let expire_time = order.expire_time().map(nanos_to_secs_i64);
-                            types::OrderLifetime::from_time_in_force(
-                                order.time_in_force(),
-                                expire_time,
-                                false,
-                                order_builder.max_short_term_secs(),
-                            )
-                            .order_flags()
-                        }
-                        None => types::ORDER_FLAG_LONG_TERM, // Default to long-term if not found
-                    }
-                },
-                |ctx| ctx.order_flags,
-            );
+            // Skip if context already cleaned up (terminal WS event received)
+            let Some(ctx) = self.get_order_context(client_id_u32) else {
+                log::debug!(
+                    "Skipping cancel for {client_order_id}: order context already cleaned up (terminal)"
+                );
+                continue;
+            };
 
-            orders_to_cancel.push((cancel.instrument_id, client_id_u32, order_flags));
+            orders_to_cancel.push((cancel.instrument_id, client_id_u32, ctx.order_flags));
         }
-        drop(cache);
 
         if orders_to_cancel.is_empty() {
             log::warn!("No valid orders to cancel in batch");
@@ -2052,119 +2021,92 @@ impl ExecutionClient for DydxExecutionClient {
 
         let block_height = self.block_time_monitor.current_block_height() as u32;
 
-        // Check if any orders are short-term (order_flags == 0)
-        // dYdX protocol restriction: short-term MsgCancelOrder cannot be batched
-        let has_short_term = orders_to_cancel
-            .iter()
-            .any(|(_, _, flags)| *flags == types::ORDER_FLAG_SHORT_TERM);
+        log::debug!(
+            "Batch cancelling {} orders via partitioned strategy",
+            orders_to_cancel.len(),
+        );
 
-        if has_short_term {
-            // Cancel each order individually (short-term cancels cannot be batched)
-            log::info!(
-                "Cancelling {} orders individually (short-term cancels cannot be batched)",
-                orders_to_cancel.len()
-            );
-
-            self.spawn_task("batch_cancel_orders", async move {
-                let mut handles = Vec::with_capacity(orders_to_cancel.len());
-
-                for (inst_id, client_id, order_flags) in orders_to_cancel {
-                    let tx_manager = tx_manager.clone();
-                    let broadcaster = broadcaster.clone();
-                    let order_builder = order_builder.clone();
-
-                    let handle = get_runtime().spawn(async move {
-                        // Build cancel message using stored order_flags
-                        let msg = match order_builder.build_cancel_order_with_flags(
-                            inst_id,
-                            client_id,
-                            order_flags,
-                            block_height,
-                        ) {
-                            Ok(m) => m,
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to build cancel message for client_id={client_id}: {e:?}"
-                                );
-                                return;
-                            }
-                        };
-
-                        // Short-term: cached sequence, no retry. Stateful: proper sequence management.
-                        let cancel_op = format!("Cancel order {client_id}");
-                        let result = if order_flags == types::ORDER_FLAG_SHORT_TERM {
-                            broadcaster
-                                .broadcast_short_term(&tx_manager, vec![msg], &cancel_op)
-                                .await
-                        } else {
-                            broadcaster
-                                .broadcast_with_retry(&tx_manager, vec![msg], &cancel_op)
-                                .await
-                        };
-                        if let Err(e) = result {
-                            log::error!("Failed to cancel order client_id={client_id}: {e:?}");
-                        }
-                    });
-
-                    handles.push(handle);
-                }
-
-                // Wait for all cancels to complete
-                for handle in handles {
-                    let _ = handle.await;
-                }
-
-                Ok(())
-            });
-        } else {
-            // All orders are long-term - can batch cancels
-            log::debug!(
-                "Batch cancelling {} long-term orders: {:?}",
-                orders_to_cancel.len(),
-                orders_to_cancel
-            );
-
-            self.spawn_task("batch_cancel_orders", async move {
-                // Build cancel messages using stored order_flags
-                let cancel_msgs = match order_builder
-                    .build_cancel_orders_batch_with_flags(&orders_to_cancel, block_height)
-                {
-                    Ok(msgs) => msgs,
-                    Err(e) => {
-                        log::error!("Failed to build batch cancel messages: {e:?}");
-                        return Ok(());
-                    }
-                };
-
-                // Broadcast with retry
-                match broadcaster
-                    .broadcast_with_retry(&tx_manager, cancel_msgs, "BatchCancelOrders")
-                    .await
-                {
-                    Ok(tx_hash) => {
-                        log::debug!(
-                            "Successfully batch cancelled {} orders, tx_hash: {}",
-                            orders_to_cancel.len(),
-                            tx_hash
-                        );
-                    }
-                    Err(e) => {
-                        log::error!("Batch cancel failed: {e:?}");
-                    }
-                }
-
-                Ok(())
-            });
-        }
+        self.spawn_task("batch_cancel_orders", async move {
+            broadcast_partitioned_cancels(
+                orders_to_cancel,
+                block_height,
+                tx_manager,
+                broadcaster,
+                order_builder,
+            )
+            .await
+        });
 
         Ok(())
     }
 
     fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+        let http_client = self.http_client.clone();
+        let wallet_address = self.wallet_address.clone();
+        let subaccount_number = self.subaccount_number;
+        let account_id = self.core.account_id;
+        let emitter = self.emitter.clone();
+
+        self.spawn_task("query_account", async move {
+            let account_state = http_client
+                .request_account_state(&wallet_address, subaccount_number, account_id)
+                .await
+                .context("failed to query account state")?;
+
+            emitter.emit_account_state(
+                account_state.balances.clone(),
+                account_state.margins.clone(),
+                account_state.is_reported,
+                account_state.ts_event,
+            );
+            Ok(())
+        });
+
         Ok(())
     }
 
-    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+        log::debug!("Querying order: client_order_id={}", cmd.client_order_id);
+
+        let http_client = self.http_client.clone();
+        let wallet_address = self.wallet_address.clone();
+        let subaccount_number = self.subaccount_number;
+        let account_id = self.core.account_id;
+        let emitter = self.emitter.clone();
+        let client_order_id = cmd.client_order_id;
+        let venue_order_id = cmd.venue_order_id;
+        let instrument_id = cmd.instrument_id;
+
+        self.spawn_task("query_order", async move {
+            let reports = http_client
+                .request_order_status_reports(
+                    &wallet_address,
+                    subaccount_number,
+                    account_id,
+                    Some(instrument_id),
+                )
+                .await
+                .context("failed to query order status")?;
+
+            // Find matching report by client_order_id or venue_order_id
+            let report = reports.into_iter().find(|r| {
+                if venue_order_id.is_some_and(|vid| r.venue_order_id == vid) {
+                    return true;
+                }
+                r.client_order_id.is_some_and(|cid| cid == client_order_id)
+            });
+
+            if let Some(report) = report {
+                emitter.send_order_status_report(report);
+            } else {
+                log::warn!(
+                    "No order found for client_order_id={client_order_id}, venue_order_id={venue_order_id:?}"
+                );
+            }
+
+            Ok(())
+        });
+
         Ok(())
     }
 
@@ -2229,7 +2171,10 @@ impl ExecutionClient for DydxExecutionClient {
             .context("failed to initialize sequence")?;
 
         self.tx_manager = Some(tx_manager);
-        self.broadcaster = Some(Arc::new(TxBroadcaster::new(grpc_client)));
+        self.broadcaster = Some(Arc::new(TxBroadcaster::new(
+            grpc_client,
+            self.config.grpc_quota(),
+        )));
         self.order_builder = Some(Arc::new(OrderMessageBuilder::new(
             self.http_client.clone(),
             self.wallet_address.clone(),

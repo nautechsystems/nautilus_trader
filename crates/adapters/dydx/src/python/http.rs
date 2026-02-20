@@ -320,6 +320,25 @@ impl DydxHttpClient {
         })
     }
 
+    #[pyo3(name = "request_account_state")]
+    fn py_request_account_state<'py>(
+        &self,
+        py: Python<'py>,
+        address: String,
+        subaccount_number: u32,
+        account_id: AccountId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let account_state = client
+                .request_account_state(&address, subaccount_number, account_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
+        })
+    }
+
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None, timestamp_on_close=true))]
     fn py_request_bars<'py>(

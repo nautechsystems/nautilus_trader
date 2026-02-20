@@ -65,6 +65,7 @@ use nautilus_model::{
         AggregationSource, BarAggregation, BookAction, OrderSide as NautilusOrderSide, PriceType,
         RecordFlag,
     },
+    events::AccountState,
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -87,7 +88,7 @@ use crate::{
         instrument_cache::InstrumentCache,
         parse::extract_raw_symbol,
     },
-    http::parse::parse_instrument_any,
+    http::parse::{parse_account_state_from_http, parse_instrument_any},
 };
 
 /// Maximum number of candles returned per dYdX API request.
@@ -1627,6 +1628,56 @@ impl DydxHttpClient {
         }
 
         Ok(reports)
+    }
+
+    /// Requests account state for a subaccount.
+    ///
+    /// Fetches the subaccount from the dYdX Indexer API and converts it to a Nautilus
+    /// `AccountState` with balances and margin calculations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_account_state(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+        account_id: AccountId,
+    ) -> anyhow::Result<AccountState> {
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        let subaccount_response = self
+            .inner
+            .get_subaccount(address, subaccount_number)
+            .await?;
+
+        // Build instruments map from cache
+        let instruments: HashMap<InstrumentId, InstrumentAny> = self
+            .instrument_cache
+            .all_instruments()
+            .into_iter()
+            .map(|inst| (inst.id(), inst))
+            .collect();
+
+        // Build oracle prices from position entry prices as fallback
+        let mut oracle_prices = HashMap::new();
+        for position in subaccount_response
+            .subaccount
+            .open_perpetual_positions
+            .values()
+        {
+            let instrument_id = crate::common::parse::parse_instrument_id(position.market.as_str());
+            oracle_prices.insert(instrument_id, position.entry_price);
+        }
+
+        parse_account_state_from_http(
+            &subaccount_response.subaccount,
+            account_id,
+            &instruments,
+            &oracle_prices,
+            ts_init,
+            ts_init,
+        )
     }
 }
 
