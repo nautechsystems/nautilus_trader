@@ -21,8 +21,9 @@ use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use super::{
-    CryptoOption, betting::BettingInstrument, binary_option::BinaryOption,
-    futures_spread::FuturesSpread, option_spread::OptionSpread, synthetic::SyntheticInstrument,
+    CryptoOption, betting::BettingInstrument, binary_option::BinaryOption, cfd::Cfd,
+    commodity::Commodity, futures_spread::FuturesSpread, index_instrument::IndexInstrument,
+    option_spread::OptionSpread, synthetic::SyntheticInstrument,
 };
 use crate::{
     enums::{AssetClass, OptionKind},
@@ -709,6 +710,79 @@ pub fn betting() -> BettingInstrument {
         None, // info
         ts_event,
         ts_init,
+    )
+}
+
+#[fixture]
+pub fn commodity_gold() -> Commodity {
+    Commodity::new(
+        InstrumentId::from("GOLD.COMEX"),
+        Symbol::from("GOLD"),
+        AssetClass::Commodity,
+        Currency::from("USD"),
+        2,
+        0,
+        Price::from("0.01"),
+        Quantity::from("1"),
+        Some(Quantity::from("1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // info
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+#[fixture]
+pub fn index_instrument_spx() -> IndexInstrument {
+    IndexInstrument::new(
+        InstrumentId::from("SPX.INDEX"),
+        Symbol::from("SPX"),
+        Currency::from("USD"),
+        2,
+        0,
+        Price::from("0.01"),
+        Quantity::from("1"),
+        None, // info
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+#[fixture]
+pub fn cfd_gold() -> Cfd {
+    Cfd::new(
+        InstrumentId::from("GOLD-CFD.SIM"),
+        Symbol::from("GOLD-CFD"),
+        AssetClass::Commodity,
+        None,
+        Currency::from("USD"),
+        2,
+        0,
+        Price::from("0.01"),
+        Quantity::from("1"),
+        Some(Quantity::from("1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // info
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 

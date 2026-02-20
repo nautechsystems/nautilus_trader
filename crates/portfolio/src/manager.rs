@@ -179,6 +179,22 @@ impl AccountsManager {
                         None,
                     )
                     .ok()?,
+                InstrumentAny::Cfd(i) => account
+                    .calculate_maintenance_margin(
+                        i,
+                        position.quantity,
+                        instrument.make_price(position.avg_px_open),
+                        None,
+                    )
+                    .ok()?,
+                InstrumentAny::Commodity(i) => account
+                    .calculate_maintenance_margin(
+                        i,
+                        position.quantity,
+                        instrument.make_price(position.avg_px_open),
+                        None,
+                    )
+                    .ok()?,
                 InstrumentAny::CryptoFuture(i) => account
                     .calculate_maintenance_margin(
                         i,
@@ -228,6 +244,14 @@ impl AccountsManager {
                     )
                     .ok()?,
                 InstrumentAny::FuturesSpread(i) => account
+                    .calculate_maintenance_margin(
+                        i,
+                        position.quantity,
+                        instrument.make_price(position.avg_px_open),
+                        None,
+                    )
+                    .ok()?,
+                InstrumentAny::IndexInstrument(i) => account
                     .calculate_maintenance_margin(
                         i,
                         position.quantity,
@@ -438,6 +462,12 @@ impl AccountsManager {
                 InstrumentAny::BinaryOption(i) => account
                     .calculate_initial_margin(i, order.quantity(), price?, None)
                     .ok()?,
+                InstrumentAny::Cfd(i) => account
+                    .calculate_initial_margin(i, order.quantity(), price?, None)
+                    .ok()?,
+                InstrumentAny::Commodity(i) => account
+                    .calculate_initial_margin(i, order.quantity(), price?, None)
+                    .ok()?,
                 InstrumentAny::CryptoFuture(i) => account
                     .calculate_initial_margin(i, order.quantity(), price?, None)
                     .ok()?,
@@ -457,6 +487,9 @@ impl AccountsManager {
                     .calculate_initial_margin(i, order.quantity(), price?, None)
                     .ok()?,
                 InstrumentAny::FuturesSpread(i) => account
+                    .calculate_initial_margin(i, order.quantity(), price?, None)
+                    .ok()?,
+                InstrumentAny::IndexInstrument(i) => account
                     .calculate_initial_margin(i, order.quantity(), price?, None)
                     .ok()?,
                 InstrumentAny::OptionContract(i) => account

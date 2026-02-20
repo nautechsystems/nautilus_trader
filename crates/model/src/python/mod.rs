@@ -153,6 +153,8 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Instruments
     m.add_class::<crate::instruments::BettingInstrument>()?;
     m.add_class::<crate::instruments::BinaryOption>()?;
+    m.add_class::<crate::instruments::Cfd>()?;
+    m.add_class::<crate::instruments::Commodity>()?;
     m.add_class::<crate::instruments::CryptoFuture>()?;
     m.add_class::<crate::instruments::CryptoOption>()?;
     m.add_class::<crate::instruments::CryptoPerpetual>()?;
@@ -160,6 +162,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::instruments::Equity>()?;
     m.add_class::<crate::instruments::FuturesContract>()?;
     m.add_class::<crate::instruments::FuturesSpread>()?;
+    m.add_class::<crate::instruments::IndexInstrument>()?;
     m.add_class::<crate::instruments::OptionContract>()?;
     m.add_class::<crate::instruments::OptionSpread>()?;
     m.add_class::<crate::instruments::SyntheticInstrument>()?;

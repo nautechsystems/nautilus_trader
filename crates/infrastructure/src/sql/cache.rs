@@ -1009,6 +1009,16 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                     DatabaseQueries::add_instrument(pool, "OPTION_CONTRACT", Box::new(instrument))
                         .await
                 }
+                InstrumentAny::Commodity(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "COMMODITY", Box::new(instrument)).await
+                }
+                InstrumentAny::IndexInstrument(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "INDEX_INSTRUMENT", Box::new(instrument))
+                        .await
+                }
+                InstrumentAny::Cfd(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "CFD", Box::new(instrument)).await
+                }
                 InstrumentAny::OptionSpread(instrument) => {
                     DatabaseQueries::add_instrument(pool, "OPTION_SPREAD", Box::new(instrument))
                         .await

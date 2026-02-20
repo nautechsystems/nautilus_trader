@@ -24,8 +24,9 @@ use nautilus_model::{
     enums::OptionKind,
     identifiers::{InstrumentId, Symbol},
     instruments::{
-        BettingInstrument, BinaryOption, CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair,
-        Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
+        BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoOption,
+        CryptoPerpetual, CurrencyPair, Equity, FuturesContract, FuturesSpread, IndexInstrument,
+        InstrumentAny, OptionContract, OptionSpread,
     },
     types::{Currency, Money, Price, Quantity},
 };
@@ -67,6 +68,15 @@ pub struct FuturesSpreadModel(pub FuturesSpread);
 
 #[derive(Debug)]
 pub struct OptionContractModel(pub OptionContract);
+
+#[derive(Debug)]
+pub struct CommodityModel(pub Commodity);
+
+#[derive(Debug)]
+pub struct IndexInstrumentModel(pub IndexInstrument);
+
+#[derive(Debug)]
+pub struct CfdModel(pub Cfd);
 
 #[derive(Debug)]
 pub struct OptionSpreadModel(pub OptionSpread);
@@ -114,6 +124,16 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
             Ok(Self(InstrumentAny::OptionContract(
                 OptionContractModel::from_row(row).unwrap().0,
             )))
+        } else if kind == "COMMODITY" {
+            Ok(Self(InstrumentAny::Commodity(
+                CommodityModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "INDEX_INSTRUMENT" {
+            Ok(Self(InstrumentAny::IndexInstrument(
+                IndexInstrumentModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "CFD" {
+            Ok(Self(InstrumentAny::Cfd(CfdModel::from_row(row).unwrap().0)))
         } else if kind == "OPTION_SPREAD" {
             Ok(Self(InstrumentAny::OptionSpread(
                 OptionSpreadModel::from_row(row).unwrap().0,
@@ -1029,6 +1049,223 @@ impl<'r> FromRow<'r, PgRow> for OptionContractModel {
             lot_size,
             max_quantity,
             min_quantity,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            None,
+            ts_event,
+            ts_init,
+        );
+        Ok(Self(inst))
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for CommodityModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
+        let asset_class = row
+            .try_get::<AssetClassModel, _>("asset_class")
+            .map(|res| res.0)?;
+        let quote_currency = row
+            .try_get::<String, _>("quote_currency")
+            .map(Currency::from)?;
+        let price_precision = row.try_get::<i32, _>("price_precision")? as u8;
+        let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
+        let price_increment = row
+            .try_get::<String, _>("price_increment")
+            .map(|res| Price::from_str(res.as_str()).unwrap())?;
+        let size_increment = row
+            .try_get::<String, _>("size_increment")
+            .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
+        let lot_size = row
+            .try_get::<Option<String>, _>("lot_size")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let max_quantity = row
+            .try_get::<Option<String>, _>("max_quantity")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let min_quantity = row
+            .try_get::<Option<String>, _>("min_quantity")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let max_notional = row
+            .try_get::<Option<String>, _>("max_notional")
+            .ok()
+            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+        let min_notional = row
+            .try_get::<Option<String>, _>("min_notional")
+            .ok()
+            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+        let max_price = row
+            .try_get::<Option<String>, _>("max_price")
+            .ok()
+            .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let min_price = row
+            .try_get::<Option<String>, _>("min_price")
+            .ok()
+            .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
+
+        let inst = Commodity::new(
+            id,
+            raw_symbol,
+            asset_class,
+            quote_currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            None,
+            ts_event,
+            ts_init,
+        );
+        Ok(Self(inst))
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for IndexInstrumentModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
+        let currency = row
+            .try_get::<String, _>("quote_currency")
+            .map(Currency::from)?;
+        let price_precision = row.try_get::<i32, _>("price_precision")? as u8;
+        let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
+        let price_increment = row
+            .try_get::<String, _>("price_increment")
+            .map(|res| Price::from_str(res.as_str()).unwrap())?;
+        let size_increment = row
+            .try_get::<String, _>("size_increment")
+            .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
+
+        let inst = IndexInstrument::new(
+            id,
+            raw_symbol,
+            currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            None,
+            ts_event,
+            ts_init,
+        );
+        Ok(Self(inst))
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for CfdModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
+        let asset_class = row
+            .try_get::<AssetClassModel, _>("asset_class")
+            .map(|res| res.0)?;
+        let base_currency = row
+            .try_get::<Option<String>, _>("base_currency")
+            .ok()
+            .and_then(|res| res.map(Currency::from));
+        let quote_currency = row
+            .try_get::<String, _>("quote_currency")
+            .map(Currency::from)?;
+        let price_precision = row.try_get::<i32, _>("price_precision")? as u8;
+        let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
+        let price_increment = row
+            .try_get::<String, _>("price_increment")
+            .map(|res| Price::from_str(res.as_str()).unwrap())?;
+        let size_increment = row
+            .try_get::<String, _>("size_increment")
+            .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
+        let lot_size = row
+            .try_get::<Option<String>, _>("lot_size")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let max_quantity = row
+            .try_get::<Option<String>, _>("max_quantity")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let min_quantity = row
+            .try_get::<Option<String>, _>("min_quantity")
+            .ok()
+            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
+        let max_notional = row
+            .try_get::<Option<String>, _>("max_notional")
+            .ok()
+            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+        let min_notional = row
+            .try_get::<Option<String>, _>("min_notional")
+            .ok()
+            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+        let max_price = row
+            .try_get::<Option<String>, _>("max_price")
+            .ok()
+            .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let min_price = row
+            .try_get::<Option<String>, _>("min_price")
+            .ok()
+            .and_then(|res| res.map(|value| Price::from(value.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
+
+        let inst = Cfd::new(
+            id,
+            raw_symbol,
+            asset_class,
+            base_currency,
+            quote_currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
             max_price,
             min_price,
             margin_init,

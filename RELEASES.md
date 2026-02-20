@@ -162,6 +162,7 @@ Released on TBD (UTC).
 - Fixed Tardis deltas snapshot boundaries with CLEAR (#3530), thanks @Arandott
 
 ### Internal Improvements
+- Added `Commodity`, `IndexInstrument`, and `Cfd` instruments in Rust
 - Added support for setting cache database adapter in cache and `LiveNode` (#3401), thanks @filipmacek
 - Added `ts_init` normalization option to `convert_stream_to_data` (#3433), thanks @faysou
 - Added Params type and catalog instrument persistence in Rust (#3539), thanks @faysou

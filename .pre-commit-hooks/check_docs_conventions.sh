@@ -36,7 +36,14 @@ while IFS= read -r file; do
   [[ -z "$file" ]] && continue
 
   # Read file into array once (0-indexed, lines[0] = line 1)
-  mapfile -t lines < "$file"
+  if type mapfile &> /dev/null; then
+    mapfile -t lines < "$file"
+  else
+    lines=()
+    while IFS= read -r _line || [[ -n "$_line" ]]; do
+      lines+=("$_line")
+    done < "$file"
+  fi
   total=${#lines[@]}
 
   # Collect line numbers for # Panics and # Errors in this file
@@ -50,7 +57,7 @@ while IFS= read -r file; do
   done
 
   # --- Check `# Panics` docs ---
-  for line_num in "${panics_lines[@]}"; do
+  for line_num in ${panics_lines[@]+"${panics_lines[@]}"}; do
     idx=$((line_num - 1))
 
     # Check for suppression above the doc block
@@ -71,7 +78,7 @@ while IFS= read -r file; do
     # Check for self-contradictory "does not panic" text
     contradictory=false
     for ((j = idx + 1; j <= idx + 4 && j < total; j++)); do
-      lower="${lines[j],,}"
+      lower="$(printf '%s' "${lines[j]}" | tr '[:upper:]' '[:lower:]')"
       if [[ "$lower" == *'does not panic'* ]] || [[ "$lower" == *'will never panic'* ]]; then
         # Find fn name for context
         fn_context="<unknown>"
@@ -161,7 +168,7 @@ while IFS= read -r file; do
   done
 
   # --- Check `# Errors` docs ---
-  for line_num in "${errors_lines[@]}"; do
+  for line_num in ${errors_lines[@]+"${errors_lines[@]}"}; do
     idx=$((line_num - 1))
 
     # Check for suppression above the doc block

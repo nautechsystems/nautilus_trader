@@ -23,10 +23,12 @@ use std::collections::HashMap;
 
 use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
 use nautilus_model::instruments::{
-    InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
-    crypto_future::CryptoFuture, crypto_option::CryptoOption, crypto_perpetual::CryptoPerpetual,
-    currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-    futures_spread::FuturesSpread, option_contract::OptionContract, option_spread::OptionSpread,
+    Instrument, InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption, cfd::Cfd,
+    commodity::Commodity, crypto_future::CryptoFuture, crypto_option::CryptoOption,
+    crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
+    futures_contract::FuturesContract, futures_spread::FuturesSpread,
+    index_instrument::IndexInstrument, option_contract::OptionContract,
+    option_spread::OptionSpread,
 };
 
 #[allow(unused)]
@@ -35,9 +37,10 @@ use crate::arrow::{
     EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
 };
 
-// Import concrete instrument serialization modules
 pub mod betting;
 pub mod binary_option;
+pub mod cfd;
+pub mod commodity;
 pub mod crypto_future;
 pub mod crypto_option;
 pub mod crypto_perpetual;
@@ -45,21 +48,22 @@ pub mod currency_pair;
 pub mod equity;
 pub mod futures_contract;
 pub mod futures_spread;
+pub mod index_instrument;
 pub mod option_contract;
 pub mod option_spread;
 
 impl ArrowSchemaProvider for InstrumentAny {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        // This is a fallback schema - actual schemas come from concrete types
-        // The schema is determined by the instrument type stored in metadata
         let instrument_type = metadata
             .as_ref()
             .and_then(|m| m.get("class"))
-            .map_or("CurrencyPair", |s| s.as_str()); // Default fallback
+            .map_or("CurrencyPair", |s| s.as_str());
 
         match instrument_type {
             "BettingInstrument" => BettingInstrument::get_schema(metadata),
             "BinaryOption" => BinaryOption::get_schema(metadata),
+            "Cfd" => Cfd::get_schema(metadata),
+            "Commodity" => Commodity::get_schema(metadata),
             "CryptoFuture" => CryptoFuture::get_schema(metadata),
             "CryptoOption" => CryptoOption::get_schema(metadata),
             "CryptoPerpetual" => CryptoPerpetual::get_schema(metadata),
@@ -67,6 +71,7 @@ impl ArrowSchemaProvider for InstrumentAny {
             "Equity" => Equity::get_schema(metadata),
             "FuturesContract" => FuturesContract::get_schema(metadata),
             "FuturesSpread" => FuturesSpread::get_schema(metadata),
+            "IndexInstrument" => IndexInstrument::get_schema(metadata),
             "OptionContract" => OptionContract::get_schema(metadata),
             "OptionSpread" => OptionSpread::get_schema(metadata),
             _ => {
@@ -88,10 +93,11 @@ impl EncodeToRecordBatch for InstrumentAny {
             ));
         }
 
-        // Group instruments by type
         let mut by_type: HashMap<String, Vec<&Self>> = HashMap::new();
         for instrument in data {
             let type_name = match instrument {
+                Self::Cfd(_) => "Cfd",
+                Self::Commodity(_) => "Commodity",
                 Self::CurrencyPair(_) => "CurrencyPair",
                 Self::Equity(_) => "Equity",
                 Self::CryptoFuture(_) => "CryptoFuture",
@@ -99,6 +105,7 @@ impl EncodeToRecordBatch for InstrumentAny {
                 Self::CryptoOption(_) => "CryptoOption",
                 Self::FuturesContract(_) => "FuturesContract",
                 Self::FuturesSpread(_) => "FuturesSpread",
+                Self::IndexInstrument(_) => "IndexInstrument",
                 Self::OptionContract(_) => "OptionContract",
                 Self::OptionSpread(_) => "OptionSpread",
                 Self::BinaryOption(_) => "BinaryOption",
@@ -110,17 +117,42 @@ impl EncodeToRecordBatch for InstrumentAny {
                 .push(instrument);
         }
 
-        // For now, we only support batches of the same type
-        // Mixed batches would require Arrow union types
         if by_type.len() > 1 {
             return Err(ArrowError::InvalidArgumentError(
                 "Cannot encode mixed instrument types in a single batch. Use separate batches for each type.".to_string(),
             ));
         }
 
-        // Get the single type and encode using its concrete implementation
         let (type_name, instruments) = by_type.iter().next().unwrap();
         match type_name.as_str() {
+            "Cfd" => {
+                let cfds: Vec<_> = instruments
+                    .iter()
+                    .map(|i| {
+                        if let Self::Cfd(c) = i {
+                            c
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .cloned()
+                    .collect();
+                Cfd::encode_batch(metadata, &cfds)
+            }
+            "Commodity" => {
+                let commodities: Vec<_> = instruments
+                    .iter()
+                    .map(|i| {
+                        if let Self::Commodity(c) = i {
+                            c
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .cloned()
+                    .collect();
+                Commodity::encode_batch(metadata, &commodities)
+            }
             "BettingInstrument" => {
                 let betting: Vec<_> = instruments
                     .iter()
@@ -247,6 +279,20 @@ impl EncodeToRecordBatch for InstrumentAny {
                     .collect();
                 FuturesSpread::encode_batch(metadata, &futures_spreads)
             }
+            "IndexInstrument" => {
+                let index_instruments: Vec<_> = instruments
+                    .iter()
+                    .map(|i| {
+                        if let Self::IndexInstrument(ii) = i {
+                            ii
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .cloned()
+                    .collect();
+                IndexInstrument::encode_batch(metadata, &index_instruments)
+            }
             "OptionContract" => {
                 let option_contracts: Vec<_> = instruments
                     .iter()
@@ -282,7 +328,6 @@ impl EncodeToRecordBatch for InstrumentAny {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        use nautilus_model::instruments::Instrument;
         let mut metadata = HashMap::new();
         metadata.insert(
             KEY_INSTRUMENT_ID.to_string(),
@@ -290,6 +335,8 @@ impl EncodeToRecordBatch for InstrumentAny {
         );
 
         let type_name = match self {
+            Self::Cfd(_) => "Cfd",
+            Self::Commodity(_) => "Commodity",
             Self::CurrencyPair(_) => "CurrencyPair",
             Self::Equity(_) => "Equity",
             Self::CryptoFuture(_) => "CryptoFuture",
@@ -297,6 +344,7 @@ impl EncodeToRecordBatch for InstrumentAny {
             Self::CryptoOption(_) => "CryptoOption",
             Self::FuturesContract(_) => "FuturesContract",
             Self::FuturesSpread(_) => "FuturesSpread",
+            Self::IndexInstrument(_) => "IndexInstrument",
             Self::OptionContract(_) => "OptionContract",
             Self::OptionSpread(_) => "OptionSpread",
             Self::BinaryOption(_) => "BinaryOption",
@@ -317,15 +365,23 @@ pub fn decode_instrument_any_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: RecordBatch,
 ) -> Result<Vec<InstrumentAny>, EncodingError> {
-    // Read the instrument type from metadata (matching Python's approach)
-    // First try metadata parameter, then schema metadata
-    // Get instrument type from metadata (we set it during encoding)
     let type_name = metadata
         .get("class")
         .map(|s| s.as_str())
         .ok_or_else(|| EncodingError::MissingMetadata("class"))?;
 
     match type_name {
+        "Cfd" => {
+            let cfds = cfd::decode_cfd_batch(metadata, record_batch)?;
+            Ok(cfds.into_iter().map(InstrumentAny::Cfd).collect())
+        }
+        "Commodity" => {
+            let commodities = commodity::decode_commodity_batch(metadata, record_batch)?;
+            Ok(commodities
+                .into_iter()
+                .map(InstrumentAny::Commodity)
+                .collect())
+        }
         "BettingInstrument" => {
             let betting = betting::decode_betting_instrument_batch(metadata, record_batch)?;
             Ok(betting.into_iter().map(InstrumentAny::Betting).collect())
@@ -386,6 +442,14 @@ pub fn decode_instrument_any_batch(
                 .map(InstrumentAny::FuturesSpread)
                 .collect())
         }
+        "IndexInstrument" => {
+            let index_instruments =
+                index_instrument::decode_index_instrument_batch(metadata, record_batch)?;
+            Ok(index_instruments
+                .into_iter()
+                .map(InstrumentAny::IndexInstrument)
+                .collect())
+        }
         "OptionContract" => {
             let option_contracts =
                 option_contract::decode_option_contract_batch(metadata, record_batch)?;
@@ -408,9 +472,6 @@ pub fn decode_instrument_any_batch(
     }
 }
 
-// Note: InstrumentAny cannot implement DecodeDataFromRecordBatch due to Into<Data> bound
-// Instruments are not part of the Data enum
-
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
@@ -428,7 +489,6 @@ mod tests {
         let mut metadata = HashMap::new();
         metadata.insert("class".to_string(), "CurrencyPair".to_string());
         let schema = InstrumentAny::get_schema(Some(metadata));
-        // CurrencyPair schema has 22 fields
         assert!(schema.fields().len() >= 20);
         assert_eq!(schema.field(0).name(), "id");
     }
@@ -480,7 +540,6 @@ mod tests {
             Instrument::asset_class(&instrument)
         );
 
-        // Verify it's the same variant and fields match
         match (&decoded[0], &instrument) {
             (InstrumentAny::CurrencyPair(decoded_cp), InstrumentAny::CurrencyPair(original_cp)) => {
                 assert_eq!(decoded_cp.id, original_cp.id);
@@ -535,7 +594,6 @@ mod tests {
             Instrument::asset_class(&instrument)
         );
 
-        // Verify it's the same variant and fields match
         match (&decoded[0], &instrument) {
             (InstrumentAny::Equity(decoded_eq), InstrumentAny::Equity(original_eq)) => {
                 assert_eq!(decoded_eq.id, original_eq.id);
