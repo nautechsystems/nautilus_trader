@@ -110,7 +110,7 @@ alloy-primitives = { version = "1.5.7", default-features = false, features = [
   "std",
   "serde",
 ] }
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 arraydeque = "0.5.1"
 arrow = { version = "57.3.0", default-features = false, features = [
   "csv",
@@ -363,7 +363,7 @@ cargo-deny = "0.19.0"
 cargo-edit = "0.13.8"
 cargo-llvm-cov = "0.8.4"
 cargo-machete = "0.9.1"
-cargo-nextest = "0.9.127"
+cargo-nextest = "0.9.128"
 cargo-vet = "0.10.2"
 lychee = "0.23.0"
 

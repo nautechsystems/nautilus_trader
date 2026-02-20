@@ -34,6 +34,7 @@ Released on TBD (UTC).
 - Added Bybit mark price subscriptions support
 - Added Bybit index price subscriptions support
 - Added Databento bulk subscription and historical request support (#3490), thanks @shzhng
+- Added Databento support for conversion of OPRA venues (#3605), thanks @faysou
 - Added Interactive Brokers subscribe index price functionality (#3514), thanks @Murph24
 - Added Interactive Brokers `TotalCashValue` to account summary `info` dict, exposing actual cash balance (#3567), thanks @shzhng
 - Added Interactive Brokers `request_timeout_secs` config to `InteractiveBrokersExecClientConfig` and consolidated all IB request timeouts into a single configurable value (#3602), thanks @shzhng
@@ -206,6 +207,8 @@ Released on TBD (UTC).
 - Improved Deribit with high-performance `Decimal` deserialization (#3510), thanks @filipmacek
 - Improved precision-mode validation for Arrow data (#3511), thanks for reporting @2-5
 - Improved dYdX v4 data client subscription handling (#3537), thanks @filipmacek
+- Improved dYdX v4 rate limiting and cancel strategy (#3606), thanks @filipmacek
+- Improved dYdX v4 docs and grid market making tutorial (#3607)
 - Refined closing of streaming writer (#3394), thanks @faysou
 - Refined handling of `skip_first_non_full_bar` in `TimeBarAggregator` (#3395), thanks @faysou
 - Refined greeks safeguards and docs (#3407), thanks @faysou
