@@ -40,7 +40,7 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use dashmap::{DashMap, mapref::entry::Entry};
+use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_model::identifiers::ClientOrderId;
 use thiserror::Error;
 
@@ -118,6 +118,11 @@ pub struct ClientOrderIdEncoder {
     reverse: DashMap<(u32, u32), ClientOrderId>,
     /// Next ID to allocate for sequential fallback (starts at 1, never 0)
     next_id: AtomicU32,
+
+    /// Client IDs seen during reconciliation from previous sessions.
+    /// Used to detect collisions when a new O-format encoding produces
+    /// a client_id that was already used by a prior session's order.
+    known_client_ids: DashSet<u32>,
 }
 
 impl Default for ClientOrderIdEncoder {
@@ -134,7 +139,17 @@ impl ClientOrderIdEncoder {
             forward: DashMap::new(),
             reverse: DashMap::new(),
             next_id: AtomicU32::new(1),
+            known_client_ids: DashSet::new(),
         }
+    }
+
+    /// Registers a client_id observed during order reconciliation.
+    ///
+    /// This prevents the encoder from producing a new order with the same
+    /// client_id, which would generate an identical venue order UUID and
+    /// cause overfill/collision errors.
+    pub fn register_known_client_id(&self, client_id: u32) {
+        self.known_client_ids.insert(client_id);
     }
 
     /// Encodes a ClientOrderId to (client_id, client_metadata) pair.
@@ -176,10 +191,21 @@ impl ClientOrderIdEncoder {
         if id_str.starts_with("O-") {
             match self.encode_o_format(id_str) {
                 Ok(encoded) => {
-                    // Cache for reverse lookup so decode_if_known can verify
-                    self.reverse
-                        .insert((encoded.client_id, encoded.client_metadata), id);
-                    return Ok(encoded);
+                    // Check if this client_id was used by a previous session's order.
+                    // On restart the counter may reuse a count value, producing the
+                    // same client_id → same venue UUID → overfill corruption.
+                    if self.known_client_ids.contains(&encoded.client_id) {
+                        log::warn!(
+                            "[ENCODER] client_id {} for '{id}' collides with \
+                             reconciled order, falling back to sequential",
+                            encoded.client_id,
+                        );
+                    } else {
+                        // Cache for reverse lookup so decode_if_known can verify
+                        self.reverse
+                            .insert((encoded.client_id, encoded.client_metadata), id);
+                        return Ok(encoded);
+                    }
                 }
                 Err(e) => {
                     log::warn!(
@@ -194,14 +220,6 @@ impl ClientOrderIdEncoder {
         self.allocate_sequential(id)
     }
 
-    /// Encodes an O-format ClientOrderId deterministically.
-    ///
-    /// Format: `O-YYYYMMDD-HHMMSS-TTT-SSS-CCC`
-    /// - YYYYMMDD: Date
-    /// - HHMMSS: Time
-    /// - TTT: Trader tag (001-999)
-    /// - SSS: Strategy tag (001-999)
-    /// - CCC: Count (1-4095)
     fn encode_o_format(&self, id_str: &str) -> Result<EncodedClientOrderId, EncoderError> {
         // Parse: O-YYYYMMDD-HHMMSS-TTT-SSS-CCC
         let parts: Vec<&str> = id_str.split('-').collect();
@@ -303,7 +321,6 @@ impl ClientOrderIdEncoder {
         })
     }
 
-    /// Allocates a sequential ID for non-standard formats.
     fn allocate_sequential(&self, id: ClientOrderId) -> Result<EncodedClientOrderId, EncoderError> {
         // Check for overflow before allocating
         let current = self.next_id.load(Ordering::Relaxed);
@@ -321,7 +338,16 @@ impl ClientOrderIdEncoder {
                 Ok(encoded)
             }
             Entry::Vacant(vacant) => {
-                let counter = self.next_id.fetch_add(1, Ordering::Relaxed);
+                // Allocate a counter value, skipping any that collide with
+                // reconciled orders from previous sessions
+                let mut counter = self.next_id.fetch_add(1, Ordering::Relaxed);
+                while self.known_client_ids.contains(&counter) {
+                    counter = self.next_id.fetch_add(1, Ordering::Relaxed);
+                }
+                if counter >= MAX_SAFE_CLIENT_ID {
+                    return Err(EncoderError::CounterOverflow(counter));
+                }
+
                 // Use counter as client_id (unique per order, for dYdX identity)
                 // Use SEQUENTIAL_METADATA_MARKER in client_metadata to identify as sequential
                 let encoded = EncodedClientOrderId {
@@ -391,11 +417,6 @@ impl ClientOrderIdEncoder {
         self.decode_o_format(client_id, client_metadata)
     }
 
-    /// Decodes O-format encoded values back to ClientOrderId string.
-    ///
-    /// Encoding scheme (swapped for uniqueness):
-    /// - client_id: [trader:10][strategy:10][count:12] - unique per order
-    /// - client_metadata: timestamp (seconds since epoch)
     fn decode_o_format(&self, client_id: u32, client_metadata: u32) -> Option<ClientOrderId> {
         // Extract identity components from client_id (unique part)
         let trader = (client_id >> TRADER_SHIFT) & TRADER_MASK;
@@ -827,5 +848,63 @@ mod tests {
 
         encoder.encode(ClientOrderId::from("custom")).unwrap();
         assert!(!encoder.is_empty());
+    }
+
+    #[rstest]
+    fn test_o_format_collision_falls_back_to_sequential() {
+        let encoder = ClientOrderIdEncoder::new();
+        let id = ClientOrderId::from("O-20260220-031943-001-000-51");
+
+        // Compute the expected O-format client_id: (1 << 22) | (0 << 12) | 51
+        let colliding_client_id = (1 << TRADER_SHIFT) | (0 << STRATEGY_SHIFT) | 51;
+
+        encoder.register_known_client_id(colliding_client_id);
+        let encoded = encoder.encode(id).unwrap();
+        assert_eq!(
+            encoded.client_metadata, SEQUENTIAL_METADATA_MARKER,
+            "Collision should fall back to sequential allocation"
+        );
+        assert_ne!(encoded.client_id, colliding_client_id);
+
+        // The original O-format still round-trips via decode (deterministic)
+        let decoded = encoder.decode_o_format(colliding_client_id, {
+            let dt = chrono::NaiveDate::from_ymd_opt(2026, 2, 20)
+                .unwrap()
+                .and_hms_opt(3, 19, 43)
+                .unwrap()
+                .and_utc()
+                .timestamp();
+            (dt - DYDX_BASE_EPOCH) as u32
+        });
+        assert_eq!(decoded, Some(id));
+    }
+
+    #[rstest]
+    fn test_sequential_skips_known_client_ids() {
+        let encoder = ClientOrderIdEncoder::new();
+
+        encoder.register_known_client_id(1);
+        encoder.register_known_client_id(2);
+
+        let encoded = encoder.encode(ClientOrderId::from("custom-order")).unwrap();
+        assert_eq!(encoded.client_id, 3);
+        assert_eq!(encoded.client_metadata, SEQUENTIAL_METADATA_MARKER);
+    }
+
+    #[rstest]
+    fn test_sequential_overflow_after_skipping_known_ids() {
+        let encoder = ClientOrderIdEncoder::new();
+
+        let near_limit = MAX_SAFE_CLIENT_ID - 1;
+        encoder.next_id.store(near_limit, Ordering::Relaxed);
+
+        // Register the near-limit value so the skip loop pushes past the threshold
+        encoder.register_known_client_id(near_limit);
+
+        let result = encoder.encode(ClientOrderId::from("overflow-order"));
+        assert!(
+            matches!(result, Err(EncoderError::CounterOverflow(_))),
+            "Expected CounterOverflow after skipping past MAX_SAFE_CLIENT_ID"
+        );
     }
 }

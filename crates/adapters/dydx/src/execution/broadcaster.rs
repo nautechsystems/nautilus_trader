@@ -50,15 +50,15 @@ use crate::{error::DydxError, grpc::DydxGrpcClient};
 /// Maximum retries for sequence mismatch errors.
 pub const MAX_SEQUENCE_RETRIES: u32 = 5;
 
-/// Initial delay between retries in milliseconds.
-/// Exponential backoff will increase this: 500 → 1000 → 2000 → 4000ms
+// Initial delay between retries in milliseconds.
+// Exponential backoff will increase this: 500 → 1000 → 2000 → 4000ms
 const INITIAL_RETRY_DELAY_MS: u64 = 500;
 
-/// Maximum delay between retries in milliseconds.
+// Maximum delay between retries in milliseconds
 const MAX_RETRY_DELAY_MS: u64 = 4_000;
 
-/// Maximum total time for all retries in milliseconds (10 seconds).
-/// Prevents indefinite retry loops during chain congestion.
+// Maximum total time for all retries in milliseconds (10 seconds).
+// Prevents indefinite retry loops during chain congestion.
 const MAX_ELAPSED_MS: u64 = 10_000;
 
 /// Creates a retry manager configured for blockchain transaction broadcasting.
@@ -82,6 +82,9 @@ pub fn create_tx_retry_manager() -> RetryManager<DydxError> {
     };
     RetryManager::new(config)
 }
+
+// Rate limiter key for gRPC broadcast calls
+const GRPC_RATE_LIMIT_KEY: &str = "grpc";
 
 /// Transaction broadcaster responsible for gRPC transmission with retry logic.
 ///
@@ -110,9 +113,6 @@ pub fn create_tx_retry_manager() -> RetryManager<DydxError> {
 /// - No semaphore needed (fully concurrent)
 /// - Cached sequence used (no increment, no allocation)
 /// - No sequence-based retry logic needed
-///   Rate limiter key for gRPC broadcast calls.
-const GRPC_RATE_LIMIT_KEY: &str = "grpc";
-
 #[derive(Debug)]
 pub struct TxBroadcaster {
     /// gRPC client for broadcasting transactions.
@@ -123,7 +123,7 @@ pub struct TxBroadcaster {
     /// Ensures sequence allocation → build → broadcast are atomic.
     broadcast_semaphore: Arc<tokio::sync::Semaphore>,
     /// Rate limiter for gRPC broadcast calls.
-    rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+    rate_limiter: Arc<RateLimiter<&'static str, MonotonicClock>>,
 }
 
 impl TxBroadcaster {
@@ -139,10 +139,9 @@ impl TxBroadcaster {
         }
     }
 
-    /// Waits for the gRPC rate limiter to allow a request.
     async fn wait_for_rate_limit(&self) {
         self.rate_limiter
-            .until_key_ready(&GRPC_RATE_LIMIT_KEY.to_string())
+            .until_key_ready(&GRPC_RATE_LIMIT_KEY)
             .await;
     }
 
@@ -212,9 +211,7 @@ impl TxBroadcaster {
                 let prepared = tx_manager.prepare_transaction(msgs, &op_name).await?;
 
                 // Wait for rate limiter before gRPC call
-                rate_limiter
-                    .until_key_ready(&GRPC_RATE_LIMIT_KEY.to_string())
-                    .await;
+                rate_limiter.until_key_ready(&GRPC_RATE_LIMIT_KEY).await;
 
                 // Broadcast
                 let mut grpc = grpc_client;

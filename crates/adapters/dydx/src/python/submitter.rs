@@ -20,7 +20,10 @@
 use std::{num::NonZeroU32, str::FromStr, sync::Arc};
 
 use chrono::Utc;
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::{
+    UnixNanos,
+    python::{to_pyruntime_err, to_pyvalue_err},
+};
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::InstrumentId,
@@ -498,7 +501,7 @@ impl PyDydxOrderSubmitter {
         let time_in_force = time_in_force
             .and_then(|tif| TimeInForce::from_repr(tif as usize))
             .unwrap_or(TimeInForce::Gtc);
-        let expire_time_ns = expire_time_ns.map(nautilus_core::UnixNanos::from);
+        let expire_time_ns = expire_time_ns.map(UnixNanos::from);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tx_hash = submitter
@@ -525,18 +528,13 @@ impl PyDydxOrderSubmitter {
         orders: Vec<(String, u32, Option<i64>, Option<u64>)>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
-        let orders: Vec<(
-            InstrumentId,
-            u32,
-            TimeInForce,
-            Option<nautilus_core::UnixNanos>,
-        )> = orders
+        let orders: Vec<(InstrumentId, u32, TimeInForce, Option<UnixNanos>)> = orders
             .into_iter()
             .map(|(id, client_id, tif, expire_ns)| {
                 let tif = tif
                     .and_then(|t| TimeInForce::from_repr(t as usize))
                     .unwrap_or(TimeInForce::Gtc);
-                let expire_ns = expire_ns.map(nautilus_core::UnixNanos::from);
+                let expire_ns = expire_ns.map(UnixNanos::from);
                 (InstrumentId::from(id), client_id, tif, expire_ns)
             })
             .collect();

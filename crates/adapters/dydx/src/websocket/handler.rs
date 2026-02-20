@@ -31,7 +31,10 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_core::{
+    UnixNanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::{
     data::{
         Bar, BarType, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
@@ -124,6 +127,8 @@ pub struct FeedHandler {
     pending_bars: AHashMap<String, Bar>,
     /// Whether to timestamp bars at close time (open + interval).
     bars_timestamp_on_close: bool,
+    /// High-resolution clock for timestamps.
+    clock: &'static AtomicTime,
 }
 
 impl Debug for FeedHandler {
@@ -166,12 +171,14 @@ impl FeedHandler {
             book_sequence: AHashMap::new(),
             pending_bars: AHashMap::new(),
             bars_timestamp_on_close,
+            clock: get_atomic_clock_realtime(),
         }
     }
 
-    /// Sends a WebSocket message with retry logic.
-    ///
-    /// Uses the configured [`RetryManager`] to handle transient failures.
+    fn generate_ts_init(&self) -> UnixNanos {
+        self.clock.get_time_ns()
+    }
+
     async fn send_with_retry(
         &self,
         payload: String,
@@ -251,7 +258,6 @@ impl FeedHandler {
         }
     }
 
-    /// Processes a raw WebSocket message.
     async fn process_raw_message(&mut self, msg: Message) -> Vec<NautilusWsMessage> {
         match msg {
             Message::Text(txt) => {
@@ -356,7 +362,6 @@ impl FeedHandler {
         }
     }
 
-    /// Handles a parsed dYdX WebSocket message.
     async fn handle_dydx_message(&mut self, msg: DydxWsMessage) -> Vec<NautilusWsMessage> {
         match self.handle_message(msg).await {
             Ok(msgs) => msgs,
@@ -367,7 +372,6 @@ impl FeedHandler {
         }
     }
 
-    /// Dispatches feed messages directly to typed handlers.
     fn handle_feed_message(&mut self, feed_msg: DydxWsFeedMessage) -> Vec<NautilusWsMessage> {
         log::trace!(
             "Handling feed message: {:?}",
@@ -384,7 +388,6 @@ impl FeedHandler {
         }
     }
 
-    /// Handles subaccounts channel messages.
     fn handle_subaccounts(&self, msg: DydxWsSubaccountsMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsSubaccountsMessage::Subscribed(data) => {
@@ -404,7 +407,6 @@ impl FeedHandler {
         }
     }
 
-    /// Handles orderbook channel messages.
     fn handle_orderbook(&mut self, msg: DydxWsOrderbookMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsOrderbookMessage::Subscribed(data) => {
@@ -455,7 +457,6 @@ impl FeedHandler {
         }
     }
 
-    /// Handles trades channel messages.
     fn handle_trades(&self, msg: DydxWsTradesMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsTradesMessage::Subscribed(data) => {
@@ -472,7 +473,6 @@ impl FeedHandler {
         }
     }
 
-    /// Handles markets channel messages.
     fn handle_markets_feed(&self, msg: DydxWsMarketsMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsMarketsMessage::Subscribed(data) => {
@@ -489,10 +489,6 @@ impl FeedHandler {
         }
     }
 
-    /// Handles candles channel messages.
-    ///
-    /// Subscribed contents is `{"candles": [...]}` (array wrapper), while
-    /// channel_data contents is a single candle object.
     fn handle_candles_feed(&mut self, msg: DydxWsCandlesMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsCandlesMessage::Subscribed(data) => {
@@ -509,7 +505,6 @@ impl FeedHandler {
         }
     }
 
-    /// Handles parent subaccounts channel messages.
     fn handle_parent_subaccounts(
         &self,
         msg: DydxWsParentSubaccountsMessage,
@@ -531,7 +526,6 @@ impl FeedHandler {
         }
     }
 
-    /// Handles block height channel messages.
     fn handle_block_height_feed(&self, msg: DydxWsBlockHeightMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsBlockHeightMessage::Subscribed(data) => {
@@ -569,7 +563,6 @@ impl FeedHandler {
         }
     }
 
-    /// Processes subaccounts subscribed message.
     fn process_subaccounts_subscribed(
         &self,
         msg: &DydxWsSubaccountsSubscribed,
@@ -580,7 +573,6 @@ impl FeedHandler {
         ))]
     }
 
-    /// Processes subaccounts channel data directly.
     fn process_subaccounts_channel_data(
         &self,
         data: DydxWsSubaccountsChannelData,
@@ -600,7 +592,6 @@ impl FeedHandler {
         }
     }
 
-    /// Parses trades from channel data message.
     fn parse_trades_from_data(&self, data: &DydxWsChannelDataMsg) -> Vec<NautilusWsMessage> {
         match self.parse_trades(data) {
             Ok(msgs) => msgs,
@@ -611,7 +602,6 @@ impl FeedHandler {
         }
     }
 
-    /// Parses orderbook from channel data message.
     fn parse_orderbook_from_data(
         &mut self,
         data: &DydxWsChannelDataMsg,
@@ -626,7 +616,6 @@ impl FeedHandler {
         }
     }
 
-    /// Parses orderbook batch from batch data message.
     fn parse_orderbook_batch_from_data(
         &mut self,
         data: &DydxWsChannelBatchDataMsg,
@@ -640,7 +629,6 @@ impl FeedHandler {
         }
     }
 
-    /// Parses markets from channel data message.
     fn parse_markets_from_data(&self, data: &DydxWsChannelDataMsg) -> Vec<NautilusWsMessage> {
         match self.parse_markets(data) {
             Ok(msgs) => msgs,
@@ -651,7 +639,6 @@ impl FeedHandler {
         }
     }
 
-    /// Parses candles from channel data message (single candle object).
     fn parse_candles_from_data(&mut self, data: &DydxWsChannelDataMsg) -> Vec<NautilusWsMessage> {
         match self.parse_candles(data) {
             Ok(msgs) => msgs,
@@ -662,7 +649,6 @@ impl FeedHandler {
         }
     }
 
-    /// Parses parent subaccounts from channel data message.
     fn parse_parent_subaccounts_from_data(
         &self,
         data: &DydxWsChannelDataMsg,
@@ -676,7 +662,6 @@ impl FeedHandler {
         }
     }
 
-    /// Handles a command to update the internal state.
     async fn handle_command(&mut self, command: HandlerCommand) {
         match command {
             HandlerCommand::UpdateInstrument(instrument) => {
@@ -745,10 +730,6 @@ impl FeedHandler {
         }
     }
 
-    /// Clears transient state on reconnect.
-    ///
-    /// Preserves `instruments`, `bar_types`, and `subscription_messages` which are
-    /// needed for replay and parsing after reconnect.
     fn clear_state(&mut self) {
         let buffer_count = self.message_buffer.len();
         let seq_count = self.book_sequence.len();
@@ -845,7 +826,7 @@ impl FeedHandler {
         let contents: DydxTradeContents = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse trade contents: {e}")))?;
 
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.generate_ts_init();
         let ticks = ws_parse::parse_trade_ticks(instrument_id, instrument, &contents, ts_init)?;
 
         if ticks.is_empty() {
@@ -870,7 +851,7 @@ impl FeedHandler {
         let price_prec = instrument.price_precision();
         let size_prec = instrument.size_precision();
 
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.generate_ts_init();
 
         if is_snapshot {
             let contents: DydxOrderbookSnapshotContents =
@@ -922,7 +903,7 @@ impl FeedHandler {
         let contents: Vec<DydxOrderbookContents> = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse orderbook batch: {e}")))?;
 
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.generate_ts_init();
         let mut all_deltas = Vec::new();
 
         let num_messages = contents.len();
@@ -962,7 +943,7 @@ impl FeedHandler {
         let instrument_id = self.parse_instrument_id(&candle.ticker)?;
         let instrument = self.get_instrument(&instrument_id)?;
 
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.generate_ts_init();
         let bar = ws_parse::parse_candle_bar(
             bar_type,
             instrument,
@@ -996,7 +977,7 @@ impl FeedHandler {
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse markets contents: {e}")))?;
 
         let mut messages = Vec::new();
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.generate_ts_init();
 
         // Parse oracle prices → MarkPriceUpdate + IndexPriceUpdate
         if let Some(oracle_prices) = &contents.oracle_prices {

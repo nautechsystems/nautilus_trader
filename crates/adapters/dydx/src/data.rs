@@ -69,6 +69,7 @@ use crate::{
 
 /// Groups WebSocket message handling dependencies.
 struct WsMessageContext {
+    clock: &'static AtomicTime,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instrument_cache: Arc<InstrumentCache>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
@@ -208,9 +209,6 @@ impl DydxDataClient {
         self.is_connected.load(Ordering::Relaxed)
     }
 
-    /// Spawns an async WebSocket task with error handling.
-    ///
-    /// This helper ensures consistent error logging across all subscription methods.
     fn spawn_ws<F>(&self, fut: F, context: &'static str)
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
@@ -222,7 +220,6 @@ impl DydxDataClient {
         });
     }
 
-    /// Spawns a stream handler to dispatch WebSocket messages to the data engine.
     fn spawn_ws_stream_handler(
         &mut self,
         stream: impl Stream<Item = NautilusWsMessage> + Send + 'static,
@@ -257,31 +254,12 @@ impl DydxDataClient {
         self.tasks.push(handle);
     }
 
-    /// Awaits all background tasks with a timeout for graceful shutdown.
-    ///
-    /// This ensures tasks are given a chance to complete cleanly after cancellation
-    /// rather than being abruptly dropped. Tasks that don't complete within the
-    /// timeout are allowed to continue running (will be cleaned up by tokio).
     async fn await_tasks_with_timeout(&mut self, timeout: Duration) {
         for handle in self.tasks.drain(..) {
             let _ = tokio::time::timeout(timeout, handle).await;
         }
     }
 
-    /// Bootstrap instruments from the dYdX Indexer API.
-    ///
-    /// This method:
-    /// 1. Fetches all available instruments from the REST API
-    /// 2. Caches them in the HTTP client
-    /// 3. Caches them in the WebSocket client (if present)
-    /// 4. Populates the local instruments cache
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The HTTP request fails.
-    /// - Instrument parsing fails.
-    ///
     async fn bootstrap_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
         // Fetch instruments via HTTP - this populates the shared InstrumentCache
         self.http_client
@@ -381,6 +359,7 @@ impl DataClient for DydxDataClient {
 
         // Start message processing task (handler already converts to NautilusWsMessage)
         let ctx = WsMessageContext {
+            clock: self.clock,
             data_sender: self.data_sender.clone(),
             instrument_cache: self.instrument_cache.clone(),
             order_books: self.order_books.clone(),
@@ -1000,7 +979,12 @@ impl DydxDataClient {
     fn handle_ws_message(message: NautilusWsMessage, ctx: &WsMessageContext) {
         match message {
             NautilusWsMessage::Data(payloads) => {
-                Self::handle_data_message(payloads, &ctx.data_sender, &ctx.incomplete_bars);
+                Self::handle_data_message(
+                    payloads,
+                    &ctx.data_sender,
+                    &ctx.incomplete_bars,
+                    ctx.clock,
+                );
             }
             NautilusWsMessage::Deltas(deltas) => {
                 Self::handle_deltas_message(
@@ -1203,29 +1187,25 @@ impl DydxDataClient {
         payloads: Vec<NautilusData>,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
         incomplete_bars: &Arc<DashMap<BarType, Bar>>,
+        clock: &'static AtomicTime,
     ) {
         for data in payloads {
             // Filter bars through incomplete bars cache
             if let NautilusData::Bar(bar) = data {
-                Self::handle_bar_message(bar, data_sender, incomplete_bars);
+                Self::handle_bar_message(bar, data_sender, incomplete_bars, clock);
             } else if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                 log::error!("Failed to emit data event: {e}");
             }
         }
     }
 
-    /// Handles bar messages by tracking incomplete bars and only emitting completed ones.
-    ///
-    /// WebSocket candle updates arrive continuously. This method:
-    /// - Caches bars where ts_event > current_time (incomplete)
-    /// - Emits bars where ts_event <= current_time (complete)
-    /// - Updates cached incomplete bars with latest data
     fn handle_bar_message(
         bar: Bar,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
         incomplete_bars: &Arc<DashMap<BarType, Bar>>,
+        clock: &'static AtomicTime,
     ) {
-        let current_time_ns = get_atomic_clock_realtime().get_time_ns();
+        let current_time_ns = clock.get_time_ns();
         let bar_type = bar.bar_type;
 
         if bar.ts_event <= current_time_ns {
@@ -1246,23 +1226,6 @@ impl DydxDataClient {
         }
     }
 
-    /// Resolves a crossed order book by generating synthetic deltas to uncross it.
-    ///
-    /// dYdX order books can become crossed due to:
-    /// - Validator delays in order acknowledgment across the network
-    /// - Missed or delayed WebSocket messages from the venue
-    ///
-    /// This function detects when bid_price >= ask_price and iteratively removes
-    /// the smaller side while adjusting the larger side until the book is uncrossed.
-    ///
-    /// # Algorithm
-    ///
-    /// For each crossed level:
-    /// - If bid_size > ask_size: DELETE ask, UPDATE bid (reduce by ask_size)
-    /// - If bid_size < ask_size: DELETE bid, UPDATE ask (reduce by bid_size)
-    /// - If bid_size == ask_size: DELETE both bid and ask
-    ///
-    /// The algorithm continues until no more crosses exist or the book is empty.
     fn resolve_crossed_order_book(
         book: &mut OrderBook,
         venue_deltas: OrderBookDeltas,

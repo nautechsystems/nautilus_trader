@@ -169,12 +169,17 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 
 ### Position management
 
-| Feature         | Perpetuals | Notes                         |
-|-----------------|------------|-------------------------------|
-| Query positions | ✓          | Real-time position updates.   |
-| Position mode   | -          | Net position mode only.       |
-| Leverage control| ✓          | Per-market leverage settings. |
-| Margin mode     | -          | Cross margin only.            |
+| Feature          | Perpetuals | Notes                         |
+|------------------|------------|-------------------------------|
+| Query positions  | ✓          | Real-time position updates.   |
+| Position mode    | -          | Netting only (see below).     |
+| Leverage control | ✓          | Per-market leverage settings. |
+| Margin mode      | -          | Cross margin only.            |
+
+:::note
+dYdX v4 supports netting (one position per instrument) at the venue level. The adapter currently
+operates in `NETTING` mode only. Hedging support is planned for a future version.
+:::
 
 ### Order querying
 
@@ -215,6 +220,42 @@ expected before the fill).
 See the [dYdX v4 order documentation](https://docs.dydx.exchange/api_integration-trading/short_term_vs_stateful)
 for full protocol-level details on short-term vs stateful order mechanics.
 
+### Client order ID encoding
+
+dYdX requires `u32` client IDs on-chain, but Nautilus uses string-based `ClientOrderId` values
+(e.g., `O-20260220-031943-001-000-51`). The adapter encodes these bidirectionally so that orders
+can be reconciled across restarts without persisted state.
+
+For the standard O-format (`O-YYYYMMDD-HHMMSS-TTT-SSS-CCC`), the encoding is deterministic:
+
+| dYdX field        | Bits | Contents                                          |
+|-------------------|------|---------------------------------------------------|
+| `client_id`       | 32   | `[trader:10][strategy:10][count:12]` (unique key).  |
+| `client_metadata` | 32   | Seconds since 2020-01-01 UTC (timestamp).           |
+
+Because the encoding is deterministic, the adapter can decode any reconciled order back to its
+original `ClientOrderId` string without needing a database or mapping file.
+
+Non-standard `ClientOrderId` formats (custom strings, plain numbers) fall back to sequential
+allocation with an in-memory reverse map. These IDs can only be decoded within the same session.
+
+#### Restart collision prevention
+
+On restart, Nautilus resets the internal order counter based on the number of reconciled orders,
+which may be lower than the highest counter value used in the previous session (e.g., if some
+orders have expired from the API response). This can cause a new order to produce the same
+`client_id` as a previous session's order, resulting in a duplicate venue order UUID.
+
+The adapter prevents this by registering every `client_id` seen during reconciliation. If a new
+O-format encoding produces a `client_id` that was already used, the encoder logs a warning and
+falls back to sequential allocation. Sequential allocation also skips any registered values.
+
+:::note
+This protection is automatic and requires no user configuration. The warning log
+`[ENCODER] client_id ... collides with reconciled order` is informational. The order will
+still be submitted successfully with an alternative ID.
+:::
+
 ## Data subscriptions
 
 The v4 adapter supports the following data subscriptions:
@@ -249,8 +290,8 @@ and risk management within a single wallet.
 
 ### Key concepts
 
-- Each wallet address can have multiple numbered subaccounts (0, 1, 2, ..., 127)
-- Subaccount 0 is the **default** and is automatically created on first deposit
+- Each wallet address can have multiple numbered subaccounts (0, 1, 2, ..., 127).
+- Subaccount 0 is the **default** and is automatically created on first deposit.
 - Each subaccount maintains its own:
   - Positions
   - Open orders
@@ -384,19 +425,20 @@ clients support environment variable fallbacks for credentials and network-speci
 
 ### Execution client configuration options
 
-| Option                   | Default | Description                                                                           |
-|--------------------------|---------|---------------------------------------------------------------------------------------|
-| `wallet_address`         | `None`  | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var. |
-| `subaccount`             | `0`     | Subaccount number (0-127). Subaccount 0 is the default.                               |
-| `private_key`            | `None`  | Hex-encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY` env var. |
-| `authenticator_ids`      | `None`  | List of authenticator IDs for permissioned key trading (institutional setups).        |
-| `is_testnet`             | `False` | Connect to dYdX testnet when `True`.                                                  |
-| `base_url_http`          | `None`  | HTTP client custom endpoint override.                                                 |
-| `base_url_ws`            | `None`  | WebSocket client custom endpoint override.                                            |
-| `base_url_grpc`          | `None`  | gRPC client custom endpoint override. Supports fallback with multiple URLs.           |
-| `max_retries`            | `3`     | Maximum retry attempts for order operations.                                          |
-| `retry_delay_initial_ms` | `1000`  | Initial delay (milliseconds) between retries.                                         |
-| `retry_delay_max_ms`     | `10000` | Maximum delay (milliseconds) between retries.                                         |
+| Option                         | Default | Description                                                                                        |
+|--------------------------------|---------|----------------------------------------------------------------------------------------------------|
+| `wallet_address`               | `None`  | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var. |
+| `subaccount`                   | `0`     | Subaccount number (0-127). Subaccount 0 is the default.                                            |
+| `private_key`                  | `None`  | Hex-encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY` env var. |
+| `authenticator_ids`            | `None`  | List of authenticator IDs for permissioned key trading (institutional setups).                      |
+| `is_testnet`                   | `False` | Connect to dYdX testnet when `True`.                                                               |
+| `base_url_http`                | `None`  | HTTP client custom endpoint override.                                                              |
+| `base_url_ws`                  | `None`  | WebSocket client custom endpoint override.                                                         |
+| `base_url_grpc`                | `None`  | gRPC client custom endpoint override. Supports fallback with multiple URLs.                        |
+| `max_retries`                  | `3`     | Maximum retry attempts for order operations.                                                       |
+| `retry_delay_initial_ms`       | `1000`  | Initial delay (milliseconds) between retries.                                                      |
+| `retry_delay_max_ms`           | `10000` | Maximum delay (milliseconds) between retries.                                                      |
+| `grpc_rate_limit_per_second`   | `4`     | Maximum gRPC requests per second. Set to `None` to disable.                                        |
 
 ### Basic setup
 

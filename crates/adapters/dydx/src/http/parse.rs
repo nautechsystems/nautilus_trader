@@ -971,7 +971,7 @@ use std::str::FromStr;
 use nautilus_core::UUID4;
 use nautilus_model::{
     enums::{LiquiditySide, OrderStatus, PositionSide, TriggerType},
-    identifiers::{AccountId, ClientOrderId, PositionId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, VenueOrderId},
     instruments::Instrument,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::Money,
@@ -1171,11 +1171,6 @@ pub fn parse_position_status_report(
     let avg_px_open = position.entry_price;
     let ts_last = UnixNanos::from(position.created_at.timestamp_millis() as u64 * 1_000_000);
 
-    let venue_position_id = Some(PositionId::new(format!(
-        "{}_{}",
-        account_id, position.market
-    )));
-
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
@@ -1184,7 +1179,7 @@ pub fn parse_position_status_report(
         ts_last,
         ts_init,
         Some(UUID4::new()),
-        venue_position_id,
+        None, // venue_position_id: None for NETTING mode
         Some(avg_px_open),
     ))
 }

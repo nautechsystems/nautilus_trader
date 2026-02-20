@@ -24,15 +24,15 @@ use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{UUID4, python::to_pyvalue_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::BarType,
+    data::{BarType, Data, OrderBookDeltas_API},
     enums::AccountType,
     events::AccountState,
     identifiers::{AccountId, InstrumentId},
-    python::instruments::pyobject_to_instrument_any,
+    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
     types::{AccountBalance, Currency, Money},
 };
 use nautilus_network::mode::ConnectionMode;
-use pyo3::{IntoPyObjectExt, prelude::*};
+use pyo3::{IntoPyObjectExt, prelude::*, types::PyDict};
 
 use crate::{
     common::{credential::DydxCredential, enums::DydxCandleResolution, parse::extract_raw_symbol},
@@ -138,6 +138,7 @@ impl DydxWebSocketClient {
                 // Spawn task to process messages and call Python callback
                 get_runtime().spawn(async move {
                     let _client = client; // Keep client alive in spawned task
+                    let clock = get_atomic_clock_realtime();
                     let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
                     let order_id_map: DashMap<String, (u32, u32)> = DashMap::new();
 
@@ -146,7 +147,6 @@ impl DydxWebSocketClient {
                             NautilusWsMessage::Data(items) => {
                                 Python::attach(|py| {
                                     for data in items {
-                                        use nautilus_model::python::data::data_to_pycapsule;
                                         let py_obj = data_to_pycapsule(py, data);
                                         if let Err(e) = callback.call1(py, (py_obj,)) {
                                             log::error!("Error calling Python callback: {e}");
@@ -156,10 +156,6 @@ impl DydxWebSocketClient {
                             }
                             NautilusWsMessage::Deltas(deltas) => {
                                 Python::attach(|py| {
-                                    use nautilus_model::{
-                                        data::{Data, OrderBookDeltas_API},
-                                        python::data::data_to_pycapsule,
-                                    };
                                     let data = Data::Deltas(OrderBookDeltas_API::new(*deltas));
                                     let py_obj = data_to_pycapsule(py, data);
                                     if let Err(e) = callback.call1(py, (py_obj,)) {
@@ -169,7 +165,6 @@ impl DydxWebSocketClient {
                             }
                             NautilusWsMessage::BlockHeight { height, time } => {
                                 Python::attach(|py| {
-                                    use pyo3::types::PyDict;
                                     let dict = PyDict::new(py);
                                     let _ = dict.set_item("type", "block_height");
                                     let _ = dict.set_item("height", height);
@@ -187,7 +182,7 @@ impl DydxWebSocketClient {
                                 };
 
                                 let instrument_cache = _client.instrument_cache();
-                                let ts_init = get_atomic_clock_realtime().get_time_ns();
+                                let ts_init = clock.get_time_ns();
 
                                 // Build maps from instrument cache
                                 let inst_map = instrument_cache.to_instrument_id_map();
@@ -282,7 +277,7 @@ impl DydxWebSocketClient {
 
                                 let instrument_cache = _client.instrument_cache();
                                 let encoder = _client.encoder();
-                                let ts_init = get_atomic_clock_realtime().get_time_ns();
+                                let ts_init = clock.get_time_ns();
 
                                 let mut terminal_orders: Vec<(u32, u32, String)> = Vec::new();
 
@@ -470,7 +465,6 @@ impl DydxWebSocketClient {
                             NautilusWsMessage::NewInstrumentDiscovered { ticker } => {
                                 log::info!("New instrument discovered via WebSocket: {ticker}");
                                 Python::attach(|py| {
-                                    use pyo3::types::PyDict;
                                     let dict = PyDict::new(py);
                                     let _ = dict.set_item("type", "new_instrument_discovered");
                                     let _ = dict.set_item("ticker", &ticker);

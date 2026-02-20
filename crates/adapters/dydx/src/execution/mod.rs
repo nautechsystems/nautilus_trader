@@ -270,9 +270,6 @@ impl DydxExecutionClient {
         })
     }
 
-    /// Resolves private key from config or environment.
-    ///
-    /// Priority: 1. config private_key, 2. env DYDX_PRIVATE_KEY
     fn resolve_private_key(config: &DydxAdapterConfig) -> anyhow::Result<String> {
         let private_key_env = if config.is_testnet {
             "DYDX_TESTNET_PRIVATE_KEY"
@@ -298,28 +295,20 @@ impl DydxExecutionClient {
         anyhow::bail!("{private_key_env} not found in config or environment")
     }
 
-    /// Registers a full order context for WebSocket correlation and cancellation.
     fn register_order_context(&self, client_id_u32: u32, context: OrderContext) {
         self.order_contexts.insert(client_id_u32, context);
     }
 
-    /// Gets the order context for a given dYdX client ID.
-    ///
-    /// Returns `None` if no context has been registered for this ID.
     fn get_order_context(&self, client_id_u32: u32) -> Option<OrderContext> {
         self.order_contexts
             .get(&client_id_u32)
             .map(|r| r.value().clone())
     }
 
-    /// Get chain ID from config network field.
-    ///
-    /// This is the recommended way to get chain_id for all transaction submissions.
     fn get_chain_id(&self) -> ChainId {
         self.config.get_chain_id()
     }
 
-    /// Spawns a stream handler to dispatch WebSocket messages to the execution engine.
     fn spawn_ws_stream_handler(
         &mut self,
         stream: impl Stream<Item = NautilusWsMessage> + Send + 'static,
@@ -2309,17 +2298,21 @@ impl ExecutionClient for DydxExecutionClient {
 
         if !order.client_id.is_empty()
             && let Ok(client_id_u32) = order.client_id.parse::<u32>()
-            && let Some(decoded) = self
+        {
+            self.encoder.register_known_client_id(client_id_u32);
+
+            if let Some(decoded) = self
                 .encoder
                 .decode_if_known(client_id_u32, order.client_metadata)
-        {
-            log::debug!(
-                "Decoded order: dYdX client_id={} meta={:#x} -> '{}'",
-                client_id_u32,
-                order.client_metadata,
-                decoded,
-            );
-            report.client_order_id = Some(decoded);
+            {
+                log::debug!(
+                    "Decoded order: dYdX client_id={} meta={:#x} -> '{}'",
+                    client_id_u32,
+                    order.client_metadata,
+                    decoded,
+                );
+                report.client_order_id = Some(decoded);
+            }
         }
 
         if let Some(client_order_id) = cmd.client_order_id
@@ -2379,17 +2372,21 @@ impl ExecutionClient for DydxExecutionClient {
                 Ok(mut r) => {
                     if !order.client_id.is_empty()
                         && let Ok(client_id_u32) = order.client_id.parse::<u32>()
-                        && let Some(decoded) = self
+                    {
+                        self.encoder.register_known_client_id(client_id_u32);
+
+                        if let Some(decoded) = self
                             .encoder
                             .decode_if_known(client_id_u32, order.client_metadata)
-                    {
-                        log::debug!(
-                            "Decoded order: dYdX client_id={} meta={:#x} -> '{}'",
-                            client_id_u32,
-                            order.client_metadata,
-                            decoded,
-                        );
-                        r.client_order_id = Some(decoded);
+                        {
+                            log::debug!(
+                                "Decoded order: dYdX client_id={} meta={:#x} -> '{}'",
+                                client_id_u32,
+                                order.client_metadata,
+                                decoded,
+                            );
+                            r.client_order_id = Some(decoded);
+                        }
                     }
                     reports.push(r);
                 }
@@ -2564,17 +2561,21 @@ impl ExecutionClient for DydxExecutionClient {
                 Ok(mut r) => {
                     if !order.client_id.is_empty()
                         && let Ok(client_id_u32) = order.client_id.parse::<u32>()
-                        && let Some(decoded) = self
+                    {
+                        self.encoder.register_known_client_id(client_id_u32);
+
+                        if let Some(decoded) = self
                             .encoder
                             .decode_if_known(client_id_u32, order.client_metadata)
-                    {
-                        log::debug!(
-                            "Decoded reconciliation order: dYdX client_id={} meta={:#x} -> '{}'",
-                            client_id_u32,
-                            order.client_metadata,
-                            decoded,
-                        );
-                        r.client_order_id = Some(decoded);
+                        {
+                            log::debug!(
+                                "Decoded reconciliation order: dYdX client_id={} meta={:#x} -> '{}'",
+                                client_id_u32,
+                                order.client_metadata,
+                                decoded,
+                            );
+                            r.client_order_id = Some(decoded);
+                        }
                     }
                     order_reports.push(r);
                 }
@@ -2633,7 +2634,7 @@ impl ExecutionClient for DydxExecutionClient {
 
         // Apply lookback filter to orders and fills (positions are always current state)
         if let Some(mins) = lookback_mins {
-            let now_ns = get_atomic_clock_realtime().get_time_ns();
+            let now_ns = self.clock.get_time_ns();
             let cutoff_ns = now_ns.as_u64().saturating_sub(mins * 60 * 1_000_000_000);
             let cutoff = UnixNanos::from(cutoff_ns);
 
