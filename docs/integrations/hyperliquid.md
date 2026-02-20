@@ -5,9 +5,7 @@ and spot exchange built on the Hyperliquid L1, a purpose-built blockchain optimi
 HyperCore provides a fully on-chain order book and matching engine. This integration supports
 live market data feeds and order execution on Hyperliquid.
 
-:::warning
-The Hyperliquid integration is under active development. Some features may be incomplete.
-:::
+This integration supports live market data ingest and order execution on Hyperliquid.
 
 ## Overview
 

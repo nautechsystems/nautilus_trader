@@ -105,7 +105,6 @@ pub fn parse_ws_order_book_deltas(
     // Treat every book payload as a snapshot: clear existing depth and rebuild it
     deltas.push(OrderBookDelta::clear(instrument.id(), 0, ts_event, ts_init));
 
-    // Parse bids
     for level in &book.levels[0] {
         let price = parse_price(&level.px, instrument, "book.bid.px")?;
         let size = parse_quantity(&level.sz, instrument, "book.bid.sz")?;
@@ -129,7 +128,6 @@ pub fn parse_ws_order_book_deltas(
         deltas.push(delta);
     }
 
-    // Parse asks
     for level in &book.levels[1] {
         let price = parse_price(&level.px, instrument, "book.ask.px")?;
         let size = parse_quantity(&level.sz, instrument, "book.ask.sz")?;

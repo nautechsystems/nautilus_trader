@@ -42,7 +42,6 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
-from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
@@ -443,17 +442,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.error(f"Failed to request fill reports for {order.client_order_id}: {e}")
 
-    async def _query_order(self, command: QueryOrder) -> None:
-        self._log.info(
-            f"Direct order query not implemented for {command.client_order_id}, "
-            f"order state is maintained through WebSocket updates and reconciliation",
-        )
-
     async def _query_account(self, command: QueryAccount) -> None:
-        self._log.info(
-            "Direct account query not implemented, "
-            "account state is maintained through WebSocket updates and reconciliation",
-        )
+        try:
+            await self._update_account_state()
+        except Exception as e:
+            self._log.error(f"Failed to query account state: {e}")
 
     async def _wait_for_quote(
         self,

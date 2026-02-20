@@ -143,18 +143,14 @@ impl HyperliquidEip712Signer {
     }
 
     fn sign_hash(&self, hash: &[u8; 32]) -> Result<String> {
-        // Parse private key and create signer
         let key_hex = self.private_key.as_hex();
         let key_hex = key_hex.strip_prefix("0x").unwrap_or(key_hex);
 
-        // Create PrivateKeySigner from hex string
         let signer = PrivateKeySigner::from_str(key_hex)
             .map_err(|e| Error::transport(format!("Failed to create signer: {e}")))?;
 
-        // Convert [u8; 32] to B256 for signing
         let hash_b256 = B256::from(*hash);
 
-        // Sign the hash - alloy-signer handles the signing internally
         let signature = signer
             .sign_hash_sync(&hash_b256)
             .map_err(|e| Error::transport(format!("Failed to sign hash: {e}")))?;

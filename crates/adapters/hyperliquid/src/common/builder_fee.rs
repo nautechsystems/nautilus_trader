@@ -22,11 +22,13 @@
 
 use std::{
     collections::HashMap,
+    env,
     io::{self, Write},
     str::FromStr,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
+        mpsc,
     },
     thread,
     time::{Duration, SystemTime},
@@ -322,7 +324,7 @@ pub async fn approve_builder_fee(
 ///
 /// `true` if approval succeeded, `false` otherwise.
 pub async fn approve_from_env(non_interactive: bool) -> bool {
-    let is_testnet = std::env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true");
+    let is_testnet = env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true");
 
     let env_var = if is_testnet {
         "HYPERLIQUID_TESTNET_PK"
@@ -330,7 +332,7 @@ pub async fn approve_from_env(non_interactive: bool) -> bool {
         "HYPERLIQUID_PK"
     };
 
-    let private_key = match std::env::var(env_var) {
+    let private_key = match env::var(env_var) {
         Ok(pk) => pk,
         Err(_) => {
             println!("Error: {env_var} environment variable not set");
@@ -534,7 +536,7 @@ pub async fn revoke_builder_fee(
 ///
 /// `true` if revocation succeeded, `false` otherwise.
 pub async fn revoke_from_env(non_interactive: bool) -> bool {
-    let is_testnet = std::env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true");
+    let is_testnet = env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true");
 
     let env_var = if is_testnet {
         "HYPERLIQUID_TESTNET_PK"
@@ -542,7 +544,7 @@ pub async fn revoke_from_env(non_interactive: bool) -> bool {
         "HYPERLIQUID_PK"
     };
 
-    let private_key = match std::env::var(env_var) {
+    let private_key = match env::var(env_var) {
         Ok(pk) => pk,
         Err(_) => {
             println!("Error: {env_var} environment variable not set");
@@ -707,7 +709,7 @@ pub async fn verify_builder_fee(
 ///
 /// `true` if builder fee is approved at the required rate, `false` otherwise.
 pub async fn verify_from_env_or_address(wallet_address: Option<String>) -> bool {
-    let is_testnet = std::env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true");
+    let is_testnet = env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true");
 
     let wallet_address = match wallet_address {
         Some(addr) => addr,
@@ -719,7 +721,7 @@ pub async fn verify_from_env_or_address(wallet_address: Option<String>) -> bool 
                 "HYPERLIQUID_PK"
             };
 
-            let private_key = match std::env::var(env_var) {
+            let private_key = match env::var(env_var) {
                 Ok(pk) => pk,
                 Err(_) => {
                     println!("Error: No wallet address provided and {env_var} not set");
@@ -916,7 +918,7 @@ fn wait_for_confirmation(prompt: &str) -> bool {
     io::stdout().flush().ok();
 
     // Spawn thread to read stdin so we can check for ctrlc
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let mut input = String::new();
         let result = io::stdin().read_line(&mut input);
@@ -941,8 +943,8 @@ fn wait_for_confirmation(prompt: &str) -> bool {
                 println!();
                 return true;
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
                 println!();
                 println!("Aborted.");
                 return false;

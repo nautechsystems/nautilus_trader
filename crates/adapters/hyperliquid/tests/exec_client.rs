@@ -19,9 +19,11 @@
 //! using mock HTTP servers. WebSocket execution updates are tested in websocket.rs.
 
 use std::{
+    cell::RefCell,
     collections::HashMap,
     net::SocketAddr,
     path::PathBuf,
+    rc::Rc,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -31,11 +33,30 @@ use std::{
 
 use axum::{
     Router,
-    extract::State,
+    extract::{
+        State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
     response::{IntoResponse, Json, Response},
     routing::post,
 };
-use nautilus_common::testing::wait_until_async;
+use futures_util::StreamExt;
+use nautilus_common::{
+    cache::Cache, clients::ExecutionClient, live::runner::set_exec_event_sender,
+    messages::ExecutionEvent, testing::wait_until_async,
+};
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_hyperliquid::{
+    config::HyperliquidExecClientConfig, execution::HyperliquidExecutionClient,
+};
+use nautilus_live::ExecutionClientCore;
+use nautilus_model::{
+    accounts::{AccountAny, MarginAccount},
+    enums::{AccountType, OmsType},
+    events::AccountState,
+    identifiers::{AccountId, ClientId, TraderId, Venue},
+    types::{AccountBalance, Money},
+};
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -107,6 +128,8 @@ async fn handle_info(body: axum::body::Bytes) -> Response {
             let meta = load_json("http_meta_perp_sample.json");
             Json(json!([meta, []])).into_response()
         }
+        "spotMeta" => Json(json!({"universe": [], "tokens": []})).into_response(),
+        "spotMetaAndAssetCtxs" => Json(json!([{"universe": [], "tokens": []}, []])).into_response(),
         "openOrders" => Json(json!([])).into_response(),
         "orderStatus" => Json(json!({
             "status": "order:filled",
@@ -259,7 +282,7 @@ async fn handle_exchange(
             "status": "err",
             "response": {
                 "type": "error",
-                "data": format!("Unknown action type: {:?}", action_type)
+                "data": format!("Unknown action type: {action_type:?}")
             }
         }))
         .into_response(),
@@ -270,11 +293,57 @@ async fn handle_health() -> impl IntoResponse {
     axum::http::StatusCode::OK
 }
 
+async fn handle_ws_upgrade(
+    ws: WebSocketUpgrade,
+    State(_state): State<TestServerState>,
+) -> Response {
+    ws.on_upgrade(handle_ws_socket)
+}
+
+async fn handle_ws_socket(mut socket: WebSocket) {
+    while let Some(message) = socket.next().await {
+        let Ok(message) = message else { break };
+
+        match message {
+            Message::Text(text) => {
+                if let Ok(payload) = serde_json::from_str::<Value>(&text) {
+                    let method = payload.get("method").and_then(|m| m.as_str());
+                    match method {
+                        Some("ping") => {
+                            let pong = json!({"channel": "pong"});
+                            if socket
+                                .send(Message::Text(pong.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                        Some("subscribe") => {
+                            // Acknowledge subscription silently
+                        }
+                        Some("unsubscribe") => {}
+                        _ => {}
+                    }
+                }
+            }
+            Message::Ping(data) => {
+                if socket.send(Message::Pong(data)).await.is_err() {
+                    break;
+                }
+            }
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+}
+
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/info", post(handle_info))
         .route("/exchange", post(handle_exchange))
         .route("/health", axum::routing::get(handle_health))
+        .route("/ws", axum::routing::get(handle_ws_upgrade))
         .with_state(state)
 }
 
@@ -582,4 +651,100 @@ async fn test_multiple_orders_in_sequence() {
     }
 
     assert_eq!(*state.exchange_request_count.lock().await, 5);
+}
+
+const TEST_PRIVATE_KEY: &str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+
+fn create_test_exec_config(addr: SocketAddr) -> HyperliquidExecClientConfig {
+    HyperliquidExecClientConfig {
+        private_key: TEST_PRIVATE_KEY.to_string(),
+        base_url_http: Some(format!("http://{addr}/info")),
+        base_url_exchange: Some(format!("http://{addr}/exchange")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        is_testnet: false,
+        ..HyperliquidExecClientConfig::default()
+    }
+}
+
+fn create_test_execution_client(
+    addr: SocketAddr,
+) -> (
+    HyperliquidExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("HYPERLIQUID-001");
+    let client_id = ClientId::from("HYPERLIQUID");
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        Venue::from("HYPERLIQUID"),
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let config = create_test_exec_config(addr);
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let client = HyperliquidExecutionClient::new(core, config).unwrap();
+
+    (client, rx, cache)
+}
+
+fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) {
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("10000.0 USDC"),
+            Money::from("0 USDC"),
+            Money::from("10000.0 USDC"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let account = AccountAny::Margin(MarginAccount::new(account_state, true));
+    cache.borrow_mut().add_account(account).unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_creation() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+
+    assert_eq!(client.client_id(), ClientId::from("HYPERLIQUID"));
+    assert_eq!(client.venue(), Venue::from("HYPERLIQUID"));
+    assert_eq!(client.oms_type(), OmsType::Netting);
+    assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_exec_client_connect_disconnect() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+
+    client.disconnect().await.unwrap();
+    assert!(!client.is_connected());
 }

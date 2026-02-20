@@ -192,6 +192,16 @@ impl HyperliquidRawHttpClient {
         })
     }
 
+    /// Overrides the base info URL (for testing with mock servers).
+    pub fn set_base_info_url(&mut self, url: String) {
+        self.base_info = url;
+    }
+
+    /// Overrides the base exchange URL (for testing with mock servers).
+    pub fn set_base_exchange_url(&mut self, url: String) {
+        self.base_exchange = url;
+    }
+
     /// Creates an authenticated client from environment variables for the specified network.
     ///
     /// # Errors
@@ -750,14 +760,7 @@ impl HyperliquidHttpClient {
         proxy_url: Option<String>,
     ) -> std::result::Result<Self, HttpClientError> {
         let raw_client = HyperliquidRawHttpClient::new(is_testnet, timeout_secs, proxy_url)?;
-        Ok(Self {
-            inner: Arc::new(raw_client),
-            instruments: Arc::new(RwLock::new(AHashMap::new())),
-            instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
-            asset_indices: Arc::new(RwLock::new(AHashMap::new())),
-            spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
-            account_id: None,
-        })
+        Ok(Self::from_raw(raw_client))
     }
 
     /// Creates a new [`HyperliquidHttpClient`] configured with a [`Secrets`] struct.
@@ -772,14 +775,40 @@ impl HyperliquidHttpClient {
     ) -> std::result::Result<Self, HttpClientError> {
         let raw_client =
             HyperliquidRawHttpClient::with_credentials(secrets, timeout_secs, proxy_url)?;
-        Ok(Self {
+        Ok(Self::from_raw(raw_client))
+    }
+
+    fn from_raw(raw_client: HyperliquidRawHttpClient) -> Self {
+        Self {
             inner: Arc::new(raw_client),
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
-        })
+        }
+    }
+
+    /// Overrides the base info URL (for testing with mock servers).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner `Arc` has multiple references.
+    pub fn set_base_info_url(&mut self, url: String) {
+        Arc::get_mut(&mut self.inner)
+            .expect("cannot override URL: Arc has multiple references")
+            .set_base_info_url(url);
+    }
+
+    /// Overrides the base exchange URL (for testing with mock servers).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner `Arc` has multiple references.
+    pub fn set_base_exchange_url(&mut self, url: String) {
+        Arc::get_mut(&mut self.inner)
+            .expect("cannot override URL: Arc has multiple references")
+            .set_base_exchange_url(url);
     }
 
     /// Creates an authenticated client from environment variables for the specified network.

@@ -172,9 +172,17 @@ impl HyperliquidExecutionClient {
 
         http_client.set_account_id(core.account_id);
 
-        // Create WebSocket client for order/execution updates
+        // Apply URL overrides from config (used for testing with mock servers)
+        if let Some(url) = &config.base_url_http {
+            http_client.set_base_info_url(url.clone());
+        }
+        if let Some(url) = &config.base_url_exchange {
+            http_client.set_base_exchange_url(url.clone());
+        }
+
+        let ws_url = config.base_url_ws.clone();
         let ws_client =
-            HyperliquidWebSocketClient::new(None, config.is_testnet, Some(core.account_id));
+            HyperliquidWebSocketClient::new(ws_url, config.is_testnet, Some(core.account_id));
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -847,7 +855,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
     fn query_account(&self, cmd: &QueryAccount) -> anyhow::Result<()> {
         log::debug!("Querying account: {cmd:?}");
 
-        // Use existing infrastructure to refresh account state
         let runtime = get_runtime();
         runtime.block_on(async {
             if let Err(e) = self.refresh_account_state().await {
@@ -861,7 +868,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
     fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
         log::debug!("Querying order: {cmd:?}");
 
-        // Get venue order ID from cache
         let cache = self.core.cache();
         let venue_order_id = cache.venue_order_id(&cmd.client_order_id);
 
@@ -877,7 +883,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
         drop(cache);
 
-        // Parse venue order ID to u64
         let oid = match u64::from_str(venue_order_id.as_ref()) {
             Ok(id) => id,
             Err(e) => {
