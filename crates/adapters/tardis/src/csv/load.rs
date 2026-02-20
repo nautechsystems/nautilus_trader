@@ -113,10 +113,6 @@ fn update_trades_precision(
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened, read, or parsed as CSV.
-///
-/// # Panics
-///
-/// Panics if a CSV record has a zero size for a non-delete action or if data conversion fails.
 pub fn load_deltas<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -563,10 +559,6 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened, read, or parsed as CSV.
-///
-/// # Panics
-///
-/// Panics if a record has invalid data or CSV parsing errors.
 pub fn load_quotes<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -640,10 +632,6 @@ pub fn load_quotes<P: AsRef<Path>>(
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened, read, or parsed as CSV.
-///
-/// # Panics
-///
-/// Panics if a record has invalid trade size or CSV parsing errors.
 pub fn load_trades<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,

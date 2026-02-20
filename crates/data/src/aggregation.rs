@@ -130,9 +130,7 @@ impl BarBuilder {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     #[must_use]
     pub fn new(bar_type: BarType, price_precision: u8, size_precision: u8) -> Self {
         correctness::check_equal(
@@ -301,9 +299,7 @@ impl BarAggregatorCore {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -358,9 +354,7 @@ impl TickBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -429,9 +423,7 @@ impl TickImbalanceBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -515,9 +507,7 @@ impl TickRunsBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -606,9 +596,7 @@ impl VolumeBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -717,9 +705,7 @@ impl VolumeImbalanceBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -821,9 +807,7 @@ impl VolumeRunsBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -935,9 +919,7 @@ impl ValueBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -1086,9 +1068,7 @@ impl ValueImbalanceBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -1251,9 +1231,7 @@ impl ValueRunsBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -1389,9 +1367,7 @@ impl RenkoBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -1594,9 +1570,7 @@ impl TimeBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     #[allow(clippy::too_many_arguments)]
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,

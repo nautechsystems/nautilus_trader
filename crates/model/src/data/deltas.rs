@@ -76,10 +76,7 @@ impl OrderBookDeltas {
     /// # Errors
     ///
     /// Returns an error if `deltas` is empty.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `deltas` is empty when unwrapping the last element.
+    #[allow(clippy::missing_panics_doc)] // Guarded by predicate check above
     pub fn new_checked(
         instrument_id: InstrumentId,
         deltas: Vec<OrderBookDelta>,

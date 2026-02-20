@@ -266,9 +266,6 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket connection fails or authentication fails (if credentials provided).
     ///
-    /// # Panics
-    ///
-    /// Panics if subscription or authentication messages fail to serialize to JSON.
     pub async fn connect(&mut self) -> Result<(), BitmexWsError> {
         let (client, raw_rx) = self.connect_inner().await?;
 
@@ -660,10 +657,6 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if closing fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the task handle cannot be unwrapped (should never happen in normal usage).
     pub async fn close(&mut self) -> Result<(), BitmexWsError> {
         log::debug!("Starting close process");
 
@@ -713,10 +706,6 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if sending the subscription message fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if serialization of WebSocket messages fails (should never happen).
     pub async fn subscribe(&self, topics: Vec<String>) -> Result<(), BitmexWsError> {
         log::debug!("Subscribing to topics: {topics:?}");
 

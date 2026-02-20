@@ -205,6 +205,14 @@ repos:
         files: '\.rs$'
         pass_filenames: false
 
+      - id: check-docs-conventions
+        name: check docs conventions
+        description: Enforces Rust documentation conventions
+        entry: .pre-commit-hooks/check_docs_conventions.sh
+        language: script
+        files: '\.rs$'
+        pass_filenames: false
+
       - id: check-cargo-conventions
         name: check cargo conventions
         description: Enforces Cargo.toml dependency ordering conventions

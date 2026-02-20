@@ -95,11 +95,9 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
 /// Returns an error if:
 /// - The input list is empty: `PyErr`.
 /// - An unsupported data type is encountered or conversion fails: `PyErr`.
-///
-/// # Panics
-///
-/// Panics if `data.first()` returns `None` (should not occur due to emptiness check).
+
 #[pyfunction]
+#[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn pyobjects_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<Bound<'_, PyAny>>,

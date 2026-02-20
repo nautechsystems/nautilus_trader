@@ -208,17 +208,13 @@ impl PortfolioAnalyzer {
 
     /// Calculates total PnL including unrealized PnL if provided.
     ///
-    /// # Panics
-    ///
-    /// This function does not panic. The internal `expect` is guarded by a length
-    /// check ensuring at least one currency exists.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - No currency is specified in a multi-currency portfolio.
     /// - The specified currency is not found in account balances.
     /// - The unrealized PnL currency does not match the specified currency.
+    #[allow(clippy::missing_panics_doc)] // Guarded by length check
     pub fn total_pnl(
         &self,
         currency: Option<&Currency>,
@@ -261,17 +257,13 @@ impl PortfolioAnalyzer {
 
     /// Calculates total PnL as a percentage of starting balance.
     ///
-    /// # Panics
-    ///
-    /// This function does not panic. The internal `expect` is guarded by a length
-    /// check ensuring at least one currency exists.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - No currency is specified in a multi-currency portfolio.
     /// - The specified currency is not found in account balances.
     /// - The unrealized PnL currency does not match the specified currency.
+    #[allow(clippy::missing_panics_doc)] // Guarded by length check
     pub fn total_pnl_percentage(
         &self,
         currency: Option<&Currency>,

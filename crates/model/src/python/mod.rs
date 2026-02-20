@@ -40,9 +40,6 @@ pub mod defi;
 ///
 /// Returns a `PyErr` if registering any module components fails.
 ///
-/// # Panics
-///
-/// Panics if inserting classes or functions into the Python module unexpectedly fails.
 #[pymodule]
 pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Types

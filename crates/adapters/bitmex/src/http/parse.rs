@@ -563,11 +563,6 @@ pub fn parse_trade(
 /// # Errors
 ///
 /// Returns an error when required OHLC fields are missing from the payload.
-///
-/// # Panics
-///
-/// Panics if the bar type or price precision cannot be determined for the instrument, which
-/// indicates the instrument cache was not hydrated prior to parsing.
 pub fn parse_trade_bin(
     bin: BitmexTradeBin,
     instrument: &InstrumentAny,
@@ -623,10 +618,6 @@ pub fn parse_trade_bin(
 /// - Order is missing `ord_status` and status cannot be inferred from quantity fields.
 /// - Order is missing `order_qty` and cannot be reconstructed from `cum_qty` + `leaves_qty`.
 ///
-/// # Panics
-///
-/// Panics if:
-/// - Unsupported `ExecInstruction` type is encountered (other than `ParticipateDoNotInitiate` or `ReduceOnly`)
 pub fn parse_order_status_report(
     order: &BitmexOrder,
     instrument: &InstrumentAny,
@@ -930,11 +921,6 @@ pub fn parse_order_status_report(
 /// but returns `Result` for future error handling compatibility.
 ///
 /// Parse a BitMEX execution into a Nautilus `FillReport` using instrument scaling.
-///
-/// # Panics
-///
-/// Panics if:
-/// - Execution is missing required fields: `symbol`, `order_id`, `trd_match_id`, `last_qty`, `last_px`, or `transact_time`
 ///
 /// # Errors
 ///

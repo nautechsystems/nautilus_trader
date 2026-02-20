@@ -135,10 +135,6 @@ impl MarginAccount {
     }
 
     /// Updates the initial margin for the specified instrument.
-    ///
-    /// # Panics
-    ///
-    /// Panics if an existing margin balance is found but cannot be unwrapped.
     pub fn update_initial_margin(&mut self, instrument_id: InstrumentId, margin_init: Money) {
         let margin_balance = self.margins.get(&instrument_id);
         if let Some(balance) = margin_balance {
@@ -175,10 +171,6 @@ impl MarginAccount {
     }
 
     /// Updates the maintenance margin for the specified instrument.
-    ///
-    /// # Panics
-    ///
-    /// Panics if an existing margin balance is found but cannot be unwrapped.
     pub fn update_maintenance_margin(
         &mut self,
         instrument_id: InstrumentId,

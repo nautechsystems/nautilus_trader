@@ -148,9 +148,6 @@ impl CashAccount {
     /// Sums all per-instrument locked amounts for the currency and updates the balance.
     /// If the total locked exceeds the total balance, clamps to total (free = 0).
     ///
-    /// # Panics
-    ///
-    /// Panics if conversion from `Decimal` to `f64` fails during balance update.
     pub fn recalculate_balance(&mut self, currency: Currency) {
         let current_balance = match self.balances.get(&currency) {
             Some(balance) => *balance,

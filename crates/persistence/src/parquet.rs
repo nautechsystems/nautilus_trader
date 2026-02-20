@@ -251,10 +251,6 @@ pub async fn combine_parquet_files_from_object_store(
 /// # Errors
 ///
 /// Returns an error if the file cannot be read, metadata parsing fails, or the column is missing or has no statistics.
-///
-/// # Panics
-///
-/// Panics if the Parquet metadata's min/max unwrap operations fail unexpectedly.
 pub async fn min_max_from_parquet_metadata(
     file_path: &str,
     storage_options: Option<AHashMap<String, String>>,
@@ -275,10 +271,6 @@ pub async fn min_max_from_parquet_metadata(
 /// # Errors
 ///
 /// Returns an error if the file cannot be read, metadata parsing fails, or the column is missing or has no statistics.
-///
-/// # Panics
-///
-/// Panics if the Parquet metadata's min/max unwrap operations fail unexpectedly.
 pub async fn min_max_from_parquet_metadata_object_store(
     object_store: Arc<dyn ObjectStore>,
     file_path: &ObjectPath,

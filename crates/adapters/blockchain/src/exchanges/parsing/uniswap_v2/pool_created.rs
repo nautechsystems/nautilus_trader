@@ -42,10 +42,6 @@ const PAIR_CREATED_EVENT_SIGNATURE_HASH: &str =
 /// # Errors
 ///
 /// Returns an error if the log parsing fails or if the event data is invalid.
-///
-/// # Panics
-///
-/// Panics if the block number is not set in the log.
 pub fn parse_pool_created_event_hypersync(log: HypersyncLog) -> anyhow::Result<PoolCreatedEvent> {
     validate_event_signature_hash("PairCreatedEvent", PAIR_CREATED_EVENT_SIGNATURE_HASH, &log)?;
 

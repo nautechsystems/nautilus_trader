@@ -1101,10 +1101,8 @@ impl HyperliquidHttpClient {
     }
 
     /// Fetch and parse all available instrument definitions from Hyperliquid.
-    ///
-    /// # Panics
-    ///
-    /// Panics if instrument parsing produces an invalid instrument state.
+    // Mutex/RwLock poisoning is not documented individually
+    #[allow(clippy::missing_panics_doc)]
     pub async fn request_instruments(&self) -> Result<Vec<InstrumentAny>> {
         let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
 
@@ -1380,10 +1378,8 @@ impl HyperliquidHttpClient {
     /// # Errors
     ///
     /// Returns an error if the API request fails or parsing fails.
-    ///
-    /// # Panics
-    ///
-    /// Returns an error if `account_id` is not set on the client.
+    // Mutex/RwLock poisoning is not documented individually
+    #[allow(clippy::missing_panics_doc)]
     pub async fn request_order_status_reports(
         &self,
         user: &str,

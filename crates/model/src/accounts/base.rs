@@ -238,9 +238,6 @@ impl BaseAccount {
     ///
     /// This function never returns an error (TBD).
     ///
-    /// # Panics
-    ///
-    /// Panics if `side` is not [`OrderSide::Buy`] or [`OrderSide::Sell`].
     pub fn base_calculate_balance_locked(
         &mut self,
         instrument: &InstrumentAny,
@@ -286,9 +283,6 @@ impl BaseAccount {
     ///
     /// This function never returns an error (TBD).
     ///
-    /// # Panics
-    ///
-    /// Panics if `fill.order_side` is neither [`OrderSide::Buy`] nor [`OrderSide::Sell`].
     pub fn base_calculate_pnls(
         &self,
         instrument: &InstrumentAny,

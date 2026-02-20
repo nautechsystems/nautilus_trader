@@ -184,13 +184,10 @@ impl CoinbaseIntxFixClient {
 
     /// Connects to the Coinbase International FIX Drop Copy endpoint.
     ///
-    /// # Panics
-    ///
-    /// Panics if time calculation or unwrap logic inside fails during logon retry setup.
-    ///
     /// # Errors
     ///
     /// Returns an error if network connection or FIX logon fails.
+    #[allow(clippy::missing_panics_doc)] // checked_sub on Instant is provably safe
     pub async fn connect(
         &mut self,
         #[cfg(feature = "python")] handler: Py<PyAny>,

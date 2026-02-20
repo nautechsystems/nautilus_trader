@@ -500,10 +500,6 @@ fn infer_order_type_from_msg(msg: &BitmexOrderMsg) -> Option<OrderType> {
 
 /// Parse a BitMEX WebSocket order message into a Nautilus `OrderStatusReport`.
 ///
-/// # Panics
-///
-/// Panics if required fields are missing or invalid.
-///
 /// # References
 ///
 /// <https://www.bitmex.com/app/wsAPI#Order>
@@ -735,14 +731,9 @@ pub fn parse_order_update_msg(
 /// - `Funding`, `Insurance`, `Rebalance`: Expected non-fills → None (debug log)
 /// - Order state changes (`New`, `Canceled`, etc.): → None (debug log)
 ///
-/// # Panics
-///
-/// Panics if required fields are missing or invalid.
-///
 /// # References
 ///
 /// <https://www.bitmex.com/app/wsAPI#Execution>
-///
 pub fn parse_execution_msg(
     msg: BitmexExecutionMsg,
     instrument: &InstrumentAny,

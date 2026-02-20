@@ -217,6 +217,7 @@ impl PoolProfiler {
         }
     }
 
+    // panics-doc-ok (transitive via check_if_initialized)
     /// Processes a historical swap event from blockchain data.
     ///
     /// Replays the swap by simulating it through [`Self::simulate_swap_through_ticks`],
@@ -291,6 +292,7 @@ impl PoolProfiler {
         Ok(())
     }
 
+    // panics-doc-ok (transitive via check_if_initialized)
     /// Executes a new simulated swap and returns the resulting event.
     ///
     /// This is the public API for forward simulation of swap operations. It delegates
@@ -590,6 +592,7 @@ impl PoolProfiler {
         );
     }
 
+    // panics-doc-ok (transitive via check_if_initialized)
     /// Returns a comprehensive swap quote without modifying pool state.
     ///
     /// This method simulates a swap and provides detailed profiling metrics including:
@@ -607,7 +610,7 @@ impl PoolProfiler {
     ///
     /// # Panics
     ///
-    /// Panics if pool is not initialized
+    /// Panics if pool is not initialized.
     pub fn quote_swap(
         &self,
         amount_specified: I256,
@@ -692,6 +695,7 @@ impl PoolProfiler {
         self.quote_swap(I256::MAX, false, Some(sqrt_price_limit_x96))
     }
 
+    // panics-doc-ok (transitive via check_if_initialized)
     /// Finds the maximum trade size that produces a target slippage (including fees).
     ///
     /// Uses binary search to find the largest trade size that results in slippage
@@ -708,7 +712,8 @@ impl PoolProfiler {
     /// - Swap simulations fail
     ///
     /// # Panics
-    /// Panics if pool is not initialized
+    ///
+    /// Panics if pool is not initialized.
     pub fn size_for_impact_bps(&self, impact_bps: u32, zero_for_one: bool) -> anyhow::Result<U256> {
         let config = size_estimator::EstimationConfig::default();
         size_estimator::size_for_impact_bps(self, impact_bps, zero_for_one, &config)
@@ -834,6 +839,7 @@ impl PoolProfiler {
         Ok(())
     }
 
+    // panics-doc-ok (transitive via check_if_initialized)
     /// Executes a simulated mint (liquidity addition) operation.
     ///
     /// Calculates required token amounts for the specified liquidity amount,
@@ -939,6 +945,7 @@ impl PoolProfiler {
         Ok(())
     }
 
+    // panics-doc-ok (transitive via check_if_initialized)
     /// Executes a simulated burn (liquidity removal) operation.
     ///
     /// Calculates token amounts that would be withdrawn for the specified liquidity,
@@ -1055,6 +1062,7 @@ impl PoolProfiler {
         Ok(())
     }
 
+    // panics-doc-ok (transitive via check_if_initialized)
     /// Processes a flash loan event from historical data.
     ///
     /// # Errors

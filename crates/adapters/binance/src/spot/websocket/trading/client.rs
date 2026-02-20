@@ -67,10 +67,8 @@ pub static BINANCE_WS_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> =
 /// Binance WebSocket API order rate limit: 1200 per minute (20/sec).
 ///
 /// Based on Binance documentation for WebSocket API rate limits.
-///
-/// # Panics
-///
-/// This function will never panic as it uses a constant non-zero value.
+// Constant values are provably valid
+#[allow(clippy::missing_panics_doc)]
 #[must_use]
 pub fn binance_ws_order_quota() -> Quota {
     Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("valid constant")
@@ -196,10 +194,8 @@ impl BinanceSpotWsTradingClient {
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal output receiver mutex is poisoned.
+    // Mutex poisoning is not documented individually
+    #[allow(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceWsApiResult<()> {
         self.signal.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();

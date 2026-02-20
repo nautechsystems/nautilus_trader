@@ -72,10 +72,6 @@ impl EnumIterator {
 
 /// Converts a JSON `Value::Object` into a Python `dict`.
 ///
-/// # Panics
-///
-/// Panics if creating a Python list fails due to an invalid iterator.
-///
 /// # Errors
 ///
 /// Returns a `PyErr` if:

@@ -584,10 +584,6 @@ pub fn format_trailing_stop_info(
 /// # Returns
 ///
 /// `Ok(())` if parameters are valid, `Err` with description otherwise.
-///
-/// # Panics
-///
-/// This function does not panic - it returns errors instead of panicking.
 pub fn validate_conditional_order_params(
     trigger_px: Option<&str>,
     tpsl: Option<&HyperliquidTpSl>,

@@ -699,10 +699,6 @@ impl BlockchainDataClientCore {
     /// # Errors
     ///
     /// Returns an error if swap event processing fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if swap event conversion to trade data fails.
     pub fn process_pool_swap_event(
         &self,
         swap_event: &SwapEvent,

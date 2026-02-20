@@ -197,10 +197,8 @@ pub struct BuilderFeeApprovalResult {
 /// # Errors
 ///
 /// Returns an error if the private key is invalid, signing fails, or the HTTP request fails.
-///
-/// # Panics
-///
-/// Panics if the JSON response structure is unexpected.
+// Mutex/RwLock poisoning is not documented individually
+#[allow(clippy::missing_panics_doc)]
 pub async fn approve_builder_fee(
     private_key: &str,
     is_testnet: bool,
@@ -412,9 +410,8 @@ const REVOKE_FEE_RATE: &str = "0%";
 ///
 /// The result of the revoke request.
 ///
-/// # Panics
-///
-/// Panics if the response contains invalid JSON structure.
+// Mutex/RwLock poisoning is not documented individually
+#[allow(clippy::missing_panics_doc)]
 pub async fn revoke_builder_fee(
     private_key: &str,
     is_testnet: bool,

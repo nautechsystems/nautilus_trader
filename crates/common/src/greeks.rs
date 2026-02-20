@@ -686,10 +686,8 @@ impl GreeksCalculator {
     ///
     /// Returns an error if any underlying greeks calculation fails.
     ///
-    /// # Panics
-    ///
-    /// Panics if `greeks_filter` is `Some` but the filter function panics when called.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::missing_panics_doc)] // Guarded by is_none check
     pub fn portfolio_greeks(
         &self,
         underlyings: Option<Vec<String>>,

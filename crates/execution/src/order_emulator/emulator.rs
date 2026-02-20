@@ -227,9 +227,6 @@ impl OrderEmulator {
     ///
     /// Returns an error if no emulated orders are found or processing fails.
     ///
-    /// # Panics
-    ///
-    /// Panics if a cached client ID cannot be unwrapped.
     pub fn on_start(&mut self) -> anyhow::Result<()> {
         let emulated_orders: Vec<OrderAny> = self
             .cache
@@ -307,9 +304,6 @@ impl OrderEmulator {
         Ok(())
     }
 
-    /// # Panics
-    ///
-    /// Panics if the order cannot be converted to a passive order.
     pub fn on_event(&mut self, event: OrderEventAny) {
         log::info!("{RECV}{EVT} {event}");
 
@@ -859,9 +853,6 @@ impl OrderEmulator {
         }
     }
 
-    /// # Panics
-    ///
-    /// Panics if the order cannot be converted to a passive order.
     pub fn cancel_order(&mut self, order: &OrderAny) {
         log::info!("Canceling order {}", order.client_order_id());
 

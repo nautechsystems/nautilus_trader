@@ -67,7 +67,7 @@ sol! {
 ///
 /// # Panics
 ///
-/// Panics if the block number is not set in the log.
+/// Panics if the log address is not set.
 pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<PoolCreatedEvent> {
     validate_event_signature_hash("InitializeEvent", INITIALIZE_EVENT_SIGNATURE_HASH, &log)?;
 

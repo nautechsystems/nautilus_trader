@@ -888,9 +888,6 @@ impl ParquetDataCatalog {
     /// - `data`: Slice of data records to validate.
     /// - `type_name`: Name of the data type for error messages.
     ///
-    /// # Panics
-    ///
-    /// Panics if any timestamp is less than the previous timestamp.
     pub fn check_ascending_timestamps<T: HasTsInit>(
         data: &[T],
         type_name: &str,

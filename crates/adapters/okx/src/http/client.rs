@@ -1568,10 +1568,8 @@ impl OKXHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or trade parsing fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the API returns an empty response when debug logging is enabled.
+    // Guarded by is_empty check
+    #[allow(clippy::missing_panics_doc)]
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
@@ -1928,14 +1926,12 @@ impl OKXHttpClient {
     /// - Stops when: limit reached, time window covered, or API returns empty
     /// - Rate limit safety: ≥ 50ms between requests
     ///
-    /// # Panics
-    ///
-    /// May panic if internal data structures are in an unexpected state.
-    ///
     /// # References
     ///
     /// - <https://tr.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks>
     /// - <https://tr.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks-history>
+    // Guarded by non-empty page check
+    #[allow(clippy::missing_panics_doc)]
     pub async fn request_bars(
         &self,
         bar_type: BarType,
