@@ -23,7 +23,7 @@ use std::{
     str::FromStr,
 };
 
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
@@ -36,7 +36,7 @@ pub(crate) const UUID4_LEN: usize = 37;
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core", from_py_object)
 )]
 pub struct UUID4 {
     /// The UUID v4 value as a fixed-length C string byte array (includes null terminator).

@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.sandbox")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.sandbox", from_py_object)
 )]
 pub struct SandboxExecutionClientConfig {
     /// The trader ID for this client.
@@ -94,7 +94,7 @@ impl SandboxExecutionClientConfig {
             book_type: BookType::L1_MBP,
             frozen_account: false,
             bar_execution: true,
-            trade_execution: false,
+            trade_execution: true,
             reject_stop_orders: true,
             support_gtd_orders: true,
             support_contingent_orders: true,
@@ -109,6 +109,7 @@ impl SandboxExecutionClientConfig {
     pub fn to_matching_engine_config(&self) -> OrderMatchingEngineConfig {
         OrderMatchingEngineConfig::new(
             self.bar_execution,
+            false, // bar_adaptive_high_low_ordering
             self.trade_execution,
             false, // liquidity_consumption
             self.reject_stop_orders,
@@ -193,7 +194,7 @@ impl Default for SandboxExecutionClientConfig {
             book_type: BookType::L1_MBP,
             frozen_account: false,
             bar_execution: true,
-            trade_execution: false,
+            trade_execution: true,
             reject_stop_orders: true,
             support_gtd_orders: true,
             support_contingent_orders: true,
@@ -219,7 +220,7 @@ mod pyo3_impl {
     #[pymethods]
     impl SandboxExecutionClientConfig {
         #[new]
-        #[pyo3(signature = (venue, starting_balances, trader_id=None, account_id=None, base_currency=None, oms_type=None, account_type=None, default_leverage=None, book_type=None, frozen_account=false, bar_execution=true, trade_execution=false, reject_stop_orders=true, support_gtd_orders=true, support_contingent_orders=true, use_position_ids=true, use_random_ids=false, use_reduce_only=true))]
+        #[pyo3(signature = (venue, starting_balances, trader_id=None, account_id=None, base_currency=None, oms_type=None, account_type=None, default_leverage=None, book_type=None, frozen_account=false, bar_execution=true, trade_execution=true, reject_stop_orders=true, support_gtd_orders=true, support_contingent_orders=true, use_position_ids=true, use_random_ids=false, use_reduce_only=true))]
         #[allow(clippy::too_many_arguments)]
         fn py_new(
             venue: Venue,

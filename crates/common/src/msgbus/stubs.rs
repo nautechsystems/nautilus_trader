@@ -255,6 +255,16 @@ impl<T: 'static> TypedIntoMessageSavingHandler<T> {
         }
     }
 
+    /// Creates a handler backed by an existing shared messages vec.
+    #[must_use]
+    pub fn new_with_messages(id: Option<Ustr>, messages: Rc<RefCell<Vec<T>>>) -> Self {
+        let unique_id = id.unwrap_or_else(|| Ustr::from(UUID4::new().as_str()));
+        Self {
+            id: unique_id,
+            messages,
+        }
+    }
+
     #[must_use]
     pub fn get_messages(&self) -> Vec<T>
     where

@@ -54,6 +54,7 @@ def get_cached_ib_client(
     client_id: int = 1,
     dockerized_gateway: DockerizedIBGatewayConfig | None = None,
     fetch_all_open_orders: bool = False,
+    request_timeout_secs: int = 60,
 ) -> InteractiveBrokersClient:
     """
     Retrieve or create a cached InteractiveBrokersClient using the provided key.
@@ -87,6 +88,8 @@ def get_cached_ib_client(
     fetch_all_open_orders : bool, default False
         If True, uses reqAllOpenOrders to fetch orders from all API clients and TWS GUI.
         If False, uses reqOpenOrders to fetch only orders from current client ID session.
+    request_timeout_secs : int, default 60
+        The timeout (seconds) to wait for request responses (contract details, etc.).
 
     Returns
     -------
@@ -126,6 +129,7 @@ def get_cached_ib_client(
             port=port,
             client_id=client_id,
             fetch_all_open_orders=fetch_all_open_orders,
+            request_timeout_secs=request_timeout_secs,
         )
         client.start()
         IB_CLIENTS[client_key] = client
@@ -224,6 +228,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             port=config.ibg_port,
             client_id=config.ibg_client_id,
             dockerized_gateway=config.dockerized_gateway,
+            request_timeout_secs=config.request_timeout_secs,
         )
 
         # Get instrument provider singleton
@@ -245,7 +250,6 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             config=config,
             name=name,
             connection_timeout=config.connection_timeout,
-            request_timeout=config.request_timeout,
         )
 
         return data_client
@@ -298,6 +302,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             client_id=config.ibg_client_id,
             dockerized_gateway=config.dockerized_gateway,
             fetch_all_open_orders=config.fetch_all_open_orders,
+            request_timeout_secs=config.request_timeout_secs,
         )
 
         # Get instrument provider singleton

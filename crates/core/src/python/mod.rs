@@ -30,6 +30,7 @@
 pub mod casing;
 pub mod datetime;
 pub mod enums;
+pub mod params;
 pub mod parsing;
 pub mod serialization;
 /// String manipulation utilities for Python.
@@ -42,7 +43,9 @@ use std::fmt::Display;
 use pyo3::{
     Py,
     conversion::IntoPyObjectExt,
-    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
+    exceptions::{
+        PyException, PyKeyError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError,
+    },
     prelude::*,
     types::PyString,
     wrap_pyfunction,
@@ -116,30 +119,33 @@ pub fn get_pytype_name<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PySt
 }
 
 /// Converts any type that implements `Display` to a Python `ValueError`.
-///
-/// # Errors
-///
-/// Returns a Python error with the error string.
 pub fn to_pyvalue_err(e: impl Display) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
 /// Converts any type that implements `Display` to a Python `TypeError`.
-///
-/// # Errors
-///
-/// Returns a Python error with the error string.
 pub fn to_pytype_err(e: impl Display) -> PyErr {
     PyTypeError::new_err(e.to_string())
 }
 
 /// Converts any type that implements `Display` to a Python `RuntimeError`.
-///
-/// # Errors
-///
-/// Returns a Python error with the error string.
 pub fn to_pyruntime_err(e: impl Display) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
+}
+
+/// Converts any type that implements `Display` to a Python `KeyError`.
+pub fn to_pykey_err(e: impl Display) -> PyErr {
+    PyKeyError::new_err(e.to_string())
+}
+
+/// Converts any type that implements `Display` to a Python `Exception`.
+pub fn to_pyexception(e: impl Display) -> PyErr {
+    PyException::new_err(e.to_string())
+}
+
+/// Converts any type that implements `Display` to a Python `NotImplementedError`.
+pub fn to_pynotimplemented_err(e: impl Display) -> PyErr {
+    PyNotImplementedError::new_err(e.to_string())
 }
 
 /// Return a value indicating whether the `obj` is a `PyCapsule`.

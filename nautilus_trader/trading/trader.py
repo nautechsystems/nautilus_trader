@@ -635,6 +635,34 @@ class Trader(Component):
 
         strategy.stop()
 
+    def market_exit_strategy(self, strategy_id: StrategyId) -> None:
+        """
+        Market exit the strategy with the given `strategy_id`.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The strategy ID to market exit.
+
+        Raises
+        ------
+        ValueError
+            If a strategy with the given `strategy_id` is not found.
+
+        """
+        PyCondition.not_none(strategy_id, "strategy_id")
+
+        strategy = self._strategies.get(strategy_id)
+
+        if strategy is None:
+            raise ValueError(f"Cannot market exit strategy, {strategy_id} not found.")
+
+        if not strategy.is_running:
+            self._log.warning(f"Strategy {strategy_id} not running")
+            return
+
+        strategy.market_exit()
+
     def remove_actor(self, actor_id: ComponentId) -> None:
         """
         Remove the actor with the given `actor_id`.

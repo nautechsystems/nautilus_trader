@@ -41,6 +41,8 @@
 //! - `postgres`: Enables PostgreSQL (sqlx) back-ends in dependent crates.
 //! - `redis`: Enables Redis based infrastructure in dependent crates.
 //! - `hypersync`: Enables hypersync support (fast parallel hash maps) where available.
+//! - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
+//! - `defi`: Enables DeFi (Decentralized Finance) support including blockchain adapters.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

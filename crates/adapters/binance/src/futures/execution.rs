@@ -24,6 +24,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
@@ -63,7 +64,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     http::{
-        client::{BinanceFuturesHttpClient, BinanceFuturesInstrument},
+        BinanceFuturesHttpError,
+        client::{BinanceFuturesHttpClient, BinanceFuturesInstrument, is_algo_order_type},
         models::{BatchOrderResult, BinancePositionRisk},
         query::{
             BatchCancelItem, BinanceAllOrdersParamsBuilder, BinanceOpenOrdersParamsBuilder,
@@ -111,6 +113,7 @@ pub struct BinanceFuturesExecutionClient {
     listen_key: Arc<RwLock<Option<String>>>,
     cancellation_token: CancellationToken,
     handler_signal: Arc<AtomicBool>,
+    triggered_algo_order_ids: Arc<RwLock<AHashSet<ClientOrderId>>>,
     ws_task: Mutex<Option<JoinHandle<()>>>,
     keepalive_task: Mutex<Option<JoinHandle<()>>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
@@ -181,6 +184,7 @@ impl BinanceFuturesExecutionClient {
             listen_key: Arc::new(RwLock::new(None)),
             cancellation_token: CancellationToken::new(),
             handler_signal: Arc::new(AtomicBool::new(false)),
+            triggered_algo_order_ids: Arc::new(RwLock::new(AHashSet::new())),
             ws_task: Mutex::new(None),
             keepalive_task: Mutex::new(None),
             pending_tasks: Mutex::new(Vec::new()),
@@ -396,23 +400,43 @@ impl BinanceFuturesExecutionClient {
         let position_side = self.determine_position_side(order_side, reduce_only);
 
         // HTTP only generates OrderRejected on failure.
-        // OrderAccepted comes from WebSocket user data stream ORDER_TRADE_UPDATE.
+        // OrderAccepted comes from WebSocket (ORDER_TRADE_UPDATE or ALGO_UPDATE).
+        let use_algo_api = is_algo_order_type(order_type);
+
         self.spawn_task("submit_order", async move {
-            let result = http_client
-                .submit_order(
-                    account_id,
-                    instrument_id,
-                    client_order_id,
-                    order_side,
-                    order_type,
-                    quantity,
-                    time_in_force,
-                    price,
-                    trigger_price,
-                    reduce_only,
-                    position_side,
-                )
-                .await;
+            let result = if use_algo_api {
+                http_client
+                    .submit_algo_order(
+                        account_id,
+                        instrument_id,
+                        client_order_id,
+                        order_side,
+                        order_type,
+                        quantity,
+                        time_in_force,
+                        price,
+                        trigger_price,
+                        reduce_only,
+                        position_side,
+                    )
+                    .await
+            } else {
+                http_client
+                    .submit_order(
+                        account_id,
+                        instrument_id,
+                        client_order_id,
+                        order_side,
+                        order_type,
+                        quantity,
+                        time_in_force,
+                        price,
+                        trigger_price,
+                        reduce_only,
+                        position_side,
+                    )
+                    .await
+            };
 
             match result {
                 Ok(report) => {
@@ -466,28 +490,53 @@ impl BinanceFuturesExecutionClient {
             command.venue_order_id,
         );
 
+        // Non-triggered algo orders use algo cancel endpoint, triggered use regular
+        let is_algo = self
+            .core
+            .cache()
+            .order(&command.client_order_id)
+            .is_some_and(|order| is_algo_order_type(order.order_type()));
+        let is_triggered = self
+            .triggered_algo_order_ids
+            .read()
+            .expect("triggered_algo_order_ids lock poisoned")
+            .contains(&command.client_order_id);
+        let use_algo_cancel = is_algo && !is_triggered;
+
         let emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
         let clock = self.clock;
         let instrument_id = command.instrument_id;
         let venue_order_id = command.venue_order_id;
-        let client_order_id = Some(command.client_order_id);
+        let client_order_id = command.client_order_id;
 
         // HTTP only generates OrderCancelRejected on failure.
-        // OrderCanceled comes from WebSocket user data stream ORDER_TRADE_UPDATE.
+        // OrderCanceled comes from WebSocket (ORDER_TRADE_UPDATE or ALGO_UPDATE).
         self.spawn_task("cancel_order", async move {
-            let result = http_client
-                .cancel_order(instrument_id, venue_order_id, client_order_id)
-                .await;
+            let result = if use_algo_cancel {
+                // Try algo cancel first; if it fails, the order may have been triggered
+                // before this session started, so fall back to regular cancel
+                match http_client.cancel_algo_order(client_order_id).await {
+                    Ok(()) => Ok(()),
+                    Err(algo_err) => {
+                        log::debug!("Algo cancel failed, trying regular cancel: {algo_err}");
+                        http_client
+                            .cancel_order(instrument_id, venue_order_id, Some(client_order_id))
+                            .await
+                            .map(|_| ())
+                    }
+                }
+            } else {
+                http_client
+                    .cancel_order(instrument_id, venue_order_id, Some(client_order_id))
+                    .await
+                    .map(|_| ())
+            };
 
             match result {
-                Ok(venue_order_id) => {
-                    log::debug!(
-                        "Cancel request accepted: client_order_id={}, venue_order_id={}",
-                        command.client_order_id,
-                        venue_order_id
-                    );
+                Ok(()) => {
+                    log::debug!("Cancel request accepted: client_order_id={client_order_id}");
                 }
                 Err(e) => {
                     let ts_now = clock.get_time_ns();
@@ -495,7 +544,7 @@ impl BinanceFuturesExecutionClient {
                         trader_id,
                         command.strategy_id,
                         command.instrument_id,
-                        command.client_order_id,
+                        client_order_id,
                         format!("cancel-order-error: {e}").into(),
                         UUID4::new(),
                         ts_now,
@@ -728,6 +777,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 self.core.account_type,
                 self.product_type,
                 self.handler_signal.clone(),
+                self.triggered_algo_order_ids.clone(),
                 cmd_rx,
                 raw_rx,
             );
@@ -1026,7 +1076,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
         log::warn!(
             "submit_order_list not yet implemented for Binance Futures (got {} orders)",
-            cmd.order_list.orders.len()
+            cmd.order_list.client_order_ids.len()
         );
         Ok(())
     }
@@ -1171,15 +1221,23 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
 
-        // HTTP cancel_all_orders only confirms the request was accepted.
-        // Actual OrderCanceled events come from WebSocket user data stream.
+        // HTTP only confirms request accepted; OrderCanceled comes from WebSocket
         self.spawn_task("cancel_all_orders", async move {
             match http_client.cancel_all_orders(instrument_id).await {
                 Ok(_) => {
-                    log::info!("Cancel all orders request accepted for {instrument_id}");
+                    log::info!("Cancel all regular orders request accepted for {instrument_id}");
                 }
                 Err(e) => {
-                    log::error!("Failed to cancel all orders for {instrument_id}: {e}");
+                    log::error!("Failed to cancel all regular orders for {instrument_id}: {e}");
+                }
+            }
+
+            match http_client.cancel_all_algo_orders(instrument_id).await {
+                Ok(()) => {
+                    log::info!("Cancel all algo orders request accepted for {instrument_id}");
+                }
+                Err(e) => {
+                    log::error!("Failed to cancel all algo orders for {instrument_id}: {e}");
                 }
             }
 
@@ -1331,17 +1389,45 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         if let Some(oid) = order_id {
             builder.order_id(oid);
         }
-        if let Some(coid) = orig_client_order_id {
-            builder.orig_client_order_id(coid);
+        if let Some(ref coid) = orig_client_order_id {
+            builder.orig_client_order_id(coid.clone());
         }
         let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let order = self.http_client.query_order(&params).await?;
         let (_, size_precision) = self.get_instrument_precision(instrument_id);
-        let report =
-            order.to_order_status_report(self.core.account_id, instrument_id, size_precision)?;
 
-        Ok(Some(report))
+        match self.http_client.query_order(&params).await {
+            Ok(order) => {
+                let report = order.to_order_status_report(
+                    self.core.account_id,
+                    instrument_id,
+                    size_precision,
+                )?;
+                Ok(Some(report))
+            }
+            Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => {
+                // Order not found in regular API, try algo order API
+                let Some(client_order_id) = cmd.client_order_id else {
+                    return Ok(None);
+                };
+
+                match self.http_client.query_algo_order(client_order_id).await {
+                    Ok(algo_order) => {
+                        let report = algo_order.to_order_status_report(
+                            self.core.account_id,
+                            instrument_id,
+                            size_precision,
+                        )?;
+                        Ok(Some(report))
+                    }
+                    Err(e) => {
+                        log::debug!("Algo order query also failed: {e}");
+                        Ok(None)
+                    }
+                }
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn generate_order_status_reports(
@@ -1358,7 +1444,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             }
             let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
 
-            let orders = self.http_client.query_open_orders(&params).await?;
+            let (orders, algo_orders) = tokio::try_join!(
+                self.http_client.query_open_orders(&params),
+                self.http_client.query_open_algo_orders(cmd.instrument_id),
+            )?;
 
             for order in orders {
                 if let Some(instrument_id) = cmd.instrument_id {
@@ -1377,6 +1466,33 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         .into_iter()
                         .find(|i| i.symbol().as_str() == order.symbol.as_str())
                         && let Ok(report) = order.to_order_status_report(
+                            self.core.account_id,
+                            instrument.id(),
+                            instrument.size_precision(),
+                        )
+                    {
+                        reports.push(report);
+                    }
+                }
+            }
+
+            for algo_order in algo_orders {
+                if let Some(instrument_id) = cmd.instrument_id {
+                    let (_, size_precision) = self.get_instrument_precision(instrument_id);
+                    if let Ok(report) = algo_order.to_order_status_report(
+                        self.core.account_id,
+                        instrument_id,
+                        size_precision,
+                    ) {
+                        reports.push(report);
+                    }
+                } else {
+                    let cache = self.core.cache();
+                    if let Some(instrument) = cache
+                        .instruments(&BINANCE_VENUE, None)
+                        .into_iter()
+                        .find(|i| i.symbol().as_str() == algo_order.symbol.as_str())
+                        && let Ok(report) = algo_order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
                             instrument.size_precision(),

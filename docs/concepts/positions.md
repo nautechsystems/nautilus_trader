@@ -110,9 +110,9 @@ When trading spot currency pairs (e.g., BTC/USDT) or FX spot, commissions paid i
 currency directly affect the net quantity received or delivered:
 
 - **Opening fills**: Commission is deducted from the traded quantity. A buy of 1.0 BTC with
-  -0.001 BTC commission results in a net long position of 0.999 BTC.
+  0.001 BTC commission results in a net long position of 0.999 BTC.
 - **Closing fills**: Commission is applied to `signed_qty` because it affects actual inventory.
-  Selling a 0.999 BTC LONG position with -0.000999 BTC commission leaves you SHORT 0.000999 BTC,
+  Selling a 0.999 BTC LONG position with 0.000999 BTC commission leaves you SHORT 0.000999 BTC,
   not FLAT, because you gave up 0.999999 BTC total.
 - **Flips**: Commission affects the final position size on both sides of the flip.
 

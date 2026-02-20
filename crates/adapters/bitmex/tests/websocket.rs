@@ -33,7 +33,8 @@ use axum::{
     response::Response,
     routing::get,
 };
-use nautilus_bitmex::websocket::client::BitmexWebSocketClient;
+use futures_util::StreamExt;
+use nautilus_bitmex::websocket::{client::BitmexWebSocketClient, messages::NautilusWsMessage};
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::identifiers::{AccountId, InstrumentId};
 use rstest::rstest;
@@ -970,6 +971,71 @@ async fn test_reconnection_scenario() {
     );
 
     // Clean up
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconnection_emits_reconnected_message() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/realtime");
+
+    let mut client = BitmexWebSocketClient::new(
+        Some(ws_url),
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(AccountId::new("BITMEX-001")),
+        None,
+    )
+    .unwrap();
+
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+    client.subscribe_trades(instrument_id).await.unwrap();
+    client.wait_until_active(5.0).await.unwrap();
+
+    // Take stream before triggering reconnection to observe lifecycle events.
+    let stream = client.stream();
+    tokio::pin!(stream);
+
+    let auth_calls_before = *state.auth_calls.lock().await;
+    let state_for_auth = state.clone();
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+
+    // Trigger server loop after setting one-shot drop.
+    let _ = client
+        .subscribe_trades(InstrumentId::from("ETHUSD.BITMEX"))
+        .await;
+
+    wait_until_async(
+        || {
+            let state = state_for_auth.clone();
+            async move { *state.auth_calls.lock().await > auth_calls_before }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let saw_reconnected = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let Some(message) = stream.next().await else {
+                return false;
+            };
+
+            if matches!(message, NautilusWsMessage::Reconnected) {
+                return true;
+            }
+        }
+    })
+    .await
+    .unwrap_or(false);
+
+    assert!(
+        saw_reconnected,
+        "Expected NautilusWsMessage::Reconnected after server-triggered reconnect"
+    );
+
     client.close().await.unwrap();
 }
 

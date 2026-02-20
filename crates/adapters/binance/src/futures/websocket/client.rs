@@ -69,7 +69,7 @@ pub const MAX_STREAMS_PER_CONNECTION: usize = 200;
 #[derive(Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
 )]
 pub struct BinanceFuturesWebSocketClient {
     url: String,
@@ -186,10 +186,8 @@ impl BinanceFuturesWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal output receiver mutex is poisoned.
+    // Mutex poisoning is not documented individually
+    #[allow(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceWsResult<()> {
         self.signal.store(false, Ordering::Relaxed);
 
@@ -214,6 +212,7 @@ impl BinanceFuturesWebSocketClient {
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Configure rate limits for subscription operations

@@ -63,6 +63,9 @@ cdef class Quantity:
     cdef Quantity from_raw_c(QuantityRaw raw, uint8_t precision)
 
     @staticmethod
+    cdef Quantity from_decimal_c(amount, uint8_t precision)
+
+    @staticmethod
     cdef Quantity zero_c(uint8_t precision)
 
     @staticmethod
@@ -110,6 +113,9 @@ cdef class Price:
     cdef Price from_raw_c(PriceRaw raw, uint8_t precision)
 
     @staticmethod
+    cdef Price from_decimal_c(amount, uint8_t precision)
+
+    @staticmethod
     cdef Price from_str_c(str value)
 
     @staticmethod
@@ -135,6 +141,9 @@ cdef class Money:
 
     @staticmethod
     cdef Money from_raw_c(MoneyRaw raw, Currency currency)
+
+    @staticmethod
+    cdef Money from_decimal_c(amount, Currency currency)
 
     @staticmethod
     cdef Money from_str_c(str value)

@@ -13,14 +13,29 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+DYdX v4 Market Maker example using the Rust-backed adapter.
+
+This example demonstrates the volatility market maker strategy on dYdX v4
+using the new Rust-backed HTTP, WebSocket, and gRPC clients.
+
+Prerequisites:
+  - Environment variables:
+      DYDX_WALLET_ADDRESS (or DYDX_TESTNET_WALLET_ADDRESS for testnet)
+      DYDX_PRIVATE_KEY (or DYDX_TESTNET_PRIVATE_KEY for testnet)
+
+Usage:
+  python dydx_market_maker.py
+
+"""
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.dydx import DYDXDataClientConfig
-from nautilus_trader.adapters.dydx import DYDXExecClientConfig
-from nautilus_trader.adapters.dydx import DYDXLiveDataClientFactory
-from nautilus_trader.adapters.dydx import DYDXLiveExecClientFactory
-from nautilus_trader.adapters.dydx_v4.constants import DYDX
+from nautilus_trader.adapters.dydx import DydxDataClientConfig
+from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.adapters.dydx import DydxLiveDataClientFactory
+from nautilus_trader.adapters.dydx import DydxLiveExecClientFactory
+from nautilus_trader.adapters.dydx.constants import DYDX
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -37,54 +52,39 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# Perpetual
+# dYdX v4 perpetual market
 symbol = "ETH-USD-PERP"
 trade_size = Decimal("0.010")
 
 # Configure the trading node
 config_node = TradingNodeConfig(
-    trader_id=TraderId("TESTER-001"),
+    trader_id=TraderId("DYDX-V4-MM-001"),
     logging=LoggingConfig(log_level="INFO", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
-        # snapshot_orders=True,
-        # snapshot_positions=True,
-        # snapshot_positions_interval_secs=5.0,
     ),
     cache=CacheConfig(
-        # database=DatabaseConfig(),
         timestamps_as_iso8601=True,
         buffer_interval_ms=100,
     ),
-    # message_bus=MessageBusConfig(
-    #     database=DatabaseConfig(),
-    #     timestamps_as_iso8601=True,
-    #     buffer_interval_ms=100,
-    #     streams_prefix="bybit",
-    #     use_trader_prefix=False,
-    #     use_trader_id=False,
-    #     use_instance_id=False,
-    #     stream_per_topic=False,
-    #     # types_filter=[QuoteTick],
-    #     autotrim_mins=30,
-    #     heartbeat_interval_secs=1,
-    # ),
     data_clients={
-        DYDX: DYDXDataClientConfig(
-            wallet_address=None,  # 'DYDX_WALLET_ADDRESS' env var
+        DYDX: DydxDataClientConfig(
+            wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=True,  # If client uses the testnet API
+            is_testnet=False,  # Mainnet
         ),
     },
     exec_clients={
-        DYDX: DYDXExecClientConfig(
-            wallet_address=None,  # 'DYDX_WALLET_ADDRESS' env var
-            mnemonic=None,  # 'DYDX_MNEMONIC' env var
+        DYDX: DydxExecClientConfig(
+            wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
+            private_key=None,  # 'DYDX_PRIVATE_KEY' or 'DYDX_TESTNET_PRIVATE_KEY' env var
+            subaccount=0,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
+            base_url_grpc=None,  # Override with custom gRPC endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=True,  # If client uses the testnet API
+            is_testnet=False,  # Mainnet
         ),
     },
     timeout_connection=20.0,
@@ -106,15 +106,16 @@ strat_config = VolatilityMarketMakerConfig(
     atr_multiple=3.0,
     trade_size=trade_size,
 )
+
 # Instantiate your strategy
 strategy = VolatilityMarketMaker(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
 
-# Register your client factories with the node (can take user-defined factories)
-node.add_data_client_factory(DYDX, DYDXLiveDataClientFactory)
-node.add_exec_client_factory(DYDX, DYDXLiveExecClientFactory)
+# Register your client factories with the node (using v4 Rust-backed factories)
+node.add_data_client_factory(DYDX, DydxLiveDataClientFactory)
+node.add_exec_client_factory(DYDX, DydxLiveExecClientFactory)
 node.build()
 
 

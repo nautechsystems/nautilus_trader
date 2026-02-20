@@ -15,8 +15,6 @@
 
 //! A common `OrderMatchingCore` for the `OrderMatchingEngine` and other components.
 
-pub mod handlers;
-
 use nautilus_model::{
     enums::{OrderSideSpecified, OrderType},
     identifiers::{ClientOrderId, InstrumentId},
@@ -24,10 +22,12 @@ use nautilus_model::{
     types::Price,
 };
 
-use crate::matching_core::handlers::{
-    FillLimitOrderHandler, ShareableFillLimitOrderHandler, ShareableFillMarketOrderHandler,
-    ShareableTriggerStopOrderHandler, TriggerStopOrderHandler,
-};
+/// An action returned by [`OrderMatchingCore::iterate`] when an order matches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchAction {
+    FillLimit(ClientOrderId),
+    TriggerStop(ClientOrderId),
+}
 
 /// Lightweight order information for matching/trigger checking.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -130,21 +130,12 @@ pub struct OrderMatchingCore {
     pub is_last_initialized: bool,
     orders_bid: Vec<OrderMatchInfo>,
     orders_ask: Vec<OrderMatchInfo>,
-    trigger_stop_order: Option<ShareableTriggerStopOrderHandler>,
-    fill_market_order: Option<ShareableFillMarketOrderHandler>,
-    fill_limit_order: Option<ShareableFillLimitOrderHandler>,
 }
 
 impl OrderMatchingCore {
     // Creates a new [`OrderMatchingCore`] instance.
     #[must_use]
-    pub const fn new(
-        instrument_id: InstrumentId,
-        price_increment: Price,
-        trigger_stop_order: Option<ShareableTriggerStopOrderHandler>,
-        fill_market_order: Option<ShareableFillMarketOrderHandler>,
-        fill_limit_order: Option<ShareableFillLimitOrderHandler>,
-    ) -> Self {
+    pub const fn new(instrument_id: InstrumentId, price_increment: Price) -> Self {
         Self {
             instrument_id,
             price_increment,
@@ -156,25 +147,8 @@ impl OrderMatchingCore {
             is_last_initialized: false,
             orders_bid: Vec::new(),
             orders_ask: Vec::new(),
-            trigger_stop_order,
-            fill_market_order,
-            fill_limit_order,
         }
     }
-
-    pub fn set_fill_limit_order_handler(&mut self, handler: ShareableFillLimitOrderHandler) {
-        self.fill_limit_order = Some(handler);
-    }
-
-    pub fn set_trigger_stop_order_handler(&mut self, handler: ShareableTriggerStopOrderHandler) {
-        self.trigger_stop_order = Some(handler);
-    }
-
-    pub fn set_fill_market_order_handler(&mut self, handler: ShareableFillMarketOrderHandler) {
-        self.fill_market_order = Some(handler);
-    }
-
-    // -- QUERIES ---------------------------------------------------------------------------------
 
     #[must_use]
     pub const fn price_precision(&self) -> u8 {
@@ -220,8 +194,6 @@ impl OrderMatchingCore {
                 .iter()
                 .any(|o| o.client_order_id == client_order_id)
     }
-
-    // -- COMMANDS --------------------------------------------------------------------------------
 
     pub const fn set_last_raw(&mut self, last: Price) {
         self.last = Some(last);
@@ -281,54 +253,59 @@ impl OrderMatchingCore {
         Err(OrderError::NotFound(client_order_id))
     }
 
-    pub fn iterate(&mut self) {
-        self.iterate_bids();
-        self.iterate_asks();
+    pub fn iterate(&mut self) -> Vec<MatchAction> {
+        let mut actions = self.iterate_bids();
+        actions.extend(self.iterate_asks());
+        actions
     }
 
-    pub fn iterate_bids(&mut self) {
+    pub fn iterate_bids(&mut self) -> Vec<MatchAction> {
         let orders: Vec<_> = self.orders_bid.clone();
-        for order in &orders {
-            self.match_order(order);
-        }
+        orders
+            .iter()
+            .filter_map(|order| self.match_order(order))
+            .collect()
     }
 
-    pub fn iterate_asks(&mut self) {
+    pub fn iterate_asks(&mut self) -> Vec<MatchAction> {
         let orders: Vec<_> = self.orders_ask.clone();
-        for order in &orders {
-            self.match_order(order);
-        }
+        orders
+            .iter()
+            .filter_map(|order| self.match_order(order))
+            .collect()
     }
 
-    // -- MATCHING --------------------------------------------------------------------------------
-
-    pub fn match_order(&mut self, order: &OrderMatchInfo) {
+    pub fn match_order(&self, order: &OrderMatchInfo) -> Option<MatchAction> {
         if order.is_stop() {
-            self.match_stop_order(order);
+            self.match_stop_order(order)
         } else if order.is_limit() {
-            self.match_limit_order(order);
+            self.match_limit_order(order)
+        } else {
+            None
         }
     }
 
-    fn match_limit_order(&mut self, order: &OrderMatchInfo) {
+    fn match_limit_order(&self, order: &OrderMatchInfo) -> Option<MatchAction> {
         if let Some(limit_price) = order.limit_price
             && self.is_limit_matched(order.order_side, limit_price)
-            && let Some(handler) = &mut self.fill_limit_order
         {
-            handler.0.fill_limit_order(order.client_order_id);
+            Some(MatchAction::FillLimit(order.client_order_id))
+        } else {
+            None
         }
     }
 
-    fn match_stop_order(&mut self, order: &OrderMatchInfo) {
+    fn match_stop_order(&self, order: &OrderMatchInfo) -> Option<MatchAction> {
         if !order.is_activated {
-            return;
+            return None;
         }
 
         if let Some(trigger_price) = order.trigger_price
             && self.is_stop_matched(order.order_side, trigger_price)
-            && let Some(handler) = &mut self.trigger_stop_order
         {
-            handler.0.trigger_stop_order(order.client_order_id);
+            Some(MatchAction::TriggerStop(order.client_order_id))
+        } else {
+            None
         }
     }
 
@@ -372,7 +349,7 @@ mod tests {
         instrument_id: InstrumentId,
         price_increment: Price,
     ) -> OrderMatchingCore {
-        OrderMatchingCore::new(instrument_id, price_increment, None, None, None)
+        OrderMatchingCore::new(instrument_id, price_increment)
     }
 
     #[rstest]
@@ -622,6 +599,286 @@ mod tests {
 
         let result = matching_core
             .is_stop_matched(order.order_side_specified(), order.trigger_price().unwrap());
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_iterate_returns_empty_when_no_orders() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.bid = Some(Price::from("100.00"));
+        matching_core.ask = Some(Price::from("101.00"));
+
+        let actions = matching_core.iterate();
+
+        assert!(actions.is_empty());
+    }
+
+    #[rstest]
+    fn test_iterate_returns_empty_when_no_market_data() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("100"))
+            .build();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        matching_core.add_order(match_info);
+
+        let actions = matching_core.iterate();
+
+        assert!(actions.is_empty());
+    }
+
+    #[rstest]
+    fn test_iterate_returns_fill_limit_for_matched_buy() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.ask = Some(Price::from("100.00"));
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("100"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        matching_core.add_order(match_info);
+
+        let actions = matching_core.iterate();
+
+        assert_eq!(actions, vec![MatchAction::FillLimit(client_order_id)]);
+    }
+
+    #[rstest]
+    fn test_iterate_returns_fill_limit_for_matched_sell() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.bid = Some(Price::from("100.00"));
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("100"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        matching_core.add_order(match_info);
+
+        let actions = matching_core.iterate();
+
+        assert_eq!(actions, vec![MatchAction::FillLimit(client_order_id)]);
+    }
+
+    #[rstest]
+    fn test_iterate_returns_no_fill_for_unmatched_limit() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.ask = Some(Price::from("101.00"));
+
+        // Buy limit at 100 with ask at 101 — not matched
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("100"))
+            .build();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        matching_core.add_order(match_info);
+
+        let actions = matching_core.iterate();
+
+        assert!(actions.is_empty());
+    }
+
+    #[rstest]
+    fn test_iterate_returns_trigger_stop_for_matched_buy() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.ask = Some(Price::from("101.00"));
+
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("101.00"))
+            .quantity(Quantity::from("100"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        matching_core.add_order(match_info);
+
+        let actions = matching_core.iterate();
+
+        assert_eq!(actions, vec![MatchAction::TriggerStop(client_order_id)]);
+    }
+
+    #[rstest]
+    fn test_iterate_returns_trigger_stop_for_matched_sell() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.bid = Some(Price::from("99.00"));
+
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("99.00"))
+            .quantity(Quantity::from("100"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        matching_core.add_order(match_info);
+
+        let actions = matching_core.iterate();
+
+        assert_eq!(actions, vec![MatchAction::TriggerStop(client_order_id)]);
+    }
+
+    #[rstest]
+    fn test_iterate_skips_unactivated_stop_order() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.ask = Some(Price::from("110.00"));
+
+        // Manually create an unactivated stop (simulates trailing stop)
+        let match_info = OrderMatchInfo::new(
+            ClientOrderId::from("O-001"),
+            OrderSideSpecified::Buy,
+            OrderType::TrailingStopMarket,
+            Some(Price::from("105.00")),
+            None,
+            false, // not activated
+        );
+        matching_core.add_order(match_info);
+
+        let actions = matching_core.iterate();
+
+        assert!(actions.is_empty());
+    }
+
+    #[rstest]
+    fn test_iterate_triggers_activated_stop_order() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.ask = Some(Price::from("110.00"));
+
+        let client_order_id = ClientOrderId::from("O-001");
+        let match_info = OrderMatchInfo::new(
+            client_order_id,
+            OrderSideSpecified::Buy,
+            OrderType::TrailingStopMarket,
+            Some(Price::from("105.00")),
+            None,
+            true, // activated
+        );
+        matching_core.add_order(match_info);
+
+        let actions = matching_core.iterate();
+
+        assert_eq!(actions, vec![MatchAction::TriggerStop(client_order_id)]);
+    }
+
+    #[rstest]
+    fn test_iterate_returns_mixed_actions_for_limits_and_stops() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.bid = Some(Price::from("99.00"));
+        matching_core.ask = Some(Price::from("101.00"));
+
+        // Buy limit at 101 — matches (ask <= price)
+        let buy_limit = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("101.00"))
+            .quantity(Quantity::from("100"))
+            .build();
+        let buy_limit_id = buy_limit.client_order_id();
+        matching_core.add_order(OrderMatchInfo::from(
+            &PassiveOrderAny::try_from(buy_limit).unwrap(),
+        ));
+
+        // Sell stop at 99 — matches (bid <= trigger)
+        let sell_stop = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("99.00"))
+            .quantity(Quantity::from("50"))
+            .build();
+        let sell_stop_id = sell_stop.client_order_id();
+        matching_core.add_order(OrderMatchInfo::from(
+            &PassiveOrderAny::try_from(sell_stop).unwrap(),
+        ));
+
+        let actions = matching_core.iterate();
+
+        // Bids processed first, then asks
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0], MatchAction::FillLimit(buy_limit_id));
+        assert_eq!(actions[1], MatchAction::TriggerStop(sell_stop_id));
+    }
+
+    #[rstest]
+    #[case(None, None, Price::from("100.00"), OrderSide::Buy, false)]
+    #[case(None, None, Price::from("100.00"), OrderSide::Sell, false)]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("102.00"),  // <-- Ask below trigger
+        OrderSide::Buy,
+        true
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("101.00"),  // <-- Ask at trigger
+        OrderSide::Buy,
+        true
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("100.00"),  // <-- Ask above trigger
+        OrderSide::Buy,
+        false
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("99.00"),  // <-- Bid above trigger
+        OrderSide::Sell,
+        true
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("100.00"),  // <-- Bid at trigger
+        OrderSide::Sell,
+        true
+    )]
+    #[case(
+        Some(Price::from("100.00")),
+        Some(Price::from("101.00")),
+        Price::from("101.00"),  // <-- Bid below trigger
+        OrderSide::Sell,
+        false
+    )]
+    fn test_is_touch_triggered(
+        #[case] bid: Option<Price>,
+        #[case] ask: Option<Price>,
+        #[case] trigger_price: Price,
+        #[case] order_side: OrderSide,
+        #[case] expected: bool,
+    ) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+        matching_core.bid = bid;
+        matching_core.ask = ask;
+
+        let result = matching_core.is_touch_triggered(order_side.as_specified(), trigger_price);
         assert_eq!(result, expected);
     }
 }

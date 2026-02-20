@@ -121,6 +121,9 @@ class TestBinanceWebSocketParsing:
         assert report.filled_qty.as_decimal() == Decimal(wrapper.data.z)
         assert report.quantity.as_decimal() == Decimal(wrapper.data.q)
 
+        expected_avg_px = Decimal(wrapper.data.Z) / Decimal(wrapper.data.z)
+        assert report.avg_px == expected_avg_px
+
     def test_parse_to_order_status_report_with_rejected_status(self):
         # Arrange: Load execution report with REJECTED status (e.g., GTX post-only order)
         raw = pkgutil.get_data(
@@ -240,6 +243,32 @@ class TestBinanceWebSocketParsing:
         assert wrapper.data.z == "0.00000000"  # No actual fill occurred
         assert wrapper.data.t == -1  # No trade ID
         assert wrapper.data.V == "EXPIRE_MAKER"  # Self-Trade Prevention Mode
+
+    def test_parse_to_order_status_report_avg_px_none_when_zero_fills(self):
+        # Arrange: Load trade prevention report where z=0 (no fills)
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_trade_prevention.json",
+        )
+        assert raw
+
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Act: Parse to OrderStatusReport
+        enum_parser = BinanceSpotEnumParser()
+        report = wrapper.data.parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=ETHUSDT.id,
+            client_order_id=ClientOrderId("test-stp"),
+            venue_order_id=VenueOrderId("1234567890"),
+            ts_event=millis_to_nanos(wrapper.data.T),
+            ts_init=0,
+            enum_parser=enum_parser,
+        )
+
+        assert Decimal(wrapper.data.z) == 0
+        assert report.avg_px is None
 
     def test_parse_futures_algo_update_triggering(self):
         # Arrange: Load ALGO_UPDATE with TRIGGERING status

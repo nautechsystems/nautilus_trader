@@ -90,3 +90,8 @@ harness = false
 name = "identifier_comparison"
 path = "benches/identifier_comparison.rs"
 harness = false
+
+[[bench]]
+name = "decimal_deserialization"
+path = "benches/decimal_deserialization.rs"
+harness = false

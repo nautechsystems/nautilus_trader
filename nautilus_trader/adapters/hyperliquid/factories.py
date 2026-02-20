@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
@@ -33,22 +32,14 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
-if TYPE_CHECKING:
-    from typing import Any
-
-    # PyO3 types from Rust (temporary namespace qualification)
-    HyperliquidHttpClient = Any  # nautilus_pyo3.HyperliquidHttpClient (stub not yet available)
-
-
 @lru_cache(1)
 def get_cached_hyperliquid_http_client(
     private_key: str | None = None,
     vault_address: str | None = None,
-    base_url: str | None = None,
     timeout_secs: int = 10,
     testnet: bool = False,
     proxy_url: str | None = None,
-) -> HyperliquidHttpClient:
+) -> nautilus_pyo3.HyperliquidHttpClient:
     """
     Cache and return a Hyperliquid HTTP client with the given parameters.
 
@@ -66,9 +57,6 @@ def get_cached_hyperliquid_http_client(
         If ``None`` then will source the `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`
         environment variable (depending on the `testnet` setting).
         Note: The PyO3 client handles credentials internally.
-    base_url : str, optional
-        The base URL for the API endpoints.
-        Note: Currently not supported by PyO3 client.
     timeout_secs : int, default 10
         The timeout (seconds) for HTTP requests to Hyperliquid.
     testnet : bool, default False
@@ -82,8 +70,6 @@ def get_cached_hyperliquid_http_client(
         The Hyperliquid HTTP client instance.
 
     """
-    # The constructor will read credentials from environment variables if not provided
-    # This ensures proxy_url is always honored regardless of credential source
     return nautilus_pyo3.HyperliquidHttpClient(
         private_key=private_key,
         vault_address=vault_address,
@@ -95,7 +81,7 @@ def get_cached_hyperliquid_http_client(
 
 @lru_cache(1)
 def get_cached_hyperliquid_instrument_provider(
-    client: HyperliquidHttpClient,
+    client: nautilus_pyo3.HyperliquidHttpClient,
     config: InstrumentProviderConfig | None = None,
 ) -> HyperliquidInstrumentProvider:
     """
@@ -105,7 +91,7 @@ def get_cached_hyperliquid_instrument_provider(
 
     Parameters
     ----------
-    client : HyperliquidHttpClient
+    client : nautilus_pyo3.HyperliquidHttpClient
         The Hyperliquid HTTP client.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
@@ -159,7 +145,6 @@ class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
 
         """
         client = get_cached_hyperliquid_http_client(
-            base_url=config.base_url_http,
             timeout_secs=config.http_timeout_secs,
             testnet=config.testnet,
             proxy_url=config.http_proxy_url,
@@ -220,7 +205,6 @@ class HyperliquidLiveExecClientFactory(LiveExecClientFactory):
         client = get_cached_hyperliquid_http_client(
             private_key=config.private_key,
             vault_address=config.vault_address,
-            base_url=config.base_url_http,
             timeout_secs=config.http_timeout_secs,
             testnet=config.testnet,
             proxy_url=config.http_proxy_url,

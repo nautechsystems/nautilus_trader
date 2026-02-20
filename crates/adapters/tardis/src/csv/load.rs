@@ -113,10 +113,6 @@ fn update_trades_precision(
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened, read, or parsed as CSV.
-///
-/// # Panics
-///
-/// Panics if a CSV record has a zero size for a non-delete action or if data conversion fails.
 pub fn load_deltas<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -563,10 +559,6 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened, read, or parsed as CSV.
-///
-/// # Panics
-///
-/// Panics if a record has invalid data or CSV parsing errors.
 pub fn load_quotes<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -640,10 +632,6 @@ pub fn load_quotes<P: AsRef<Path>>(
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened, read, or parsed as CSV.
-///
-/// # Panics
-///
-/// Panics if a record has invalid trade size or CSV parsing errors.
 pub fn load_trades<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -748,20 +736,25 @@ pub fn load_funding_rates<P: AsRef<Path>>(
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, fs::File, sync::Arc};
+
+    use nautilus_core::paths::get_test_data_path as get_test_data_root;
     use nautilus_model::{
         enums::{AggressorSide, BookAction},
-        identifiers::TradeId,
+        identifiers::{InstrumentId, TradeId},
         types::Price,
     };
+    use nautilus_serialization::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
     use nautilus_testkit::common::{
         get_tardis_binance_snapshot5_path, get_tardis_binance_snapshot25_path,
         get_tardis_bitmex_trades_path, get_tardis_deribit_book_l2_path,
         get_tardis_huobi_quotes_path,
     };
+    use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
     use rstest::*;
 
     use super::*;
-    use crate::{parse::parse_price, tests::get_test_data_path};
+    use crate::{common::testing::get_test_data_path, parse::parse_price};
 
     #[rstest]
     #[case(0.0, 0)]
@@ -1380,5 +1373,67 @@ binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0";
         // First snapshot inserts CLEAR, then we get 4 more data deltas
         assert_eq!(deltas.len(), 5);
         assert_eq!(deltas[0].action, BookAction::Clear);
+    }
+
+    // Curates the large Tardis Deribit CSV.gz into NautilusTrader Parquet format.
+    // Run manually: `cargo test -p nautilus-tardis test_curate_deribit_deltas -- --ignored --nocapture`
+    #[rstest]
+    #[ignore = "one-time dataset curation, not for routine CI"]
+    fn test_curate_deribit_deltas() {
+        let csv_path = get_test_data_root()
+            .join("large")
+            .join("tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz");
+
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        let parquet_path = "/tmp/tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet";
+
+        println!("Loading deltas from {}", csv_path.display());
+        let deltas = load_deltas(&csv_path, None, None, Some(instrument_id), None).unwrap();
+        let count = deltas.len();
+        println!("Loaded {count} deltas");
+
+        let sample = deltas
+            .iter()
+            .find(|d| d.order.price.precision > 0)
+            .expect("Should have at least one non-CLEAR delta");
+        let price_precision = sample.order.price.precision;
+        let size_precision = sample.order.size.precision;
+        println!("Precision: price={price_precision}, size={size_precision}");
+
+        // Write in chunks to avoid stack overflow on large batches
+        let metadata =
+            OrderBookDelta::get_metadata(&instrument_id, price_precision, size_precision);
+        let schema = OrderBookDelta::get_schema(Some(metadata.clone()));
+
+        println!("Writing Parquet to {parquet_path}");
+        let file = File::create(parquet_path).unwrap();
+        let zstd_level = parquet::basic::ZstdLevel::try_new(3).unwrap();
+        let props = WriterProperties::builder()
+            .set_compression(parquet::basic::Compression::ZSTD(zstd_level))
+            .set_max_row_group_size(1_000_000)
+            .build();
+        let mut writer = ArrowWriter::try_new(file, Arc::new(schema), Some(props)).unwrap();
+
+        let chunk_size = 1_000_000;
+        for (i, chunk) in deltas.chunks(chunk_size).enumerate() {
+            println!("  Encoding chunk {} ({} records)...", i + 1, chunk.len());
+            let batch = OrderBookDelta::encode_batch(&metadata, chunk).unwrap();
+            writer.write(&batch).unwrap();
+        }
+        writer.close().unwrap();
+
+        let file_size = fs::metadata(parquet_path).unwrap().len();
+        println!("\n=== CURATION COMPLETE ===");
+        println!("Records: {count}");
+        println!("Price precision: {price_precision}");
+        println!("Size precision: {size_precision}");
+        println!(
+            "File size: {} bytes ({:.1} MB)",
+            file_size,
+            file_size as f64 / 1_048_576.0
+        );
+        println!("Output: {parquet_path}");
+        println!("\nNext steps:");
+        println!("  sha256sum {parquet_path}");
     }
 }

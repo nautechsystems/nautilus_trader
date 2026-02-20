@@ -98,3 +98,23 @@ harness = false
 name = "black_scholes_simd_criterion"
 path = "benches/black_scholes_simd_criterion.rs"
 harness = false
+
+[[bench]]
+name = "f64_vs_decimal_to_price_quantity"
+path = "benches/f64_vs_decimal_to_price_quantity.rs"
+harness = false
+
+[[bench]]
+name = "money_criterion"
+path = "benches/money_criterion.rs"
+harness = false
+
+[[bench]]
+name = "price_criterion"
+path = "benches/price_criterion.rs"
+harness = false
+
+[[bench]]
+name = "quantity_criterion"
+path = "benches/quantity_criterion.rs"
+harness = false

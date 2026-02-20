@@ -20,6 +20,7 @@ pub mod bias;
 pub mod cci;
 pub mod cmo;
 pub mod dm;
+pub mod ichimoku;
 pub mod kvo;
 pub mod macd;
 pub mod obv;

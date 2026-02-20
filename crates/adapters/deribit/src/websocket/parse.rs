@@ -40,7 +40,7 @@ use rust_decimal::prelude::ToPrimitive;
 use ustr::Ustr;
 
 use super::{
-    enums::DeribitBookMsgType,
+    enums::{DeribitBookAction, DeribitBookMsgType},
     messages::{
         DeribitBookMsg, DeribitChartMsg, DeribitOrderMsg, DeribitPerpetualMsg, DeribitQuoteMsg,
         DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg,
@@ -76,8 +76,8 @@ pub fn parse_trade_msg(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let price = Price::new(msg.price, price_precision);
-    let size = Quantity::new(msg.amount.abs(), size_precision);
+    let price = Price::from_decimal_dp(msg.price, price_precision)?;
+    let size = Quantity::from_decimal_dp(msg.amount.abs(), size_precision)?;
 
     let aggressor_side = match msg.direction.as_str() {
         "buy" => AggressorSide::Buyer,
@@ -116,6 +116,110 @@ pub fn parse_trades_data(
         .collect()
 }
 
+fn parse_snapshot_level(
+    level: &[serde_json::Value],
+    index: usize,
+    side: &str,
+    instrument_name: &str,
+) -> Option<(f64, f64)> {
+    let (price_val, amount_val) = if level.len() >= 3 {
+        let price = level[1].as_f64().or_else(|| {
+            log::warn!(
+                "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
+        let amount = level[2].as_f64().or_else(|| {
+            log::warn!(
+                "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
+        (price, amount)
+    } else if level.len() >= 2 {
+        let price = level[0].as_f64().or_else(|| {
+            log::warn!(
+                "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
+        let amount = level[1].as_f64().or_else(|| {
+            log::warn!(
+                "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
+        (price, amount)
+    } else {
+        log::warn!(
+            "Invalid {side} format at index {index} for {instrument_name}: expected 2-3 elements, was {}",
+            level.len()
+        );
+        return None;
+    };
+
+    if price_val <= 0.0 {
+        log::warn!(
+            "Invalid {side} price {price_val} at index {index} for {instrument_name}: {level:?}"
+        );
+        return None;
+    }
+
+    Some((price_val, amount_val))
+}
+
+fn parse_delta_level(
+    level: &[serde_json::Value],
+    index: usize,
+    side: &str,
+    instrument_name: &str,
+) -> Option<(BookAction, f64, f64)> {
+    if level.len() < 3 {
+        log::warn!(
+            "Invalid {side} delta format at index {index} for {instrument_name}: expected 3 elements, was {}",
+            level.len()
+        );
+        return None;
+    }
+
+    let action_str = level[0].as_str().or_else(|| {
+        log::warn!(
+            "Failed to parse {side} action at index {index} for {instrument_name}: {level:?}"
+        );
+        None
+    })?;
+
+    let deribit_action: DeribitBookAction = action_str.parse().ok().or_else(|| {
+        log::warn!(
+            "Unknown {side} action '{action_str}' at index {index} for {instrument_name}: {level:?}"
+        );
+        None
+    })?;
+
+    let price_val = level[1].as_f64().or_else(|| {
+        log::warn!(
+            "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
+        );
+        None
+    })?;
+
+    let amount_val = level[2].as_f64().or_else(|| {
+        log::warn!(
+            "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
+        );
+        None
+    })?;
+
+    if price_val <= 0.0 {
+        log::warn!(
+            "Invalid {side} price {price_val} at index {index} for {instrument_name}: {level:?}"
+        );
+        return None;
+    }
+
+    Some((deribit_action.into(), price_val, amount_val))
+}
+
 /// Parses a Deribit order book snapshot into Nautilus `OrderBookDeltas`.
 ///
 /// # Errors
@@ -152,23 +256,10 @@ pub fn parse_book_snapshot(
         ts_init,
     ));
 
-    // Parse bids - handles both formats:
-    // - Simple channel: ["new", price, amount] (3 elements)
-    // - Grouped channel: [price, amount] (2 elements)
     for (i, bid) in msg.bids.iter().enumerate() {
-        let (price_val, amount_val) = if bid.len() >= 3 {
-            // 3-element format: skip action field, use indices 1 and 2
-            (
-                bid[1].as_f64().unwrap_or(0.0),
-                bid[2].as_f64().unwrap_or(0.0),
-            )
-        } else if bid.len() >= 2 {
-            // 2-element format: use indices 0 and 1 directly
-            (
-                bid[0].as_f64().unwrap_or(0.0),
-                bid[1].as_f64().unwrap_or(0.0),
-            )
-        } else {
+        let Some((price_val, amount_val)) =
+            parse_snapshot_level(bid, i, "bid", msg.instrument_name.as_str())
+        else {
             continue;
         };
 
@@ -188,24 +279,11 @@ pub fn parse_book_snapshot(
         }
     }
 
-    // Parse asks - handles both formats:
-    // - Simple channel: ["new", price, amount] (3 elements)
-    // - Grouped channel: [price, amount] (2 elements)
     let num_bids = msg.bids.len();
     for (i, ask) in msg.asks.iter().enumerate() {
-        let (price_val, amount_val) = if ask.len() >= 3 {
-            // 3-element format: skip action field, use indices 1 and 2
-            (
-                ask[1].as_f64().unwrap_or(0.0),
-                ask[2].as_f64().unwrap_or(0.0),
-            )
-        } else if ask.len() >= 2 {
-            // 2-element format: use indices 0 and 1 directly
-            (
-                ask[0].as_f64().unwrap_or(0.0),
-                ask[1].as_f64().unwrap_or(0.0),
-            )
-        } else {
+        let Some((price_val, amount_val)) =
+            parse_snapshot_level(ask, i, "ask", msg.instrument_name.as_str())
+        else {
             continue;
         };
 
@@ -257,63 +335,47 @@ pub fn parse_book_delta(
 
     let mut deltas = Vec::new();
 
-    // Parse bids: [action, price, amount] for delta
     for (i, bid) in msg.bids.iter().enumerate() {
-        if bid.len() >= 3 {
-            let action_str = bid[0].as_str().unwrap_or("new");
-            let price_val = bid[1].as_f64().unwrap_or(0.0);
-            let amount_val = bid[2].as_f64().unwrap_or(0.0);
+        let Some((action, price_val, amount_val)) =
+            parse_delta_level(bid, i, "bid", msg.instrument_name.as_str())
+        else {
+            continue;
+        };
 
-            let action = match action_str {
-                "new" => BookAction::Add,
-                "change" => BookAction::Update,
-                "delete" => BookAction::Delete,
-                _ => continue,
-            };
+        let price = Price::new(price_val, price_precision);
+        let size = Quantity::new(amount_val.abs(), size_precision);
 
-            let price = Price::new(price_val, price_precision);
-            let size = Quantity::new(amount_val.abs(), size_precision);
-
-            deltas.push(OrderBookDelta::new(
-                instrument_id,
-                action,
-                BookOrder::new(OrderSide::Buy, price, size, i as u64),
-                0, // No flags for regular deltas
-                msg.change_id,
-                ts_event,
-                ts_init,
-            ));
-        }
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            action,
+            BookOrder::new(OrderSide::Buy, price, size, i as u64),
+            0,
+            msg.change_id,
+            ts_event,
+            ts_init,
+        ));
     }
 
-    // Parse asks: [action, price, amount] for delta
     let num_bids = msg.bids.len();
     for (i, ask) in msg.asks.iter().enumerate() {
-        if ask.len() >= 3 {
-            let action_str = ask[0].as_str().unwrap_or("new");
-            let price_val = ask[1].as_f64().unwrap_or(0.0);
-            let amount_val = ask[2].as_f64().unwrap_or(0.0);
+        let Some((action, price_val, amount_val)) =
+            parse_delta_level(ask, i, "ask", msg.instrument_name.as_str())
+        else {
+            continue;
+        };
 
-            let action = match action_str {
-                "new" => BookAction::Add,
-                "change" => BookAction::Update,
-                "delete" => BookAction::Delete,
-                _ => continue,
-            };
+        let price = Price::new(price_val, price_precision);
+        let size = Quantity::new(amount_val.abs(), size_precision);
 
-            let price = Price::new(price_val, price_precision);
-            let size = Quantity::new(amount_val.abs(), size_precision);
-
-            deltas.push(OrderBookDelta::new(
-                instrument_id,
-                action,
-                BookOrder::new(OrderSide::Sell, price, size, (num_bids + i) as u64),
-                0, // No flags for regular deltas
-                msg.change_id,
-                ts_event,
-                ts_init,
-            ));
-        }
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            action,
+            BookOrder::new(OrderSide::Sell, price, size, (num_bids + i) as u64),
+            0,
+            msg.change_id,
+            ts_event,
+            ts_init,
+        ));
     }
 
     // Set F_LAST flag on the last delta
@@ -369,10 +431,12 @@ pub fn parse_ticker_to_quote(
         .best_ask_price
         .context("Missing best_ask_price in ticker")?;
 
-    let bid_price = Price::new(bid_price_val, price_precision);
-    let ask_price = Price::new(ask_price_val, price_precision);
-    let bid_size = Quantity::new(msg.best_bid_amount.unwrap_or(0.0), size_precision);
-    let ask_size = Quantity::new(msg.best_ask_amount.unwrap_or(0.0), size_precision);
+    let bid_price = Price::from_decimal_dp(bid_price_val, price_precision)?;
+    let ask_price = Price::from_decimal_dp(ask_price_val, price_precision)?;
+    let bid_size =
+        Quantity::from_decimal_dp(msg.best_bid_amount.unwrap_or_default(), size_precision)?;
+    let ask_size =
+        Quantity::from_decimal_dp(msg.best_ask_amount.unwrap_or_default(), size_precision)?;
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
     QuoteTick::new_checked(
@@ -400,10 +464,10 @@ pub fn parse_quote_msg(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let bid_price = Price::new(msg.best_bid_price, price_precision);
-    let ask_price = Price::new(msg.best_ask_price, price_precision);
-    let bid_size = Quantity::new(msg.best_bid_amount, size_precision);
-    let ask_size = Quantity::new(msg.best_ask_amount, size_precision);
+    let bid_price = Price::from_decimal_dp(msg.best_bid_price, price_precision)?;
+    let ask_price = Price::from_decimal_dp(msg.best_ask_price, price_precision)?;
+    let bid_size = Quantity::from_decimal_dp(msg.best_bid_amount, size_precision)?;
+    let ask_size = Quantity::from_decimal_dp(msg.best_ask_amount, size_precision)?;
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
     QuoteTick::new_checked(
@@ -418,33 +482,49 @@ pub fn parse_quote_msg(
 }
 
 /// Parses a Deribit ticker message into a Nautilus `MarkPriceUpdate`.
-#[must_use]
+///
+/// # Errors
+///
+/// Returns an error if the price cannot be converted to the required precision.
 pub fn parse_ticker_to_mark_price(
     msg: &DeribitTickerMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> MarkPriceUpdate {
+) -> anyhow::Result<MarkPriceUpdate> {
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
-    let value = Price::new(msg.mark_price, price_precision);
+    let value = Price::from_decimal_dp(msg.mark_price, price_precision)?;
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
-    MarkPriceUpdate::new(instrument_id, value, ts_event, ts_init)
+    Ok(MarkPriceUpdate::new(
+        instrument_id,
+        value,
+        ts_event,
+        ts_init,
+    ))
 }
 
 /// Parses a Deribit ticker message into a Nautilus `IndexPriceUpdate`.
-#[must_use]
+///
+/// # Errors
+///
+/// Returns an error if the price cannot be converted to the required precision.
 pub fn parse_ticker_to_index_price(
     msg: &DeribitTickerMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> IndexPriceUpdate {
+) -> anyhow::Result<IndexPriceUpdate> {
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
-    let value = Price::new(msg.index_price, price_precision);
+    let value = Price::from_decimal_dp(msg.index_price, price_precision)?;
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
-    IndexPriceUpdate::new(instrument_id, value, ts_event, ts_init)
+    Ok(IndexPriceUpdate::new(
+        instrument_id,
+        value,
+        ts_event,
+        ts_init,
+    ))
 }
 
 /// Parses a Deribit ticker message into a Nautilus `FundingRateUpdate`.
@@ -750,7 +830,7 @@ pub fn parse_user_trade_msg(
 
     // Get fee currency from the fee_currency field
     let fee_currency = Currency::from(&msg.fee_currency);
-    let commission = Money::new(msg.fee.abs().to_f64().unwrap_or_default(), fee_currency);
+    let commission = Money::from_decimal(msg.fee, fee_currency)?;
 
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
@@ -1213,13 +1293,13 @@ mod tests {
         // Verify the message was deserialized correctly
         assert_eq!(msg.instrument_name.as_str(), "BTC-PERPETUAL");
         assert_eq!(msg.timestamp, 1_765_541_474_086);
-        assert_eq!(msg.best_bid_price, Some(92283.5));
-        assert_eq!(msg.best_ask_price, Some(92284.0));
-        assert_eq!(msg.best_bid_amount, Some(117660.0));
-        assert_eq!(msg.best_ask_amount, Some(186520.0));
-        assert_eq!(msg.mark_price, 92281.78);
-        assert_eq!(msg.index_price, 92263.55);
-        assert_eq!(msg.open_interest, 1132329370.0);
+        assert_eq!(msg.best_bid_price, Some(dec!(92283.5)));
+        assert_eq!(msg.best_ask_price, Some(dec!(92284.0)));
+        assert_eq!(msg.best_bid_amount, Some(dec!(117660.0)));
+        assert_eq!(msg.best_ask_amount, Some(dec!(186520.0)));
+        assert_eq!(msg.mark_price, dec!(92281.78));
+        assert_eq!(msg.index_price, dec!(92263.55));
+        assert_eq!(msg.open_interest, dec!(1132329370.0));
 
         let quote = parse_ticker_to_quote(&msg, &instrument, UnixNanos::default()).unwrap();
 
@@ -1242,10 +1322,10 @@ mod tests {
         // Verify the message was deserialized correctly
         assert_eq!(msg.instrument_name.as_str(), "BTC-PERPETUAL");
         assert_eq!(msg.timestamp, 1_765_541_767_174);
-        assert_eq!(msg.best_bid_price, 92288.0);
-        assert_eq!(msg.best_ask_price, 92288.5);
-        assert_eq!(msg.best_bid_amount, 133440.0);
-        assert_eq!(msg.best_ask_amount, 99470.0);
+        assert_eq!(msg.best_bid_price, dec!(92288.0));
+        assert_eq!(msg.best_ask_price, dec!(92288.5));
+        assert_eq!(msg.best_bid_amount, dec!(133440.0));
+        assert_eq!(msg.best_ask_amount, dec!(99470.0));
 
         let quote = parse_quote_msg(&msg, &instrument, UnixNanos::default()).unwrap();
 
@@ -1451,7 +1531,8 @@ mod tests {
         let msg: DeribitTickerMsg =
             serde_json::from_value(response["params"]["data"].clone()).unwrap();
 
-        let mark_price = parse_ticker_to_mark_price(&msg, &instrument, UnixNanos::default());
+        let mark_price =
+            parse_ticker_to_mark_price(&msg, &instrument, UnixNanos::default()).unwrap();
 
         assert_eq!(mark_price.instrument_id, instrument.id());
         assert_eq!(mark_price.value, instrument.make_price(92281.78));
@@ -1469,7 +1550,8 @@ mod tests {
         let msg: DeribitTickerMsg =
             serde_json::from_value(response["params"]["data"].clone()).unwrap();
 
-        let index_price = parse_ticker_to_index_price(&msg, &instrument, UnixNanos::default());
+        let index_price =
+            parse_ticker_to_index_price(&msg, &instrument, UnixNanos::default()).unwrap();
 
         assert_eq!(index_price.instrument_id, instrument.id());
         assert_eq!(index_price.value, instrument.make_price(92263.55));

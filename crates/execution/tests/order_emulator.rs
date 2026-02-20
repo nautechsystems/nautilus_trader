@@ -30,8 +30,7 @@ fn test_stop_limit_order_triggered_before_market_data_retains_command(
     let price_increment = crypto_perpetual_ethusdt.price_increment;
 
     // Create a matching core
-    let mut matching_core =
-        OrderMatchingCore::new(instrument_id, price_increment, None, None, None);
+    let mut matching_core = OrderMatchingCore::new(instrument_id, price_increment);
 
     // Verify matching core has no market data initially
     assert!(matching_core.bid.is_none());

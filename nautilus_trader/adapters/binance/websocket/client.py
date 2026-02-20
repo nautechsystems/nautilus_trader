@@ -330,18 +330,6 @@ class BinanceWebSocketClient:
         self._clients[client_id] = None  # Dispose (will go out of scope)
         self._log.debug(f"ws-client {client_id}: Disconnected from {self._base_url}")
 
-    async def subscribe_listen_key(self, listen_key: str) -> None:
-        """
-        Subscribe to user data stream.
-        """
-        await self._subscribe(listen_key)
-
-    async def unsubscribe_listen_key(self, listen_key: str) -> None:
-        """
-        Unsubscribe from user data stream.
-        """
-        await self._unsubscribe(listen_key)
-
     async def subscribe_agg_trades(self, symbol: str) -> None:
         """
         Subscribe to aggregate trade stream.

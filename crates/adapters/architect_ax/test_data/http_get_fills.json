@@ -1,0 +1,28 @@
+{
+  "fills": [
+    {
+      "trade_id": "T-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "order_id": "O-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "fee": "0.54225",
+      "is_taker": true,
+      "price": "1.08450",
+      "quantity": 500,
+      "side": "B",
+      "symbol": "EURUSD-PERP",
+      "timestamp": "2024-01-15T10:30:45Z",
+      "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a"
+    },
+    {
+      "trade_id": "T-01ARZ3NDEKTSV4RRFFQ69G5FBW",
+      "order_id": "O-01ARZ3NDEKTSV4RRFFQ69G5FBW",
+      "fee": "0.25430",
+      "is_taker": false,
+      "price": "1.27180",
+      "quantity": 200,
+      "side": "S",
+      "symbol": "GBPUSD-PERP",
+      "timestamp": "2024-01-15T10:31:12Z",
+      "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a"
+    }
+  ]
+}

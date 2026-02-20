@@ -10,13 +10,6 @@ node operations, execution reconciliation, and the differences between backtesti
 
 This guide provides an overview of the key aspects of live trading.
 
-:::warning **One TradingNode per process**
-Running multiple `TradingNode` instances concurrently in the same process is not supported due to global singleton state.
-Add multiple strategies to a single node, or run additional nodes in separate processes for parallel execution.
-
-See [Processes and threads](architecture.md#processes-and-threads) for details.
-:::
-
 :::danger **Jupyter notebooks not recommended for live trading**
 Running live trading nodes in Jupyter notebooks is **not recommended** due to event loop conflicts and operational risks:
 
@@ -28,7 +21,22 @@ Running live trading nodes in Jupyter notebooks is **not recommended** due to ev
 Use Jupyter notebooks for backtesting, analysis, and experimentation. For live trading, run your trading nodes as standalone Python scripts or services with proper process management.
 :::
 
-:::info Platform differences
+:::warning **One TradingNode per process**
+Running multiple `TradingNode` instances concurrently in the same process is not supported due to global singleton state.
+Add multiple strategies to a single node, or run additional nodes in separate processes for parallel execution.
+
+See [Processes and threads](architecture.md#processes-and-threads) for details.
+:::
+
+:::warning **Do not block the event loop**
+User code running on the event loop thread (strategy callbacks, actor handlers, and `on_event`
+methods) should return as quickly as possible. This applies to both Python and Rust implementations.
+Expensive operations such as model inference, heavy calculations, or synchronous I/O can degrade
+performance and compromise correctness (missed fills, stale data, delayed order submissions).
+Offload long-running work to an executor, or to a separate thread/process.
+:::
+
+:::info **Platform differences**
 Windows signal handling differs from Unix-like systems. If you are running on Windows, please read
 the note on [Windows signal handling](#windows-signal-handling) for guidance on graceful shutdown
 behavior and Ctrl+C (SIGINT) support.
@@ -222,6 +230,7 @@ If an order's status cannot be reconciled after exhausting all retries, the engi
 
 | Cache status       | Venue status | Resolution  | Rationale                                                           |
 |--------------------|--------------|-------------|---------------------------------------------------------------------|
+| `SUBMITTED`        | Not found    | `REJECTED`  | Order never confirmed by venue (e.g., lost during network error).   |
 | `ACCEPTED`         | Not found    | `REJECTED`  | Order doesn't exist at venue, likely was never successfully placed. |
 | `ACCEPTED`         | `CANCELED`   | `CANCELED`  | Venue canceled the order (user action or venue-initiated).          |
 | `ACCEPTED`         | `EXPIRED`    | `EXPIRED`   | Order reached GTD expiration at venue.                              |
@@ -521,7 +530,7 @@ The scenarios below are split between startup reconciliation (mass status) and r
 | **Position quantity mismatch (short)** | Internal short position differs from external (e.g., internal: -100, external: -150).             | Generates SELL LIMIT order with calculated price when `generate_missing_orders=True`. |
 | **Position reduction**                 | External position smaller than internal (e.g., internal: 150 long, external: 100 long).           | Generates opposite side LIMIT order with calculated price to reduce position.             |
 | **Position side flip**                 | Internal position opposite of external (e.g., internal: 100 long, external: 50 short).            | Generates LIMIT order with calculated price to close internal and open external position. |
-| **Internal reconciliation orders**     | Position reconciliation orders with strategy ID "EXTERNAL" and tag "RECONCILIATION".                    | Never filtered, regardless of `filter_unclaimed_external_orders` (filtered by tag check). |
+| **Internal reconciliation orders**     | Position reconciliation orders with strategy ID "EXTERNAL" and tag "RECONCILIATION".              | Never filtered, regardless of `filter_unclaimed_external_orders` (filtered by tag check). |
 
 #### Runtime/continuous checks
 

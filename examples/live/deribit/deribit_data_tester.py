@@ -41,7 +41,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -57,10 +57,10 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # Use testnet by default for safety
 USE_TESTNET = bool(os.getenv("USE_TESTNET", "true").lower() == "true")
 
-# Optional: Filter by instrument kinds
-instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = (
-    DeribitInstrumentKind.FUTURE,
-    # DeribitInstrumentKind.OPTION,  # Uncomment to include options (many instruments!)
+# Optional: Filter by product types
+product_types: tuple[DeribitProductType, ...] | None = (
+    DeribitProductType.FUTURE,
+    # DeribitProductType.OPTION,  # Uncomment to include options (many instruments!)
 )
 
 # Define instruments to subscribe to
@@ -87,7 +87,7 @@ config_node = TradingNodeConfig(
         DERIBIT: DeribitDataClientConfig(
             api_key=None,  # Will use env var: DERIBIT_TESTNET_API_KEY or DERIBIT_API_KEY
             api_secret=None,  # Will use env var: DERIBIT_TESTNET_API_SECRET or DERIBIT_API_SECRET
-            instrument_kinds=instrument_kinds,
+            product_types=product_types,
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
             ),
@@ -106,15 +106,19 @@ node = TradingNode(config=config_node)
 # Configure and initialize the tester
 config_tester = DataTesterConfig(
     instrument_ids=[perpetual_id],
-    # subscribe_book_at_interval=True,
-    subscribe_quotes=True,
-    subscribe_trades=True,
-    subscribe_index_prices=True,
-    subscribe_mark_prices=True,
-    subscribe_funding_rates=True,
-    subscribe_bars=True,
+    subscribe_book_at_interval=True,
+    # subscribe_quotes=True,
+    # subscribe_trades=True,
+    # subscribe_index_prices=True,
+    # subscribe_mark_prices=True,
+    # subscribe_funding_rates=True,
+    # subscribe_bars=True,
+    request_trades=True,
+    request_bars=True,
     bar_types=bar_types,
-    book_interval_ms=10,
+    book_interval_ms=100,
+    book_depth=20,  # Limits depth to 20 levels (normalized to Deribit's 1, 10, or 20)
+    # subscribe_params={"interval": "100ms"},  # Use 100ms grouped channel instead of raw
     log_data=True,
 )
 tester = DataTester(config=config_tester)

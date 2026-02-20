@@ -55,7 +55,7 @@ use nautilus_model::{
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     },
 };
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::prelude::*;
 
 use crate::websocket::{CoinbaseIntxWebSocketClient, messages::NautilusWsMessage};
 
@@ -202,7 +202,7 @@ impl CoinbaseIntxWebSocketClient {
             client
                 .wait_until_active(timeout_secs)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(to_pyruntime_err)?;
             Ok(())
         })
     }

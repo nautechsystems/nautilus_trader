@@ -27,6 +27,7 @@ use nautilus_architect_ax::{
     common::consts::{AX_HTTP_SANDBOX_URL, AX_HTTP_URL, AX_ORDERS_SANDBOX_URL, AX_ORDERS_URL},
     http::client::AxRawHttpClient,
 };
+use ustr::Ustr;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -89,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let test_symbol = instruments_response
         .instruments
         .first()
-        .map_or("EURUSD-PERP", |i| i.symbol.as_str());
+        .map_or(Ustr::from("EURUSD-PERP"), |i| i.symbol);
 
     log::info!("Fetching single instrument: {test_symbol}");
     let start = std::time::Instant::now();

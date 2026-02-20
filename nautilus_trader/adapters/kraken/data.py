@@ -35,6 +35,7 @@ from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
@@ -43,6 +44,7 @@ from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstruments
@@ -54,6 +56,7 @@ from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOU
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
@@ -288,6 +291,30 @@ class KrakenDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        if self._config.update_instruments_interval_mins:
+            self._log.info(
+                f"Kraken does not have an instruments channel, instrument updates are handled by "
+                f"polling task running every {self._config.update_instruments_interval_mins} minutes",
+                LogColor.BLUE,
+            )
+        else:
+            self._log.warning(
+                "Instruments subscription requested but update_instruments_interval_mins is not configured",
+            )
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        if self._config.update_instruments_interval_mins:
+            self._log.info(
+                f"Kraken does not have an instruments channel, instrument updates are handled by "
+                f"polling task running every {self._config.update_instruments_interval_mins} minutes",
+                LogColor.BLUE,
+            )
+        else:
+            self._log.warning(
+                "Instrument subscription requested but update_instruments_interval_mins is not configured",
+            )
+
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
             self._log.warning(
@@ -334,129 +361,6 @@ class KrakenDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await ws_client.subscribe_trades(pyo3_instrument_id)
 
-    async def _subscribe_bars(self, command: SubscribeBars) -> None:
-        if not command.bar_type.is_externally_aggregated():
-            self._log.warning(
-                f"Cannot subscribe to {command.bar_type} bars: "
-                f"only EXTERNAL bars are supported, use INTERNAL aggregation instead",
-            )
-            return
-
-        if not command.bar_type.spec.is_time_aggregated():
-            self._log.warning(
-                f"Cannot subscribe to {command.bar_type} bars: "
-                f"only time-based bars are aggregated by Kraken",
-            )
-            return
-
-        symbol = command.bar_type.instrument_id.symbol.value
-        if symbol.startswith(("PI_", "PF_", "PV_", "FI_", "FF_")):
-            self._log.warning(
-                f"Cannot subscribe to {command.bar_type} bars: "
-                f"Kraken Futures does not support EXTERNAL bar streaming, "
-                f"use INTERNAL aggregation instead",
-            )
-            return
-
-        if self._ws_client_spot is None:
-            self._log.error(f"No spot WebSocket client configured for {command.bar_type}")
-            return
-
-        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
-        await self._ws_client_spot.subscribe_bars(pyo3_bar_type)
-
-    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
-        if self._config.update_instruments_interval_mins:
-            self._log.info(
-                f"Kraken does not have an instruments channel, instrument updates are handled by "
-                f"polling task running every {self._config.update_instruments_interval_mins} minutes",
-                LogColor.BLUE,
-            )
-        else:
-            self._log.warning(
-                "Instruments subscription requested but update_instruments_interval_mins is not configured",
-            )
-
-    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
-        if self._config.update_instruments_interval_mins:
-            self._log.info(
-                f"Kraken does not have an instruments channel, instrument updates are handled by "
-                f"polling task running every {self._config.update_instruments_interval_mins} minutes",
-                LogColor.BLUE,
-            )
-        else:
-            self._log.warning(
-                "Instrument subscription requested but update_instruments_interval_mins is not configured",
-            )
-
-    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
-        symbol = command.instrument_id.symbol.value
-        ws_client = self._get_ws_client_for_symbol(symbol)
-        if ws_client is None:
-            return
-
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await ws_client.unsubscribe_book(pyo3_instrument_id)
-
-    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
-        symbol = command.instrument_id.symbol.value
-        ws_client = self._get_ws_client_for_symbol(symbol)
-        if ws_client is None:
-            return
-
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await ws_client.unsubscribe_quotes(pyo3_instrument_id)
-
-    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        symbol = command.instrument_id.symbol.value
-        ws_client = self._get_ws_client_for_symbol(symbol)
-        if ws_client is None:
-            return
-
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await ws_client.unsubscribe_trades(pyo3_instrument_id)
-
-    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        symbol = command.bar_type.instrument_id.symbol.value
-        if symbol.startswith(("PI_", "PF_", "PV_", "FI_", "FF_")):
-            # Futures bars were never subscribed
-            return
-
-        if self._ws_client_spot is None:
-            return
-
-        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
-        await self._ws_client_spot.unsubscribe_bars(pyo3_bar_type)
-
-    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
-        # Instruments are updated via polling task, no WebSocket unsubscribe needed
-        pass
-
-    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
-        # Instruments are updated via polling task, no WebSocket unsubscribe needed
-        pass
-
-    async def _ensure_futures_ws_connected(self) -> None:
-        if self._ws_client_futures is None:
-            self._log.warning("Futures WebSocket not configured")
-            return
-
-        if self._ws_client_futures_connected:
-            return
-
-        self._log.info("Connecting futures WebSocket (lazy)", LogColor.BLUE)
-
-        # Get instruments for price precision lookup
-        instruments_pyo3 = self.instrument_provider.instruments_pyo3()
-
-        await self._ws_client_futures.connect(instruments_pyo3, self._handle_msg)
-        self._ws_client_futures_connected = True
-
-        self._log.info(
-            f"Connected to futures websocket {self._ws_client_futures.url}",
-            LogColor.BLUE,
-        )
-
     async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
         instrument_id = command.instrument_id
         symbol = instrument_id.symbol.value
@@ -495,6 +399,92 @@ class KrakenDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         await self._ws_client_futures.subscribe_index_price(pyo3_instrument_id)
 
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        if not command.bar_type.is_externally_aggregated():
+            self._log.warning(
+                f"Cannot subscribe to {command.bar_type} bars: "
+                f"only EXTERNAL bars are supported, use INTERNAL aggregation instead",
+            )
+            return
+
+        if not command.bar_type.spec.is_time_aggregated():
+            self._log.warning(
+                f"Cannot subscribe to {command.bar_type} bars: "
+                f"only time-based bars are aggregated by Kraken",
+            )
+            return
+
+        symbol = command.bar_type.instrument_id.symbol.value
+        product_type = nautilus_pyo3.kraken_product_type_from_symbol(symbol)
+        if product_type == KrakenProductType.FUTURES:
+            self._log.warning(
+                f"Cannot subscribe to {command.bar_type} bars: "
+                f"Kraken Futures does not support EXTERNAL bar streaming, "
+                f"use INTERNAL aggregation instead",
+            )
+            return
+
+        if self._ws_client_spot is None:
+            self._log.error(f"No spot WebSocket client configured for {command.bar_type}")
+            return
+
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
+        await self._ws_client_spot.subscribe_bars(pyo3_bar_type)
+
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        instrument_id = command.instrument_id
+        symbol = instrument_id.symbol.value
+        product_type = nautilus_pyo3.kraken_product_type_from_symbol(symbol)
+
+        if product_type != KrakenProductType.FUTURES:
+            self._log.warning(
+                f"Funding rate subscription not supported for spot instrument {instrument_id}",
+            )
+            return
+
+        if self._ws_client_futures is None:
+            self._log.warning("Futures WebSocket not configured for funding rate subscription")
+            return
+
+        await self._ensure_futures_ws_connected()
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
+        await self._ws_client_futures.subscribe_funding_rate(pyo3_instrument_id)
+
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
+        # Instruments are updated via polling task, no WebSocket unsubscribe needed
+        pass
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        # Instruments are updated via polling task, no WebSocket unsubscribe needed
+        pass
+
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        symbol = command.instrument_id.symbol.value
+        ws_client = self._get_ws_client_for_symbol(symbol)
+        if ws_client is None:
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await ws_client.unsubscribe_book(pyo3_instrument_id)
+
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        symbol = command.instrument_id.symbol.value
+        ws_client = self._get_ws_client_for_symbol(symbol)
+        if ws_client is None:
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await ws_client.unsubscribe_quotes(pyo3_instrument_id)
+
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        symbol = command.instrument_id.symbol.value
+        ws_client = self._get_ws_client_for_symbol(symbol)
+        if ws_client is None:
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await ws_client.unsubscribe_trades(pyo3_instrument_id)
+
     async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
         instrument_id = command.instrument_id
         symbol = instrument_id.symbol.value
@@ -522,6 +512,53 @@ class KrakenDataClient(LiveMarketDataClient):
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         await self._ws_client_futures.unsubscribe_index_price(pyo3_instrument_id)
+
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        symbol = command.bar_type.instrument_id.symbol.value
+        product_type = nautilus_pyo3.kraken_product_type_from_symbol(symbol)
+        if product_type == KrakenProductType.FUTURES:
+            return
+
+        if self._ws_client_spot is None:
+            return
+
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
+        await self._ws_client_spot.unsubscribe_bars(pyo3_bar_type)
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        instrument_id = command.instrument_id
+        symbol = instrument_id.symbol.value
+        product_type = nautilus_pyo3.kraken_product_type_from_symbol(symbol)
+
+        if product_type != KrakenProductType.FUTURES:
+            return
+
+        if self._ws_client_futures is None or not self._ws_client_futures_connected:
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
+        await self._ws_client_futures.unsubscribe_funding_rate(pyo3_instrument_id)
+
+    async def _ensure_futures_ws_connected(self) -> None:
+        if self._ws_client_futures is None:
+            self._log.warning("Futures WebSocket not configured")
+            return
+
+        if self._ws_client_futures_connected:
+            return
+
+        self._log.info("Connecting futures WebSocket (lazy)", LogColor.BLUE)
+
+        # Get instruments for price precision lookup
+        instruments_pyo3 = self.instrument_provider.instruments_pyo3()
+
+        await self._ws_client_futures.connect(instruments_pyo3, self._handle_msg)
+        self._ws_client_futures_connected = True
+
+        self._log.info(
+            f"Connected to futures websocket {self._ws_client_futures.url}",
+            LogColor.BLUE,
+        )
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         all_pyo3_instruments = []
@@ -689,6 +726,8 @@ class KrakenDataClient(LiveMarketDataClient):
                 self._handle_data(data)
             elif isinstance(msg, KRAKEN_INSTRUMENT_TYPES):
                 self._handle_instrument_update(msg)
+            elif isinstance(msg, nautilus_pyo3.FundingRateUpdate):
+                self._handle_data(FundingRateUpdate.from_pyo3(msg))
             else:
                 self._log.warning(f"Cannot handle message {msg}, not implemented")
         except Exception as e:

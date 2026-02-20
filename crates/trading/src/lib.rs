@@ -36,6 +36,9 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `examples`: Enables example strategies (e.g. `EmaCross`) for backtesting and demos.
+//! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds the crate as a Python extension module.
 
@@ -51,6 +54,9 @@
 pub mod algorithm;
 pub mod sessions;
 pub mod strategy;
+
+#[cfg(feature = "examples")]
+pub mod examples;
 
 pub use algorithm::{
     ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, TwapAlgorithm,

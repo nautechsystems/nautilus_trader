@@ -28,7 +28,7 @@ use super::{
 };
 use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
-    enums::{BookAction, BookType, OrderSide, OrderSideSpecified, OrderStatus},
+    enums::{BookAction, BookType, OrderSide, OrderSideSpecified, OrderStatus, RecordFlag},
     identifiers::InstrumentId,
     orderbook::{
         BookIntegrityError, InvalidBookOperation,
@@ -50,7 +50,7 @@ use crate::{
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct OrderBook {
     /// The instrument ID for the order book.
@@ -375,6 +375,82 @@ impl OrderBook {
         Ok(())
     }
 
+    /// Creates an `OrderBookDeltas` snapshot from the current order book state.
+    ///
+    /// This is the reverse operation of `apply_deltas`: it converts the current book state
+    /// back into a snapshot format with a `Clear` delta followed by `Add` deltas for all orders.
+    ///
+    /// # Parameters
+    ///
+    /// * `ts_event` - UNIX timestamp (nanoseconds) when the book event occurred.
+    /// * `ts_init` - UNIX timestamp (nanoseconds) when the instance was created.
+    ///
+    /// # Returns
+    ///
+    /// An `OrderBookDeltas` containing a snapshot of the current order book state.
+    #[must_use]
+    pub fn to_deltas(&self, ts_event: UnixNanos, ts_init: UnixNanos) -> OrderBookDeltas {
+        let mut deltas = Vec::new();
+
+        let total_orders = self.bids(None).map(|level| level.len()).sum::<usize>()
+            + self.asks(None).map(|level| level.len()).sum::<usize>();
+
+        // Set F_LAST on clear when book is empty so buffered consumers flush
+        let mut clear = OrderBookDelta::clear(self.instrument_id, self.sequence, ts_event, ts_init);
+        if total_orders == 0 {
+            clear.flags |= RecordFlag::F_LAST as u8;
+        }
+        deltas.push(clear);
+
+        let mut order_count = 0;
+
+        // Add bid orders
+        for level in self.bids(None) {
+            for order in level.iter() {
+                order_count += 1;
+                let flags = if order_count == total_orders {
+                    RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+                } else {
+                    RecordFlag::F_SNAPSHOT as u8
+                };
+
+                deltas.push(OrderBookDelta::new(
+                    self.instrument_id,
+                    BookAction::Add,
+                    *order,
+                    flags,
+                    self.sequence,
+                    ts_event,
+                    ts_init,
+                ));
+            }
+        }
+
+        // Add ask orders
+        for level in self.asks(None) {
+            for order in level.iter() {
+                order_count += 1;
+                let flags = if order_count == total_orders {
+                    RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+                } else {
+                    RecordFlag::F_SNAPSHOT as u8
+                };
+
+                deltas.push(OrderBookDelta::new(
+                    self.instrument_id,
+                    BookAction::Add,
+                    *order,
+                    flags,
+                    self.sequence,
+                    ts_event,
+                    ts_init,
+                ));
+            }
+        }
+
+        OrderBookDeltas::new(self.instrument_id, deltas)
+    }
+
     /// Replaces current book state with a depth snapshot.
     ///
     /// # Errors
@@ -410,12 +486,20 @@ impl OrderBook {
                 continue;
             }
 
-            debug_assert_eq!(
-                order.side,
-                OrderSide::Buy,
-                "Bid order must have Buy side, was {:?}",
-                order.side
-            );
+            if order.side != OrderSide::Buy {
+                debug_assert_eq!(
+                    order.side,
+                    OrderSide::Buy,
+                    "Bid order must have Buy side, was {:?}",
+                    order.side
+                );
+                log::warn!(
+                    "Skipping bid order with wrong side {:?} (instrument_id={})",
+                    order.side,
+                    self.instrument_id
+                );
+                continue;
+            }
 
             let order = pre_process_order(self.book_type, order, depth.flags);
             self.bids.add(order, depth.flags);
@@ -427,12 +511,20 @@ impl OrderBook {
                 continue;
             }
 
-            debug_assert_eq!(
-                order.side,
-                OrderSide::Sell,
-                "Ask order must have Sell side, was {:?}",
-                order.side
-            );
+            if order.side != OrderSide::Sell {
+                debug_assert_eq!(
+                    order.side,
+                    OrderSide::Sell,
+                    "Ask order must have Sell side, was {:?}",
+                    order.side
+                );
+                log::warn!(
+                    "Skipping ask order with wrong side {:?} (instrument_id={})",
+                    order.side,
+                    self.instrument_id
+                );
+                continue;
+            }
 
             let order = pre_process_order(self.book_type, order, depth.flags);
             self.asks.add(order, depth.flags);
@@ -918,34 +1010,29 @@ impl OrderBook {
     }
 
     fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {
-        // Critical invariant checks: panic in debug, warn in release
-        if sequence < self.sequence {
-            let msg = format!(
-                "Sequence number should not go backwards: old={}, new={}",
-                self.sequence, sequence
+        if sequence > 0 && sequence < self.sequence {
+            log::warn!(
+                "Out-of-order update: sequence {} < {} (instrument_id={})",
+                sequence,
+                self.sequence,
+                self.instrument_id
             );
-            debug_assert!(sequence >= self.sequence, "{}", msg);
-            log::warn!("{msg}");
         }
-
         if ts_event < self.ts_last {
-            let msg = format!(
-                "Timestamp should not go backwards: old={}, new={}",
-                self.ts_last, ts_event
+            log::warn!(
+                "Out-of-order update: ts_event {} < {} (instrument_id={})",
+                ts_event,
+                self.ts_last,
+                self.instrument_id
             );
-            debug_assert!(ts_event >= self.ts_last, "{}", msg);
-            log::warn!("{msg}");
         }
 
         if self.update_count == u64::MAX {
-            // Debug assert to catch in development
             debug_assert!(
                 self.update_count < u64::MAX,
                 "Update count at u64::MAX limit (about to overflow): {}",
                 self.update_count
             );
-
-            // Spam warnings in production when at/near u64::MAX
             log::warn!(
                 "Update count at u64::MAX: {} (instrument_id={})",
                 self.update_count,
@@ -953,8 +1040,9 @@ impl OrderBook {
             );
         }
 
-        self.sequence = sequence;
-        self.ts_last = ts_event;
+        // High-water mark prevents metadata regression from out-of-order updates
+        self.sequence = sequence.max(self.sequence);
+        self.ts_last = ts_event.max(self.ts_last);
         self.update_count = self.update_count.saturating_add(1);
     }
 

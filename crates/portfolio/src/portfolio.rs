@@ -802,7 +802,7 @@ impl Portfolio {
 
             let result = self.inner.borrow_mut().accounts.update_orders(
                 account,
-                instrument.clone(),
+                instrument,
                 orders_open.iter().collect(),
                 self.clock.borrow().timestamp_ns(),
             );
@@ -923,7 +923,7 @@ impl Portfolio {
 
             let result = self.inner.borrow_mut().accounts.update_positions(
                 &account,
-                instrument,
+                &instrument,
                 positions.iter().collect(),
                 self.clock.borrow().timestamp_ns(),
             );
@@ -1696,7 +1696,7 @@ fn update_instrument_id(
 
         result_init = inner.borrow().accounts.update_orders(
             &account,
-            instrument.clone(),
+            &instrument,
             orders_open.iter().collect(),
             clock.borrow().timestamp_ns(),
         );
@@ -1704,7 +1704,7 @@ fn update_instrument_id(
         if let AccountAny::Margin(ref margin_account) = account {
             result_maint = inner.borrow().accounts.update_positions(
                 margin_account,
-                instrument,
+                &instrument,
                 positions_open.iter().collect(),
                 clock.borrow().timestamp_ns(),
             );
@@ -1809,11 +1809,10 @@ fn update_order(
     };
 
     if let OrderEventAny::Filled(order_filled) = event {
-        let _ = inner.borrow().accounts.update_balances(
-            account.clone(),
-            instrument.clone(),
-            *order_filled,
-        );
+        let _ = inner
+            .borrow()
+            .accounts
+            .update_balances(account.clone(), instrument, *order_filled);
 
         let mut portfolio_clone = Portfolio {
             clock: clock.clone(),
@@ -1842,15 +1841,15 @@ fn update_order(
 
     let account_state = inner.borrow_mut().accounts.update_orders(
         account,
-        instrument.clone(),
+        instrument,
         orders_open,
         clock.borrow().timestamp_ns(),
     );
 
     let mut cache_ref = cache.borrow_mut();
-    cache_ref.update_account(account.clone()).unwrap();
 
-    if let Some((_, account_state)) = account_state {
+    if let Some((updated_account, account_state)) = account_state {
+        cache_ref.update_account(updated_account).unwrap();
         msgbus::publish_account_state(
             format!("events.account.{}", account.id()).into(),
             &account_state,
@@ -1945,7 +1944,7 @@ fn update_position(
 
         let result = inner.borrow_mut().accounts.update_positions(
             margin_account,
-            instrument.clone(),
+            instrument,
             positions_open.iter().collect(),
             clock.borrow().timestamp_ns(),
         );

@@ -135,6 +135,68 @@ def data_client(
 
 
 @pytest.fixture
+def race_data_client(
+    mocker,
+    betfair_client,
+    instrument_provider,
+    instrument,
+    venue,
+    event_loop,
+    msgbus,
+    cache,
+    clock,
+) -> BetfairDataClient:
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.factories.get_cached_betfair_client",
+        return_value=betfair_client,
+    )
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.factories.get_cached_betfair_instrument_provider",
+        return_value=instrument_provider,
+    )
+
+    instrument_provider.add(instrument)
+    data_client = BetfairLiveDataClientFactory.create(
+        loop=event_loop,
+        name=venue.value,
+        config=BetfairDataClientConfig(
+            account_currency="GBP",
+            username="username",
+            password="password",
+            app_key="app_key",
+            subscribe_race_data=True,
+        ),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    data_client._client._headers.update(
+        {
+            "X-Authentication": "token",
+            "X-Application": "product",
+        },
+    )
+
+    # Patches
+    patch(
+        "nautilus_trader.adapters.betfair.data.BetfairDataClient._instrument_provider.get_account_currency",
+        return_value="GBP",
+    )
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.data.BetfairDataClient.stream_subscribe",
+    )
+    patch(
+        "nautilus_trader.adapters.betfair.providers.BetfairInstrumentProvider._client.list_navigation",
+        return_value=BetfairResponses.navigation_list_navigation(),
+    )
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.data.BetfairDataClient.stream_subscribe",
+    )
+
+    return data_client
+
+
+@pytest.fixture
 def exec_client(
     mocker,
     betfair_client,

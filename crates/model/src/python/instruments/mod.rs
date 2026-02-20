@@ -19,13 +19,15 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
 
 use crate::instruments::{
-    BettingInstrument, BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
-    FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
-    crypto_option::CryptoOption,
+    BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair,
+    Equity, FuturesContract, FuturesSpread, IndexInstrument, InstrumentAny, OptionContract,
+    OptionSpread, PerpetualContract, crypto_option::CryptoOption,
 };
 
 pub mod betting;
 pub mod binary_option;
+pub mod cfd;
+pub mod commodity;
 pub mod crypto_future;
 pub mod crypto_option;
 pub mod crypto_perpetual;
@@ -33,8 +35,11 @@ pub mod currency_pair;
 pub mod equity;
 pub mod futures_contract;
 pub mod futures_spread;
+pub mod index_instrument;
 pub mod option_contract;
 pub mod option_spread;
+pub mod perpetual_contract;
+pub mod synthetic;
 
 /// Converts an [`InstrumentAny`] into a Python object.
 ///
@@ -45,6 +50,8 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
     match instrument {
         InstrumentAny::Betting(inst) => inst.into_py_any(py),
         InstrumentAny::BinaryOption(inst) => inst.into_py_any(py),
+        InstrumentAny::Cfd(inst) => inst.into_py_any(py),
+        InstrumentAny::Commodity(inst) => inst.into_py_any(py),
         InstrumentAny::CryptoFuture(inst) => inst.into_py_any(py),
         InstrumentAny::CryptoOption(inst) => inst.into_py_any(py),
         InstrumentAny::CryptoPerpetual(inst) => inst.into_py_any(py),
@@ -52,8 +59,10 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
         InstrumentAny::Equity(inst) => inst.into_py_any(py),
         InstrumentAny::FuturesContract(inst) => inst.into_py_any(py),
         InstrumentAny::FuturesSpread(inst) => inst.into_py_any(py),
+        InstrumentAny::IndexInstrument(inst) => inst.into_py_any(py),
         InstrumentAny::OptionContract(inst) => inst.into_py_any(py),
         InstrumentAny::OptionSpread(inst) => inst.into_py_any(py),
+        InstrumentAny::PerpetualContract(inst) => inst.into_py_any(py),
     }
 }
 
@@ -69,6 +78,10 @@ pub fn pyobject_to_instrument_any(py: Python, instrument: Py<PyAny>) -> PyResult
         )),
         stringify!(BinaryOption) => Ok(InstrumentAny::BinaryOption(
             instrument.extract::<BinaryOption>(py)?,
+        )),
+        stringify!(Cfd) => Ok(InstrumentAny::Cfd(instrument.extract::<Cfd>(py)?)),
+        stringify!(Commodity) => Ok(InstrumentAny::Commodity(
+            instrument.extract::<Commodity>(py)?,
         )),
         stringify!(CryptoFuture) => Ok(InstrumentAny::CryptoFuture(
             instrument.extract::<CryptoFuture>(py)?,
@@ -89,11 +102,17 @@ pub fn pyobject_to_instrument_any(py: Python, instrument: Py<PyAny>) -> PyResult
         stringify!(FuturesSpread) => Ok(InstrumentAny::FuturesSpread(
             instrument.extract::<FuturesSpread>(py)?,
         )),
+        stringify!(IndexInstrument) => Ok(InstrumentAny::IndexInstrument(
+            instrument.extract::<IndexInstrument>(py)?,
+        )),
         stringify!(OptionContract) => Ok(InstrumentAny::OptionContract(
             instrument.extract::<OptionContract>(py)?,
         )),
         stringify!(OptionSpread) => Ok(InstrumentAny::OptionSpread(
             instrument.extract::<OptionSpread>(py)?,
+        )),
+        stringify!(PerpetualContract) => Ok(InstrumentAny::PerpetualContract(
+            instrument.extract::<PerpetualContract>(py)?,
         )),
         _ => Err(to_pyvalue_err(
             "Error in conversion from `Py<PyAny>` to `InstrumentAny`",

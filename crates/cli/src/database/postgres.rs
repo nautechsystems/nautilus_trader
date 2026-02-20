@@ -45,7 +45,7 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
             );
             log::info!(
                 "Connecting to Postgres at {}",
-                pg_connect_options.connection_string()
+                pg_connect_options.connection_string_masked()
             );
 
             let pg = connect_pg(pg_connect_options.clone().into()).await?;
@@ -69,7 +69,7 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
             );
             log::info!(
                 "Connecting to Postgres at {}",
-                pg_connect_options.connection_string()
+                pg_connect_options.connection_string_masked()
             );
 
             let pg = connect_pg(pg_connect_options.clone().into()).await?;

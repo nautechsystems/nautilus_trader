@@ -36,16 +36,18 @@
 //! This design removes all manual INCREF/DECREF on `callback_ptr`, eliminates
 //! leaks, and is safe on any thread.
 
-use std::{
-    ffi::c_char,
-    sync::{Mutex, OnceLock},
-};
+use std::ffi::c_char;
+#[cfg(feature = "python")]
+use std::sync::{Mutex, OnceLock};
 
+#[cfg(feature = "python")]
 use ahash::AHashMap;
+#[cfg(feature = "python")]
+use nautilus_core::MUTEX_POISONED;
 #[cfg(feature = "python")]
 use nautilus_core::python::clone_py_object;
 use nautilus_core::{
-    MUTEX_POISONED, UUID4,
+    UUID4,
     ffi::string::{cstr_to_ustr, str_to_cstr},
 };
 #[cfg(feature = "python")]

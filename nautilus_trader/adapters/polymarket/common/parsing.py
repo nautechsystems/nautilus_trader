@@ -171,8 +171,8 @@ def parse_polymarket_instrument(
         # end_date_iso can be missing in some conditions that are part of an event that has it
         expiration_ns = (pd.Timestamp.now(tz="UTC") + pd.DateOffset(years=10)).value
 
-    maker_fee = Decimal(str(market_info["maker_base_fee"]))
-    taker_fee = Decimal(str(market_info["taker_base_fee"]))
+    maker_fee = basis_points_as_decimal(Decimal(str(market_info["maker_base_fee"])))
+    taker_fee = basis_points_as_decimal(Decimal(str(market_info["taker_base_fee"])))
 
     ts_init = ts_init if ts_init is not None else time.time_ns()
 
@@ -227,6 +227,24 @@ def update_instrument(
         ts_init=ts_init,
         info=instrument.info,
     )
+
+
+def basis_points_as_decimal(basis_points: Decimal) -> Decimal:
+    """
+    Convert basis points to a decimal fraction.
+
+    Parameters
+    ----------
+    basis_points : Decimal
+        The fee rate in basis points (1 bp = 0.01%).
+
+    Returns
+    -------
+    Decimal
+        The decimal fraction (e.g., 100 bp -> 0.01).
+
+    """
+    return basis_points / Decimal(10_000)
 
 
 def calculate_commission(

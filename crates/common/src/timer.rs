@@ -33,10 +33,9 @@ use ustr::Ustr;
 
 /// Creates a valid nanoseconds interval that is guaranteed to be positive.
 ///
-/// # Panics
-///
-/// Panics if `interval_ns` is zero.
+/// Coerces zero to one to ensure a valid `NonZeroU64`.
 #[must_use]
+#[allow(clippy::missing_panics_doc)] // Value is coerced to >= 1
 pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
     NonZeroU64::new(std::cmp::max(interval_ns, 1)).expect("`interval_ns` must be positive")
 }
@@ -45,7 +44,7 @@ pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
 )]
 /// Represents a time event occurring at the event timestamp.
 ///
@@ -292,10 +291,6 @@ impl TimeEventHandler {
     }
 
     /// Executes the handler by invoking its callback for the associated event.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the underlying callback invocation fails (e.g., a Python callback raises an exception).
     pub fn run(self) {
         let Self { event, callback } = self;
         callback.call(event);

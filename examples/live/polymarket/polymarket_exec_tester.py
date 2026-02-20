@@ -22,7 +22,7 @@ from nautilus_trader.adapters.polymarket import PolymarketExecClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketLiveDataClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketLiveExecClientFactory
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
-from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -59,7 +59,7 @@ instrument_id = get_polymarket_instrument_id(condition_id, token_id)
 # Configure instrument provider to only load the specific instrument we're testing
 # This avoids walking the entire Polymarket market space unnecessarily
 load_ids = [str(instrument_id)]
-instrument_provider_config = InstrumentProviderConfig(load_ids=frozenset(load_ids))
+instrument_provider_config = PolymarketInstrumentProviderConfig(load_ids=frozenset(load_ids))
 
 # Order configuration
 order_qty = Decimal(10)  # Number of shares for limit orders, or notional value for market BUY
@@ -120,7 +120,7 @@ config_node = TradingNodeConfig(
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             # signature_type=2,  # Use if trading via Polymarket Proxy (enables UI verification, requires funder address)
             base_url_http=None,  # Override with custom endpoint
-            instrument_provider=instrument_provider_config,
+            instrument_config=instrument_provider_config,
         ),
     },
     exec_clients={
@@ -130,7 +130,7 @@ config_node = TradingNodeConfig(
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             # signature_type=2,  # Use if trading via Polymarket Proxy (enables UI verification, requires funder address)
             base_url_http=None,  # Override with custom endpoint
-            instrument_provider=instrument_provider_config,
+            instrument_config=instrument_provider_config,
             generate_order_history_from_trades=False,
         ),
     },

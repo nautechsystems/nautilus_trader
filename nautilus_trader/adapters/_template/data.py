@@ -15,6 +15,7 @@
 
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
@@ -89,8 +90,6 @@ class TemplateLiveDataClient(LiveDataClient):
             "method `_disconnect` must be implemented in the subclass",
         )  # pragma: no cover
 
-    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
-
     async def _subscribe(self, command: SubscribeData) -> None:
         raise NotImplementedError(
             "method `_subscribe` must be implemented in the subclass",
@@ -100,8 +99,6 @@ class TemplateLiveDataClient(LiveDataClient):
         raise NotImplementedError(
             "method `_unsubscribe` must be implemented in the subclass",
         )  # pragma: no cover
-
-    # -- REQUESTS ---------------------------------------------------------------------------------
 
     async def _request(self, request: RequestData) -> None:
         raise NotImplementedError(
@@ -131,8 +128,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _subscribe_trade_ticks                 | optional    |
     | _subscribe_mark_prices                 | optional    |
     | _subscribe_index_prices                | optional    |
-    | _subscribe_funding_rates               | optional    |
     | _subscribe_bars                        | optional    |
+    | _subscribe_funding_rates               | optional    |
     | _subscribe_instrument_status           | optional    |
     | _subscribe_instrument_close            | optional    |
     | _unsubscribe (adapter specific types)  | optional    |
@@ -144,8 +141,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _unsubscribe_trade_ticks               | optional    |
     | _unsubscribe_mark_prices               | optional    |
     | _unsubscribe_index_prices              | optional    |
-    | _unsubscribe_funding_rates             | optional    |
     | _unsubscribe_bars                      | optional    |
+    | _unsubscribe_funding_rates             | optional    |
     | _unsubscribe_instrument_status         | optional    |
     | _unsubscribe_instrument_close          | optional    |
     +----------------------------------------+-------------+
@@ -156,6 +153,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _request_quote_ticks                   | optional    |
     | _request_trade_ticks                   | optional    |
     | _request_bars                          | optional    |
+    | _request_funding_rates                 | optional    |
     +----------------------------------------+-------------+
 
     """
@@ -169,8 +167,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         raise NotImplementedError(
             "method `_disconnect` must be implemented in the subclass",
         )  # pragma: no cover
-
-    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe(self, command: SubscribeData) -> None:
         raise NotImplementedError(
@@ -217,14 +213,14 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_subscribe_index_prices` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
-        raise NotImplementedError(
-            "method `_subscribe_funding_rates` must be implemented in the subclass",
-        )  # pragma: no cover
-
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         raise NotImplementedError(
             "method `_subscribe_bars` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        raise NotImplementedError(
+            "method `_subscribe_funding_rates` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
@@ -282,14 +278,14 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_unsubscribe_index_prices` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
-        raise NotImplementedError(
-            "method `_unsubscribe_funding_rates` must be implemented in the subclass",
-        )  # pragma: no cover
-
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_bars` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        raise NotImplementedError(
+            "method `_unsubscribe_funding_rates` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
@@ -301,8 +297,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         raise NotImplementedError(
             "method `_unsubscribe_instrument_close` must be implemented in the subclass",
         )  # pragma: no cover
-
-    # -- REQUESTS ---------------------------------------------------------------------------------
 
     async def _request(self, request: RequestData) -> None:
         raise NotImplementedError(
@@ -337,4 +331,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _request_bars(self, request: RequestBars) -> None:
         raise NotImplementedError(
             "method `_request_bars` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _request_funding_rates(self, request: RequestFundingRates) -> None:
+        raise NotImplementedError(
+            "method `_request_funding_rates` must be implemented in the subclass",
         )  # pragma: no cover

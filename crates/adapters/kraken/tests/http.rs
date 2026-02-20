@@ -121,6 +121,7 @@ fn create_test_futures_instrument() -> InstrumentAny {
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None,
         0.into(),
         0.into(),
     ))
@@ -945,8 +946,8 @@ async fn test_spot_domain_request_trades() {
     let instruments = client.request_instruments(None).await.unwrap();
     client.cache_instruments(instruments);
 
-    // Create a valid instrument ID from cached instruments
-    let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
+    // Create a valid instrument ID from cached instruments (normalized to BTC)
+    let instrument_id = InstrumentId::from("BTC/USDT.KRAKEN");
 
     let result = client.request_trades(instrument_id, None, None, None).await;
     assert!(result.is_ok(), "Failed to request trades: {result:?}");
@@ -986,8 +987,8 @@ async fn test_spot_domain_request_bars() {
     let instruments = client.request_instruments(None).await.unwrap();
     client.cache_instruments(instruments);
 
-    // Create a BarType for 1-minute bars
-    let bar_type = BarType::from("XBT/USDT.KRAKEN-1-MINUTE-LAST-INTERNAL");
+    // Create a BarType for 1-minute bars (normalized to BTC)
+    let bar_type = BarType::from("BTC/USDT.KRAKEN-1-MINUTE-LAST-INTERNAL");
 
     let result = client.request_bars(bar_type, None, None, None).await;
     assert!(result.is_ok(), "Failed to request bars: {result:?}");

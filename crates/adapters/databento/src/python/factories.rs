@@ -17,7 +17,7 @@
 
 use std::path::PathBuf;
 
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime};
 use nautilus_model::identifiers::ClientId;
 use pyo3::prelude::*;
 
@@ -54,6 +54,6 @@ impl DatabentoDataClientFactory {
             bars_timestamp_on_close,
             get_atomic_clock_realtime(),
         )
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))
+        .map_err(to_pyruntime_err)
     }
 }

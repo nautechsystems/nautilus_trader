@@ -42,6 +42,7 @@ from nautilus_trader.model.instruments.futures_contract cimport FuturesContract
 from nautilus_trader.model.instruments.futures_spread cimport FuturesSpread
 from nautilus_trader.model.instruments.option_contract cimport OptionContract
 from nautilus_trader.model.instruments.option_spread cimport OptionSpread
+from nautilus_trader.model.instruments.perpetual_contract cimport PerpetualContract
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick_scheme.base cimport TICK_SCHEMES
@@ -49,6 +50,15 @@ from nautilus_trader.model.tick_scheme.base cimport get_tick_scheme
 
 
 EXPIRING_INSTRUMENT_CLASSES = {
+    InstrumentClass.FUTURE,
+    InstrumentClass.FUTURES_SPREAD,
+    InstrumentClass.OPTION,
+    InstrumentClass.OPTION_SPREAD,
+}
+
+# Instrument classes for which the backtest engine runs built-in expiration.
+# Futures: close at market or settlement_prices. Options: exercise/expiry logic in engine.
+ENGINE_EXPIRING_INSTRUMENT_CLASSES = {
     InstrumentClass.FUTURE,
     InstrumentClass.FUTURES_SPREAD,
     InstrumentClass.OPTION,
@@ -862,7 +872,9 @@ cpdef list[Instrument] instruments_from_pyo3(list pyo3_instruments):
             instruments.append(OptionContract.from_pyo3_c(pyo3_instrument))
         elif isinstance(pyo3_instrument, nautilus_pyo3.OptionSpread):
             instruments.append(OptionSpread.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.PerpetualContract):
+            instruments.append(PerpetualContract.from_pyo3_c(pyo3_instrument))
         else:
-            RuntimeError(f"Instrument {pyo3_instrument} not supported")
+            raise RuntimeError(f"Instrument {pyo3_instrument} not supported")
 
     return instruments

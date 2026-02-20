@@ -6802,3 +6802,46 @@ fn test_get_all_crossed_levels(
         assert_eq!(levels[i].1.as_f64(), *exp_size, "Level {i} size mismatch");
     }
 }
+
+#[rstest]
+fn test_to_deltas_empty_book_has_f_last_on_clear() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let deltas = book.to_deltas(0.into(), 0.into());
+
+    assert_eq!(deltas.deltas.len(), 1);
+    assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+    assert!(RecordFlag::F_LAST.matches(deltas.deltas[0].flags));
+    assert!(RecordFlag::F_SNAPSHOT.matches(deltas.deltas[0].flags));
+}
+
+#[rstest]
+fn test_to_deltas_non_empty_book_has_f_last_on_last_order() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let bid = BookOrder::new(OrderSide::Buy, Price::from("100.00"), Quantity::from(10), 1);
+    let ask = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("101.00"),
+        Quantity::from(20),
+        2,
+    );
+    book.add(bid, 0, 1, 1.into());
+    book.add(ask, 0, 2, 2.into());
+
+    let deltas = book.to_deltas(0.into(), 0.into());
+
+    assert_eq!(deltas.deltas.len(), 3);
+    assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+    assert!(!RecordFlag::F_LAST.matches(deltas.deltas[0].flags));
+
+    assert_eq!(deltas.deltas[1].action, BookAction::Add);
+    assert!(!RecordFlag::F_LAST.matches(deltas.deltas[1].flags));
+    assert!(RecordFlag::F_SNAPSHOT.matches(deltas.deltas[1].flags));
+
+    assert_eq!(deltas.deltas[2].action, BookAction::Add);
+    assert!(RecordFlag::F_LAST.matches(deltas.deltas[2].flags));
+    assert!(RecordFlag::F_SNAPSHOT.matches(deltas.deltas[2].flags));
+}

@@ -32,6 +32,7 @@ import fsspec
 import pandas as pd
 import portion as P
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.dataset as pds
 import pyarrow.parquet as pq
 from fsspec.implementations.local import make_path_posix
@@ -335,8 +336,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         directory = self._make_path(data_cls=data_cls, identifier=identifier)
         self.fs.mkdirs(directory, exist_ok=True)
 
-        start = start if start else data[0].ts_init
-        end = end if end else data[-1].ts_init
+        start = start or data[0].ts_init
+        end = end or data[-1].ts_init
         filename = _timestamps_to_filename(start, end)
         parquet_file = f"{directory}/{filename}"
 
@@ -726,6 +727,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             pq.read_table(file, memory_map=True, pre_buffer=False, filesystem=self.fs)
             for file in file_list
         ]
+        self._validate_table_metadata(tables, file_list)
+
         combined_table = pa.concat_tables(tables)
 
         if deduplicate:
@@ -736,6 +739,45 @@ class ParquetDataCatalog(BaseDataCatalog):
         for file in file_list:
             if file != new_file:
                 self.fs.rm(file)
+
+    @staticmethod
+    def _validate_table_metadata(
+        tables: list[pa.Table],
+        file_list: list[str],
+    ) -> None:
+        if len(tables) <= 1:
+            return
+
+        reference_metadata = tables[0].schema.metadata or {}
+        reference_keys = set(reference_metadata.keys())
+
+        for i, table in enumerate(tables[1:], start=1):
+            metadata = table.schema.metadata or {}
+            metadata_keys = set(metadata.keys())
+
+            missing = reference_keys - metadata_keys
+            if missing:
+                raise ValueError(
+                    f"Cannot consolidate parquet files with mismatched metadata: "
+                    f"keys {missing!r} present in '{file_list[0]}' "
+                    f"but missing from '{file_list[i]}'",
+                )
+
+            extra = metadata_keys - reference_keys
+            if extra:
+                raise ValueError(
+                    f"Cannot consolidate parquet files with mismatched metadata: "
+                    f"keys {extra!r} present in '{file_list[i]}' "
+                    f"but missing from '{file_list[0]}'",
+                )
+
+            for key in reference_keys:
+                if reference_metadata[key] != metadata[key]:
+                    raise ValueError(
+                        f"Cannot consolidate parquet files with conflicting metadata: "
+                        f"key {key!r} has value {reference_metadata[key]!r} in "
+                        f"'{file_list[0]}' but {metadata[key]!r} in '{file_list[i]}'",
+                    )
 
     @staticmethod
     def _deduplicate_table(table: pa.Table) -> pa.Table:
@@ -1624,14 +1666,13 @@ class ParquetDataCatalog(BaseDataCatalog):
             start=start,
             end=end,
             where=where,
-            file=files,
+            files=files,
             **kwargs,
         )
         result = session.to_query_result()
 
         # Gather data
         data = []
-
         for chunk in result:
             data.extend(capsule_to_list(chunk))
 
@@ -1651,7 +1692,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
         session: DataBackendSession | None = None,
         files: list[str] | None = None,
-        optimize_file_loading: bool = True,
+        optimize_file_loading: bool = False,
         **kwargs: Any,
     ) -> DataBackendSession:
         """
@@ -1680,8 +1721,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             performance optimization when the caller already knows which files exist.
             Note: With `optimize_file_loading=True`, the entire directory containing
             these files will be read by DataFusion, not just the specified files.
-        optimize_file_loading : bool, default True
-            If True (default), registers entire directories with DataFusion, which is
+        optimize_file_loading : bool, default False
+            If True, registers entire directories with DataFusion, which is
             more efficient for managing many files. If False, registers each file
             individually (needed for operations like consolidation where precise file
             control is required).
@@ -1944,7 +1985,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs: Any,
     ) -> list[Data]:
         # Load dataset - use provided files or query for them
-        file_list = files if files else self._query_files(data_cls, identifiers, start, end)
+        file_list = files or self._query_files(data_cls, identifiers, start, end)
 
         if not file_list:
             return []
@@ -2429,13 +2470,143 @@ class ParquetDataCatalog(BaseDataCatalog):
             if feather_table is None:
                 continue
 
-            file_data = self._handle_table_nautilus(
-                feather_table,
-                data_cls,
-                convert_bar_type_to_external=True,
+            self._convert_feather_table_to_parquet(
+                feather_table=feather_table,
+                feather_path=feather_file.path,
+                data_cls=data_cls,
+                used_catalog=used_catalog,
                 use_ts_event_for_ts_init=use_ts_event_for_ts_init,
             )
-            used_catalog.write_data(file_data)
+
+    def _convert_feather_table_to_parquet(
+        self,
+        feather_table: pa.Table,
+        feather_path: str,
+        data_cls: type,
+        used_catalog: ParquetDataCatalog,
+        use_ts_event_for_ts_init: bool = False,
+    ) -> None:
+        # Apply table-only transforms (no deserialization).
+        table = self._apply_stream_conversion_transforms(
+            feather_table,
+            use_ts_event_for_ts_init=use_ts_event_for_ts_init,
+            convert_bar_type_to_external=True,
+        )
+        if table is None or len(table) == 0:
+            return
+
+        identifier = self._identifier_from_table_or_path(table, data_cls, feather_path)
+        start = int(pa.compute.min(table["ts_init"]).as_py())
+        end = int(pa.compute.max(table["ts_init"]).as_py())
+
+        directory = used_catalog._make_path(data_cls=data_cls, identifier=identifier)
+        used_catalog.fs.mkdirs(directory, exist_ok=True)
+        filename = _timestamps_to_filename(start, end)
+        parquet_file = f"{directory}/{filename}"
+
+        if used_catalog.fs.exists(parquet_file):
+            print(f"File {parquet_file} already exists, skipping write")
+            return
+
+        current_intervals = used_catalog._get_directory_intervals(directory)
+        new_intervals = [*current_intervals, (start, end)]
+        if not _are_intervals_disjoint(new_intervals):
+            raise ValueError(
+                f"Writing file {filename} with interval ({start}, {end}) would create "
+                f"non-disjoint intervals. Existing intervals: {current_intervals}",
+            )
+
+        pq.write_table(
+            table,
+            where=parquet_file,
+            filesystem=used_catalog.fs,
+            row_group_size=used_catalog.max_rows_per_group,
+        )
+
+    @staticmethod
+    def _apply_stream_conversion_transforms(
+        table: pa.Table,
+        use_ts_event_for_ts_init: bool = False,
+        convert_bar_type_to_external: bool = False,
+    ) -> pa.Table:
+        if use_ts_event_for_ts_init:
+            schema = table.schema
+            column_names = schema.names
+            if "ts_event" not in column_names or "ts_init" not in column_names:
+                raise ValueError(
+                    "Both 'ts_event' and 'ts_init' columns must exist in the table "
+                    "to use 'use_ts_event_for_ts_init' option",
+                )
+
+            ts_event_idx = column_names.index("ts_event")
+            ts_init_idx = column_names.index("ts_init")
+            new_arrays = list(table.columns)
+            new_arrays[ts_init_idx] = new_arrays[ts_event_idx]
+            table = pa.Table.from_arrays(new_arrays, schema=schema)
+
+        if convert_bar_type_to_external and table.schema.metadata:
+            metadata = dict(table.schema.metadata)
+            if b"bar_type" in metadata:
+                bar_type_str = metadata[b"bar_type"].decode()
+                if bar_type_str.endswith("-INTERNAL"):
+                    metadata[b"bar_type"] = bar_type_str.replace(
+                        "-INTERNAL",
+                        "-EXTERNAL",
+                    ).encode()
+
+            table = table.replace_schema_metadata(metadata)
+
+        table = ParquetDataCatalog._enforce_monotonic_ts(table)
+
+        return table
+
+    @staticmethod
+    def _enforce_monotonic_ts(table: pa.Table) -> pa.Table:
+        if len(table) > 0 and "ts_init" not in table.schema.names:
+            raise ValueError(
+                "Table has no 'ts_init' column; cannot enforce monotonicity",
+            )
+
+        if len(table) <= 1:
+            return table
+
+        ts_col = table.column("ts_init")
+        if isinstance(ts_col, pa.ChunkedArray):
+            ts_col = ts_col.combine_chunks()
+
+        # Use direct comparison instead of pairwise_diff to avoid uint64 overflow
+        is_sorted = pc.all(
+            pc.greater_equal(ts_col.slice(1), ts_col.slice(0, len(ts_col) - 1)),
+        ).as_py()
+        if not is_sorted:
+            sort_indices = pc.sort_indices(
+                table,
+                sort_keys=[("ts_init", "ascending")],
+            )
+            table = table.take(sort_indices)
+
+        return table
+
+    @staticmethod
+    def _identifier_from_table_or_path(
+        table: pa.Table,
+        data_cls: type,
+        feather_path: str,
+    ) -> str | None:
+        metadata = table.schema.metadata or {}
+        if b"bar_type" in metadata:
+            return metadata[b"bar_type"].decode()
+
+        if b"instrument_id" in metadata:
+            return metadata[b"instrument_id"].decode()
+
+        # Fallback: per-instrument feather layout .../data_name/identifier/file.feather
+        parts = feather_path.rstrip("/").split("/")
+        data_name = class_to_filename(data_cls)
+        if len(parts) >= 3 and parts[-3] == data_name:
+            return parts[-2]
+
+        return None
 
     def _read_feather_file(
         self,
@@ -2461,40 +2632,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         if isinstance(table, pd.DataFrame):
             table = pa.Table.from_pandas(table)
 
-        # Replace ts_init column with ts_event if requested
-        if use_ts_event_for_ts_init:
-            schema = table.schema
-            column_names = schema.names
-
-            if "ts_event" not in column_names or "ts_init" not in column_names:
-                raise ValueError(
-                    "Both 'ts_event' and 'ts_init' columns must exist in the table "
-                    "to use 'use_ts_event_for_ts_init' option",
-                )
-
-            ts_event_idx = column_names.index("ts_event")
-            ts_init_idx = column_names.index("ts_init")
-
-            # Create new arrays with ts_init replaced by ts_event
-            new_arrays = list(table.columns)
-            new_arrays[ts_init_idx] = new_arrays[ts_event_idx]
-
-            # Create new table with updated arrays
-            table = pa.Table.from_arrays(new_arrays, schema=schema)
-
-        # Convert metadata from INTERNAL to EXTERNAL if requested
-        if convert_bar_type_to_external and table.schema.metadata:
-            metadata = dict(table.schema.metadata)
-
-            # Convert bar_type metadata (for Bar data)
-            if b"bar_type" in metadata:
-                bar_type_str = metadata[b"bar_type"].decode()
-
-                if bar_type_str.endswith("-INTERNAL"):
-                    metadata[b"bar_type"] = bar_type_str.replace("-INTERNAL", "-EXTERNAL").encode()
-
-            # Replace schema with updated metadata (shallow copy)
-            table = table.replace_schema_metadata(metadata)
+        table = ParquetDataCatalog._apply_stream_conversion_transforms(
+            table,
+            use_ts_event_for_ts_init=use_ts_event_for_ts_init,
+            convert_bar_type_to_external=convert_bar_type_to_external,
+        )
 
         data = ArrowSerializer.deserialize(data_cls=data_cls, batch=table)
         if len(data) == 0:

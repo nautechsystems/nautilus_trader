@@ -90,6 +90,8 @@ iai = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]

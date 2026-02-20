@@ -582,8 +582,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 report = FillReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except Exception as e:
-            self._log.exception("Failed to generate FillReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
 
         self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
@@ -628,13 +628,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 report = PositionStatusReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("PositionStatusReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate PositionStatusReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate PositionStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -1040,8 +1035,11 @@ class BybitExecutionClient(LiveExecutionClient):
         is_leverage: bool,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
+        order_list = command.order_list
+        orders = order_list.orders
         order_params = []
-        for order in command.order_list.orders:
+
+        for order in orders:
             if order.is_closed:
                 self._log.warning(f"Cannot submit already closed order: {order}")
                 continue
@@ -1116,7 +1114,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 )
             except Exception as e:
                 self._log.error(f"Failed to batch place orders: {e}")
-                for order in command.order_list.orders:
+
+                for order in orders:
                     if not order.is_closed:
                         self.generate_order_rejected(
                             strategy_id=order.strategy_id,

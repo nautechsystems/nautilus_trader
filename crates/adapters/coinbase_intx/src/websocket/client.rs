@@ -61,7 +61,10 @@ use crate::{
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx",
+        from_py_object
+    )
 )]
 pub struct CoinbaseIntxWebSocketClient {
     url: String,
@@ -216,6 +219,7 @@ impl CoinbaseIntxWebSocketClient {
             reconnect_backoff_factor: None,   // Use default
             reconnect_jitter_ms: None,        // Use default
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
         let (reader, client) =
             WebSocketClient::connect_stream(config, vec![], None, Some(post_reconnect)).await?;

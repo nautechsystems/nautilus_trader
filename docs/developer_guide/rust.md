@@ -330,7 +330,14 @@ For enums with extensive derive attributes:
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.model")
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
 )]
 pub enum AccountType {
     /// An account with unleveraged cash assets only.
@@ -720,6 +727,31 @@ pub fn py_do_something() -> PyResult<()> {
 The `check_pyo3_conventions.sh` pre-commit hook enforces the `py_` prefix for PyO3 functions.
 :::
 
+### PyO3 enum conventions
+
+Enums exposed to Python should use the following `pyclass` attributes:
+
+- `frozen`: enums are immutable value types.
+- `eq, eq_int`: enables equality with other enum instances and integer discriminants.
+- `rename_all = "SCREAMING_SNAKE_CASE"`: standardizes Python variant names.
+- `from_py_object`: enables conversion from Python objects.
+
+:::warning Do not use the `hash` pyclass attribute with `eq_int` enums
+PyO3's auto-generated `__hash__` uses Rust's `DefaultHasher`, which produces different values
+than Python's `hash()` on the equivalent integer. Since `eq_int` makes `MyEnum.VARIANT == 1`
+true, the hash contract (`a == b` implies `hash(a) == hash(b)`) would be violated. Instead,
+provide a manual `__hash__` returning the discriminant directly:
+:::
+
+```rust
+#[pymethods]
+impl MyEnum {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+```
+
 ### Testing conventions
 
 - Use `mod tests` as the standard test module name unless you need to specifically compartmentalize.
@@ -744,6 +776,58 @@ fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
     assert_eq!(symbol.is_composite(), expected);
 }
 ```
+
+#### Property-based testing
+
+Use the `proptest` crate for property-based tests. Place these in a separate
+`property_tests` module (not inside `mod tests`) to keep deterministic unit
+tests separate from randomized property tests:
+
+```rust
+#[cfg(test)]
+mod property_tests {
+    use proptest::prelude::*;
+    use rstest::rstest;
+
+    use super::*;
+
+    // Define strategies for generating test inputs
+    fn my_strategy() -> impl Strategy<Value = MyType> {
+        prop_oneof![
+            Just(MyType::VariantA),
+            Just(MyType::VariantB),
+        ]
+    }
+
+    fn value_strategy() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            -1000.0..1000.0,
+            Just(0.0),
+        ]
+    }
+
+    // Group all property tests inside the proptest! macro
+    proptest! {
+        #[rstest]
+        fn prop_construction_roundtrip(
+            value in value_strategy(),
+            variant in my_strategy()
+        ) {
+            // Test invariants that should hold for all generated inputs
+        }
+    }
+}
+```
+
+Conventions:
+
+- Name the module `property_tests`, separate from `mod tests`.
+- Import `proptest::prelude::*` and `rstest::rstest`.
+- Define strategy functions returning `impl Strategy<Value = T>`.
+- Combine value ranges with edge cases using `prop_oneof!`.
+- Filter invalid combinations with `prop_filter_map`.
+- Prefix test names with `prop_`.
+- Mark each test inside `proptest!` with `#[rstest]`.
 
 #### Test naming
 

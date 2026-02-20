@@ -25,30 +25,62 @@ use std::{
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use nautilus_core::{UUID4, nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    UUID4,
+    nanos::UnixNanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide as NautilusOrderSide, OrderType},
+    enums::{LiquiditySide, OrderSide as NautilusOrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired, OrderFilled, OrderRejected,
     },
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
+    reports::{FillReport, OrderStatusReport},
+    types::{Money, Price, Quantity},
 };
 use nautilus_network::websocket::{AuthTracker, WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use crate::{
-    common::enums::AxOrderSide,
-    websocket::messages::{
-        AxOrdersWsMessage, AxWsCancelOrder, AxWsCancelRejected, AxWsGetOpenOrders, AxWsOrder,
-        AxWsOrderAcknowledged, AxWsOrderCanceled, AxWsOrderDoneForDay, AxWsOrderEvent,
-        AxWsOrderExpired, AxWsOrderFilled, AxWsOrderPartiallyFilled, AxWsOrderRejected,
-        AxWsOrderReplaced, AxWsOrderResponse, AxWsPlaceOrder, AxWsRawMessage, AxWsTradeExecution,
-        NautilusExecWsMessage, OrderMetadata,
+    common::{
+        consts::AX_POST_ONLY_REJECT,
+        enums::{AxOrderRequestType, AxOrderSide, AxTimeInForce},
+        parse::{ax_timestamp_s_to_unix_nanos, cid_to_client_order_id},
+    },
+    http::models::AxOrderRejectReason,
+    websocket::{
+        messages::{
+            AxOrdersWsMessage, AxWsCancelOrder, AxWsCancelRejected, AxWsError, AxWsGetOpenOrders,
+            AxWsOrder, AxWsOrderAcknowledged, AxWsOrderCanceled, AxWsOrderDoneForDay,
+            AxWsOrderEvent, AxWsOrderExpired, AxWsOrderFilled, AxWsOrderPartiallyFilled,
+            AxWsOrderRejected, AxWsOrderReplaced, AxWsOrderResponse, AxWsPlaceOrder,
+            AxWsRawMessage, AxWsTradeExecution, NautilusExecWsMessage, OrderMetadata,
+        },
+        parse::parse_order_message,
     },
 };
+
+fn map_time_in_force(tif: AxTimeInForce) -> TimeInForce {
+    match tif {
+        AxTimeInForce::Gtc => TimeInForce::Gtc,
+        AxTimeInForce::Ioc => TimeInForce::Ioc,
+        AxTimeInForce::Fok => TimeInForce::Fok,
+        AxTimeInForce::Day => TimeInForce::Day,
+        AxTimeInForce::Gtd => TimeInForce::Gtd,
+        AxTimeInForce::Ato => TimeInForce::AtTheOpen,
+        AxTimeInForce::Atc => TimeInForce::AtTheClose,
+    }
+}
+
+fn map_order_side(side: AxOrderSide) -> NautilusOrderSide {
+    match side {
+        AxOrderSide::Buy => NautilusOrderSide::Buy,
+        AxOrderSide::Sell => NautilusOrderSide::Sell,
+    }
+}
 
 /// Simple tracking info for pending WebSocket orders.
 #[derive(Clone, Debug)]
@@ -109,6 +141,7 @@ pub enum HandlerCommand {
 ///
 /// Runs in a dedicated Tokio task and owns the WebSocket client exclusively.
 pub(crate) struct FeedHandler {
+    clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
     client: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -120,6 +153,7 @@ pub(crate) struct FeedHandler {
     message_queue: VecDeque<AxOrdersWsMessage>,
     orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
     venue_to_client_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
+    cid_to_client_order_id: Arc<DashMap<u64, ClientOrderId>>,
     bearer_token: Option<String>,
     needs_reauthentication: bool,
 }
@@ -127,6 +161,7 @@ pub(crate) struct FeedHandler {
 impl FeedHandler {
     /// Creates a new [`FeedHandler`] instance.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -135,8 +170,10 @@ impl FeedHandler {
         account_id: AccountId,
         orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
         venue_to_client_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
+        cid_to_client_order_id: Arc<DashMap<u64, ClientOrderId>>,
     ) -> Self {
         Self {
+            clock: get_atomic_clock_realtime(),
             signal,
             client: None,
             cmd_rx,
@@ -148,9 +185,14 @@ impl FeedHandler {
             message_queue: VecDeque::new(),
             orders_metadata,
             venue_to_client_id,
+            cid_to_client_order_id,
             bearer_token: None,
             needs_reauthentication: false,
         }
+    }
+
+    fn generate_ts_init(&self) -> UnixNanos {
+        self.clock.get_time_ns()
     }
 
     async fn reauthenticate(&mut self) {
@@ -257,11 +299,20 @@ impl FeedHandler {
                     "PlaceOrder command received: request_id={request_id}, symbol={}",
                     order.s
                 );
-                self.pending_orders.insert(request_id, order_info);
+                self.pending_orders.insert(request_id, order_info.clone());
 
                 if let Err(e) = self.send_json(&order).await {
                     log::error!("Failed to send place order message: {e}");
                     self.pending_orders.remove(&request_id);
+                    self.orders_metadata.remove(&order_info.client_order_id);
+                    if let Some(cid) = order.cid {
+                        self.cid_to_client_order_id.remove(&cid);
+                    }
+                    self.message_queue
+                        .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
+                            "Failed to send place order for {}: {e}",
+                            order_info.client_order_id
+                        ))));
                 }
             }
             HandlerCommand::CancelOrder {
@@ -294,26 +345,34 @@ impl FeedHandler {
         }
     }
 
-    async fn send_cancel_order(&self, request_id: i64, order_id: &str) {
+    async fn send_cancel_order(&mut self, request_id: i64, order_id: &str) {
         let msg = AxWsCancelOrder {
             rid: request_id,
-            t: "x".to_string(),
+            t: AxOrderRequestType::CancelOrder,
             oid: order_id.to_string(),
         };
 
         if let Err(e) = self.send_json(&msg).await {
             log::error!("Failed to send cancel order message: {e}");
+            self.message_queue
+                .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
+                    "Failed to send cancel for order {order_id}: {e}"
+                ))));
         }
     }
 
-    async fn send_get_open_orders(&self, request_id: i64) {
+    async fn send_get_open_orders(&mut self, request_id: i64) {
         let msg = AxWsGetOpenOrders {
             rid: request_id,
-            t: "o".to_string(),
+            t: AxOrderRequestType::GetOpenOrders,
         };
 
         if let Err(e) = self.send_json(&msg).await {
             log::error!("Failed to send get open orders message: {e}");
+            self.message_queue
+                .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
+                    "Failed to send get open orders request: {e}"
+                ))));
         }
     }
 
@@ -343,7 +402,7 @@ impl FeedHandler {
 
                 log::trace!("Raw websocket message: {text}");
 
-                let raw_msg: AxWsRawMessage = match serde_json::from_str(&text) {
+                let raw_msg: AxWsRawMessage = match parse_order_message(&text) {
                     Ok(v) => v,
                     Err(e) => {
                         log::error!("Failed to parse WebSocket message: {e}: {text}");
@@ -394,6 +453,7 @@ impl FeedHandler {
         match resp {
             AxWsOrderResponse::PlaceOrder(msg) => {
                 log::debug!("Place order response: rid={} oid={}", msg.rid, msg.res.oid);
+                self.pending_orders.remove(&msg.rid);
                 Some(vec![AxOrdersWsMessage::PlaceOrderResponse(msg)])
             }
             AxWsOrderResponse::CancelOrder(msg) => {
@@ -449,6 +509,13 @@ impl FeedHandler {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderAccepted(event),
             )])
+        } else if let Some(report) =
+            self.create_order_status_report(&msg.o, OrderStatus::Accepted, msg.ts)
+        {
+            log::debug!("Created OrderStatusReport for external order {}", msg.o.oid);
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderStatusReports(vec![report]),
+            )])
         } else {
             log::warn!(
                 "Could not create OrderAccepted event for order {}",
@@ -473,6 +540,11 @@ impl FeedHandler {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderFilled(Box::new(event)),
             )])
+        } else if let Some(report) = self.create_fill_report(&msg.o, &msg.xs, msg.ts) {
+            log::debug!("Created FillReport for external order {}", msg.o.oid);
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::FillReports(vec![report]),
+            )])
         } else {
             log::warn!("Could not create OrderFilled event for order {}", msg.o.oid);
             None
@@ -482,22 +554,37 @@ impl FeedHandler {
     fn handle_order_filled(&mut self, msg: AxWsOrderFilled) -> Option<Vec<AxOrdersWsMessage>> {
         log::debug!("Order filled: {} {} @ {}", msg.o.oid, msg.xs.q, msg.xs.p);
 
-        if let Some(event) = self.create_order_filled(&msg.o, &msg.xs, msg.ts) {
+        let message = if let Some(event) = self.create_order_filled(&msg.o, &msg.xs, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderFilled(Box::new(event)),
+            )])
+        } else if let Some(report) = self.create_fill_report(&msg.o, &msg.xs, msg.ts) {
+            log::debug!("Created FillReport for external order {}", msg.o.oid);
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::FillReports(vec![report]),
             )])
         } else {
             log::warn!("Could not create OrderFilled event for order {}", msg.o.oid);
             None
-        }
+        };
+
+        self.cleanup_terminal_order_tracking(&msg.o);
+        message
     }
 
     fn handle_order_canceled(&mut self, msg: AxWsOrderCanceled) -> Option<Vec<AxOrdersWsMessage>> {
         log::debug!("Order canceled: {} reason={}", msg.o.oid, msg.xr);
 
-        if let Some(event) = self.create_order_canceled(&msg.o, msg.ts) {
+        let message = if let Some(event) = self.create_order_canceled(&msg.o, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderCanceled(event),
+            )])
+        } else if let Some(report) =
+            self.create_order_status_report(&msg.o, OrderStatus::Canceled, msg.ts)
+        {
+            log::debug!("Created OrderStatusReport for external order {}", msg.o.oid);
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderStatusReports(vec![report]),
             )])
         } else {
             log::warn!(
@@ -505,13 +592,21 @@ impl FeedHandler {
                 msg.o.oid
             );
             None
-        }
+        };
+
+        self.cleanup_terminal_order_tracking(&msg.o);
+        message
     }
 
     fn handle_order_rejected(&mut self, msg: AxWsOrderRejected) -> Option<Vec<AxOrdersWsMessage>> {
-        log::warn!("Order rejected: {} reason={}", msg.o.oid, msg.r);
+        let known_reason = msg.r.filter(|r| !matches!(r, AxOrderRejectReason::Unknown));
+        let reason = known_reason
+            .as_ref()
+            .map(AsRef::as_ref)
+            .or(msg.txt.as_deref())
+            .unwrap_or("UNKNOWN");
 
-        if let Some(event) = self.create_order_rejected(&msg.o, &msg.r, msg.ts) {
+        let message = if let Some(event) = self.create_order_rejected(&msg.o, reason, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderRejected(event),
             )])
@@ -521,15 +616,25 @@ impl FeedHandler {
                 msg.o.oid
             );
             None
-        }
+        };
+
+        self.cleanup_terminal_order_tracking(&msg.o);
+        message
     }
 
     fn handle_order_expired(&mut self, msg: AxWsOrderExpired) -> Option<Vec<AxOrdersWsMessage>> {
         log::debug!("Order expired: {}", msg.o.oid);
 
-        if let Some(event) = self.create_order_expired(&msg.o, msg.ts) {
+        let message = if let Some(event) = self.create_order_expired(&msg.o, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderExpired(event),
+            )])
+        } else if let Some(report) =
+            self.create_order_status_report(&msg.o, OrderStatus::Expired, msg.ts)
+        {
+            log::debug!("Created OrderStatusReport for external order {}", msg.o.oid);
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderStatusReports(vec![report]),
             )])
         } else {
             log::warn!(
@@ -537,7 +642,10 @@ impl FeedHandler {
                 msg.o.oid
             );
             None
-        }
+        };
+
+        self.cleanup_terminal_order_tracking(&msg.o);
+        message
     }
 
     fn handle_order_replaced(&mut self, msg: AxWsOrderReplaced) -> Option<Vec<AxOrdersWsMessage>> {
@@ -547,6 +655,16 @@ impl FeedHandler {
         if let Some(event) = self.create_order_accepted(&msg.o, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderAccepted(event),
+            )])
+        } else if let Some(report) =
+            self.create_order_status_report(&msg.o, OrderStatus::Accepted, msg.ts)
+        {
+            log::debug!(
+                "Created OrderStatusReport for external replaced order {}",
+                msg.o.oid
+            );
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderStatusReports(vec![report]),
             )])
         } else {
             log::warn!(
@@ -563,9 +681,19 @@ impl FeedHandler {
     ) -> Option<Vec<AxOrdersWsMessage>> {
         log::debug!("Order done for day: {}", msg.o.oid);
 
-        if let Some(event) = self.create_order_expired(&msg.o, msg.ts) {
+        let message = if let Some(event) = self.create_order_expired(&msg.o, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderExpired(event),
+            )])
+        } else if let Some(report) =
+            self.create_order_status_report(&msg.o, OrderStatus::Expired, msg.ts)
+        {
+            log::debug!(
+                "Created OrderStatusReport for external done-for-day order {}",
+                msg.o.oid
+            );
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderStatusReports(vec![report]),
             )])
         } else {
             log::warn!(
@@ -573,7 +701,10 @@ impl FeedHandler {
                 msg.o.oid
             );
             None
-        }
+        };
+
+        self.cleanup_terminal_order_tracking(&msg.o);
+        message
     }
 
     fn handle_cancel_rejected(
@@ -591,9 +722,9 @@ impl FeedHandler {
                 metadata.strategy_id,
                 metadata.instrument_id,
                 metadata.client_order_id,
-                msg.r.into(),
+                Ustr::from(msg.r.as_ref()),
                 UUID4::new(),
-                get_atomic_clock_realtime().get_time_ns(),
+                self.generate_ts_init(),
                 metadata.ts_init,
                 false,
                 Some(venue_order_id),
@@ -611,13 +742,6 @@ impl FeedHandler {
         }
     }
 
-    fn extract_client_order_id(&self, order: &AxWsOrder) -> Option<ClientOrderId> {
-        order
-            .tag
-            .as_ref()
-            .map(|tag| ClientOrderId::new(tag.as_str()))
-    }
-
     fn lookup_order_metadata(
         &self,
         order: &AxWsOrder,
@@ -631,9 +755,12 @@ impl FeedHandler {
             return Some(metadata);
         }
 
-        // Fall back to tag field
-        if let Some(client_order_id) = self.extract_client_order_id(order) {
-            return self.orders_metadata.get(&client_order_id);
+        // Try cid mapping second
+        if let Some(cid) = order.cid
+            && let Some(client_order_id) = self.cid_to_client_order_id.get(&cid)
+            && let Some(metadata) = self.orders_metadata.get(&*client_order_id)
+        {
+            return Some(metadata);
         }
 
         None
@@ -661,7 +788,9 @@ impl FeedHandler {
             entry.venue_order_id = Some(venue_order_id);
         }
 
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
 
         Some(OrderAccepted::new(
             trader_id,
@@ -672,7 +801,7 @@ impl FeedHandler {
             self.account_id,
             UUID4::new(),
             ts_event,
-            get_atomic_clock_realtime().get_time_ns(),
+            self.generate_ts_init(),
             false,
         ))
     }
@@ -686,10 +815,12 @@ impl FeedHandler {
         let venue_order_id = VenueOrderId::new(&order.oid);
         let metadata = self.lookup_order_metadata(order)?;
 
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
 
-        // AX uses i64 contracts directly - use instrument precision from metadata
-        let last_qty = Quantity::new(execution.q.abs() as f64, metadata.size_precision);
+        // AX uses u64 contracts - use instrument precision from metadata
+        let last_qty = Quantity::new(execution.q as f64, metadata.size_precision);
         let last_px = Price::from_decimal_dp(execution.p, metadata.price_precision).ok()?;
 
         let order_side = match order.d {
@@ -723,14 +854,14 @@ impl FeedHandler {
             liquidity_side,
             UUID4::new(),
             ts_event,
-            get_atomic_clock_realtime().get_time_ns(),
+            self.generate_ts_init(),
             false,
             None, // position_id
             None, // commission
         ))
     }
 
-    fn create_order_canceled(&mut self, order: &AxWsOrder, event_ts: i64) -> Option<OrderCanceled> {
+    fn create_order_canceled(&self, order: &AxWsOrder, event_ts: i64) -> Option<OrderCanceled> {
         let venue_order_id = VenueOrderId::new(&order.oid);
         let metadata = self.lookup_order_metadata(order)?;
 
@@ -739,14 +870,9 @@ impl FeedHandler {
         let strategy_id = metadata.strategy_id;
         let instrument_id = metadata.instrument_id;
 
-        // Drop the reference before removing
-        drop(metadata);
-
-        // Remove from tracking maps
-        self.orders_metadata.remove(&client_order_id);
-        self.venue_to_client_id.remove(&venue_order_id);
-
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
 
         Some(OrderCanceled::new(
             trader_id,
@@ -755,14 +881,14 @@ impl FeedHandler {
             client_order_id,
             UUID4::new(),
             ts_event,
-            get_atomic_clock_realtime().get_time_ns(),
+            self.generate_ts_init(),
             false,
             Some(venue_order_id),
             Some(self.account_id),
         ))
     }
 
-    fn create_order_expired(&mut self, order: &AxWsOrder, event_ts: i64) -> Option<OrderExpired> {
+    fn create_order_expired(&self, order: &AxWsOrder, event_ts: i64) -> Option<OrderExpired> {
         let venue_order_id = VenueOrderId::new(&order.oid);
         let metadata = self.lookup_order_metadata(order)?;
 
@@ -771,14 +897,9 @@ impl FeedHandler {
         let strategy_id = metadata.strategy_id;
         let instrument_id = metadata.instrument_id;
 
-        // Drop the reference before removing
-        drop(metadata);
-
-        // Remove from tracking maps
-        self.orders_metadata.remove(&client_order_id);
-        self.venue_to_client_id.remove(&venue_order_id);
-
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
 
         Some(OrderExpired::new(
             trader_id,
@@ -787,7 +908,7 @@ impl FeedHandler {
             client_order_id,
             UUID4::new(),
             ts_event,
-            get_atomic_clock_realtime().get_time_ns(),
+            self.generate_ts_init(),
             false,
             Some(venue_order_id),
             Some(self.account_id),
@@ -795,25 +916,22 @@ impl FeedHandler {
     }
 
     fn create_order_rejected(
-        &mut self,
+        &self,
         order: &AxWsOrder,
         reason: &str,
         event_ts: i64,
     ) -> Option<OrderRejected> {
-        let client_order_id = self.extract_client_order_id(order)?;
-        let metadata = self.orders_metadata.get(&client_order_id)?;
+        let metadata = self.lookup_order_metadata(order)?;
 
+        let client_order_id = metadata.client_order_id;
         let trader_id = metadata.trader_id;
         let strategy_id = metadata.strategy_id;
         let instrument_id = metadata.instrument_id;
 
-        // Drop the reference before removing
-        drop(metadata);
-
-        // Remove from tracking
-        self.orders_metadata.remove(&client_order_id);
-
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
+        let due_post_only = reason.contains(AX_POST_ONLY_REJECT);
 
         Some(OrderRejected::new(
             trader_id,
@@ -821,12 +939,306 @@ impl FeedHandler {
             instrument_id,
             client_order_id,
             self.account_id,
-            reason.to_string().into(),
+            Ustr::from(reason),
             UUID4::new(),
             ts_event,
-            get_atomic_clock_realtime().get_time_ns(),
+            self.generate_ts_init(),
             false,
-            false,
+            due_post_only,
         ))
+    }
+
+    fn cleanup_terminal_order_tracking(&mut self, order: &AxWsOrder) {
+        let venue_order_id = VenueOrderId::new(&order.oid);
+        let client_order_id = self
+            .venue_to_client_id
+            .remove(&venue_order_id)
+            .map(|(_, v)| v)
+            .or_else(|| {
+                order
+                    .cid
+                    .and_then(|cid| self.cid_to_client_order_id.remove(&cid).map(|(_, v)| v))
+            });
+
+        if let Some(client_order_id) = client_order_id {
+            self.orders_metadata.remove(&client_order_id);
+        }
+
+        if let Some(cid) = order.cid {
+            self.cid_to_client_order_id.remove(&cid);
+        }
+    }
+
+    fn create_order_status_report(
+        &self,
+        order: &AxWsOrder,
+        order_status: OrderStatus,
+        event_ts: i64,
+    ) -> Option<OrderStatusReport> {
+        let instrument = self.instruments.get(&order.s)?;
+        let venue_order_id = VenueOrderId::new(&order.oid);
+        let instrument_id = instrument.id();
+        let order_side = map_order_side(order.d);
+        let time_in_force = map_time_in_force(order.tif);
+
+        let quantity = Quantity::new(order.q as f64, instrument.size_precision());
+        let filled_qty = Quantity::new(order.xq as f64, instrument.size_precision());
+
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
+        let ts_init = self.generate_ts_init();
+
+        let client_order_id = order.cid.map(|cid| {
+            self.cid_to_client_order_id
+                .get(&cid)
+                .map_or_else(|| cid_to_client_order_id(cid), |v| *v)
+        });
+
+        let mut report = OrderStatusReport::new(
+            self.account_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            order_side,
+            OrderType::Limit, // AX primarily uses limit orders
+            time_in_force,
+            order_status,
+            quantity,
+            filled_qty,
+            ts_event, // ts_accepted
+            ts_event, // ts_last
+            ts_init,
+            Some(UUID4::new()),
+        );
+
+        if let Ok(price) = Price::from_decimal_dp(order.p, instrument.price_precision()) {
+            report = report.with_price(price);
+        }
+
+        Some(report)
+    }
+
+    fn create_fill_report(
+        &self,
+        order: &AxWsOrder,
+        execution: &AxWsTradeExecution,
+        event_ts: i64,
+    ) -> Option<FillReport> {
+        let instrument = self.instruments.get(&order.s)?;
+        let venue_order_id = VenueOrderId::new(&order.oid);
+        let instrument_id = instrument.id();
+        let order_side = map_order_side(order.d);
+
+        let last_qty = Quantity::new(execution.q as f64, instrument.size_precision());
+        let last_px = Price::from_decimal_dp(execution.p, instrument.price_precision()).ok()?;
+
+        // agg=true means aggressor (taker), agg=false means maker
+        let liquidity_side = if execution.agg {
+            LiquiditySide::Taker
+        } else {
+            LiquiditySide::Maker
+        };
+
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts)
+            .map_err(|e| log::error!("{e}"))
+            .ok()?;
+        let ts_init = self.generate_ts_init();
+
+        let client_order_id = order.cid.map(|cid| {
+            self.cid_to_client_order_id
+                .get(&cid)
+                .map_or_else(|| cid_to_client_order_id(cid), |v| *v)
+        });
+
+        // AX doesn't provide commission in WebSocket fill events
+        let commission = Money::new(0.0, instrument.quote_currency());
+
+        Some(FillReport::new(
+            self.account_id,
+            instrument_id,
+            venue_order_id,
+            TradeId::new(&execution.tid),
+            order_side,
+            last_qty,
+            last_px,
+            commission,
+            liquidity_side,
+            client_order_id,
+            None, // venue_position_id
+            ts_event,
+            ts_init,
+            Some(UUID4::new()),
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, atomic::AtomicBool};
+
+    use dashmap::DashMap;
+    use nautilus_model::{
+        identifiers::{InstrumentId, StrategyId, TraderId},
+        types::Currency,
+    };
+    use nautilus_network::websocket::AuthTracker;
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+    use ustr::Ustr;
+
+    use super::*;
+    use crate::{
+        common::enums::{AxOrderSide, AxOrderStatus, AxTimeInForce},
+        http::models::AxOrderRejectReason,
+        websocket::messages::{AxWsOrderRejected, AxWsPlaceOrderResponse, AxWsPlaceOrderResult},
+    };
+
+    fn test_handler() -> FeedHandler {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            AuthTracker::default(),
+            AccountId::from("AX-001"),
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+        )
+    }
+
+    fn sample_order(cid: u64) -> AxWsOrder {
+        AxWsOrder {
+            oid: "OID-1".to_string(),
+            u: "user-1".to_string(),
+            s: Ustr::from("EURUSD-PERP"),
+            p: dec!(50000),
+            q: 100,
+            xq: 100,
+            rq: 0,
+            o: AxOrderStatus::Filled,
+            d: AxOrderSide::Buy,
+            tif: AxTimeInForce::Gtc,
+            ts: 1_700_000_000,
+            tn: 1,
+            cid: Some(cid),
+            tag: None,
+            txt: None,
+        }
+    }
+
+    fn sample_metadata(
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> OrderMetadata {
+        OrderMetadata {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("S-001"),
+            instrument_id: InstrumentId::from("EURUSD-PERP.AX"),
+            client_order_id,
+            venue_order_id: Some(venue_order_id),
+            ts_init: UnixNanos::from(1_700_000_000_000_000_000u64),
+            size_precision: 8,
+            price_precision: 2,
+            quote_currency: Currency::USD(),
+        }
+    }
+
+    #[rstest]
+    fn test_place_order_response_cleans_pending_order() {
+        let mut handler = test_handler();
+        let request_id = 11;
+        handler.pending_orders.insert(
+            request_id,
+            WsOrderInfo {
+                client_order_id: ClientOrderId::from("CID-11"),
+                symbol: Ustr::from("EURUSD-PERP"),
+            },
+        );
+
+        let response = AxWsOrderResponse::PlaceOrder(AxWsPlaceOrderResponse {
+            rid: request_id,
+            res: AxWsPlaceOrderResult {
+                oid: "OID-11".to_string(),
+            },
+        });
+
+        let messages = handler.handle_response(response).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(handler.pending_orders.get(&request_id).is_none());
+    }
+
+    #[rstest]
+    fn test_handle_order_filled_cleans_tracking_maps() {
+        let mut handler = test_handler();
+
+        let client_order_id = ClientOrderId::from("CID-22");
+        let venue_order_id = VenueOrderId::new("OID-1");
+        let cid = 22_u64;
+
+        handler.orders_metadata.insert(
+            client_order_id,
+            sample_metadata(client_order_id, venue_order_id),
+        );
+        handler
+            .venue_to_client_id
+            .insert(venue_order_id, client_order_id);
+        handler.cid_to_client_order_id.insert(cid, client_order_id);
+
+        let msg = AxWsOrderFilled {
+            ts: 1_700_000_001,
+            tn: 2,
+            eid: "EID-1".to_string(),
+            o: sample_order(cid),
+            xs: AxWsTradeExecution {
+                tid: "T-1".to_string(),
+                s: Ustr::from("EURUSD-PERP"),
+                q: 100,
+                p: dec!(50000),
+                d: AxOrderSide::Buy,
+                agg: true,
+            },
+        };
+
+        let messages = handler.handle_order_filled(msg).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(handler.orders_metadata.get(&client_order_id).is_none());
+        assert!(handler.venue_to_client_id.get(&venue_order_id).is_none());
+        assert!(handler.cid_to_client_order_id.get(&cid).is_none());
+    }
+
+    #[rstest]
+    fn test_handle_order_rejected_cleans_tracking_maps() {
+        let mut handler = test_handler();
+
+        let client_order_id = ClientOrderId::from("CID-33");
+        let venue_order_id = VenueOrderId::new("OID-1");
+        let cid = 33_u64;
+
+        handler.orders_metadata.insert(
+            client_order_id,
+            sample_metadata(client_order_id, venue_order_id),
+        );
+        handler
+            .venue_to_client_id
+            .insert(venue_order_id, client_order_id);
+        handler.cid_to_client_order_id.insert(cid, client_order_id);
+
+        let msg = AxWsOrderRejected {
+            ts: 1_700_000_002,
+            tn: 3,
+            eid: "EID-3".to_string(),
+            o: sample_order(cid),
+            r: Some(AxOrderRejectReason::InsufficientMargin),
+            txt: None,
+        };
+
+        let messages = handler.handle_order_rejected(msg);
+        assert!(messages.is_some());
+        assert!(handler.orders_metadata.get(&client_order_id).is_none());
+        assert!(handler.venue_to_client_id.get(&venue_order_id).is_none());
+        assert!(handler.cid_to_client_order_id.get(&cid).is_none());
     }
 }

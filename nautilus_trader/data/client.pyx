@@ -25,8 +25,10 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestFundingRates
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookDeltas
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
@@ -55,6 +57,8 @@ from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport FundingRateUpdate
+from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -1037,6 +1041,21 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_instruments` method for this client",  # pragma: no cover  # noqa
         )
 
+    cpdef void request_order_book_deltas(self, RequestOrderBookDeltas request):
+        """
+        Request historical `OrderBookDeltas` data.
+
+        Parameters
+        ----------
+        request : RequestOrderBookDeltas
+            The message for the data request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request `OrderBookDeltas` data for {request.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_order_book_deltas` method for this client",  # pragma: no cover  # noqa
+        )
+
     cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request):
         """
         Request order book snapshot data.
@@ -1082,6 +1101,21 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_trade_ticks` method for this client",  # pragma: no cover  # noqa
         )
 
+    cpdef void request_funding_rates(self, RequestFundingRates request):
+        """
+        Request historical `FundingRateUpdate` data.
+
+        Parameters
+        ----------
+        request : RequestFundingRates
+            The message for the data request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request `FundingRateUpdate` data for {request.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_funding_rates` method for this client",  # pragma: no cover  # noqa
+        )
+
     cpdef void request_bars(self, RequestBars request):
         """
         Request historical `Bar` data. To load historical data from a catalog, you can pass a list[DataCatalogConfig] to the TradingNodeConfig or the BacktestEngineConfig.
@@ -1118,11 +1152,17 @@ cdef class MarketDataClient(DataClient):
     def _handle_trade_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_trade_ticks(instrument_id, ticks, correlation_id, start, end, params)
 
+    def _handle_funding_rates_py(self, InstrumentId instrument_id, list funding_rates, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
+        self._handle_funding_rates(instrument_id, funding_rates, correlation_id, start, end, params)
+
     def _handle_bars_py(self, BarType bar_type, list bars, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_bars(bar_type, bars, correlation_id, start, end, params)
 
     def _handle_order_book_depths_py(self, InstrumentId instrument_id, list depths, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_order_book_depths(instrument_id, depths, correlation_id, start, end, params)
+
+    def _handle_order_book_deltas_py(self, InstrumentId instrument_id, list deltas, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
+        self._handle_order_book_deltas(instrument_id, deltas, correlation_id, start, end, params)
 
     def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_data_response(data_type, data, correlation_id, start, end, params)
@@ -1196,6 +1236,22 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
+    cpdef void _handle_funding_rates(self, InstrumentId instrument_id, list funding_rates, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+        cdef DataResponse response = DataResponse(
+            client_id=self.id,
+            venue=instrument_id.venue,
+            data_type=DataType(FundingRateUpdate, metadata=({"instrument_id": instrument_id})),
+            data=funding_rates,
+            correlation_id=correlation_id,
+            response_id=UUID4(),
+            start=start,
+            end=end,
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
+
     cpdef void _handle_bars(self, BarType bar_type, list bars, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
@@ -1218,6 +1274,22 @@ cdef class MarketDataClient(DataClient):
             venue=instrument_id.venue,
             data_type=DataType(OrderBookDepth10, metadata=({"instrument_id": instrument_id})),
             data=depths,
+            correlation_id=correlation_id,
+            response_id=UUID4(),
+            start=start,
+            end=end,
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
+
+    cpdef void _handle_order_book_deltas(self, InstrumentId instrument_id, list deltas, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+        cdef DataResponse response = DataResponse(
+            client_id=self.id,
+            venue=instrument_id.venue,
+            data_type=DataType(OrderBookDeltas, metadata=({"instrument_id": instrument_id})),
+            data=deltas,
             correlation_id=correlation_id,
             response_id=UUID4(),
             start=start,

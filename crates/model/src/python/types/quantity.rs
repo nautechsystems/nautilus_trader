@@ -364,6 +364,12 @@ impl Quantity {
         Self::from_decimal_dp(decimal, precision).map_err(to_pyvalue_err)
     }
 
+    #[staticmethod]
+    #[pyo3(name = "from_mantissa_exponent")]
+    fn py_from_mantissa_exponent(mantissa: u64, exponent: i8, precision: u8) -> Self {
+        Self::from_mantissa_exponent(mantissa, exponent, precision)
+    }
+
     #[pyo3(name = "is_zero")]
     fn py_is_zero(&self) -> bool {
         self.is_zero()

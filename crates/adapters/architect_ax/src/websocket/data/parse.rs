@@ -27,13 +27,12 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use crate::{
+    common::parse::ax_timestamp_s_to_unix_nanos,
     http::parse::candle_width_to_bar_spec,
     websocket::messages::{
         AxBookLevel, AxBookLevelL3, AxMdBookL1, AxMdBookL2, AxMdBookL3, AxMdCandle, AxMdTrade,
     },
 };
-
-const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
 
 /// Converts a Decimal to Price with specified precision.
 fn decimal_to_price_dp(value: Decimal, precision: u8, field: &str) -> anyhow::Result<Price> {
@@ -75,7 +74,7 @@ pub fn parse_book_l1_quote(
         (Price::zero(price_precision), Quantity::zero(size_precision))
     };
 
-    let ts_event = UnixNanos::from((book.ts as u64) * NANOSECONDS_IN_SECOND);
+    let ts_event = ax_timestamp_s_to_unix_nanos(book.ts)?;
 
     QuoteTick::new_checked(
         instrument.id(),
@@ -118,7 +117,7 @@ pub fn parse_book_l2_deltas(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let ts_event = UnixNanos::from((book.ts as u64) * NANOSECONDS_IN_SECOND);
+    let ts_event = ax_timestamp_s_to_unix_nanos(book.ts)?;
 
     let total_levels = book.b.len() + book.a.len();
     let capacity = total_levels + 1;
@@ -221,7 +220,7 @@ pub fn parse_book_l3_deltas(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let ts_event = UnixNanos::from((book.ts as u64) * NANOSECONDS_IN_SECOND);
+    let ts_event = ax_timestamp_s_to_unix_nanos(book.ts)?;
 
     let total_orders: usize = book.b.iter().map(|l| l.o.len()).sum::<usize>()
         + book.a.iter().map(|l| l.o.len()).sum::<usize>();
@@ -326,11 +325,12 @@ pub fn parse_trade_tick(
     let size = Quantity::new(trade.q as f64, size_precision);
     let aggressor_side: AggressorSide = trade.d.map_or(AggressorSide::NoAggressor, |d| d.into());
 
-    // Use transaction number as trade ID
-    let trade_id = TradeId::new_checked(trade.tn.to_string())
+    // Use transaction number as trade ID (stack-formatted to avoid heap alloc)
+    let mut buf = itoa::Buffer::new();
+    let trade_id = TradeId::new_checked(buf.format(trade.tn))
         .context("Failed to create TradeId from transaction number")?;
 
-    let ts_event = UnixNanos::from((trade.ts as u64) * NANOSECONDS_IN_SECOND);
+    let ts_event = ax_timestamp_s_to_unix_nanos(trade.ts)?;
 
     TradeTick::new_checked(
         instrument.id(),
@@ -363,7 +363,7 @@ pub fn parse_candle_bar(
     let close = decimal_to_price_dp(candle.close, price_precision, "candle.close")?;
     let volume = Quantity::new(candle.volume as f64, size_precision);
 
-    let ts_event = UnixNanos::from((candle.ts as u64) * NANOSECONDS_IN_SECOND);
+    let ts_event = ax_timestamp_s_to_unix_nanos(candle.ts)?;
 
     let bar_spec = candle_width_to_bar_spec(candle.width);
     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::External);
@@ -375,8 +375,9 @@ pub fn parse_candle_bar(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
+        enums::AssetClass,
         identifiers::{InstrumentId, Symbol},
-        instruments::CryptoPerpetual,
+        instruments::PerpetualContract,
         types::Currency,
     };
     use rstest::rstest;
@@ -403,6 +404,7 @@ mod tests {
         price_precision: u8,
         size_precision: u8,
     ) -> InstrumentAny {
+        let underlying = Ustr::from(symbol.split('-').next().unwrap_or(symbol));
         let price_increment =
             Price::from_decimal_dp(Decimal::new(1, price_precision as u32), price_precision)
                 .unwrap();
@@ -410,10 +412,12 @@ mod tests {
             Quantity::from_decimal_dp(Decimal::new(1, size_precision as u32), size_precision)
                 .unwrap();
 
-        let instrument = CryptoPerpetual::new(
+        let instrument = PerpetualContract::new(
             InstrumentId::new(Symbol::new(symbol), *AX_VENUE),
             Symbol::new(symbol),
-            Currency::USD(),
+            underlying,
+            AssetClass::Cryptocurrency,
+            None,
             Currency::USD(),
             Currency::USD(),
             false,
@@ -433,10 +437,11 @@ mod tests {
             Some(Decimal::new(5, 3)),
             Some(Decimal::new(2, 4)),
             Some(Decimal::new(5, 4)),
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
-        InstrumentAny::CryptoPerpetual(instrument)
+        InstrumentAny::PerpetualContract(instrument)
     }
 
     #[rstest]
@@ -746,11 +751,11 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_candle.json");
         let candle: AxMdCandle = serde_json::from_str(json).unwrap();
 
-        assert_eq!(candle.symbol.as_str(), "BTCUSD-PERP");
+        assert_eq!(candle.symbol.as_str(), "EURUSD-PERP");
         assert_eq!(candle.open, dec!(49500.00));
         assert_eq!(candle.close, dec!(50000.00));
 
-        let instrument = create_instrument_with_precision("BTCUSD-PERP", 2, 3);
+        let instrument = create_instrument_with_precision("EURUSD-PERP", 2, 3);
         let ts_init = UnixNanos::default();
 
         let bar = parse_candle_bar(&candle, &instrument, ts_init).unwrap();
@@ -760,6 +765,6 @@ mod tests {
         assert_eq!(bar.low.as_f64(), 49000.00);
         assert_eq!(bar.close.as_f64(), 50000.00);
         assert_eq!(bar.volume.as_f64(), 5000.0);
-        assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "BTCUSD-PERP");
+        assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "EURUSD-PERP");
     }
 }

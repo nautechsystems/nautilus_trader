@@ -104,6 +104,46 @@ print(type(result3))  # <class 'decimal.Decimal'>
 ## Precision handling
 
 Each value type stores a precision field indicating the number of decimal places.
+Precision is set at construction and is immutable. There is no "unspecified" precision.
+
+### Fixed-point representation
+
+Value types are stored internally as integers scaled to a global fixed precision
+(e.g., 10^16 in high-precision mode), not floating-point numbers. The `precision`
+field tracks the number of decimal places used at construction, controlling display
+formatting and serialization, but the underlying raw value always uses the global scale.
+
+```python
+from nautilus_trader.model.objects import Price
+
+p1 = Price(1.23, precision=2)   # displays as "1.23"
+p2 = Price(1.230, precision=3)  # displays as "1.230"
+
+p1 == p2  # True: same underlying value
+str(p1)   # "1.23"
+str(p2)   # "1.230"
+```
+
+**Precision controls display, not identity.** Two prices with the same decimal value but
+different precisions are equal. The `precision` field determines string formatting and
+how many decimal places are shown, but equality is based on the underlying numeric value.
+
+**Market data serialization uses precision metadata.** When market data types (quotes,
+trades, order book deltas) are written to Parquet or Arrow format, precision is stored in
+the file metadata so that values can be correctly decoded. All market data values within
+a single file must share the same precision.
+
+:::note
+If a venue changes an instrument's tick size (and thus its precision), data files written
+before and after the change will have different precision metadata and should not be
+consolidated into a single file.
+:::
+
+For how instrument-level precision constrains valid prices and quantities, see the
+[Precision](instruments.md#precision) section of the Instruments guide.
+
+### Arithmetic precision
+
 When performing arithmetic between values with different precisions, the result
 uses the maximum precision of the operands.
 

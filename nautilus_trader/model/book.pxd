@@ -68,6 +68,7 @@ cdef class OrderBook(Data):
     cpdef void update_quote_tick(self, QuoteTick tick)
     cpdef void update_trade_tick(self, TradeTick tick)
     cpdef QuoteTick to_quote_tick(self)
+    cpdef OrderBookDeltas to_deltas_c(self, uint64_t ts_event, uint64_t ts_init)
     cpdef str pprint(self, int num_levels=*)
 
 

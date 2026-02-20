@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 from enum import Enum
 
 import pyarrow as pa
@@ -160,7 +161,7 @@ class BetfairTicker(Data):
         traded_volume: float | None = None,
         starting_price_near: float | None = None,
         starting_price_far: float | None = None,
-    ):
+    ) -> None:
         self.instrument_id = instrument_id
         self.last_traded_price = last_traded_price
         self.traded_volume = traded_volume
@@ -266,7 +267,7 @@ class BetfairStartingPrice(Data):
         ts_event: int,
         ts_init: int,
         bsp: float | None = None,
-    ):
+    ) -> None:
         self.instrument_id: InstrumentId = instrument_id
         self.bsp = bsp
         self._ts_event = ts_event
@@ -328,12 +329,405 @@ class BetfairStartingPrice(Data):
         }
 
 
+class BetfairRaceRunnerData(Data):
+    """
+    Represents Betfair TPD race runner GPS data.
+
+    Individual horse tracking data from the race stream (rrc - Race Runner Changes).
+
+    """
+
+    def __init__(
+        self,
+        race_id: str,
+        selection_id: int,
+        ts_event: int,
+        ts_init: int,
+        market_id: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        speed: float | None = None,
+        progress: float | None = None,
+        stride_frequency: float | None = None,
+    ) -> None:
+        self.race_id = race_id
+        self.market_id = market_id
+        self.selection_id = selection_id
+        self.latitude = latitude
+        self.longitude = longitude
+        self.speed = speed
+        self.progress = progress
+        self.stride_frequency = stride_frequency
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
+        if not isinstance(other, BetfairRaceRunnerData):
+            return False
+        return self.race_id == other.race_id and self.selection_id == other.selection_id
+
+    def __hash__(self) -> int:
+        return hash((self.race_id, self.selection_id))
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
+    @classmethod
+    def schema(cls):
+        return pa.schema(
+            {
+                "race_id": pa.string(),
+                "market_id": pa.string(),
+                "selection_id": pa.int64(),
+                "latitude": pa.float64(),
+                "longitude": pa.float64(),
+                "speed": pa.float64(),
+                "progress": pa.float64(),
+                "stride_frequency": pa.float64(),
+                "ts_event": pa.uint64(),
+                "ts_init": pa.uint64(),
+            },
+            metadata={"type": "BetfairRaceRunnerData"},
+        )
+
+    @classmethod
+    def from_dict(cls, values: dict):
+        return cls(
+            race_id=values["race_id"],
+            market_id=values.get("market_id"),
+            selection_id=values["selection_id"],
+            latitude=values.get("latitude"),
+            longitude=values.get("longitude"),
+            speed=values.get("speed"),
+            progress=values.get("progress"),
+            stride_frequency=values.get("stride_frequency"),
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    def to_dict(obj: BetfairRaceRunnerData):
+        return {
+            "type": type(obj).__name__,
+            "race_id": obj.race_id,
+            "market_id": obj.market_id,
+            "selection_id": obj.selection_id,
+            "latitude": obj.latitude,
+            "longitude": obj.longitude,
+            "speed": obj.speed,
+            "progress": obj.progress,
+            "stride_frequency": obj.stride_frequency,
+            "ts_event": obj._ts_event,
+            "ts_init": obj._ts_init,
+        }
+
+    def __repr__(self):
+        return (
+            f"BetfairRaceRunnerData(race_id={self.race_id}, selection_id={self.selection_id}, "
+            f"lat={self.latitude}, long={self.longitude}, spd={self.speed}, prg={self.progress}, "
+            f"sfq={self.stride_frequency})"
+        )
+
+
+class BetfairRaceProgress(Data):
+    """
+    Represents Betfair TPD race progress data.
+
+    Overall race summary data from the race stream (rpc - Race Progress Changes).
+
+    """
+
+    def __init__(
+        self,
+        race_id: str,
+        ts_event: int,
+        ts_init: int,
+        market_id: str | None = None,
+        gate_name: str | None = None,
+        sectional_time: float | None = None,
+        running_time: float | None = None,
+        speed: float | None = None,
+        progress: float | None = None,
+        order: list[int] | None = None,
+        jumps: list[dict] | None = None,
+    ) -> None:
+        self.race_id = race_id
+        self.market_id = market_id
+        self.gate_name = gate_name
+        self.sectional_time = sectional_time
+        self.running_time = running_time
+        self.speed = speed
+        self.progress = progress
+        self.order = order
+        self.jumps = jumps
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
+        if not isinstance(other, BetfairRaceProgress):
+            return False
+        return self.race_id == other.race_id
+
+    def __hash__(self) -> int:
+        return hash(self.race_id)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
+    @classmethod
+    def schema(cls):
+        return pa.schema(
+            {
+                "race_id": pa.string(),
+                "market_id": pa.string(),
+                "gate_name": pa.string(),
+                "sectional_time": pa.float64(),
+                "running_time": pa.float64(),
+                "speed": pa.float64(),
+                "progress": pa.float64(),
+                "order": pa.list_(pa.int64()),
+                "jumps": pa.string(),  # JSON-encoded
+                "ts_event": pa.uint64(),
+                "ts_init": pa.uint64(),
+            },
+            metadata={"type": "BetfairRaceProgress"},
+        )
+
+    @classmethod
+    def from_dict(cls, values: dict):
+        jumps = values.get("jumps")
+        if isinstance(jumps, str):
+            jumps = json.loads(jumps) if jumps else None
+        return cls(
+            race_id=values["race_id"],
+            market_id=values.get("market_id"),
+            gate_name=values.get("gate_name"),
+            sectional_time=values.get("sectional_time"),
+            running_time=values.get("running_time"),
+            speed=values.get("speed"),
+            progress=values.get("progress"),
+            order=values.get("order"),
+            jumps=jumps,
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    def to_dict(obj: BetfairRaceProgress):
+        return {
+            "type": type(obj).__name__,
+            "race_id": obj.race_id,
+            "market_id": obj.market_id,
+            "gate_name": obj.gate_name,
+            "sectional_time": obj.sectional_time,
+            "running_time": obj.running_time,
+            "speed": obj.speed,
+            "progress": obj.progress,
+            "order": obj.order,
+            "jumps": json.dumps(obj.jumps) if obj.jumps is not None else None,
+            "ts_event": obj._ts_event,
+            "ts_init": obj._ts_init,
+        }
+
+    def __repr__(self):
+        return (
+            f"BetfairRaceProgress(race_id={self.race_id}, gate={self.gate_name}, "
+            f"st={self.sectional_time}, rt={self.running_time}, spd={self.speed}, "
+            f"prg={self.progress}, ord={self.order})"
+        )
+
+
+class BetfairOrderVoided(Data):
+    """
+    Represents a Betfair order void event (e.g., VAR void).
+
+    Published when a matched bet is retroactively voided by Betfair, such as when a goal
+    is disallowed following a VAR review.
+
+    """
+
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: str,
+        venue_order_id: str,
+        ts_event: int,
+        ts_init: int,
+        size_voided: float,
+        price: float,
+        size: float,
+        side: str,
+        avg_price_matched: float | None = None,
+        size_matched: float | None = None,
+        reason: str | None = None,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.client_order_id = client_order_id
+        self.venue_order_id = venue_order_id
+        self.size_voided = size_voided
+        self.price = price
+        self.size = size
+        self.side = side
+        self.avg_price_matched = avg_price_matched
+        self.size_matched = size_matched
+        self.reason = reason
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
+        if not isinstance(other, BetfairOrderVoided):
+            return False
+        return (
+            self.instrument_id == other.instrument_id
+            and self.client_order_id == other.client_order_id
+            and self.venue_order_id == other.venue_order_id
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.instrument_id, self.client_order_id, self.venue_order_id))
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
+    @classmethod
+    def schema(cls):
+        return pa.schema(
+            {
+                "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+                "client_order_id": pa.string(),
+                "venue_order_id": pa.string(),
+                "size_voided": pa.float64(),
+                "price": pa.float64(),
+                "size": pa.float64(),
+                "side": pa.string(),
+                "avg_price_matched": pa.float64(),
+                "size_matched": pa.float64(),
+                "reason": pa.string(),
+                "ts_event": pa.uint64(),
+                "ts_init": pa.uint64(),
+            },
+            metadata={"type": "BetfairOrderVoided"},
+        )
+
+    @classmethod
+    def from_dict(cls, values: dict):
+        return cls(
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            client_order_id=values["client_order_id"],
+            venue_order_id=values["venue_order_id"],
+            size_voided=values["size_voided"],
+            price=values["price"],
+            size=values["size"],
+            side=values["side"],
+            avg_price_matched=values.get("avg_price_matched"),
+            size_matched=values.get("size_matched"),
+            reason=values.get("reason"),
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    def to_dict(obj: BetfairOrderVoided):
+        return {
+            "type": type(obj).__name__,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id,
+            "venue_order_id": obj.venue_order_id,
+            "size_voided": obj.size_voided,
+            "price": obj.price,
+            "size": obj.size,
+            "side": obj.side,
+            "avg_price_matched": obj.avg_price_matched,
+            "size_matched": obj.size_matched,
+            "reason": obj.reason,
+            "ts_event": obj._ts_event,
+            "ts_init": obj._ts_init,
+        }
+
+    def __repr__(self):
+        return (
+            f"BetfairOrderVoided(instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.client_order_id}, venue_order_id={self.venue_order_id}, "
+            f"price={self.price}, size={self.size}, side={self.side}, "
+            f"size_voided={self.size_voided}, avg_price_matched={self.avg_price_matched}, "
+            f"size_matched={self.size_matched}, reason={self.reason})"
+        )
+
+
 @customdataclass
 class BetfairSequenceCompleted(Data):
     pass
 
 
-# Register serialization/parquet BetfairTicker
 register_serializable_type(
     BetfairTicker,
     BetfairTicker.to_dict,
@@ -347,7 +741,6 @@ register_arrow(
     decoder=make_dict_deserializer(BetfairTicker),
 )
 
-# Register serialization/parquet BetfairStartingPrice
 register_serializable_type(
     BetfairStartingPrice,
     BetfairStartingPrice.to_dict,
@@ -362,7 +755,6 @@ register_arrow(
 )
 
 
-# Register serialization/parquet BSPOrderBookDeltas
 register_serializable_type(
     BSPOrderBookDelta,
     BSPOrderBookDelta.to_dict,
@@ -374,4 +766,44 @@ register_arrow(
     encoder=BSPOrderBookDelta.to_batch,
     decoder=BSPOrderBookDelta.from_batch,
     schema=BSPOrderBookDelta.schema(),
+)
+
+
+register_serializable_type(
+    BetfairRaceRunnerData,
+    BetfairRaceRunnerData.to_dict,
+    BetfairRaceRunnerData.from_dict,
+)
+
+register_arrow(
+    data_cls=BetfairRaceRunnerData,
+    schema=BetfairRaceRunnerData.schema(),
+    encoder=make_dict_serializer(schema=BetfairRaceRunnerData.schema()),
+    decoder=make_dict_deserializer(BetfairRaceRunnerData),
+)
+
+register_serializable_type(
+    BetfairRaceProgress,
+    BetfairRaceProgress.to_dict,
+    BetfairRaceProgress.from_dict,
+)
+
+register_arrow(
+    data_cls=BetfairRaceProgress,
+    schema=BetfairRaceProgress.schema(),
+    encoder=make_dict_serializer(schema=BetfairRaceProgress.schema()),
+    decoder=make_dict_deserializer(BetfairRaceProgress),
+)
+
+register_serializable_type(
+    BetfairOrderVoided,
+    BetfairOrderVoided.to_dict,
+    BetfairOrderVoided.from_dict,
+)
+
+register_arrow(
+    data_cls=BetfairOrderVoided,
+    schema=BetfairOrderVoided.schema(),
+    encoder=make_dict_serializer(schema=BetfairOrderVoided.schema()),
+    decoder=make_dict_deserializer(BetfairOrderVoided),
 )

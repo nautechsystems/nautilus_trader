@@ -221,6 +221,20 @@ impl BybitWebSocketClient {
                                 });
                             }
                         }
+                        NautilusWsMessage::MarkPrices(prices) => {
+                            for price in prices {
+                                call_python_with_data(&callback, move |py| {
+                                    price.into_py_any(py).map(|obj| obj.into_bound(py))
+                                });
+                            }
+                        }
+                        NautilusWsMessage::IndexPrices(prices) => {
+                            for price in prices {
+                                call_python_with_data(&callback, move |py| {
+                                    price.into_py_any(py).map(|obj| obj.into_bound(py))
+                                });
+                            }
+                        }
                         NautilusWsMessage::OrderStatusReports(reports) => {
                             for report in reports {
                                 call_python_with_data(&callback, move |py| {
@@ -736,6 +750,8 @@ impl BybitWebSocketClient {
         post_only=None,
         reduce_only=None,
         is_leverage=false,
+        take_profit=None,
+        stop_loss=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_build_place_order_params(
@@ -753,6 +769,8 @@ impl BybitWebSocketClient {
         post_only: Option<bool>,
         reduce_only: Option<bool>,
         is_leverage: bool,
+        take_profit: Option<Price>,
+        stop_loss: Option<Price>,
     ) -> PyResult<BybitWsPlaceOrderParams> {
         let params = self
             .build_place_order_params(
@@ -769,6 +787,8 @@ impl BybitWebSocketClient {
                 post_only,
                 reduce_only,
                 is_leverage,
+                take_profit,
+                stop_loss,
             )
             .map_err(to_pyruntime_err)?;
         Ok(params.into())

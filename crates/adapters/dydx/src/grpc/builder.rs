@@ -34,6 +34,7 @@ use std::fmt::Debug;
 
 use cosmrs::{
     Any, Coin,
+    tendermint::chain::Id as ChainIdTendermint,
     tx::{self, Fee, SignDoc, SignerInfo},
 };
 use dydx_proto::{ToAny, dydxprotocol::accountplus::TxExtension};
@@ -49,7 +50,7 @@ const GAS_MULTIPLIER: f64 = 1.8;
 ///
 /// Handles fee calculation, transaction construction, and signing.
 pub struct TxBuilder {
-    chain_id: cosmrs::tendermint::chain::Id,
+    chain_id: ChainIdTendermint,
     fee_denom: String,
 }
 

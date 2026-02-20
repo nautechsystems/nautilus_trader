@@ -129,7 +129,7 @@ cdef class Cache(CacheFacade):
         self._mark_xrates: dict[tuple[Currency, Currency], double] = {}
         self._mark_prices: dict[InstrumentId, deque[MarkPriceUpdate]] = {}
         self._index_prices: dict[InstrumentId, deque[IndexPriceUpdate]] = {}
-        self._funding_rates: dict[InstrumentId, FundingRateUpdate] = {}
+        self._funding_rates: dict[InstrumentId, deque[FundingRateUpdate]] = {}
         self._bars: dict[BarType, deque[Bar]] = {}
         self._bars_bid: dict[InstrumentId, Bar] = {}
         self._bars_ask: dict[InstrumentId, Bar] = {}
@@ -1138,6 +1138,7 @@ cdef class Cache(CacheFacade):
         self._index_instrument_position_snapshots.clear()
         self._index_strategy_orders.clear()
         self._index_strategy_positions.clear()
+        self._index_account_orders.clear()
         self._index_account_positions.clear()
         self._index_exec_algorithm_orders.clear()
         self._index_exec_spawn_orders.clear()
@@ -1185,6 +1186,8 @@ cdef class Cache(CacheFacade):
         self._order_lists.clear()
         self._positions.clear()
         self._position_snapshots.clear()
+        self._greeks.clear()
+        self._yield_curves.clear()
         self.clear_index()
 
         if self._drop_instruments_on_reset:
@@ -1701,7 +1704,14 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(funding_rate, "funding_rate")
 
-        self._funding_rates[funding_rate.instrument_id] = funding_rate
+        funding_rates = self._funding_rates.get(funding_rate.instrument_id)
+
+        if not funding_rates:
+            # The instrument_id was not registered
+            funding_rates = deque(maxlen=self.tick_capacity)
+            self._funding_rates[funding_rate.instrument_id] = funding_rates
+
+        funding_rates.appendleft(funding_rate)
 
     cpdef void add_bar(self, Bar bar):
         """
@@ -2384,7 +2394,7 @@ cdef class Cache(CacheFacade):
 
         if self._database is None:
             self._log.warning(
-                "Cannot snapshot position state for {position.id:r!} (no database configured)",
+                f"Cannot snapshot position state for {position.id!r} (no database configured)",
             )
             return
 
@@ -2410,7 +2420,7 @@ cdef class Cache(CacheFacade):
 
         if self._database is None:
             self._log.warning(
-                "Cannot snapshot order state for {order.client_order_id:r!} (no database configured)",
+                f"Cannot snapshot order state for {order.client_order_id!r} (no database configured)",
             )
             return
 
@@ -2766,6 +2776,24 @@ cdef class Cache(CacheFacade):
         Condition.not_none(instrument_id, "instrument_id")
 
         return list(self._index_prices.get(instrument_id, []))
+
+    cpdef list funding_rates(self, InstrumentId instrument_id):
+        """
+        Return funding rates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the mark prices to get.
+
+        Returns
+        -------
+        list[FundingRateUpdate]
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return list(self._funding_rates.get(instrument_id, []))
 
     cpdef list bars(self, BarType bar_type):
         """
@@ -3144,9 +3172,11 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
-    cpdef FundingRateUpdate funding_rate(self, InstrumentId instrument_id):
+    cpdef FundingRateUpdate funding_rate(self, InstrumentId instrument_id, int index = 0):
         """
-        Return the funding rate for the given instrument ID (if found).
+        Return the funding rate for the given instrument ID at the given index (if found).
+
+        Last funding rate if no index specified.
 
         Parameters
         ----------
@@ -3156,12 +3186,24 @@ cdef class Cache(CacheFacade):
         Returns
         -------
         FundingRateUpdate or ``None``
-            If no funding rate then returns ``None``.
+            If no funding rates or no funding rate at the index then returns ``None``.
+
+        Notes
+        -----
+        Reverse indexed (most recent index price at index 0).
 
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        return self._funding_rates.get(instrument_id)
+        funding_rates = self._funding_rates.get(instrument_id)
+
+        if not funding_rates:
+            return None
+
+        try:
+            return funding_rates[index]
+        except IndexError:
+            return None
 
     cpdef Bar bar(self, BarType bar_type, int index = 0):
         """
@@ -3293,6 +3335,24 @@ cdef class Cache(CacheFacade):
 
         return len(self._index_prices.get(instrument_id, []))
 
+    cpdef int funding_rate_count(self, InstrumentId instrument_id):
+        """
+        The count of funding rates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the index prices.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return len(self._funding_rates.get(instrument_id, []))
+
     cpdef int bar_count(self, BarType bar_type):
         """
         The count of bars for the given bar type.
@@ -3403,6 +3463,25 @@ cdef class Cache(CacheFacade):
         Condition.not_none(instrument_id, "instrument_id")
 
         return self.index_price_count(instrument_id) > 0
+
+    cpdef bint has_funding_rates(self, InstrumentId instrument_id):
+        """
+        Return a value indicating whether the cache has funding rates for the
+        given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the funding rates.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self.funding_rate_count(instrument_id) > 0
 
     cpdef bint has_bars(self, BarType bar_type):
         """

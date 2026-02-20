@@ -210,6 +210,21 @@ impl<T: 'static> TopicRouter<T> {
         }
     }
 
+    /// Removes a specific handler from a pattern by handler ID.
+    pub fn remove_handler(&mut self, pattern: MStr<Pattern>, handler_id: Ustr) {
+        if let Some(idx) = self
+            .subscriptions
+            .iter()
+            .position(|s| s.pattern == pattern && s.handler_id == handler_id)
+        {
+            self.subscriptions.remove(idx);
+
+            // Must clear entire cache since remove() shifts indices
+            self.topic_cache.clear();
+            log::debug!("Handler {handler_id} for pattern '{pattern}' was removed");
+        }
+    }
+
     /// Checks if a handler is subscribed to a pattern.
     #[must_use]
     pub fn is_subscribed(&self, pattern: MStr<Pattern>, handler: &TypedHandler<T>) -> bool {
@@ -233,6 +248,17 @@ impl<T: 'static> TopicRouter<T> {
     pub fn subscriber_count(&self, topic: MStr<Topic>) -> usize {
         self.get_matching_indices(topic)
             .map_or_else(|| self.find_matches(topic).len(), |indices| indices.len())
+    }
+
+    /// Returns the count of subscribers with an exact topic match,
+    /// excluding wildcard pattern subscriptions.
+    #[must_use]
+    pub fn exact_subscriber_count(&self, topic: MStr<Topic>) -> usize {
+        let pattern: MStr<Pattern> = topic.into();
+        self.subscriptions
+            .iter()
+            .filter(|s| s.pattern == pattern)
+            .count()
     }
 
     /// Publishes a message to all handlers subscribed to matching patterns.
@@ -647,5 +673,77 @@ mod tests {
         assert!(msgs.contains(&"specific:42".to_string()));
         assert!(msgs.contains(&"wildcard:42".to_string()));
         assert!(msgs.contains(&"all:42".to_string()));
+    }
+
+    #[rstest]
+    fn test_remove_handler_invalidates_cross_pattern_cache() {
+        let mut router = TopicRouter::<i32>::new();
+        let count_a = Rc::new(RefCell::new(0));
+        let count_b = Rc::new(RefCell::new(0));
+
+        let ca = count_a.clone();
+        let handler_a = TypedHandler::from_with_id("ha", move |_: &i32| {
+            *ca.borrow_mut() += 1;
+        });
+        let handler_a_id = Ustr::from("ha");
+
+        let cb = count_b.clone();
+        let handler_b = TypedHandler::from_with_id("hb", move |_: &i32| {
+            *cb.borrow_mut() += 1;
+        });
+
+        router.subscribe("events.order.S-001".into(), handler_a, 0);
+        router.subscribe("events.order.S-002".into(), handler_b, 0);
+
+        let topic_a: MStr<Topic> = "events.order.S-001".into();
+        let topic_b: MStr<Topic> = "events.order.S-002".into();
+        router.publish(topic_a, &1);
+        router.publish(topic_b, &1);
+        assert_eq!(*count_a.borrow(), 1);
+        assert_eq!(*count_b.borrow(), 1);
+
+        // Remove handler_a — must invalidate ALL cached indices
+        router.remove_handler("events.order.S-001".into(), handler_a_id);
+
+        // handler_b must still dispatch correctly despite index shift
+        router.publish(topic_b, &2);
+        assert_eq!(*count_b.borrow(), 2);
+
+        router.publish(topic_a, &3);
+        assert_eq!(*count_a.borrow(), 1);
+    }
+
+    #[rstest]
+    fn test_remove_handler_only_removes_targeted_handler() {
+        let mut router = TopicRouter::<i32>::new();
+        let count_own = Rc::new(RefCell::new(0));
+        let count_other = Rc::new(RefCell::new(0));
+
+        let co = count_own.clone();
+        let handler_own = TypedHandler::from_with_id("strategy", move |_: &i32| {
+            *co.borrow_mut() += 1;
+        });
+        let own_id = Ustr::from("strategy");
+
+        let cother = count_other.clone();
+        let handler_other = TypedHandler::from_with_id("exec-algo", move |_: &i32| {
+            *cother.borrow_mut() += 1;
+        });
+
+        // Both handlers on the same pattern (same strategy topic)
+        let pattern: MStr<Pattern> = "events.order.S-001".into();
+        router.subscribe(pattern, handler_own, 0);
+        router.subscribe(pattern, handler_other, 0);
+
+        let topic: MStr<Topic> = "events.order.S-001".into();
+        router.publish(topic, &1);
+        assert_eq!(*count_own.borrow(), 1);
+        assert_eq!(*count_other.borrow(), 1);
+
+        router.remove_handler(pattern, own_id);
+
+        router.publish(topic, &2);
+        assert_eq!(*count_own.borrow(), 1);
+        assert_eq!(*count_other.borrow(), 2);
     }
 }

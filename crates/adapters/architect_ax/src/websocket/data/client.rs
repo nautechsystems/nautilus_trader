@@ -73,13 +73,39 @@ impl core::fmt::Display for AxWsClientError {
 
 impl std::error::Error for AxWsClientError {}
 
+#[derive(Debug, Default, Clone)]
+pub(crate) struct SymbolDataTypes {
+    pub(crate) quotes: bool,
+    pub(crate) trades: bool,
+    pub(crate) book_level: Option<AxMarketDataLevel>,
+}
+
+impl SymbolDataTypes {
+    pub(crate) fn effective_level(&self) -> Option<AxMarketDataLevel> {
+        if let Some(level) = self.book_level {
+            return Some(level);
+        }
+        if self.quotes || self.trades {
+            return Some(AxMarketDataLevel::Level1);
+        }
+        None
+    }
+
+    fn is_empty(&self) -> bool {
+        !self.quotes && !self.trades && self.book_level.is_none()
+    }
+}
+
 /// Market data WebSocket client for Ax.
 ///
 /// Provides streaming market data including tickers, trades, order books, and candles.
 /// Requires Bearer token authentication obtained via the HTTP `/api/authenticate` endpoint.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.architect")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        from_py_object
+    )
 )]
 pub struct AxMdWebSocketClient {
     url: String,
@@ -89,10 +115,12 @@ pub struct AxMdWebSocketClient {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusDataWsMessage>>>,
     signal: Arc<AtomicBool>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    task_handle: Option<tokio::task::JoinHandle<()>>,
     subscriptions: SubscriptionState,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     request_id_counter: Arc<AtomicI64>,
+    subscribe_lock: Arc<tokio::sync::Mutex<()>>,
+    symbol_data_types: Arc<DashMap<String, SymbolDataTypes>>,
 }
 
 impl Debug for AxMdWebSocketClient {
@@ -113,12 +141,14 @@ impl Clone for AxMdWebSocketClient {
             auth_token: self.auth_token.clone(),
             connection_mode: Arc::clone(&self.connection_mode),
             cmd_tx: Arc::clone(&self.cmd_tx),
-            out_rx: None, // Each clone gets its own receiver
+            out_rx: None,
             signal: Arc::clone(&self.signal),
-            task_handle: None, // Each clone gets its own task handle
+            task_handle: None,
             subscriptions: self.subscriptions.clone(),
+            subscribe_lock: Arc::clone(&self.subscribe_lock),
             instruments_cache: Arc::clone(&self.instruments_cache),
             request_id_counter: Arc::clone(&self.request_id_counter),
+            symbol_data_types: Arc::clone(&self.symbol_data_types),
         }
     }
 }
@@ -146,6 +176,8 @@ impl AxMdWebSocketClient {
             subscriptions: SubscriptionState::new(AX_TOPIC_DELIMITER),
             instruments_cache: Arc::new(DashMap::new()),
             request_id_counter: Arc::new(AtomicI64::new(1)),
+            subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
+            symbol_data_types: Arc::new(DashMap::new()),
         }
     }
 
@@ -171,6 +203,8 @@ impl AxMdWebSocketClient {
             subscriptions: SubscriptionState::new(AX_TOPIC_DELIMITER),
             instruments_cache: Arc::new(DashMap::new()),
             request_id_counter: Arc::new(AtomicI64::new(1)),
+            subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
+            symbol_data_types: Arc::new(DashMap::new()),
         }
     }
 
@@ -209,9 +243,18 @@ impl AxMdWebSocketClient {
         self.subscriptions.len()
     }
 
-    /// Generates a unique request ID.
     fn next_request_id(&self) -> i64 {
         self.request_id_counter.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn is_subscribed_topic(&self, topic: &str) -> bool {
+        let (channel, symbol) = topic
+            .split_once(AX_TOPIC_DELIMITER)
+            .map_or((topic, None), |(c, s)| (c, Some(s)));
+        let channel_ustr = Ustr::from(channel);
+        let symbol_ustr = symbol.map_or_else(|| Ustr::from(""), Ustr::from);
+        self.subscriptions
+            .is_subscribed(&channel_ustr, &symbol_ustr)
     }
 
     /// Caches an instrument for use during message parsing.
@@ -267,6 +310,7 @@ impl AxMdWebSocketClient {
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Retry initial connection with exponential backoff
@@ -362,6 +406,7 @@ impl AxMdWebSocketClient {
 
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
+        let symbol_data_types = Arc::clone(&self.symbol_data_types);
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
@@ -370,6 +415,7 @@ impl AxMdWebSocketClient {
                 raw_rx,
                 out_tx.clone(),
                 subscriptions.clone(),
+                symbol_data_types,
             );
 
             while let Some(msg) = handler.next().await {
@@ -386,37 +432,293 @@ impl AxMdWebSocketClient {
             log::debug!("Handler loop exited");
         });
 
-        self.task_handle = Some(Arc::new(stream_handle));
+        self.task_handle = Some(stream_handle);
 
         Ok(())
     }
 
-    /// Subscribes to market data for a symbol at the specified level.
+    /// Subscribes to order book deltas for a symbol.
+    ///
+    /// Uses reference counting so the underlying AX subscription is only
+    /// removed when all data types have been unsubscribed.
     ///
     /// # Errors
     ///
     /// Returns an error if the subscription command cannot be sent.
-    pub async fn subscribe(&self, symbol: &str, level: AxMarketDataLevel) -> AxWsResult<()> {
-        let request_id = self.next_request_id();
-        let topic = format!("{symbol}:{level:?}");
+    pub async fn subscribe_book_deltas(
+        &self,
+        symbol: &str,
+        level: AxMarketDataLevel,
+    ) -> AxWsResult<()> {
+        let _guard = self.subscribe_lock.lock().await;
 
-        self.subscriptions.mark_subscribe(&topic);
+        let entry = self
+            .symbol_data_types
+            .entry(symbol.to_string())
+            .or_default();
 
-        self.send_cmd(HandlerCommand::Subscribe {
-            request_id,
-            symbol: symbol.to_string(),
-            level,
-        })
-        .await
+        // AX allows only one subscription per symbol, skip if book already subscribed
+        if entry.book_level.is_some() {
+            log::debug!("Book deltas already subscribed for {symbol}, skipping");
+            return Ok(());
+        }
+
+        let old_level = entry.effective_level();
+        let mut next = entry.clone();
+        next.book_level = Some(level);
+        let new_level = next.effective_level();
+        drop(entry);
+
+        self.update_data_subscription(symbol, old_level, new_level)
+            .await?;
+
+        self.symbol_data_types
+            .entry(symbol.to_string())
+            .or_default()
+            .book_level = Some(level);
+
+        Ok(())
     }
 
-    /// Unsubscribes from market data for a symbol.
+    /// Subscribes to quote data for a symbol.
+    ///
+    /// Uses reference counting so the underlying AX subscription is only
+    /// removed when all data types have been unsubscribed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription command cannot be sent.
+    pub async fn subscribe_quotes(&self, symbol: &str) -> AxWsResult<()> {
+        let _guard = self.subscribe_lock.lock().await;
+
+        let entry = self
+            .symbol_data_types
+            .entry(symbol.to_string())
+            .or_default();
+        let old_level = entry.effective_level();
+        let mut next = entry.clone();
+        next.quotes = true;
+        let new_level = next.effective_level();
+        drop(entry);
+
+        self.update_data_subscription(symbol, old_level, new_level)
+            .await?;
+
+        self.symbol_data_types
+            .entry(symbol.to_string())
+            .or_default()
+            .quotes = true;
+
+        Ok(())
+    }
+
+    /// Subscribes to trade data for a symbol.
+    ///
+    /// Uses reference counting so the underlying AX subscription is only
+    /// removed when all data types have been unsubscribed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription command cannot be sent.
+    pub async fn subscribe_trades(&self, symbol: &str) -> AxWsResult<()> {
+        let _guard = self.subscribe_lock.lock().await;
+
+        let entry = self
+            .symbol_data_types
+            .entry(symbol.to_string())
+            .or_default();
+        let old_level = entry.effective_level();
+        let mut next = entry.clone();
+        next.trades = true;
+        let new_level = next.effective_level();
+        drop(entry);
+
+        self.update_data_subscription(symbol, old_level, new_level)
+            .await?;
+
+        self.symbol_data_types
+            .entry(symbol.to_string())
+            .or_default()
+            .trades = true;
+
+        Ok(())
+    }
+
+    /// Unsubscribes from order book deltas for a symbol.
+    ///
+    /// The underlying AX subscription is only removed when all data types
+    /// (quotes, trades, book) have been unsubscribed.
     ///
     /// # Errors
     ///
     /// Returns an error if the unsubscribe command cannot be sent.
-    pub async fn unsubscribe(&self, symbol: &str) -> AxWsResult<()> {
+    pub async fn unsubscribe_book_deltas(&self, symbol: &str) -> AxWsResult<()> {
+        let _guard = self.subscribe_lock.lock().await;
+
+        let Some(entry) = self.symbol_data_types.get(symbol) else {
+            log::debug!("Symbol {symbol} not subscribed, skipping unsubscribe book deltas");
+            return Ok(());
+        };
+        let old_level = entry.effective_level();
+        let mut next = entry.clone();
+        next.book_level = None;
+        let new_level = next.effective_level();
+        drop(entry);
+
+        self.update_data_subscription(symbol, old_level, new_level)
+            .await?;
+
+        if let Some(mut entry) = self.symbol_data_types.get_mut(symbol) {
+            entry.book_level = None;
+            if entry.is_empty() {
+                drop(entry);
+                self.symbol_data_types.remove(symbol);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Unsubscribes from quote data for a symbol.
+    ///
+    /// The underlying AX subscription is only removed when all data types
+    /// (quotes, trades, book) have been unsubscribed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe command cannot be sent.
+    pub async fn unsubscribe_quotes(&self, symbol: &str) -> AxWsResult<()> {
+        let _guard = self.subscribe_lock.lock().await;
+
+        let Some(entry) = self.symbol_data_types.get(symbol) else {
+            log::debug!("Symbol {symbol} not subscribed, skipping unsubscribe quotes");
+            return Ok(());
+        };
+        let old_level = entry.effective_level();
+        let mut next = entry.clone();
+        next.quotes = false;
+        let new_level = next.effective_level();
+        drop(entry);
+
+        self.update_data_subscription(symbol, old_level, new_level)
+            .await?;
+
+        if let Some(mut entry) = self.symbol_data_types.get_mut(symbol) {
+            entry.quotes = false;
+            if entry.is_empty() {
+                drop(entry);
+                self.symbol_data_types.remove(symbol);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Unsubscribes from trade data for a symbol.
+    ///
+    /// The underlying AX subscription is only removed when all data types
+    /// (quotes, trades, book) have been unsubscribed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe command cannot be sent.
+    pub async fn unsubscribe_trades(&self, symbol: &str) -> AxWsResult<()> {
+        let _guard = self.subscribe_lock.lock().await;
+
+        let Some(entry) = self.symbol_data_types.get(symbol) else {
+            log::debug!("Symbol {symbol} not subscribed, skipping unsubscribe trades");
+            return Ok(());
+        };
+        let old_level = entry.effective_level();
+        let mut next = entry.clone();
+        next.trades = false;
+        let new_level = next.effective_level();
+        drop(entry);
+
+        self.update_data_subscription(symbol, old_level, new_level)
+            .await?;
+
+        if let Some(mut entry) = self.symbol_data_types.get_mut(symbol) {
+            entry.trades = false;
+            if entry.is_empty() {
+                drop(entry);
+                self.symbol_data_types.remove(symbol);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn update_data_subscription(
+        &self,
+        symbol: &str,
+        old_level: Option<AxMarketDataLevel>,
+        new_level: Option<AxMarketDataLevel>,
+    ) -> AxWsResult<()> {
+        if old_level == new_level {
+            return Ok(());
+        }
+
+        match (old_level, new_level) {
+            (None, Some(level)) => {
+                log::debug!("Subscribing {symbol} at {level:?}");
+                self.send_subscribe(symbol, level).await
+            }
+            (Some(_), None) => {
+                log::debug!("Unsubscribing {symbol} (no remaining data types)");
+                self.send_unsubscribe(symbol).await
+            }
+            (Some(old), Some(new)) => {
+                log::debug!("Resubscribing {symbol}: {old:?} -> {new:?}");
+                self.send_unsubscribe(symbol).await?;
+                if let Err(e) = self.send_subscribe(symbol, new).await {
+                    log::warn!("Resubscribe failed for {symbol} at {new:?}: {e}");
+                    if let Err(restore_err) = self.send_subscribe(symbol, old).await {
+                        // Channel dead, mark old topic for reconnection replay
+                        log::error!(
+                            "Failed to restore {symbol} at {old:?}: {restore_err}, \
+                             reconnection required"
+                        );
+                        let old_topic = format!("{symbol}:{old:?}");
+                        self.subscriptions.mark_subscribe(&old_topic);
+                    }
+                    return Err(e);
+                }
+                Ok(())
+            }
+            (None, None) => Ok(()),
+        }
+    }
+
+    async fn send_subscribe(&self, symbol: &str, level: AxMarketDataLevel) -> AxWsResult<()> {
+        let topic = format!("{symbol}:{level:?}");
         let request_id = self.next_request_id();
+
+        self.subscriptions.mark_subscribe(&topic);
+
+        if let Err(e) = self
+            .send_cmd(HandlerCommand::Subscribe {
+                request_id,
+                symbol: Ustr::from(symbol),
+                level,
+            })
+            .await
+        {
+            self.subscriptions.mark_unsubscribe(&topic);
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    async fn send_unsubscribe(&self, symbol: &str) -> AxWsResult<()> {
+        let request_id = self.next_request_id();
+
+        self.send_cmd(HandlerCommand::Unsubscribe {
+            request_id,
+            symbol: Ustr::from(symbol),
+        })
+        .await?;
 
         for level in [
             AxMarketDataLevel::Level1,
@@ -427,30 +729,45 @@ impl AxMdWebSocketClient {
             self.subscriptions.mark_unsubscribe(&topic);
         }
 
-        self.send_cmd(HandlerCommand::Unsubscribe {
-            request_id,
-            symbol: symbol.to_string(),
-        })
-        .await
+        Ok(())
     }
 
     /// Subscribes to candle data for a symbol.
+    ///
+    /// Skips sending if already subscribed or subscription is pending.
     ///
     /// # Errors
     ///
     /// Returns an error if the subscription command cannot be sent.
     pub async fn subscribe_candles(&self, symbol: &str, width: AxCandleWidth) -> AxWsResult<()> {
-        let request_id = self.next_request_id();
+        let _guard = self.subscribe_lock.lock().await;
         let topic = format!("candles:{symbol}:{width:?}");
 
+        // Skip if already subscribed or pending
+        if self.is_subscribed_topic(&topic) {
+            log::debug!("Already subscribed to {topic}, skipping");
+            return Ok(());
+        }
+
+        let request_id = self.next_request_id();
+
+        // Mark pending BEFORE sending to prevent race conditions with concurrent subscribes
         self.subscriptions.mark_subscribe(&topic);
 
-        self.send_cmd(HandlerCommand::SubscribeCandles {
-            request_id,
-            symbol: symbol.to_string(),
-            width,
-        })
-        .await
+        if let Err(e) = self
+            .send_cmd(HandlerCommand::SubscribeCandles {
+                request_id,
+                symbol: Ustr::from(symbol),
+                width,
+            })
+            .await
+        {
+            // Rollback pending state on send failure
+            self.subscriptions.mark_unsubscribe(&topic);
+            return Err(e);
+        }
+
+        Ok(())
     }
 
     /// Unsubscribes from candle data for a symbol.
@@ -459,6 +776,7 @@ impl AxMdWebSocketClient {
     ///
     /// Returns an error if the unsubscribe command cannot be sent.
     pub async fn unsubscribe_candles(&self, symbol: &str, width: AxCandleWidth) -> AxWsResult<()> {
+        let _guard = self.subscribe_lock.lock().await;
         let request_id = self.next_request_id();
         let topic = format!("candles:{symbol}:{width:?}");
 
@@ -466,7 +784,7 @@ impl AxMdWebSocketClient {
 
         self.send_cmd(HandlerCommand::UnsubscribeCandles {
             request_id,
-            symbol: symbol.to_string(),
+            symbol: Ustr::from(symbol),
             width,
         })
         .await
@@ -509,21 +827,14 @@ impl AxMdWebSocketClient {
 
         if let Some(handle) = self.task_handle.take() {
             const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+            let abort_handle = handle.abort_handle();
 
-            match tokio::time::timeout(CLOSE_TIMEOUT, async {
-                loop {
-                    if Arc::strong_count(&handle) == 1 {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-            })
-            .await
-            {
-                Ok(()) => log::debug!("Handler task completed gracefully"),
+            match tokio::time::timeout(CLOSE_TIMEOUT, handle).await {
+                Ok(Ok(())) => log::debug!("Handler task completed gracefully"),
+                Ok(Err(e)) => log::warn!("Handler task panicked: {e}"),
                 Err(_) => {
                     log::warn!("Handler task did not complete within timeout, aborting");
-                    handle.abort();
+                    abort_handle.abort();
                 }
             }
         }

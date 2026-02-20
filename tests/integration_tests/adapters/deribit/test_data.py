@@ -21,7 +21,7 @@ import pytest
 
 from nautilus_trader.adapters.deribit.constants import DERIBIT_VENUE
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import RequestInstrument
@@ -79,6 +79,7 @@ class TestDeribitDataClient:
                 book_type=BookType.L2_MBP,
                 depth=None,
                 instrument_id=InstrumentId(Symbol("BTC-PERPETUAL"), DERIBIT_VENUE),
+                params=None,
             )
 
             # Act
@@ -86,7 +87,7 @@ class TestDeribitDataClient:
 
             # Assert
             expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-            client._ws_client.subscribe_book.assert_called_once_with(expected_id)
+            client._ws_client.subscribe_book.assert_called_once_with(expected_id, None, None)
         finally:
             await client._disconnect()
 
@@ -139,6 +140,7 @@ class TestDeribitDataClient:
 
             command = SimpleNamespace(
                 instrument_id=InstrumentId(Symbol("BTC-PERPETUAL"), DERIBIT_VENUE),
+                params=None,
             )
 
             # Act
@@ -146,7 +148,7 @@ class TestDeribitDataClient:
 
             # Assert
             expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-            client._ws_client.subscribe_trades.assert_called_once_with(expected_id)
+            client._ws_client.subscribe_trades.assert_called_once_with(expected_id, None)
         finally:
             await client._disconnect()
 
@@ -199,6 +201,7 @@ class TestDeribitDataClient:
 
             command = SimpleNamespace(
                 instrument_id=InstrumentId(Symbol("BTC-PERPETUAL"), DERIBIT_VENUE),
+                params=None,
             )
 
             # Act
@@ -206,7 +209,7 @@ class TestDeribitDataClient:
 
             # Assert
             expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-            client._ws_client.unsubscribe_trades.assert_called_once_with(expected_id)
+            client._ws_client.unsubscribe_trades.assert_called_once_with(expected_id, None)
         finally:
             await client._disconnect()
 
@@ -229,6 +232,7 @@ class TestDeribitDataClient:
 
             command = SimpleNamespace(
                 instrument_id=InstrumentId(Symbol("BTC-PERPETUAL"), DERIBIT_VENUE),
+                params=None,
             )
 
             # Act
@@ -236,21 +240,21 @@ class TestDeribitDataClient:
 
             # Assert
             expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-            client._ws_client.unsubscribe_book.assert_called_once_with(expected_id)
+            client._ws_client.unsubscribe_book.assert_called_once_with(expected_id, None, None)
         finally:
             await client._disconnect()
 
     @pytest.mark.asyncio
-    async def test_subscribe_multiple_instrument_kinds(
+    async def test_subscribe_multiple_product_types(
         self,
         data_client_builder,
         instrument,
     ) -> None:
         # Arrange
         client = data_client_builder(
-            instrument_kinds=(
-                DeribitInstrumentKind.FUTURE,
-                DeribitInstrumentKind.OPTION,
+            product_types=(
+                DeribitProductType.FUTURE,
+                DeribitProductType.OPTION,
             ),
         )
         client._instrument_provider.get_all.return_value = {
@@ -262,9 +266,9 @@ class TestDeribitDataClient:
 
         try:
             # Assert
-            assert client._config.instrument_kinds == (
-                DeribitInstrumentKind.FUTURE,
-                DeribitInstrumentKind.OPTION,
+            assert client._config.product_types == (
+                DeribitProductType.FUTURE,
+                DeribitProductType.OPTION,
             )
         finally:
             await client._disconnect()

@@ -29,30 +29,13 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
     """
     Endpoint for managing user data streams (listenKey).
 
-    `POST /api/v3/userDataStream`
-    `POST /sapi/v3/userDataStream`
-    `POST /sapi/v3/userDataStream/isolated`
     `POST /fapi/v1/listenKey`
-    `POST /dapi/v1/listenKey`
-
-    `PUT /api/v3/userDataStream`
-    `PUT /sapi/v3/userDataStream`
-    `PUT /sapi/v3/userDataStream/isolated`
     `PUT /fapi/v1/listenKey`
-    `PUT /dapi/v1/listenKey`
-
-    `DELETE /api/v3/userDataStream`
-    `DELETE /sapi/v3/userDataStream`
-    `DELETE /sapi/v3/userDataStream/isolated`
     `DELETE /fapi/v1/listenKey`
-    `DELETE /dapi/v1/listenKey`
 
     References
     ----------
-    https://binance-docs.github.io/apidocs/spot/en/#listen-key-spot
-    https://binance-docs.github.io/apidocs/spot/en/#listen-key-margin
-    https://binance-docs.github.io/apidocs/futures/en/#start-user-data-stream-user_stream
-    https://binance-docs.github.io/apidocs/delivery/en/#start-user-data-stream-user_stream
+    https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams
 
     """
 
@@ -81,12 +64,12 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
         Parameters
         ----------
-        symbol : BinanceSymbol
-            The trading pair. Only required for ISOLATED MARGIN accounts!
+        symbol : BinanceSymbol, optional
+            The trading pair. Only required for ISOLATED MARGIN accounts.
 
         """
 
-        symbol: BinanceSymbol | None = None  # MARGIN_ISOLATED only, mandatory
+        symbol: BinanceSymbol | None = None
 
     class PutDeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -94,15 +77,15 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
         Parameters
         ----------
-        symbol : BinanceSymbol
-            The trading pair. Only required for ISOLATED MARGIN accounts!
-        listenKey : str
-            The listen key to manage. Only required for SPOT/MARGIN accounts!
+        symbol : BinanceSymbol, optional
+            The trading pair. Only required for ISOLATED MARGIN accounts.
+        listenKey : str, optional
+            The listen key to manage. Only required for SPOT/MARGIN accounts.
 
         """
 
-        symbol: BinanceSymbol | None = None  # MARGIN_ISOLATED only, mandatory
-        listenKey: str | None = None  # SPOT/MARGIN only, mandatory
+        symbol: BinanceSymbol | None = None
+        listenKey: str | None = None
 
     async def _post(self, params: PostParameters | None = None) -> BinanceListenKey:
         method_type = HttpMethod.POST
@@ -122,7 +105,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
 class BinanceUserDataHttpAPI:
     """
-    Provides access to the Binance User HTTP REST API.
+    Provides access to the Binance User Data Stream HTTP REST API.
 
     Parameters
     ----------
@@ -130,10 +113,6 @@ class BinanceUserDataHttpAPI:
         The Binance REST API client.
     account_type : BinanceAccountType
         The Binance account type, used to select the endpoint.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
 
     """
 
@@ -147,23 +126,18 @@ class BinanceUserDataHttpAPI:
         self.account_type = account_type
 
         if account_type == BinanceAccountType.SPOT:
-            self.base_endpoint = "/api/v3/"
-            listen_key_url = self.base_endpoint + "userDataStream"
+            listen_key_url = "/api/v3/userDataStream"
         elif account_type == BinanceAccountType.MARGIN:
-            self.base_endpoint = "/sapi/v1/"
-            listen_key_url = self.base_endpoint + "userDataStream"
+            listen_key_url = "/sapi/v1/userDataStream"
         elif account_type == BinanceAccountType.ISOLATED_MARGIN:
-            self.base_endpoint = "/sapi/v1/"
-            listen_key_url = self.base_endpoint + "userDataStream/isolated"
+            listen_key_url = "/sapi/v1/userDataStream/isolated"
         elif account_type == BinanceAccountType.USDT_FUTURES:
-            self.base_endpoint = "/fapi/v1/"
-            listen_key_url = self.base_endpoint + "listenKey"
+            listen_key_url = "/fapi/v1/listenKey"
         elif account_type == BinanceAccountType.COIN_FUTURES:
-            self.base_endpoint = "/dapi/v1/"
-            listen_key_url = self.base_endpoint + "listenKey"
+            listen_key_url = "/dapi/v1/listenKey"
         else:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover (design-time error)
+            raise RuntimeError(
+                f"invalid `BinanceAccountType`, was {account_type}",
             )
 
         self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
@@ -173,7 +147,7 @@ class BinanceUserDataHttpAPI:
         symbol: str | None = None,
     ) -> BinanceListenKey:
         """
-        Create Binance ListenKey.
+        Create a new Binance listenKey.
         """
         key = await self._endpoint_listenkey._post(
             params=self._endpoint_listenkey.PostParameters(
@@ -188,7 +162,7 @@ class BinanceUserDataHttpAPI:
         listen_key: str | None = None,
     ):
         """
-        Ping/Keepalive Binance ListenKey.
+        Keepalive an existing Binance listenKey.
         """
         await self._endpoint_listenkey._put(
             params=self._endpoint_listenkey.PutDeleteParameters(
@@ -197,13 +171,13 @@ class BinanceUserDataHttpAPI:
             ),
         )
 
-    async def delete_listen_key(
+    async def close_listen_key(
         self,
         symbol: str | None = None,
         listen_key: str | None = None,
     ):
         """
-        Delete Binance ListenKey.
+        Close an existing Binance listenKey.
         """
         await self._endpoint_listenkey._delete(
             params=self._endpoint_listenkey.PutDeleteParameters(

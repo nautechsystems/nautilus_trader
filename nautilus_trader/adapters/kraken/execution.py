@@ -417,13 +417,8 @@ class KrakenExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
 
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'generate_order_status_reports'")
-        except Exception as e:
-            if "canceled" in str(e).lower():
-                self._log.debug("Canceled task 'generate_order_status_reports'")
-            else:
-                self._log.exception("Failed to generate OrderStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -528,14 +523,8 @@ class KrakenExecutionClient(LiveExecutionClient):
 
             return None
 
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'generate_order_status_report'")
-            return None
-        except Exception as e:
-            if "canceled" in str(e).lower():
-                self._log.debug("Canceled task 'generate_order_status_report'")
-            else:
-                self._log.exception("Failed to generate OrderStatusReport", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReport")
             return None
 
     async def generate_fill_reports(
@@ -586,13 +575,8 @@ class KrakenExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
 
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'generate_fill_reports'")
-        except Exception as e:
-            if "canceled" in str(e).lower():
-                self._log.debug("Canceled task 'generate_fill_reports'")
-            else:
-                self._log.exception("Failed to generate FillReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
 
         self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
@@ -633,13 +617,8 @@ class KrakenExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
 
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'generate_position_status_reports'")
-        except Exception as e:
-            if "canceled" in str(e).lower():
-                self._log.debug("Canceled task 'generate_position_status_reports'")
-            else:
-                self._log.exception("Failed to generate PositionStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -662,7 +641,7 @@ class KrakenExecutionClient(LiveExecutionClient):
 
         if client is None:
             self._log.error(f"No HTTP client available for symbol {symbol}")
-            self.generate_order_rejected(
+            self.generate_order_denied(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
@@ -863,11 +842,9 @@ class KrakenExecutionClient(LiveExecutionClient):
             # Generate OrderUpdated event
             # Use command values if provided, otherwise fall back to order values
             # Note: StopMarketOrder doesn't have a price attribute, only trigger_price
-            price = command.price if command.price else (order.price if order.has_price else None)
-            trigger_price = (
-                command.trigger_price
-                if command.trigger_price
-                else (order.trigger_price if order.has_trigger_price else None)
+            price = command.price or (order.price if order.has_price else None)
+            trigger_price = command.trigger_price or (
+                order.trigger_price if order.has_trigger_price else None
             )
 
             self.generate_order_updated(
@@ -875,7 +852,7 @@ class KrakenExecutionClient(LiveExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 venue_order_id=new_venue_order_id_obj,
-                quantity=command.quantity if command.quantity else order.quantity,
+                quantity=command.quantity or order.quantity,
                 price=price,
                 trigger_price=trigger_price,
                 ts_event=self._clock.timestamp_ns(),

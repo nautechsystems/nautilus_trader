@@ -1,0 +1,35 @@
+{
+  "risk_snapshot": {
+    "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
+    "timestamp_ns": "2024-01-15T10:30:00Z",
+    "balance_usd": "100000.50",
+    "equity": "102500.75",
+    "unrealized_pnl": "2500.25",
+    "initial_margin_required_for_positions": "5000.00",
+    "initial_margin_required_for_open_orders": "2000.00",
+    "initial_margin_required_total": "7000.00",
+    "initial_margin_available": "95500.75",
+    "maintenance_margin_required": "3500.00",
+    "maintenance_margin_available": "99000.75",
+    "per_symbol": {
+      "EURUSD-PERP": {
+        "signed_quantity": 1000,
+        "signed_notional": "1084.50",
+        "average_price": "1.08300",
+        "liquidation_price": "1.05000",
+        "initial_margin_required": "3000.00",
+        "maintenance_margin_required": "2100.00",
+        "unrealized_pnl": "1500.00"
+      },
+      "GBPUSD-PERP": {
+        "signed_quantity": -500,
+        "signed_notional": "-635.75",
+        "average_price": "1.27300",
+        "liquidation_price": null,
+        "initial_margin_required": "2000.00",
+        "maintenance_margin_required": "1400.00",
+        "unrealized_pnl": "1000.25"
+      }
+    }
+  }
+}

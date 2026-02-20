@@ -349,7 +349,7 @@ impl DataClient for OKXDataClient {
 
         let mut all_instruments = Vec::new();
         for inst_type in &instrument_types {
-            let mut fetched = self
+            let (mut fetched, _inst_id_codes) = self
                 .http_client
                 .request_instruments(*inst_type, None)
                 .await
@@ -877,7 +877,7 @@ impl DataClient for OKXDataClient {
 
                 if families.is_empty() {
                     match http.request_instruments(inst_type, None).await {
-                        Ok(instruments) => {
+                        Ok((instruments, _inst_id_codes)) => {
                             for instrument in instruments {
                                 if !contract_filter_with_config_types(
                                     contract_types.as_ref(),
@@ -900,7 +900,7 @@ impl DataClient for OKXDataClient {
                             .request_instruments(inst_type, Some(family.clone()))
                             .await
                         {
-                            Ok(instruments) => {
+                            Ok((instruments, _inst_id_codes)) => {
                                 for instrument in instruments {
                                     if !contract_filter_with_config_types(
                                         contract_types.as_ref(),

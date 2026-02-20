@@ -258,7 +258,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{num::NonZeroU32, time::Duration};
+    use std::{
+        num::NonZeroU32,
+        sync::atomic::{AtomicU32, Ordering},
+        time::Duration,
+    };
 
     use dashmap::DashMap;
     use rstest::rstest;
@@ -266,7 +270,8 @@ mod tests {
     use super::{
         DashMapStateStore, RateLimiter,
         clock::{Clock, FakeRelativeClock},
-        gcra::Gcra,
+        gcra::{Gcra, StateSnapshot},
+        nanos::Nanos,
         quota::Quota,
     };
 
@@ -274,7 +279,7 @@ mod tests {
         let clock = FakeRelativeClock::default();
         let start = clock.now();
         let gcra = DashMap::new();
-        let base_quota = Quota::per_second(NonZeroU32::new(2).unwrap());
+        let base_quota = Quota::per_second(NonZeroU32::new(2).unwrap()).unwrap();
         RateLimiter {
             default_gcra: Some(Gcra::new(base_quota)),
             state: DashMapStateStore::new(),
@@ -307,7 +312,7 @@ mod tests {
         // Add new key quota pair
         mock_limiter.add_quota_for_key(
             "custom".to_string(),
-            Quota::per_second(NonZeroU32::new(1).unwrap()),
+            Quota::per_second(NonZeroU32::new(1).unwrap()).unwrap(),
         );
 
         // Check custom quota
@@ -326,11 +331,11 @@ mod tests {
 
         mock_limiter.add_quota_for_key(
             "key1".to_string(),
-            Quota::per_second(NonZeroU32::new(1).unwrap()),
+            Quota::per_second(NonZeroU32::new(1).unwrap()).unwrap(),
         );
         mock_limiter.add_quota_for_key(
             "key2".to_string(),
-            Quota::per_second(NonZeroU32::new(3).unwrap()),
+            Quota::per_second(NonZeroU32::new(3).unwrap()).unwrap(),
         );
 
         // Test key1
@@ -368,7 +373,7 @@ mod tests {
 
         mock_limiter.add_quota_for_key(
             "per_second".to_string(),
-            Quota::per_second(NonZeroU32::new(2).unwrap()),
+            Quota::per_second(NonZeroU32::new(2).unwrap()).unwrap(),
         );
         mock_limiter.add_quota_for_key(
             "per_minute".to_string(),
@@ -411,34 +416,176 @@ mod tests {
     }
 
     #[rstest]
+    fn test_remaining_burst_capacity_zero_t() {
+        let snapshot = StateSnapshot::new(
+            Nanos::from(0u64),
+            Nanos::from(1_000_000u64),
+            Nanos::from(0u64),
+            Nanos::from(0u64),
+        );
+        assert_eq!(snapshot.remaining_burst_capacity(), 0);
+    }
+
+    #[rstest]
+    fn test_per_second_returns_none_on_zero_replenish_interval() {
+        assert!(Quota::per_second(NonZeroU32::new(u32::MAX).unwrap()).is_none());
+    }
+
+    #[rstest]
+    fn test_per_minute_accepts_max_burst() {
+        let quota = Quota::per_minute(NonZeroU32::new(u32::MAX).unwrap());
+        assert!(quota.replenish_interval().as_nanos() > 0);
+    }
+
+    #[rstest]
+    fn test_per_hour_accepts_max_burst() {
+        let quota = Quota::per_hour(NonZeroU32::new(u32::MAX).unwrap());
+        assert!(quota.replenish_interval().as_nanos() > 0);
+    }
+
+    mod property_tests {
+        use proptest::prelude::*;
+        use rstest::rstest;
+
+        use crate::ratelimiter::{gcra::StateSnapshot, nanos::Nanos};
+
+        // Upper bound: ~1 hour in nanoseconds (realistic GCRA range)
+        const MAX_NANOS: u64 = 3_600_000_000_000;
+
+        proptest! {
+            #![proptest_config(ProptestConfig {
+                failure_persistence: Some(Box::new(
+                    proptest::test_runner::FileFailurePersistence::WithSource("ratelimiter")
+                )),
+                ..ProptestConfig::default()
+            })]
+
+            #[rstest]
+            fn remaining_burst_capacity_never_panics(
+                t in 0u64..=MAX_NANOS,
+                tau in 0u64..=MAX_NANOS,
+                time_of_measurement in 0u64..=MAX_NANOS,
+                tat in 0u64..=MAX_NANOS,
+            ) {
+                let snapshot = StateSnapshot::new(
+                    Nanos::from(t),
+                    Nanos::from(tau),
+                    Nanos::from(time_of_measurement),
+                    Nanos::from(tat),
+                );
+
+                let _ = snapshot.remaining_burst_capacity();
+            }
+        }
+    }
+
+    #[rstest]
     fn test_gcra_boundary_exact_replenishment() {
         // Test GCRA boundary condition where t0 equals earliest_time exactly.
         // This exercises the saturating_sub edge case deterministically without sleeps.
         let mock_limiter = initialize_mock_rate_limiter();
         let key = "boundary_test".to_string();
 
-        // Consume entire burst capacity (2 requests)
         assert!(mock_limiter.check_key(&key).is_ok());
         assert!(mock_limiter.check_key(&key).is_ok());
-
-        // Next request should be rate-limited
         assert!(mock_limiter.check_key(&key).is_err());
 
         // Advance clock by exactly one replenish interval (500ms for 2 req/sec)
-        let quota = Quota::per_second(NonZeroU32::new(2).unwrap());
+        let quota = Quota::per_second(NonZeroU32::new(2).unwrap()).unwrap();
         let replenish_interval = quota.replenish_interval();
         mock_limiter.advance_clock(replenish_interval);
 
-        // At the exact boundary (t0 == earliest_time), request should be allowed
         assert!(
             mock_limiter.check_key(&key).is_ok(),
             "Request at exact replenish boundary should be allowed"
         );
-
-        // But the next immediate request should be denied (burst exhausted again)
         assert!(
             mock_limiter.check_key(&key).is_err(),
             "Immediate follow-up should be rate-limited"
+        );
+    }
+
+    #[rstest]
+    fn test_per_second_boundary_exact_limit() {
+        // 1_000_000_000ns / 1_000_000_000 = 1ns per replenish, the exact boundary
+        let quota = Quota::per_second(NonZeroU32::new(1_000_000_000).unwrap()).unwrap();
+        assert_eq!(quota.replenish_interval().as_nanos(), 1);
+    }
+
+    #[rstest]
+    fn test_per_second_returns_none_above_one_billion() {
+        // 1_000_000_000ns / 1_000_000_001 rounds to 0ns
+        assert!(Quota::per_second(NonZeroU32::new(1_000_000_001).unwrap()).is_none());
+    }
+
+    #[rstest]
+    fn test_burst_size_replenished_in_truncation() {
+        // 100_000_000_000ns * u32::MAX overflows u64, `as u64` silently truncates
+        let quota = Quota::with_period(Duration::from_secs(100))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(u32::MAX).unwrap());
+
+        let replenished_in = quota.burst_size_replenished_in();
+        let full: u128 = 100_000_000_000u128 * u32::MAX as u128;
+        let truncated = full as u64;
+
+        assert_eq!(replenished_in, Duration::from_nanos(truncated));
+        assert_ne!(full, truncated as u128, "Truncation should have occurred");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "t cannot be zero")]
+    fn test_from_gcra_parameters_panics_on_zero_t() {
+        let _ = Quota::from_gcra_parameters(Nanos::from(0u64), Nanos::from(100u64));
+    }
+
+    #[rstest]
+    #[should_panic(expected = "tau/t results in zero burst capacity")]
+    fn test_from_gcra_parameters_panics_on_zero_division() {
+        // tau=1, t=2 → integer division yields 0
+        let _ = Quota::from_gcra_parameters(Nanos::from(2u64), Nanos::from(1u64));
+    }
+
+    #[rstest]
+    #[should_panic(expected = "tau/t exceeds u32::MAX")]
+    fn test_from_gcra_parameters_panics_on_overflow() {
+        let _ = Quota::from_gcra_parameters(Nanos::from(1u64), Nanos::from(u64::MAX));
+    }
+
+    #[rstest]
+    fn test_concurrent_check_key_respects_burst() {
+        let rate = 10u32;
+        let clock = FakeRelativeClock::default();
+        let start = clock.now();
+        let limiter = RateLimiter {
+            default_gcra: Some(Gcra::new(
+                Quota::per_second(NonZeroU32::new(rate).unwrap()).unwrap(),
+            )),
+            state: DashMapStateStore::new(),
+            gcra: DashMap::new(),
+            clock,
+            start,
+        };
+
+        let accepted = AtomicU32::new(0);
+        let num_threads = 50;
+
+        // Clock is frozen: no replenishment occurs
+        std::thread::scope(|s| {
+            for _ in 0..num_threads {
+                s.spawn(|| {
+                    if limiter.check_key(&"hot_key".to_string()).is_ok() {
+                        accepted.fetch_add(1, Ordering::Relaxed);
+                    }
+                });
+            }
+        });
+
+        let total = accepted.load(Ordering::Relaxed);
+        assert!(total >= 1, "At least one request should be accepted");
+        assert!(
+            total <= rate,
+            "Accepted {total} but burst capacity is {rate}"
         );
     }
 }

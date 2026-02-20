@@ -110,19 +110,31 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         If True, the processing order adapts with the heuristic:
         - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
         - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
-    trade_execution : bool, default False
+    trade_execution : bool, default True
         If trades should be processed by the matching engine(s) (and move the market).
     liquidity_consumption : bool, default False
         If liquidity consumption should be tracked per price level. When enabled, fills
         consume available liquidity which resets when fresh data arrives at that level.
         When disabled, each iteration can fill against the full book liquidity independently.
+    queue_position : bool, default False
+        If queue position tracking should be enabled for limit orders during trade
+        execution mode. When enabled, limit orders only fill after the quantity ahead
+        of them (at order placement time) has been traded through or the price level
+        is deleted. Requires trade_execution=True.
     allow_cash_borrowing : bool, default False
         If borrowing is allowed for cash accounts (negative balances).
     frozen_account : bool, default False
         If the account for this exchange is frozen (balances will not change).
-    price_protection_points : int, default 0
+    price_protection_points : NonNegativeInt, default 0
         Defines an exchange-calculated price boundary (in points) to prevent
         marketable orders from executing at excessively aggressive prices.
+        For BUY orders: protection_price = ask + (points * price_increment).
+        For SELL orders: protection_price = bid - (points * price_increment).
+        Set to 0 to disable price protection.
+    settlement_prices : dict[InstrumentId, float], optional
+        Map of instrument ID to settlement price for expiring instruments.
+        For futures, positions close at this price instead of market.
+        For options, the option leg settles at this price.
 
     """
 
@@ -150,11 +162,13 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     use_market_order_acks: bool = False
     bar_execution: bool = True
     bar_adaptive_high_low_ordering: bool = False
-    trade_execution: bool = False
+    trade_execution: bool = True
     liquidity_consumption: bool = False
+    queue_position: bool = False
     allow_cash_borrowing: bool = False
     frozen_account: bool = False
-    price_protection_points: int = 0
+    price_protection_points: NonNegativeInt = 0
+    settlement_prices: dict[InstrumentId, float] | None = None
 
 
 class BacktestDataConfig(NautilusConfig, frozen=True):
@@ -196,6 +210,9 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     bar_types : list[BarType | str], optional
         The bar types for the data catalog query.
         Can be used if instrument_id is not specified.
+    optimize_file_loading : bool, default False
+        If True, registers entire directories with the query backend for efficient
+        loading. If False, registers each file individually (e.g. for precise file control).
 
     """
 
@@ -213,6 +230,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     bar_spec: str | None = None
     instrument_ids: list[str] | None = None
     bar_types: list[str] | None = None
+    optimize_file_loading: bool = False
 
     @property
     def data_type(self) -> type:
@@ -265,6 +283,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             "end": self.end_time,
             "filter_expr": parse_filters_expr(self.filter_expr),
             "metadata": self.metadata,
+            "optimize_file_loading": self.optimize_file_loading,
         }
 
     @property

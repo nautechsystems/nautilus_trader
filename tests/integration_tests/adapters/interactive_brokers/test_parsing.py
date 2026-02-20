@@ -88,7 +88,30 @@ simplified_symbology_params = [
     ),
     (IBContract(secType="CRYPTO", exchange="PAXOS", localSymbol="BTC.USD"), "BTC/USD.PAXOS"),
     (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "^SPX.CBOE"),
+    (IBContract(secType="IND", exchange="EUREX", localSymbol="ESTX50"), "^ESTX50.EUREX"),
     (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "^XJO.ASX"),
+    (
+        IBContract(
+            secType="FUT",
+            exchange="EUREX",
+            symbol="ESTX50",
+            tradingClass="FESX",
+            lastTradeDateOrContractMonth="20240315",
+        ),
+        "ESTX50 FESX 20240315.EUREX",
+    ),
+    (
+        IBContract(
+            secType="OPT",
+            exchange="EUREX",
+            symbol="OESX",
+            tradingClass="OESX",
+            lastTradeDateOrContractMonth="20260213",
+            strike=4775,
+            right="C",
+        ),
+        "C OESX 20260213 4775.EUREX",
+    ),
 ]
 
 
@@ -540,3 +563,40 @@ def test_parse_instrument_future_option():
     # Assert
     assert instrument.id.value == "E4AN4 C5655.CME"
     assert isinstance(instrument, OptionContract), "instrument is not a OptionContract"
+
+
+def test_parse_instrument_option_on_index_has_caret_prefix():
+    # Arrange: SPX option with underSecType=IND
+    contract = IBTestContractStubs.create_contract(
+        secType="OPT",
+        conId=123456,
+        symbol="SPX",
+        lastTradeDateOrContractMonth="20240315",
+        strike=5000.0,
+        right="C",
+        multiplier="100",
+        exchange="CBOE",
+        currency="USD",
+        localSymbol="SPX   240315C05000000",
+        tradingClass="SPX",
+    )
+    contract = IBContract(**contract.__dict__)
+    contract_details = IBTestContractStubs.create_contract_details(
+        contract=contract,
+        marketName="SPX",
+        minTick=0.05,
+        underSymbol="SPX",
+        underSecType="IND",
+        timeZoneId="US/Central",
+        tradingHours="20240101:0830-20240101:1515",
+        liquidHours="20240101:0830-20240101:1515",
+        realExpirationDate="20240315",
+    )
+    contract_details = IBContractDetails(**contract_details.__dict__)
+
+    # Act
+    instrument = parse_instrument(contract_details, "CBOE")
+
+    # Assert
+    assert isinstance(instrument, OptionContract)
+    assert instrument.underlying == "^SPX"

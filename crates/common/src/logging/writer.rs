@@ -158,7 +158,7 @@ impl From<(u64, u32)> for FileRotateConfig {
 
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
 )]
 #[derive(Debug, Clone, Default)]
 pub struct FileWriterConfig {

@@ -18,15 +18,18 @@
 use std::{cell::RefCell, rc::Rc};
 
 use indexmap::IndexMap;
-use nautilus_core::UUID4;
+use nautilus_core::{
+    UUID4, UnixNanos,
+    correctness::{check_equal, check_slice_not_empty},
+};
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, TimeInForce, TriggerType},
     identifiers::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, OrderAny, OrderList,
-        StopLimitOrder, StopMarketOrder,
+        LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, Order, OrderAny,
+        OrderList, StopLimitOrder, StopMarketOrder,
     },
     types::{Price, Quantity},
 };
@@ -444,7 +447,52 @@ impl OrderFactory {
         OrderAny::LimitIfTouched(order)
     }
 
-    /// Creates a bracket order list with entry order and attached stop-loss and take-profit orders.
+    /// Creates a new [`OrderList`] from the given orders, generating a fresh
+    /// order list ID and propagating it back to each order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - `orders` is empty.
+    /// - Any order has a different `instrument_id` than the first.
+    /// - Any order has a different `strategy_id` than the factory.
+    pub fn create_list(&mut self, orders: &mut [OrderAny], ts_init: UnixNanos) -> OrderList {
+        check_slice_not_empty(orders, stringify!(orders)).unwrap();
+        let instrument_id = orders[0].instrument_id();
+        for order in orders.iter().skip(1) {
+            check_equal(
+                &order.instrument_id(),
+                &instrument_id,
+                "instrument_id",
+                "first order instrument_id",
+            )
+            .unwrap();
+            check_equal(
+                &order.strategy_id(),
+                &self.strategy_id,
+                "strategy_id",
+                "factory strategy_id",
+            )
+            .unwrap();
+        }
+        let order_list_id = self.generate_order_list_id();
+        let order_ids: Vec<ClientOrderId> = orders.iter().map(|o| o.client_order_id()).collect();
+
+        // Propagate list ID back to each order
+        for order in orders.iter_mut() {
+            order.set_order_list_id(order_list_id);
+        }
+
+        OrderList::new(
+            order_list_id,
+            instrument_id,
+            self.strategy_id,
+            order_ids,
+            ts_init,
+        )
+    }
+
+    /// Creates a bracket order with entry order and attached stop-loss and take-profit orders.
     #[allow(clippy::too_many_arguments)]
     pub fn bracket(
         &mut self,
@@ -458,6 +506,7 @@ impl OrderFactory {
         entry_trigger_price: Option<Price>,
         time_in_force: Option<TimeInForce>,
         expire_time: Option<nautilus_core::UnixNanos>,
+        sl_time_in_force: Option<TimeInForce>,
         post_only: Option<bool>,
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
@@ -466,7 +515,7 @@ impl OrderFactory {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         tags: Option<Vec<Ustr>>,
-    ) -> OrderList {
+    ) -> Vec<OrderAny> {
         let order_list_id = self.generate_order_list_id();
         let ts_init = self.clock.borrow().timestamp_ns();
 
@@ -618,8 +667,8 @@ impl OrderFactory {
             quantity,
             sl_trigger_price,
             sl_trigger_type.unwrap_or(TriggerType::Default),
-            time_in_force.unwrap_or(TimeInForce::Gtc),
-            expire_time,
+            sl_time_in_force.unwrap_or(TimeInForce::Gtc),
+            None, // SL has no independent expire time
             true, // SL/TP should only reduce positions
             quote_quantity.unwrap_or(false),
             None, // display_qty
@@ -671,13 +720,7 @@ impl OrderFactory {
             ts_init,
         ));
 
-        OrderList::new(
-            order_list_id,
-            instrument_id,
-            self.strategy_id,
-            vec![entry_order, sl_order, tp_order],
-            ts_init,
-        )
+        vec![entry_order, sl_order, tp_order]
     }
 }
 
@@ -685,6 +728,7 @@ impl OrderFactory {
 pub mod tests {
     use std::{cell::RefCell, rc::Rc};
 
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::{ContingencyType, OrderSide, TimeInForce, TriggerType},
         identifiers::{
@@ -1087,7 +1131,7 @@ pub mod tests {
 
     #[rstest]
     fn test_bracket_order_with_market_entry(mut order_factory: OrderFactory) {
-        let bracket = order_factory.bracket(
+        let orders = order_factory.bracket(
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Buy,
             100.into(),
@@ -1098,6 +1142,7 @@ pub mod tests {
             None,                    // no entry trigger
             Some(TimeInForce::Gtc),
             None,
+            None, // sl_time_in_force
             Some(false),
             Some(false),
             Some(false),
@@ -1108,27 +1153,24 @@ pub mod tests {
             None,
         );
 
-        assert_eq!(bracket.orders.len(), 3);
-        assert_eq!(bracket.instrument_id, "BTCUSDT.BINANCE".into());
+        assert_eq!(orders.len(), 3);
+        assert_eq!(orders[0].instrument_id(), "BTCUSDT.BINANCE".into());
 
         // Entry should be market order
-        assert_eq!(bracket.orders[0].order_side(), OrderSide::Buy);
+        assert_eq!(orders[0].order_side(), OrderSide::Buy);
 
         // SL should be opposite side stop-market
-        assert_eq!(bracket.orders[1].order_side(), OrderSide::Sell);
-        assert_eq!(
-            bracket.orders[1].trigger_price(),
-            Some(Price::from("45000.00"))
-        );
+        assert_eq!(orders[1].order_side(), OrderSide::Sell);
+        assert_eq!(orders[1].trigger_price(), Some(Price::from("45000.00")));
 
         // TP should be opposite side limit
-        assert_eq!(bracket.orders[2].order_side(), OrderSide::Sell);
-        assert_eq!(bracket.orders[2].price(), Some(Price::from("55000.00")));
+        assert_eq!(orders[2].order_side(), OrderSide::Sell);
+        assert_eq!(orders[2].price(), Some(Price::from("55000.00")));
     }
 
     #[rstest]
     fn test_bracket_order_with_limit_entry(mut order_factory: OrderFactory) {
-        let bracket = order_factory.bracket(
+        let orders = order_factory.bracket(
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Buy,
             100.into(),
@@ -1139,6 +1181,7 @@ pub mod tests {
             None,                          // no entry trigger
             Some(TimeInForce::Gtc),
             None,
+            None, // sl_time_in_force
             Some(false),
             Some(false),
             Some(false),
@@ -1149,15 +1192,15 @@ pub mod tests {
             None,
         );
 
-        assert_eq!(bracket.orders.len(), 3);
+        assert_eq!(orders.len(), 3);
 
         // Entry should be limit order at entry price
-        assert_eq!(bracket.orders[0].price(), Some(Price::from("49000.00")));
+        assert_eq!(orders[0].price(), Some(Price::from("49000.00")));
     }
 
     #[rstest]
     fn test_bracket_order_with_stop_entry(mut order_factory: OrderFactory) {
-        let bracket = order_factory.bracket(
+        let orders = order_factory.bracket(
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Buy,
             100.into(),
@@ -1168,6 +1211,7 @@ pub mod tests {
             Some(Price::from("51000.00")), // entry trigger (stop entry)
             Some(TimeInForce::Gtc),
             None,
+            None, // sl_time_in_force
             Some(false),
             Some(false),
             Some(false),
@@ -1178,18 +1222,15 @@ pub mod tests {
             None,
         );
 
-        assert_eq!(bracket.orders.len(), 3);
+        assert_eq!(orders.len(), 3);
 
         // Entry should be stop-market order
-        assert_eq!(
-            bracket.orders[0].trigger_price(),
-            Some(Price::from("51000.00"))
-        );
+        assert_eq!(orders[0].trigger_price(), Some(Price::from("51000.00")));
     }
 
     #[rstest]
     fn test_bracket_order_sell_side(mut order_factory: OrderFactory) {
-        let bracket = order_factory.bracket(
+        let orders = order_factory.bracket(
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Sell,
             100.into(),
@@ -1200,6 +1241,7 @@ pub mod tests {
             None,
             Some(TimeInForce::Gtc),
             None,
+            None, // sl_time_in_force
             Some(false),
             Some(false),
             Some(false),
@@ -1210,21 +1252,21 @@ pub mod tests {
             None,
         );
 
-        assert_eq!(bracket.orders.len(), 3);
+        assert_eq!(orders.len(), 3);
 
         // Entry should be sell
-        assert_eq!(bracket.orders[0].order_side(), OrderSide::Sell);
+        assert_eq!(orders[0].order_side(), OrderSide::Sell);
 
         // SL should be buy (opposite)
-        assert_eq!(bracket.orders[1].order_side(), OrderSide::Buy);
+        assert_eq!(orders[1].order_side(), OrderSide::Buy);
 
         // TP should be buy (opposite)
-        assert_eq!(bracket.orders[2].order_side(), OrderSide::Buy);
+        assert_eq!(orders[2].order_side(), OrderSide::Buy);
     }
 
     #[rstest]
     fn test_bracket_order_sets_contingencies(mut order_factory: OrderFactory) {
-        let bracket = order_factory.bracket(
+        let orders = order_factory.bracket(
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Buy,
             100.into(),
@@ -1235,6 +1277,7 @@ pub mod tests {
             None,                          // entry_trigger_price
             Some(TimeInForce::Gtc),
             None,
+            None, // sl_time_in_force
             Some(false),
             Some(false),
             Some(false),
@@ -1245,25 +1288,84 @@ pub mod tests {
             None,
         );
 
-        let entry = &bracket.orders[0];
-        let stop = &bracket.orders[1];
-        let take = &bracket.orders[2];
+        let entry = &orders[0];
+        let stop = &orders[1];
+        let take = &orders[2];
 
-        assert_eq!(entry.order_list_id(), Some(bracket.id));
+        let order_list_id = entry
+            .order_list_id()
+            .expect("Entry should have order_list_id");
         assert_eq!(entry.contingency_type(), Some(ContingencyType::Oto));
         assert_eq!(
             entry.linked_order_ids().unwrap(),
             &[stop.client_order_id(), take.client_order_id()]
         );
 
-        assert_eq!(stop.order_list_id(), Some(bracket.id));
+        assert_eq!(stop.order_list_id(), Some(order_list_id));
         assert_eq!(stop.contingency_type(), Some(ContingencyType::Oco));
         assert_eq!(stop.parent_order_id(), Some(entry.client_order_id()));
         assert_eq!(stop.linked_order_ids().unwrap(), &[take.client_order_id()]);
 
-        assert_eq!(take.order_list_id(), Some(bracket.id));
+        assert_eq!(take.order_list_id(), Some(order_list_id));
         assert_eq!(take.contingency_type(), Some(ContingencyType::Oco));
         assert_eq!(take.parent_order_id(), Some(entry.client_order_id()));
         assert_eq!(take.linked_order_ids().unwrap(), &[stop.client_order_id()]);
+    }
+
+    #[rstest]
+    fn test_create_list_from_plain_orders(mut order_factory: OrderFactory) {
+        let entry = order_factory.limit(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            OrderSide::Buy,
+            100.into(),
+            Price::from("50000.00"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let sl = order_factory.stop_market(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            OrderSide::Sell,
+            100.into(),
+            Price::from("45000.00"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let mut orders = vec![entry.clone(), sl.clone()];
+        let order_list = order_factory.create_list(&mut orders, UnixNanos::default());
+
+        assert_eq!(order_list.len(), 2);
+        assert_eq!(
+            order_list.instrument_id,
+            InstrumentId::from("BTCUSDT.BINANCE")
+        );
+        assert_eq!(order_list.client_order_ids[0], entry.client_order_id());
+        assert_eq!(order_list.client_order_ids[1], sl.client_order_id());
+        assert_eq!(
+            order_list.id,
+            OrderListId::new("OL-19700101-000000-001-001-1"),
+        );
+        assert_eq!(orders[0].order_list_id(), Some(order_list.id));
+        assert_eq!(orders[1].order_list_id(), Some(order_list.id));
     }
 }

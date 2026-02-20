@@ -135,6 +135,36 @@ impl Default for BybitTradesParams {
     }
 }
 
+/// Query parameters for `GET /v5/market/funding/history`.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[serde(rename_all = "camelCase")]
+#[builder(setter(into, strip_option), default)]
+pub struct BybitFundingParams {
+    pub category: BybitProductType,
+    pub symbol: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+impl Default for BybitFundingParams {
+    fn default() -> Self {
+        Self {
+            category: BybitProductType::Linear,
+            symbol: String::new(),
+            start_time: None,
+            end_time: None,
+            limit: None,
+        }
+    }
+}
+
 /// Query parameters for `GET /v5/market/orderbook`.
 ///
 /// # References

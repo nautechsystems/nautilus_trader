@@ -36,7 +36,7 @@ mod handlers;
 pub mod pool;
 
 use std::{
-    any::Any,
+    any::{Any, type_name},
     cell::{Ref, RefCell},
     collections::hash_map::Entry,
     fmt::{Debug, Display},
@@ -399,29 +399,48 @@ impl DataEngine {
         log::debug!("Registered default client {client_id}");
     }
 
-    /// Starts all registered data clients.
+    /// Starts all registered data clients and re-arms bar aggregator timers.
     pub fn start(&mut self) {
         for client in self.get_clients_mut() {
             if let Err(e) = client.start() {
                 log::error!("{e}");
             }
         }
+
+        for aggregator in self.bar_aggregators.values() {
+            if aggregator.borrow().bar_type().spec().is_time_aggregated() {
+                aggregator
+                    .borrow_mut()
+                    .start_timer(Some(aggregator.clone()));
+            }
+        }
     }
 
-    /// Stops all registered data clients.
+    /// Stops all registered data clients and bar aggregator timers.
     pub fn stop(&mut self) {
         for client in self.get_clients_mut() {
             if let Err(e) = client.stop() {
                 log::error!("{e}");
             }
         }
+
+        for aggregator in self.bar_aggregators.values() {
+            aggregator.borrow_mut().stop();
+        }
     }
 
-    /// Resets all registered data clients to their initial state.
+    /// Resets all registered data clients and clears bar aggregator state.
     pub fn reset(&mut self) {
         for client in self.get_clients_mut() {
             if let Err(e) = client.reset() {
                 log::error!("{e}");
+            }
+        }
+
+        let bar_types: Vec<BarType> = self.bar_aggregators.keys().copied().collect();
+        for bar_type in bar_types {
+            if let Err(e) = self.stop_bar_aggregator(bar_type) {
+                log::error!("Error stopping bar aggregator during reset for {bar_type}: {e}");
             }
         }
     }
@@ -802,6 +821,7 @@ impl DataEngine {
                 RequestCommand::BookDepth(req) => client.request_book_depth(req),
                 RequestCommand::Quotes(req) => client.request_quotes(req),
                 RequestCommand::Trades(req) => client.request_trades(req),
+                RequestCommand::FundingRates(req) => client.request_funding_rates(req),
                 RequestCommand::Bars(req) => client.request_bars(req),
             }
         } else {
@@ -857,9 +877,26 @@ impl DataEngine {
             DataResponse::Instruments(r) => {
                 self.handle_instruments(&r.data);
             }
-            DataResponse::Quotes(r) => self.handle_quotes(&r.data),
-            DataResponse::Trades(r) => self.handle_trades(&r.data),
-            DataResponse::Bars(r) => self.handle_bars(&r.data),
+            DataResponse::Quotes(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                    self.handle_quotes(&r.data);
+                }
+            }
+            DataResponse::Trades(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                    self.handle_trades(&r.data);
+                }
+            }
+            DataResponse::FundingRates(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                    self.handle_funding_rates(&r.data);
+                }
+            }
+            DataResponse::Bars(r) => {
+                if !log_if_empty_response(&r.data, &r.bar_type, &correlation_id) {
+                    self.handle_bars(&r.data);
+                }
+            }
             DataResponse::Book(r) => self.handle_book_response(&r.data),
             _ => todo!("Handle other response types"),
         }
@@ -917,42 +954,34 @@ impl DataEngine {
     }
 
     fn handle_deltas(&mut self, deltas: OrderBookDeltas) {
-        let deltas = if self.config.buffer_deltas {
-            let mut is_last_delta = false;
-            for delta in &deltas.deltas {
-                if RecordFlag::F_LAST.matches(delta.flags) {
-                    is_last_delta = true;
-                    break;
-                }
-            }
-
+        if self.config.buffer_deltas {
             let instrument_id = deltas.instrument_id;
 
-            if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&instrument_id) {
-                buffered_deltas.deltas.extend(deltas.deltas);
-
-                if let Some(last_delta) = buffered_deltas.deltas.last() {
-                    buffered_deltas.flags = last_delta.flags;
-                    buffered_deltas.sequence = last_delta.sequence;
-                    buffered_deltas.ts_event = last_delta.ts_event;
-                    buffered_deltas.ts_init = last_delta.ts_init;
+            for delta in deltas.deltas {
+                if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&instrument_id) {
+                    buffered_deltas.deltas.push(delta);
+                    buffered_deltas.flags = delta.flags;
+                    buffered_deltas.sequence = delta.sequence;
+                    buffered_deltas.ts_event = delta.ts_event;
+                    buffered_deltas.ts_init = delta.ts_init;
+                } else {
+                    let buffered_deltas = OrderBookDeltas::new(instrument_id, vec![delta]);
+                    self.buffered_deltas_map
+                        .insert(instrument_id, buffered_deltas);
                 }
-            } else {
-                self.buffered_deltas_map.insert(instrument_id, deltas);
-            }
 
-            if !is_last_delta {
-                return;
+                if RecordFlag::F_LAST.matches(delta.flags) {
+                    // SAFETY: We know the deltas exist already
+                    let deltas_to_publish =
+                        self.buffered_deltas_map.remove(&instrument_id).unwrap();
+                    let topic = switchboard::get_book_deltas_topic(instrument_id);
+                    msgbus::publish_deltas(topic, &deltas_to_publish);
+                }
             }
-
-            // SAFETY: We know the deltas exists already
-            self.buffered_deltas_map.remove(&instrument_id).unwrap()
         } else {
-            deltas
+            let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
+            msgbus::publish_deltas(topic, &deltas);
         };
-
-        let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
-        msgbus::publish_deltas(topic, &deltas);
     }
 
     fn handle_depth10(&mut self, depth: OrderBookDepth10) {
@@ -1307,17 +1336,33 @@ impl DataEngine {
         Ok(())
     }
 
-    /// Unsubscribe internal bar aggregator for the given bar type.
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        // If we have an internal aggregator for this bar type, stop and remove it
         let bar_type = cmd.bar_type;
-        if self.bar_aggregators.contains_key(&bar_type.standard()) {
-            if let Err(e) = self.stop_bar_aggregator(bar_type) {
-                log::error!("Error stopping bar aggregator for {bar_type}: {e}");
-            }
-            self.bar_aggregators.remove(&bar_type.standard());
-            log::debug!("Removed bar aggregator for {bar_type}");
+
+        // Don't remove aggregator if other exact-topic subscribers still exist
+        let topic = switchboard::get_bars_topic(bar_type.standard());
+        if msgbus::exact_subscriber_count_bars(topic) > 0 {
+            return Ok(());
         }
+
+        if self.bar_aggregators.contains_key(&bar_type.standard())
+            && let Err(e) = self.stop_bar_aggregator(bar_type)
+        {
+            log::error!("Error stopping bar aggregator for {bar_type}: {e}");
+        }
+
+        // After stopping a composite, check if the source aggregator is now orphaned
+        if bar_type.is_composite() {
+            let source_type = bar_type.composite();
+            let source_topic = switchboard::get_bars_topic(source_type);
+            if msgbus::exact_subscriber_count_bars(source_topic) == 0
+                && self.bar_aggregators.contains_key(&source_type)
+                && let Err(e) = self.stop_bar_aggregator(source_type)
+            {
+                log::error!("Error stopping source bar aggregator for {source_type}: {e}");
+            }
+        }
+
         Ok(())
     }
 
@@ -1397,6 +1442,17 @@ impl DataEngine {
 
     fn handle_trades(&self, trades: &[TradeTick]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_trades(trades) {
+            log_error_on_cache_insert(&e);
+        }
+    }
+
+    fn handle_funding_rates(&self, funding_rates: &[FundingRateUpdate]) {
+        if let Err(e) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .add_funding_rates(funding_rates)
+        {
             log_error_on_cache_insert(&e);
         }
     }
@@ -1497,8 +1553,8 @@ impl DataEngine {
                 config.time_bars_timestamp_on_close,
                 config.time_bars_interval_type,
                 time_bars_origin_offset,
-                20,    // TODO: TBD, composite bar build delay
-                false, // TODO: skip_first_non_full_bar, make it config dependent
+                config.time_bars_build_delay,
+                config.time_bars_skip_first_non_full_bar,
             ))
         } else {
             match bar_type.spec().aggregation {
@@ -1613,6 +1669,23 @@ impl DataEngine {
             msgbus::subscribe_trades(topic.into(), handler.clone(), Some(self.msgbus_priority));
             subscriptions.push(BarAggregatorSubscription::Trade { topic, handler });
         } else {
+            // Warn if imbalance/runs aggregation is wired to quotes (needs aggressor_side from trades)
+            if matches!(
+                bar_type.spec().aggregation,
+                BarAggregation::TickImbalance
+                    | BarAggregation::VolumeImbalance
+                    | BarAggregation::ValueImbalance
+                    | BarAggregation::TickRuns
+                    | BarAggregation::VolumeRuns
+                    | BarAggregation::ValueRuns
+            ) {
+                log::warn!(
+                    "Bar type {bar_type} uses imbalance/runs aggregation which requires trade \
+                     data with `aggressor_side`, but `price_type` is not LAST so it will receive \
+                     quote data: bars will not emit correctly",
+                );
+            }
+
             let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
             let handler = TypedHandler::new(BarQuoteHandler::new(aggregator.clone(), bar_key));
             msgbus::subscribe_quotes(topic.into(), handler.clone(), Some(self.msgbus_priority));
@@ -1722,4 +1795,15 @@ impl DataEngine {
 #[inline(always)]
 fn log_error_on_cache_insert<T: Display>(e: &T) {
     log::error!("Error on cache insert: {e}");
+}
+
+#[inline(always)]
+fn log_if_empty_response<T, I: Display>(data: &[T], id: &I, correlation_id: &UUID4) -> bool {
+    if data.is_empty() {
+        let name = type_name::<T>();
+        let short_name = name.rsplit("::").next().unwrap_or(name);
+        log::warn!("Received empty {short_name} response for {id} {correlation_id}");
+        return true;
+    }
+    false
 }

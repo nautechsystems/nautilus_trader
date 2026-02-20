@@ -39,7 +39,7 @@ pub const DEPTH10_LEN: usize = 10;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct OrderBookDepth10 {
     /// The instrument ID for the book.

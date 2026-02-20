@@ -75,7 +75,7 @@ use crate::common::{
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
 )]
 pub struct BitmexWebSocketClient {
     url: String,
@@ -266,11 +266,11 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket connection fails or authentication fails (if credentials provided).
     ///
-    /// # Panics
-    ///
-    /// Panics if subscription or authentication messages fail to serialize to JSON.
     pub async fn connect(&mut self) -> Result<(), BitmexWsError> {
         let (client, raw_rx) = self.connect_inner().await?;
+
+        // Reset shutdown signal so is_active() works after close+reconnect
+        self.signal.store(false, Ordering::Relaxed);
 
         // Replace connection state so all clones see the underlying WebSocketClient's state
         self.connection_mode.store(client.connection_mode_atomic());
@@ -433,9 +433,10 @@ impl BitmexWebSocketClient {
                             resubscribe_all();
                         }
 
-                        // TODO: Implement proper Reconnected event forwarding to consumers.
-                        // Currently intercepted for internal housekeeping only. Will add new
-                        // message type from WebSocketClient to notify consumers of reconnections.
+                        if handler.send(NautilusWsMessage::Reconnected).is_err() {
+                            log::error!("Failed to forward reconnect event (receiver dropped)");
+                            break;
+                        }
 
                         continue;
                     }
@@ -471,6 +472,10 @@ impl BitmexWebSocketClient {
         if self.credential.is_some()
             && let Err(e) = self.authenticate().await
         {
+            if let Some(handle) = self.task_handle.take() {
+                handle.abort();
+            }
+            self.signal.store(true, Ordering::Relaxed);
             return Err(e);
         }
 
@@ -535,6 +540,7 @@ impl BitmexWebSocketClient {
             reconnect_backoff_factor: None,   // Use default
             reconnect_jitter_ms: None,        // Use default
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let keyed_quotas = vec![];
@@ -651,10 +657,6 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if closing fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the task handle cannot be unwrapped (should never happen in normal usage).
     pub async fn close(&mut self) -> Result<(), BitmexWsError> {
         log::debug!("Starting close process");
 
@@ -704,10 +706,6 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if sending the subscription message fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if serialization of WebSocket messages fails (should never happen).
     pub async fn subscribe(&self, topics: Vec<String>) -> Result<(), BitmexWsError> {
         log::debug!("Subscribing to topics: {topics:?}");
 

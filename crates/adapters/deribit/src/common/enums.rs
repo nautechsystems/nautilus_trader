@@ -21,7 +21,7 @@ use nautilus_model::enums::TimeInForce;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display as StrumDisplay, EnumIter, EnumString};
 
-/// Deribit instrument kind/type.
+/// Deribit product type.
 #[derive(
     Clone,
     Copy,
@@ -40,9 +40,15 @@ use strum::{AsRefStr, Display as StrumDisplay, EnumIter, EnumString};
 #[strum(serialize_all = "snake_case")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.deribit",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
 )]
-pub enum DeribitInstrumentKind {
+pub enum DeribitProductType {
     /// Future contract
     Future,
     /// Option contract
@@ -65,7 +71,13 @@ pub enum DeribitInstrumentKind {
 #[strum(serialize_all = "UPPERCASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.deribit",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
 )]
 pub enum DeribitCurrency {
     /// Bitcoin

@@ -89,8 +89,9 @@ pub struct CoinbaseIntxResponse<T> {
 }
 
 // https://docs.cdp.coinbase.com/intx/docs/rate-limits#rest-api-rate-limits
-pub static COINBASE_INTX_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(100).unwrap()));
+pub static COINBASE_INTX_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(100).expect("non-zero")).expect("valid constant")
+});
 
 /// Provides a lower-level HTTP client for connecting to the [Coinbase International](https://coinbase.com) REST API.
 ///
@@ -618,7 +619,10 @@ impl CoinbaseIntxHttpInnerClient {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx",
+        from_py_object
+    )
 )]
 pub struct CoinbaseIntxHttpClient {
     pub(crate) inner: Arc<CoinbaseIntxHttpInnerClient>,

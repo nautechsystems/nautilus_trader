@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Time event accumulation and scheduling for the backtest engine.
+
 use std::{cmp::Ordering, collections::BinaryHeap};
 
 use nautilus_common::{clock::TestClock, timer::TimeEventHandler};

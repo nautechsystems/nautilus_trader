@@ -28,7 +28,7 @@ use nautilus_common::enums::Environment;
 use nautilus_deribit::{
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
-    http::models::DeribitInstrumentKind,
+    http::models::DeribitProductType,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_config = DeribitDataClientConfig {
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
-        instrument_kinds: vec![DeribitInstrumentKind::Future],
+        product_types: vec![DeribitProductType::Future],
         use_testnet,
         ..Default::default()
     };
@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         account_id,
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
-        instrument_kinds: vec![DeribitInstrumentKind::Future],
+        product_types: vec![DeribitProductType::Future],
         use_testnet,
         ..Default::default()
     };
@@ -79,14 +79,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
+    let order_qty = Quantity::from(10); // 10 USD contracts (Deribit minimum)
+
     let mut tester_config = ExecTesterConfig::new(
         StrategyId::from("EXEC_TESTER-001"),
         instrument_id,
         client_id,
-        Quantity::from("10"), // 10 USD contracts (Deribit minimum)
+        order_qty,
     )
     .with_subscribe_trades(true)
     .with_subscribe_quotes(true)
+    .with_open_position_on_start(order_qty.as_decimal())
     .with_use_post_only(true)
     .with_log_data(false);
 

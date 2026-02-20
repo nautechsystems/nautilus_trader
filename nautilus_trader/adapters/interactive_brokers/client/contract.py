@@ -68,9 +68,17 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
 
             request.handle()
 
-            return await self._await_request(request, 10, suppress_timeout_warning=True)
+            return await self._await_request(
+                request,
+                self._request_timeout_secs,
+                suppress_timeout_warning=True,
+            )
         else:
-            return await self._await_request(request, 10, suppress_timeout_warning=True)
+            return await self._await_request(
+                request,
+                self._request_timeout_secs,
+                suppress_timeout_warning=True,
+            )
 
     async def get_matching_contracts(self, pattern: str) -> list[IBContract] | None:
         """
@@ -105,7 +113,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
 
             request.handle()
 
-            return await self._await_request(request, 20)
+            return await self._await_request(request, self._request_timeout_secs)
         else:
             self._log.info(f"Request already exist for {request}")
             return None
@@ -146,7 +154,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
 
             request.handle()
 
-            return await self._await_request(request, 20)
+            return await self._await_request(request, self._request_timeout_secs)
         else:
             self._log.info(f"Request already exist for {request}")
             return None

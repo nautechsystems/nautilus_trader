@@ -18,10 +18,11 @@ use std::{env, str::FromStr};
 use nautilus_hyperliquid::http::{
     client::HyperliquidHttpClient,
     models::{
-        HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
+        Cloid, HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
         HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
     },
 };
+use nautilus_model::identifiers::ClientOrderId;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -29,18 +30,27 @@ use rust_decimal_macros::dec;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
-    let _ = env::var("HYPERLIQUID_TESTNET_PK")
-        .expect("HYPERLIQUID_TESTNET_PK environment variable not set");
+    // Check for testnet flag from environment (default to mainnet)
+    let is_testnet =
+        env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true" || v == "1");
 
-    log::info!("Starting Hyperliquid Testnet Order Placer");
+    let network_name = if is_testnet { "TESTNET" } else { "MAINNET" };
+    log::info!("Starting Hyperliquid {network_name} Order Placer");
 
-    let client = match HyperliquidHttpClient::from_env() {
+    let client = match HyperliquidHttpClient::from_env(is_testnet) {
         Ok(client) => {
-            log::info!("Client created (testnet: {})", client.is_testnet());
+            let is_testnet = client.is_testnet();
+            log::info!("Client created (testnet: {is_testnet})");
             client
         }
         Err(e) => {
             log::error!("Failed to create client: {e}");
+            let pk_var = if is_testnet {
+                "HYPERLIQUID_TESTNET_PK"
+            } else {
+                "HYPERLIQUID_PK"
+            };
+            log::error!("Make sure {pk_var} environment variable is set");
             return Err(e.into());
         }
     };
@@ -66,10 +76,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("BTC not found in universe");
 
     log::info!("BTC asset ID: {btc_asset_id}");
-    log::info!(
-        "BTC sz_decimals: {}",
-        meta.universe[btc_asset_id].sz_decimals
-    );
+    let sz_decimals = meta.universe[btc_asset_id].sz_decimals;
+    log::info!("BTC sz_decimals: {sz_decimals}");
 
     // Get the wallet address to verify authentication
     let wallet_address = client
@@ -81,10 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Fetching account state...");
     match client.info_clearinghouse_state(&wallet_address).await {
         Ok(state) => {
-            log::info!(
-                "Account state: {}",
-                serde_json::to_string_pretty(&state).unwrap_or_else(|_| "N/A".to_string())
-            );
+            let state_json =
+                serde_json::to_string_pretty(&state).unwrap_or_else(|_| "N/A".to_string());
+            log::info!("Account state: {state_json}");
         }
         Err(e) => {
             log::warn!("Failed to fetch account state: {e}");
@@ -103,6 +110,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limit_price = (best_bid * dec!(0.95)).round();
     log::info!("Limit order price: ${limit_price}");
 
+    // Create cloid from a test ClientOrderId (production-like)
+    let client_order_id = ClientOrderId::from("O-20241210-TEST-001-001-1");
+    let cloid = Cloid::from_client_order_id(client_order_id);
+    log::info!("ClientOrderId: {client_order_id}");
+    let cloid_hex = cloid.to_hex();
+    log::info!("Cloid: {cloid_hex}");
+
     let order = HyperliquidExecPlaceOrderRequest {
         asset: btc_asset_id as u32,
         is_buy: true,
@@ -114,7 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tif: HyperliquidExecTif::Gtc,
             },
         },
-        cloid: None,
+        cloid: Some(cloid),
     };
 
     log::info!("Order details:");
@@ -122,6 +136,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("  Side: BUY");
     log::info!("  Price: ${limit_price}");
     log::info!("  Size: 0.001 BTC");
+    let order_cloid = order.cloid.as_ref().unwrap().to_hex();
+    log::info!("  Cloid: {order_cloid}");
 
     log::info!("Placing order...");
 
@@ -136,10 +152,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Also log the action as JSON
     if let Ok(action_json) = serde_json::to_value(&action) {
-        log::debug!(
-            "Action JSON: {}",
-            serde_json::to_string_pretty(&action_json)?
-        );
+        let action_json_pretty = serde_json::to_string_pretty(&action_json)?;
+        log::debug!("Action JSON: {action_json_pretty}");
     }
 
     match client.post_action_exec(&action).await {

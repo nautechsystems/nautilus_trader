@@ -98,9 +98,7 @@ impl Chain {
     #[pyo3(name = "from_chain_name")]
     fn py_from_chain_name(chain_name: &str) -> PyResult<Self> {
         Self::from_chain_name(chain_name).cloned().ok_or_else(|| {
-            pyo3::exceptions::PyValueError::new_err(format!(
-                "`chain_name` '{chain_name}' is not recognized",
-            ))
+            to_pyvalue_err(format!("`chain_name` '{chain_name}' is not recognized",))
         })
     }
 

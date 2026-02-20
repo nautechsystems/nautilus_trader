@@ -51,8 +51,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment: BinanceEnvironment::Testnet,
         api_key: None,
         api_secret: None,
-        ed25519_api_key: None,
-        ed25519_api_secret: None,
         ..Default::default()
     };
 

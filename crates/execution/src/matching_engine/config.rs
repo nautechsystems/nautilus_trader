@@ -17,6 +17,7 @@
 #[derive(Debug, Clone)]
 pub struct OrderMatchingEngineConfig {
     pub bar_execution: bool,
+    pub bar_adaptive_high_low_ordering: bool,
     pub trade_execution: bool,
     pub liquidity_consumption: bool,
     pub reject_stop_orders: bool,
@@ -26,6 +27,7 @@ pub struct OrderMatchingEngineConfig {
     pub use_random_ids: bool,
     pub use_reduce_only: bool,
     pub use_market_order_acks: bool,
+    pub queue_position: bool,
     pub price_protection_points: Option<u32>,
 }
 
@@ -35,6 +37,7 @@ impl OrderMatchingEngineConfig {
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         bar_execution: bool,
+        bar_adaptive_high_low_ordering: bool,
         trade_execution: bool,
         liquidity_consumption: bool,
         reject_stop_orders: bool,
@@ -47,6 +50,7 @@ impl OrderMatchingEngineConfig {
     ) -> Self {
         Self {
             bar_execution,
+            bar_adaptive_high_low_ordering,
             trade_execution,
             liquidity_consumption,
             reject_stop_orders,
@@ -56,6 +60,7 @@ impl OrderMatchingEngineConfig {
             use_random_ids,
             use_reduce_only,
             use_market_order_acks,
+            queue_position: false,
             price_protection_points: None,
         }
     }
@@ -77,7 +82,8 @@ impl Default for OrderMatchingEngineConfig {
     fn default() -> Self {
         Self {
             bar_execution: false,
-            trade_execution: false,
+            bar_adaptive_high_low_ordering: false,
+            trade_execution: true,
             liquidity_consumption: false,
             reject_stop_orders: false,
             support_gtd_orders: false,
@@ -86,6 +92,7 @@ impl Default for OrderMatchingEngineConfig {
             use_random_ids: false,
             use_reduce_only: false,
             use_market_order_acks: false,
+            queue_position: false,
             price_protection_points: None,
         }
     }

@@ -38,7 +38,7 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
         The account default leverage (for margin accounts).
     bar_execution : bool, default True
         If bars should be processed by the matching engine(s) (and move the market).
-    trade_execution : bool, default False
+    trade_execution : bool, default True
         If trades should be processed by the matching engine(s) (and move the market).
     reject_stop_orders : bool, default True
         If stop orders are rejected on submission if trigger price is in the market.
@@ -66,7 +66,7 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=Tr
     book_type: str = "L1_MBP"
     frozen_account: bool = False
     bar_execution: bool = True
-    trade_execution: bool = False
+    trade_execution: bool = True
     reject_stop_orders: bool = True
     support_gtd_orders: bool = True
     support_contingent_orders: bool = True

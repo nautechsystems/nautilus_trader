@@ -94,6 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_retries: Some(3),
         retry_delay_initial_ms: Some(1000),
         retry_delay_max_ms: Some(10000),
+        grpc_rate_limit_per_second: Some(4),
     };
 
     let data_factory = DydxDataClientFactory::new();

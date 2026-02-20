@@ -79,14 +79,6 @@ impl Credential {
             format!("{}...{}", &key[..4], &key[len - 4..])
         }
     }
-
-    /// Creates an Authorization header value for bearer token authentication.
-    ///
-    /// Returns the value to be used in the `Authorization` HTTP header.
-    #[must_use]
-    pub fn bearer_token(&self, session_token: &str) -> String {
-        format!("Bearer {session_token}")
-    }
 }
 
 #[cfg(test)]
@@ -121,15 +113,6 @@ mod tests {
         let masked = credential.masked_api_key();
 
         assert_eq!(masked, "*****");
-    }
-
-    #[rstest]
-    fn test_bearer_token() {
-        let credential = Credential::new(API_KEY, API_SECRET);
-        let session_token = "abc123def456"; // gitleaks:allow
-        let auth_header = credential.bearer_token(session_token);
-
-        assert_eq!(auth_header, "Bearer abc123def456");
     }
 
     #[rstest]

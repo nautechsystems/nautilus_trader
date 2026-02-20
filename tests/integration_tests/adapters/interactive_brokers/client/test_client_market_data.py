@@ -28,6 +28,7 @@ from ibapi.common import BarData
 from ibapi.common import HistoricalTickLast
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
+from ibapi.ticktype import TickTypeEnum
 
 from nautilus_trader.adapters.interactive_brokers.client.common import Request
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscription
@@ -35,6 +36,7 @@ from nautilus_trader.adapters.interactive_brokers.client.market_data import MAX_
 from nautilus_trader.adapters.interactive_brokers.parsing.data import what_to_show
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -180,6 +182,45 @@ async def test_unsubscribe_ticks(ib_client):
 
     # Assert
     ib_client._eclient.cancelTickByTickData.assert_called_once_with(999)
+
+
+@pytest.mark.asyncio
+async def test_subscribe_index_market_data(ib_client):
+    # Arrange
+    ib_client._request_id_seq = 999
+    instrument_id = IBTestContractStubs.spx_instrument().id
+    contract = IBTestContractStubs.spx_index_ib_contract()
+    ib_client._eclient.reqMktData = Mock()
+
+    # Act
+    await ib_client.subscribe_index_market_data(instrument_id, contract)
+
+    # Assert
+    ib_client._eclient.reqMktData.assert_called_once_with(
+        999,
+        contract,
+        "",  # genericTickList
+        False,  # snapshot
+        False,  # regulatorySnapshot
+        [],  # mktDataOptions
+    )
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_index_market_data(ib_client):
+    # Arrange
+    ib_client._request_id_seq = 999
+    instrument_id = IBTestContractStubs.spx_instrument().id
+    contract = IBTestContractStubs.spx_index_ib_contract()
+    ib_client._eclient.reqMktData = Mock()
+    ib_client._eclient.cancelMktData = Mock()
+    await ib_client.subscribe_index_market_data(instrument_id, contract)
+
+    # Act
+    await ib_client.unsubscribe_index_market_data(instrument_id)
+
+    # Assert
+    ib_client._eclient.cancelMktData.assert_called_once_with(999)
 
 
 @pytest.mark.asyncio
@@ -1027,61 +1068,85 @@ async def test_realtimeBar(ib_client):
 
 
 @pytest.mark.asyncio
-async def test_process_tick_price_invalid_price_ignored(ib_client):
+@pytest.mark.parametrize(
+    ("subscription_name", "instrument", "tick_type"),
+    [
+        ("market_data", IBTestContractStubs.aapl_instrument(), TickTypeEnum.BID),
+        ("index_market_data", IBTestContractStubs.spx_instrument(), TickTypeEnum.LAST),
+    ],
+)
+async def test_process_tick_price_invalid_price_ignored(
+    ib_client,
+    subscription_name,
+    instrument,
+    tick_type,
+):
     """
     Test that invalid price (-1.0) is ignored when there's already a valid price.
     """
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    mock_subscription.name = (str(instrument.id), subscription_name)
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = AsyncMock()
     ib_client._subscription_tick_data = {1: {}}
-    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+    ib_client._cache.add_instrument(instrument)
 
     # First, set a valid bid price
-    ib_client._subscription_tick_data[1][1] = 100.0  # BID_PRICE
+    ib_client._subscription_tick_data[1][tick_type] = 100.0  # BID_PRICE or LAST_PRICE for index
 
     # Act - Try to set invalid price (-1.0) for bid price
     await ib_client.process_tick_price(
         req_id=1,
-        tick_type=1,  # BID_PRICE
+        tick_type=tick_type,  # BID_PRICE or LAST_PRICE for index
         price=-1.0,
         attrib=None,
     )
 
     # Assert - Invalid price should be ignored, original price should remain
-    assert ib_client._subscription_tick_data[1][1] == 100.0
+    assert ib_client._subscription_tick_data[1][tick_type] == 100.0
     ib_client._handle_data.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_process_tick_price_invalid_price_first_allowed(ib_client):
+@pytest.mark.parametrize(
+    ("subscription_name", "instrument", "tick_type"),
+    [
+        ("market_data", IBTestContractStubs.aapl_instrument(), TickTypeEnum.BID),
+        ("index_market_data", IBTestContractStubs.spx_instrument(), TickTypeEnum.LAST),
+    ],
+)
+async def test_process_tick_price_invalid_price_first_allowed(
+    ib_client,
+    subscription_name,
+    instrument,
+    tick_type,
+):
     """
     Test that invalid price (-1.0) is allowed when it's the first price received.
     """
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    mock_subscription.name = (str(instrument.id), subscription_name)
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = AsyncMock()
     ib_client._subscription_tick_data = {1: {}}
-    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+    ib_client._cache.add_instrument(instrument)
 
     # Act - Set invalid price as first price (should be allowed)
     await ib_client.process_tick_price(
         req_id=1,
-        tick_type=1,  # BID_PRICE
+        tick_type=tick_type,  # BID_PRICE or LAST_PRICE for index
         price=-1.0,
         attrib=None,
     )
 
     # Assert - Invalid price should be stored
-    assert ib_client._subscription_tick_data[1][1] == -1.0
+    assert ib_client._subscription_tick_data[1][tick_type] == -1.0
 
 
 @pytest.mark.asyncio
@@ -1092,7 +1157,8 @@ async def test_process_tick_size_negative_size_ignored(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    instrument_id = IBTestContractStubs.aapl_instrument().id
+    mock_subscription.name = (str(instrument_id), "market_data")
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = AsyncMock()
@@ -1102,12 +1168,12 @@ async def test_process_tick_size_negative_size_ignored(ib_client):
     # Act - Try to set negative size
     await ib_client.process_tick_size(
         req_id=1,
-        tick_type=0,  # BID_SIZE
+        tick_type=TickTypeEnum.BID_SIZE,
         size=Decimal(-100),
     )
 
     # Assert - Negative size should be ignored
-    assert 0 not in ib_client._subscription_tick_data[1]
+    assert TickTypeEnum.BID_SIZE not in ib_client._subscription_tick_data[1]
     ib_client._handle_data.assert_not_called()
 
 
@@ -1119,7 +1185,8 @@ async def test_process_tick_size_extremely_large_size_ignored(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    instrument_id = IBTestContractStubs.aapl_instrument().id
+    mock_subscription.name = (str(instrument_id), "market_data")
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = AsyncMock()
@@ -1130,12 +1197,12 @@ async def test_process_tick_size_extremely_large_size_ignored(ib_client):
     invalid_size = MAX_VALID_TICK_SIZE + Decimal(1)
     await ib_client.process_tick_size(
         req_id=1,
-        tick_type=0,  # BID_SIZE
+        tick_type=TickTypeEnum.BID_SIZE,
         size=invalid_size,
     )
 
     # Assert - Extremely large size should be ignored
-    assert 0 not in ib_client._subscription_tick_data[1]
+    assert TickTypeEnum.BID_SIZE not in ib_client._subscription_tick_data[1]
     ib_client._handle_data.assert_not_called()
 
 
@@ -1147,7 +1214,8 @@ async def test_process_tick_size_valid_size_accepted(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    instrument_id = IBTestContractStubs.aapl_instrument().id
+    mock_subscription.name = (str(instrument_id), "market_data")
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = AsyncMock()
@@ -1157,12 +1225,12 @@ async def test_process_tick_size_valid_size_accepted(ib_client):
     # Act - Set valid size
     await ib_client.process_tick_size(
         req_id=1,
-        tick_type=0,  # BID_SIZE
+        tick_type=TickTypeEnum.BID_SIZE,
         size=Decimal(100),
     )
 
     # Assert - Valid size should be stored
-    assert ib_client._subscription_tick_data[1][0] == 100
+    assert ib_client._subscription_tick_data[1][TickTypeEnum.BID_SIZE] == 100
 
 
 @pytest.mark.asyncio
@@ -1174,7 +1242,8 @@ async def test_try_create_quote_tick_all_values_present(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    instrument_id = IBTestContractStubs.aapl_instrument().id
+    mock_subscription.name = (str(instrument_id), "market_data")
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = AsyncMock()
@@ -1209,7 +1278,8 @@ async def test_try_create_quote_tick_missing_size_not_created(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    instrument_id = IBTestContractStubs.aapl_instrument().id
+    mock_subscription.name = (str(instrument_id), "market_data")
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = AsyncMock()
@@ -1237,7 +1307,8 @@ async def test_try_create_quote_tick_missing_price_not_created(ib_client):
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    instrument_id = IBTestContractStubs.aapl_instrument().id
+    mock_subscription.name = (str(instrument_id), "market_data")
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = AsyncMock()
@@ -1261,12 +1332,13 @@ async def test_try_create_quote_tick_missing_price_not_created(ib_client):
 async def test_process_tick_price_and_size_creates_quote_tick(ib_client):
     """
     Test that processing both price and size data creates a quote tick when all values
-    are present.
+    are present and subscription name equal to "market_data".
     """
     # Arrange
     ib_client._clock.set_time(1704067205000000000)
     mock_subscription = Mock(spec=Subscription)
-    mock_subscription.name = ["AAPL.NASDAQ"]
+    instrument_id = IBTestContractStubs.aapl_instrument().id
+    mock_subscription.name = (str(instrument_id), "market_data")
     ib_client._subscriptions = Mock()
     ib_client._subscriptions.get.return_value = mock_subscription
     ib_client._handle_data = AsyncMock()
@@ -1276,7 +1348,7 @@ async def test_process_tick_price_and_size_creates_quote_tick(ib_client):
     # Act - Process bid price
     await ib_client.process_tick_price(
         req_id=1,
-        tick_type=1,  # BID_PRICE
+        tick_type=TickTypeEnum.BID,
         price=100.01,
         attrib=None,
     )
@@ -1284,7 +1356,7 @@ async def test_process_tick_price_and_size_creates_quote_tick(ib_client):
     # Process ask price
     await ib_client.process_tick_price(
         req_id=1,
-        tick_type=2,  # ASK_PRICE
+        tick_type=TickTypeEnum.ASK,
         price=100.02,
         attrib=None,
     )
@@ -1292,14 +1364,14 @@ async def test_process_tick_price_and_size_creates_quote_tick(ib_client):
     # Process bid size
     await ib_client.process_tick_size(
         req_id=1,
-        tick_type=0,  # BID_SIZE
+        tick_type=TickTypeEnum.BID_SIZE,
         size=Decimal(100),
     )
 
     # Process ask size (this should trigger quote tick creation)
     await ib_client.process_tick_size(
         req_id=1,
-        tick_type=3,  # ASK_SIZE
+        tick_type=TickTypeEnum.ASK_SIZE,
         size=Decimal(200),
     )
 
@@ -1311,3 +1383,34 @@ async def test_process_tick_price_and_size_creates_quote_tick(ib_client):
     assert call_args.ask_price == Price(100.02, precision=2)
     assert call_args.bid_size == Quantity(100, precision=0)
     assert call_args.ask_size == Quantity(200, precision=0)
+
+
+@pytest.mark.asyncio
+async def test_process_tick_price_creates_index_price_update(ib_client):
+    """
+    Test that processing a price with a subscription name equal to 'index_market_data'
+    creates an IndexPriceUpdate.
+    """
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    instrument_id = IBTestContractStubs.spx_instrument().id
+    mock_subscription.name = (str(instrument_id), "index_market_data")
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+    ib_client._subscription_tick_data = {1: {}}
+    ib_client._cache.add_instrument(IBTestContractStubs.spx_instrument())
+
+    # Act - Process index price
+    await ib_client.process_tick_price(
+        req_id=1,
+        tick_type=TickTypeEnum.LAST,
+        price=7000.53,
+        attrib=None,
+    )
+
+    # Assert - Index price update should be created
+    call_args = ib_client._handle_data.call_args[0][0]
+    assert isinstance(call_args, IndexPriceUpdate)
+    assert call_args.value == Price(7000.53, precision=2)

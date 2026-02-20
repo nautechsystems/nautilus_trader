@@ -27,6 +27,7 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 - [Rust](rust.md)
 - [Python](python.md)
 - [Testing](testing.md)
+- [Test Datasets](test_datasets.md)
 - [Docs Style](docs.md)
 - [Release Notes](releases.md)
 - [Adapters](adapters.md)

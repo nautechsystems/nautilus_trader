@@ -15,6 +15,8 @@
 
 //! Configuration types for Kraken data and execution clients.
 
+use nautilus_model::identifiers::{AccountId, TraderId};
+
 use crate::common::{
     enums::{KrakenEnvironment, KrakenProductType},
     urls::{get_kraken_http_base_url, get_kraken_ws_private_url, get_kraken_ws_public_url},
@@ -87,6 +89,8 @@ impl KrakenDataClientConfig {
 /// Configuration for the Kraken execution client.
 #[derive(Debug, Clone)]
 pub struct KrakenExecClientConfig {
+    pub trader_id: TraderId,
+    pub account_id: AccountId,
     pub api_key: String,
     pub api_secret: String,
     pub product_type: KrakenProductType,
@@ -98,6 +102,26 @@ pub struct KrakenExecClientConfig {
     pub timeout_secs: Option<u64>,
     pub heartbeat_interval_secs: Option<u64>,
     pub max_requests_per_second: Option<u32>,
+}
+
+impl Default for KrakenExecClientConfig {
+    fn default() -> Self {
+        Self {
+            trader_id: TraderId::default(),
+            account_id: AccountId::from("KRAKEN-001"),
+            api_key: String::new(),
+            api_secret: String::new(),
+            product_type: KrakenProductType::Spot,
+            environment: KrakenEnvironment::Mainnet,
+            base_url: None,
+            ws_url: None,
+            http_proxy: None,
+            ws_proxy: None,
+            timeout_secs: Some(30),
+            heartbeat_interval_secs: Some(30),
+            max_requests_per_second: None,
+        }
+    }
 }
 
 impl KrakenExecClientConfig {

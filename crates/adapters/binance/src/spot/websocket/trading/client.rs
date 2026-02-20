@@ -67,13 +67,11 @@ pub static BINANCE_WS_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> =
 /// Binance WebSocket API order rate limit: 1200 per minute (20/sec).
 ///
 /// Based on Binance documentation for WebSocket API rate limits.
-///
-/// # Panics
-///
-/// This function will never panic as it uses a constant non-zero value.
+// Constant values are provably valid
+#[allow(clippy::missing_panics_doc)]
 #[must_use]
 pub fn binance_ws_order_quota() -> Quota {
-    Quota::per_second(NonZeroU32::new(20).expect("20 > 0"))
+    Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("valid constant")
 }
 
 /// Binance Spot WebSocket API client for SBE trading.
@@ -83,7 +81,7 @@ pub fn binance_ws_order_quota() -> Quota {
 #[derive(Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
 )]
 pub struct BinanceSpotWsTradingClient {
     url: String,
@@ -196,10 +194,8 @@ impl BinanceSpotWsTradingClient {
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal output receiver mutex is poisoned.
+    // Mutex poisoning is not documented individually
+    #[allow(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceWsApiResult<()> {
         self.signal.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
@@ -223,6 +219,7 @@ impl BinanceSpotWsTradingClient {
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Configure rate limits for order operations

@@ -79,9 +79,9 @@ endif
 # Can be disabled: make cargo-test-core DEFI=false
 DEFI ?= true
 ifeq ($(DEFI),true)
-BASE_FEATURES := ffi,python,high-precision,defi
+BASE_FEATURES := ffi,python,high-precision,defi,examples
 else
-BASE_FEATURES := ffi,python,high-precision
+BASE_FEATURES := ffi,python,high-precision,examples
 endif
 
 # Combine base features with extra features
@@ -115,22 +115,22 @@ RESET  := \033[0m
 
 #== Installation
 
+.PHONY: install-deps
+install-deps:  #-- Install Python dependencies only (no package build)
+	$(info $(M) Installing Python dependencies...)
+	$Q uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
+
 .PHONY: install
 install: export BUILD_MODE=release
 install:  #-- Install in release mode with all dependencies and extras
-	$(info $(M) Installing NautilusTrader in release mode with all dependencies and extras...)
-	$Q uv sync --active --all-groups --all-extras --verbose
+	$(info $(M) Installing NautilusTrader in release mode...)
+	$Q uv sync --active --all-groups --all-extras --inexact
 
 .PHONY: install-debug
 install-debug: export BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
-	$(info $(M) Installing NautilusTrader in debug mode for development...)
-	$Q uv sync --active --all-groups --all-extras --verbose
-
-.PHONY: install-just-deps
-install-just-deps:  #-- Install dependencies only without building the package
-	$(info $(M) Installing dependencies only without building the package...)
-	$Q uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
+	$(info $(M) Installing NautilusTrader in debug mode...)
+	$Q uv sync --active --all-groups --all-extras --inexact
 
 #== Build
 
@@ -318,7 +318,7 @@ install-tools:  #-- Install required development tools (Rust tools from Cargo.to
 security-audit: check-audit-installed check-deny-installed check-vet-installed check-osv-scanner-installed  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, osv-scanner)
 	$(info $(M) Running security audit...)
 	@printf "$(CYAN)Running cargo audit...$(RESET)\n"
-	cargo audit --color never || true
+	cargo audit --color never
 	@printf "\n$(CYAN)Running cargo deny (advisories, licenses, sources, bans)...$(RESET)\n"
 	cargo deny --all-features check advisories licenses sources bans
 	@printf "\n$(CYAN)Running cargo vet (supply chain audit)...$(RESET)\n"
@@ -350,6 +350,7 @@ docs-rust:  #-- Build Rust documentation with cargo doc
 	cargo +nightly doc --all-features --no-deps --workspace
 
 .PHONY: docsrs-check
+docsrs-check: export DOCS_RS=1
 docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
 	cargo +nightly hack --workspace doc --no-deps --all-features
@@ -445,7 +446,7 @@ check-edit-installed:  #-- Verify cargo-edit is installed
 
 .PHONY: check-features
 check-features: check-hack-installed  #-- Verify crate feature combinations compile correctly
-	cargo hack check --each-feature
+	cargo hack --workspace check --each-feature
 
 .PHONY: check-capnp-schemas  #-- Verify Cap'n Proto schemas are up-to-date
 check-capnp-schemas:

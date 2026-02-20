@@ -22,7 +22,7 @@
 use std::{
     fmt::Debug,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
@@ -36,6 +36,7 @@ use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
+    data::BarType,
     enums::OrderSide,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny},
@@ -64,10 +65,12 @@ use super::{
 };
 use crate::common::{
     consts::{
-        DERIBIT_TESTNET_WS_URL, DERIBIT_WS_ORDER_KEY, DERIBIT_WS_ORDER_QUOTA,
-        DERIBIT_WS_SUBSCRIPTION_KEY, DERIBIT_WS_SUBSCRIPTION_QUOTA, DERIBIT_WS_URL,
+        DERIBIT_TESTNET_WS_URL, DERIBIT_WS_HEARTBEAT_SECS, DERIBIT_WS_ORDER_KEY,
+        DERIBIT_WS_ORDER_QUOTA, DERIBIT_WS_SUBSCRIPTION_KEY, DERIBIT_WS_SUBSCRIPTION_QUOTA,
+        DERIBIT_WS_URL,
     },
     credential::Credential,
+    parse::bar_spec_to_resolution,
 };
 
 /// Authentication timeout in seconds.
@@ -77,14 +80,13 @@ const AUTHENTICATION_TIMEOUT_SECS: u64 = 30;
 #[derive(Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
 )]
 pub struct DeribitWebSocketClient {
     url: String,
     is_testnet: bool,
     heartbeat_interval: Option<u64>,
     credential: Option<Credential>,
-    is_authenticated: Arc<AtomicBool>,
     auth_state: Arc<tokio::sync::RwLock<Option<AuthState>>>,
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -97,6 +99,7 @@ pub struct DeribitWebSocketClient {
     cancellation_token: CancellationToken,
     account_id: Option<AccountId>,
     bars_timestamp_on_close: bool,
+    subscribe_errors: Arc<Mutex<Vec<String>>>,
 }
 
 impl Debug for DeribitWebSocketClient {
@@ -105,10 +108,7 @@ impl Debug for DeribitWebSocketClient {
             .field("url", &self.url)
             .field("is_testnet", &self.is_testnet)
             .field("has_credentials", &self.credential.is_some())
-            .field(
-                "is_authenticated",
-                &self.is_authenticated.load(Ordering::Relaxed),
-            )
+            .field("is_authenticated", &self.auth_tracker.is_authenticated())
             .field(
                 "has_auth_state",
                 &self.auth_state.try_read().is_ok_and(|s| s.is_some()),
@@ -177,7 +177,6 @@ impl DeribitWebSocketClient {
             is_testnet,
             heartbeat_interval,
             credential,
-            is_authenticated: Arc::new(AtomicBool::new(false)),
             auth_state: Arc::new(tokio::sync::RwLock::new(None)),
             signal,
             connection_mode: Arc::new(ArcSwap::from_pointee(AtomicU8::new(
@@ -195,6 +194,7 @@ impl DeribitWebSocketClient {
             cancellation_token: CancellationToken::new(),
             account_id: None,
             bars_timestamp_on_close: true,
+            subscribe_errors: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -206,7 +206,7 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if initialization fails.
     pub fn new_public(is_testnet: bool) -> anyhow::Result<Self> {
-        let heartbeat_interval = 10;
+        let heartbeat_interval = DERIBIT_WS_HEARTBEAT_SECS;
         Self::new_inner(
             None,
             None,
@@ -254,7 +254,7 @@ impl DeribitWebSocketClient {
         let api_secret = get_or_env_var_opt(None, secret_env)
             .ok_or_else(|| anyhow::anyhow!("Missing environment variable: {secret_env}"))?;
 
-        let heartbeat_interval = 10;
+        let heartbeat_interval = DERIBIT_WS_HEARTBEAT_SECS;
         Self::new(
             None,
             Some(api_key),
@@ -285,7 +285,8 @@ impl DeribitWebSocketClient {
     /// Returns whether the client is closed.
     #[must_use]
     pub fn is_closed(&self) -> bool {
-        self.connection_mode() == ConnectionMode::Disconnect
+        let mode = self.connection_mode();
+        mode == ConnectionMode::Disconnect || mode == ConnectionMode::Closed
     }
 
     /// Cancel all pending WebSocket requests.
@@ -320,6 +321,42 @@ impl DeribitWebSocketClient {
         })?;
 
         Ok(())
+    }
+
+    /// Waits until all pending subscriptions are confirmed by the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timeout expires before all subscriptions are confirmed.
+    pub async fn wait_for_subscriptions_confirmed(&self, timeout_secs: f64) -> DeribitWsResult<()> {
+        let timeout = Duration::from_secs_f64(timeout_secs);
+
+        tokio::time::timeout(timeout, async {
+            loop {
+                // Fail fast on permanent subscribe errors
+                if let Ok(mut errors) = self.subscribe_errors.lock()
+                    && !errors.is_empty()
+                {
+                    let msg = errors.join("; ");
+                    errors.clear();
+                    return Err(DeribitWsError::Subscribe(msg));
+                }
+
+                let pending = self.subscriptions_state.pending_subscribe_topics();
+                if pending.is_empty() {
+                    return Ok(());
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| {
+            let pending = self.subscriptions_state.pending_subscribe_topics();
+            DeribitWsError::Timeout(format!(
+                "Subscription confirmation timeout after {timeout_secs}s, \
+                still pending: {pending:?}"
+            ))
+        })?
     }
 
     /// Caches instruments for use during message parsing.
@@ -363,6 +400,10 @@ impl DeribitWebSocketClient {
             color = LogColor::Blue
         );
 
+        if let Some(handle) = self.task_handle.take() {
+            handle.abort();
+        }
+
         // Reset stop signal
         self.signal.store(false, Ordering::Relaxed);
 
@@ -386,6 +427,7 @@ impl DeribitWebSocketClient {
             reconnect_backoff_factor: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Configure rate limits
@@ -420,6 +462,10 @@ impl DeribitWebSocketClient {
         *self.cmd_tx.write().await = cmd_tx.clone();
         self.out_rx = Some(Arc::new(out_rx));
 
+        if let Ok(mut errors) = self.subscribe_errors.lock() {
+            errors.clear();
+        }
+
         // Create handler
         let mut handler = DeribitWsFeedHandler::new(
             self.signal.clone(),
@@ -430,6 +476,7 @@ impl DeribitWebSocketClient {
             self.subscriptions_state.clone(),
             self.account_id,
             self.bars_timestamp_on_close,
+            self.subscribe_errors.clone(),
         );
 
         // Send client to handler
@@ -454,12 +501,17 @@ impl DeribitWebSocketClient {
         // Spawn handler task
         let subscriptions_state = self.subscriptions_state.clone();
         let credential = self.credential.clone();
-        let is_authenticated = self.is_authenticated.clone();
+        let auth_tracker = self.auth_tracker.clone();
         let auth_state = self.auth_state.clone();
 
         let task_handle = get_runtime().spawn(async move {
-            // Track if we're waiting for re-authentication after reconnection
+            const MAX_REAUTH_ATTEMPTS: u32 = 3;
+
             let mut pending_reauth = false;
+            let mut reauth_attempts: u32 = 0;
+
+            let mut refresh_cancel = CancellationToken::new();
+            let mut retry_cancel = CancellationToken::new();
 
             loop {
                 match handler.next().await {
@@ -467,11 +519,14 @@ impl DeribitWebSocketClient {
                         NautilusWsMessage::Reconnected => {
                             log::info!("Reconnected to WebSocket");
 
-                            // Get all subscriptions that should be restored
-                            // all_topics() returns confirmed + pending_subscribe, excluding pending_unsubscribe
+                            // Cancel stale refresh and retry tasks from prior connection
+                            refresh_cancel.cancel();
+                            refresh_cancel = CancellationToken::new();
+                            retry_cancel.cancel();
+                            retry_cancel = CancellationToken::new();
+
                             let channels = subscriptions_state.all_topics();
 
-                            // Mark each channel as failed (transitions confirmed → pending_subscribe)
                             for channel in &channels {
                                 subscriptions_state.mark_failure(channel);
                             }
@@ -480,18 +535,16 @@ impl DeribitWebSocketClient {
                             if let Some(cred) = &credential {
                                 log::info!("Re-authenticating after reconnection...");
 
-                                // Reset authenticated state
-                                is_authenticated.store(false, Ordering::Release);
+                                let _rx = auth_tracker.begin();
                                 pending_reauth = true;
+                                reauth_attempts = 1;
 
-                                // Get the previously used scope for re-authentication
                                 let previous_scope = auth_state
                                     .read()
                                     .await
                                     .as_ref()
                                     .map(|s| s.scope.clone());
 
-                                // Send re-authentication request
                                 send_auth_request(cred, previous_scope, &cmd_tx);
                             } else {
                                 // No credentials - resubscribe immediately
@@ -505,35 +558,101 @@ impl DeribitWebSocketClient {
                             let new_auth_state = AuthState::from_auth_result(&result, timestamp);
                             *auth_state.write().await = Some(new_auth_state);
 
-                            // Spawn background token refresh task
+                            refresh_cancel.cancel();
+                            refresh_cancel = CancellationToken::new();
+                            retry_cancel.cancel();
+                            retry_cancel = CancellationToken::new();
+
                             spawn_token_refresh_task(
                                 result.expires_in,
                                 result.refresh_token.clone(),
                                 cmd_tx.clone(),
+                                refresh_cancel.clone(),
                             );
 
                             if pending_reauth {
                                 pending_reauth = false;
-                                is_authenticated.store(true, Ordering::Release);
+                                reauth_attempts = 0;
                                 log::info!(
                                     "Re-authentication successful (scope: {}), resubscribing to channels",
                                     result.scope
                                 );
 
-                                // Now resubscribe to all channels using all_topics()
                                 let channels = subscriptions_state.all_topics();
 
                                 if !channels.is_empty() {
                                     let _ = cmd_tx.send(HandlerCommand::Subscribe { channels });
                                 }
                             } else {
-                                // Initial authentication completed
-                                is_authenticated.store(true, Ordering::Release);
                                 log::debug!(
                                     "Auth state stored: scope={}, expires_in={}s",
                                     result.scope,
                                     result.expires_in
                                 );
+                            }
+                        }
+                        NautilusWsMessage::AuthenticationFailed(reason) => {
+                            if pending_reauth && reauth_attempts < MAX_REAUTH_ATTEMPTS {
+                                let delay_secs = 1u64 << reauth_attempts; // 2s, 4s
+                                log::warn!(
+                                    "Re-authentication attempt {reauth_attempts}/{MAX_REAUTH_ATTEMPTS} \
+                                    failed: {reason} - retrying in {delay_secs}s",
+                                );
+                                reauth_attempts += 1;
+
+                                // Spawn delayed retry so the handler loop keeps
+                                // processing messages during the backoff
+                                if let Some(cred) = &credential {
+                                    let cred = cred.clone();
+                                    let auth_state = auth_state.clone();
+                                    let auth_tracker = auth_tracker.clone();
+                                    let cmd_tx = cmd_tx.clone();
+                                    let cancel = retry_cancel.clone();
+                                    get_runtime().spawn(async move {
+                                        tokio::select! {
+                                            () = tokio::time::sleep(Duration::from_secs(delay_secs)) => {}
+                                            () = cancel.cancelled() => return,
+                                        }
+                                        let _rx = auth_tracker.begin();
+                                        let previous_scope = auth_state
+                                            .read()
+                                            .await
+                                            .as_ref()
+                                            .map(|s| s.scope.clone());
+                                        send_auth_request(&cred, previous_scope, &cmd_tx);
+                                    });
+                                }
+                            } else if pending_reauth {
+                                pending_reauth = false;
+                                reauth_attempts = 0;
+                                log::error!(
+                                    "Re-authentication failed after {MAX_REAUTH_ATTEMPTS} \
+                                    attempts: {reason} \
+                                    - resubscribing to public channels only"
+                                );
+
+                                let all = subscriptions_state.all_topics();
+                                let mut public_channels = Vec::new();
+
+                                for ch in &all {
+                                    if DeribitWsChannel::requires_auth(ch) {
+                                        // Release private channels so future subscribe
+                                        // calls aren't skipped as already referenced
+                                        subscriptions_state.mark_unsubscribe(ch);
+                                        subscriptions_state.confirm_unsubscribe(ch);
+                                        subscriptions_state.remove_reference(ch);
+                                    } else {
+                                        public_channels.push(ch.clone());
+                                    }
+                                }
+
+                                if !public_channels.is_empty() {
+                                    let _ = cmd_tx.send(HandlerCommand::Subscribe {
+                                        channels: public_channels,
+                                    });
+                                }
+                            } else {
+                                log::error!("Authentication failed: {reason}");
                             }
                         }
                         _ => {}
@@ -563,35 +682,44 @@ impl DeribitWebSocketClient {
 
         let _ = self.cmd_tx.read().await.send(HandlerCommand::Disconnect);
 
-        // Wait for task to complete
-        if let Some(_handle) = &self.task_handle {
-            let _ = tokio::time::timeout(Duration::from_secs(5), async {
-                // Can't actually await the handle since we don't own it
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            })
-            .await;
+        // Poll for graceful handler shutdown, abort after 2s deadline
+        if let Some(handle) = &self.task_handle {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+            while !handle.is_finished() && tokio::time::Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            if !handle.is_finished() {
+                handle.abort();
+            }
         }
+
+        self.auth_tracker.invalidate();
 
         Ok(())
     }
 
     /// Returns a stream of WebSocket messages.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if called before `connect()` or if called twice.
-    pub fn stream(&mut self) -> impl Stream<Item = NautilusWsMessage> + 'static {
-        let rx = self
-            .out_rx
-            .take()
-            .expect("Data stream receiver already taken or not connected");
-        let mut rx = Arc::try_unwrap(rx).expect("Cannot take ownership - other references exist");
+    /// Returns an error if called before `connect()` or if called more than once.
+    pub fn stream(&mut self) -> DeribitWsResult<impl Stream<Item = NautilusWsMessage> + 'static> {
+        let rx = self.out_rx.take().ok_or_else(|| {
+            DeribitWsError::ClientError(
+                "Stream receiver already taken or not connected".to_string(),
+            )
+        })?;
+        let mut rx = Arc::try_unwrap(rx).map_err(|_| {
+            DeribitWsError::ClientError(
+                "Cannot take stream ownership - other references exist".to_string(),
+            )
+        })?;
 
-        async_stream::stream! {
+        Ok(async_stream::stream! {
             while let Some(msg) = rx.recv().await {
                 yield msg;
             }
-        }
+        })
     }
 
     /// Returns whether the client has credentials configured.
@@ -603,7 +731,7 @@ impl DeribitWebSocketClient {
     /// Returns whether the client is authenticated.
     #[must_use]
     pub fn is_authenticated(&self) -> bool {
-        self.is_authenticated.load(Ordering::Acquire)
+        self.auth_tracker.is_authenticated()
     }
 
     /// Authenticates the WebSocket session with Deribit.
@@ -648,7 +776,6 @@ impl DeribitWebSocketClient {
             .await
         {
             Ok(()) => {
-                self.is_authenticated.store(true, Ordering::Release);
                 log::info!("WebSocket authenticated successfully");
                 Ok(())
             }
@@ -783,18 +910,6 @@ impl DeribitWebSocketClient {
         self.send_subscribe(vec![channel]).await
     }
 
-    /// Subscribes to raw trade updates (requires authentication).
-    ///
-    /// Convenience method equivalent to `subscribe_trades(id, Some(DeribitUpdateInterval::Raw))`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if not authenticated or subscription fails.
-    pub async fn subscribe_trades_raw(&self, instrument_id: InstrumentId) -> DeribitWsResult<()> {
-        self.subscribe_trades(instrument_id, Some(DeribitUpdateInterval::Raw))
-            .await
-    }
-
     /// Unsubscribes from trade updates for an instrument.
     ///
     /// # Errors
@@ -833,18 +948,6 @@ impl DeribitWebSocketClient {
         self.send_subscribe(vec![channel]).await
     }
 
-    /// Subscribes to raw order book updates (requires authentication).
-    ///
-    /// Convenience method equivalent to `subscribe_book(id, Some(DeribitUpdateInterval::Raw))`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if not authenticated or subscription fails.
-    pub async fn subscribe_book_raw(&self, instrument_id: InstrumentId) -> DeribitWsResult<()> {
-        self.subscribe_book(instrument_id, Some(DeribitUpdateInterval::Raw))
-            .await
-    }
-
     /// Unsubscribes from order book updates for an instrument.
     ///
     /// # Errors
@@ -865,6 +968,8 @@ impl DeribitWebSocketClient {
     ///
     /// Uses the Deribit grouped book channel format: `book.{instrument}.{group}.{depth}.{interval}`
     ///
+    /// Depth is normalized to Deribit supported values: 1, 10, or 20.
+    ///
     /// # Errors
     ///
     /// Returns an error if subscription fails or raw is requested without authentication.
@@ -875,19 +980,34 @@ impl DeribitWebSocketClient {
         depth: u32,
         interval: Option<DeribitUpdateInterval>,
     ) -> DeribitWsResult<()> {
-        let interval = interval.unwrap_or_default();
-        self.check_auth_requirement(interval)?;
+        // Grouped book channel only supports 100ms and agg2, not raw
+        let interval = match interval {
+            Some(DeribitUpdateInterval::Raw) | None => DeribitUpdateInterval::Ms100,
+            Some(i) => i,
+        };
+
+        let normalized_depth = if depth < 5 {
+            1
+        } else if depth < 15 {
+            10
+        } else {
+            20
+        };
+
         let channel = format!(
             "book.{}.{}.{}.{}",
             instrument_id.symbol,
             group,
-            depth,
+            normalized_depth,
             interval.as_str()
         );
+        log::debug!("Subscribing to grouped book channel: {channel}");
         self.send_subscribe(vec![channel]).await
     }
 
     /// Unsubscribes from grouped (depth-limited) order book updates for an instrument.
+    ///
+    /// Depth is normalized to Deribit supported values: 1, 10, or 20.
     ///
     /// # Errors
     ///
@@ -899,12 +1019,25 @@ impl DeribitWebSocketClient {
         depth: u32,
         interval: Option<DeribitUpdateInterval>,
     ) -> DeribitWsResult<()> {
-        let interval = interval.unwrap_or_default();
+        // Grouped book channel only supports 100ms and agg2, not raw
+        let interval = match interval {
+            Some(DeribitUpdateInterval::Raw) | None => DeribitUpdateInterval::Ms100,
+            Some(i) => i,
+        };
+
+        let normalized_depth = if depth < 5 {
+            1
+        } else if depth < 15 {
+            10
+        } else {
+            20
+        };
+
         let channel = format!(
             "book.{}.{}.{}.{}",
             instrument_id.symbol,
             group,
-            depth,
+            normalized_depth,
             interval.as_str()
         );
         self.send_unsubscribe(vec![channel]).await
@@ -930,18 +1063,6 @@ impl DeribitWebSocketClient {
         let channel =
             DeribitWsChannel::Ticker.format_channel(instrument_id.symbol.as_str(), Some(interval));
         self.send_subscribe(vec![channel]).await
-    }
-
-    /// Subscribes to raw ticker updates (requires authentication).
-    ///
-    /// Convenience method equivalent to `subscribe_ticker(id, Some(DeribitUpdateInterval::Raw))`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if not authenticated or subscription fails.
-    pub async fn subscribe_ticker_raw(&self, instrument_id: InstrumentId) -> DeribitWsResult<()> {
-        self.subscribe_ticker(instrument_id, Some(DeribitUpdateInterval::Raw))
-            .await
     }
 
     /// Unsubscribes from ticker updates for an instrument.
@@ -1081,6 +1202,31 @@ impl DeribitWebSocketClient {
     ) -> DeribitWsResult<()> {
         let channel = format!("chart.trades.{}.{}", instrument_id.symbol, resolution);
         self.send_unsubscribe(vec![channel]).await
+    }
+
+    /// Subscribes to bar updates for an instrument using a BarType specification.
+    ///
+    /// Converts the BarType to the nearest supported Deribit resolution and subscribes
+    /// to the chart channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn subscribe_bars(&self, bar_type: BarType) -> DeribitWsResult<()> {
+        let resolution = bar_spec_to_resolution(&bar_type);
+        self.subscribe_chart(bar_type.instrument_id(), &resolution)
+            .await
+    }
+
+    /// Unsubscribes from bar updates for an instrument using a BarType specification.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
+    pub async fn unsubscribe_bars(&self, bar_type: BarType) -> DeribitWsResult<()> {
+        let resolution = bar_spec_to_resolution(&bar_type);
+        self.unsubscribe_chart(bar_type.instrument_id(), &resolution)
+            .await
     }
 
     /// Checks if authentication is required for the given interval.

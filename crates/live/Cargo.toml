@@ -74,6 +74,7 @@ ustr = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
+async-trait = { workspace = true }
 criterion = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }

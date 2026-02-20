@@ -37,13 +37,15 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     messages::data::{
         DataCommand, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
-        RequestCustomData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+        RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
+        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+        SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
         UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand,
         UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+        UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, MessageBus, TypedIntoHandler,
@@ -154,10 +156,6 @@ fn register_mock_client(
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, routing);
 }
-
-// ------------------------------------------------------------------------------------------------
-// Client registration & routing tests
-// ------------------------------------------------------------------------------------------------
 
 #[rstest]
 #[should_panic]
@@ -320,10 +318,6 @@ fn test_register_default_client(
         default_id
     );
 }
-
-// ------------------------------------------------------------------------------------------------
-// Test execute subscription commands
-// ------------------------------------------------------------------------------------------------
 
 #[rstest]
 fn test_execute_subscribe_custom_data(
@@ -789,7 +783,7 @@ fn test_execute_subscribe_bars(
         &mut data_engine,
     );
 
-    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim.clone());
     data_engine.process(&inst_any as &dyn Any);
 
     let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
@@ -1016,9 +1010,129 @@ fn test_execute_subscribe_funding_rates(
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
-// ------------------------------------------------------------------------------------------------
-// Test execute request commands
-// ------------------------------------------------------------------------------------------------
+#[rstest]
+fn test_execute_subscribe_instrument_status(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let sub = SubscribeInstrumentStatus::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(sub));
+    data_engine.execute(sub_cmd.clone());
+
+    assert!(
+        data_engine
+            .subscribed_instrument_status()
+            .contains(&audusd_sim.id)
+    );
+    {
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+    }
+
+    let unsub = UnsubscribeInstrumentStatus::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentStatus(unsub));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert!(
+        !data_engine
+            .subscribed_instrument_status()
+            .contains(&audusd_sim.id)
+    );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_execute_subscribe_instrument_close(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let sub = SubscribeInstrumentClose::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::InstrumentClose(sub));
+    data_engine.execute(sub_cmd.clone());
+
+    assert!(
+        data_engine
+            .subscribed_instrument_close()
+            .contains(&audusd_sim.id)
+    );
+    {
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+    }
+
+    let unsub = UnsubscribeInstrumentClose::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentClose(unsub));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert!(
+        !data_engine
+            .subscribed_instrument_close()
+            .contains(&audusd_sim.id)
+    );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
 
 #[rstest]
 fn test_execute_request_data(
@@ -1237,6 +1351,43 @@ fn test_execute_request_trades(
 }
 
 #[rstest]
+fn test_execute_request_funding_rates(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let req = RequestFundingRates::new(
+        audusd_sim.id,
+        None, // start
+        None, // end
+        None, // limit
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::FundingRates(req));
+    data_engine.execute(cmd.clone());
+
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
 fn test_execute_request_bars(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -1309,10 +1460,6 @@ fn test_execute_request_order_book_depth(
 
     assert_eq!(recorder.borrow()[0], cmd);
 }
-
-// ------------------------------------------------------------------------------------------------
-// Test process data flows
-// ------------------------------------------------------------------------------------------------
 
 #[rstest]
 fn test_process_instrument(
@@ -1839,10 +1986,6 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
     assert_eq!(messages.len(), 1);
     assert!(messages.contains(&bar));
 }
-
-// ------------------------------------------------------------------------------------------------
-// DeFi subscription and processing tests
-// ------------------------------------------------------------------------------------------------
 
 #[cfg(feature = "defi")]
 #[rstest]
@@ -3661,7 +3804,7 @@ fn test_process_book_snapshot_publish(
     // Add instrument to cache
     let _ = cache
         .borrow_mut()
-        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim));
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()));
 
     // Set up book snapshot handler to capture published snapshots
     let interval_ms = NonZeroUsize::new(100).unwrap();

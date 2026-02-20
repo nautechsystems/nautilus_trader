@@ -20,6 +20,7 @@ pub mod close;
 pub mod delta;
 pub mod depth;
 pub mod index_price;
+pub mod instrument;
 pub mod mark_price;
 pub mod quote;
 pub mod trade;
@@ -30,7 +31,7 @@ use std::{
 };
 
 use arrow::{
-    array::{Array, ArrayRef},
+    array::{Array, ArrayRef, FixedSizeBinaryArray},
     datatypes::{DataType, Schema},
     error::ArrowError,
     ipc::writer::StreamWriter,
@@ -43,7 +44,7 @@ use nautilus_model::{
     },
     types::{
         PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
-        fixed::{correct_price_raw, correct_quantity_raw},
+        fixed::{PRECISION_BYTES, correct_price_raw, correct_quantity_raw},
         price::PriceRaw,
         quantity::QuantityRaw,
     },
@@ -80,6 +81,17 @@ pub enum EncodingError {
     ParseError(&'static str, String),
     #[error("Invalid column type `{0}` at index {1}: expected {2}, found {3}")]
     InvalidColumnType(&'static str, usize, DataType, DataType),
+    #[error(
+        "Precision mode mismatch for `{field}`: catalog data has {actual_bytes} byte values, \
+         but this build expects {expected_bytes} bytes. The catalog was created with a different \
+         precision mode (standard=8 bytes, high=16 bytes). Rebuild the catalog or change your \
+         build's precision mode. See: https://nautilustrader.io/docs/latest/getting_started/installation#precision-mode"
+    )]
+    PrecisionMismatch {
+        field: &'static str,
+        expected_bytes: i32,
+        actual_bytes: i32,
+    },
     #[error("Arrow error: {0}")]
     ArrowError(#[from] arrow::error::ArrowError),
 }
@@ -338,6 +350,30 @@ pub fn extract_column<'a, T: Array + 'static>(
     Ok(downcasted_values)
 }
 
+/// Validates that a [`FixedSizeBinaryArray`] has the expected precision byte width.
+///
+/// This detects precision mode mismatches that occur when catalog data was encoded
+/// with a different precision mode (64-bit standard vs 128-bit high-precision).
+///
+/// # Errors
+///
+/// Returns [`EncodingError::PrecisionMismatch`] if the actual byte width doesn't
+/// match [`PRECISION_BYTES`].
+pub fn validate_precision_bytes(
+    array: &FixedSizeBinaryArray,
+    field: &'static str,
+) -> Result<(), EncodingError> {
+    let actual = array.value_length();
+    if actual != PRECISION_BYTES {
+        return Err(EncodingError::PrecisionMismatch {
+            field,
+            expected_bytes: PRECISION_BYTES,
+            actual_bytes: actual,
+        });
+    }
+    Ok(())
+}
+
 /// Converts a vector of `OrderBookDelta` into an Arrow `RecordBatch`.
 ///
 /// # Errors
@@ -364,10 +400,7 @@ pub fn book_deltas_to_arrow_record_batch_bytes(
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-///
-/// # Panics
-///
-/// Panics if `data` is empty (after the explicit empty check, unwrap is safe).
+#[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn book_depth10_to_arrow_record_batch_bytes(
     data: Vec<OrderBookDepth10>,
 ) -> Result<RecordBatch, EncodingError> {
@@ -389,10 +422,7 @@ pub fn book_depth10_to_arrow_record_batch_bytes(
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-///
-/// # Panics
-///
-/// Panics if `data` is empty (after the explicit empty check, unwrap is safe).
+#[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn quotes_to_arrow_record_batch_bytes(
     data: Vec<QuoteTick>,
 ) -> Result<RecordBatch, EncodingError> {
@@ -414,10 +444,7 @@ pub fn quotes_to_arrow_record_batch_bytes(
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-///
-/// # Panics
-///
-/// Panics if `data` is empty (after the explicit empty check, unwrap is safe).
+#[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn trades_to_arrow_record_batch_bytes(
     data: Vec<TradeTick>,
 ) -> Result<RecordBatch, EncodingError> {
@@ -439,10 +466,7 @@ pub fn trades_to_arrow_record_batch_bytes(
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-///
-/// # Panics
-///
-/// Panics if `data` is empty (after the explicit empty check, unwrap is safe).
+#[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn bars_to_arrow_record_batch_bytes(data: Vec<Bar>) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
         return Err(EncodingError::EmptyData);
@@ -462,10 +486,7 @@ pub fn bars_to_arrow_record_batch_bytes(data: Vec<Bar>) -> Result<RecordBatch, E
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-///
-/// # Panics
-///
-/// Panics if `data` is empty (after the explicit empty check, unwrap is safe).
+#[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn mark_prices_to_arrow_record_batch_bytes(
     data: Vec<MarkPriceUpdate>,
 ) -> Result<RecordBatch, EncodingError> {
@@ -487,10 +508,7 @@ pub fn mark_prices_to_arrow_record_batch_bytes(
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-///
-/// # Panics
-///
-/// Panics if `data` is empty (after the explicit empty check, unwrap is safe).
+#[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn index_prices_to_arrow_record_batch_bytes(
     data: Vec<IndexPriceUpdate>,
 ) -> Result<RecordBatch, EncodingError> {
@@ -512,10 +530,7 @@ pub fn index_prices_to_arrow_record_batch_bytes(
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-///
-/// # Panics
-///
-/// Panics if `data` is empty (after the explicit empty check, unwrap is safe).
+#[allow(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn instrument_closes_to_arrow_record_batch_bytes(
     data: Vec<InstrumentClose>,
 ) -> Result<RecordBatch, EncodingError> {

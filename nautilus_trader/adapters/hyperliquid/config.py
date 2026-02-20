@@ -26,8 +26,6 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
 
     Parameters
     ----------
-    base_url_http : str, optional
-        The HTTP client custom endpoint override.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
     http_proxy_url : str, optional
@@ -43,7 +41,6 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
 
     """
 
-    base_url_http: str | None = None
     base_url_ws: str | None = None
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None
@@ -65,8 +62,6 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         The vault address for vault trading.
         If ``None`` then will source the `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`
         environment variable (depending on the `testnet` setting).
-    base_url_http : str, optional
-        The HTTP client custom endpoint override.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
     http_proxy_url : str, optional
@@ -94,7 +89,6 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
 
     private_key: str | None = None
     vault_address: str | None = None
-    base_url_http: str | None = None
     base_url_ws: str | None = None
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None

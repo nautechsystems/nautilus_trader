@@ -194,7 +194,7 @@ The BitMEX integration supports the following order types and execution features
 | `STOP_LIMIT`           | ✓         | Supported (set `price` and `trigger_price`).  |
 | `MARKET_IF_TOUCHED`    | ✓         | Supported (set `trigger_price`).              |
 | `LIMIT_IF_TOUCHED`     | ✓         | Supported (set `price` and `trigger_price`).  |
-| `TRAILING_STOP_MARKET` | -         | *Not implemented* (supported by BitMEX).      |
+| `TRAILING_STOP_MARKET` | ✓         | Supported (set `trailing_offset`). Price offset type only. |
 
 ### Execution instructions
 
@@ -246,6 +246,79 @@ order = self.order_factory.stop_market(
 `ExecTester` example configuration also demonstrates setting `stop_trigger_type=TriggerType.MARK_PRICE`
 in `examples/live/bitmex/bitmex_exec_tester.py`.
 
+### Trailing stops
+
+BitMEX supports trailing stop orders that automatically adjust the stop price as the market moves
+favorably. The adapter maps `TRAILING_STOP_MARKET` orders to BitMEX's pegged orders with
+`TrailingStopPeg` price type.
+
+**Limitations:**
+
+- Only `PRICE` trailing offset type is supported (absolute price offset, not basis points or ticks).
+- The offset sign is handled automatically: sell stops use negative offset, buy stops use positive.
+- Trigger type can be combined with trailing stops for additional control.
+
+**Example**:
+
+```python
+from nautilus_trader.model.enums import TrailingOffsetType
+
+order = self.order_factory.trailing_stop_market(
+    instrument_id=instrument_id,
+    order_side=OrderSide.SELL,
+    quantity=qty,
+    trailing_offset=Decimal("100"),  # $100 trailing offset
+    trailing_offset_type=TrailingOffsetType.PRICE,
+    trigger_type=TriggerType.LAST_PRICE,  # Optional
+)
+```
+
+:::note
+BitMEX updates trailing stop prices periodically as the market moves.
+The stop price freezes when the market moves toward the trigger level.
+See the [BitMEX API documentation](https://www.bitmex.com/app/perpetualContractsGuide) for current update cadence details.
+:::
+
+### Pegged orders
+
+BitMEX supports pegged orders (BBO) that automatically track a reference price. The adapter
+supports pegged orders via the `params` dict on `submit_order`, which overrides the order type
+to `Pegged` on the exchange side.
+
+| Peg price type | Description                                                      |
+|----------------|------------------------------------------------------------------|
+| `PrimaryPeg`   | Pegs to the best bid (buy) or best ask (sell).                   |
+| `MarketPeg`    | Pegs to the opposite side (best ask for buy, best bid for sell). |
+| `MidPricePeg`  | Pegs to the mid-price between bid and ask.                       |
+| `LastPeg`      | Pegs to the last traded price.                                   |
+
+**Requirements**:
+
+- The underlying order must be a `LIMIT` order. Other order types are rejected.
+- `peg_price_type` is required; `peg_offset_value` is optional (defaults to 0).
+- `peg_offset_value` can be negative (e.g., sell-side offsets) or fractional.
+
+**Example**:
+
+```python
+# Pegged to best bid with zero offset (BBO)
+order = self.order_factory.limit(
+    instrument_id=instrument_id,
+    order_side=OrderSide.BUY,
+    quantity=qty,
+    price=price,  # Required for LIMIT order, but overridden by peg
+)
+self.submit_order(order, params={"peg_price_type": "PrimaryPeg", "peg_offset_value": "0"})
+
+# Pegged to mid-price with a -0.5 offset
+self.submit_order(order, params={"peg_price_type": "MidPricePeg", "peg_offset_value": "-0.5"})
+```
+
+:::note
+The `price` field is still required when constructing the `LimitOrder`, but BitMEX ignores it
+for pegged orders and instead continuously tracks the reference price plus offset.
+:::
+
 ### Time in force
 
 | Time in force  | Supported | Notes                                               |
@@ -263,13 +336,13 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 
 ### Advanced order features
 
-| Feature            | Supported | Notes                                          |
-|--------------------|-----------|------------------------------------------------|
-| Order Modification | ✓         | Modify price, quantity, and trigger price.     |
-| Bracket Orders     | -         | Use `contingency_type` and `linked_order_ids`. |
-| Iceberg Orders     | ✓         | Use `display_qty`.                             |
-| Trailing Stops     | -         | *Not implemented* (supported by BitMEX).       |
-| Pegged Orders      | -         | *Not implemented* (supported by BitMEX).       |
+| Feature            | Supported | Notes                                                                    |
+|--------------------|-----------|--------------------------------------------------------------------------|
+| Order Modification | ✓         | Modify price, quantity, and trigger price.                               |
+| Bracket Orders     | ✓         | Use `contingency_type` and `linked_order_ids`.                           |
+| Iceberg Orders     | ✓         | Use `display_qty`.                                                       |
+| Trailing Stops     | ✓         | Use `trailing_offset`. Price offset type only.                           |
+| Pegged Orders      | ✓         | Use `params` with `peg_price_type`. See [Pegged orders](#pegged-orders). |
 
 ### Batch operations
 
@@ -299,7 +372,7 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 ## Market data
 
 - Order book deltas: `L2_MBP` only; `depth` 0 (full book) or 25.
-- Order book snapshots: `L2_MBP` only; `depth` 0 (default 10) or 10.
+- Order book depth10 snapshots: fixed 10 levels via `orderBook10` channel.
 - Quotes, trades, and instrument updates are supported via WebSocket.
 - Funding rates, mark prices, and index prices are supported where applicable.
 - Historical requests via REST:
@@ -342,7 +415,7 @@ BitMEX implements a dual-layer rate limiting system:
 - **Rolling minute limit**: 120 requests per minute for authenticated users (30 requests per minute for unauthenticated users).
 - **Order caps**: 200 open orders and 10 stop orders per symbol; exceeding these caps triggers exchange-side rejections.
 
-The adapter enforces these quotas automatically and surfaces the rate-limit headers BitMEX returns with each response.
+The adapter enforces these quotas locally using the configured `max_requests_per_second` and `max_requests_per_minute` values.
 
 ### WebSocket limits
 
@@ -371,7 +444,7 @@ For more details on rate limiting, see the [BitMEX API documentation on rate lim
 
 The cancel broadcaster (when `canceller_pool_size > 1`) fans out each cancel request to multiple independent HTTP clients in parallel. Each client maintains its own rate limiter, which means the effective request rate is multiplied by the pool size.
 
-**Example**: With `canceller_pool_size=3` (default) and `max_requests_per_second=10`, a single cancel operation consumes **3 requests** (one per client), potentially reaching **30 requests/second** if canceling rapidly.
+**Example**: With `canceller_pool_size=3` and `max_requests_per_second=10`, a single cancel operation consumes **3 requests** (one per client), potentially reaching **30 requests/second** if canceling rapidly.
 
 Since BitMEX enforces rate limits **at the account level** (not per connection), the broadcaster can push you over the exchange's default limits of 10 req/s burst and 120 req/min rolling window.
 
@@ -398,10 +471,10 @@ Order submissions are time-critical operations - when a strategy decides to ente
 
 - **Parallel fanout**: Submit requests are simultaneously broadcast to multiple independent HTTP client instances.
 - **First-success short-circuiting**: The first successful response wins, minimizing latency to acceptance.
-- **Unique client_order_id suffixes**: Each broadcast attempt uses a unique `client_order_id` (original ID, then incrementing suffix `-1`, `-2`, etc.) to avoid duplicate order ID rejections.
-- **Latency vs. duplicates tradeoff**: Accepts the risk of potential duplicate fills in exchange for lower minimum latency and higher assurance of acceptance.
+- **Shared client_order_id**: All transports use the same `client_order_id`. BitMEX rejects duplicate submissions with "duplicate clOrdID" (tracked as expected rejections).
+- **Latency vs. duplicates tradeoff**: Accepts the risk of potential duplicate fills (if multiple transports succeed before rejection) in exchange for lower minimum latency and higher assurance of acceptance.
 
-This architecture reduces the minimum latency to order acceptance by parallelizing across multiple network paths. Note that all submitted orders may fill, resulting in multiple executions that strategies must handle appropriately.
+This architecture reduces the minimum latency to order acceptance by parallelizing across multiple network paths.
 
 ### Usage
 
@@ -421,10 +494,9 @@ self.submit_order(order, params={"submit_tries": 3})
 **Key points**:
 
 - `submit_tries` must be a positive integer.
-- Broadcasting only occurs when `submit_tries > 1`.
+- Broadcasting only occurs when `submit_tries > 1`. Default submits go through a single HTTP client.
 - If `submit_tries` exceeds `submitter_pool_size`, it will be capped at the pool size with a warning.
-- Each parallel attempt uses a unique `client_order_id` suffix (`-1`, `-2`, etc.) to avoid duplicate order ID rejections.
-- All submitted orders may fill - strategies must handle potential duplicate executions.
+- All transports use the same `client_order_id`; BitMEX rejects duplicates as expected rejections.
 
 ### Health monitoring
 
@@ -448,7 +520,7 @@ The broadcaster exposes metrics including total submits, successful submits, fai
 | `healthy_clients`        | `usize`| Current number of healthy HTTP clients in the pool (clients that passed recent health checks).                        |
 | `total_clients`          | `usize`| Total number of HTTP clients configured in the pool (`submitter_pool_size`).                                          |
 
-These metrics can be accessed programmatically via the `get_metrics()` and `get_metrics_async()` methods on the `SubmitBroadcaster` instance.
+These metrics can be accessed programmatically via the `get_metrics()` method on the `SubmitBroadcaster` instance.
 
 ### Configuration
 
@@ -456,8 +528,8 @@ The submit broadcaster is configured via the execution client configuration:
 
 | Option                 | Default | Description                                                                               |
 |------------------------|---------|-------------------------------------------------------------------------------------------|
-| `submitter_pool_size`  | `3`     | Size of the HTTP client pool for the broadcaster. Higher values increase fault tolerance but consume more resources. |
-| `submitter_proxy_urls` | `None`  | Optional list of proxy URLs for submit broadcaster path diversity. When set, each HTTP client in the pool uses a different proxy. |
+| `submitter_pool_size`  | `None`  | Size of the HTTP client pool. `None` resolves to 1 (single client, no redundancy). |
+| `submitter_proxy_urls` | `None`  | Optional list of proxy URLs for submit broadcaster path diversity. *Not yet wired through Python integration.* |
 
 **Example configuration**:
 
@@ -467,7 +539,7 @@ from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
 exec_config = BitmexExecClientConfig(
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
-    submitter_pool_size=3,  # Default pool size
+    submitter_pool_size=3,  # Recommended pool size for redundancy
 )
 ```
 
@@ -476,7 +548,7 @@ For HFT strategies without higher rate limits, consider the advantages of using 
 The default `submitter_pool_size=None` disables the broadcaster. The recommended setting of `submitter_pool_size=3` broadcasts each submit request to 3 parallel HTTP clients for fault tolerance, which consumes 3× the rate limit quota per submit operation but provides higher assurance against network or exchange issues.
 :::
 
-The broadcaster is automatically started when the execution client connects and stopped when it disconnects. All submit operations are automatically routed through the broadcaster without requiring any changes to strategy code.
+The broadcaster is automatically started when the execution client connects and stopped when it disconnects. Submit operations are routed through the broadcaster only when `submit_tries > 1`; default submits use a single HTTP client directly.
 
 ## Cancel broadcaster
 
@@ -516,7 +588,7 @@ The broadcaster exposes metrics including total cancels, successful cancels, fai
 | `healthy_clients`        | `usize`| Current number of healthy HTTP clients in the pool (clients that passed recent health checks).                        |
 | `total_clients`          | `usize`| Total number of HTTP clients configured in the pool (`canceller_pool_size`).                                          |
 
-These metrics can be accessed programmatically via the `get_metrics()` and `get_metrics_async()` methods on the `CancelBroadcaster` instance.
+These metrics can be accessed programmatically via the `get_metrics()` method on the `CancelBroadcaster` instance.
 
 ### Configuration
 
@@ -524,8 +596,8 @@ The cancel broadcaster is configured via the execution client configuration:
 
 | Option                 | Default | Description                                                                               |
 |------------------------|---------|-------------------------------------------------------------------------------------------|
-| `canceller_pool_size`  | `3`     | Size of the HTTP client pool for the broadcaster. Higher values increase fault tolerance but consume more resources. |
-| `canceller_proxy_urls` | `None`  | Optional list of proxy URLs for cancel broadcaster path diversity. When set, each HTTP client in the pool uses a different proxy. |
+| `canceller_pool_size`  | `None`  | Size of the HTTP client pool. `None` resolves to 1 (single client, no redundancy). |
+| `canceller_proxy_urls` | `None`  | Optional list of proxy URLs for cancel broadcaster path diversity. *Not yet wired through Python integration.* |
 
 **Example configuration**:
 
@@ -535,7 +607,7 @@ from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
 exec_config = BitmexExecClientConfig(
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
-    canceller_pool_size=3,  # Default pool size
+    canceller_pool_size=3,  # Recommended pool size for redundancy
 )
 ```
 
@@ -579,8 +651,8 @@ The BitMEX data client provides the following configuration options:
 
 | Option                            | Default  | Description |
 |-----------------------------------|----------|-------------|
-| `api_key`                         | `None`   | Optional API key; if `None`, loaded from `BITMEX_API_KEY`. |
-| `api_secret`                      | `None`   | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET`. |
+| `api_key`                         | `None`   | Optional API key; if `None`, loaded from `BITMEX_API_KEY` or `BITMEX_TESTNET_API_KEY` (when `testnet=True`). |
+| `api_secret`                      | `None`   | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET` or `BITMEX_TESTNET_API_SECRET` (when `testnet=True`). |
 | `base_url_http`                   | `None`   | Override for the REST base URL (defaults to production). |
 | `base_url_ws`                     | `None`   | Override for the WebSocket base URL (defaults to production). |
 | `testnet`                         | `False`  | Route requests to the BitMEX testnet when `True`. |
@@ -593,7 +665,7 @@ The BitMEX data client provides the following configuration options:
 | `max_requests_per_second`         | `10`     | Burst rate limit enforced by the adapter for REST calls. |
 | `max_requests_per_minute`         | `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
 | `http_proxy_url`                  | `None`   | Optional HTTP proxy URL. |
-| `ws_proxy_url`                    | `None`   | Optional WebSocket proxy URL. |
+| `ws_proxy_url`                    | `None`   | Optional WebSocket proxy URL. *Not yet implemented; reserved for future use.* |
 
 ### Execution client configuration options
 
@@ -601,8 +673,8 @@ The BitMEX execution client provides the following configuration options:
 
 | Option                   | Default  | Description |
 |--------------------------|----------|-------------|
-| `api_key`                | `None`   | Optional API key; if `None`, loaded from `BITMEX_API_KEY`. |
-| `api_secret`             | `None`   | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET`. |
+| `api_key`                | `None`   | Optional API key; if `None`, loaded from `BITMEX_API_KEY` or `BITMEX_TESTNET_API_KEY` (when `testnet=True`). |
+| `api_secret`             | `None`   | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET` or `BITMEX_TESTNET_API_SECRET` (when `testnet=True`). |
 | `base_url_http`          | `None`   | Override for the REST base URL (defaults to production). |
 | `base_url_ws`            | `None`   | Override for the WebSocket base URL (defaults to production). |
 | `testnet`                | `False`  | Route orders to the BitMEX testnet when `True`. |
@@ -613,12 +685,12 @@ The BitMEX execution client provides the following configuration options:
 | `recv_window_ms`         | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
 | `max_requests_per_second`| `10`     | Burst rate limit enforced by the adapter for REST calls. |
 | `max_requests_per_minute`| `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
-| `canceller_pool_size`    | `3`      | Number of redundant HTTP clients in the cancel broadcaster pool. See [Cancel broadcaster](#cancel-broadcaster). |
-| `submitter_pool_size`    | `3`      | Number of redundant HTTP clients in the submit broadcaster pool. See [Submit broadcaster](#submit-broadcaster). |
+| `canceller_pool_size`    | `None`   | Number of HTTP clients in the cancel broadcaster pool. `None` resolves to 1. See [Cancel broadcaster](#cancel-broadcaster). |
+| `submitter_pool_size`    | `None`   | Number of HTTP clients in the submit broadcaster pool. `None` resolves to 1. See [Submit broadcaster](#submit-broadcaster). |
 | `http_proxy_url`         | `None`   | Optional HTTP proxy URL. |
-| `ws_proxy_url`           | `None`   | Optional WebSocket proxy URL. |
-| `submitter_proxy_urls`   | `None`   | Optional list of proxy URLs for submit broadcaster path diversity. |
-| `canceller_proxy_urls`   | `None`   | Optional list of proxy URLs for cancel broadcaster path diversity. |
+| `ws_proxy_url`           | `None`   | Optional WebSocket proxy URL. *Not yet implemented; reserved for future use.* |
+| `submitter_proxy_urls`   | `None`   | Optional list of proxy URLs for submit broadcaster path diversity. *Not yet wired through Python integration.* |
+| `canceller_proxy_urls`   | `None`   | Optional list of proxy URLs for cancel broadcaster path diversity. *Not yet wired through Python integration.* |
 
 ### Configuration examples
 
@@ -630,7 +702,7 @@ from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
 
 # Using environment variables (recommended)
 testnet_data_config = BitmexDataClientConfig(
-    testnet=True,  # API credentials loaded from BITMEX_API_KEY and BITMEX_API_SECRET
+    testnet=True,  # API credentials loaded from BITMEX_TESTNET_API_KEY and BITMEX_TESTNET_API_SECRET
 )
 
 # Using explicit credentials

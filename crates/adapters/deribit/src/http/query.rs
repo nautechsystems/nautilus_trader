@@ -18,7 +18,7 @@
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-use super::models::{DeribitCurrency, DeribitInstrumentKind};
+use super::models::{DeribitCurrency, DeribitProductType};
 
 /// Query parameters for `/public/get_instruments` endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]
@@ -26,10 +26,10 @@ use super::models::{DeribitCurrency, DeribitInstrumentKind};
 pub struct GetInstrumentsParams {
     /// Currency filter
     pub currency: DeribitCurrency,
-    /// Optional instrument kind filter
+    /// Optional product type filter
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
-    pub kind: Option<DeribitInstrumentKind>,
+    pub kind: Option<DeribitProductType>,
     /// Whether to include expired instruments
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
@@ -53,9 +53,9 @@ impl GetInstrumentsParams {
         }
     }
 
-    /// Creates parameters for a specific currency and kind.
+    /// Creates parameters for a specific currency and product type.
     #[must_use]
-    pub fn with_kind(currency: DeribitCurrency, kind: DeribitInstrumentKind) -> Self {
+    pub fn with_kind(currency: DeribitCurrency, kind: DeribitProductType) -> Self {
         Self {
             currency,
             kind: Some(kind),
@@ -298,14 +298,22 @@ impl GetOrderHistoryByInstrumentParams {
 pub struct GetOrderHistoryByCurrencyParams {
     /// Currency filter
     pub currency: DeribitCurrency,
-    /// Optional instrument kind filter
+    /// Optional product type filter
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
-    pub kind: Option<DeribitInstrumentKind>,
-    /// Number of requested items, default - 20, maximum - 10000
+    pub kind: Option<DeribitProductType>,
+    /// Number of requested items, default - 20, maximum - 1000
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub count: Option<u32>,
+    /// Offset for pagination
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub offset: Option<u32>,
+    /// Include orders older than 3 days
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub include_old: Option<bool>,
     /// Include unfilled orders
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
@@ -320,6 +328,8 @@ impl GetOrderHistoryByCurrencyParams {
             currency,
             kind: None,
             count: None,
+            offset: None,
+            include_old: None,
             include_unfilled: None,
         }
     }
@@ -387,14 +397,18 @@ pub struct GetUserTradesByCurrencyAndTimeParams {
     pub start_timestamp: i64,
     /// End timestamp in milliseconds since UNIX epoch
     pub end_timestamp: i64,
-    /// Optional instrument kind filter
+    /// Optional product type filter
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
-    pub kind: Option<DeribitInstrumentKind>,
+    pub kind: Option<DeribitProductType>,
     /// Number of requested items, default - 10, maximum - 1000
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub count: Option<u32>,
+    /// Direction of results sorting: "asc", "desc", or "default"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub sorting: Option<String>,
 }
 
 impl GetUserTradesByCurrencyAndTimeParams {
@@ -407,6 +421,7 @@ impl GetUserTradesByCurrencyAndTimeParams {
             end_timestamp,
             kind: None,
             count: None,
+            sorting: None,
         }
     }
 
@@ -424,10 +439,10 @@ impl GetUserTradesByCurrencyAndTimeParams {
 pub struct GetPositionsParams {
     /// Currency filter
     pub currency: DeribitCurrency,
-    /// Optional instrument kind filter
+    /// Optional product type filter
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
-    pub kind: Option<DeribitInstrumentKind>,
+    pub kind: Option<DeribitProductType>,
 }
 
 impl GetPositionsParams {

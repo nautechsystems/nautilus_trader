@@ -180,6 +180,20 @@ impl WebSocketClientInner {
     ) -> Result<Self, Error> {
         install_cryptographic_provider();
 
+        if config.heartbeat == Some(0) {
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Heartbeat interval cannot be zero",
+            )));
+        }
+
+        if config.idle_timeout_ms == Some(0) {
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Idle timeout cannot be zero",
+            )));
+        }
+
         // Capture whether we're in stream mode before moving config
         let is_stream_mode = message_handler.is_none();
         let reconnect_max_attempts = config.reconnect_max_attempts;
@@ -195,6 +209,7 @@ impl WebSocketClientInner {
                 reader,
                 message_handler.as_ref(),
                 ping_handler.as_ref(),
+                config.idle_timeout_ms,
             ))
         } else {
             None
@@ -467,6 +482,7 @@ impl WebSocketClientInner {
                     reader,
                     self.message_handler.as_ref(),
                     self.ping_handler.as_ref(),
+                    self.config.idle_timeout_ms,
                 ))
             } else {
                 None
@@ -487,19 +503,17 @@ impl WebSocketClientInner {
         })?
     }
 
-    /// Check if the client is still connected.
+    /// Check if the client is still alive.
     ///
-    /// The client is connected if the read task has not finished. It is expected
-    /// that in case of any failure client or server side. The read task will be
-    /// shutdown or will receive a `Close` frame which will finish it. There
-    /// might be some delay between the connection being closed and the client
-    /// detecting.
+    /// Returns `true` if both the read and write tasks are still running.
+    /// There may be some delay between the connection closing and the
+    /// client detecting it.
     #[inline]
     #[must_use]
     pub fn is_alive(&self) -> bool {
         match &self.read_task {
-            Some(read_task) => !read_task.is_finished(),
-            None => true, // Stream is being used directly
+            Some(read_task) => !read_task.is_finished() && !self.write_task.is_finished(),
+            None => !self.write_task.is_finished(),
         }
     }
 
@@ -508,16 +522,20 @@ impl WebSocketClientInner {
         mut reader: MessageReader,
         message_handler: Option<&MessageHandler>,
         ping_handler: Option<&PingHandler>,
+        idle_timeout_ms: Option<u64>,
     ) -> tokio::task::JoinHandle<()> {
         log::debug!("Started message handler task 'read'");
 
         let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
+        let idle_timeout = idle_timeout_ms.map(Duration::from_millis);
 
         // Clone Arc handlers for the async task
         let message_handler = message_handler.cloned();
         let ping_handler = ping_handler.cloned();
 
         tokio::task::spawn(async move {
+            let mut last_data_time = tokio::time::Instant::now();
+
             loop {
                 if !ConnectionMode::from_atomic(&connection_state).is_active() {
                     break;
@@ -526,24 +544,28 @@ impl WebSocketClientInner {
                 match tokio::time::timeout(check_interval, reader.next()).await {
                     Ok(Some(Ok(Message::Binary(data)))) => {
                         log::trace!("Received message <binary> {} bytes", data.len());
+                        last_data_time = tokio::time::Instant::now();
                         if let Some(ref handler) = message_handler {
                             handler(Message::Binary(data));
                         }
                     }
                     Ok(Some(Ok(Message::Text(data)))) => {
                         log::trace!("Received message: {data}");
+                        last_data_time = tokio::time::Instant::now();
                         if let Some(ref handler) = message_handler {
                             handler(Message::Text(data));
                         }
                     }
                     Ok(Some(Ok(Message::Ping(ping_data)))) => {
                         log::trace!("Received ping: {ping_data:?}");
+                        last_data_time = tokio::time::Instant::now();
                         if let Some(ref handler) = ping_handler {
                             handler(ping_data.to_vec());
                         }
                     }
                     Ok(Some(Ok(Message::Pong(_)))) => {
                         log::trace!("Received pong");
+                        last_data_time = tokio::time::Instant::now();
                     }
                     Ok(Some(Ok(Message::Close(_)))) => {
                         log::debug!("Received close message - terminating");
@@ -559,7 +581,16 @@ impl WebSocketClientInner {
                         break;
                     }
                     Err(_) => {
-                        // Timeout - continue loop and check connection mode
+                        if let Some(timeout) = idle_timeout {
+                            let idle_duration = last_data_time.elapsed();
+                            if idle_duration >= timeout {
+                                log::warn!(
+                                    "Read idle timeout: no data received for {:.1}s",
+                                    idle_duration.as_secs_f64()
+                                );
+                                break;
+                            }
+                        }
                         continue;
                     }
                 }
@@ -1089,6 +1120,8 @@ impl WebSocketClient {
                 self.controller_task.abort();
                 log_task_aborted("controller");
             }
+            self.connection_mode
+                .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         }
     }
 
@@ -1445,6 +1478,7 @@ mod tests {
             reconnect_delay_max_ms: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
         WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, None, vec![], None)
             .await
@@ -1488,6 +1522,7 @@ mod tests {
             reconnect_delay_max_ms: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
         let res =
             WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, None, vec![], None)
@@ -1520,7 +1555,7 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limiter() {
         let server = TestServer::setup().await;
-        let quota = Quota::per_second(NonZeroU32::new(2).unwrap());
+        let quota = Quota::per_second(NonZeroU32::new(2).unwrap()).unwrap();
 
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{}", server.port),
@@ -1533,6 +1568,7 @@ mod tests {
             reconnect_delay_max_ms: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let client = WebSocketClient::connect(
@@ -1584,7 +1620,8 @@ mod tests {
 #[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
 mod rust_tests {
-    use futures_util::StreamExt;
+    use futures_util::{SinkExt, StreamExt};
+    use nautilus_common::testing::wait_until_async;
     use rstest::rstest;
     use tokio::{
         net::TcpListener,
@@ -1627,6 +1664,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Connect the client
@@ -1671,6 +1709,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -1720,6 +1759,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let (_reader, _client) = WebSocketClient::connect_stream(config, vec![], None, None)
@@ -1766,6 +1806,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -1838,6 +1879,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(10),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -1897,6 +1939,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let (mut reader, client) = WebSocketClient::connect_stream(config, vec![], None, None)
@@ -1974,6 +2017,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -2057,6 +2101,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -2141,11 +2186,13 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Very restrictive rate limit: 1 request per second, burst of 1
-        let quota =
-            Quota::per_second(NonZeroU32::new(1).unwrap()).allow_burst(NonZeroU32::new(1).unwrap());
+        let quota = Quota::per_second(NonZeroU32::new(1).unwrap())
+            .unwrap()
+            .allow_burst(NonZeroU32::new(1).unwrap());
 
         let client = Arc::new(
             WebSocketClient::connect(
@@ -2230,6 +2277,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -2294,6 +2342,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Very restrictive rate limit: 1 request per 10 seconds
@@ -2370,6 +2419,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Pass None for message_handler - should be rejected
@@ -2417,6 +2467,7 @@ mod rust_tests {
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(0),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Create client directly via connect_url with no handler (stream mode)
@@ -2434,5 +2485,143 @@ mod rust_tests {
         // (documented behavior - stream mode clients close instead of reconnecting)
 
         server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_idle_timeout_triggers_reconnect() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        // Server accepts WS connection but sends nothing (simulates silent death)
+        let server = task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let _ws = accept_async(stream).await.unwrap();
+            // Hold connection open but send nothing
+            sleep(Duration::from_secs(5)).await;
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: Some(1),
+            idle_timeout_ms: Some(500),
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        assert!(client.is_active());
+
+        // Wait for idle timeout to fire and client to enter reconnect/closed
+        wait_until_async(
+            || async { client.is_reconnecting() || client.is_disconnected() },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        assert!(
+            !client.is_active(),
+            "Client should not be active after idle timeout"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_idle_timeout_resets_on_data() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        // Server sends a message every 200ms (well within 1s idle timeout)
+        let server = task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(stream).await.unwrap();
+            for _ in 0..10 {
+                sleep(Duration::from_millis(200)).await;
+                if ws
+                    .send(tokio_tungstenite::tungstenite::Message::Text("ping".into()))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: Some(1),
+            idle_timeout_ms: Some(1_000),
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        assert!(client.is_active());
+
+        // Wait 1.5s - data arrives every 200ms so idle timeout (1s) should NOT fire
+        sleep(Duration::from_millis(1_500)).await;
+
+        assert!(
+            client.is_active(),
+            "Client should remain active when data is flowing"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_zero_idle_timeout_rejected() {
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: "ws://127.0.0.1:9999".to_string(),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_delay_max_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_jitter_ms: None,
+            reconnect_max_attempts: None,
+            idle_timeout_ms: Some(0),
+        };
+
+        let result =
+            WebSocketClient::connect(config, Some(handler), None, None, vec![], None).await;
+
+        assert!(result.is_err(), "Zero idle timeout should be rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Idle timeout cannot be zero"),
+            "Error should mention zero idle timeout, was: {err_msg}"
+        );
     }
 }

@@ -19,7 +19,7 @@
 
 use std::str::FromStr;
 
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
@@ -32,9 +32,8 @@ use pyo3::{
     types::{PyDict, PyList},
 };
 use rust_decimal::Decimal;
-use ustr::Ustr;
 
-use crate::{common::enums::DydxCandleResolution, http::client::DydxHttpClient};
+use crate::http::client::DydxHttpClient;
 
 #[pymethods]
 impl DydxHttpClient {
@@ -87,8 +86,7 @@ impl DydxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            #[allow(deprecated)]
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_instruments: PyResult<Vec<Py<PyAny>>> = instruments
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
@@ -110,10 +108,35 @@ impl DydxHttpClient {
         })
     }
 
+    /// Fetches a single instrument by ticker and caches it.
+    ///
+    /// This is used for on-demand fetching of newly discovered instruments
+    /// via WebSocket.
+    ///
+    /// Returns `None` if the market is not found or inactive.
+    #[pyo3(name = "fetch_instrument")]
+    fn py_fetch_instrument<'py>(
+        &self,
+        py: Python<'py>,
+        ticker: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            match client.fetch_and_cache_single_instrument(&ticker).await {
+                Ok(Some(instrument)) => {
+                    Python::attach(|py| instrument_any_to_pyobject(py, instrument))
+                }
+                Ok(None) => Ok(Python::attach(|py| py.None())),
+                Err(e) => Err(to_pyvalue_err(e)),
+            }
+        })
+    }
+
     #[pyo3(name = "get_instrument")]
     fn py_get_instrument(&self, py: Python<'_>, symbol: &str) -> PyResult<Option<Py<PyAny>>> {
-        let symbol_ustr = Ustr::from(symbol);
-        let instrument = self.get_instrument(&symbol_ustr);
+        use nautilus_model::identifiers::{Symbol, Venue};
+        let instrument_id = InstrumentId::new(Symbol::new(symbol), Venue::new("DYDX"));
+        let instrument = self.get_instrument(&instrument_id);
         match instrument {
             Some(inst) => Ok(Some(instrument_any_to_pyobject(py, inst)?)),
             None => Ok(None),
@@ -297,35 +320,41 @@ impl DydxHttpClient {
         })
     }
 
+    #[pyo3(name = "request_account_state")]
+    fn py_request_account_state<'py>(
+        &self,
+        py: Python<'py>,
+        address: String,
+        subaccount_number: u32,
+        account_id: AccountId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let account_state = client
+                .request_account_state(&address, subaccount_number, account_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
+        })
+    }
+
     #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (bar_type, resolution, limit=None, start=None, end=None))]
+    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, timestamp_on_close=true))]
     fn py_request_bars<'py>(
         &self,
         py: Python<'py>,
-        bar_type: String,
-        resolution: String,
+        bar_type: BarType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
-        start: Option<String>,
-        end: Option<String>,
+        timestamp_on_close: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let bar_type = BarType::from_str(&bar_type).map_err(to_pyvalue_err)?;
-        let resolution = DydxCandleResolution::from_str(&resolution).map_err(to_pyvalue_err)?;
-
-        let from_iso = start
-            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
-            .transpose()
-            .map_err(to_pyvalue_err)?;
-
-        let to_iso = end
-            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
-            .transpose()
-            .map_err(to_pyvalue_err)?;
-
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let bars = client
-                .request_bars(bar_type, resolution, limit, from_iso, to_iso)
+                .request_bars(bar_type, start, end, limit, timestamp_on_close)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -337,18 +366,20 @@ impl DydxHttpClient {
     }
 
     #[pyo3(name = "request_trade_ticks")]
-    #[pyo3(signature = (instrument_id, limit=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trade_ticks<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let trades = client
-                .request_trade_ticks(instrument_id, limit)
+                .request_trade_ticks(instrument_id, start, end, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 

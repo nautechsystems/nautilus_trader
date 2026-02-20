@@ -18,6 +18,8 @@
 pub mod any;
 pub mod betting;
 pub mod binary_option;
+pub mod cfd;
+pub mod commodity;
 pub mod crypto_future;
 pub mod crypto_option;
 pub mod crypto_perpetual;
@@ -25,8 +27,10 @@ pub mod currency_pair;
 pub mod equity;
 pub mod futures_contract;
 pub mod futures_spread;
+pub mod index_instrument;
 pub mod option_contract;
 pub mod option_spread;
+pub mod perpetual_contract;
 pub mod synthetic;
 
 #[cfg(any(test, feature = "stubs"))]
@@ -45,10 +49,12 @@ use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 pub use crate::instruments::{
-    any::InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
-    crypto_future::CryptoFuture, crypto_option::CryptoOption, crypto_perpetual::CryptoPerpetual,
-    currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-    futures_spread::FuturesSpread, option_contract::OptionContract, option_spread::OptionSpread,
+    any::InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption, cfd::Cfd,
+    commodity::Commodity, crypto_future::CryptoFuture, crypto_option::CryptoOption,
+    crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
+    futures_contract::FuturesContract, futures_spread::FuturesSpread,
+    index_instrument::IndexInstrument, option_contract::OptionContract,
+    option_spread::OptionSpread, perpetual_contract::PerpetualContract,
     synthetic::SyntheticInstrument,
 };
 use crate::{
@@ -1305,6 +1311,7 @@ mod tests {
             None,
             None,
             None,
+            None, // info
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -1353,6 +1360,7 @@ mod tests {
             None,
             None,
             None,
+            None, // info
             UnixNanos::default(),
             UnixNanos::default(),
         );

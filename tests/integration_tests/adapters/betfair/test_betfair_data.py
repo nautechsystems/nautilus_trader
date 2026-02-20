@@ -15,16 +15,24 @@
 
 import asyncio
 from collections import Counter
+from pathlib import Path
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import msgspec
 import pytest
 from betfair_parser.spec.streaming import stream_decode
 
+from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
+from nautilus_trader.adapters.betfair.data_types import BetfairOrderVoided
+from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
+from nautilus_trader.adapters.betfair.data_types import BetfairRaceRunnerData
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
+from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -39,6 +47,7 @@ from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
@@ -52,6 +61,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
@@ -149,6 +159,367 @@ async def test_subscriptions(data_client, instrument):
     assert data_client.subscribed_trade_ticks() == [instrument.id]
     assert data_client.subscribed_instrument_status() == [instrument.id]
     assert data_client.subscribed_instrument_close() == [instrument.id]
+
+
+def test_race_stream_client_created_when_configured(
+    mocker,
+    betfair_client,
+    instrument_provider,
+    instrument,
+    venue,
+    event_loop,
+    msgbus,
+    cache,
+    clock,
+):
+    """
+    Verify that subscribe_race_data=True creates a race stream client on a separate
+    connection to sports-data-stream-api.betfair.com.
+    """
+    # Arrange
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.factories.get_cached_betfair_client",
+        return_value=betfair_client,
+    )
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.factories.get_cached_betfair_instrument_provider",
+        return_value=instrument_provider,
+    )
+    instrument_provider.add(instrument)
+
+    # Act
+    client = BetfairLiveDataClientFactory.create(
+        loop=event_loop,
+        name=venue.value,
+        config=BetfairDataClientConfig(
+            account_currency="GBP",
+            username="username",
+            password="password",
+            app_key="app_key",
+            subscribe_race_data=True,
+        ),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    # Assert
+    assert client._race_stream is not None
+    assert client._race_stream.host == "sports-data-stream-api.betfair.com"
+
+
+def test_race_stream_client_not_created_by_default(
+    mocker,
+    betfair_client,
+    instrument_provider,
+    instrument,
+    venue,
+    event_loop,
+    msgbus,
+    cache,
+    clock,
+):
+    """
+    Verify that the race stream client is not created by default.
+    """
+    # Arrange
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.factories.get_cached_betfair_client",
+        return_value=betfair_client,
+    )
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.factories.get_cached_betfair_instrument_provider",
+        return_value=instrument_provider,
+    )
+    instrument_provider.add(instrument)
+
+    # Act
+    client = BetfairLiveDataClientFactory.create(
+        loop=event_loop,
+        name=venue.value,
+        config=BetfairDataClientConfig(
+            account_currency="GBP",
+            username="username",
+            password="password",
+            app_key="app_key",
+        ),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    # Assert
+    assert client._race_stream is None
+
+
+@pytest.mark.asyncio
+async def test_race_stream_fatal_error_disables_race_stream(data_client):
+    """
+    A permanent auth error on the race stream should disconnect and disable it rather
+    than entering an infinite reconnect loop.
+    """
+    # Arrange
+    mock_stream = MagicMock()
+    mock_stream.disconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_APP_KEY",
+            "errorMessage": "AppKey is not configured for service",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act
+    data_client.on_race_stream_update(raw)
+    await eventually(lambda: data_client._race_stream is None)
+
+    # Assert - stream disconnected and reference cleared
+    mock_stream.disconnect.assert_called_once()
+    assert not data_client._is_reconnecting
+
+
+@pytest.mark.asyncio
+async def test_race_stream_transient_error_renews_session_via_keep_alive(data_client):
+    """
+    A transient race stream closure should renew the session token via keep_alive (not
+    reconnect which resets shared HTTP client state) and reconnect the race stream.
+    """
+    # Arrange
+    mock_stream = MagicMock()
+    mock_stream.reconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    data_client._client.keep_alive = AsyncMock()
+    data_client._client.reconnect = AsyncMock()
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_SESSION",
+            "errorMessage": "Session expired",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act
+    data_client.on_race_stream_update(raw)
+    await eventually(lambda: not data_client._is_reconnecting_race_stream)
+
+    # Assert - keep_alive used (not reconnect), race stream reconnected
+    data_client._client.keep_alive.assert_called_once()
+    data_client._client.reconnect.assert_not_called()
+    mock_stream.reconnect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_race_stream_reconnect_falls_back_to_full_session_refresh(data_client):
+    """
+    When keep_alive fails during race reconnect, fall back to a full session refresh so
+    the race stream can recover.
+    """
+    # Arrange
+    mock_stream = MagicMock()
+    mock_stream.reconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    data_client._client.keep_alive = AsyncMock(side_effect=Exception("Token invalid"))
+    data_client._client.reconnect = AsyncMock()
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_SESSION",
+            "errorMessage": "Session expired",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act
+    data_client.on_race_stream_update(raw)
+    await eventually(lambda: not data_client._is_reconnecting_race_stream)
+
+    # Assert - fell back to full reconnect, race stream recovered
+    data_client._client.keep_alive.assert_called_once()
+    data_client._client.reconnect.assert_called_once()
+    mock_stream.reconnect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_race_stream_connect_failure_does_not_block_market_startup(race_data_client):
+    """
+    If the race stream fails to connect during startup, market data should still
+    function normally with the race stream disabled.
+    """
+    # Arrange
+    race_data_client._race_stream.connect = AsyncMock(
+        side_effect=Exception("TPD endpoint unreachable"),
+    )
+    race_data_client._stream.connect = AsyncMock()
+    race_data_client._client.connect = AsyncMock()
+    race_data_client._instrument_provider.load_all_async = AsyncMock()
+
+    # Act
+    await race_data_client._connect()
+
+    # Assert - market stream connected, race stream disabled
+    race_data_client._stream.connect.assert_called_once()
+    assert race_data_client._race_stream is None
+
+
+@pytest.mark.asyncio
+async def test_race_stream_max_connection_limit_is_fatal(data_client):
+    """
+    MAX_CONNECTION_LIMIT_EXCEEDED should disable the race stream rather than looping
+    reconnects that can never succeed.
+    """
+    # Arrange
+    mock_stream = MagicMock()
+    mock_stream.disconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "MAX_CONNECTION_LIMIT_EXCEEDED",
+            "errorMessage": "Connection limit exceeded",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act
+    data_client.on_race_stream_update(raw)
+    await eventually(lambda: data_client._race_stream is None)
+
+    # Assert
+    mock_stream.disconnect.assert_called_once()
+    assert not data_client._is_reconnecting_race_stream
+
+
+@pytest.mark.asyncio
+async def test_race_stream_duplicate_reconnect_suppressed(data_client):
+    """
+    Back-to-back race stream status errors should result in a single reconnect, not
+    overlapping tasks.
+    """
+    # Arrange - make keep_alive block so the first reconnect is still in-flight
+    # when the second status message arrives
+    keep_alive_entered = asyncio.Event()
+    keep_alive_proceed = asyncio.Event()
+
+    async def slow_keep_alive():
+        keep_alive_entered.set()
+        await keep_alive_proceed.wait()
+
+    mock_stream = MagicMock()
+    mock_stream.reconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    data_client._client.keep_alive = slow_keep_alive
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_SESSION",
+            "errorMessage": "Session expired",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act - first status spawns reconnect task
+    data_client.on_race_stream_update(raw)
+    await keep_alive_entered.wait()
+    assert data_client._is_reconnecting_race_stream
+
+    # Second status while first reconnect is in-flight
+    data_client.on_race_stream_update(raw)
+
+    # Unblock the first reconnect
+    keep_alive_proceed.set()
+    await eventually(lambda: not data_client._is_reconnecting_race_stream)
+
+    # Assert - stream reconnected exactly once
+    mock_stream.reconnect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_race_reconnect_aborts_when_full_reconnect_starts_during_await(data_client):
+    """
+    If a full reconnect starts while _reconnect_race_stream is awaiting keep_alive, the
+    race reconnect should abort and let the full reconnect handle both streams.
+    """
+    # Arrange - make keep_alive block so we can simulate a full reconnect starting
+    keep_alive_entered = asyncio.Event()
+    keep_alive_proceed = asyncio.Event()
+
+    async def slow_keep_alive():
+        keep_alive_entered.set()
+        await keep_alive_proceed.wait()
+
+    mock_stream = MagicMock()
+    mock_stream.reconnect = AsyncMock()
+    data_client._race_stream = mock_stream
+    data_client._client.keep_alive = slow_keep_alive
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_SESSION",
+            "errorMessage": "Session expired",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act - race reconnect starts and blocks on keep_alive
+    data_client.on_race_stream_update(raw)
+    await keep_alive_entered.wait()
+
+    # Full reconnect starts while race reconnect is mid-keep_alive
+    data_client._is_reconnecting = True
+
+    # Unblock keep_alive so race reconnect can check the flag
+    keep_alive_proceed.set()
+    await eventually(lambda: not data_client._is_reconnecting_race_stream)
+
+    # Assert - race stream reconnect aborted, deferred to full reconnect
+    mock_stream.reconnect.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_market_reconnect_proceeds_despite_race_reconnect_in_flight(data_client):
+    """
+    Market stream recovery always takes priority.
+
+    A full reconnect should proceed even when a race-only reconnect is in-flight,
+    subsuming it.
+
+    """
+    # Arrange
+    data_client._is_reconnecting_race_stream = True
+    data_client._client.reconnect = AsyncMock()
+    data_client._stream.reconnect = AsyncMock()
+    raw = msgspec.json.encode(
+        {
+            "op": "status",
+            "id": 1,
+            "connectionClosed": True,
+            "errorCode": "NO_SESSION",
+            "errorMessage": "Session expired",
+            "statusCode": "FAILURE",
+        },
+    )
+
+    # Act
+    data_client.on_market_update(raw)
+    await eventually(lambda: data_client._client.reconnect.called)
+
+    # Assert - full reconnect ran, race reconnect flag cleared
+    assert not data_client._is_reconnecting_race_stream
 
 
 def test_market_heartbeat(data_client):
@@ -553,3 +924,332 @@ def test_bsp_deltas_apply(data_client, instrument):
 @pytest.mark.asyncio
 async def test_subscribe_instruments(data_client, instrument):
     await data_client._subscribe_instrument(instrument.id)
+
+
+RESOURCES_PATH = Path(__file__).parent / "resources"
+
+
+def test_rcm_race_runner_data(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm.json").read_bytes()
+
+    # Act
+    data_client.on_race_stream_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    runner_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceRunnerData)
+    ]
+
+    assert len(runner_data) == 1
+    assert runner_data[0].race_id == "28587288.1650"
+    assert runner_data[0].selection_id == 7390417
+    assert runner_data[0].speed == 17.8
+    assert runner_data[0].progress == 2051
+
+
+def test_rcm_race_progress(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm.json").read_bytes()
+
+    # Act
+    data_client.on_race_stream_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    progress_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceProgress)
+    ]
+
+    assert len(progress_data) == 1
+    assert progress_data[0].race_id == "28587288.1650"
+    assert progress_data[0].gate_name == "1f"
+    assert progress_data[0].running_time == 46.7
+    assert progress_data[0].order == [7390417, 5600338, 11527189, 6395118, 8706072]
+
+
+def test_rcm_multi_runner(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_multi_runner.json").read_bytes()
+
+    # Act
+    data_client.on_race_stream_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    runner_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceRunnerData)
+    ]
+
+    assert len(runner_data) == 5
+    assert all(r.race_id == "32908802.0000" for r in runner_data)
+    assert {r.selection_id for r in runner_data} == {35467839, 24947967, 299569, 31422647, 41694785}
+
+
+def test_rcm_with_jumps(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_race_start.json").read_bytes()
+
+    # Act
+    data_client.on_race_stream_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    progress_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceProgress)
+    ]
+
+    assert len(progress_data) == 1
+    assert progress_data[0].jumps is not None
+    assert len(progress_data[0].jumps) == 9
+    assert progress_data[0].jumps[0] == {"J": 9, "L": 3123.5}
+
+
+def test_betfair_order_voided_dict_serialization():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
+        avg_price_matched=1.50,
+        size_matched=50.0,
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Act
+    result_dict = BetfairOrderVoided.to_dict(voided)
+    result = BetfairOrderVoided.from_dict(result_dict)
+
+    # Assert
+    assert result.instrument_id == voided.instrument_id
+    assert result.client_order_id == voided.client_order_id
+    assert result.venue_order_id == voided.venue_order_id
+    assert result.size_voided == voided.size_voided
+    assert result.price == voided.price
+    assert result.size == voided.size
+    assert result.side == voided.side
+    assert result.avg_price_matched == voided.avg_price_matched
+    assert result.size_matched == voided.size_matched
+    assert result.reason == voided.reason
+    assert result.ts_event == voided.ts_event
+    assert result.ts_init == voided.ts_init
+
+
+def test_betfair_order_voided_dict_serialization_with_reason():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=25.5,
+        price=2.0,
+        size=100.0,
+        side="L",
+        reason="VAR_DECISION",
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Act
+    result_dict = BetfairOrderVoided.to_dict(voided)
+    result = BetfairOrderVoided.from_dict(result_dict)
+
+    # Assert
+    assert result.reason == "VAR_DECISION"
+    assert result.size_voided == 25.5
+
+
+def test_betfair_order_voided_repr():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Act
+    result = repr(voided)
+
+    # Assert
+    assert "BetfairOrderVoided" in result
+    assert "1-123456-789-None.BETFAIR" in result
+    assert "test-order-123" in result
+    assert "248485109136" in result
+    assert "50.0" in result
+
+
+def test_betfair_order_voided_equality():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided1 = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+    voided2 = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=25.0,
+        price=2.0,
+        size=100.0,
+        side="L",
+        reason="DIFFERENT",
+        ts_event=1635217893000000002,
+        ts_init=1635217893000000003,
+    )
+    voided3 = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="different-order",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Assert
+    assert voided1 == voided2  # Same instrument_id, client_order_id, venue_order_id
+    assert voided1 != voided3  # Different client_order_id
+    assert voided1 != None  # noqa: E711
+    assert voided1 != "not a voided object"
+
+
+def test_rcm_runner_data_reaches_subscriber_via_data_engine(data_client, data_engine, msgbus):
+    """
+    Verify that an actor subscribing with DataType(BetfairRaceRunnerData,
+    {"selection_id": N}) receives runner data through the full pipeline.
+    """
+    # Arrange
+    received = []
+    data_type = DataType(BetfairRaceRunnerData, {"selection_id": 49411491})
+    topic = f"data.{data_type.topic}"
+    msgbus.subscribe(topic=topic, handler=received.append)
+
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_tpd_live.jsonl").read_bytes()
+    lines = raw.splitlines()
+
+    # Act - first message has 3 runners including selection_id 49411491
+    data_client.on_race_stream_update(lines[0])
+
+    # Assert
+    assert len(received) == 1
+    assert isinstance(received[0], BetfairRaceRunnerData)
+    assert received[0].selection_id == 49411491
+    assert received[0].race_id == "35270435.1830"
+    assert received[0].latitude == 52.6056631
+    assert received[0].longitude == -2.145348
+    assert received[0].speed == 1.73
+
+
+def test_rcm_runner_data_filtered_by_selection_id(data_client, data_engine, msgbus):
+    """
+    Verify that subscribing to a specific selection_id only receives data for that
+    runner, not others in the same RCM message.
+    """
+    # Arrange
+    received_target = []
+    received_other = []
+    topic_target = f"data.{DataType(BetfairRaceRunnerData, {'selection_id': 44169412}).topic}"
+    topic_other = f"data.{DataType(BetfairRaceRunnerData, {'selection_id': 19080425}).topic}"
+    msgbus.subscribe(topic=topic_target, handler=received_target.append)
+    msgbus.subscribe(topic=topic_other, handler=received_other.append)
+
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_tpd_live.jsonl").read_bytes()
+    lines = raw.splitlines()
+
+    # Act - first message has runners 49411491, 44169412, 19080425
+    data_client.on_race_stream_update(lines[0])
+
+    # Assert - each subscriber only gets their runner
+    assert len(received_target) == 1
+    assert received_target[0].selection_id == 44169412
+    assert received_target[0].speed == 1.32
+
+    assert len(received_other) == 1
+    assert received_other[0].selection_id == 19080425
+    assert received_other[0].speed == 1.45
+
+
+def test_rcm_progress_data_reaches_subscriber_via_data_engine(data_client, data_engine, msgbus):
+    """
+    Verify that an actor subscribing with DataType(BetfairRaceProgress) receives race
+    progress data through the full pipeline.
+    """
+    # Arrange
+    received = []
+    data_type = DataType(BetfairRaceProgress)
+    topic = f"data.{data_type.topic}"
+    msgbus.subscribe(topic=topic, handler=received.append)
+
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_tpd_live.jsonl").read_bytes()
+    lines = raw.splitlines()
+
+    # Act - second message has race progress data
+    data_client.on_race_stream_update(lines[1])
+
+    # Assert
+    assert len(received) == 1
+    assert isinstance(received[0], BetfairRaceProgress)
+    assert received[0].race_id == "35270435.1830"
+    assert received[0].market_id == "1.254088503"
+    assert received[0].progress == 1025
+
+
+def test_rcm_sequence_delivers_all_updates(data_client, data_engine, msgbus):
+    """
+    Verify that processing a sequence of RCM messages delivers all runner and progress
+    updates to their respective subscribers.
+    """
+    # Arrange
+    runner_data = []
+    progress_data = []
+    msgbus.subscribe(topic="data.BetfairRaceRunnerData*", handler=runner_data.append)
+    msgbus.subscribe(
+        topic=f"data.{DataType(BetfairRaceProgress).topic}",
+        handler=progress_data.append,
+    )
+
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_tpd_live.jsonl").read_bytes()
+
+    # Act - process all 3 messages
+    for line in raw.splitlines():
+        data_client.on_race_stream_update(line)
+
+    # Assert - 3 runners from msg 0, 1 runner from msg 2, 1 progress from msg 1
+    assert len(runner_data) == 4
+    assert all(isinstance(d, BetfairRaceRunnerData) for d in runner_data)
+
+    assert len(progress_data) == 1
+    assert isinstance(progress_data[0], BetfairRaceProgress)

@@ -21,7 +21,11 @@ reason = "derivative crate is unmaintained, transitive dependency with no availa
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2023-0071"
-reason = "rsa timing sidechannel (Marvin Attack), no fix available, low risk for use case"
+reason = "rsa timing sidechannel (Marvin Attack), transitive via sqlx-mysql, no fix available"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0143"
+reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0075"

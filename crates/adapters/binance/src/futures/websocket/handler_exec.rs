@@ -22,16 +22,18 @@ use std::{
     collections::VecDeque,
     fmt::Debug,
     sync::{
-        Arc,
+        Arc, RwLock,
         atomic::{AtomicBool, Ordering},
     },
 };
 
-use ahash::AHashMap;
-use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+use ahash::{AHashMap, AHashSet};
+use nautilus_core::{UUID4, nanos::UnixNanos, time::AtomicTime};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide},
-    events::{AccountState, OrderAccepted, OrderCanceled, OrderFilled, OrderUpdated},
+    events::{
+        AccountState, OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, OrderUpdated,
+    },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
@@ -40,11 +42,15 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use super::messages::{
-    BinanceExecutionType, BinanceFuturesAccountUpdateMsg, BinanceFuturesExecWsMessage,
-    BinanceFuturesOrderUpdateMsg, ExecHandlerCommand, NautilusExecWsMessage, NautilusWsMessage,
+    BinanceExecutionType, BinanceFuturesAccountUpdateMsg, BinanceFuturesAlgoUpdateMsg,
+    BinanceFuturesExecWsMessage, BinanceFuturesOrderUpdateMsg, ExecHandlerCommand,
+    NautilusExecWsMessage, NautilusWsMessage,
 };
 use crate::{
-    common::{enums::BinanceProductType, symbol::format_instrument_id},
+    common::{
+        enums::{BinanceAlgoStatus, BinanceProductType},
+        symbol::format_instrument_id,
+    },
     futures::http::BinanceFuturesInstrument,
 };
 
@@ -86,6 +92,8 @@ pub struct BinanceFuturesExecWsFeedHandler {
     pending_cancel_requests: AHashMap<ClientOrderId, CancelRequestData>,
     pending_modify_requests: AHashMap<ClientOrderId, ModifyRequestData>,
     active_orders: AHashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>,
+    algo_client_order_ids: AHashSet<ClientOrderId>,
+    triggered_algo_order_ids: Arc<RwLock<AHashSet<ClientOrderId>>>,
     instruments_cache: AHashMap<Ustr, BinanceFuturesInstrument>,
     message_queue: VecDeque<NautilusExecWsMessage>,
 }
@@ -116,6 +124,7 @@ impl BinanceFuturesExecWsFeedHandler {
         account_type: AccountType,
         product_type: BinanceProductType,
         signal: Arc<AtomicBool>,
+        triggered_algo_order_ids: Arc<RwLock<AHashSet<ClientOrderId>>>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<ExecHandlerCommand>,
         msg_rx: tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>,
     ) -> Self {
@@ -132,6 +141,8 @@ impl BinanceFuturesExecWsFeedHandler {
             pending_cancel_requests: AHashMap::new(),
             pending_modify_requests: AHashMap::new(),
             active_orders: AHashMap::new(),
+            algo_client_order_ids: AHashSet::new(),
+            triggered_algo_order_ids,
             instruments_cache: AHashMap::new(),
             message_queue: VecDeque::new(),
         }
@@ -253,6 +264,7 @@ impl BinanceFuturesExecWsFeedHandler {
     ) -> Option<NautilusExecWsMessage> {
         match msg {
             BinanceFuturesExecWsMessage::OrderUpdate(update) => self.handle_order_update(&update),
+            BinanceFuturesExecWsMessage::AlgoUpdate(update) => self.handle_algo_update(&update),
             BinanceFuturesExecWsMessage::AccountUpdate(update) => {
                 self.handle_account_update(&update)
             }
@@ -298,6 +310,14 @@ impl BinanceFuturesExecWsFeedHandler {
 
         match order_data.execution_type {
             BinanceExecutionType::New => {
+                // Algo orders emit OrderAccepted via ALGO_UPDATE NEW, skip here to avoid duplicate
+                if self.algo_client_order_ids.contains(&client_order_id) {
+                    log::debug!(
+                        "Skipping OrderAccepted for algo order: client_order_id={client_order_id}"
+                    );
+                    return None;
+                }
+
                 // Move from pending to active on acceptance
                 self.pending_place_requests.remove(&client_order_id);
 
@@ -308,7 +328,7 @@ impl BinanceFuturesExecWsFeedHandler {
                     client_order_id,
                     venue_order_id,
                     self.account_id,
-                    nautilus_core::UUID4::new(),
+                    UUID4::new(),
                     ts_event,
                     ts_init,
                     false,
@@ -326,7 +346,7 @@ impl BinanceFuturesExecWsFeedHandler {
                     strategy_id,
                     instrument_id,
                     client_order_id,
-                    nautilus_core::UUID4::new(),
+                    UUID4::new(),
                     ts_event,
                     ts_init,
                     false,
@@ -369,7 +389,7 @@ impl BinanceFuturesExecWsFeedHandler {
                     instrument_id,
                     client_order_id,
                     Quantity::new(quantity, size_precision as u8),
-                    nautilus_core::UUID4::new(),
+                    UUID4::new(),
                     ts_event,
                     ts_init,
                     false,
@@ -455,7 +475,7 @@ impl BinanceFuturesExecWsFeedHandler {
             Price::new(last_px, price_precision as u8),
             commission_currency,
             liquidity_side,
-            nautilus_core::UUID4::new(),
+            UUID4::new(),
             ts_event,
             ts_init,
             false,
@@ -512,13 +532,254 @@ impl BinanceFuturesExecWsFeedHandler {
             balances,
             vec![], // Margins handled separately
             true,   // is_reported
-            nautilus_core::UUID4::new(),
+            UUID4::new(),
             ts_event,
             self.clock.get_time_ns(),
             None, // base_currency
         );
 
         Some(NautilusExecWsMessage::AccountUpdate(event))
+    }
+
+    fn handle_algo_update(
+        &mut self,
+        msg: &BinanceFuturesAlgoUpdateMsg,
+    ) -> Option<NautilusExecWsMessage> {
+        let algo_data = &msg.algo_order;
+        let ts_event = UnixNanos::from((msg.event_time * 1_000_000) as u64);
+        let ts_init = self.clock.get_time_ns();
+
+        let client_order_id = ClientOrderId::new(&algo_data.client_algo_id);
+        let venue_order_id = algo_data.actual_order_id.as_ref().map_or_else(
+            || VenueOrderId::new(algo_data.algo_id.to_string()),
+            |id| VenueOrderId::new(id.clone()),
+        );
+        let (trader_id, strategy_id, instrument_id) =
+            self.get_order_context(&client_order_id, algo_data.symbol.as_str());
+
+        match algo_data.algo_status {
+            BinanceAlgoStatus::New => {
+                // Track so ORDER_TRADE_UPDATE NEW skips duplicate OrderAccepted
+                self.algo_client_order_ids.insert(client_order_id);
+                self.pending_place_requests.remove(&client_order_id);
+
+                let event = OrderAccepted::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    self.account_id,
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                );
+
+                Some(NautilusExecWsMessage::OrderAccepted(event))
+            }
+            BinanceAlgoStatus::Triggering => {
+                log::info!(
+                    "Algo order triggering: client_order_id={}, algo_id={}, symbol={}",
+                    algo_data.client_algo_id,
+                    algo_data.algo_id,
+                    algo_data.symbol
+                );
+                None
+            }
+            BinanceAlgoStatus::Triggered => {
+                // Track for cancel routing: triggered orders use regular cancel endpoint
+                self.triggered_algo_order_ids
+                    .write()
+                    .expect("triggered_algo_order_ids lock poisoned")
+                    .insert(client_order_id);
+
+                log::info!(
+                    "Algo order triggered: client_order_id={}, algo_id={}, actual_order_id={:?}, symbol={}",
+                    algo_data.client_algo_id,
+                    algo_data.algo_id,
+                    algo_data.actual_order_id,
+                    algo_data.symbol
+                );
+
+                let Some(actual_order_id) = &algo_data.actual_order_id else {
+                    log::warn!(
+                        "Algo order triggered but no actual_order_id: client_order_id={client_order_id}"
+                    );
+                    return None;
+                };
+
+                let new_venue_order_id = VenueOrderId::new(actual_order_id.clone());
+
+                let symbol_key = Ustr::from(algo_data.symbol.as_str());
+                let size_precision =
+                    self.instruments_cache
+                        .get(&symbol_key)
+                        .map_or(8, |inst| inst.quantity_precision()) as u8;
+
+                let quantity: f64 = algo_data.quantity.parse().unwrap_or(0.0);
+
+                let event = OrderUpdated::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    Quantity::new(quantity, size_precision),
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    Some(new_venue_order_id),
+                    Some(self.account_id),
+                    None,
+                    None,
+                    None,
+                );
+
+                Some(NautilusExecWsMessage::OrderUpdated(event))
+            }
+            BinanceAlgoStatus::Canceled => {
+                self.algo_client_order_ids.remove(&client_order_id);
+                self.triggered_algo_order_ids
+                    .write()
+                    .expect("triggered_algo_order_ids lock poisoned")
+                    .remove(&client_order_id);
+                self.pending_cancel_requests.remove(&client_order_id);
+                self.active_orders.remove(&client_order_id);
+
+                let event = OrderCanceled::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    Some(venue_order_id),
+                    Some(self.account_id),
+                );
+
+                Some(NautilusExecWsMessage::OrderCanceled(event))
+            }
+            BinanceAlgoStatus::Expired => {
+                self.algo_client_order_ids.remove(&client_order_id);
+                self.triggered_algo_order_ids
+                    .write()
+                    .expect("triggered_algo_order_ids lock poisoned")
+                    .remove(&client_order_id);
+                self.active_orders.remove(&client_order_id);
+
+                log::info!(
+                    "Algo order expired: client_order_id={}, algo_id={}",
+                    algo_data.client_algo_id,
+                    algo_data.algo_id
+                );
+
+                // Treat expired as canceled for Nautilus
+                let event = OrderCanceled::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    Some(venue_order_id),
+                    Some(self.account_id),
+                );
+
+                Some(NautilusExecWsMessage::OrderCanceled(event))
+            }
+            BinanceAlgoStatus::Rejected => {
+                self.algo_client_order_ids.remove(&client_order_id);
+                self.triggered_algo_order_ids
+                    .write()
+                    .expect("triggered_algo_order_ids lock poisoned")
+                    .remove(&client_order_id);
+                self.pending_place_requests.remove(&client_order_id);
+                self.active_orders.remove(&client_order_id);
+
+                log::warn!(
+                    "Algo order rejected: client_order_id={}, algo_id={}",
+                    algo_data.client_algo_id,
+                    algo_data.algo_id
+                );
+
+                // Binance doesn't provide rejection reason in ALGO_UPDATE
+                let event = OrderRejected::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    self.account_id,
+                    Ustr::from("REJECTED"),
+                    UUID4::new(),
+                    ts_event,
+                    ts_init,
+                    false,
+                    false,
+                );
+
+                Some(NautilusExecWsMessage::OrderRejected(event))
+            }
+            BinanceAlgoStatus::Finished => {
+                self.algo_client_order_ids.remove(&client_order_id);
+                self.triggered_algo_order_ids
+                    .write()
+                    .expect("triggered_algo_order_ids lock poisoned")
+                    .remove(&client_order_id);
+                self.active_orders.remove(&client_order_id);
+
+                // Check if the order was filled or just finished (canceled after trigger)
+                let executed_qty: f64 = algo_data
+                    .executed_qty
+                    .as_ref()
+                    .and_then(|q| q.parse().ok())
+                    .unwrap_or(0.0);
+
+                if executed_qty > 0.0 {
+                    log::debug!(
+                        "Algo order finished with fills: client_order_id={}, executed_qty={}",
+                        algo_data.client_algo_id,
+                        executed_qty
+                    );
+                    // Fill events are emitted via ORDER_TRADE_UPDATE, not ALGO_UPDATE
+                } else {
+                    log::debug!(
+                        "Algo order finished without fills: client_order_id={}",
+                        algo_data.client_algo_id
+                    );
+                }
+                None
+            }
+            BinanceAlgoStatus::Unknown => {
+                log::warn!(
+                    "Unknown algo status received: client_order_id={}, algo_id={}",
+                    algo_data.client_algo_id,
+                    algo_data.algo_id
+                );
+                None
+            }
+        }
+    }
+
+    /// Returns whether a client order ID is a triggered algo order.
+    ///
+    /// This is used to determine which cancel endpoint to use:
+    /// - Non-triggered algo orders use `DELETE /fapi/v1/algoOrder`
+    /// - Triggered algo orders use regular `DELETE /fapi/v1/order`
+    ///
+    /// # Panics
+    ///
+    /// Panics if `triggered_algo_order_ids` lock is poisoned.
+    #[must_use]
+    pub fn is_triggered_algo_order(&self, client_order_id: &ClientOrderId) -> bool {
+        self.triggered_algo_order_ids
+            .read()
+            .expect("triggered_algo_order_ids lock poisoned")
+            .contains(client_order_id)
     }
 
     /// Looks up order context from pending/active maps.

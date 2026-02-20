@@ -78,7 +78,7 @@ fn is_matching_greedy(topic: &[u8], pattern: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
     use regex::Regex;
     use rstest::rstest;
 

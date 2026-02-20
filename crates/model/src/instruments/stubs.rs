@@ -21,8 +21,10 @@ use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use super::{
-    CryptoOption, betting::BettingInstrument, binary_option::BinaryOption,
-    futures_spread::FuturesSpread, option_spread::OptionSpread, synthetic::SyntheticInstrument,
+    CryptoOption, betting::BettingInstrument, binary_option::BinaryOption, cfd::Cfd,
+    commodity::Commodity, futures_spread::FuturesSpread, index_instrument::IndexInstrument,
+    option_spread::OptionSpread, perpetual_contract::PerpetualContract,
+    synthetic::SyntheticInstrument,
 };
 use crate::{
     enums::{AssetClass, OptionKind},
@@ -88,6 +90,7 @@ pub fn crypto_future_btcusdt(
         None,
         None,
         None,
+        None, // info
         0.into(),
         0.into(),
     )
@@ -127,6 +130,7 @@ pub fn ethbtc_quanto(
         None,
         None,
         None,
+        None, // info
         0.into(),
         0.into(),
     )
@@ -168,6 +172,7 @@ pub fn xbtusd_inverse_perp(
         Some(dec!(0.0035)),                // margin_maint
         Some(dec!(-0.00025)),              // maker_fee (rebate)
         Some(dec!(0.00075)),               // taker_fee
+        None,                              // info
         UnixNanos::default(),              // ts_event
         UnixNanos::default(),              // ts_init
     )
@@ -213,6 +218,7 @@ pub fn crypto_option_btc_deribit(
         None,
         Some(dec!(0.0003)),
         Some(dec!(0.0003)),
+        None, // info
         0.into(),
         0.into(),
     )
@@ -247,6 +253,7 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         Some(dec!(0.35)),
         Some(dec!(0.0002)),
         Some(dec!(0.0004)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -277,6 +284,7 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         Some(dec!(0.0035)),
         Some(dec!(-0.00025)),
         Some(dec!(0.00075)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -307,6 +315,7 @@ pub fn ethusdt_bitmex() -> CryptoPerpetual {
         Some(dec!(0.0035)),
         Some(dec!(-0.00025)),
         Some(dec!(0.00075)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -339,6 +348,7 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         Some(dec!(0.001)),
         Some(dec!(0.001)),
         Some(dec!(0.001)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -367,6 +377,7 @@ pub fn currency_pair_ethusdt() -> CurrencyPair {
         Some(dec!(0.0035)),
         Some(dec!(0.0001)),
         Some(dec!(0.0001)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -404,6 +415,7 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         Some(dec!(0.03)),
         Some(dec!(0.00002)),
         Some(dec!(0.00002)),
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -446,6 +458,7 @@ pub fn equity_aapl() -> Equity {
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -496,6 +509,7 @@ pub fn futures_contract_es(
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -531,6 +545,7 @@ pub fn futures_spread_es() -> FuturesSpread {
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -567,6 +582,7 @@ pub fn option_contract_appl() -> OptionContract {
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -602,6 +618,7 @@ pub fn option_spread() -> OptionSpread {
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -691,8 +708,119 @@ pub fn betting() -> BettingInstrument {
         margin_maint,
         maker_fee,
         taker_fee,
+        None, // info
         ts_event,
         ts_init,
+    )
+}
+
+#[fixture]
+pub fn commodity_gold() -> Commodity {
+    Commodity::new(
+        InstrumentId::from("GOLD.COMEX"),
+        Symbol::from("GOLD"),
+        AssetClass::Commodity,
+        Currency::from("USD"),
+        2,
+        0,
+        Price::from("0.01"),
+        Quantity::from("1"),
+        Some(Quantity::from("1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // info
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+#[fixture]
+pub fn index_instrument_spx() -> IndexInstrument {
+    IndexInstrument::new(
+        InstrumentId::from("SPX.INDEX"),
+        Symbol::from("SPX"),
+        Currency::from("USD"),
+        2,
+        0,
+        Price::from("0.01"),
+        Quantity::from("1"),
+        None, // info
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+#[fixture]
+pub fn cfd_gold() -> Cfd {
+    Cfd::new(
+        InstrumentId::from("GOLD-CFD.SIM"),
+        Symbol::from("GOLD-CFD"),
+        AssetClass::Commodity,
+        None,
+        Currency::from("USD"),
+        2,
+        0,
+        Price::from("0.01"),
+        Quantity::from("1"),
+        Some(Quantity::from("1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // info
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// PerpetualContract
+////////////////////////////////////////////////////////////////////////////////
+
+#[fixture]
+pub fn perpetual_contract_eurusd() -> PerpetualContract {
+    PerpetualContract::new(
+        InstrumentId::from("EURUSD-PERP.AX"),
+        Symbol::from("EURUSD-PERP"),
+        Ustr::from("EURUSD"),
+        AssetClass::FX,
+        Some(Currency::from("EUR")),
+        Currency::from("USD"),
+        Currency::from("USD"),
+        false,
+        5,
+        0,
+        Price::from("0.00001"),
+        Quantity::from("1"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(dec!(0.03)),
+        Some(dec!(0.03)),
+        Some(dec!(0.00002)),
+        Some(dec!(0.00002)),
+        None, // info
+        UnixNanos::default(),
+        UnixNanos::default(),
     )
 }
 
@@ -732,6 +860,7 @@ pub fn binary_option() -> BinaryOption {
         None,
         None,
         None,
+        None, // info
         UnixNanos::default(),
         UnixNanos::default(),
     )

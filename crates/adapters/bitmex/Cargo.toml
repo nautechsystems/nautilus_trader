@@ -50,6 +50,7 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
+nautilus-system = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -62,6 +63,7 @@ dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
@@ -84,6 +86,7 @@ nautilus-testkit = { workspace = true }
 
 axum = { workspace = true }
 criterion = { workspace = true }
+dotenvy = { workspace = true }
 rstest = { workspace = true }
 url = { workspace = true }
 
@@ -100,4 +103,18 @@ doc = false
 [[bin]]
 name = "bitmex-ws-exec"
 path = "bin/ws_exec.rs"
+doc = false
+
+# Run with `cargo run --example bitmex-data-tester --package nautilus-bitmex`.
+[[example]]
+name = "bitmex-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = []
+doc = false
+
+# Run with `cargo run --example bitmex-exec-tester --package nautilus-bitmex`.
+[[example]]
+name = "bitmex-exec-tester"
+path = "examples/node_exec_tester.rs"
+required-features = []
 doc = false

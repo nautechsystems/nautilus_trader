@@ -38,13 +38,20 @@ use crate::{
 #[pyo3::pyclass(
     module = "nautilus_trader.core.nautilus_pyo3.common",
     name = "Clock",
-    unsendable
+    unsendable,
+    from_py_object
 )]
 #[derive(Debug, Clone)]
 pub struct PyClock(Rc<RefCell<dyn Clock>>);
 
 #[pymethods]
 impl PyClock {
+    #[staticmethod]
+    #[pyo3(name = "new_test")]
+    fn py_new_test() -> Self {
+        Self(Rc::new(RefCell::new(TestClock::default())))
+    }
+
     #[pyo3(name = "register_default_handler")]
     fn py_register_default_handler(&mut self, callback: Py<PyAny>) {
         self.0
@@ -113,11 +120,9 @@ impl PyClock {
     ) -> PyResult<()> {
         let interval_ns_i64 = interval
             .num_nanoseconds()
-            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Interval too large"))?;
+            .ok_or_else(|| to_pyvalue_err("Interval too large"))?;
         if interval_ns_i64 <= 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Interval must be positive",
-            ));
+            return Err(to_pyvalue_err("Interval must be positive"));
         }
         let interval_ns = interval_ns_i64 as u64;
 
@@ -185,6 +190,12 @@ impl PyClock {
     #[must_use]
     pub fn from_rc(rc: Rc<RefCell<dyn Clock>>) -> Self {
         Self(rc)
+    }
+
+    /// Gets the inner `Rc<RefCell<dyn Clock>>` for use in Rust code.
+    #[must_use]
+    pub fn clock_rc(&self) -> Rc<RefCell<dyn Clock>> {
+        self.0.clone()
     }
 
     /// Creates a clock backed by [`TestClock`].

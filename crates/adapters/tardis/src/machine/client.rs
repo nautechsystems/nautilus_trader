@@ -35,12 +35,15 @@ use super::{
         TardisInstrumentMiniInfo,
     },
 };
-use crate::{config::BookSnapshotOutput, machine::parse::parse_tardis_ws_message};
+use crate::{
+    common::consts::TARDIS_MACHINE_WS_URL, config::BookSnapshotOutput,
+    machine::parse::parse_tardis_ws_message,
+};
 
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
 )]
 #[derive(Debug, Clone)]
 pub struct TardisMachineClient {
@@ -65,10 +68,11 @@ impl TardisMachineClient {
     ) -> anyhow::Result<Self> {
         let base_url = base_url
             .map(ToString::to_string)
-            .or_else(|| env::var("TARDIS_MACHINE_WS_URL").ok())
+            .or_else(|| env::var(TARDIS_MACHINE_WS_URL).ok())
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Tardis Machine `base_url` must be provided or set in the 'TARDIS_MACHINE_WS_URL' environment variable"
+                    "Tardis Machine `base_url` must be provided or \
+                     set in the '{TARDIS_MACHINE_WS_URL}' environment variable"
                 )
             })?;
 

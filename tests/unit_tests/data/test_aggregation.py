@@ -2419,6 +2419,35 @@ class TestTestValueBarAggregator:
         assert last_bar.close == Price.from_str("102.50")
         assert last_bar.volume == Quantity.from_str("30")
 
+    def test_high_price_low_step_does_not_emit_zero_volume_bars(self):
+        # Arrange: price * min_size >> step causes size_chunk to round to zero
+        handler = []
+        bar_spec = BarSpecification(100, BarAggregation.VALUE, PriceType.LAST)
+        bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+        aggregator = ValueBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+        )
+
+        tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1000.00000"),
+            size=Quantity.from_int(3),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("value-precision-1"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick)
+
+        # Assert: 3 bars (one per min-size unit), not 30 zero-volume bars
+        assert len(handler) == 3
+        for bar in handler:
+            assert bar.volume == Quantity.from_int(1)
+
 
 class TestValueImbalanceBarAggregator:
     def test_emits_when_value_imbalance_reaches_threshold(self):
@@ -2581,6 +2610,77 @@ class TestValueImbalanceBarAggregator:
 
         # Assert
         assert len(handler) == 1
+
+    def test_high_price_low_step_does_not_emit_zero_volume_bars(self):
+        # Arrange: price * min_size >> step causes size_chunk to round to zero
+        handler = []
+        bar_spec = BarSpecification(100, BarAggregation.VALUE_IMBALANCE, PriceType.LAST)
+        bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+        aggregator = ValueImbalanceBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+        )
+
+        tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1000.00000"),
+            size=Quantity.from_int(3),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("value-imbalance-precision-1"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick)
+
+        # Assert: 3 bars (one per min-size unit), not 30 zero-volume bars
+        assert len(handler) == 3
+        for bar in handler:
+            assert bar.volume == Quantity.from_int(1)
+
+    def test_opposite_side_min_size_overshoot_emits_bar(self):
+        # Arrange: opposite-side flatten amount < min_size, clamp overshoots threshold
+        handler = []
+        bar_spec = BarSpecification(100, BarAggregation.VALUE_IMBALANCE, PriceType.LAST)
+        bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+        aggregator = ValueImbalanceBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+        )
+
+        # Build seller imbalance of -50 (below step=100, no bar yet)
+        tick1 = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("10.00000"),
+            size=Quantity.from_int(5),
+            aggressor_side=AggressorSide.SELLER,
+            trade_id=TradeId("imbalance-opp-1"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Opposite-side buyer tick: flatten amount 50/1000=0.05 < min_size (1),
+        # clamp overshoots imbalance from -50 to +950, crossing threshold
+        tick2 = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1000.00000"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("imbalance-opp-2"),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick1)
+        aggregator.handle_trade_tick(tick2)
+
+        # Assert
+        assert len(handler) == 1
+        assert handler[0].volume == Quantity.from_int(6)
 
 
 class TestValueRunsBarAggregator:
@@ -2749,6 +2849,35 @@ class TestValueRunsBarAggregator:
         # Assert
         assert len(handler) == 1
         assert handler[0].high == Price.from_str("10.00000")
+
+    def test_high_price_low_step_does_not_emit_zero_volume_bars(self):
+        # Arrange: price * min_size >> step causes size_chunk to round to zero
+        handler = []
+        bar_spec = BarSpecification(100, BarAggregation.VALUE_RUNS, PriceType.LAST)
+        bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+        aggregator = ValueRunsBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+        )
+
+        tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1000.00000"),
+            size=Quantity.from_int(3),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("value-runs-precision-1"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick)
+
+        # Assert: 3 bars (one per min-size unit), not 30 zero-volume bars
+        assert len(handler) == 3
+        for bar in handler:
+            assert bar.volume == Quantity.from_int(1)
 
 
 class TestRenkoBarAggregator:
@@ -4312,7 +4441,6 @@ class TestSpreadQuoteAggregator:
         )
         self.cache = Cache()
         self.greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )
@@ -4894,7 +5022,6 @@ class TestSpreadQuoteAggregator:
         from nautilus_trader.model.instruments import CryptoFuture
 
         greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )
@@ -5701,7 +5828,6 @@ class TestSpreadQuoteAggregator:
         # Note: Not adding underlying trade tick, so greeks will be missing
 
         greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=cache,
             clock=self.clock,
         )
@@ -5779,7 +5905,6 @@ class TestSpreadQuoteAggregatorHistoricalMode:
         )
         self.cache = Cache()
         self.greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )

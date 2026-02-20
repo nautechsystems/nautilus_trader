@@ -49,7 +49,9 @@ use super::{
     },
     parse::{
         parse_millis_i64, parse_orderbook_deltas, parse_orderbook_quote,
-        parse_ticker_linear_funding, parse_ws_account_state, parse_ws_fill_report,
+        parse_ticker_linear_funding, parse_ticker_linear_index_price,
+        parse_ticker_linear_mark_price, parse_ticker_option_index_price,
+        parse_ticker_option_mark_price, parse_ws_account_state, parse_ws_fill_report,
         parse_ws_kline_bar, parse_ws_order_status_report, parse_ws_position_status_report,
         parse_ws_trade_tick,
     },
@@ -946,7 +948,6 @@ impl FeedHandler {
                         }
                     }
 
-                    // Extract funding rate if available
                     if msg.data.funding_rate.is_some() && msg.data.next_funding_time.is_some() {
                         let should_publish = {
                             let cache = funding_cache.read().await;
@@ -978,6 +979,32 @@ impl FeedHandler {
                                 Err(e) => {
                                     log::debug!("Skipping funding rate update: {e}");
                                 }
+                            }
+                        }
+                    }
+
+                    if msg.data.mark_price.is_some() {
+                        match parse_ticker_linear_mark_price(
+                            &msg.data, instrument, ts_event, ts_init,
+                        ) {
+                            Ok(mark_price) => {
+                                result.push(NautilusWsMessage::MarkPrices(vec![mark_price]));
+                            }
+                            Err(e) => {
+                                log::debug!("Skipping mark price update: {e}");
+                            }
+                        }
+                    }
+
+                    if msg.data.index_price.is_some() {
+                        match parse_ticker_linear_index_price(
+                            &msg.data, instrument, ts_event, ts_init,
+                        ) {
+                            Ok(index_price) => {
+                                result.push(NautilusWsMessage::IndexPrices(vec![index_price]));
+                            }
+                            Err(e) => {
+                                log::debug!("Skipping index price update: {e}");
                             }
                         }
                     }
@@ -1051,6 +1078,24 @@ impl FeedHandler {
                             log::warn!(
                                 "Failed to parse ticker fields, skipping update, raw_data: {raw_data}"
                             );
+                        }
+                    }
+
+                    match parse_ticker_option_mark_price(&msg, instrument, ts_init) {
+                        Ok(mark_price) => {
+                            result.push(NautilusWsMessage::MarkPrices(vec![mark_price]));
+                        }
+                        Err(e) => {
+                            log::debug!("Skipping option mark price update: {e}");
+                        }
+                    }
+
+                    match parse_ticker_option_index_price(&msg, instrument, ts_init) {
+                        Ok(index_price) => {
+                            result.push(NautilusWsMessage::IndexPrices(vec![index_price]));
+                        }
+                        Err(e) => {
+                            log::debug!("Skipping option index price update: {e}");
                         }
                     }
                 } else {

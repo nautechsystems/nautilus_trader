@@ -40,7 +40,7 @@ use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
 )]
 pub struct HttpClient {
     /// The underlying HTTP client used to make requests.
@@ -384,7 +384,7 @@ impl InnerHttpClient {
             None => request_builder.build().map_err(HttpClientError::from)?,
         };
 
-        log::trace!("{request:?}");
+        log::trace!("{} {}", request.method(), request.url());
 
         let response = self
             .client

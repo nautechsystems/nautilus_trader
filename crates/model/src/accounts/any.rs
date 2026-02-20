@@ -100,10 +100,7 @@ impl AccountAny {
     /// # Errors
     ///
     /// Returns an error if `events` is empty.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `events` is empty when unwrapping the first element.
+    #[allow(clippy::missing_panics_doc)] // Guarded by empty check above
     pub fn from_events(events: Vec<AccountState>) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create `AccountAny`");
@@ -122,8 +119,8 @@ impl AccountAny {
     /// Returns an error if calculating P&Ls fails for the underlying account.
     pub fn calculate_pnls(
         &self,
-        instrument: InstrumentAny,
-        fill: OrderFilled,
+        instrument: &InstrumentAny,
+        fill: &OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         match self {
@@ -137,7 +134,7 @@ impl AccountAny {
     /// Returns an error if calculating commission fails for the underlying account.
     pub fn calculate_commission(
         &self,
-        instrument: InstrumentAny,
+        instrument: &InstrumentAny,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,

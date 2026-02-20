@@ -1222,6 +1222,7 @@ cdef class ExecutionEngine(Component):
                     f"Order with {event.client_order_id!r} "
                     f"not found in the cache to apply {event}"
                 )
+
             if event.venue_order_id is None:
                 self._log.error(
                     f"Cannot apply event to any order: "

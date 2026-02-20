@@ -54,6 +54,7 @@ from nautilus_trader.model.instruments import FuturesSpread
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.instruments import OptionSpread
+from nautilus_trader.model.instruments import PerpetualContract
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orders import Order
@@ -105,6 +106,8 @@ def transform_instrument_to_pyo3(instrument: Instrument):
         return nautilus_pyo3.FuturesContract.from_dict(FuturesContract.to_dict(instrument))
     elif isinstance(instrument, OptionContract):
         return nautilus_pyo3.OptionContract.from_dict(OptionContract.to_dict(instrument))
+    elif isinstance(instrument, PerpetualContract):
+        return nautilus_pyo3.PerpetualContract.from_dict(PerpetualContract.to_dict(instrument))
     else:
         raise ValueError(f"Unknown instrument type: {instrument}")
 
@@ -132,6 +135,8 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noq
         return OptionContract.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.OptionSpread):
         return OptionSpread.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.PerpetualContract):
+        return PerpetualContract.from_pyo3(instrument_pyo3)
     else:
         raise ValueError(f"Unknown instrument type: {instrument_pyo3}")
 

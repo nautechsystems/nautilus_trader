@@ -17,6 +17,7 @@ import datetime
 from collections import Counter
 from collections import defaultdict
 from copy import copy
+from types import SimpleNamespace
 
 import msgspec
 import pytest
@@ -58,6 +59,7 @@ from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
 from nautilus_trader.adapters.betfair.parsing.common import instrument_id_betfair_ids
 from nautilus_trader.adapters.betfair.parsing.common import market_id_from_instrument_id
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
+from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
 from nautilus_trader.adapters.betfair.parsing.requests import hashed_trade_id
@@ -108,6 +110,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
@@ -869,8 +872,6 @@ def test_bsp_orders_use_stake_units_not_liability():
     """
     from types import SimpleNamespace
 
-    from betfair_parser.spec.betting.enums import Side as BetOrderSide
-
     # This tests the fix for BSP order quantity calculation
     # Previously: used order.bsp_liability / order (TypeError)
     # Then: used order.bsp_liability directly (wrong - mixed liability and stake units)
@@ -885,7 +886,7 @@ def test_bsp_orders_use_stake_units_not_liability():
         size_cancelled=0.0,
         size_lapsed=0.0,
         size_voided=0.0,
-        side=BetOrderSide.BACK,
+        side=Side.BACK,
     )
 
     # Act - replicate the fixed logic from the code
@@ -957,7 +958,6 @@ def test_bsp_order_status_report_uses_stake_units():
     from types import SimpleNamespace
 
     from betfair_parser.spec.betting.enums import PersistenceType
-    from betfair_parser.spec.betting.enums import Side as BetOrderSide
     from betfair_parser.spec.common import OrderStatus
     from betfair_parser.spec.common import OrderType
 
@@ -977,7 +977,7 @@ def test_bsp_order_status_report_uses_stake_units():
         size_cancelled=0.0,
         size_lapsed=0.0,
         size_voided=0.0,
-        side=BetOrderSide.BACK,
+        side=Side.BACK,
         order_type=OrderType.LIMIT,
         status=OrderStatus.EXECUTABLE,
         persistence_type=PersistenceType.LAPSE,
@@ -1011,7 +1011,7 @@ def test_bsp_order_status_report_uses_stake_units():
         size_cancelled=0.0,
         size_lapsed=0.0,
         size_voided=0.0,
-        side=BetOrderSide.LAY,
+        side=Side.LAY,
         order_type=OrderType.LIMIT,
         status=OrderStatus.EXECUTABLE,
         persistence_type=PersistenceType.LAPSE,
@@ -1043,7 +1043,7 @@ def test_bsp_order_status_report_uses_stake_units():
         size_cancelled=0.0,
         size_lapsed=0.0,
         size_voided=0.0,
-        side=BetOrderSide.BACK,
+        side=Side.BACK,
         order_type=OrderType.LIMIT,
         status=OrderStatus.EXECUTABLE,
         persistence_type=PersistenceType.LAPSE,
@@ -1068,6 +1068,212 @@ def test_bsp_order_status_report_uses_stake_units():
     # This correctly shows 60% filled (6/10), not 30% (6/20)
 
 
+def test_order_status_report_uses_cached_values_when_stale_api():
+    """
+    Test bet_to_order_status_report uses cached values when API returns stale data.
+
+    During reconciliation, the stream may process fills faster than the HTTP API
+    reflects them. When cached_filled_qty > api_fill_qty, we should use the cached
+    values to avoid reporting stale fill state.
+
+    """
+    # API returns stale data (5.0 matched), but cache has newer data (10.0 matched)
+    order = SimpleNamespace(
+        price_size=SimpleNamespace(size=20.0, price=2.5),
+        bsp_liability=0.0,
+        size_matched=5.0,
+        size_remaining=15.0,
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=Side.BACK,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.PERSIST,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date="2021-03-24T06:48:00.000Z",
+        average_price_matched=2.4,
+    )
+
+    cached_filled_qty = Quantity(10.0, 6)
+    cached_avg_px = 2.45
+
+    report = bet_to_order_status_report(
+        order=order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980-None.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754671"),
+        client_order_id=ClientOrderId("O-123"),
+        ts_init=0,
+        report_id=UUID4(),
+        cached_filled_qty=cached_filled_qty,
+        cached_avg_px=cached_avg_px,
+    )
+
+    assert report.filled_qty.as_double() == 10.0
+    assert float(report.avg_px) == 2.45
+
+
+def test_order_status_report_corrects_status_when_cached_fills_exist():
+    """
+    Test bet_to_order_status_report corrects order status when using cached fill data.
+
+    When API shows ACCEPTED (size_matched=0) but cached fills exist, the status must be
+    corrected to PARTIALLY_FILLED to ensure reconciliation handles fills.
+
+    """
+    # API shows ACCEPTED (size_matched=0), but stream has processed fills
+    order = SimpleNamespace(
+        price_size=SimpleNamespace(size=20.0, price=2.5),
+        bsp_liability=0.0,
+        size_matched=0.0,
+        size_remaining=20.0,
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=Side.BACK,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.PERSIST,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date=None,
+        average_price_matched=0.0,
+    )
+
+    cached_filled_qty = Quantity(5.0, 6)
+    cached_avg_px = 2.48
+
+    report = bet_to_order_status_report(
+        order=order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980-None.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754671"),
+        client_order_id=ClientOrderId("O-123"),
+        ts_init=0,
+        report_id=UUID4(),
+        cached_filled_qty=cached_filled_qty,
+        cached_avg_px=cached_avg_px,
+    )
+
+    assert report.order_status == NautilusOrderStatus.PARTIALLY_FILLED
+    assert report.filled_qty.as_double() == 5.0
+    assert float(report.avg_px) == 2.48
+
+
+def test_order_status_report_uses_api_values_when_not_stale():
+    """
+    Test bet_to_order_status_report uses API values when not stale.
+
+    When api_fill_qty >= cached_filled_qty, the API data is current and should be used
+    instead of cached values.
+
+    """
+    # API returns current data (10.0 matched), cache has older data (5.0 matched)
+    order = SimpleNamespace(
+        price_size=SimpleNamespace(size=20.0, price=2.5),
+        bsp_liability=0.0,
+        size_matched=10.0,
+        size_remaining=10.0,
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=Side.BACK,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.PERSIST,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date="2021-03-24T06:48:00.000Z",
+        average_price_matched=2.45,
+    )
+
+    cached_filled_qty = Quantity(5.0, 6)
+    cached_avg_px = 2.4
+
+    report = bet_to_order_status_report(
+        order=order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980-None.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754671"),
+        client_order_id=ClientOrderId("O-123"),
+        ts_init=0,
+        report_id=UUID4(),
+        cached_filled_qty=cached_filled_qty,
+        cached_avg_px=cached_avg_px,
+    )
+
+    assert report.filled_qty.as_double() == 10.0
+    assert float(report.avg_px) == 2.45
+
+
+def test_order_status_report_avg_px_populated_from_api():
+    """
+    Test bet_to_order_status_report populates avg_px from API when no cache.
+    """
+    order = SimpleNamespace(
+        price_size=SimpleNamespace(size=20.0, price=2.5),
+        bsp_liability=0.0,
+        size_matched=10.0,
+        size_remaining=10.0,
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=Side.BACK,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.PERSIST,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date="2021-03-24T06:48:00.000Z",
+        average_price_matched=2.45,
+    )
+
+    report = bet_to_order_status_report(
+        order=order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980-None.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754671"),
+        client_order_id=ClientOrderId("O-123"),
+        ts_init=0,
+        report_id=UUID4(),
+    )
+
+    assert report.avg_px is not None
+    assert float(report.avg_px) == 2.45
+
+
+def test_order_status_report_avg_px_none_when_no_match():
+    """
+    Test bet_to_order_status_report returns None avg_px when no matches.
+    """
+    order = SimpleNamespace(
+        price_size=SimpleNamespace(size=20.0, price=2.5),
+        bsp_liability=0.0,
+        size_matched=0.0,
+        size_remaining=20.0,
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=Side.BACK,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.PERSIST,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date=None,
+        average_price_matched=0.0,
+    )
+
+    report = bet_to_order_status_report(
+        order=order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980-None.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754671"),
+        client_order_id=ClientOrderId("O-123"),
+        ts_init=0,
+        report_id=UUID4(),
+    )
+
+    assert report.avg_px is None
+
+
 def test_hashed_trade_id_deterministic():
     """
     Test that hashed_trade_id produces consistent, deterministic output.
@@ -1089,7 +1295,7 @@ def test_hashed_trade_id_deterministic():
     )
 
     assert isinstance(result, TradeId)
-    assert result.value == "a5a0e11302313453e314aeb3eeba489333ee"
+    assert result.value == "dbbcfdd8301db15100f11a07ee2dcfcdfc0a"
 
 
 @pytest.mark.parametrize(

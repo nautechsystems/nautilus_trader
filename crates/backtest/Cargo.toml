@@ -22,6 +22,8 @@ crate-type = ["rlib", "staticlib"]
 
 [features]
 default = []
+examples = ["nautilus-trading/examples"]
+high-precision = ["nautilus-model/high-precision"]
 streaming = ["nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
   "nautilus-common/extension-module",
@@ -53,6 +55,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+nautilus-analysis = { workspace = true }
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
@@ -62,6 +65,7 @@ nautilus-persistence = { workspace = true, optional = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-system = { workspace = true }
+nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -73,8 +77,20 @@ ustr = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-indicators = { workspace = true }
+nautilus-persistence = { workspace = true }
+nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true, features = ["examples"] }
+
 rstest = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
+
+# Run with `cargo run --example ema-cross --package nautilus-backtest --features nautilus-backtest/examples`.
+[[example]]
+name = "ema-cross"
+path = "examples/ema_cross.rs"
+required-features = ["examples"]
+doc = false

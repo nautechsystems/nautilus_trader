@@ -41,14 +41,15 @@ pub struct BlockchainHttpRpcClient {
 impl BlockchainHttpRpcClient {
     /// Creates a new HTTP RPC client with the given endpoint URL and optional rate limit.
     ///
+    /// If `rpc_request_per_second` is `Some(0)` or an invalid value, rate limiting is disabled.
+    ///
     /// # Panics
     ///
-    /// Panics if `rpc_request_per_second` is `Some(0)`, since a zero rate limit is invalid.
+    /// Panics if the internal HTTP client cannot be created.
     #[must_use]
     pub fn new(http_rpc_url: String, rpc_request_per_second: Option<u32>) -> Self {
-        let default_quota = rpc_request_per_second.map(|rpc_request_per_second| {
-            Quota::per_second(NonZeroU32::new(rpc_request_per_second).unwrap())
-        });
+        let default_quota =
+            rpc_request_per_second.and_then(|rps| Quota::per_second(NonZeroU32::new(rps)?));
         let http_client = HttpClient::new(
             HashMap::new(),
             vec![],

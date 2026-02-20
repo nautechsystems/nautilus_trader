@@ -23,6 +23,8 @@ use nautilus_system::factories::ClientConfig;
 use crate::common::enums::{BinanceEnvironment, BinanceProductType};
 
 /// Configuration for Binance data client.
+///
+/// Ed25519 API keys are required for SBE WebSocket streams.
 #[derive(Clone, Debug)]
 pub struct BinanceDataClientConfig {
     /// Product types to subscribe to.
@@ -33,14 +35,10 @@ pub struct BinanceDataClientConfig {
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket.
     pub base_url_ws: Option<String>,
-    /// API key for HTTP authenticated endpoints (HMAC).
+    /// API key (Ed25519).
     pub api_key: Option<String>,
-    /// API secret for HTTP request signing (HMAC).
+    /// API secret (Ed25519 base64-encoded or PEM).
     pub api_secret: Option<String>,
-    /// Ed25519 API key for SBE WebSocket streams (required for SBE).
-    pub ed25519_api_key: Option<String>,
-    /// Ed25519 private key (base64) for SBE WebSocket streams (required for SBE).
-    pub ed25519_api_secret: Option<String>,
 }
 
 impl Default for BinanceDataClientConfig {
@@ -52,8 +50,6 @@ impl Default for BinanceDataClientConfig {
             base_url_ws: None,
             api_key: None,
             api_secret: None,
-            ed25519_api_key: None,
-            ed25519_api_secret: None,
         }
     }
 }
@@ -65,6 +61,10 @@ impl ClientConfig for BinanceDataClientConfig {
 }
 
 /// Configuration for Binance execution client.
+///
+/// Ed25519 API keys are required for execution clients. Binance deprecated
+/// listenKey-based user data streams in favor of WebSocket API authentication,
+/// which only supports Ed25519.
 #[derive(Clone, Debug)]
 pub struct BinanceExecClientConfig {
     /// Trader ID for the client.
@@ -79,9 +79,9 @@ pub struct BinanceExecClientConfig {
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket.
     pub base_url_ws: Option<String>,
-    /// API key for authenticated endpoints (optional, uses env var if not provided).
+    /// API key (Ed25519 required, uses env var if not provided).
     pub api_key: Option<String>,
-    /// API secret for request signing (optional, uses env var if not provided).
+    /// API secret (Ed25519 base64-encoded, required, uses env var if not provided).
     pub api_secret: Option<String>,
 }
 

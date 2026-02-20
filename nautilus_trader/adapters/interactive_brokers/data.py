@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from __future__ import annotations
 
 import asyncio
@@ -40,6 +41,7 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstrumentClose
 from nautilus_trader.data.messages import SubscribeInstruments
@@ -49,6 +51,7 @@ from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstrumentClose
 from nautilus_trader.data.messages import UnsubscribeInstruments
@@ -108,7 +111,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         config: InteractiveBrokersDataClientConfig,
         name: str | None = None,
         connection_timeout: int = 300,
-        request_timeout: int = 60,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -121,7 +123,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             config=config,
         )
         self._connection_timeout = connection_timeout
-        self._request_timeout = request_timeout
         self._client = client
         self._handle_revised_bars = config.handle_revised_bars
         self._use_regular_trading_hours = config.use_regular_trading_hours
@@ -167,6 +168,26 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instrument` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+        contract = self.instrument_provider.contract.get(command.instrument_id)
+        if not contract:
+            self._log.error(
+                f"Cannot subscribe to index prices for {command.instrument_id}: instrument not found",
+            )
+            return
+
+        if contract.secType != "IND":
+            self._log.warning(
+                f"Index price subscription not supported for security type {contract.secType}",
+            )
+            return
+
+        await self._client.subscribe_index_market_data(
+            instrument_id=command.instrument_id,
+            contract=contract,
+            generic_tick_list="",  # Empty for basic price updates
         )
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
@@ -285,6 +306,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             "implement the `_unsubscribe_instrument` coroutine",  # pragma: no cover
         )
 
+    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
+        await self._client.unsubscribe_index_market_data(command.instrument_id)
+
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         is_smart_depth = command.params.get("is_smart_depth", True)
         await self._client.unsubscribe_order_book(
@@ -299,7 +323,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         await self._client.unsubscribe_ticks(command.instrument_id, "AllLast")
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        if command.bar_type.spec.timedelta == 5:
+        if command.bar_type.spec.timedelta.total_seconds() == 5:
             await self._client.unsubscribe_realtime_bars(command.bar_type)
         else:
             await self._client.unsubscribe_historical_bars(command.bar_type)
@@ -397,7 +421,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        end = request.end if request.end else pd.Timestamp.utcnow()
+        end = request.end or pd.Timestamp.utcnow()
 
         ticks = await self.get_historical_ticks_paged(
             instrument_id=request.instrument_id,
@@ -407,7 +431,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end_date_time=end,
             limit=request.limit,
             use_rth=self._use_regular_trading_hours,
-            timeout=self._request_timeout,
+            timeout=self._client._request_timeout_secs,
         )
         if not ticks:
             self._log.warning(f"No quote tick data received for {request.instrument_id}")
@@ -435,7 +459,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        end = request.end if request.end else pd.Timestamp.utcnow()
+        end = request.end or pd.Timestamp.utcnow()
 
         ticks = await self.get_historical_ticks_paged(
             instrument_id=request.instrument_id,
@@ -445,7 +469,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end_date_time=end,
             limit=request.limit,
             use_rth=self._use_regular_trading_hours,
-            timeout=self._request_timeout,
+            timeout=self._client._request_timeout_secs,
         )
         if not ticks:
             self._log.warning(f"No trades received for {request.instrument_id}")
@@ -597,7 +621,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end_date_time=request.end,
             duration=duration_str,
             use_rth=self._use_regular_trading_hours,
-            timeout=self._request_timeout,
+            timeout=self._client._request_timeout_secs,
         )
 
         if bars:

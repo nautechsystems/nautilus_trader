@@ -46,7 +46,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    matching_core::{OrderMatchInfo, OrderMatchingCore},
+    matching_core::{MatchAction, OrderMatchInfo, OrderMatchingCore},
     order_manager::{
         handlers::{CancelOrderHandlerAny, ModifyOrderHandlerAny, SubmitOrderHandlerAny},
         manager::OrderManager,
@@ -227,9 +227,6 @@ impl OrderEmulator {
     ///
     /// Returns an error if no emulated orders are found or processing fails.
     ///
-    /// # Panics
-    ///
-    /// Panics if a cached client ID cannot be unwrapped.
     pub fn on_start(&mut self) -> anyhow::Result<()> {
         let emulated_orders: Vec<OrderAny> = self
             .cache
@@ -307,9 +304,6 @@ impl OrderEmulator {
         Ok(())
     }
 
-    /// # Panics
-    ///
-    /// Panics if the order cannot be converted to a passive order.
     pub fn on_event(&mut self, event: OrderEventAny) {
         log::info!("{RECV}{EVT} {event}");
 
@@ -352,8 +346,7 @@ impl OrderEmulator {
         instrument_id: InstrumentId,
         price_increment: Price,
     ) -> OrderMatchingCore {
-        let matching_core =
-            OrderMatchingCore::new(instrument_id, price_increment, None, None, None);
+        let matching_core = OrderMatchingCore::new(instrument_id, price_increment);
         self.matching_cores
             .insert(instrument_id, matching_core.clone());
         log::info!("Creating matching core for {instrument_id:?}");
@@ -546,7 +539,12 @@ impl OrderEmulator {
     fn handle_submit_order_list(&mut self, command: SubmitOrderList) {
         self.check_monitoring(command.strategy_id, command.position_id);
 
-        for order in &command.order_list.orders {
+        let orders: Vec<OrderAny> = self
+            .cache
+            .borrow()
+            .orders_for_ids(&command.order_list.client_order_ids, &command);
+
+        for order in &orders {
             if let Some(parent_order_id) = order.parent_order_id() {
                 let cache = self.cache.borrow();
                 let parent_order = if let Some(parent_order) = cache.order(&parent_order_id) {
@@ -795,12 +793,37 @@ impl OrderEmulator {
     }
 
     fn iterate_orders(&mut self, instrument_id: &InstrumentId) {
-        let orders = if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
-            matching_core.iterate();
-
-            matching_core.get_orders()
+        // Process bid actions before ask actions so cross-side
+        // contingencies (OCO/OUO) mutate state between sides
+        let bid_actions = if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
+            matching_core.iterate_bids()
         } else {
             log::error!("Cannot iterate orders: no matching core for instrument {instrument_id}");
+            return;
+        };
+        for action in bid_actions {
+            match action {
+                MatchAction::FillLimit(id) => self.fill_limit_order(id),
+                MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
+            }
+        }
+
+        let ask_actions = if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
+            matching_core.iterate_asks()
+        } else {
+            return;
+        };
+        for action in ask_actions {
+            match action {
+                MatchAction::FillLimit(id) => self.fill_limit_order(id),
+                MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
+            }
+        }
+
+        // Re-snapshot orders after actions to avoid stale trailing stop updates
+        let orders = if let Some(matching_core) = self.matching_cores.get(instrument_id) {
+            matching_core.get_orders()
+        } else {
             return;
         };
 
@@ -830,9 +853,6 @@ impl OrderEmulator {
         }
     }
 
-    /// # Panics
-    ///
-    /// Panics if the order cannot be converted to a passive order.
     pub fn cancel_order(&mut self, order: &OrderAny) {
         log::info!("Canceling order {}", order.client_order_id());
 
@@ -1410,7 +1430,7 @@ mod tests {
     fn add_instrument_to_cache(cache: &Rc<RefCell<Cache>>, instrument: &CryptoPerpetual) {
         cache
             .borrow_mut()
-            .add_instrument(InstrumentAny::CryptoPerpetual(*instrument))
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument.clone()))
             .unwrap();
     }
 

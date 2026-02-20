@@ -21,6 +21,8 @@ pub mod config;
 pub mod factories;
 
 #[cfg(feature = "hypersync")]
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+#[cfg(feature = "hypersync")]
 use nautilus_system::{
     factories::{ClientConfig, DataClientFactory},
     get_global_pyo3_registry,
@@ -35,7 +37,7 @@ fn extract_blockchain_factory(
 ) -> PyResult<Box<dyn DataClientFactory>> {
     match factory.extract::<crate::factories::BlockchainDataClientFactory>(py) {
         Ok(concrete_factory) => Ok(Box::new(concrete_factory)),
-        Err(e) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+        Err(e) => Err(to_pyvalue_err(format!(
             "Failed to extract BlockchainDataClientFactory: {e}"
         ))),
     }
@@ -46,7 +48,7 @@ fn extract_blockchain_factory(
 fn extract_blockchain_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
     match config.extract::<crate::config::BlockchainDataClientConfig>(py) {
         Ok(concrete_config) => Ok(Box::new(concrete_config)),
-        Err(e) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+        Err(e) => Err(to_pyvalue_err(format!(
             "Failed to extract BlockchainDataClientConfig: {e}"
         ))),
     }
@@ -72,7 +74,7 @@ pub fn blockchain(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         if let Err(e) = registry
             .register_factory_extractor("BLOCKCHAIN".to_string(), extract_blockchain_factory)
         {
-            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+            return Err(to_pyruntime_err(format!(
                 "Failed to register blockchain factory extractor: {e}"
             )));
         }
@@ -81,7 +83,7 @@ pub fn blockchain(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             "BlockchainDataClientConfig".to_string(),
             extract_blockchain_config,
         ) {
-            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+            return Err(to_pyruntime_err(format!(
                 "Failed to register blockchain config extractor: {e}"
             )));
         }

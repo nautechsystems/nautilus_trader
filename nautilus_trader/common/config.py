@@ -36,6 +36,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OtoTriggerMode
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import Identifier
@@ -99,7 +100,7 @@ def nautilus_schema_hook(type_: type[Any]) -> dict[str, Any]:
         return {"type": "string", "format": "date-time"}
     if type_ == pd.Timedelta:
         return {"type": "string"}
-    if type_ == Environment:
+    if type_ in (Environment, TimeInForce):
         return {"type": "string"}
     if type_ is type:  # Handle <class 'type'>
         return {"type": "string"}  # Represent type objects as strings
@@ -122,7 +123,7 @@ def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
         return str(obj)
     if isinstance(obj, (Price | Quantity | Money | Currency)):
         return str(obj)
-    if isinstance(obj, (OmsType | AccountType | BookType | OtoTriggerMode)):
+    if isinstance(obj, (OmsType | AccountType | BookType | OtoTriggerMode | TimeInForce)):
         return obj.name
     if isinstance(obj, (pd.Timestamp | pd.Timedelta)):
         return obj.isoformat()
@@ -164,6 +165,8 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too c
         return BookType[obj]
     if obj_type == OtoTriggerMode:
         return OtoTriggerMode[obj]
+    if obj_type == TimeInForce:
+        return TimeInForce[obj]
     if obj_type == TriggerType:
         return TriggerType[obj]
     if obj_type == Environment:

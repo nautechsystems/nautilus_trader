@@ -32,7 +32,11 @@
 use std::fmt::Debug;
 
 use anyhow::Context;
-use cosmrs::{AccountId, crypto::secp256k1::SigningKey, tx::SignDoc};
+use cosmrs::{
+    AccountId,
+    crypto::{PublicKey, secp256k1::SigningKey},
+    tx::SignDoc,
+};
 use nautilus_core::env::get_or_env_var_opt;
 
 use crate::common::consts::DYDX_BECH32_PREFIX;
@@ -210,7 +214,7 @@ impl DydxCredential {
     }
 
     /// Returns the public key for this credential.
-    pub fn public_key(&self) -> cosmrs::crypto::PublicKey {
+    pub fn public_key(&self) -> PublicKey {
         self.signing_key.public_key()
     }
 }

@@ -220,7 +220,8 @@ pub fn py_init_tracing() -> PyResult<()> {
 #[pyclass(
     module = "nautilus_trader.core.nautilus_pyo3.common",
     name = "Logger",
-    unsendable
+    unsendable,
+    from_py_object
 )]
 #[derive(Debug, Clone)]
 pub struct PyLogger {

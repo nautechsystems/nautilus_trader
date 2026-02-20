@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -22,6 +21,7 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashMap;
 use derive_builder::Builder;
 use futures_util::future::BoxFuture;
 use nautilus_common::live::get_runtime;
@@ -31,7 +31,7 @@ use tokio::{
 };
 
 use crate::{
-    common::consts::INFLIGHT_MAX,
+    common::{consts::INFLIGHT_MAX, enums::HyperliquidInfoRequestType},
     http::{
         error::{Error, Result},
         models::{HyperliquidFills, HyperliquidL2Book, HyperliquidOrderStatus},
@@ -42,11 +42,6 @@ use crate::{
     },
 };
 
-// -------------------------------------------------------------------------------------------------
-// Correlation router for "channel":"post" → correlate by id
-//  - Enforces inflight cap using OwnedSemaphorePermit stored per waiter
-// -------------------------------------------------------------------------------------------------
-
 #[derive(Debug)]
 struct Waiter {
     tx: oneshot::Sender<PostResponse>,
@@ -56,14 +51,14 @@ struct Waiter {
 
 #[derive(Debug)]
 pub struct PostRouter {
-    inner: Mutex<HashMap<u64, Waiter>>,
+    inner: Mutex<AHashMap<u64, Waiter>>,
     inflight: Arc<Semaphore>, // hard cap per HL docs (e.g., 100)
 }
 
 impl Default for PostRouter {
     fn default() -> Self {
         Self {
-            inner: Mutex::new(HashMap::new()),
+            inner: Mutex::new(AHashMap::new()),
             inflight: Arc::new(Semaphore::new(INFLIGHT_MAX)),
         }
     }
@@ -146,10 +141,6 @@ impl PostRouter {
     }
 }
 
-// -------------------------------------------------------------------------------------------------
-// ID generation
-// -------------------------------------------------------------------------------------------------
-
 #[derive(Debug)]
 pub struct PostIds(AtomicU64);
 
@@ -161,10 +152,6 @@ impl PostIds {
         self.0.fetch_add(1, Ordering::Relaxed)
     }
 }
-
-// -------------------------------------------------------------------------------------------------
-// Lanes & batcher (scaffold). You can expand policy later.
-// -------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PostLane {
@@ -288,10 +275,6 @@ pub fn lane_for_action(action: &ActionRequest) -> PostLane {
         _ => PostLane::Normal,
     }
 }
-
-// -------------------------------------------------------------------------------------------------
-// Typed builders (produce ActionRequest), plus Info request helpers.
-// -------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Grouping {
@@ -516,50 +499,53 @@ pub fn modify(oid: u64, new_order: OrderRequest) -> ActionRequest {
     }
 }
 
-// Info wrappers (bodies go under PostRequest::Info{ payload })
 pub fn info_l2_book(coin: &str) -> PostRequest {
     PostRequest::Info {
-        payload: serde_json::json!({"type":"l2Book","coin":coin}),
+        payload: serde_json::json!({"type": HyperliquidInfoRequestType::L2Book.as_str(), "coin": coin}),
     }
 }
+
 pub fn info_all_mids() -> PostRequest {
     PostRequest::Info {
-        payload: serde_json::json!({"type":"allMids"}),
+        payload: serde_json::json!({"type": HyperliquidInfoRequestType::AllMids.as_str()}),
     }
 }
+
 pub fn info_order_status(user: &str, oid: u64) -> PostRequest {
     PostRequest::Info {
-        payload: serde_json::json!({"type":"orderStatus","user":user,"oid":oid}),
+        payload: serde_json::json!({"type": HyperliquidInfoRequestType::OrderStatus.as_str(), "user": user, "oid": oid}),
     }
 }
+
 pub fn info_open_orders(user: &str, frontend: Option<bool>) -> PostRequest {
-    let mut body = serde_json::json!({"type":"openOrders","user":user});
+    let mut body =
+        serde_json::json!({"type": HyperliquidInfoRequestType::OpenOrders.as_str(), "user": user});
     if let Some(fe) = frontend {
         body["frontend"] = serde_json::json!(fe);
     }
     PostRequest::Info { payload: body }
 }
+
 pub fn info_user_fills(user: &str, aggregate_by_time: Option<bool>) -> PostRequest {
-    let mut body = serde_json::json!({"type":"userFills","user":user});
+    let mut body =
+        serde_json::json!({"type": HyperliquidInfoRequestType::UserFills.as_str(), "user": user});
     if let Some(agg) = aggregate_by_time {
         body["aggregateByTime"] = serde_json::json!(agg);
     }
     PostRequest::Info { payload: body }
 }
+
 pub fn info_user_rate_limit(user: &str) -> PostRequest {
     PostRequest::Info {
-        payload: serde_json::json!({"type":"userRateLimit","user":user}),
-    }
-}
-pub fn info_candle(coin: &str, interval: &str) -> PostRequest {
-    PostRequest::Info {
-        payload: serde_json::json!({"type":"candle","coin":coin,"interval":interval}),
+        payload: serde_json::json!({"type": HyperliquidInfoRequestType::UserRateLimit.as_str(), "user": user}),
     }
 }
 
-// -------------------------------------------------------------------------------------------------
-// Minimal response helpers
-// -------------------------------------------------------------------------------------------------
+pub fn info_candle(coin: &str, interval: &str) -> PostRequest {
+    PostRequest::Info {
+        payload: serde_json::json!({"type": HyperliquidInfoRequestType::Candle.as_str(), "coin": coin, "interval": interval}),
+    }
+}
 
 pub fn parse_l2_book(payload: &serde_json::Value) -> Result<HyperliquidL2Book> {
     serde_json::from_value(payload.clone()).map_err(Error::Serde)
@@ -621,10 +607,6 @@ pub fn classify_action_payload(payload: &serde_json::Value) -> ActionOutcome<'_>
     ActionOutcome::Unknown(payload)
 }
 
-// -------------------------------------------------------------------------------------------------
-// Glue helpers used by the client (wired in client.rs)
-// -------------------------------------------------------------------------------------------------
-
 #[derive(Clone, Debug)]
 pub struct WsSender {
     inner: Arc<tokio::sync::Mutex<mpsc::Sender<HyperliquidWsRequest>>>,
@@ -648,10 +630,11 @@ impl WsSender {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::testing::wait_until_async;
     use rstest::rstest;
     use tokio::{
         sync::oneshot,
-        time::{Duration, sleep, timeout},
+        time::{Duration, timeout},
     };
 
     use super::*;
@@ -662,8 +645,6 @@ mod tests {
             OrderRequestBuilder, OrderTypeRequest, TimeInForceRequest,
         },
     };
-
-    // --- helpers -------------------------------------------------------------------------------
 
     fn mk_limit_alo(asset: u32) -> OrderRequest {
         OrderRequest {
@@ -693,8 +674,6 @@ mod tests {
             c: None,
         }
     }
-
-    // --- PostRouter ---------------------------------------------------------------------------
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
@@ -781,8 +760,6 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
-    // --- Lane classifier -----------------------------------------------------------------------
-
     #[rstest(
         orders, expected,
         case::all_alo(vec![mk_limit_alo(0), mk_limit_alo(1)], PostLane::Alo),
@@ -797,8 +774,6 @@ mod tests {
         };
         assert_eq!(lane_for_action(&action), expected);
     }
-
-    // --- Builder Pattern Tests -----------------------------------------------------------------
 
     #[rstest]
     fn test_order_request_builder() {
@@ -994,8 +969,6 @@ mod tests {
         assert!(matches!(action, ActionRequest::CancelByCloid { .. }));
     }
 
-    // --- Batcher (tick flush path) --------------------------------------------------------------
-
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn batcher_sends_on_tick() {
@@ -1020,20 +993,25 @@ mod tests {
             batcher
                 .enqueue(ScheduledPost {
                     id,
-                    request: PostRequest::Info {
-                        payload: serde_json::json!({"type":"allMids"}),
-                    },
+                    request: info_all_mids(),
                     lane: PostLane::Normal,
                 })
                 .await
                 .unwrap();
         }
 
-        // Wait slightly past one tick to allow the lane to flush.
-        sleep(Duration::from_millis(80)).await;
+        // Wait for all 5 posts to be sent
+        let sent_check = sent.clone();
+        wait_until_async(
+            || {
+                let sent_inner = sent_check.clone();
+                async move { sent_inner.lock().await.len() == 5 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
 
         let got = sent.lock().await.clone();
-        assert_eq!(got.len(), 5, "expected 5 sends on first tick");
         assert_eq!(got, vec![1, 2, 3, 4, 5]);
     }
 }

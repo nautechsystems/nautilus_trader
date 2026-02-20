@@ -315,10 +315,8 @@ pub fn calculate_reconciliation_price(
 ///
 /// Returns `FillAdjustmentResult` indicating what adjustments (if any) are needed.
 ///
-/// # Panics
-///
-/// This function does not panic under normal circumstances as all unwrap calls are guarded by prior checks.
 #[must_use]
+#[allow(clippy::missing_panics_doc)] // All unwraps guarded by prior checks
 pub fn adjust_fills_for_partial_window(
     fills: &[FillSnapshot],
     venue_position: &VenuePositionSnapshot,

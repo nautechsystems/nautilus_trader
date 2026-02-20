@@ -21,14 +21,19 @@
 //!
 //! # Arithmetic behavior
 //!
-//! `Quantity` implements `Add` and `Sub` for same-type operations:
-//!
-//! | Operation             | Result     | Notes                                     |
-//! |-----------------------|------------|-------------------------------------------|
-//! | `Quantity + Quantity` | `Quantity` | Precision is max of both operands.        |
-//! | `Quantity - Quantity` | `Quantity` | Panics if result would be negative.       |
-//!
-//! For Python bindings with mixed-type operations, see the Python API documentation.
+//! | Operation               | Result     | Notes                               |
+//! |-------------------------|------------|-------------------------------------|
+//! | `Quantity + Quantity`   | `Quantity` | Precision is max of both operands.  |
+//! | `Quantity - Quantity`   | `Quantity` | Panics if result would be negative. |
+//! | `Quantity * Quantity`   | `Quantity` | Scales back by `FIXED_SCALAR`.      |
+//! | `Quantity + Decimal`    | `Decimal`  |                                     |
+//! | `Quantity - Decimal`    | `Decimal`  |                                     |
+//! | `Quantity * Decimal`    | `Decimal`  |                                     |
+//! | `Quantity / Decimal`    | `Decimal`  |                                     |
+//! | `Quantity + f64`        | `f64`      |                                     |
+//! | `Quantity - f64`        | `f64`      |                                     |
+//! | `Quantity * f64`        | `f64`      |                                     |
+//! | `Quantity / f64`        | `f64`      |                                     |
 //!
 //! # Immutability
 //!
@@ -38,7 +43,7 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
-    ops::{Add, Deref, Mul, Sub},
+    ops::{Add, Deref, Div, Mul, Sub},
     str::FromStr,
 };
 
@@ -48,10 +53,13 @@ use nautilus_core::{
     correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true},
     formatting::Separable,
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, MAX_FLOAT_PRECISION, check_fixed_precision};
+use super::fixed::{
+    FIXED_PRECISION, FIXED_SCALAR, MAX_FLOAT_PRECISION, check_fixed_precision,
+    mantissa_exponent_to_fixed_i128,
+};
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 #[cfg(feature = "high-precision")]
@@ -108,7 +116,11 @@ pub const QUANTITY_MIN: f64 = 0.0;
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", frozen)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.model",
+        frozen,
+        from_py_object
+    )
 )]
 pub struct Quantity {
     /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
@@ -198,10 +210,22 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// Panics if a correctness check fails. See [`Quantity::from_raw_checked`] for more details.
+    /// Panics if `raw` exceeds [`QUANTITY_RAW_MAX`] and is not a sentinel value.
+    /// Panics if `precision` exceeds [`FIXED_PRECISION`].
     pub fn from_raw(raw: QuantityRaw, precision: u8) -> Self {
+        assert!(
+            raw == QUANTITY_UNDEF || raw <= QUANTITY_RAW_MAX,
+            "`raw` value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX} for Quantity"
+        );
+        if raw == QUANTITY_UNDEF {
+            assert!(
+                precision == 0,
+                "`precision` must be 0 when `raw` is QUANTITY_UNDEF"
+            );
+        }
+        check_fixed_precision(precision).expect(FAILED);
+
         // TODO: Enforce spurious bits validation in v2
-        // Validate raw value has no spurious bits beyond the precision scale
         // if raw != QUANTITY_UNDEF && raw > 0 {
         //     #[cfg(feature = "high-precision")]
         //     super::fixed::check_fixed_raw_u128(raw, precision).expect(FAILED);
@@ -209,7 +233,7 @@ impl Quantity {
         //     super::fixed::check_fixed_raw_u64(raw, precision).expect(FAILED);
         // }
 
-        Self::from_raw_checked(raw, precision).expect(FAILED)
+        Self { raw, precision }
     }
 
     /// Creates a new [`Quantity`] instance from the given `raw` fixed-point value and `precision`
@@ -338,42 +362,32 @@ impl Quantity {
 
     /// Creates a new [`Quantity`] from a `Decimal` value with specified precision.
     ///
-    /// This method provides more reliable parsing by using Decimal arithmetic
-    /// to avoid floating-point precision issues during conversion.
+    /// Uses pure integer arithmetic on the Decimal's mantissa and scale for fast conversion.
     /// The value is rounded to the specified precision using banker's rounding (round half to even).
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - `precision` exceeds [`FIXED_PRECISION`].
+    /// - The decimal value is negative.
     /// - The decimal value cannot be converted to the raw representation.
     /// - Overflow occurs during scaling.
     pub fn from_decimal_dp(decimal: Decimal, precision: u8) -> anyhow::Result<Self> {
-        check_fixed_precision(precision)?;
+        anyhow::ensure!(
+            decimal.mantissa() >= 0,
+            "Decimal value '{decimal}' is negative, Quantity must be non-negative"
+        );
 
-        // Scale the decimal to the target precision
-        let scale_factor = Decimal::from(10_i64.pow(precision as u32));
-        let scaled = decimal * scale_factor;
-        let rounded = scaled.round();
+        let exponent = -(decimal.scale() as i8);
+        let raw_i128 = mantissa_exponent_to_fixed_i128(decimal.mantissa(), exponent, precision)?;
 
-        #[cfg(feature = "high-precision")]
-        let raw_at_precision: QuantityRaw = rounded.to_u128().ok_or_else(|| {
-            anyhow::anyhow!("Decimal value '{decimal}' cannot be converted to u128")
+        let raw: QuantityRaw = raw_i128.try_into().map_err(|_| {
+            anyhow::anyhow!("Decimal value exceeds QuantityRaw range [0, {QUANTITY_RAW_MAX}]")
         })?;
-        #[cfg(not(feature = "high-precision"))]
-        let raw_at_precision: QuantityRaw = rounded.to_u64().ok_or_else(|| {
-            anyhow::anyhow!("Decimal value '{decimal}' cannot be converted to u64")
-        })?;
-
-        let scale_up = 10_u64.pow((FIXED_PRECISION - precision) as u32) as QuantityRaw;
-        let raw = raw_at_precision
-            .checked_mul(scale_up)
-            .ok_or_else(|| anyhow::anyhow!("Overflow when scaling to fixed precision"))?;
-
-        check_predicate_true(
+        anyhow::ensure!(
             raw <= QUANTITY_RAW_MAX,
-            &format!("raw value outside valid range, was {raw}"),
-        )?;
+            "Raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX} for Quantity"
+        );
 
         Ok(Self { raw, precision })
     }
@@ -392,6 +406,36 @@ impl Quantity {
     pub fn from_decimal(decimal: Decimal) -> anyhow::Result<Self> {
         let precision = decimal.scale() as u8;
         Self::from_decimal_dp(decimal, precision)
+    }
+
+    /// Creates a new [`Quantity`] from a mantissa/exponent pair using pure integer arithmetic.
+    ///
+    /// The value is `mantissa * 10^exponent`. This avoids all floating-point and Decimal
+    /// operations, making it ideal for exchange data that arrives as mantissa/exponent pairs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the resulting raw value exceeds [`QUANTITY_RAW_MAX`].
+    #[must_use]
+    pub fn from_mantissa_exponent(mantissa: u64, exponent: i8, precision: u8) -> Self {
+        check_fixed_precision(precision).expect(FAILED);
+
+        if mantissa == 0 {
+            return Self { raw: 0, precision };
+        }
+
+        let raw_i128 = mantissa_exponent_to_fixed_i128(mantissa as i128, exponent, precision)
+            .expect("Overflow in Quantity::from_mantissa_exponent");
+
+        let raw: QuantityRaw = raw_i128
+            .try_into()
+            .expect("Raw value exceeds QuantityRaw range in Quantity::from_mantissa_exponent");
+        assert!(
+            raw <= QUANTITY_RAW_MAX,
+            "`raw` value {raw} exceeded QUANTITY_RAW_MAX={QUANTITY_RAW_MAX} for Quantity"
+        );
+
+        Self { raw, precision }
     }
 
     /// Creates a new [`Quantity`] from a U256 amount with specified precision.
@@ -573,10 +617,59 @@ impl Mul for Quantity {
     }
 }
 
+impl Add<Decimal> for Quantity {
+    type Output = Decimal;
+    fn add(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() + rhs
+    }
+}
+
+impl Sub<Decimal> for Quantity {
+    type Output = Decimal;
+    fn sub(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() - rhs
+    }
+}
+
+impl Mul<Decimal> for Quantity {
+    type Output = Decimal;
+    fn mul(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() * rhs
+    }
+}
+
+impl Div<Decimal> for Quantity {
+    type Output = Decimal;
+    fn div(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() / rhs
+    }
+}
+
+impl Add<f64> for Quantity {
+    type Output = f64;
+    fn add(self, rhs: f64) -> Self::Output {
+        self.as_f64() + rhs
+    }
+}
+
+impl Sub<f64> for Quantity {
+    type Output = f64;
+    fn sub(self, rhs: f64) -> Self::Output {
+        self.as_f64() - rhs
+    }
+}
+
 impl Mul<f64> for Quantity {
     type Output = f64;
     fn mul(self, rhs: f64) -> Self::Output {
         self.as_f64() * rhs
+    }
+}
+
+impl Div<f64> for Quantity {
+    type Output = f64;
+    fn div(self, rhs: f64) -> Self::Output {
+        self.as_f64() / rhs
     }
 }
 
@@ -1267,6 +1360,81 @@ mod tests {
         assert_eq!(deserialized.precision, 3);
     }
 
+    #[rstest]
+    fn test_from_mantissa_exponent_exact_precision() {
+        let qty = Quantity::from_mantissa_exponent(12345, -2, 2);
+        assert_eq!(qty.as_f64(), 123.45);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_excess_rounds_down() {
+        // 12.344 -> 12.34 (no rounding needed, truncation)
+        // 12.345 rounds to 12.34 (4 is even, banker's rounding)
+        let qty = Quantity::from_mantissa_exponent(12345, -3, 2);
+        assert_eq!(qty.as_f64(), 12.34);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_excess_rounds_up() {
+        // 12.355 rounds to 12.36 (5 is odd, banker's rounding)
+        let qty = Quantity::from_mantissa_exponent(12355, -3, 2);
+        assert_eq!(qty.as_f64(), 12.36);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_positive_exponent() {
+        let qty = Quantity::from_mantissa_exponent(5, 2, 0);
+        assert_eq!(qty.as_f64(), 500.0);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_zero() {
+        let qty = Quantity::from_mantissa_exponent(0, 2, 2);
+        assert_eq!(qty.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn test_from_mantissa_exponent_overflow_panics() {
+        let _ = Quantity::from_mantissa_exponent(u64::MAX, 9, 0);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "exceeds i128 range")]
+    fn test_from_mantissa_exponent_large_exponent_panics() {
+        let _ = Quantity::from_mantissa_exponent(1, 119, 0);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_zero_with_large_exponent() {
+        let qty = Quantity::from_mantissa_exponent(0, 119, 0);
+        assert_eq!(qty.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_very_negative_exponent_rounds_to_zero() {
+        let qty = Quantity::from_mantissa_exponent(12345, -120, 2);
+        assert_eq!(qty.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_f64_operations() {
+        let q = Quantity::new(10.5, 2);
+        assert_eq!(q + 1.0, 11.5);
+        assert_eq!(q - 1.0, 9.5);
+        assert_eq!(q * 2.0, 21.0);
+        assert_eq!(q / 2.0, 5.25);
+    }
+
+    #[rstest]
+    fn test_decimal_arithmetic_operations() {
+        let qty = Quantity::new(100.0, 2);
+        assert_eq!(qty + dec!(50.25), dec!(150.25));
+        assert_eq!(qty - dec!(30.50), dec!(69.50));
+        assert_eq!(qty * dec!(1.5), dec!(150.00));
+        assert_eq!(qty / dec!(4), dec!(25.00));
+    }
+
     /// Tests `Quantity::from_u256` using real swap event data from Arbitrum transactions, result values sourced from DexScreener.
     /// Data sourced from:
     /// - Sell tx: https://arbiscan.io/tx/0xb417009ce3bd9b9f2dde7d52277ffc9f1b1733ecedfcc7f8e3dedd5d87160325
@@ -1293,9 +1461,6 @@ mod tests {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Property-based tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod property_tests {
     use proptest::prelude::*;

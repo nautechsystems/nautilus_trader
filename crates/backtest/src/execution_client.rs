@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 //! Provides a `BacktestExecutionClient` implementation for backtesting.
 
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
@@ -38,6 +34,7 @@ use nautilus_execution::client::core::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
+    events::OrderEventAny,
     identifiers::{AccountId, ClientId, ClientOrderId, TraderId, Venue},
     orders::OrderAny,
     types::{AccountBalance, MarginBalance},
@@ -58,8 +55,15 @@ pub struct BacktestExecutionClient {
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
     exchange: WeakCell<SimulatedExchange>,
+    /// Buffered order events for deferred processing.
+    ///
+    /// Events like `OrderSubmitted` cannot be sent synchronously through
+    /// the msgbus during `submit_order` because the exec engine holds a
+    /// borrow via its `execute` handler. Instead, events are buffered here
+    /// and drained by the engine after the execute borrow is released.
+    queued_events: Rc<RefCell<Vec<OrderEventAny>>>,
     routing: bool,
-    frozen_account: bool,
+    _frozen_account: bool,
 }
 
 impl Debug for BacktestExecutionClient {
@@ -72,6 +76,8 @@ impl Debug for BacktestExecutionClient {
 }
 
 impl BacktestExecutionClient {
+    /// Creates a new [`BacktestExecutionClient`] instance.
+    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -112,8 +118,9 @@ impl BacktestExecutionClient {
             exchange: exchange_shared.downgrade(),
             cache,
             clock,
+            queued_events: Rc::new(RefCell::new(Vec::new())),
             routing,
-            frozen_account,
+            _frozen_account: frozen_account,
         }
     }
 
@@ -123,6 +130,15 @@ impl BacktestExecutionClient {
             .order(client_order_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Order not found in cache for {client_order_id}"))
+    }
+
+    /// Drain buffered order events, sending each to the exec engine.
+    pub fn drain_queued_events(&self) {
+        let events: Vec<OrderEventAny> = self.queued_events.borrow_mut().drain(..).collect();
+        let endpoint = MessagingSwitchboard::exec_engine_process();
+        for event in events {
+            msgbus::send_order_event(endpoint, event);
+        }
     }
 }
 
@@ -181,11 +197,12 @@ impl ExecutionClient for BacktestExecutionClient {
     }
 
     fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+        // Buffer the OrderSubmitted event for deferred processing to avoid
+        // RefCell re-entrancy (exec_engine holds a borrow during execute)
         let order = self.get_order(&cmd.client_order_id)?;
         let ts_init = self.clock.borrow().timestamp_ns();
         let event = self.factory.generate_order_submitted(&order, ts_init);
-        let endpoint = MessagingSwitchboard::exec_engine_process();
-        msgbus::send_order_event(endpoint, event);
+        self.queued_events.borrow_mut().push(event);
 
         if let Some(exchange) = self.exchange.upgrade() {
             exchange
@@ -199,11 +216,19 @@ impl ExecutionClient for BacktestExecutionClient {
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
         let ts_init = self.clock.borrow().timestamp_ns();
-        let endpoint = MessagingSwitchboard::exec_engine_process();
-        for order in &cmd.order_list.orders {
+
+        let orders: Vec<OrderAny> = self
+            .cache
+            .borrow()
+            .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
+
+        // Buffer events for deferred processing
+        let mut queued = self.queued_events.borrow_mut();
+        for order in &orders {
             let event = self.factory.generate_order_submitted(order, ts_init);
-            msgbus::send_order_event(endpoint, event);
+            queued.push(event);
         }
+        drop(queued);
 
         if let Some(exchange) = self.exchange.upgrade() {
             exchange

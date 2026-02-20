@@ -127,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sigint = signal::ctrl_c();
     pin!(sigint);
 
-    let stream = ws_client.stream();
+    let stream = ws_client.stream()?;
     tokio::pin!(stream);
 
     log::info!("Listening for market data... Press Ctrl+C to exit");

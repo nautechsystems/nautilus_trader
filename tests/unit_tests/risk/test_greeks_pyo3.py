@@ -30,7 +30,6 @@ class TestBlackScholesGreeksPyO3:
             is_call=True,
             k=100.0,
             t=1.0,
-            multiplier=1.0,
         )
 
         # Test that vol field is accessible (new field added in previous commit)
@@ -63,7 +62,6 @@ class TestBlackScholesGreeksPyO3:
         is_call = True
         k = 100.0
         t = 1.0
-        multiplier = 1.0
 
         # Calculate the price with the initial vol
         initial_result = black_scholes_greeks(
@@ -74,7 +72,6 @@ class TestBlackScholesGreeksPyO3:
             is_call,
             k,
             t,
-            multiplier,
         )
         target_price = initial_result.price
 
@@ -89,7 +86,6 @@ class TestBlackScholesGreeksPyO3:
             t,
             target_price,
             refined_vol,
-            multiplier,
         )
 
         # Exact expected values (tolerance 1e-3 for refinement precision)
@@ -111,7 +107,6 @@ class TestBlackScholesGreeksPyO3:
         is_call = False
         k = 105.0
         t = 0.5
-        multiplier = 1.0
 
         # Calculate the price with the initial vol
         initial_result = black_scholes_greeks(
@@ -122,7 +117,6 @@ class TestBlackScholesGreeksPyO3:
             is_call,
             k,
             t,
-            multiplier,
         )
         target_price = initial_result.price
 
@@ -137,7 +131,6 @@ class TestBlackScholesGreeksPyO3:
             t,
             target_price,
             refined_vol,
-            multiplier,
         )
 
         # Exact expected values (tolerance 1.5e-3 for refinement precision, slightly relaxed for put)
@@ -159,7 +152,6 @@ class TestBlackScholesGreeksPyO3:
         is_call = True
         k = 100.0
         t = 1.0
-        multiplier = 1.0
 
         # Calculate the price with the initial vol
         initial_result = black_scholes_greeks(
@@ -170,7 +162,6 @@ class TestBlackScholesGreeksPyO3:
             is_call,
             k,
             t,
-            multiplier,
         )
         target_price = initial_result.price
 
@@ -185,7 +176,6 @@ class TestBlackScholesGreeksPyO3:
             t,
             target_price,
             refined_vol,
-            multiplier,
         )
 
         # Exact expected values (tolerance 2e-2 for convergence with larger initial error)
@@ -208,7 +198,6 @@ class TestBlackScholesGreeksPyO3:
             is_call=True,
             k=100.0,
             t=1.0,
-            multiplier=1.0,
         )
 
         # Test all properties are accessible
@@ -218,6 +207,7 @@ class TestBlackScholesGreeksPyO3:
         assert hasattr(result, "gamma")
         assert hasattr(result, "vega")
         assert hasattr(result, "theta")
+        assert hasattr(result, "itm_prob")
 
         # Test all values match expected values exactly
         tol = 1e-5
@@ -238,7 +228,6 @@ class TestBlackScholesGreeksPyO3:
             is_call=False,
             k=100.0,
             t=1.0,
-            multiplier=1.0,
         )
 
         # Exact expected values (tolerance 1e-5 for f64 precision)
@@ -269,7 +258,6 @@ class TestBlackScholesGreeksPyO3:
             is_call=True,
             k=100.0,
             t=1.0,
-            multiplier=1.0,
         )
 
         assert result.vol == 0.2
@@ -292,7 +280,6 @@ class TestBlackScholesGreeksPyO3:
             is_call=True,
             k=100.0,
             t=1.0,
-            multiplier=1.0,
         )
 
         assert result.vol == 0.2
@@ -305,9 +292,9 @@ class TestBlackScholesGreeksPyO3:
             f"Delta mismatch: {result.delta} vs 0.4298316240"
         )
 
-    def test_black_scholes_greeks_multiplier(self):
-        # Test multiplier affects all greeks appropriately
-        multiplier = 100.0
+    def test_black_scholes_greeks_itm_prob(self):
+        # Test that itm_prob is N(d2), not delta N(d1)
+        # For ATM options, itm_prob < delta for calls (since d2 < d1)
         result = black_scholes_greeks(
             s=100.0,
             r=0.05,
@@ -316,27 +303,28 @@ class TestBlackScholesGreeksPyO3:
             is_call=True,
             k=100.0,
             t=1.0,
-            multiplier=multiplier,
         )
 
-        # Compare with unit multiplier
-        result_unit = black_scholes_greeks(
+        # itm_prob should be between 0 and 1
+        assert 0.0 <= result.itm_prob <= 1.0
+
+        # itm_prob (N(d2)) should be less than delta (N(d1)) for calls
+        # because d2 = d1 - vol*sqrt(t) < d1
+        assert result.itm_prob < result.delta
+
+        # Test put option - itm_prob should be 1 - call_itm_prob
+        result_put = black_scholes_greeks(
             s=100.0,
             r=0.05,
             b=0.05,
             vol=0.2,
-            is_call=True,
+            is_call=False,
             k=100.0,
             t=1.0,
-            multiplier=1.0,
         )
 
-        assert abs(result.price - result_unit.price * multiplier) < 1e-6
-        assert abs(result.delta - result_unit.delta * multiplier) < 1e-6
-        assert abs(result.gamma - result_unit.gamma * multiplier) < 1e-6
-        assert abs(result.vega - result_unit.vega * multiplier) < 1e-6
-        assert abs(result.theta - result_unit.theta * multiplier) < 1e-6
-        assert result.vol == result_unit.vol  # Vol should not change with multiplier
+        assert 0.0 <= result_put.itm_prob <= 1.0
+        assert result.itm_prob + result_put.itm_prob == 1.0
 
     def test_imply_vol_and_greeks_call(self):
         # Test imply_vol_and_greeks for call option
@@ -347,14 +335,13 @@ class TestBlackScholesGreeksPyO3:
         is_call = True
         k = 100.0
         t = 1.0
-        multiplier = 1.0
 
         # Calculate the true price using known volatility
-        true_result = black_scholes_greeks(s, r, b, true_vol, is_call, k, t, multiplier)
+        true_result = black_scholes_greeks(s, r, b, true_vol, is_call, k, t)
         market_price = true_result.price
 
         # Now imply vol from market price
-        implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, market_price, multiplier)
+        implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, market_price)
 
         # Exact expected values (tolerance 1e-3 for implied vol precision)
         tol = 1e-3
@@ -382,14 +369,13 @@ class TestBlackScholesGreeksPyO3:
         is_call = False
         k = 105.0
         t = 0.5
-        multiplier = 1.0
 
         # Calculate the true price using known volatility
-        true_result = black_scholes_greeks(s, r, b, true_vol, is_call, k, t, multiplier)
+        true_result = black_scholes_greeks(s, r, b, true_vol, is_call, k, t)
         market_price = true_result.price
 
         # Now imply vol from market price
-        implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, market_price, multiplier)
+        implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, market_price)
 
         # Exact expected values (tolerance 1e-2 for implied vol precision)
         tol = 1e-2
@@ -410,10 +396,9 @@ class TestBlackScholesGreeksPyO3:
         is_call = True
         k = 100.0
         t = 1.0
-        multiplier = 1.0
 
         # Calculate the target price
-        true_result = black_scholes_greeks(s, r, b, true_vol, is_call, k, t, multiplier)
+        true_result = black_scholes_greeks(s, r, b, true_vol, is_call, k, t)
         target_price = true_result.price
 
         # Refine using the true vol as initial guess
@@ -426,7 +411,6 @@ class TestBlackScholesGreeksPyO3:
             t,
             target_price,
             true_vol,
-            multiplier,
         )
 
         # Exact expected values (tolerance 1e-4 for refinement precision)
@@ -447,9 +431,8 @@ class TestBlackScholesGreeksPyO3:
         is_call = True
         k = 100.0
         t = 0.01  # Very short expiry
-        multiplier = 1.0
 
-        true_result = black_scholes_greeks(s, r, b, true_vol, is_call, k, t, multiplier)
+        true_result = black_scholes_greeks(s, r, b, true_vol, is_call, k, t)
         target_price = true_result.price
 
         # Use a different initial guess
@@ -463,7 +446,6 @@ class TestBlackScholesGreeksPyO3:
             t,
             target_price,
             initial_vol,
-            multiplier,
         )
 
         # Exact expected values (tolerance 5e-2 for short expiry convergence)
@@ -484,9 +466,8 @@ class TestBlackScholesGreeksPyO3:
         is_call = True
         k = 100.0
         t = 1.0
-        multiplier = 1.0
 
-        true_result = black_scholes_greeks(s, r, b, true_vol, is_call, k, t, multiplier)
+        true_result = black_scholes_greeks(s, r, b, true_vol, is_call, k, t)
         target_price = true_result.price
 
         initial_vol = true_vol * 0.9
@@ -499,7 +480,6 @@ class TestBlackScholesGreeksPyO3:
             t,
             target_price,
             initial_vol,
-            multiplier,
         )
 
         # Exact expected values (tolerance 2e-2 for deep ITM convergence)

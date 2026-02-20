@@ -30,7 +30,7 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType,
-        PriceType, RecordFlag, TimeInForce, TriggerType,
+        PriceType, RecordFlag, TimeInForce, TrailingOffsetType,
     },
     events::{OrderUpdated, account::state::AccountState},
     identifiers::{
@@ -56,9 +56,11 @@ use super::{
 use crate::{
     common::{
         consts::BITMEX_VENUE,
-        enums::{BitmexExecInstruction, BitmexExecType, BitmexSide},
+        enums::{
+            BitmexExecInstruction, BitmexExecType, BitmexOrderType, BitmexPegPriceType, BitmexSide,
+        },
         parse::{
-            clean_reason, map_bitmex_currency, normalize_trade_bin_prices,
+            clean_reason, extract_trigger_type, map_bitmex_currency, normalize_trade_bin_prices,
             normalize_trade_bin_volume, parse_contracts_quantity, parse_fractional_quantity,
             parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
             parse_position_side, parse_signed_contracts_quantity,
@@ -131,6 +133,20 @@ pub fn parse_book_msg_vec(
             );
         }
     }
+
+    // Set F_LAST on the last delta so data engine knows the batch is complete
+    if let Some(Data::Delta(last_delta)) = deltas.last_mut() {
+        *last_delta = OrderBookDelta::new(
+            last_delta.instrument_id,
+            last_delta.action,
+            last_delta.order,
+            last_delta.flags | RecordFlag::F_LAST as u8,
+            last_delta.sequence,
+            last_delta.ts_event,
+            last_delta.ts_init,
+        );
+    }
+
     deltas
 }
 
@@ -147,13 +163,12 @@ pub fn parse_book10_msg_vec(
         if let Some(instrument) = instruments.get(&msg.symbol) {
             let instrument_id = instrument.id();
             let price_precision = instrument.price_precision();
-            depths.push(Data::Depth10(Box::new(parse_book10_msg(
-                &msg,
-                instrument,
-                instrument_id,
-                price_precision,
-                ts_init,
-            ))));
+            match parse_book10_msg(&msg, instrument, instrument_id, price_precision, ts_init) {
+                Ok(depth) => depths.push(Data::Depth10(Box::new(depth))),
+                Err(e) => {
+                    log::error!("Failed to parse orderBook10 for symbol={}: {e}", msg.symbol);
+                }
+            }
         } else {
             log::error!(
                 "Instrument cache miss: depth10 message dropped for symbol={}",
@@ -237,7 +252,7 @@ pub fn parse_book_msg(
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> OrderBookDelta {
-    let flags = if action == &BitmexAction::Insert {
+    let flags = if action == &BitmexAction::Partial {
         RecordFlag::F_SNAPSHOT as u8
     } else {
         0
@@ -265,18 +280,17 @@ pub fn parse_book_msg(
 
 /// Parses an `OrderBook10` message into an `OrderBookDepth10` object.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the bid or ask arrays cannot be converted to exactly 10 elements.
+/// Returns an error if the bid or ask arrays are not exactly 10 elements.
 #[allow(clippy::too_many_arguments)]
-#[must_use]
 pub fn parse_book10_msg(
     msg: &BitmexOrderBook10Msg,
     instrument: &InstrumentAny,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> OrderBookDepth10 {
+) -> anyhow::Result<OrderBookDepth10> {
     let mut bids = Vec::with_capacity(DEPTH10_LEN);
     let mut asks = Vec::with_capacity(DEPTH10_LEN);
 
@@ -308,22 +322,22 @@ pub fn parse_book10_msg(
         ask_counts[i] = 1;
     }
 
-    let bids: [BookOrder; DEPTH10_LEN] = bids
-        .try_into()
-        .inspect_err(|v: &Vec<BookOrder>| {
-            log::error!("Bids length mismatch: expected 10, was {}", v.len());
-        })
-        .expect("BitMEX orderBook10 should always have exactly 10 bid levels");
-    let asks: [BookOrder; DEPTH10_LEN] = asks
-        .try_into()
-        .inspect_err(|v: &Vec<BookOrder>| {
-            log::error!("Asks length mismatch: expected 10, was {}", v.len());
-        })
-        .expect("BitMEX orderBook10 should always have exactly 10 ask levels");
+    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().map_err(|v: Vec<BookOrder>| {
+        anyhow::anyhow!(
+            "Bids length mismatch: expected {DEPTH10_LEN}, was {}",
+            v.len()
+        )
+    })?;
+    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().map_err(|v: Vec<BookOrder>| {
+        anyhow::anyhow!(
+            "Asks length mismatch: expected {DEPTH10_LEN}, was {}",
+            v.len()
+        )
+    })?;
 
     let ts_event = UnixNanos::from(msg.timestamp);
 
-    OrderBookDepth10::new(
+    Ok(OrderBookDepth10::new(
         instrument_id,
         bids,
         asks,
@@ -333,7 +347,7 @@ pub fn parse_book10_msg(
         0, // Not applicable for BitMEX L2 books
         ts_event,
         ts_init,
-    )
+    ))
 }
 
 /// Converts a BitMEX quote message into a `QuoteTick`, filling missing data from cache.
@@ -438,9 +452,7 @@ pub fn parse_trade_bin_msg(
 
 /// Converts a WebSocket topic to a bar specification.
 ///
-/// # Panics
-///
-/// Panics if the topic is not a valid bar topic (`TradeBin1m`, `TradeBin5m`, `TradeBin1h`, or `TradeBin1d`).
+/// Returns `BAR_SPEC_1_MINUTE` and logs an error for unsupported topics.
 #[must_use]
 pub fn bar_spec_from_topic(topic: &BitmexWsTopic) -> BarSpecification {
     match topic {
@@ -457,9 +469,7 @@ pub fn bar_spec_from_topic(topic: &BitmexWsTopic) -> BarSpecification {
 
 /// Converts a bar specification to a WebSocket topic.
 ///
-/// # Panics
-///
-/// Panics if the specification is not one of the supported values (1m, 5m, 1h, or 1d).
+/// Returns `TradeBin1m` and logs an error for unsupported specifications.
 #[must_use]
 pub fn topic_from_bar_spec(spec: BarSpecification) -> BitmexWsTopic {
     match spec {
@@ -490,10 +500,6 @@ fn infer_order_type_from_msg(msg: &BitmexOrderMsg) -> Option<OrderType> {
 
 /// Parse a BitMEX WebSocket order message into a Nautilus `OrderStatusReport`.
 ///
-/// # Panics
-///
-/// Panics if required fields are missing or invalid.
-///
 /// # References
 ///
 /// <https://www.bitmex.com/app/wsAPI#Order>
@@ -513,7 +519,18 @@ pub fn parse_order_msg(
     let order_side: OrderSide = common_side.into();
 
     let order_type: OrderType = if let Some(ord_type) = msg.ord_type {
-        ord_type.into()
+        // Pegged orders with TrailingStopPeg are trailing stop orders
+        if ord_type == BitmexOrderType::Pegged
+            && msg.peg_price_type == Some(BitmexPegPriceType::TrailingStopPeg)
+        {
+            if msg.price.is_some() {
+                OrderType::TrailingStopLimit
+            } else {
+                OrderType::TrailingStopMarket
+            }
+        } else {
+            ord_type.into()
+        }
     } else if let Some(client_order_id) = msg.cl_ord_id {
         let client_order_id = ClientOrderId::new(client_order_id);
         if let Some(entry) = order_type_cache.get(&client_order_id) {
@@ -579,24 +596,26 @@ pub fn parse_order_msg(
     }
 
     if let Some(trigger_price) = msg.stop_px {
-        let trigger_type = if let Some(exec_insts) = &msg.exec_inst {
-            // Check if any trigger type instruction is present
-            if exec_insts.contains(&BitmexExecInstruction::MarkPrice) {
-                TriggerType::MarkPrice
-            } else if exec_insts.contains(&BitmexExecInstruction::IndexPrice) {
-                TriggerType::IndexPrice
-            } else if exec_insts.contains(&BitmexExecInstruction::LastPrice) {
-                TriggerType::LastPrice
-            } else {
-                TriggerType::Default
-            }
-        } else {
-            TriggerType::Default // BitMEX defaults to LastPrice when not specified
-        };
-
         report = report
             .with_trigger_price(Price::new(trigger_price, instrument.price_precision()))
-            .with_trigger_type(trigger_type);
+            .with_trigger_type(extract_trigger_type(msg.exec_inst.as_ref()));
+    }
+
+    // Populate trailing offset for trailing stop orders
+    if matches!(
+        order_type,
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    ) && let Some(peg_offset) = msg.peg_offset_value
+    {
+        let trailing_offset = Decimal::try_from(peg_offset.abs())
+            .unwrap_or_else(|_| Decimal::new(peg_offset.abs() as i64, 0));
+        report = report
+            .with_trailing_offset(trailing_offset)
+            .with_trailing_offset_type(TrailingOffsetType::Price);
+
+        if msg.stop_px.is_none() {
+            report = report.with_trigger_type(extract_trigger_type(msg.exec_inst.as_ref()));
+        }
     }
 
     if let Some(exec_insts) = &msg.exec_inst {
@@ -662,8 +681,15 @@ pub fn parse_order_update_msg(
     let venue_order_id = Some(VenueOrderId::new(msg.order_id.to_string()));
     let client_order_id = msg
         .cl_ord_id
+        .as_ref()
         .map_or_else(ClientOrderId::external, ClientOrderId::new);
-    let quantity = Quantity::zero(instrument.size_precision());
+
+    // BitMEX partial updates may omit leaves_qty/cum_qty. When missing, we fall back
+    // to zero which signals the execution engine to use the cached order quantity.
+    let quantity = match (msg.leaves_qty, msg.cum_qty) {
+        (Some(leaves), Some(cum)) => parse_contracts_quantity((leaves + cum) as u64, instrument),
+        _ => Quantity::zero(instrument.size_precision()),
+    };
     let price = msg
         .price
         .map(|p| Price::new(p, instrument.price_precision()));
@@ -705,14 +731,9 @@ pub fn parse_order_update_msg(
 /// - `Funding`, `Insurance`, `Rebalance`: Expected non-fills → None (debug log)
 /// - Order state changes (`New`, `Canceled`, etc.): → None (debug log)
 ///
-/// # Panics
-///
-/// Panics if required fields are missing or invalid.
-///
 /// # References
 ///
 /// <https://www.bitmex.com/app/wsAPI#Execution>
-///
 pub fn parse_execution_msg(
     msg: BitmexExecutionMsg,
     instrument: &InstrumentAny,
@@ -787,6 +808,15 @@ pub fn parse_execution_msg(
             log::debug!(
                 "Execution message skipped (order state change, not a fill): exec_type={exec_type:?}, order_id={:?}",
                 msg.order_id,
+            );
+            return None;
+        }
+
+        BitmexExecType::Unknown(ref type_str) => {
+            log::warn!(
+                "Unknown execution type received, skipping: exec_type={type_str}, order_id={:?}, symbol={:?}",
+                msg.order_id,
+                msg.symbol,
             );
             return None;
         }
@@ -1087,6 +1117,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // info
             UnixNanos::default(),
             UnixNanos::default(),
         ))
@@ -1105,6 +1136,8 @@ mod tests {
 
         // Test Insert action
         let instrument = create_test_perpetual_instrument();
+
+        // Test Insert action (no snapshot flag)
         let delta = parse_book_msg(
             &msg,
             &BitmexAction::Insert,
@@ -1119,12 +1152,24 @@ mod tests {
         assert_eq!(delta.order.side, OrderSide::Sell);
         assert_eq!(delta.order.order_id, 62400580205);
         assert_eq!(delta.action, BookAction::Add);
-        assert_eq!(delta.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(delta.flags, 0);
         assert_eq!(delta.sequence, 0);
         assert_eq!(delta.ts_event, 1732436782356000000); // 2024-11-24T08:26:22.356Z in nanos
         assert_eq!(delta.ts_init, 3);
 
-        // Test Update action (should have different flags)
+        // Test Partial action (should have F_SNAPSHOT flag)
+        let delta = parse_book_msg(
+            &msg,
+            &BitmexAction::Partial,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
+        assert_eq!(delta.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(delta.action, BookAction::Add);
+
+        // Test Update action (no flags)
         let delta = parse_book_msg(
             &msg,
             &BitmexAction::Update,
@@ -1149,7 +1194,8 @@ mod tests {
             instrument.id(),
             instrument.price_precision(),
             UnixNanos::from(3),
-        );
+        )
+        .unwrap();
 
         assert_eq!(depth10.instrument_id, instrument_id);
 
@@ -1288,6 +1334,7 @@ mod tests {
             turnover: 0,
             home_notional: 0.0,
             foreign_notional: 0.0,
+            pool: None,
         };
 
         let bar = parse_trade_bin_msg(
@@ -1572,7 +1619,7 @@ mod tests {
         for exec_type in order_state_types {
             let mut msg: BitmexExecutionMsg =
                 serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
-            msg.exec_type = Some(exec_type);
+            msg.exec_type = Some(exec_type.clone());
 
             let result = parse_execution_msg(msg, &instrument);
             assert!(
@@ -1810,6 +1857,7 @@ mod tests {
             None,                 // margin_maint
             None,                 // maker_fee
             None,                 // taker_fee
+            None,                 // info
             UnixNanos::default(), // ts_event
             UnixNanos::default(), // ts_init
         );

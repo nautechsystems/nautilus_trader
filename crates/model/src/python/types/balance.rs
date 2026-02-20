@@ -152,9 +152,6 @@ impl MarginBalance {
     ///
     /// Returns a `PyErr` if serialization fails.
     ///
-    /// # Panics
-    ///
-    /// Panics if parsing numeric values (`unwrap()`) fails due to invalid format.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);

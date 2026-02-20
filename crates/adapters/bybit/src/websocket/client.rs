@@ -111,7 +111,7 @@ fn resolve_credential(
 }
 
 /// Public/market data WebSocket client for Bybit.
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
 pub struct BybitWebSocketClient {
     url: String,
     environment: BybitEnvironment,
@@ -126,7 +126,6 @@ pub struct BybitWebSocketClient {
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: SubscriptionState,
-    is_authenticated: Arc<AtomicBool>,
     account_id: Option<AccountId>,
     mm_level: Arc<AtomicU8>,
     bars_timestamp_on_close: bool,
@@ -165,7 +164,6 @@ impl Clone for BybitWebSocketClient {
             signal: Arc::clone(&self.signal),
             task_handle: None, // Each clone gets its own task handle
             subscriptions: self.subscriptions.clone(),
-            is_authenticated: Arc::clone(&self.is_authenticated),
             account_id: self.account_id,
             mm_level: Arc::clone(&self.mm_level),
             bars_timestamp_on_close: self.bars_timestamp_on_close,
@@ -219,7 +217,6 @@ impl BybitWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
-            is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             bar_types_cache: Arc::new(DashMap::new()),
             account_id: None,
@@ -269,7 +266,6 @@ impl BybitWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
-            is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             bar_types_cache: Arc::new(DashMap::new()),
             account_id: None,
@@ -319,7 +315,6 @@ impl BybitWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
-            is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             bar_types_cache: Arc::new(DashMap::new()),
             account_id: None,
@@ -366,6 +361,7 @@ impl BybitWebSocketClient {
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         // Retry initial connection with exponential backoff to handle transient DNS/network issues
@@ -478,7 +474,7 @@ impl BybitWebSocketClient {
         let mm_level = Arc::clone(&self.mm_level);
         let cmd_tx_for_reconnect = cmd_tx.clone();
         let auth_tracker = self.auth_tracker.clone();
-        let is_authenticated = Arc::clone(&self.is_authenticated);
+        let auth_tracker_for_handler = auth_tracker.clone();
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
@@ -490,7 +486,7 @@ impl BybitWebSocketClient {
                 product_type,
                 bars_timestamp_on_close,
                 mm_level.clone(),
-                auth_tracker,
+                auth_tracker_for_handler,
                 subscriptions.clone(),
                 funding_cache.clone(),
                 bar_types_cache.clone(),
@@ -572,10 +568,12 @@ impl BybitWebSocketClient {
                         funding_cache.write().await.clear();
 
                         if requires_auth {
-                            is_authenticated.store(false, Ordering::Relaxed);
                             log::debug!("Re-authenticating after reconnection");
 
                             if let Some(cred) = &credential {
+                                // Begin auth attempt so succeed() will update state
+                                let _rx = auth_tracker.begin();
+
                                 let expires = chrono::Utc::now().timestamp_millis()
                                     + WEBSOCKET_AUTH_WINDOW_MS;
                                 let signature = cred.sign_websocket_auth(expires);
@@ -618,7 +616,6 @@ impl BybitWebSocketClient {
                     }
                     Some(NautilusWsMessage::Authenticated) => {
                         log::debug!("Authenticated, resubscribing");
-                        is_authenticated.store(true, Ordering::Relaxed);
                         resubscribe_all().await;
                         continue;
                     }
@@ -692,7 +689,7 @@ impl BybitWebSocketClient {
             log::debug!("No task handle to await");
         }
 
-        self.is_authenticated.store(false, Ordering::Relaxed);
+        self.auth_tracker.invalidate();
 
         log::debug!("Closed");
 
@@ -1224,7 +1221,7 @@ impl BybitWebSocketClient {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to place orders".to_string(),
             ));
@@ -1259,7 +1256,7 @@ impl BybitWebSocketClient {
         instrument_id: InstrumentId,
         venue_order_id: Option<VenueOrderId>,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to amend orders".to_string(),
             ));
@@ -1295,7 +1292,7 @@ impl BybitWebSocketClient {
         instrument_id: InstrumentId,
         venue_order_id: Option<VenueOrderId>,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to cancel orders".to_string(),
             ));
@@ -1328,7 +1325,7 @@ impl BybitWebSocketClient {
         strategy_id: StrategyId,
         orders: Vec<BybitWsPlaceOrderParams>,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to place orders".to_string(),
             ));
@@ -1458,7 +1455,7 @@ impl BybitWebSocketClient {
         #[allow(unused_variables)] strategy_id: StrategyId,
         orders: Vec<BybitWsAmendOrderParams>,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to amend orders".to_string(),
             ));
@@ -1506,7 +1503,7 @@ impl BybitWebSocketClient {
         strategy_id: StrategyId,
         orders: Vec<BybitWsCancelOrderParams>,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to cancel orders".to_string(),
             ));
@@ -1905,6 +1902,8 @@ impl BybitWebSocketClient {
         post_only: Option<bool>,
         reduce_only: Option<bool>,
         is_leverage: bool,
+        take_profit: Option<Price>,
+        stop_loss: Option<Price>,
     ) -> BybitWsResult<BybitWsPlaceOrderParams> {
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
             .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
@@ -2011,11 +2010,15 @@ impl BybitWebSocketClient {
                 trigger_price: trigger_price.map(|p| p.to_string()),
                 trigger_by: Some(BybitTriggerType::LastPrice),
                 trigger_direction,
-                tpsl_mode: None,
-                take_profit: None,
-                stop_loss: None,
-                tp_trigger_by: None,
-                sl_trigger_by: None,
+                tpsl_mode: if take_profit.is_some() || stop_loss.is_some() {
+                    Some("Full".to_string())
+                } else {
+                    None
+                },
+                take_profit: take_profit.map(|p| p.to_string()),
+                stop_loss: stop_loss.map(|p| p.to_string()),
+                tp_trigger_by: take_profit.map(|_| BybitTriggerType::LastPrice),
+                sl_trigger_by: stop_loss.map(|_| BybitTriggerType::LastPrice),
                 sl_trigger_price: None,
                 tp_trigger_price: None,
                 sl_order_type: None,
@@ -2044,11 +2047,15 @@ impl BybitWebSocketClient {
                 trigger_price: None,
                 trigger_by: None,
                 trigger_direction: None,
-                tpsl_mode: None,
-                take_profit: None,
-                stop_loss: None,
-                tp_trigger_by: None,
-                sl_trigger_by: None,
+                tpsl_mode: if take_profit.is_some() || stop_loss.is_some() {
+                    Some("Full".to_string())
+                } else {
+                    None
+                },
+                take_profit: take_profit.map(|p| p.to_string()),
+                stop_loss: stop_loss.map(|p| p.to_string()),
+                tp_trigger_by: take_profit.map(|_| BybitTriggerType::LastPrice),
+                sl_trigger_by: stop_loss.map(|_| BybitTriggerType::LastPrice),
                 sl_trigger_price: None,
                 tp_trigger_price: None,
                 sl_order_type: None,
@@ -2151,6 +2158,9 @@ impl BybitWebSocketClient {
         };
 
         let payload = serde_json::to_string(&auth_message)?;
+
+        // Begin auth attempt so succeed() will update state
+        let _rx = self.auth_tracker.begin();
 
         self.cmd_tx
             .read()
@@ -2434,6 +2444,8 @@ mod tests {
                 None,
                 None,
                 is_leverage,
+                None, // take_profit
+                None, // stop_loss
             )
             .expect("Failed to build params");
 
@@ -2491,6 +2503,8 @@ mod tests {
                 None,
                 None,
                 false,
+                None, // take_profit
+                None, // stop_loss
             )
             .expect("Failed to build params");
 

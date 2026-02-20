@@ -4,7 +4,7 @@ The heart of the NautilusTrader user experience is in writing and working with
 trading strategies. Defining a strategy involves inheriting the `Strategy` class and
 implementing the methods required by the strategy's logic.
 
-**Key capabilities**:
+**Capabilities**:
 
 - All `Actor` capabilities.
 - Order management.
@@ -541,6 +541,67 @@ self.modify_order(order, new_quantity)
 :::info
 The price and trigger price can also be modified (when emulated or supported by a venue).
 :::
+
+#### Market exit
+
+The `market_exit()` method provides a graceful way to exit all positions and cancel all orders
+for a strategy. The strategy remains running after the exit completes, allowing you to re-enter
+positions later if desired.
+
+```python
+self.market_exit()
+```
+
+The market exit process:
+
+1. Cancels all open and in-flight orders for the strategy.
+2. Closes all open positions with market orders.
+3. Periodically checks (at `market_exit_interval_ms`) until all orders resolve and positions close.
+4. Calls `post_market_exit()` once flat, or after `market_exit_max_attempts` is reached.
+
+Two hooks are available for custom logic:
+
+- `on_market_exit()` - Called when the exit process begins.
+- `post_market_exit()` - Called when the exit process completes.
+
+```python
+class MyStrategy(Strategy):
+    def on_market_exit(self) -> None:
+        self.log.info("Beginning market exit...")
+
+    def post_market_exit(self) -> None:
+        self.log.info("Market exit complete")
+```
+
+During a market exit, non-reduce-only orders are automatically denied. For order lists,
+if any order in the list is non-reduce-only, the entire list is denied to preserve list
+semantics (e.g., bracket orders with interdependencies).
+
+To check if an exit is in progress (e.g., to skip order submission logic), use `is_exiting()`:
+
+```python
+def on_quote_tick(self, tick: QuoteTick) -> None:
+    if self.is_exiting():
+        return  # Skip order logic during exit
+    # ... normal order logic
+```
+
+To automatically perform a market exit when the strategy is stopped, set `manage_stop=True`:
+
+```python
+config = StrategyConfig(manage_stop=True)
+```
+
+With this option, calling `stop()` will first perform a market exit, then stop the strategy
+once flat.
+
+Configuration options in `StrategyConfig`:
+
+- `manage_stop` (default: False) - If True, `stop()` performs a market exit before stopping.
+- `market_exit_interval_ms` (default: 100) - Interval between exit completion checks.
+- `market_exit_max_attempts` (default: 100) - Maximum checks before completing the exit.
+- `market_exit_time_in_force` (default: None/GTC) - Time in force for closing market orders.
+- `market_exit_reduce_only` (default: True) - If closing market orders should be reduce only.
 
 ## Strategy configuration
 

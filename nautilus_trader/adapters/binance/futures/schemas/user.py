@@ -53,11 +53,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
 
-################################################################################
-# WebSocket messages
-################################################################################
-
-
 class BinanceFuturesUserMsgData(msgspec.Struct, frozen=True):
     """
     Inner struct for execution WebSocket messages from Binance.
@@ -113,14 +108,13 @@ class BinanceFuturesBalance(msgspec.Struct, frozen=True):
 
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.a)
-        free = Decimal(self.wb)
-        locked = Decimal(0)  # TODO: Pending refactoring of accounting
-        total: Decimal = free + locked
-
+        free = Money(Decimal(self.wb), currency)
+        locked = Money(0, currency)  # TODO: Pending refactoring of accounting
+        total = free + locked
         return AccountBalance(
-            total=Money(total, currency),
-            locked=Money(locked, currency),
-            free=Money(free, currency),
+            total=total,
+            locked=locked,
+            free=free,
         )
 
 
@@ -575,6 +569,14 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
         elif self.x == BinanceExecutionType.CANCELED or (
             exec_client.treat_expired_as_canceled and self.x == BinanceExecutionType.EXPIRED
         ):
+            # Guard against duplicate cancel events with different venue_order_ids
+            order = exec_client._cache.order(client_order_id)
+            if order is not None and order.is_closed:
+                exec_client._log.warning(
+                    f"Skipping duplicate cancel for already closed order {client_order_id}",
+                )
+                return
+
             # Clean up triggered algo order tracking if applicable
             exec_client._triggered_algo_order_ids.discard(client_order_id)
             exec_client.generate_order_canceled(

@@ -1209,15 +1209,24 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug("Checking order consistency between cached-state and venues")
 
             open_order_ids: set[ClientOrderId] = self._cache.client_order_ids_open()
-            open_orders: list[Order] = self._cache.orders_open()
+            inflight_order_ids: set[ClientOrderId] = self._cache.client_order_ids_inflight()
 
             if self.reconciliation_instrument_ids:
+                open_orders: list[Order] = self._cache.orders_open()
                 open_orders = [
                     o for o in open_orders if o.instrument_id in self.reconciliation_instrument_ids
                 ]
                 open_order_ids = {o.client_order_id for o in open_orders}
+                inflight_orders: list[Order] = self._cache.orders_inflight()
+                inflight_orders = [
+                    o
+                    for o in inflight_orders
+                    if o.instrument_id in self.reconciliation_instrument_ids
+                ]
+                inflight_order_ids = {o.client_order_id for o in inflight_orders}
 
-            open_len = len(open_orders)
+            all_order_ids = open_order_ids | inflight_order_ids
+            open_len = len(all_order_ids)
             self._log.debug(f"Found {open_len} order{'' if open_len == 1 else 's'} open in cache")
 
             if not self._clients:
@@ -1229,7 +1238,7 @@ class LiveExecutionEngine(ExecutionEngine):
             self._reconcile_order_reports(all_order_reports, open_order_ids)
 
             if self.open_check_open_only:
-                missing_orders = open_order_ids - venue_reported_ids
+                missing_orders = all_order_ids - venue_reported_ids
                 if missing_orders:
                     self._log.debug(
                         f"{len(missing_orders)} cached open order(s) not in venue's current response - "
@@ -1241,7 +1250,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
                 return  # Can't reliably resolve missing orders in open_only mode
 
-            await self._handle_missing_orders_at_venue(open_order_ids, venue_reported_ids)
+            await self._handle_missing_orders_at_venue(all_order_ids, venue_reported_ids)
 
             self._validate_open_orders_consistency()
         except Exception as e:
@@ -1412,6 +1421,21 @@ class LiveExecutionEngine(ExecutionEngine):
             self._order_local_activity_ns.pop(order.client_order_id, None)
             return
 
+        if order.status == OrderStatus.SUBMITTED:
+            self._log.warning(
+                f"Reconciling {order.client_order_id!r}: SUBMITTED order not found at venue, marking as REJECTED",
+                LogColor.YELLOW,
+            )
+            rejected = create_order_rejected_event(
+                order=order,
+                ts_now=ts_now,
+                reason="ORDER_NOT_FOUND_AT_VENUE",
+            )
+            self._handle_event_with_tracking(rejected)
+            self._clear_recon_tracking(order.client_order_id)
+            self._order_local_activity_ns.pop(order.client_order_id, None)
+            return
+
         if order.is_inflight:
             self._log.debug(
                 f"Deferring resolution for {order.client_order_id!r} - still inflight state {order.status_string()}",
@@ -1491,6 +1515,8 @@ class LiveExecutionEngine(ExecutionEngine):
         all_order_reports: list[OrderStatusReport],
         open_order_ids: set[ClientOrderId],
     ) -> None:
+        ts_now = self._clock.timestamp_ns()
+
         for report in all_order_reports:
             is_in_open_ids = report.client_order_id in open_order_ids
 
@@ -1531,6 +1557,17 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._log.debug(
                         f"Skipping reconciliation for {report.client_order_id!r}: "
                         f"instrument {report.instrument_id} not in include list",
+                    )
+                    continue
+
+                # Check for recent local activity to avoid race conditions with in-flight fills
+                local_activity = self._order_local_activity_ns.get(report.client_order_id)
+                if local_activity and (ts_now - local_activity) < self._open_check_threshold_ns:
+                    self._log.info(
+                        f"Deferring reconciliation for {report.client_order_id!r}: "
+                        f"recent local activity ({(ts_now - local_activity) / 1_000_000:.0f}ms < "
+                        f"threshold={self.open_check_threshold_ms}ms), "
+                        f"reason was: {reconcile_reason}",
                     )
                     continue
 
@@ -3511,11 +3548,11 @@ class LiveExecutionEngine(ExecutionEngine):
         if client_order_id is None:
             return
 
-        ts_event = event.ts_event
-        if ts_event == 0:
-            ts_event = self._clock.timestamp_ns()
-
-        self._order_local_activity_ns[client_order_id] = ts_event
+        # Use receipt time (current clock time) instead of venue time (ts_event)
+        # to accurately track when we last processed activity for this order.
+        # This avoids race conditions where network/queue latency makes events
+        # appear "old" even though they just arrived.
+        self._order_local_activity_ns[client_order_id] = self._clock.timestamp_ns()
 
     def _find_matching_cached_order(
         self,

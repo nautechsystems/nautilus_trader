@@ -220,6 +220,7 @@ pub(super) struct OKXWsFeedHandler {
     pending_messages: VecDeque<NautilusWsMessage>,
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
+    inst_id_code_cache: Arc<DashMap<Ustr, u64>>,
     emitted_accepted: FifoCache<VenueOrderId, 10_000>,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
     fee_cache: AHashMap<Ustr, Money>,
@@ -241,6 +242,7 @@ impl OKXWsFeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
         client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
+        inst_id_code_cache: Arc<DashMap<Ustr, u64>>,
         auth_tracker: AuthTracker,
         subscriptions_state: SubscriptionState,
     ) -> Self {
@@ -262,6 +264,7 @@ impl OKXWsFeedHandler {
             pending_messages: VecDeque::new(),
             active_client_orders,
             client_id_aliases,
+            inst_id_code_cache,
             emitted_accepted: FifoCache::new(),
             instruments_cache: AHashMap::new(),
             fee_cache: AHashMap::new(),
@@ -2221,6 +2224,11 @@ impl OKXWsFeedHandler {
         let mut builder = WsCancelOrderParamsBuilder::default();
         builder.inst_id(instrument_id.symbol.as_str());
 
+        // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+        if let Some(inst_id_code) = self.inst_id_code_cache.get(&instrument_id.symbol.inner()) {
+            builder.inst_id_code(*inst_id_code.value());
+        }
+
         if let Some(venue_order_id) = venue_order_id {
             builder.ord_id(venue_order_id.as_str());
         }
@@ -2371,6 +2379,11 @@ impl OKXWsFeedHandler {
     ) -> anyhow::Result<()> {
         let mut builder = WsCancelAlgoOrderParamsBuilder::default();
         builder.inst_id(instrument_id.symbol.as_str());
+
+        // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+        if let Some(inst_id_code) = self.inst_id_code_cache.get(&instrument_id.symbol.inner()) {
+            builder.inst_id_code(*inst_id_code.value());
+        }
 
         if let Some(client_order_id) = &client_order_id {
             builder.algo_cl_ord_id(client_order_id.as_str());
@@ -2530,6 +2543,7 @@ mod tests {
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
         let active_client_orders = Arc::new(DashMap::new());
         let client_id_aliases = Arc::new(DashMap::new());
+        let inst_id_code_cache = Arc::new(DashMap::new());
         let auth_tracker = AuthTracker::new();
         let subscriptions_state = SubscriptionState::new(OKX_WS_TOPIC_DELIMITER);
 
@@ -2541,6 +2555,7 @@ mod tests {
             out_tx,
             active_client_orders.clone(),
             client_id_aliases.clone(),
+            inst_id_code_cache,
             auth_tracker,
             subscriptions_state,
         );
@@ -2752,6 +2767,7 @@ mod tests {
                 None, // margin_maint
                 None, // maker_fee
                 None, // taker_fee
+                None, // info
                 UnixNanos::default(),
                 UnixNanos::default(),
             ))
@@ -2770,6 +2786,7 @@ mod tests {
                 8,
                 Price::from("0.01"),
                 Quantity::from("0.00000001"),
+                None,
                 None,
                 None,
                 None,
@@ -2957,6 +2974,7 @@ mod tests {
                 None, // margin_maint
                 None, // maker_fee
                 None, // taker_fee
+                None, // info
                 UnixNanos::default(),
                 UnixNanos::default(),
             ));

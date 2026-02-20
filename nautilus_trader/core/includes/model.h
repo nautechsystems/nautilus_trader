@@ -3094,6 +3094,27 @@ void orderbook_apply_delta(struct OrderBook_API *book, const struct OrderBookDel
 
 void orderbook_apply_deltas(struct OrderBook_API *book, const struct OrderBookDeltas_API *deltas);
 
+/**
+ * Creates an `OrderBookDeltas` snapshot from the current order book state.
+ *
+ * This is the reverse operation of `orderbook_apply_deltas`: it converts the current book state
+ * back into a snapshot format with a `Clear` delta followed by `Add` deltas for all orders.
+ *
+ * # Parameters
+ *
+ * * `book` - The order book to convert.
+ * * `sequence` - The message sequence number for the snapshot.
+ * * `ts_event` - UNIX timestamp (nanoseconds) when the book event occurred.
+ * * `ts_init` - UNIX timestamp (nanoseconds) when the instance was created.
+ *
+ * # Returns
+ *
+ * An `OrderBookDeltas_API` containing a snapshot of the current order book state.
+ */
+struct OrderBookDeltas_API orderbook_to_snapshot_deltas(const struct OrderBook_API *book,
+                                                        uint64_t ts_event,
+                                                        uint64_t ts_init);
+
 void orderbook_apply_depth(struct OrderBook_API *book, const struct OrderBookDepth10_t *depth);
 
 CVec orderbook_bids(struct OrderBook_API *book);
@@ -3206,6 +3227,8 @@ struct Price_t level_price(const struct BookLevel_API *level);
 CVec level_orders(const struct BookLevel_API *level);
 
 double level_size(const struct BookLevel_API *level);
+
+QuantityRaw level_size_raw(const struct BookLevel_API *level);
 
 double level_exposure(const struct BookLevel_API *level);
 

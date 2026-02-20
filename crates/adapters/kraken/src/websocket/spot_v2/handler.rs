@@ -464,7 +464,11 @@ impl SpotFeedHandler {
                 Ok(ticker_data) => {
                     let symbol = &ticker_data.symbol;
 
-                    if !self.is_subscribed(&format!("ticker:{symbol}")) {
+                    // Accept both quotes:{symbol} (BBO via subscribe_quotes) and
+                    // ticker:{symbol} (raw ticker via subscribe API).
+                    let quotes_key = format!("quotes:{symbol}");
+                    let ticker_key = format!("ticker:{symbol}");
+                    if !self.is_subscribed(&quotes_key) && !self.is_subscribed(&ticker_key) {
                         continue;
                     }
 
@@ -910,5 +914,300 @@ impl SpotFeedHandler {
 
         // Return first queued message (rest returned via next() pending check)
         self.pending_messages.pop_front()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{
+        identifiers::{InstrumentId, Symbol, Venue},
+        instruments::{InstrumentAny, currency_pair::CurrencyPair},
+        types::{Currency, Price, Quantity},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    fn create_test_handler() -> SpotFeedHandler {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new(':');
+
+        SpotFeedHandler::new(signal, cmd_rx, raw_rx, subscriptions)
+    }
+
+    fn create_test_instrument(symbol: &str) -> InstrumentAny {
+        let instrument_id = InstrumentId::new(Symbol::new(symbol), Venue::new("KRAKEN"));
+        InstrumentAny::CurrencyPair(CurrencyPair::new(
+            instrument_id,
+            Symbol::new(symbol),
+            Currency::BTC(),
+            Currency::USD(),
+            2,
+            8,
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
+    #[rstest]
+    fn test_ticker_message_filtered_without_quotes_subscription() {
+        let mut handler = create_test_handler();
+        let instrument = create_test_instrument("BTC/USD");
+        handler
+            .instruments_cache
+            .insert(Ustr::from("BTC/USD"), instrument);
+
+        let json = r#"{
+            "channel": "ticker",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bid": 105944.20,
+                "bid_qty": 2.5,
+                "ask": 105944.30,
+                "ask_qty": 3.2,
+                "last": 105899.40,
+                "volume": 163.28908096,
+                "vwap": 105904.39279,
+                "low": 104711.00,
+                "high": 106613.10,
+                "change": 250.00,
+                "change_pct": 0.24
+            }]
+        }"#;
+
+        let ts_init = UnixNanos::from(1_000_000_000);
+        let result = handler.parse_message(json, ts_init);
+
+        assert!(
+            result.is_none(),
+            "Ticker message should be filtered when no quotes subscription exists"
+        );
+    }
+
+    #[rstest]
+    fn test_ticker_message_passes_with_quotes_subscription() {
+        let mut handler = create_test_handler();
+        let instrument = create_test_instrument("BTC/USD");
+        handler
+            .instruments_cache
+            .insert(Ustr::from("BTC/USD"), instrument);
+
+        handler.subscriptions.mark_subscribe("quotes:BTC/USD");
+        handler.subscriptions.confirm_subscribe("quotes:BTC/USD");
+
+        let json = r#"{
+            "channel": "ticker",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bid": 105944.20,
+                "bid_qty": 2.5,
+                "ask": 105944.30,
+                "ask_qty": 3.2,
+                "last": 105899.40,
+                "volume": 163.28908096,
+                "vwap": 105904.39279,
+                "low": 104711.00,
+                "high": 106613.10,
+                "change": 250.00,
+                "change_pct": 0.24
+            }]
+        }"#;
+
+        let ts_init = UnixNanos::from(1_000_000_000);
+        let result = handler.parse_message(json, ts_init);
+
+        assert!(
+            result.is_some(),
+            "Ticker message should pass with quotes subscription"
+        );
+        match result.unwrap() {
+            NautilusWsMessage::Data(data) => {
+                assert!(!data.is_empty(), "Should have quote data");
+            }
+            _ => panic!("Expected Data message with quote"),
+        }
+    }
+
+    #[rstest]
+    fn test_ticker_message_passes_with_ticker_subscription() {
+        let mut handler = create_test_handler();
+        let instrument = create_test_instrument("BTC/USD");
+        handler
+            .instruments_cache
+            .insert(Ustr::from("BTC/USD"), instrument);
+
+        // Direct ticker subscription via subscribe(Ticker, ...) API
+        handler.subscriptions.mark_subscribe("ticker:BTC/USD");
+        handler.subscriptions.confirm_subscribe("ticker:BTC/USD");
+
+        let json = r#"{
+            "channel": "ticker",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bid": 105944.20,
+                "bid_qty": 2.5,
+                "ask": 105944.30,
+                "ask_qty": 3.2,
+                "last": 105899.40,
+                "volume": 163.28908096,
+                "vwap": 105904.39279,
+                "low": 104711.00,
+                "high": 106613.10,
+                "change": 250.00,
+                "change_pct": 0.24
+            }]
+        }"#;
+
+        let ts_init = UnixNanos::from(1_000_000_000);
+        let result = handler.parse_message(json, ts_init);
+
+        assert!(
+            result.is_some(),
+            "Ticker message should pass with ticker: subscription"
+        );
+        match result.unwrap() {
+            NautilusWsMessage::Data(data) => {
+                assert!(!data.is_empty(), "Should have quote data");
+            }
+            _ => panic!("Expected Data message with quote"),
+        }
+    }
+
+    #[rstest]
+    fn test_book_message_filtered_without_book_subscription() {
+        let mut handler = create_test_handler();
+        let instrument = create_test_instrument("BTC/USD");
+        handler
+            .instruments_cache
+            .insert(Ustr::from("BTC/USD"), instrument);
+
+        let json = r#"{
+            "channel": "book",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bids": [{"price": 105944.20, "qty": 2.5}],
+                "asks": [{"price": 105944.30, "qty": 3.2}],
+                "checksum": 12345
+            }]
+        }"#;
+
+        let ts_init = UnixNanos::from(1_000_000_000);
+        let result = handler.parse_message(json, ts_init);
+
+        assert!(
+            result.is_none(),
+            "Book message should be filtered when no book subscription exists"
+        );
+    }
+
+    #[rstest]
+    fn test_book_message_passes_with_book_subscription() {
+        let mut handler = create_test_handler();
+        let instrument = create_test_instrument("BTC/USD");
+        handler
+            .instruments_cache
+            .insert(Ustr::from("BTC/USD"), instrument);
+
+        handler.subscriptions.mark_subscribe("book:BTC/USD");
+        handler.subscriptions.confirm_subscribe("book:BTC/USD");
+
+        let json = r#"{
+            "channel": "book",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bids": [{"price": 105944.20, "qty": 2.5}],
+                "asks": [{"price": 105944.30, "qty": 3.2}],
+                "checksum": 12345
+            }]
+        }"#;
+
+        let ts_init = UnixNanos::from(1_000_000_000);
+        let result = handler.parse_message(json, ts_init);
+
+        assert!(
+            result.is_some(),
+            "Book message should pass with book subscription"
+        );
+        match result.unwrap() {
+            NautilusWsMessage::Deltas(_) => {}
+            _ => panic!("Expected Deltas message"),
+        }
+    }
+
+    #[rstest]
+    fn test_quotes_and_book_subscriptions_independent() {
+        let mut handler = create_test_handler();
+        let instrument = create_test_instrument("BTC/USD");
+        handler
+            .instruments_cache
+            .insert(Ustr::from("BTC/USD"), instrument);
+
+        handler.subscriptions.mark_subscribe("quotes:BTC/USD");
+        handler.subscriptions.confirm_subscribe("quotes:BTC/USD");
+
+        let book_json = r#"{
+            "channel": "book",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bids": [{"price": 105944.20, "qty": 2.5}],
+                "asks": [{"price": 105944.30, "qty": 3.2}],
+                "checksum": 12345
+            }]
+        }"#;
+
+        let ts_init = UnixNanos::from(1_000_000_000);
+        let book_result = handler.parse_message(book_json, ts_init);
+        assert!(
+            book_result.is_none(),
+            "Book message should be filtered without book: subscription"
+        );
+
+        let ticker_json = r#"{
+            "channel": "ticker",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bid": 105944.20,
+                "bid_qty": 2.5,
+                "ask": 105944.30,
+                "ask_qty": 3.2,
+                "last": 105899.40,
+                "volume": 163.28908096,
+                "vwap": 105904.39279,
+                "low": 104711.00,
+                "high": 106613.10,
+                "change": 250.00,
+                "change_pct": 0.24
+            }]
+        }"#;
+
+        let ticker_result = handler.parse_message(ticker_json, ts_init);
+        assert!(
+            ticker_result.is_some(),
+            "Ticker should pass with quotes subscription"
+        );
     }
 }

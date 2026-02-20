@@ -15,7 +15,10 @@
 
 //! Configuration structures for the dYdX adapter.
 
+use std::num::NonZeroU32;
+
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::ratelimiter::quota::Quota;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -101,6 +104,18 @@ pub struct DydxAdapterConfig {
     /// Maximum retry delay in milliseconds (default: 10000ms).
     #[serde(default = "default_retry_delay_max_ms")]
     pub retry_delay_max_ms: u64,
+    /// gRPC rate limit: maximum broadcast requests per second.
+    ///
+    /// Controls the rate of gRPC `broadcast_tx` calls to prevent 429 (ResourceExhausted)
+    /// errors from validator nodes. Known provider limits:
+    /// - Polkachu: 300 req/min (~5 req/s)
+    /// - KingNodes: 250 req/min (~4.2 req/s)
+    /// - AutoStake: 4 req/s
+    ///
+    /// Default: 4 requests per second (conservative, works across all public providers).
+    /// Set to `None` to disable rate limiting.
+    #[serde(default = "default_grpc_rate_limit_per_second")]
+    pub grpc_rate_limit_per_second: Option<u32>,
 }
 
 fn default_max_retries() -> u32 {
@@ -113,6 +128,10 @@ fn default_retry_delay_initial_ms() -> u64 {
 
 fn default_retry_delay_max_ms() -> u64 {
     10000
+}
+
+fn default_grpc_rate_limit_per_second() -> Option<u32> {
+    Some(4)
 }
 
 impl DydxAdapterConfig {
@@ -145,6 +164,14 @@ impl DydxAdapterConfig {
     pub const fn compute_is_testnet(&self) -> bool {
         matches!(self.network, DydxNetwork::Testnet)
     }
+
+    /// Returns the gRPC rate limiting quota, if configured.
+    #[must_use]
+    pub fn grpc_quota(&self) -> Option<Quota> {
+        self.grpc_rate_limit_per_second
+            .and_then(NonZeroU32::new)
+            .and_then(Quota::per_second)
+    }
 }
 
 impl Default for DydxAdapterConfig {
@@ -173,6 +200,7 @@ impl Default for DydxAdapterConfig {
             max_retries: default_max_retries(),
             retry_delay_initial_ms: default_retry_delay_initial_ms(),
             retry_delay_max_ms: default_retry_delay_max_ms(),
+            grpc_rate_limit_per_second: default_grpc_rate_limit_per_second(),
         }
     }
 }
@@ -198,12 +226,6 @@ pub struct DydxDataClientConfig {
     pub http_proxy_url: Option<String>,
     /// WebSocket proxy URL.
     pub ws_proxy_url: Option<String>,
-    /// Orderbook snapshot refresh interval in seconds (prevents stale books from missed messages).
-    /// Set to None to disable periodic refresh. Default: 60 seconds.
-    pub orderbook_refresh_interval_secs: Option<u64>,
-    /// Instrument refresh interval in seconds (updates instrument definitions periodically).
-    /// Set to None to disable periodic refresh. Default: 3600 seconds (60 minutes).
-    pub instrument_refresh_interval_secs: Option<u64>,
 }
 
 impl Default for DydxDataClientConfig {
@@ -218,8 +240,6 @@ impl Default for DydxDataClientConfig {
             is_testnet: false,
             http_proxy_url: None,
             ws_proxy_url: None,
-            orderbook_refresh_interval_secs: Some(60),
-            instrument_refresh_interval_secs: Some(3600),
         }
     }
 }
@@ -269,6 +289,9 @@ pub struct DYDXExecClientConfig {
     pub retry_delay_initial_ms: Option<u64>,
     /// Maximum retry delay in milliseconds.
     pub retry_delay_max_ms: Option<u64>,
+    /// gRPC rate limit: maximum broadcast requests per second.
+    #[serde(default = "default_grpc_rate_limit_per_second")]
+    pub grpc_rate_limit_per_second: Option<u32>,
 }
 
 impl DYDXExecClientConfig {
@@ -319,6 +342,14 @@ impl DYDXExecClientConfig {
     #[must_use]
     pub const fn is_testnet(&self) -> bool {
         matches!(self.network, DydxNetwork::Testnet)
+    }
+
+    /// Returns the gRPC rate limiting quota, if configured.
+    #[must_use]
+    pub fn grpc_quota(&self) -> Option<Quota> {
+        self.grpc_rate_limit_per_second
+            .and_then(NonZeroU32::new)
+            .and_then(Quota::per_second)
     }
 }
 

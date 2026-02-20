@@ -329,7 +329,7 @@ mod tests {
         messages::{
             ExecutionEvent, ExecutionReport,
             data::{SubscribeCommand, SubscribeCustomData},
-            execution::TradingCommand,
+            execution::{CancelAllOrders, TradingCommand},
         },
         timer::{TimeEvent, TimeEventCallback, TimeEventHandler},
     };
@@ -621,6 +621,124 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let sender = AsyncTradingCommandSender::new(tx);
         assert!(format!("{sender:?}").contains("AsyncTradingCommandSender"));
+    }
+
+    #[tokio::test]
+    async fn test_async_trading_command_sender_execute() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+        let sender = AsyncTradingCommandSender::new(tx);
+
+        let command = TradingCommand::CancelAllOrders(CancelAllOrders::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("EUR/USD.SIM"),
+            OrderSide::Buy,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+
+        sender.execute(command);
+
+        let received = rx.recv().await;
+        assert!(received.is_some());
+        assert!(matches!(
+            received.unwrap(),
+            TradingCommand::CancelAllOrders(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_runner_processes_trading_commands() {
+        let (_data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+        let (_time_evt_tx, time_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (_exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+        let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+
+        let mut runner = create_test_runner(
+            time_evt_rx,
+            data_evt_rx,
+            data_cmd_rx,
+            exec_evt_rx,
+            exec_cmd_rx,
+            signal_rx,
+            signal_tx.clone(),
+        );
+
+        let runner_handle = tokio::spawn(async move {
+            runner.run().await;
+        });
+
+        let command = TradingCommand::CancelAllOrders(CancelAllOrders::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("EUR/USD.SIM"),
+            OrderSide::Buy,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        exec_cmd_tx.send(command).unwrap();
+
+        tokio::task::yield_now().await;
+        signal_tx.send(()).unwrap();
+
+        let result = tokio::time::timeout(Duration::from_millis(100), runner_handle).await;
+        assert!(result.is_ok(), "Runner should process command and stop");
+    }
+
+    #[tokio::test]
+    async fn test_runner_processes_multiple_trading_commands() {
+        let (_data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+        let (_time_evt_tx, time_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (_exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+        let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+
+        let mut runner = create_test_runner(
+            time_evt_rx,
+            data_evt_rx,
+            data_cmd_rx,
+            exec_evt_rx,
+            exec_cmd_rx,
+            signal_rx,
+            signal_tx.clone(),
+        );
+
+        let runner_handle = tokio::spawn(async move {
+            runner.run().await;
+        });
+
+        for i in 0..10 {
+            let strategy_id = format!("S-{i:03}");
+            let command = TradingCommand::CancelAllOrders(CancelAllOrders::new(
+                TraderId::from("TRADER-001"),
+                None,
+                StrategyId::from(strategy_id.as_str()),
+                InstrumentId::from("EUR/USD.SIM"),
+                OrderSide::Buy,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            ));
+            exec_cmd_tx.send(command).unwrap();
+        }
+
+        tokio::task::yield_now().await;
+        signal_tx.send(()).unwrap();
+
+        let result = tokio::time::timeout(Duration::from_millis(100), runner_handle).await;
+        assert!(
+            result.is_ok(),
+            "Runner should process all commands and stop"
+        );
     }
 
     #[tokio::test]

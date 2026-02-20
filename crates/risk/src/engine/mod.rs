@@ -43,7 +43,7 @@ use nautilus_model::{
     events::{OrderDenied, OrderEventAny, OrderModifyRejected},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
-    orders::{Order, OrderAny, OrderList},
+    orders::{Order, OrderAny},
     types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
 };
 use nautilus_portfolio::Portfolio;
@@ -124,7 +124,7 @@ impl RiskEngine {
     ) -> Throttler<SubmitOrder, SubmitOrderFn> {
         let success_handler = {
             Box::new(move |submit_order: SubmitOrder| {
-                let endpoint = MessagingSwitchboard::exec_engine_execute();
+                let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
                 msgbus::send_trading_command(endpoint, TradingCommand::SubmitOrder(submit_order));
             }) as Box<dyn Fn(SubmitOrder)>
         };
@@ -167,7 +167,7 @@ impl RiskEngine {
     ) -> Throttler<ModifyOrder, ModifyOrderFn> {
         let success_handler = {
             Box::new(move |order: ModifyOrder| {
-                let endpoint = MessagingSwitchboard::exec_engine_execute();
+                let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
                 msgbus::send_trading_command(endpoint, TradingCommand::ModifyOrder(order));
             }) as Box<dyn Fn(ModifyOrder)>
         };
@@ -477,15 +477,28 @@ impl RiskEngine {
             return; // Denied
         };
 
-        for order in command.order_list.orders.clone() {
+        let orders: Vec<OrderAny> = self
+            .cache
+            .borrow()
+            .orders_for_ids(&command.order_list.client_order_ids, &command);
+
+        if orders.len() != command.order_list.client_order_ids.len() {
+            self.deny_order_list(
+                &orders,
+                &format!("Incomplete order list: missing orders in cache for {command}"),
+            );
+            return; // Denied
+        }
+
+        for order in orders.clone() {
             if !self.check_order(instrument.clone(), order) {
                 return; // Denied
             }
         }
 
-        if !self.check_orders_risk(instrument.clone(), &command.order_list.orders) {
+        if !self.check_orders_risk(instrument.clone(), &orders) {
             self.deny_order_list(
-                command.order_list.clone(),
+                &orders,
                 &format!("OrderList {} DENIED", command.order_list.id),
             );
             return; // Denied
@@ -1203,7 +1216,11 @@ impl RiskEngine {
                 }
             }
             TradingCommand::SubmitOrderList(command) => {
-                self.deny_order_list(command.order_list, reason);
+                let orders: Vec<OrderAny> = self
+                    .cache
+                    .borrow()
+                    .orders_for_ids(&command.order_list.client_order_ids, &command);
+                self.deny_order_list(&orders, reason);
             }
             _ => {
                 panic!("Cannot deny command {command}");
@@ -1250,10 +1267,10 @@ impl RiskEngine {
         msgbus::send_order_event(endpoint, denied);
     }
 
-    fn deny_order_list(&self, order_list: OrderList, reason: &str) {
-        for order in order_list.orders {
+    fn deny_order_list(&self, orders: &[OrderAny], reason: &str) {
+        for order in orders {
             if !order.is_closed() {
-                self.deny_order(order, reason);
+                self.deny_order(order.clone(), reason);
             }
         }
     }
@@ -1291,7 +1308,11 @@ impl RiskEngine {
                     }
                 }
                 TradingCommand::SubmitOrderList(submit_order_list) => {
-                    self.deny_order_list(submit_order_list.order_list, "TradingState::HALTED");
+                    let orders: Vec<OrderAny> = self.cache.borrow().orders_for_ids(
+                        &submit_order_list.order_list.client_order_ids,
+                        &submit_order_list,
+                    );
+                    self.deny_order_list(&orders, "TradingState::HALTED");
                 }
                 _ => {}
             },
@@ -1322,11 +1343,14 @@ impl RiskEngine {
                     }
                 }
                 TradingCommand::SubmitOrderList(submit_order_list) => {
-                    let order_list = submit_order_list.order_list;
-                    for order in &order_list.orders {
+                    let orders: Vec<OrderAny> = self.cache.borrow().orders_for_ids(
+                        &submit_order_list.order_list.client_order_ids,
+                        &submit_order_list,
+                    );
+                    for order in &orders {
                         if order.is_buy() && self.portfolio.is_net_long(&instrument.id()) {
                             self.deny_order_list(
-                                order_list,
+                                &orders,
                                 &format!(
                                     "BUY when TradingState::REDUCING and LONG {}",
                                     instrument.id()
@@ -1335,7 +1359,7 @@ impl RiskEngine {
                             return;
                         } else if order.is_sell() && self.portfolio.is_net_short(&instrument.id()) {
                             self.deny_order_list(
-                                order_list,
+                                &orders,
                                 &format!(
                                     "SELL when TradingState::REDUCING and SHORT {}",
                                     instrument.id()
@@ -1361,7 +1385,7 @@ impl RiskEngine {
     }
 
     fn send_to_execution(&self, command: TradingCommand) {
-        let endpoint = MessagingSwitchboard::exec_engine_execute();
+        let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
         msgbus::send_trading_command(endpoint, command);
     }
 

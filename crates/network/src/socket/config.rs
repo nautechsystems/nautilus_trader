@@ -34,7 +34,7 @@ use super::types::TcpMessageHandler;
 /// Configuration for TCP socket connection.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
 )]
 pub struct SocketConfig {
     /// The URL to connect to.
@@ -63,6 +63,11 @@ pub struct SocketConfig {
     /// - `None`: Unlimited reconnection attempts (default, recommended for production).
     /// - `Some(n)`: After n failed attempts, transition to CLOSED state.
     pub reconnect_max_attempts: Option<u32>,
+    /// The idle timeout (milliseconds) for the read task.
+    /// When set, the read task will break and trigger reconnection if no data
+    /// is received within this duration. Useful for detecting silently dead
+    /// connections where the server stops sending without closing.
+    pub idle_timeout_ms: Option<u64>,
     /// The path to the certificates directory.
     pub certs_dir: Option<String>,
 }
@@ -88,6 +93,7 @@ impl Debug for SocketConfig {
             .field("reconnect_jitter_ms", &self.reconnect_jitter_ms)
             .field("connection_max_retries", &self.connection_max_retries)
             .field("reconnect_max_attempts", &self.reconnect_max_attempts)
+            .field("idle_timeout_ms", &self.idle_timeout_ms)
             .field("certs_dir", &self.certs_dir)
             .finish()
     }
@@ -108,6 +114,7 @@ impl Clone for SocketConfig {
             reconnect_jitter_ms: self.reconnect_jitter_ms,
             connection_max_retries: self.connection_max_retries,
             reconnect_max_attempts: self.reconnect_max_attempts,
+            idle_timeout_ms: self.idle_timeout_ms,
             certs_dir: self.certs_dir.clone(),
         }
     }

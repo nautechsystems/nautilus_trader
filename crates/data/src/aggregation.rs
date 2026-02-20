@@ -130,9 +130,7 @@ impl BarBuilder {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     #[must_use]
     pub fn new(bar_type: BarType, price_precision: u8, size_precision: u8) -> Self {
         correctness::check_equal(
@@ -301,9 +299,7 @@ impl BarAggregatorCore {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -358,9 +354,7 @@ impl TickBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -429,9 +423,7 @@ impl TickImbalanceBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -515,9 +507,7 @@ impl TickRunsBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -606,9 +596,7 @@ impl VolumeBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -717,9 +705,7 @@ impl VolumeImbalanceBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -821,9 +807,7 @@ impl VolumeRunsBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -935,9 +919,7 @@ impl ValueBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -997,7 +979,16 @@ impl BarAggregator for ValueBarAggregator {
             }
 
             let value_diff = spec.step.get() as f64 - self.cum_value;
-            let size_diff = size_update * (value_diff / value_update);
+            let mut size_diff = size_update * (value_diff / value_update);
+
+            // Clamp to minimum representable size to avoid zero-volume bars
+            if is_below_min_size(size_diff, size.precision) {
+                if is_below_min_size(size_update, size.precision) {
+                    break;
+                }
+                size_diff = min_size_f64(size.precision);
+            }
+
             self.core
                 .apply_update(price, Quantity::new(size_diff, size.precision), ts_init);
 
@@ -1029,7 +1020,16 @@ impl BarAggregator for ValueBarAggregator {
             }
 
             let value_diff = self.core.bar_type.spec().step.get() as f64 - self.cum_value;
-            let volume_diff = volume_update.as_f64() * (value_diff / value_update);
+            let mut volume_diff = volume_update.as_f64() * (value_diff / value_update);
+
+            // Clamp to minimum representable size to avoid zero-volume bars
+            if is_below_min_size(volume_diff, volume_update.precision) {
+                if is_below_min_size(volume_update.as_f64(), volume_update.precision) {
+                    break;
+                }
+                volume_diff = min_size_f64(volume_update.precision);
+            }
+
             self.core.builder.update_bar(
                 bar,
                 Quantity::new(volume_diff, volume_update.precision),
@@ -1068,9 +1068,7 @@ impl ValueImbalanceBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -1132,9 +1130,7 @@ impl BarAggregator for ValueImbalanceBarAggregator {
         let mut size_remaining = trade.size.as_f64();
         while size_remaining > 0.0 {
             let value_remaining = price_f64 * size_remaining;
-            let current_sign = self.imbalance_value.signum();
-
-            if current_sign == 0.0 || current_sign == side_sign {
+            if self.imbalance_value == 0.0 || self.imbalance_value.signum() == side_sign {
                 let needed = self.step_value - self.imbalance_value.abs();
                 if value_remaining <= needed {
                     self.imbalance_value += side_sign * value_remaining;
@@ -1143,11 +1139,26 @@ impl BarAggregator for ValueImbalanceBarAggregator {
                         Quantity::new(size_remaining, trade.size.precision),
                         trade.ts_init,
                     );
+
+                    if self.imbalance_value.abs() >= self.step_value {
+                        self.core.build_now_and_send();
+                        self.imbalance_value = 0.0;
+                    }
                     break;
                 }
 
-                let value_chunk = needed;
-                let size_chunk = value_chunk / price_f64;
+                let mut value_chunk = needed;
+                let mut size_chunk = value_chunk / price_f64;
+
+                // Clamp to minimum representable size to avoid zero-volume bars
+                if is_below_min_size(size_chunk, trade.size.precision) {
+                    if is_below_min_size(size_remaining, trade.size.precision) {
+                        break;
+                    }
+                    size_chunk = min_size_f64(trade.size.precision);
+                    value_chunk = price_f64 * size_chunk;
+                }
+
                 self.core.apply_update(
                     trade.price,
                     Quantity::new(size_chunk, trade.size.precision),
@@ -1162,14 +1173,30 @@ impl BarAggregator for ValueImbalanceBarAggregator {
                 }
             } else {
                 // Opposing side: first neutralize existing imbalance
-                let value_to_flatten = self.imbalance_value.abs().min(value_remaining);
-                let size_chunk = value_to_flatten / price_f64;
+                let mut value_to_flatten = self.imbalance_value.abs().min(value_remaining);
+                let mut size_chunk = value_to_flatten / price_f64;
+
+                // Clamp to minimum representable size to avoid zero-volume bars
+                if is_below_min_size(size_chunk, trade.size.precision) {
+                    if is_below_min_size(size_remaining, trade.size.precision) {
+                        break;
+                    }
+                    size_chunk = min_size_f64(trade.size.precision);
+                    value_to_flatten = price_f64 * size_chunk;
+                }
+
                 self.core.apply_update(
                     trade.price,
                     Quantity::new(size_chunk, trade.size.precision),
                     trade.ts_init,
                 );
                 self.imbalance_value += side_sign * value_to_flatten;
+
+                // Min-size clamp can overshoot past threshold
+                if self.imbalance_value.abs() >= self.step_value {
+                    self.core.build_now_and_send();
+                    self.imbalance_value = 0.0;
+                }
                 size_remaining -= size_chunk;
             }
         }
@@ -1204,9 +1231,7 @@ impl ValueRunsBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -1288,7 +1313,16 @@ impl BarAggregator for ValueRunsBarAggregator {
             }
 
             let value_needed = self.step_value - self.run_value;
-            let size_chunk = value_needed / price_f64;
+            let mut size_chunk = value_needed / price_f64;
+
+            // Clamp to minimum representable size to avoid zero-volume bars
+            if is_below_min_size(size_chunk, trade.size.precision) {
+                if is_below_min_size(size_remaining, trade.size.precision) {
+                    break;
+                }
+                size_chunk = min_size_f64(trade.size.precision);
+            }
+
             self.core.apply_update(
                 trade.price,
                 Quantity::new(size_chunk, trade.size.precision),
@@ -1333,9 +1367,7 @@ impl RenkoBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -1538,9 +1570,7 @@ impl TimeBarAggregator {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
     #[allow(clippy::too_many_arguments)]
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
@@ -1658,7 +1688,7 @@ impl TimeBarAggregator {
                 self.next_close_ns = UnixNanos::from(start_time + interval_duration);
             }
 
-            self.stored_open_ns = self.next_close_ns - self.interval_ns;
+            self.stored_open_ns = self.next_close_ns.saturating_sub_ns(self.interval_ns);
         } else {
             // The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
             let alert_time = if fire_immediately {
@@ -1879,6 +1909,14 @@ impl BarAggregator for TimeBarAggregator {
     fn start_timer(&mut self, aggregator_rc: Option<Rc<RefCell<Box<dyn BarAggregator>>>>) {
         self.start_timer_internal(aggregator_rc);
     }
+}
+
+fn is_below_min_size(size: f64, precision: u8) -> bool {
+    Quantity::new(size, precision).raw == 0
+}
+
+fn min_size_f64(precision: u8) -> f64 {
+    10_f64.powi(-(precision as i32))
 }
 
 #[cfg(test)]
@@ -2760,7 +2798,7 @@ mod tests {
         aggregator.handle_trade(sell);
 
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
-        assert!(handler_guard.is_empty());
+        assert_eq!(handler_guard.len(), 2);
     }
 
     #[rstest]
@@ -4103,5 +4141,155 @@ mod tests {
 
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
+    }
+
+    #[rstest]
+    fn test_value_bar_high_price_low_step_no_zero_volume_bars(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(100, BarAggregation::Value, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        // price=1000, size=3, value=3000, step=100 → size_chunk=0.1 rounds to 0 at precision 0
+        aggregator.update(
+            Price::from("1000.00"),
+            Quantity::from(3),
+            UnixNanos::default(),
+        );
+
+        // 3 bars (one per min-size unit), not 30 zero-volume bars
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 3);
+        for bar in handler_guard.iter() {
+            assert_eq!(bar.volume, Quantity::from(1));
+        }
+    }
+
+    #[rstest]
+    fn test_value_imbalance_high_price_low_step_no_zero_volume_bars(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(100, BarAggregation::ValueImbalance, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueImbalanceBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let trade = TradeTick {
+            price: Price::from("1000.00"),
+            size: Quantity::from(3),
+            aggressor_side: AggressorSide::Buyer,
+            instrument_id: instrument.id(),
+            ..TradeTick::default()
+        };
+
+        aggregator.handle_trade(trade);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 3);
+        for bar in handler_guard.iter() {
+            assert_eq!(bar.volume, Quantity::from(1));
+        }
+    }
+
+    #[rstest]
+    fn test_value_imbalance_opposite_side_overshoot_emits_bar(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(100, BarAggregation::ValueImbalance, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueImbalanceBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        // Build seller imbalance of -50 (below step=100, no bar yet)
+        let sell_tick = TradeTick {
+            price: Price::from("10.00"),
+            size: Quantity::from(5),
+            aggressor_side: AggressorSide::Seller,
+            instrument_id: instrument.id(),
+            ..TradeTick::default()
+        };
+
+        // Opposite-side buyer: flatten amount 50/1000=0.05 < min_size (1),
+        // clamp overshoots imbalance from -50 to +950, crossing threshold
+        let buy_tick = TradeTick {
+            price: Price::from("1000.00"),
+            size: Quantity::from(1),
+            aggressor_side: AggressorSide::Buyer,
+            instrument_id: instrument.id(),
+            ts_init: UnixNanos::from(1),
+            ts_event: UnixNanos::from(1),
+            ..TradeTick::default()
+        };
+
+        aggregator.handle_trade(sell_tick);
+        aggregator.handle_trade(buy_tick);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 1);
+        assert_eq!(handler_guard[0].volume, Quantity::from(6));
+    }
+
+    #[rstest]
+    fn test_value_runs_high_price_low_step_no_zero_volume_bars(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(100, BarAggregation::ValueRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let trade = TradeTick {
+            price: Price::from("1000.00"),
+            size: Quantity::from(3),
+            aggressor_side: AggressorSide::Buyer,
+            instrument_id: instrument.id(),
+            ..TradeTick::default()
+        };
+
+        aggregator.handle_trade(trade);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 3);
+        for bar in handler_guard.iter() {
+            assert_eq!(bar.volume, Quantity::from(1));
+        }
     }
 }

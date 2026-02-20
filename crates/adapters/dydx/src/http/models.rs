@@ -279,7 +279,7 @@ pub struct PerpetualPosition {
     /// Position status.
     pub status: DydxPositionStatus,
     /// Position side (determined by size sign).
-    pub side: OrderSide,
+    pub side: DydxPositionSide,
     /// Position size (negative for short).
     #[serde_as(as = "DisplayFromStr")]
     pub size: Decimal,

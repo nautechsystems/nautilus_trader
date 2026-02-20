@@ -404,8 +404,9 @@ impl BinanceRawSpotHttpClient {
             }
         }
 
-        let default_quota =
-            default.unwrap_or_else(|| Quota::per_second(NonZeroU32::new(10).unwrap()));
+        let default_quota = default.unwrap_or_else(|| {
+            Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
+        });
 
         keyed.push((BINANCE_GLOBAL_RATE_KEY.to_string(), default_quota));
 
@@ -419,7 +420,7 @@ impl BinanceRawSpotHttpClient {
     fn quota_from(quota: &BinanceRateLimitQuota) -> Option<Quota> {
         let burst = NonZeroU32::new(quota.limit)?;
         match quota.interval {
-            BinanceRateLimitInterval::Second => Some(Quota::per_second(burst)),
+            BinanceRateLimitInterval::Second => Quota::per_second(burst),
             BinanceRateLimitInterval::Minute => Some(Quota::per_minute(burst)),
             BinanceRateLimitInterval::Day => {
                 Quota::with_period(std::time::Duration::from_secs(86_400))
@@ -1232,7 +1233,7 @@ impl BinanceRawSpotHttpClient {
 /// - Complex types (instruments, orders): Transform to Nautilus domain types.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
 )]
 pub struct BinanceSpotHttpClient {
     inner: Arc<BinanceRawSpotHttpClient>,

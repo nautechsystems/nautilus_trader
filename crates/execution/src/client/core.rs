@@ -24,7 +24,8 @@ use std::{
 use nautilus_common::cache::Cache;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::{AccountId, ClientId, TraderId, Venue},
+    identifiers::{AccountId, ClientId, ClientOrderId, TraderId, Venue},
+    orders::{OrderAny, OrderList},
     types::Currency,
 };
 
@@ -34,9 +35,9 @@ use nautilus_model::{
 /// client identity, connection state, and read-only cache access. Execution
 /// clients use this as a base and extend it with venue-specific implementations.
 ///
-/// For event generation, use [`OrderEventFactory`] from `nautilus_common::factories`.
-/// For live adapters, use [`ExecutionEventEmitter`] which combines event generation
-/// with async dispatch. For backtest/sandbox, use [`OrderEventFactory`] directly
+/// For event generation, use `OrderEventFactory` from `nautilus_common::factories`.
+/// For live adapters, use `ExecutionEventEmitter` which combines event generation
+/// with async dispatch. For backtest/sandbox, use `OrderEventFactory` directly
 /// and dispatch via `msgbus::send_order_event()`.
 #[derive(Debug)]
 pub struct ExecutionClientCore {
@@ -105,6 +106,32 @@ impl ExecutionClientCore {
     /// Returns a read-only borrow of the cache.
     pub fn cache(&self) -> std::cell::Ref<'_, Cache> {
         self.cache.borrow()
+    }
+
+    /// Returns the order for the given `client_order_id` from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found in the cache.
+    pub fn get_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
+        self.cache
+            .borrow()
+            .order(client_order_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Order not found in cache: {client_order_id}"))
+    }
+
+    /// Returns all orders for the given order list from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any order is not found in the cache.
+    pub fn get_orders_for_list(&self, order_list: &OrderList) -> anyhow::Result<Vec<OrderAny>> {
+        order_list
+            .client_order_ids
+            .iter()
+            .map(|id| self.get_order(id))
+            .collect()
     }
 
     /// Returns `true` if the client is connected.

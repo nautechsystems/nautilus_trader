@@ -699,10 +699,6 @@ impl BlockchainDataClientCore {
     /// # Errors
     ///
     /// Returns an error if swap event processing fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if swap event conversion to trade data fails.
     pub fn process_pool_swap_event(
         &self,
         swap_event: &SwapEvent,
@@ -1152,7 +1148,7 @@ impl BlockchainDataClientCore {
         match self.get_on_chain_snapshot(&profiler).await {
             Ok(on_chain_snapshot) => profiler.restore_from_snapshot(on_chain_snapshot)?,
             Err(e) => log::error!(
-                "Failed to restore from on-chain snapshot: {e}. Sending not hydrated state to client."
+                "Failed to restore from on-chain snapshot: {e}, sending not hydrated state to client"
             ),
         }
 

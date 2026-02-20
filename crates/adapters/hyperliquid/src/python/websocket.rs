@@ -19,31 +19,23 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
-    identifiers::{AccountId, InstrumentId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
-use pyo3::{conversion::IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
+use pyo3::{conversion::IntoPyObjectExt, prelude::*};
 
-use crate::{
-    common::HyperliquidProductType,
-    websocket::{
-        HyperliquidWebSocketClient,
-        messages::{ExecutionReport, NautilusWsMessage},
-    },
+use crate::websocket::{
+    HyperliquidWebSocketClient,
+    messages::{ExecutionReport, NautilusWsMessage},
 };
 
 #[pymethods]
 impl HyperliquidWebSocketClient {
     #[new]
-    #[pyo3(signature = (url=None, testnet=false, product_type=HyperliquidProductType::Perp, account_id=None))]
-    fn py_new(
-        url: Option<String>,
-        testnet: bool,
-        product_type: HyperliquidProductType,
-        account_id: Option<String>,
-    ) -> PyResult<Self> {
+    #[pyo3(signature = (url=None, testnet=false, account_id=None))]
+    fn py_new(url: Option<String>, testnet: bool, account_id: Option<String>) -> PyResult<Self> {
         let account_id = account_id.map(|s| AccountId::from(s.as_str()));
-        Ok(Self::new(url, testnet, product_type, account_id))
+        Ok(Self::new(url, testnet, account_id))
     }
 
     #[getter]
@@ -61,6 +53,40 @@ impl HyperliquidWebSocketClient {
     #[pyo3(name = "is_closed")]
     fn py_is_closed(&self) -> bool {
         !self.is_active()
+    }
+
+    #[pyo3(name = "cache_spot_fill_coins")]
+    fn py_cache_spot_fill_coins(&self, mapping: std::collections::HashMap<String, String>) {
+        let ahash_mapping: ahash::AHashMap<ustr::Ustr, ustr::Ustr> = mapping
+            .into_iter()
+            .map(|(k, v)| (ustr::Ustr::from(&k), ustr::Ustr::from(&v)))
+            .collect();
+        self.cache_spot_fill_coins(ahash_mapping);
+    }
+
+    #[pyo3(name = "cache_cloid_mapping")]
+    fn py_cache_cloid_mapping(&self, cloid: String, client_order_id: ClientOrderId) {
+        self.cache_cloid_mapping(ustr::Ustr::from(&cloid), client_order_id);
+    }
+
+    #[pyo3(name = "remove_cloid_mapping")]
+    fn py_remove_cloid_mapping(&self, cloid: String) {
+        self.remove_cloid_mapping(&ustr::Ustr::from(&cloid));
+    }
+
+    #[pyo3(name = "clear_cloid_cache")]
+    fn py_clear_cloid_cache(&self) {
+        self.clear_cloid_cache();
+    }
+
+    #[pyo3(name = "cloid_cache_len")]
+    fn py_cloid_cache_len(&self) -> usize {
+        self.cloid_cache_len()
+    }
+
+    #[pyo3(name = "get_cloid_mapping")]
+    fn py_get_cloid_mapping(&self, cloid: String) -> Option<ClientOrderId> {
+        self.get_cloid_mapping(&ustr::Ustr::from(&cloid))
     }
 
     #[pyo3(name = "connect")]
@@ -213,7 +239,7 @@ impl HyperliquidWebSocketClient {
                             }
                         }
                         None => {
-                            log::info!("WebSocket connection closed");
+                            log::debug!("WebSocket connection closed");
                             break;
                         }
                     }
@@ -240,7 +266,7 @@ impl HyperliquidWebSocketClient {
                 }
 
                 if start.elapsed().as_secs_f64() >= timeout_secs {
-                    return Err(PyRuntimeError::new_err(format!(
+                    return Err(to_pyruntime_err(format!(
                         "WebSocket connection did not become active within {timeout_secs} seconds"
                     )));
                 }
@@ -481,6 +507,23 @@ impl HyperliquidWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .subscribe_user_events(&user)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_user_fills")]
+    fn py_subscribe_user_fills<'py>(
+        &self,
+        py: Python<'py>,
+        user: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_user_fills(&user)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

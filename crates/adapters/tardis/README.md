@@ -26,9 +26,11 @@ highest level, with the aim of supporting mission-critical, trading system backt
 This crate provides feature flags to control source code inclusion during compilation,
 depending on the intended use case:
 
-- `replay`: Enables market data replay functionality (enabled by default).
-- `extension-module`: Builds the crate as a Python extension module.
+- `replay` (default): Enables market data replay functionality.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `extension-module`: Builds the crate as a Python extension module.
+
+[High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
 
 ## Documentation
 

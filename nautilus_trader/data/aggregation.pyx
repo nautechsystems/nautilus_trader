@@ -384,6 +384,9 @@ cdef class BarAggregator:
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         raise NotImplementedError("method `_apply_update` must be implemented in the subclass") # pragma: no cover
 
+    cdef bint _is_below_min_size(self, double size, int precision):
+        return Quantity(size, precision=precision)._mem.raw == 0
+
     cdef void _build_now_and_send(self):
         cdef Bar bar = self._builder.build_now()
         self._handler(bar)
@@ -924,6 +927,13 @@ cdef class ValueBarAggregator(BarAggregator):
 
             value_diff: Decimal = self.bar_type.spec.step - self._cum_value
             size_diff: Decimal = size_update * (value_diff / value_update)
+
+            # Clamp to minimum representable size to avoid zero-volume bars
+            if self._is_below_min_size(size_diff, size._mem.precision):
+                if self._is_below_min_size(size_update, size._mem.precision):
+                    break
+                size_diff = Decimal(10) ** -size._mem.precision
+
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
@@ -958,6 +968,13 @@ cdef class ValueBarAggregator(BarAggregator):
 
             value_diff: Decimal = self.bar_type.spec.step - self._cum_value
             volume_diff: Decimal = volume_update * (value_diff / value_update)
+
+            # Clamp to minimum representable size to avoid zero-volume bars
+            if self._is_below_min_size(volume_diff, volume._mem.precision):
+                if self._is_below_min_size(volume_update, volume._mem.precision):
+                    break
+                volume_diff = Decimal(10) ** -volume._mem.precision
+
             # Update builder to the step threshold
             self._builder.update_bar(
                 bar=bar,
@@ -1065,6 +1082,14 @@ cdef class ValueImbalanceBarAggregator(BarAggregator):
 
                 value_chunk = needed
                 size_chunk = value_chunk / price_f64
+
+                # Clamp to minimum representable size to avoid zero-volume bars
+                if self._is_below_min_size(size_chunk, tick.size.precision):
+                    if self._is_below_min_size(size_remaining, tick.size.precision):
+                        break
+                    size_chunk = 10.0 ** -tick.size.precision
+                    value_chunk = price_f64 * size_chunk
+
                 self._apply_update(
                     tick.price,
                     Quantity(size_chunk, precision=tick.size.precision),
@@ -1080,12 +1105,25 @@ cdef class ValueImbalanceBarAggregator(BarAggregator):
                 imbalance_abs = abs(self._imbalance_value)
                 value_to_flatten = value_remaining if value_remaining < imbalance_abs else imbalance_abs
                 size_chunk = value_to_flatten / price_f64
+
+                # Clamp to minimum representable size to avoid zero-volume bars
+                if self._is_below_min_size(size_chunk, tick.size.precision):
+                    if self._is_below_min_size(size_remaining, tick.size.precision):
+                        break
+                    size_chunk = 10.0 ** -tick.size.precision
+                    value_to_flatten = price_f64 * size_chunk
+
                 self._apply_update(
                     tick.price,
                     Quantity(size_chunk, precision=tick.size.precision),
                     tick.ts_init,
                 )
                 self._imbalance_value += side_sign * value_to_flatten
+
+                # Min-size clamp can overshoot past threshold
+                if abs(self._imbalance_value) >= self._step_value:
+                    self._build_now_and_send()
+                    self._imbalance_value = 0.0
                 size_remaining -= size_chunk
 
 
@@ -1176,6 +1214,13 @@ cdef class ValueRunsBarAggregator(BarAggregator):
 
             value_needed = self._step_value - self._run_value
             size_chunk = value_needed / price_f64
+
+            # Clamp to minimum representable size to avoid zero-volume bars
+            if self._is_below_min_size(size_chunk, tick.size.precision):
+                if self._is_below_min_size(size_remaining, tick.size.precision):
+                    break
+                size_chunk = 10.0 ** -tick.size.precision
+
             self._apply_update(
                 tick.price,
                 Quantity(size_chunk, precision=tick.size.precision),

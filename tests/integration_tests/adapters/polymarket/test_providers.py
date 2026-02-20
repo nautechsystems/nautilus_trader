@@ -19,6 +19,7 @@ from unittest.mock import patch
 import pytest
 
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
+from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProviderConfig
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.model.identifiers import InstrumentId
@@ -430,7 +431,7 @@ async def test_load_all_async_uses_gamma_api_when_configured(mock_clob_client, l
     Gamma API for server-side filtering.
 
     """
-    config = InstrumentProviderConfig(use_gamma_markets=True)
+    config = PolymarketInstrumentProviderConfig(use_gamma_markets=True)
     provider = PolymarketInstrumentProvider(
         client=mock_clob_client,
         clock=live_clock,
@@ -500,3 +501,465 @@ async def test_load_all_async_uses_clob_api_when_gamma_not_configured(
 
     instruments = instrument_provider.list_all()
     assert len(instruments) == 2
+
+
+# =====================================================================================
+# event_slug_builder tests
+# =====================================================================================
+
+# Sample event data for event_slug_builder tests
+SAMPLE_EVENT = {
+    "id": "185377",
+    "slug": "highest-temperature-in-nyc-on-january-26",
+    "title": "Highest temperature in NYC on January 26?",
+    "active": True,
+    "closed": False,
+    "markets": [
+        {
+            "conditionId": "0xed7d522e06d2f1f9015a468884cfdb2be7e737a33f130c1237a40f18bc739267",
+            "question": "Will the highest temperature be 25F or below?",
+            "slug": "highest-temperature-in-nyc-on-january-26-25forbelow",
+            "clobTokenIds": '["111111111111111111111111111111111111111111111111111111111111111111", "222222222222222222222222222222222222222222222222222222222222222222"]',
+            "outcomes": '["Yes", "No"]',
+            "outcomePrices": '["0.3", "0.7"]',
+            "endDateIso": "2025-01-27",
+            "orderPriceMinTickSize": 0.001,
+            "orderMinSize": 5,
+            "active": True,
+            "closed": False,
+            "enableOrderBook": True,
+        },
+        {
+            "conditionId": "0x35c268a9ba1b27115c9b42415a667177d9959310d2c9b3131bca9e7942a13f3a",
+            "question": "Will the highest temperature be 26-27F?",
+            "slug": "highest-temperature-in-nyc-on-january-26-26-27f",
+            "clobTokenIds": '["333333333333333333333333333333333333333333333333333333333333333333", "444444444444444444444444444444444444444444444444444444444444444444"]',
+            "outcomes": '["Yes", "No"]',
+            "outcomePrices": '["0.5", "0.5"]',
+            "endDateIso": "2025-01-27",
+            "orderPriceMinTickSize": 0.001,
+            "orderMinSize": 5,
+            "active": True,
+            "closed": False,
+            "enableOrderBook": True,
+        },
+    ],
+}
+
+
+def sample_slug_builder() -> list[str]:
+    """
+    Sample slug builder for testing.
+    """
+    return ["highest-temperature-in-nyc-on-january-26"]
+
+
+def multi_slug_builder() -> list[str]:
+    """
+    Sample slug builder that returns multiple slugs.
+    """
+    return [
+        "highest-temperature-in-nyc-on-january-26",
+        "highest-temperature-in-london-on-january-26",
+    ]
+
+
+def empty_slug_builder() -> list[str]:
+    """
+    Sample slug builder that returns empty list.
+    """
+    return []
+
+
+@pytest.mark.asyncio
+async def test_load_all_async_uses_event_slug_builder_when_configured(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that load_all_async uses event_slug_builder when configured.
+
+    The event_slug_builder should take priority over both use_gamma_markets and the
+    default CLOB API path.
+
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:sample_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.PolymarketDataLoader._fetch_event_by_slug",
+    ) as mock_fetch_event:
+        mock_fetch_event.return_value = SAMPLE_EVENT
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert
+        mock_fetch_event.assert_called_once()
+        call_args = mock_fetch_event.call_args
+        assert call_args[1]["slug"] == "highest-temperature-in-nyc-on-january-26"
+
+        instruments = provider.list_all()
+        assert len(instruments) == 4  # 2 markets x 2 tokens
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_takes_priority_over_gamma_markets(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that event_slug_builder takes priority over use_gamma_markets.
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:sample_slug_builder",
+        use_gamma_markets=True,  # This should be ignored
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    with (
+        patch(
+            "nautilus_trader.adapters.polymarket.providers.PolymarketDataLoader._fetch_event_by_slug",
+        ) as mock_fetch_event,
+        patch(
+            "nautilus_trader.adapters.polymarket.providers.list_markets",
+        ) as mock_list_markets,
+    ):
+        mock_fetch_event.return_value = SAMPLE_EVENT
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert
+        mock_fetch_event.assert_called_once()
+        mock_list_markets.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_handles_multiple_slugs(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that event_slug_builder correctly handles multiple slugs.
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:multi_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    second_event = {
+        **SAMPLE_EVENT,
+        "slug": "highest-temperature-in-london-on-january-26",
+        "markets": [
+            {
+                **SAMPLE_EVENT["markets"][0],
+                "conditionId": "0xaabbcc",
+                "clobTokenIds": '["555555555555555555555555555555555555555555555555555555555555555555", "666666666666666666666666666666666666666666666666666666666666666666"]',
+            },
+        ],
+    }
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.PolymarketDataLoader._fetch_event_by_slug",
+    ) as mock_fetch_event:
+        mock_fetch_event.side_effect = [SAMPLE_EVENT, second_event]
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert
+        assert mock_fetch_event.call_count == 2
+        instruments = provider.list_all()
+        assert len(instruments) == 6  # 4 from first event + 2 from second
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_handles_empty_slug_list(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that event_slug_builder handles empty slug list gracefully.
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:empty_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.PolymarketDataLoader._fetch_event_by_slug",
+    ) as mock_fetch_event:
+        # Act
+        await provider.load_all_async()
+
+        # Assert
+        mock_fetch_event.assert_not_called()
+        instruments = provider.list_all()
+        assert len(instruments) == 0
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_continues_on_event_not_found(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that event_slug_builder continues processing when an event is not found.
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:multi_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.PolymarketDataLoader._fetch_event_by_slug",
+    ) as mock_fetch_event:
+        mock_fetch_event.side_effect = [
+            ValueError("Event not found"),
+            SAMPLE_EVENT,
+        ]
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert
+        assert mock_fetch_event.call_count == 2
+        instruments = provider.list_all()
+        assert len(instruments) == 4  # Only from successful event
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_skips_markets_without_condition_id(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that event_slug_builder skips markets without conditionId.
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:sample_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    event_with_bad_market = {
+        **SAMPLE_EVENT,
+        "markets": [
+            SAMPLE_EVENT["markets"][0],  # Valid market
+            {
+                "question": "Bad market without conditionId",
+                "slug": "bad-market",
+            },  # Invalid market
+        ],
+    }
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.PolymarketDataLoader._fetch_event_by_slug",
+    ) as mock_fetch_event:
+        mock_fetch_event.return_value = event_with_bad_market
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert
+        instruments = provider.list_all()
+        assert len(instruments) == 2  # Only 1 valid market x 2 tokens
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_invalid_module_path_raises(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that an invalid module path in event_slug_builder raises ModuleNotFoundError.
+
+    If a user misconfigures the path with a typo in the module name, the error should
+    propagate immediately (fail fast).
+
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="nonexistent.module:build_slugs",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    # Act & Assert
+    with pytest.raises(ModuleNotFoundError):
+        await provider.load_all_async()
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_invalid_function_path_raises(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that an invalid function name in event_slug_builder raises AttributeError.
+
+    If a user misconfigures the path with a typo in the function name, the error should
+    propagate immediately (fail fast).
+
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:nonexistent_function",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    # Act & Assert
+    with pytest.raises(AttributeError):
+        await provider.load_all_async()
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_callable_raises_exception(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that an exception raised by the slug builder callable propagates up.
+
+    If the slug builder itself fails (e.g., network error fetching slug data), the error
+    should propagate immediately rather than being silently swallowed.
+
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:sample_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.resolve_path",
+    ) as mock_resolve:
+        mock_resolve.return_value = MagicMock(side_effect=RuntimeError("Builder failed"))
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match="Builder failed"):
+            await provider.load_all_async()
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_handles_generic_exception_during_fetch(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that a generic (non-ValueError) exception during event fetch is logged and
+    skipped.
+
+    Unlike ValueError (event not found), other exceptions like ConnectionError should be
+    logged at error level with traceback but still allow processing of remaining slugs.
+
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:multi_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.PolymarketDataLoader._fetch_event_by_slug",
+    ) as mock_fetch_event:
+        mock_fetch_event.side_effect = [
+            ConnectionError("Network timeout"),
+            SAMPLE_EVENT,
+        ]
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert: Second slug still processed despite first failing
+        assert mock_fetch_event.call_count == 2
+        instruments = provider.list_all()
+        assert len(instruments) == 4  # Only from successful event
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_skips_empty_token_id(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that tokens with empty token_id are skipped with a warning.
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:sample_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    event_with_empty_token = {
+        **SAMPLE_EVENT,
+        "markets": [
+            {
+                **SAMPLE_EVENT["markets"][0],
+                "clobTokenIds": '["", "222222222222222222222222222222222222222222222222222222222222222222"]',
+            },
+        ],
+    }
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.PolymarketDataLoader._fetch_event_by_slug",
+    ) as mock_fetch_event:
+        mock_fetch_event.return_value = event_with_empty_token
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert: Only 1 valid token loaded (the one with non-empty token_id)
+        instruments = provider.list_all()
+        assert len(instruments) == 1

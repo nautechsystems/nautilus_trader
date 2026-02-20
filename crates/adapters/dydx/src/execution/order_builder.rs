@@ -26,7 +26,7 @@
 //!
 //! The builder produces `cosmrs::Any` messages ready for transaction building.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use chrono::{DateTime, Duration, Utc};
 use cosmrs::Any;
@@ -53,7 +53,10 @@ use crate::{
     proto::{
         ToAny,
         dydxprotocol::{
-            clob::{MsgCancelOrder, MsgPlaceOrder, OrderId, msg_cancel_order::GoodTilOneof},
+            clob::{
+                MsgBatchCancel, MsgCancelOrder, MsgPlaceOrder, OrderBatch, OrderId,
+                msg_cancel_order::GoodTilOneof,
+            },
             subaccounts::SubaccountId,
         },
     },
@@ -185,6 +188,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         quantity: Quantity,
         block_height: u32,
@@ -196,6 +200,7 @@ impl OrderMessageBuilder {
             self.wallet_address.clone(),
             self.subaccount_number,
             client_order_id,
+            client_metadata,
         )
         .market(order_side_to_proto(side), quantity.as_decimal())
         .short_term()
@@ -222,6 +227,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         price: Price,
         quantity: Quantity,
@@ -244,6 +250,7 @@ impl OrderMessageBuilder {
             self.wallet_address.clone(),
             self.subaccount_number,
             client_order_id,
+            client_metadata,
         )
         .limit(
             order_side_to_proto(side),
@@ -284,6 +291,7 @@ impl OrderMessageBuilder {
         self.build_limit_order(
             params.instrument_id,
             params.client_order_id,
+            params.client_metadata,
             params.side,
             params.price,
             params.quantity,
@@ -467,6 +475,49 @@ impl OrderMessageBuilder {
             .collect()
     }
 
+    /// Builds a `MsgBatchCancel` message for batch-cancelling short-term orders.
+    ///
+    /// Groups orders by `clob_pair_id` and creates a single `MsgBatchCancel` message
+    /// that cancels all listed short-term orders in one transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if market parameters cannot be retrieved for any instrument.
+    pub fn build_batch_cancel_short_term(
+        &self,
+        orders: &[(InstrumentId, u32)],
+        block_height: u32,
+    ) -> Result<Any, DydxError> {
+        // Group client_ids by clob_pair_id
+        let mut clob_groups: HashMap<u32, Vec<u32>> = HashMap::new();
+        for (instrument_id, client_order_id) in orders {
+            let market_params = self.get_market_params(*instrument_id)?;
+            clob_groups
+                .entry(market_params.clob_pair_id)
+                .or_default()
+                .push(*client_order_id);
+        }
+
+        let short_term_cancels: Vec<OrderBatch> = clob_groups
+            .into_iter()
+            .map(|(clob_pair_id, client_ids)| OrderBatch {
+                clob_pair_id,
+                client_ids,
+            })
+            .collect();
+
+        let msg = MsgBatchCancel {
+            subaccount_id: Some(SubaccountId {
+                owner: self.wallet_address.clone(),
+                number: self.subaccount_number,
+            }),
+            short_term_cancels,
+            good_til_block: block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+        };
+
+        Ok(msg.to_any())
+    }
+
     /// Builds a cancel-and-replace batch for order modification.
     ///
     /// Returns `[MsgCancelOrder, MsgPlaceOrder]` as a single atomic transaction.
@@ -558,6 +609,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         order_type: ConditionalOrderType,
         side: OrderSide,
         trigger_price: Price,
@@ -575,6 +627,7 @@ impl OrderMessageBuilder {
             self.wallet_address.clone(),
             self.subaccount_number,
             client_order_id,
+            client_metadata,
         );
 
         let proto_side = order_side_to_proto(side);
@@ -648,6 +701,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         quantity: Quantity,
@@ -657,6 +711,7 @@ impl OrderMessageBuilder {
         self.build_conditional_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             ConditionalOrderType::StopMarket,
             side,
             trigger_price,
@@ -679,6 +734,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         limit_price: Price,
@@ -691,6 +747,7 @@ impl OrderMessageBuilder {
         self.build_conditional_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             ConditionalOrderType::StopLimit,
             side,
             trigger_price,
@@ -713,6 +770,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         quantity: Quantity,
@@ -722,6 +780,7 @@ impl OrderMessageBuilder {
         self.build_conditional_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             ConditionalOrderType::TakeProfitMarket,
             side,
             trigger_price,
@@ -744,6 +803,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         limit_price: Price,
@@ -756,6 +816,7 @@ impl OrderMessageBuilder {
         self.build_conditional_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             ConditionalOrderType::TakeProfitLimit,
             side,
             trigger_price,
@@ -785,7 +846,7 @@ impl OrderMessageBuilder {
         Ok(OrderMarketParams {
             atomic_resolution: market.atomic_resolution,
             clob_pair_id: market.clob_pair_id,
-            oracle_price: None,
+            oracle_price: Some(market.oracle_price),
             quantum_conversion_exponent: market.quantum_conversion_exponent,
             step_base_quantums: market.step_base_quantums,
             subticks_per_tick: market.subticks_per_tick,

@@ -40,7 +40,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderType},
+    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
     events::OrderEventAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
@@ -50,12 +50,11 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Price},
 };
 use tokio::task::JoinHandle;
-use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::{
-    common::consts::AX_VENUE,
+    common::{consts::AX_VENUE, enums::AxOrderSide, parse::quantity_to_contracts},
     config::AxExecClientConfig,
-    http::client::AxHttpClient,
+    http::{client::AxHttpClient, models::PreviewAggressiveLimitOrderRequest},
     websocket::{AxOrdersWsMessage, NautilusExecWsMessage, orders::AxOrdersWebSocketClient},
 };
 
@@ -130,43 +129,10 @@ impl AxExecutionClient {
             .or_else(|| std::env::var("AX_API_SECRET").ok())
             .context("AX_API_SECRET not configured")?;
 
-        match self
-            .http_client
+        self.http_client
             .authenticate(&api_key, &api_secret, 3600)
             .await
-        {
-            Ok(token) => Ok(token),
-            Err(e) => {
-                let totp_secret = self
-                    .config
-                    .totp_secret
-                    .clone()
-                    .or_else(|| std::env::var("AX_TOTP_SECRET").ok());
-
-                if let Some(secret) = totp_secret {
-                    log::info!("2FA required, generating TOTP code...");
-                    let code = self.generate_totp(&secret)?;
-                    self.http_client
-                        .authenticate_with_totp(&api_key, &api_secret, 3600, Some(&code))
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Authentication with 2FA failed: {e}"))
-                } else {
-                    Err(anyhow::anyhow!("Authentication failed: {e}"))
-                }
-            }
-        }
-    }
-
-    fn generate_totp(&self, secret: &str) -> anyhow::Result<String> {
-        let secret_bytes = Secret::Encoded(secret.to_string())
-            .to_bytes()
-            .map_err(|e| anyhow::anyhow!("Invalid TOTP secret: {e}"))?;
-
-        let totp = TOTP::new(Algorithm::SHA1, 6, 1, 30, secret_bytes)
-            .map_err(|e| anyhow::anyhow!("Invalid TOTP configuration: {e}"))?;
-
-        totp.generate_current()
-            .map_err(|e| anyhow::anyhow!("Failed to generate TOTP: {e}"))
+            .map_err(|e| anyhow::anyhow!("Authentication failed: {e}"))
     }
 
     async fn refresh_account_state(&self) -> anyhow::Result<()> {
@@ -191,51 +157,7 @@ impl AxExecutionClient {
         runtime.block_on(self.refresh_account_state())
     }
 
-    /// Calculates an aggressive limit price for market order simulation.
-    ///
-    /// Uses the best bid/ask from cached quote data with a conservative price band
-    /// buffer to ensure the order fills immediately while staying within AX price bounds.
-    fn calculate_market_order_price(
-        &self,
-        instrument_id: InstrumentId,
-        order_side: OrderSide,
-    ) -> anyhow::Result<Option<Price>> {
-        // Use 3% band (conservative, as AX typically allows ~5%)
-        const PRICE_BAND_PCT: f64 = 0.03;
-
-        let cache = self.core.cache();
-
-        let quote = cache.quote(&instrument_id).ok_or_else(|| {
-            anyhow::anyhow!("Market order simulation requires cached quote for {instrument_id}")
-        })?;
-
-        let aggressive_price = match order_side {
-            OrderSide::Buy => {
-                // For BUY: use ask price + buffer to ensure fill
-                let ask = quote.ask_price.as_f64();
-                let price_value = ask * (1.0 + PRICE_BAND_PCT);
-                Price::new(price_value, quote.ask_price.precision)
-            }
-            OrderSide::Sell => {
-                // For SELL: use bid price - buffer to ensure fill
-                let bid = quote.bid_price.as_f64();
-                let price_value = bid * (1.0 - PRICE_BAND_PCT);
-                Price::new(price_value, quote.bid_price.precision)
-            }
-            _ => {
-                anyhow::bail!("Invalid order side for market simulation: {order_side:?}");
-            }
-        };
-
-        log::debug!(
-            "Market order simulation: {order_side:?} {instrument_id} aggressive_price={aggressive_price}"
-        );
-
-        Ok(Some(aggressive_price))
-    }
-
-    fn submit_order_impl(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        // Extract all needed fields in a single borrow scope
+    fn submit_order_internal(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let (
             client_order_id,
             strategy_id,
@@ -266,39 +188,81 @@ impl AxExecutionClient {
             )
         };
 
-        // For market orders, calculate aggressive price from cached quote
-        let price = if order_type == OrderType::Market {
-            self.calculate_market_order_price(instrument_id, order_side)?
-        } else {
-            limit_price
-        };
-
         let ws_orders = self.ws_orders.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let trader_id = self.core.trader_id;
-        let ts_init = self.clock.get_time_ns();
+
+        let http_client = if order_type == OrderType::Market {
+            Some(self.http_client.clone())
+        } else {
+            None
+        };
 
         self.spawn_task("submit_order", async move {
-            let result = ws_orders
-                .submit_order(
-                    trader_id,
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    order_side,
-                    order_type,
-                    quantity,
-                    time_in_force,
-                    price,
-                    trigger_price,
-                    is_post_only,
-                    ts_init,
-                )
-                .await
-                .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
+            let result: anyhow::Result<()> = async {
+                // For market orders, get the take-through price from AX
+                let price = if order_type == OrderType::Market {
+                    let symbol = instrument_id.symbol.inner();
+                    let ax_side = AxOrderSide::try_from(order_side)
+                        .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+                    let qty_contracts = quantity_to_contracts(quantity)?;
 
-            if let Err(e) = &result {
+                    let request =
+                        PreviewAggressiveLimitOrderRequest::new(symbol, qty_contracts, ax_side);
+                    let response = http_client
+                        .expect("HTTP client should be set for market orders")
+                        .inner
+                        .preview_aggressive_limit_order(&request)
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to preview aggressive limit order: {e}")
+                        })?;
+
+                    if response.remaining_quantity > 0 {
+                        log::warn!(
+                            "Market order book depth insufficient: \
+                             filled_qty={} remaining_qty={} for {instrument_id}",
+                            response.filled_quantity,
+                            response.remaining_quantity,
+                        );
+                    }
+
+                    let limit_price_decimal = response.limit_price.ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "No liquidity available for market order on {instrument_id}"
+                        )
+                    })?;
+
+                    let price = Price::from(limit_price_decimal.to_string().as_str());
+                    log::info!("Market order take-through price: {price} for {instrument_id}",);
+                    Some(price)
+                } else {
+                    limit_price
+                };
+
+                ws_orders
+                    .submit_order(
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        order_side,
+                        order_type,
+                        quantity,
+                        time_in_force,
+                        price,
+                        trigger_price,
+                        is_post_only,
+                    )
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"))?;
+
+                Ok(())
+            }
+            .await;
+
+            if let Err(e) = result {
                 let ts_event = clock.get_time_ns();
                 emitter.emit_order_rejected_event(
                     strategy_id,
@@ -317,7 +281,7 @@ impl AxExecutionClient {
         Ok(())
     }
 
-    fn cancel_order_impl(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order_internal(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
         let ws_orders = self.ws_orders.clone();
 
         let emitter = self.emitter.clone();
@@ -329,7 +293,7 @@ impl AxExecutionClient {
 
         self.spawn_task("cancel_order", async move {
             let result = ws_orders
-                .cancel_order_command(instrument_id, client_order_id, venue_order_id)
+                .cancel_order(client_order_id, venue_order_id)
                 .await
                 .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
 
@@ -436,6 +400,9 @@ impl ExecutionClient for AxExecutionClient {
             return Ok(());
         }
 
+        // Reset so requests work after a previous disconnect
+        self.http_client.reset_cancellation_token();
+
         if !self.core.instruments_initialized() {
             let instruments = self
                 .http_client
@@ -460,7 +427,11 @@ impl ExecutionClient for AxExecutionClient {
         self.ws_orders.connect(&token).await?;
         log::info!("Connected to orders WebSocket");
 
-        if self.ws_stream_handle.is_none() {
+        let should_spawn = match &self.ws_stream_handle {
+            None => true,
+            Some(handle) => handle.is_finished(),
+        };
+        if should_spawn {
             let stream = self.ws_orders.stream();
             let emitter = self.emitter.clone();
 
@@ -518,10 +489,45 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
-        log::debug!(
-            "query_order not implemented for AX execution client (client_order_id={})",
-            cmd.client_order_id
-        );
+        let http_client = self.http_client.clone();
+        let account_id = self.core.account_id;
+        let client_order_id = cmd.client_order_id;
+        let venue_order_id = cmd.venue_order_id;
+        let instrument_id = cmd.instrument_id;
+        let emitter = self.emitter.clone();
+
+        // Read immutable order fields from cache before spawning
+        let (order_side, order_type, time_in_force) = {
+            let cache = self.core.cache();
+            match cache.order(&client_order_id) {
+                Some(order) => (
+                    order.order_side(),
+                    order.order_type(),
+                    order.time_in_force(),
+                ),
+                None => (OrderSide::NoOrderSide, OrderType::Limit, TimeInForce::Gtc),
+            }
+        };
+
+        self.spawn_task("query_order", async move {
+            match http_client
+                .request_order_status(
+                    account_id,
+                    instrument_id,
+                    Some(client_order_id),
+                    venue_order_id,
+                    order_side,
+                    order_type,
+                    time_in_force,
+                )
+                .await
+            {
+                Ok(report) => emitter.send_order_status_report(report),
+                Err(e) => log::error!("AX query order failed: {e}"),
+            }
+            Ok(())
+        });
+
         Ok(())
     }
 
@@ -569,7 +575,6 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        // Hold single borrow for all cache access
         {
             let cache = self.core.cache();
             let order = cache.order(&cmd.client_order_id).ok_or_else(|| {
@@ -581,41 +586,71 @@ impl ExecutionClient for AxExecutionClient {
                 return Ok(());
             }
 
-            // For market orders, validate quote is cached before emitting OrderSubmitted
-            if order.order_type() == OrderType::Market {
-                let instrument_id = order.instrument_id();
-                if cache.quote(&instrument_id).is_none() {
-                    anyhow::bail!(
-                        "Market order requires cached quote for {instrument_id} (quote not yet received)"
-                    );
-                }
+            if !matches!(
+                order.order_type(),
+                OrderType::Market | OrderType::Limit | OrderType::StopLimit
+            ) {
+                self.emitter.emit_order_denied(
+                    order,
+                    &format!(
+                        "Unsupported order type: {:?}. \
+                         AX supports MARKET, LIMIT and STOP_LIMIT.",
+                        order.order_type(),
+                    ),
+                );
+                return Ok(());
             }
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
             self.emitter.emit_order_submitted(order);
         }
 
-        self.submit_order_impl(cmd)
+        self.submit_order_internal(cmd)
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        log::warn!(
-            "submit_order_list not yet implemented for AX execution client (got {} orders)",
-            cmd.order_list.orders.len()
-        );
+        for (client_order_id, order_init) in cmd
+            .order_list
+            .client_order_ids
+            .iter()
+            .zip(cmd.order_inits.iter())
+        {
+            let submit_cmd = SubmitOrder::new(
+                cmd.trader_id,
+                cmd.client_id,
+                cmd.strategy_id,
+                cmd.instrument_id,
+                *client_order_id,
+                order_init.clone(),
+                cmd.exec_algorithm_id,
+                cmd.position_id,
+                cmd.params.clone(),
+                UUID4::new(),
+                cmd.ts_init,
+            );
+            self.submit_order(&submit_cmd)?;
+        }
         Ok(())
     }
 
     fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
-        log::warn!(
-            "modify_order not yet implemented for AX execution client (client_order_id={})",
-            cmd.client_order_id
+        let reason = "AX does not support order modification. Use cancel and resubmit instead.";
+        log::error!("{reason}");
+
+        let ts_event = self.clock.get_time_ns();
+        self.emitter.emit_order_modify_rejected_event(
+            cmd.strategy_id,
+            cmd.instrument_id,
+            cmd.client_order_id,
+            cmd.venue_order_id,
+            reason,
+            ts_event,
         );
         Ok(())
     }
 
     fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        self.cancel_order_impl(cmd)
+        self.cancel_order_internal(cmd)
     }
 
     fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
@@ -647,7 +682,7 @@ impl ExecutionClient for AxExecutionClient {
                 ts_init,
                 params: None,
             };
-            self.cancel_order_impl(&cancel_cmd)?;
+            self.cancel_order_internal(&cancel_cmd)?;
         }
 
         Ok(())
@@ -655,7 +690,7 @@ impl ExecutionClient for AxExecutionClient {
 
     fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
         for cancel in &cmd.cancels {
-            self.cancel_order_impl(cancel)?;
+            self.cancel_order_internal(cancel)?;
         }
         Ok(())
     }
@@ -664,9 +699,12 @@ impl ExecutionClient for AxExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let cid_map = self.ws_orders.cid_to_client_order_id().clone();
+        let cid_resolver = move |cid: u64| cid_map.get(&cid).map(|v| *v);
+
         let mut reports = self
             .http_client
-            .request_order_status_reports(self.core.account_id)
+            .request_order_status_reports(self.core.account_id, Some(cid_resolver))
             .await?;
 
         if let Some(instrument_id) = cmd.instrument_id {
@@ -688,9 +726,12 @@ impl ExecutionClient for AxExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let cid_map = self.ws_orders.cid_to_client_order_id().clone();
+        let cid_resolver = move |cid: u64| cid_map.get(&cid).map(|v| *v);
+
         let mut reports = self
             .http_client
-            .request_order_status_reports(self.core.account_id)
+            .request_order_status_reports(self.core.account_id, Some(cid_resolver))
             .await?;
 
         if let Some(instrument_id) = cmd.instrument_id {
@@ -823,14 +864,13 @@ impl ExecutionClient for AxExecutionClient {
         venue_order_id: VenueOrderId,
         instrument_id: InstrumentId,
         strategy_id: StrategyId,
-        ts_init: UnixNanos,
+        _ts_init: UnixNanos,
     ) {
         self.ws_orders.register_external_order(
             client_order_id,
             venue_order_id,
             instrument_id,
             strategy_id,
-            ts_init,
         );
     }
 }

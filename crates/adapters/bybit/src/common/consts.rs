@@ -51,3 +51,5 @@ pub const BYBIT_TOPIC_ORDER: &str = "order";
 pub const BYBIT_TOPIC_EXECUTION: &str = "execution";
 pub const BYBIT_TOPIC_WALLET: &str = "wallet";
 pub const BYBIT_TOPIC_POSITION: &str = "position";
+
+pub const BYBIT_DEFAULT_ORDERBOOK_DEPTH: u32 = 50;

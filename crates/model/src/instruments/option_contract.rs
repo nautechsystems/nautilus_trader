@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    UnixNanos,
+    Params, UnixNanos,
     correctness::{
         FAILED, check_equal_u8, check_valid_string_ascii, check_valid_string_ascii_optional,
     },
@@ -39,10 +39,10 @@ use crate::{
 
 /// Represents a generic option contract instrument.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct OptionContract {
     /// The instrument ID.
@@ -93,6 +93,8 @@ pub struct OptionContract {
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// Additional instrument metadata as a JSON-serializable dictionary.
+    pub info: Option<Params>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the data object was initialized.
@@ -132,6 +134,7 @@ impl OptionContract {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -168,6 +171,7 @@ impl OptionContract {
             margin_maint: margin_maint.unwrap_or_default(),
             maker_fee: maker_fee.unwrap_or_default(),
             taker_fee: taker_fee.unwrap_or_default(),
+            info,
             max_quantity,
             min_quantity: Some(min_quantity.unwrap_or(1.into())),
             max_price,
@@ -206,6 +210,7 @@ impl OptionContract {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
@@ -232,6 +237,7 @@ impl OptionContract {
             margin_maint,
             maker_fee,
             taker_fee,
+            info,
             ts_event,
             ts_init,
         )
@@ -382,7 +388,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(option_contract_appl: OptionContract) {
-        let option_contract_appl2 = option_contract_appl;
+        let option_contract_appl2 = option_contract_appl.clone();
         assert_eq!(option_contract_appl, option_contract_appl2);
     }
 }

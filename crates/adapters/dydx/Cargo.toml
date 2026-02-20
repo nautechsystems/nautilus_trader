@@ -56,6 +56,7 @@ nautilus-system = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
@@ -64,6 +65,7 @@ dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dotenvy = { workspace = true }
 dydx-proto = { workspace = true }
+futures-util = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
 prost = { workspace = true }
@@ -86,6 +88,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true, features = ["examples"] }
 
 axum = { workspace = true }
 criterion = { workspace = true }
@@ -130,5 +133,12 @@ doc = false
 [[example]]
 name = "dydx-exec-tester"
 path = "examples/node_exec_tester.rs"
+required-features = []
+doc = false
+
+# Run with `cargo run --example dydx-grid-mm --package nautilus-dydx`
+[[example]]
+name = "dydx-grid-mm"
+path = "examples/node_grid_mm.rs"
 required-features = []
 doc = false

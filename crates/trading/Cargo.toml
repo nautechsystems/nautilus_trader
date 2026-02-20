@@ -23,6 +23,7 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 defi = ["nautilus-model/defi"]
+examples = ["nautilus-indicators"]
 high-precision = ["nautilus-model/high-precision"]
 extension-module = [
   "nautilus-common/extension-module",
@@ -57,12 +58,16 @@ chrono = { workspace = true }
 chrono-tz = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
+rust_decimal = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 strum = { workspace = true }
 ustr = { workspace = true }
 
+nautilus-indicators = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
 serde_json = { workspace = true }

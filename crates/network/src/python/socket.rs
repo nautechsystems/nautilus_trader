@@ -28,7 +28,7 @@ use crate::{
 impl SocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, connection_max_retries=5, certs_dir=None, reconnect_max_attempts=None))]
+    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, connection_max_retries=5, reconnect_max_attempts=None, idle_timeout_ms=None, certs_dir=None))]
     fn py_new(
         url: String,
         ssl: bool,
@@ -41,8 +41,9 @@ impl SocketConfig {
         reconnect_backoff_factor: Option<f64>,
         reconnect_jitter_ms: Option<u64>,
         connection_max_retries: Option<u32>,
-        certs_dir: Option<String>,
         reconnect_max_attempts: Option<u32>,
+        idle_timeout_ms: Option<u64>,
+        certs_dir: Option<String>,
     ) -> Self {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
 
@@ -68,8 +69,9 @@ impl SocketConfig {
             reconnect_backoff_factor,
             reconnect_jitter_ms,
             connection_max_retries,
-            certs_dir,
             reconnect_max_attempts,
+            idle_timeout_ms,
+            certs_dir,
         }
     }
 }
@@ -191,8 +193,24 @@ impl SocketClient {
                 }
                 _ => {
                     mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
-                    while !ConnectionMode::from_atomic(&mode).is_active() {
-                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    let timeout = tokio::time::timeout(Duration::from_secs(30), async {
+                        loop {
+                            let current = ConnectionMode::from_atomic(&mode);
+                            if current.is_active() {
+                                return Ok(());
+                            }
+                            if current.is_closed() || current.is_disconnect() {
+                                return Err("Connection closed during reconnect");
+                            }
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+                    })
+                    .await;
+
+                    match timeout {
+                        Ok(Ok(())) => log::debug!("Reconnected successfully"),
+                        Ok(Err(e)) => log::warn!("Reconnect aborted: {e}"),
+                        Err(_) => log::error!("Reconnect timed out after 30s"),
                     }
                 }
             }
@@ -226,8 +244,17 @@ impl SocketClient {
                 }
                 _ => {
                     mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
-                    while !ConnectionMode::from_atomic(&mode).is_closed() {
-                        tokio::time::sleep(Duration::from_millis(10)).await;
+
+                    let timeout = tokio::time::timeout(Duration::from_secs(5), async {
+                        while !ConnectionMode::from_atomic(&mode).is_closed() {
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+                    })
+                    .await;
+
+                    if timeout.is_err() {
+                        log::error!("Timeout waiting for socket to close, forcing closed state");
+                        mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
                     }
                 }
             }

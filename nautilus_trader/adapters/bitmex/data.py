@@ -200,6 +200,8 @@ class BitmexDataClient(LiveMarketDataClient):
 
         for inst in instruments_pyo3:
             self._http_client.cache_instrument(inst)
+            if self._ws_client is not None:
+                self._ws_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -434,6 +436,7 @@ class BitmexDataClient(LiveMarketDataClient):
                 )
                 await asyncio.sleep(interval_mins * 60)
                 await self._instrument_provider.initialize(reload=True)
+                self._cache_instruments()
                 self._send_all_instruments_to_data_engine()
             except asyncio.CancelledError:
                 self._log.debug("Canceled task 'update_instruments'")

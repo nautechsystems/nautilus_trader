@@ -44,6 +44,7 @@ fn socket_config() -> SocketConfig {
         reconnect_jitter_ms: Some(10),
         connection_max_retries: None,
         reconnect_max_attempts: None,
+        idle_timeout_ms: None,
         certs_dir: None,
     }
 }
@@ -238,6 +239,42 @@ fn test_turmoil_real_socket_network_partition(mut socket_config: SocketConfig) {
         // Close
         client.send_bytes(b"close".to_vec()).await.ok();
         client.close().await;
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_real_socket_close_during_reconnect(mut socket_config: SocketConfig) {
+    socket_config.reconnect_timeout_ms = Some(5_000);
+    socket_config.reconnect_delay_initial_ms = Some(100);
+
+    let mut sim = Builder::new().build();
+
+    sim.host("server", echo_server);
+
+    sim.client("client", async move {
+        let client = SocketClient::connect(socket_config, None, None, None)
+            .await
+            .expect("Should connect");
+
+        assert!(client.is_active(), "Client should be active after connect");
+
+        turmoil::partition("client", "server");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        client.close().await;
+
+        assert!(
+            client.is_closed(),
+            "Client should be closed after close during reconnect"
+        );
+        assert!(
+            !client.is_active(),
+            "Client should not be active after close"
+        );
 
         Ok(())
     });

@@ -60,7 +60,10 @@ use crate::{
 
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx",
+        from_py_object
+    )
 )]
 #[derive(Debug, Clone)]
 pub struct CoinbaseIntxFixClient {
@@ -181,13 +184,10 @@ impl CoinbaseIntxFixClient {
 
     /// Connects to the Coinbase International FIX Drop Copy endpoint.
     ///
-    /// # Panics
-    ///
-    /// Panics if time calculation or unwrap logic inside fails during logon retry setup.
-    ///
     /// # Errors
     ///
     /// Returns an error if network connection or FIX logon fails.
+    #[allow(clippy::missing_panics_doc)] // checked_sub on Instant is provably safe
     pub async fn connect(
         &mut self,
         #[cfg(feature = "python")] handler: Py<PyAny>,
@@ -312,6 +312,7 @@ impl CoinbaseIntxFixClient {
             reconnect_jitter_ms: Some(500),
             reconnect_max_attempts: None,
             connection_max_retries: None,
+            idle_timeout_ms: None,
             certs_dir: None,
         };
 

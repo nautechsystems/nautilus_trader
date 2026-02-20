@@ -40,9 +40,6 @@ pub mod defi;
 ///
 /// Returns a `PyErr` if registering any module components fails.
 ///
-/// # Panics
-///
-/// Panics if inserting classes or functions into the Python module unexpectedly fails.
 #[pymodule]
 pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Types
@@ -156,6 +153,8 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Instruments
     m.add_class::<crate::instruments::BettingInstrument>()?;
     m.add_class::<crate::instruments::BinaryOption>()?;
+    m.add_class::<crate::instruments::Cfd>()?;
+    m.add_class::<crate::instruments::Commodity>()?;
     m.add_class::<crate::instruments::CryptoFuture>()?;
     m.add_class::<crate::instruments::CryptoOption>()?;
     m.add_class::<crate::instruments::CryptoPerpetual>()?;
@@ -163,8 +162,10 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::instruments::Equity>()?;
     m.add_class::<crate::instruments::FuturesContract>()?;
     m.add_class::<crate::instruments::FuturesSpread>()?;
+    m.add_class::<crate::instruments::IndexInstrument>()?;
     m.add_class::<crate::instruments::OptionContract>()?;
     m.add_class::<crate::instruments::OptionSpread>()?;
+    m.add_class::<crate::instruments::PerpetualContract>()?;
     m.add_class::<crate::instruments::SyntheticInstrument>()?;
     // Order book
     m.add_class::<crate::orderbook::book::OrderBook>()?;

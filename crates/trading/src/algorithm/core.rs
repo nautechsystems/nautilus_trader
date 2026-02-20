@@ -32,7 +32,7 @@ use nautilus_common::{
 use nautilus_model::{
     events::{OrderEventAny, PositionEvent},
     identifiers::{ActorId, ClientOrderId, ExecAlgorithmId, StrategyId, TraderId},
-    orders::OrderAny,
+    orders::{OrderAny, OrderList},
     types::Quantity,
 };
 
@@ -236,6 +236,19 @@ impl ExecutionAlgorithmCore {
             .order(client_order_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Order not found in cache for {client_order_id}"))
+    }
+
+    /// Returns all orders for the given order list from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any order is not found in the cache.
+    pub fn get_orders_for_list(&self, order_list: &OrderList) -> anyhow::Result<Vec<OrderAny>> {
+        order_list
+            .client_order_ids
+            .iter()
+            .map(|id| self.get_order(id))
+            .collect()
     }
 }
 

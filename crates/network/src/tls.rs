@@ -161,8 +161,11 @@ pub fn create_tls_config_from_certs_dir(
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-    for entry in std::fs::read_dir(certs_dir)? {
-        let entry = entry?;
+    // Sort entries for deterministic cert/key selection across platforms
+    let mut entries: Vec<_> = std::fs::read_dir(certs_dir)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|e| e.path());
+
+    for entry in entries {
         let path = entry.path();
 
         if client_key.is_none()

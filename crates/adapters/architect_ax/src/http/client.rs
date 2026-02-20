@@ -25,16 +25,20 @@ use std::{
     },
 };
 
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
+    UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::Bar,
+    data::{Bar, BookOrder, FundingRateUpdate, TradeTick},
+    enums::{BookType, OrderSide, OrderType, TimeInForce},
     events::AccountState,
-    identifiers::AccountId,
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
+    orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Price, Quantity},
 };
 use nautilus_network::{
     http::HttpClient,
@@ -51,32 +55,38 @@ use super::{
     error::AxHttpError,
     models::{
         AuthenticateApiKeyRequest, AxAuthenticateResponse, AxBalancesResponse,
-        AxBatchCancelOrdersResponse, AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle,
-        AxCandleResponse, AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse, AxInstrument,
-        AxInstrumentsResponse, AxOpenOrdersResponse, AxPlaceOrderResponse, AxPositionsResponse,
-        AxRiskSnapshotResponse, AxTicker, AxTickersResponse, AxTransactionsResponse, AxWhoAmI,
-        BatchCancelOrdersRequest, CancelAllOrdersRequest, CancelOrderRequest, PlaceOrderRequest,
+        AxBatchCancelOrdersResponse, AxBookResponse, AxCancelAllOrdersResponse,
+        AxCancelOrderResponse, AxCandle, AxCandleResponse, AxCandlesResponse, AxFillsResponse,
+        AxFundingRatesResponse, AxInitialMarginRequirementResponse, AxInstrument,
+        AxInstrumentsResponse, AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse,
+        AxPlaceOrderResponse, AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse,
+        AxRiskSnapshotResponse, AxTicker, AxTickersResponse, AxTradesResponse,
+        AxTransactionsResponse, AxWhoAmI, BatchCancelOrdersRequest, CancelAllOrdersRequest,
+        CancelOrderRequest, PlaceOrderRequest, PreviewAggressiveLimitOrderRequest,
     },
     parse::{
-        parse_account_state, parse_bar, parse_fill_report, parse_order_status_report,
-        parse_perp_instrument, parse_position_status_report,
+        parse_account_state, parse_bar, parse_fill_report, parse_funding_rate,
+        parse_order_status_report, parse_perp_instrument, parse_position_status_report,
+        parse_trade_tick,
     },
     query::{
-        GetCandleParams, GetCandlesParams, GetFundingRatesParams, GetInstrumentParams,
-        GetTickerParams, GetTransactionsParams,
+        GetBookParams, GetCandleParams, GetCandlesParams, GetFundingRatesParams,
+        GetInstrumentParams, GetOrderStatusParams, GetOrdersParams, GetTickerParams,
+        GetTradesParams, GetTransactionsParams,
     },
 };
 use crate::common::{
     consts::{AX_HTTP_URL, AX_ORDERS_URL},
     credential::Credential,
     enums::{AxCandleWidth, AxInstrumentState},
+    parse::{cid_to_client_order_id, client_order_id_to_cid},
 };
 
 /// Default Ax REST API rate limit.
 ///
 /// Conservative default of 10 requests per second.
 pub static AX_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(10).expect("Should be a valid non-zero u32"))
+    Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
 });
 
 const AX_GLOBAL_RATE_KEY: &str = "architect:global";
@@ -92,7 +102,7 @@ pub struct AxRawHttpClient {
     credential: Option<Credential>,
     session_token: RwLock<Option<String>>,
     retry_manager: RetryManager<AxHttpError>,
-    cancellation_token: CancellationToken,
+    cancellation_token: RwLock<CancellationToken>,
 }
 
 impl Default for AxRawHttpClient {
@@ -121,14 +131,45 @@ impl AxRawHttpClient {
         &self.base_url
     }
 
-    /// Cancel all pending HTTP requests.
-    pub fn cancel_all_requests(&self) {
-        self.cancellation_token.cancel();
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        self.credential
+            .as_ref()
+            .map_or_else(|| "None".to_string(), |c| c.masked_api_key())
     }
 
-    /// Get the cancellation token for this client.
-    pub fn cancellation_token(&self) -> &CancellationToken {
-        &self.cancellation_token
+    /// Cancel all pending HTTP requests.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cancellation token lock is poisoned.
+    pub fn cancel_all_requests(&self) {
+        self.cancellation_token
+            .read()
+            .expect("Lock poisoned")
+            .cancel();
+    }
+
+    /// Replaces the cancelled token so new requests can proceed after reconnect.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cancellation token lock is poisoned.
+    pub fn reset_cancellation_token(&self) {
+        *self.cancellation_token.write().expect("Lock poisoned") = CancellationToken::new();
+    }
+
+    /// Get a clone of the current cancellation token.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cancellation token lock is poisoned.
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token
+            .read()
+            .expect("Lock poisoned")
+            .clone()
     }
 
     /// Creates a new [`AxRawHttpClient`] using the default Ax HTTP URL.
@@ -174,7 +215,7 @@ impl AxRawHttpClient {
             credential: None,
             session_token: RwLock::new(None),
             retry_manager,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: RwLock::new(CancellationToken::new()),
         })
     }
 
@@ -223,7 +264,7 @@ impl AxRawHttpClient {
             credential: Some(Credential::new(api_key, api_secret)),
             session_token: RwLock::new(None),
             retry_manager,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: RwLock::new(CancellationToken::new()),
         })
     }
 
@@ -258,21 +299,14 @@ impl AxRawHttpClient {
     }
 
     fn auth_headers(&self) -> Result<HashMap<String, String>, AxHttpError> {
-        let credential = self
-            .credential
-            .as_ref()
-            .ok_or(AxHttpError::MissingCredentials)?;
-
         // SAFETY: Lock poisoning indicates a panic in another thread, which is fatal
         let guard = self.session_token.read().expect("Lock poisoned");
-        let session_token = guard
-            .as_ref()
-            .ok_or_else(|| AxHttpError::ValidationError("Session token not set".to_string()))?;
+        let session_token = guard.as_ref().ok_or(AxHttpError::MissingSessionToken)?;
 
         let mut headers = HashMap::new();
         headers.insert(
             "Authorization".to_string(),
-            credential.bearer_token(session_token),
+            format!("Bearer {session_token}"),
         );
 
         Ok(headers)
@@ -385,13 +419,19 @@ impl AxRawHttpClient {
             }
         };
 
+        let cancel_token = self
+            .cancellation_token
+            .read()
+            .expect("Lock poisoned")
+            .clone();
+
         self.retry_manager
             .execute_with_retry_with_cancel(
                 endpoint.as_str(),
                 operation,
                 should_retry,
                 create_error,
-                &self.cancellation_token,
+                &cancel_token,
             )
             .await
     }
@@ -475,7 +515,7 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or the response cannot be parsed.
-    pub async fn get_ticker(&self, symbol: &str) -> Result<AxTicker, AxHttpError> {
+    pub async fn get_ticker(&self, symbol: Ustr) -> Result<AxTicker, AxHttpError> {
         let params = GetTickerParams::new(symbol);
         self.send_request::<AxTicker, _>(Method::GET, "/ticker", Some(&params), None, true)
             .await
@@ -489,7 +529,7 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or the response cannot be parsed.
-    pub async fn get_instrument(&self, symbol: &str) -> Result<AxInstrument, AxHttpError> {
+    pub async fn get_instrument(&self, symbol: Ustr) -> Result<AxInstrument, AxHttpError> {
         let params = GetInstrumentParams::new(symbol);
         self.send_request::<AxInstrument, _>(Method::GET, "/instrument", Some(&params), None, false)
             .await
@@ -509,31 +549,7 @@ impl AxRawHttpClient {
         api_secret: &str,
         expiration_seconds: i32,
     ) -> Result<AxAuthenticateResponse, AxHttpError> {
-        self.authenticate_with_totp(api_key, api_secret, expiration_seconds, None)
-            .await
-    }
-
-    /// Authenticates with the AX Exchange API using API key credentials and optional 2FA.
-    ///
-    /// # Endpoint
-    /// `POST /authenticate`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - 400: 2FA is required but `totp` was not provided.
-    /// - 401: Invalid credentials.
-    pub async fn authenticate_with_totp(
-        &self,
-        api_key: &str,
-        api_secret: &str,
-        expiration_seconds: i32,
-        totp: Option<&str>,
-    ) -> Result<AxAuthenticateResponse, AxHttpError> {
-        let mut request = AuthenticateApiKeyRequest::new(api_key, api_secret, expiration_seconds);
-        if let Some(code) = totp {
-            request = request.with_totp(code);
-        }
+        let request = AuthenticateApiKeyRequest::new(api_key, api_secret, expiration_seconds);
 
         let body = serde_json::to_vec(&request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
@@ -546,6 +562,42 @@ impl AxRawHttpClient {
             false,
         )
         .await
+    }
+
+    /// Authenticates using stored credentials or environment variables.
+    ///
+    /// # Credential Resolution
+    ///
+    /// Credentials are resolved in the following order:
+    /// 1. Stored credentials (from `with_credentials` constructor)
+    /// 2. Environment variables (`AX_API_KEY` and `AX_API_SECRET`)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No credentials are available from either source
+    /// - The HTTP request fails
+    /// - The credentials are invalid
+    pub async fn authenticate_auto(
+        &self,
+        expiration_seconds: i32,
+    ) -> Result<AxAuthenticateResponse, AxHttpError> {
+        let (api_key, api_secret) = self
+            .resolve_credentials()
+            .ok_or(AxHttpError::MissingCredentials)?;
+
+        self.authenticate(&api_key, &api_secret, expiration_seconds)
+            .await
+    }
+
+    fn resolve_credentials(&self) -> Option<(String, String)> {
+        if let Some(cred) = &self.credential {
+            return Some((cred.api_key().to_string(), cred.api_secret().to_string()));
+        }
+
+        let api_key = std::env::var("AX_API_KEY").ok()?;
+        let api_secret = std::env::var("AX_API_SECRET").ok()?;
+        Some((api_key, api_secret))
     }
 
     /// Places a new order.
@@ -689,7 +741,7 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_candles(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
         candle_width: AxCandleWidth,
@@ -716,7 +768,7 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_current_candle(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         candle_width: AxCandleWidth,
     ) -> Result<AxCandle, AxHttpError> {
         let params = GetCandleParams::new(symbol, candle_width);
@@ -742,7 +794,7 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_last_candle(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         candle_width: AxCandleWidth,
     ) -> Result<AxCandle, AxHttpError> {
         let params = GetCandleParams::new(symbol, candle_width);
@@ -768,7 +820,7 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_funding_rates(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
     ) -> Result<AxFundingRatesResponse, AxHttpError> {
@@ -802,6 +854,34 @@ impl AxRawHttpClient {
         .await
     }
 
+    /// Previews an aggressive limit order to get the "take through" price.
+    ///
+    /// This endpoint calculates the price needed to sweep the order book for a given
+    /// quantity, which is used to simulate market orders on AX (which only supports
+    /// limit orders natively).
+    ///
+    /// # Endpoint
+    /// `POST /preview-aggressive-limit-order`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn preview_aggressive_limit_order(
+        &self,
+        request: &PreviewAggressiveLimitOrderRequest,
+    ) -> Result<AxPreviewAggressiveLimitOrderResponse, AxHttpError> {
+        let body = serde_json::to_vec(request)
+            .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
+        self.send_request::<AxPreviewAggressiveLimitOrderResponse, ()>(
+            Method::POST,
+            "/preview-aggressive-limit-order",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
+
     /// Fetches transactions filtered by type.
     ///
     /// # Endpoint
@@ -824,6 +904,138 @@ impl AxRawHttpClient {
         )
         .await
     }
+
+    /// Fetches recent trades for a symbol.
+    ///
+    /// # Endpoint
+    /// `GET /trades`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_trades(
+        &self,
+        symbol: Ustr,
+        limit: Option<i32>,
+    ) -> Result<AxTradesResponse, AxHttpError> {
+        let params = GetTradesParams::new(symbol, limit);
+        self.send_request::<AxTradesResponse, _>(Method::GET, "/trades", Some(&params), None, true)
+            .await
+    }
+
+    /// Fetches an order book snapshot for a symbol.
+    ///
+    /// # Endpoint
+    /// `GET /book`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_book(
+        &self,
+        symbol: Ustr,
+        level: Option<i32>,
+    ) -> Result<AxBookResponse, AxHttpError> {
+        let params = GetBookParams::new(symbol, level);
+        self.send_request::<AxBookResponse, _>(Method::GET, "/book", Some(&params), None, false)
+            .await
+    }
+
+    /// Fetches the status of a single order by order ID.
+    ///
+    /// # Endpoint
+    /// `GET /order-status` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_order_status_by_id(
+        &self,
+        order_id: &str,
+    ) -> Result<AxOrderStatusQueryResponse, AxHttpError> {
+        let params = GetOrderStatusParams::by_order_id(order_id);
+        self.send_request_to_url::<AxOrderStatusQueryResponse, _>(
+            &self.orders_base_url,
+            Method::GET,
+            "/order-status",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches the status of a single order by client order ID.
+    ///
+    /// # Endpoint
+    /// `GET /order-status` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_order_status_by_cid(
+        &self,
+        client_order_id: u64,
+    ) -> Result<AxOrderStatusQueryResponse, AxHttpError> {
+        let params = GetOrderStatusParams::by_client_order_id(client_order_id);
+        self.send_request_to_url::<AxOrderStatusQueryResponse, _>(
+            &self.orders_base_url,
+            Method::GET,
+            "/order-status",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches historical orders with optional filters.
+    ///
+    /// # Endpoint
+    /// `GET /orders` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_orders(
+        &self,
+        params: &GetOrdersParams,
+    ) -> Result<AxOrdersResponse, AxHttpError> {
+        self.send_request_to_url::<AxOrdersResponse, _>(
+            &self.orders_base_url,
+            Method::GET,
+            "/orders",
+            Some(params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Checks the initial margin requirement for a proposed order.
+    ///
+    /// # Endpoint
+    /// `POST /initial-margin-requirement` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn check_initial_margin(
+        &self,
+        request: &PlaceOrderRequest,
+    ) -> Result<AxInitialMarginRequirementResponse, AxHttpError> {
+        let body = serde_json::to_vec(request)
+            .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
+        self.send_request_to_url::<AxInitialMarginRequirementResponse, ()>(
+            &self.orders_base_url,
+            Method::POST,
+            "/initial-margin-requirement",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
 }
 
 /// High-level HTTP client for the Ax REST API.
@@ -833,7 +1045,10 @@ impl AxRawHttpClient {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.architect")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        from_py_object
+    )
 )]
 pub struct AxHttpClient {
     pub(crate) inner: Arc<AxRawHttpClient>,
@@ -929,9 +1144,20 @@ impl AxHttpClient {
         self.inner.base_url()
     }
 
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        self.inner.api_key_masked()
+    }
+
     /// Cancel all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
         self.inner.cancel_all_requests();
+    }
+
+    /// Replaces the cancelled token so new requests can proceed after reconnect.
+    pub fn reset_cancellation_token(&self) {
+        self.inner.reset_cancellation_token();
     }
 
     /// Sets the session token for authenticated requests.
@@ -1004,24 +1230,24 @@ impl AxHttpClient {
         Ok(resp.token)
     }
 
-    /// Authenticates with Ax using API credentials and TOTP.
+    /// Authenticates using stored credentials or environment variables.
+    ///
+    /// # Credential Resolution
+    ///
+    /// Credentials are resolved in the following order:
+    /// 1. Stored credentials (from `with_credentials` constructor)
+    /// 2. Environment variables (`AX_API_KEY` and `AX_API_SECRET`)
     ///
     /// On success, the session token is automatically stored for subsequent authenticated requests.
     ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP request fails or credentials are invalid.
-    pub async fn authenticate_with_totp(
-        &self,
-        api_key: &str,
-        api_secret: &str,
-        expiration_seconds: i32,
-        totp_code: Option<&str>,
-    ) -> Result<String, AxHttpError> {
-        let resp = self
-            .inner
-            .authenticate_with_totp(api_key, api_secret, expiration_seconds, totp_code)
-            .await?;
+    /// Returns an error if:
+    /// - No credentials are available from either source
+    /// - The HTTP request fails
+    /// - The credentials are invalid
+    pub async fn authenticate_auto(&self, expiration_seconds: i32) -> Result<String, AxHttpError> {
+        let resp = self.inner.authenticate_auto(expiration_seconds).await?;
         self.inner.set_session_token(resp.token.clone());
         Ok(resp.token)
     }
@@ -1084,7 +1310,7 @@ impl AxHttpClient {
     /// Returns an error if the HTTP request fails or instrument parsing fails.
     pub async fn request_instrument(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
     ) -> anyhow::Result<InstrumentAny> {
@@ -1099,6 +1325,194 @@ impl AxHttpClient {
         let ts_init = self.generate_ts_init();
 
         parse_perp_instrument(&resp, maker_fee, taker_fee, ts_init, ts_init)
+    }
+
+    /// Requests an order book snapshot from Ax and builds a Nautilus [`OrderBook`].
+    ///
+    /// Requires the instrument to be cached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in the cache.
+    /// - The HTTP request fails.
+    pub async fn request_book_snapshot(
+        &self,
+        symbol: Ustr,
+        depth: Option<usize>,
+    ) -> anyhow::Result<OrderBook> {
+        let instrument = self
+            .get_instrument(&symbol)
+            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
+
+        let resp = self
+            .inner
+            .get_book(symbol, Some(2))
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let instrument_id = instrument.id();
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+        let ts_event = UnixNanos::from(resp.book.ts as u64 * 1_000_000_000 + resp.book.tn as u64);
+
+        for (i, level) in resp.book.b.iter().enumerate() {
+            if depth.is_some_and(|d| i >= d) {
+                break;
+            }
+            let price = Price::from_decimal_dp(level.p, price_precision)
+                .unwrap_or_else(|_| Price::from(level.p.to_string().as_str()));
+            let size = Quantity::new(level.q as f64, size_precision);
+            let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
+            book.add(order, 0, i as u64, ts_event);
+        }
+
+        let bids_len = resp.book.b.len();
+        for (i, level) in resp.book.a.iter().enumerate() {
+            if depth.is_some_and(|d| i >= d) {
+                break;
+            }
+            let price = Price::from_decimal_dp(level.p, price_precision)
+                .unwrap_or_else(|_| Price::from(level.p.to_string().as_str()));
+            let size = Quantity::new(level.q as f64, size_precision);
+            let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
+            book.add(order, 0, (bids_len + i) as u64, ts_event);
+        }
+
+        Ok(book)
+    }
+
+    /// Requests recent trades from Ax and parses them to Nautilus [`TradeTick`].
+    ///
+    /// The AX trades endpoint does not accept time range parameters, so
+    /// `start` and `end` are applied as client-side filters after fetching.
+    ///
+    /// Requires the instrument to be cached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in the cache.
+    /// - The HTTP request fails.
+    /// - Trade parsing fails.
+    pub async fn request_trade_ticks(
+        &self,
+        symbol: Ustr,
+        limit: Option<i32>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        let instrument = self
+            .get_instrument(&symbol)
+            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
+
+        let resp = self
+            .inner
+            .get_trades(symbol, limit)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let ts_init = self.generate_ts_init();
+        let mut ticks = Vec::with_capacity(resp.trades.len());
+
+        for trade in &resp.trades {
+            match parse_trade_tick(trade, &instrument, ts_init) {
+                Ok(tick) => {
+                    if start.is_some_and(|s| tick.ts_event < s) {
+                        continue;
+                    }
+                    if end.is_some_and(|e| tick.ts_event > e) {
+                        continue;
+                    }
+                    ticks.push(tick);
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse trade for {symbol}: {e}");
+                }
+            }
+        }
+
+        Ok(ticks)
+    }
+
+    /// Requests historical bars from Ax and parses them to Nautilus Bar types.
+    ///
+    /// Requires the instrument to be cached (call `request_instruments` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in the cache.
+    /// - The HTTP request fails.
+    /// - Bar parsing fails.
+    pub async fn request_bars(
+        &self,
+        symbol: Ustr,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        width: AxCandleWidth,
+    ) -> anyhow::Result<Vec<Bar>> {
+        let instrument = self
+            .get_instrument(&symbol)
+            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
+
+        let start_ns = start.and_then(|dt| dt.timestamp_nanos_opt()).unwrap_or(0);
+        let end_ns = end
+            .and_then(|dt| dt.timestamp_nanos_opt())
+            .unwrap_or_else(|| self.generate_ts_init().as_i64());
+        let resp = self
+            .inner
+            .get_candles(symbol, start_ns, end_ns, width)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let ts_init = self.generate_ts_init();
+        let mut bars = Vec::with_capacity(resp.candles.len());
+
+        for candle in &resp.candles {
+            match parse_bar(candle, &instrument, ts_init) {
+                Ok(bar) => bars.push(bar),
+                Err(e) => {
+                    log::warn!("Failed to parse bar for {symbol}: {e}");
+                }
+            }
+        }
+
+        Ok(bars)
+    }
+
+    /// Requests funding rates from Ax and parses them to Nautilus types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails.
+    pub async fn request_funding_rates(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+    ) -> Result<Vec<FundingRateUpdate>, AxHttpError> {
+        let symbol = instrument_id.symbol.inner();
+        let start_ns = start.and_then(|dt| dt.timestamp_nanos_opt()).unwrap_or(0);
+        let end_ns = end
+            .and_then(|dt| dt.timestamp_nanos_opt())
+            .unwrap_or_else(|| self.generate_ts_init().as_i64());
+        let response = self
+            .inner
+            .get_funding_rates(symbol, start_ns, end_ns)
+            .await?;
+
+        let ts_init = self.generate_ts_init();
+        let funding_rates = response
+            .funding_rates
+            .iter()
+            .map(|r| parse_funding_rate(r, instrument_id, ts_init))
+            .collect::<anyhow::Result<Vec<_>>>()
+            .map_err(|e| AxHttpError::from(e.to_string()))?;
+
+        Ok(funding_rates)
     }
 
     /// Requests account state from Ax and parses to a Nautilus [`AccountState`].
@@ -1120,68 +1534,94 @@ impl AxHttpClient {
         parse_account_state(&response, account_id, ts_init, ts_init)
     }
 
-    /// Requests funding rates from Ax.
+    /// Checks the initial margin requirement for a proposed order.
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails.
-    pub async fn request_funding_rates(
+    pub async fn check_initial_margin(
         &self,
-        symbol: &str,
-        start_timestamp_ns: i64,
-        end_timestamp_ns: i64,
-    ) -> Result<AxFundingRatesResponse, AxHttpError> {
-        self.inner
-            .get_funding_rates(symbol, start_timestamp_ns, end_timestamp_ns)
+        request: &PlaceOrderRequest,
+    ) -> anyhow::Result<Decimal> {
+        let resp = self
+            .inner
+            .check_initial_margin(request)
             .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        Ok(resp.im)
     }
 
-    /// Requests historical bars from Ax and parses them to Nautilus Bar types.
+    /// Queries a single order by venue order ID or client order ID using the
+    /// dedicated `/order-status` endpoint, which works for any order state.
     ///
-    /// Requires the instrument to be cached (call `request_instruments` first).
+    /// The caller must supply `order_side`, `order_type`, and `time_in_force`
+    /// because the endpoint does not return these fields.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instrument is not found in the cache.
+    /// - Neither `venue_order_id` nor `client_order_id` is provided.
     /// - The HTTP request fails.
-    /// - Bar parsing fails.
-    pub async fn request_bars(
+    #[allow(clippy::too_many_arguments)]
+    pub async fn request_order_status(
         &self,
-        symbol: &str,
-        start_timestamp_ns: i64,
-        end_timestamp_ns: i64,
-        width: AxCandleWidth,
-    ) -> anyhow::Result<Vec<Bar>> {
-        let symbol_ustr = ustr::Ustr::from(symbol);
-        let instrument = self
-            .get_instrument(&symbol_ustr)
-            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
-
-        let resp = self
-            .inner
-            .get_candles(symbol, start_timestamp_ns, end_timestamp_ns, width)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-
-        let ts_init = self.generate_ts_init();
-        let mut bars = Vec::with_capacity(resp.candles.len());
-
-        for candle in &resp.candles {
-            match parse_bar(candle, &instrument, ts_init) {
-                Ok(bar) => bars.push(bar),
-                Err(e) => {
-                    log::warn!("Failed to parse bar for {symbol}: {e}");
-                }
-            }
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        order_side: OrderSide,
+        order_type: OrderType,
+        time_in_force: TimeInForce,
+    ) -> anyhow::Result<OrderStatusReport> {
+        let resp = if let Some(ref voi) = venue_order_id {
+            self.inner.get_order_status_by_id(voi.as_str()).await
+        } else if let Some(ref coid) = client_order_id {
+            let cid = client_order_id_to_cid(coid);
+            self.inner.get_order_status_by_cid(cid).await
+        } else {
+            anyhow::bail!("Either venue_order_id or client_order_id must be provided")
         }
+        .map_err(|e| anyhow::anyhow!(e))?;
 
-        Ok(bars)
+        let detail = resp.status;
+        let size_precision = self
+            .get_instrument(&detail.symbol)
+            .map_or(0, |i| i.size_precision());
+
+        let voi = VenueOrderId::new(&detail.order_id);
+        let order_status = detail.state.into();
+        let filled = detail.filled_quantity.unwrap_or(0);
+        let remaining = detail.remaining_quantity.unwrap_or(0);
+        let quantity = Quantity::new((filled + remaining) as f64, size_precision);
+        let filled_qty = Quantity::new(filled as f64, size_precision);
+        let ts_init = self.generate_ts_init();
+
+        let resolved_coid = client_order_id.or_else(|| detail.clord_id.map(cid_to_client_order_id));
+
+        Ok(OrderStatusReport::new(
+            account_id,
+            instrument_id,
+            resolved_coid,
+            voi,
+            order_side,
+            order_type,
+            time_in_force,
+            order_status,
+            quantity,
+            filled_qty,
+            ts_init,
+            ts_init,
+            ts_init,
+            Some(UUID4::new()),
+        ))
     }
 
     /// Requests open orders from Ax and parses them to Nautilus [`OrderStatusReport`].
     ///
     /// Requires instruments to be cached for parsing order details.
+    ///
+    /// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
+    /// to a `ClientOrderId`. This is needed for correlating orders submitted via WebSocket.
     ///
     /// # Errors
     ///
@@ -1189,10 +1629,14 @@ impl AxHttpClient {
     /// - The HTTP request fails.
     /// - An order's instrument is not found in the cache.
     /// - Order parsing fails.
-    pub async fn request_order_status_reports(
+    pub async fn request_order_status_reports<F>(
         &self,
         account_id: AccountId,
-    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        cid_resolver: Option<F>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>>
+    where
+        F: Fn(u64) -> Option<ClientOrderId>,
+    {
         let response = self
             .inner
             .get_open_orders()
@@ -1207,7 +1651,13 @@ impl AxHttpClient {
                 .get_instrument(&order.s)
                 .ok_or_else(|| anyhow::anyhow!("Instrument {} not found in cache", order.s))?;
 
-            match parse_order_status_report(order, account_id, &instrument, ts_init) {
+            match parse_order_status_report(
+                order,
+                account_id,
+                &instrument,
+                ts_init,
+                cid_resolver.as_ref(),
+            ) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
                     log::warn!("Failed to parse order {}: {e}", order.oid);
@@ -1281,6 +1731,11 @@ impl AxHttpClient {
         let mut reports = Vec::with_capacity(response.positions.len());
 
         for position in &response.positions {
+            // Skip flat positions (zero quantity)
+            if position.signed_quantity == 0 {
+                continue;
+            }
+
             let instrument = self.get_instrument(&position.symbol).ok_or_else(|| {
                 anyhow::anyhow!("Instrument {} not found in cache", position.symbol)
             })?;

@@ -332,6 +332,7 @@ class BacktestNode:
             "request_quote_ticks",
             "request_trade_ticks",
             "request_order_book_depth",
+            "request_order_book_deltas",
         ]
 
         if request_function not in compatible_request_functions:
@@ -409,8 +410,10 @@ class BacktestNode:
                 bar_adaptive_high_low_ordering=venue_config.bar_adaptive_high_low_ordering,
                 trade_execution=venue_config.trade_execution,
                 liquidity_consumption=venue_config.liquidity_consumption,
+                queue_position=venue_config.queue_position,
                 allow_cash_borrowing=venue_config.allow_cash_borrowing,
                 price_protection_points=get_price_protection_points(venue_config),
+                settlement_prices=venue_config.settlement_prices,
             )
 
         # Add instruments
@@ -588,6 +591,7 @@ class BacktestNode:
                 end=used_end,
                 session=session,
                 files=filter_files,
+                optimize_file_loading=config.optimize_file_loading,
             )
 
         # Stream data

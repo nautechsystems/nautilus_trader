@@ -35,8 +35,13 @@ pub struct TickBitmap {
 }
 
 impl TickBitmap {
-    /// Create a new empty bitmap
+    /// Create a new empty bitmap.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `tick_spacing` is zero.
     pub fn new(tick_spacing: u32) -> Self {
+        assert!(tick_spacing > 0, "Tick spacing must be greater than zero");
         Self {
             words: AHashMap::new(),
             tick_spacing: tick_spacing as i32,

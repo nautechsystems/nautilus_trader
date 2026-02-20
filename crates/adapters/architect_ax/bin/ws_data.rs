@@ -22,14 +22,10 @@
 //! - `AX_API_KEY`: Your API key
 //! - `AX_API_SECRET`: Your API secret
 //!
-//! For 2FA (if enabled on your account):
-//! - `AX_TOTP_SECRET`: Base32 TOTP secret for auto-generating codes
-//!
 //! Usage:
 //! ```bash
 //! AX_API_KEY=your_key \
 //!   AX_API_SECRET=your_secret \
-//!   AX_TOTP_SECRET=your_totp_secret \
 //!   cargo run --bin architect-ws-data -p nautilus-architect
 //! ```
 
@@ -37,11 +33,12 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use nautilus_architect_ax::{
-    common::enums::{AxEnvironment, AxMarketDataLevel},
-    http::{client::AxRawHttpClient, error::AxHttpError},
+    common::enums::AxEnvironment,
+    http::{client::AxRawHttpClient, parse::parse_perp_instrument},
     websocket::{NautilusDataWsMessage, data::AxMdWebSocketClient},
 };
-use totp_rs::{Algorithm, Secret, TOTP};
+use nautilus_core::time::get_atomic_clock_realtime;
+use rust_decimal::Decimal;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -78,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     )?;
 
-    match http_client.get_instruments().await {
+    let instruments_response = match http_client.get_instruments().await {
         Ok(response) => {
             log::info!(
                 "Connectivity OK - got {} instruments",
@@ -87,61 +84,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(first) = response.instruments.first() {
                 log::debug!("First instrument: {:?}", first.symbol);
             }
+            response
         }
         Err(e) => {
             log::error!("Connectivity test failed: {e:?}");
             return Err(format!("Connectivity test failed: {e:?}").into());
         }
-    }
+    };
 
     log::info!(
         "Authenticating via HTTP to {}/authenticate ...",
         environment.http_url()
     );
 
-    // Generate TOTP code from secret if available
-    let totp_code: Option<String> = std::env::var("AX_TOTP_SECRET").ok().map(|secret| {
-        let secret_bytes = Secret::Encoded(secret)
-            .to_bytes()
-            .expect("Invalid base32 TOTP secret");
-        let totp =
-            TOTP::new(Algorithm::SHA1, 6, 1, 30, secret_bytes).expect("Invalid TOTP configuration");
-        let code = totp.generate_current().expect("Failed to generate TOTP");
-        log::info!("Generated TOTP code from secret");
-        code
-    });
-
-    // First try without TOTP (in case 2FA is disabled)
-    let auth_response = match http_client.authenticate(&api_key, &api_secret, 3600).await {
-        Ok(resp) => resp,
-        Err(e) => {
-            // Check if 2FA is required
-            if matches!(e, AxHttpError::UnexpectedStatus { status: 400, .. }) {
-                let code = match totp_code {
-                    Some(code) => code,
-                    None => {
-                        log::error!("2FA required but AX_TOTP_SECRET not set");
-                        return Err("2FA required but AX_TOTP_SECRET not provided".into());
-                    }
-                };
-
-                log::info!("2FA required, using provided code...");
-                match http_client
-                    .authenticate_with_totp(&api_key, &api_secret, 3600, Some(&code))
-                    .await
-                {
-                    Ok(resp) => resp,
-                    Err(e) => {
-                        log::error!("Authentication with 2FA failed: {e:?}");
-                        return Err(format!("Authentication failed: {e:?}").into());
-                    }
-                }
-            } else {
-                log::error!("Authentication failed: {e:?}");
-                return Err(format!("Authentication failed: {e:?}").into());
-            }
-        }
-    };
+    let auth_response = http_client
+        .authenticate(&api_key, &api_secret, 3600)
+        .await
+        .map_err(|e| format!("Authentication failed: {e:?}"))?;
     log::info!("Authenticated successfully");
 
     log::info!(
@@ -154,15 +113,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(30),
     );
 
+    let test_symbol = "EURUSD-PERP";
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+    let maybe_instrument = instruments_response
+        .instruments
+        .iter()
+        .find(|inst| inst.symbol.as_str() == test_symbol)
+        .ok_or_else(|| format!("Instrument {test_symbol} not found in /instruments response"))?;
+
+    let instrument = parse_perp_instrument(
+        maybe_instrument,
+        Decimal::ZERO,
+        Decimal::ZERO,
+        ts_init,
+        ts_init,
+    )
+    .map_err(|e| format!("Failed to parse instrument {test_symbol}: {e}"))?;
+    client.cache_instrument(instrument);
+    log::info!("Cached instrument {test_symbol} for WebSocket parsing");
+
     log::info!("Establishing WebSocket connection...");
     client.connect().await?;
     log::info!("Connected");
 
-    let test_symbol = "EURUSD-PERP";
-    log::info!("Subscribing to {test_symbol} L1 data...");
-    client
-        .subscribe(test_symbol, AxMarketDataLevel::Level1)
-        .await?;
+    log::info!("Subscribing to {test_symbol} quotes and trades...");
+    client.subscribe_quotes(test_symbol).await?;
+    client.subscribe_trades(test_symbol).await?;
     log::info!("Subscribed");
 
     log::info!("Listening for messages (30 seconds)...");

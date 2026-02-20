@@ -69,7 +69,17 @@ class DummyStreamingCatalog:
     ):
         return file_paths
 
-    def backend_session(self, data_cls, identifiers, start, end, session, files):
+    def backend_session(
+        self,
+        data_cls,
+        identifiers,
+        start,
+        end,
+        session,
+        files,
+        optimize_file_loading,
+        **kwargs,
+    ):
         return session
 
 

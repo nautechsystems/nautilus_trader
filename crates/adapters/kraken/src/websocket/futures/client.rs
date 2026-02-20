@@ -47,13 +47,11 @@ use crate::{common::credential::KrakenCredential, websocket::error::KrakenWsErro
 /// Topics use colon format: `feed:symbol` (e.g., `trades:PF_ETHUSD`).
 pub const KRAKEN_FUTURES_WS_TOPIC_DELIMITER: char = ':';
 
-const WS_PING_MSG: &str = r#"{"event":"ping"}"#;
-
 /// WebSocket client for the Kraken Futures v1 streaming API.
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
 )]
 pub struct KrakenFuturesWebSocketClient {
     url: String,
@@ -256,13 +254,14 @@ impl KrakenFuturesWebSocketClient {
             url: self.url.clone(),
             headers: vec![],
             heartbeat: self.heartbeat_secs,
-            heartbeat_msg: Some(WS_PING_MSG.to_string()),
+            heartbeat_msg: None, // Use WebSocket ping frames, not text messages
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let ws_client =
@@ -563,6 +562,40 @@ impl KrakenFuturesWebSocketClient {
     ) -> Result<(), KrakenWsError> {
         let symbol = instrument_id.symbol;
         let key = format!("index:{symbol}");
+
+        if !self.subscriptions.remove_reference(&key) {
+            return Ok(());
+        }
+
+        self.subscriptions.mark_unsubscribe(&key);
+        self.subscriptions.confirm_unsubscribe(&key);
+        self.maybe_unsubscribe_ticker(symbol).await
+    }
+
+    /// Subscribes to funding rate updates for the given instrument.
+    pub async fn subscribe_funding_rate(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), KrakenWsError> {
+        let symbol = instrument_id.symbol;
+        let key = format!("funding:{symbol}");
+
+        if !self.subscriptions.add_reference(&key) {
+            return Ok(());
+        }
+
+        self.subscriptions.mark_subscribe(&key);
+        self.subscriptions.confirm_subscribe(&key);
+        self.ensure_ticker_subscribed(symbol).await
+    }
+
+    /// Unsubscribes from funding rate updates for the given instrument.
+    pub async fn unsubscribe_funding_rate(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), KrakenWsError> {
+        let symbol = instrument_id.symbol;
+        let key = format!("funding:{symbol}");
 
         if !self.subscriptions.remove_reference(&key) {
             return Ok(());

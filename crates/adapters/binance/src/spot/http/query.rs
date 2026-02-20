@@ -813,7 +813,8 @@ impl TradeFeeParams {
     pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.binance",
         name = "SpotBatchOrderItem",
-        get_all
+        get_all,
+        from_py_object,
     )
 )]
 pub struct BatchOrderItem {
@@ -897,7 +898,8 @@ impl BatchOrderItem {
     pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.binance",
         name = "SpotBatchCancelItem",
-        get_all
+        get_all,
+        from_py_object,
     )
 )]
 pub struct BatchCancelItem {

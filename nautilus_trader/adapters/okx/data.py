@@ -428,7 +428,10 @@ class OKXDataClient(LiveMarketDataClient):
         family: str | None = None,
     ) -> list[Instrument]:
         try:
-            pyo3_instruments = await self._http_client.request_instruments(inst_type, family)
+            pyo3_instruments, _inst_id_codes = await self._http_client.request_instruments(
+                inst_type,
+                family,
+            )
             instruments = []
             for pyo3_instrument in pyo3_instruments:
                 self._cache_instrument(pyo3_instrument)  # type: ignore[arg-type]
@@ -453,11 +456,9 @@ class OKXDataClient(LiveMarketDataClient):
 
         all_instruments: list[Instrument] = []
 
-        instrument_types = (
-            self._instrument_provider.instrument_types
-            if self._instrument_provider.instrument_types
-            else [nautilus_pyo3.OKXInstrumentType.SPOT]
-        )
+        instrument_types = self._instrument_provider.instrument_types or [
+            nautilus_pyo3.OKXInstrumentType.SPOT,
+        ]
         instrument_families = list(self._instrument_provider.instrument_families or [])
 
         for inst_type in instrument_types:

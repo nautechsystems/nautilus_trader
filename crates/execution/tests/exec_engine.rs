@@ -89,7 +89,7 @@ fn stub_client() -> StubExecutionClient {
     StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     )
@@ -121,7 +121,7 @@ fn test_register_venue_routing_success(
     stub_client: StubExecutionClient,
 ) {
     let client_id = stub_client.client_id();
-    let venue = Venue::from("STUB_VENUE");
+    let venue = Venue::test_default();
 
     execution_engine
         .register_client(Box::new(stub_client))
@@ -173,7 +173,7 @@ fn test_check_connected_when_client_connected_returns_true(mut execution_engine:
     let mut stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -196,7 +196,7 @@ fn test_check_connected_when_client_disconnected_returns_false(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -220,7 +220,7 @@ fn test_check_disconnected_when_client_disconnected_returns_true(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -293,7 +293,7 @@ fn test_submit_order_with_duplicate_client_order_id_handles_gracefully(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -304,7 +304,7 @@ fn test_submit_order_with_duplicate_client_order_id_handles_gracefully(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -385,7 +385,7 @@ fn test_submit_order_for_random_venue_logs(mut execution_engine: ExecutionEngine
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
     let order = OrderTestBuilder::new(OrderType::Market)
         .trader_id(trader_id)
@@ -457,7 +457,7 @@ fn test_order_filled_with_unrecognized_strategy_id(mut execution_engine: Executi
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -538,7 +538,7 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let entry = OrderTestBuilder::new(OrderType::Market)
@@ -570,12 +570,16 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         .price(Price::from_str("1.00000").unwrap())
         .build();
 
-    let bracket_orders = vec![entry.clone(), stop_loss.clone(), take_profit.clone()];
+    let orders = [entry.clone(), stop_loss.clone(), take_profit.clone()];
     let order_list = OrderList::new(
         OrderListId::from("1"),
         instrument.id,
         strategy_id,
-        bracket_orders,
+        vec![
+            entry.client_order_id(),
+            stop_loss.client_order_id(),
+            take_profit.client_order_id(),
+        ],
         UnixNanos::default(),
     );
 
@@ -585,12 +589,23 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         strategy_id,
         instrument_id: instrument.id,
         order_list,
+        order_inits: orders.iter().map(|o| o.init_event().clone()).collect(),
         exec_algorithm_id: None,
         position_id: None,
         params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
+
+    // Insert orders into cache (simulating what the strategy does)
+    for order in &orders {
+        execution_engine
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+            .unwrap();
+    }
+
     execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list.clone()));
     let entry_submitted = TestOrderEventStubs::submitted(&entry, AccountId::test_default());
     execution_engine.process(entry_submitted);
@@ -664,7 +679,7 @@ fn test_submit_order_successfully_processes_and_caches_order(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -675,7 +690,7 @@ fn test_submit_order_successfully_processes_and_caches_order(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -766,7 +781,7 @@ fn test_submit_order_with_cleared_cache_logs_error(mut execution_engine: Executi
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
     let order = OrderTestBuilder::new(OrderType::Market)
         .trader_id(trader_id)
@@ -857,7 +872,7 @@ fn test_when_applying_event_to_order_with_invalid_state_trigger_logs(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
     let order = OrderTestBuilder::new(OrderType::Market)
         .trader_id(trader_id)
@@ -930,7 +945,7 @@ fn test_order_filled_event_when_order_not_found_in_cache_logs(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -998,7 +1013,7 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -1121,7 +1136,7 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1132,7 +1147,7 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -1254,7 +1269,7 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1265,7 +1280,7 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -1396,7 +1411,7 @@ fn test_process_event_with_no_venue_order_id_logs_and_does_nothing(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1407,7 +1422,7 @@ fn test_process_event_with_no_venue_order_id_logs_and_does_nothing(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Limit)
@@ -1466,7 +1481,7 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1477,7 +1492,7 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::StopMarket)
@@ -1589,7 +1604,7 @@ fn test_handle_order_event_with_different_client_order_id_but_matching_venue_ord
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1600,7 +1615,7 @@ fn test_handle_order_event_with_different_client_order_id_but_matching_venue_ord
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -1664,7 +1679,7 @@ fn test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1675,7 +1690,7 @@ fn test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -1740,7 +1755,7 @@ fn test_handle_duplicate_order_events_logs_error_and_does_not_apply(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1751,7 +1766,7 @@ fn test_handle_duplicate_order_events_logs_error_and_does_not_apply(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -1842,7 +1857,7 @@ fn test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -1863,7 +1878,7 @@ fn test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(
 
     let order_filled_event = TestOrderEventStubs::filled(
         &order,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001")), // Provide unique trade_id
         None,                                            // position_id
         None,                                            // last_px
@@ -1933,7 +1948,7 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::test_default(),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1944,7 +1959,7 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     {
@@ -1972,7 +1987,7 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
     let expected_position_id = PositionId::from(format!("{}-{}", instrument.id, strategy_id));
 
     let position = Position::new(
-        &instrument.into(),
+        &instrument.clone().into(),
         OrderFilled::new(
             order.trader_id(),
             order.strategy_id(),
@@ -2028,7 +2043,7 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
     let cache = execution_engine.cache().borrow();
 
     println!("Filtering parameters:");
-    println!("  Venue: {:?}", Venue::from("STUB_VENUE"));
+    println!("  Venue: {:?}", Venue::test_default());
     println!("  Instrument ID: {:?}", instrument.id);
     println!("  Strategy ID: {strategy_id:?}");
     println!("  Expected Position ID: {expected_position_id:?}");
@@ -2139,7 +2154,7 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::test_default(),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -2150,7 +2165,7 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -2186,7 +2201,7 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
     let expected_position_id = PositionId::from(format!("{}-{}", instrument.id, strategy_id));
 
     let position = Position::new(
-        &instrument.into(),
+        &instrument.clone().into(),
         OrderFilled::new(
             order.trader_id(),
             order.strategy_id(),
@@ -2396,7 +2411,7 @@ fn test_handle_position_opening_with_position_id_none(mut execution_engine: Exec
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -2431,7 +2446,7 @@ fn test_handle_position_opening_with_position_id_none(mut execution_engine: Exec
 
     let order_filled_event = TestOrderEventStubs::filled(
         &order,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001")),
         None,                            // position_id = None (let engine generate it)
         None,                            // last_px
@@ -2546,7 +2561,7 @@ fn test_add_to_existing_position_on_order_fill(mut execution_engine: ExecutionEn
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -2582,7 +2597,7 @@ fn test_add_to_existing_position_on_order_fill(mut execution_engine: ExecutionEn
     // Fill first order to create a position
     let order1_filled_event = TestOrderEventStubs::filled(
         &order1,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         None,                            // Let system generate position ID
         None,                            // last_px
@@ -2632,7 +2647,7 @@ fn test_add_to_existing_position_on_order_fill(mut execution_engine: ExecutionEn
 
     let order2_filled_event = TestOrderEventStubs::filled(
         &order2,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         Some(expected_position_id),      // Specify existing position ID
         None,                            // last_px
@@ -2764,7 +2779,7 @@ fn test_close_position_on_order_fill(mut execution_engine: ExecutionEngine) {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -2804,7 +2819,7 @@ fn test_close_position_on_order_fill(mut execution_engine: ExecutionEngine) {
     // Fill first order to open position
     let order1_filled_event = TestOrderEventStubs::filled(
         &order1,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         Some(position_id),
         None,
@@ -2967,7 +2982,7 @@ fn test_multiple_strategy_positions_opened(mut execution_engine: ExecutionEngine
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -3024,7 +3039,7 @@ fn test_multiple_strategy_positions_opened(mut execution_engine: ExecutionEngine
 
     let order1_filled_event = TestOrderEventStubs::filled(
         &order1,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         Some(position1_id),
         None,
@@ -3048,7 +3063,7 @@ fn test_multiple_strategy_positions_opened(mut execution_engine: ExecutionEngine
 
     let order2_filled_event = TestOrderEventStubs::filled(
         &order2,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         Some(position2_id),
         None,
@@ -3278,7 +3293,7 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -3332,7 +3347,7 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
 
     let order1_filled_event = TestOrderEventStubs::filled(
         &order1,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         Some(position_id),
         None,
@@ -3376,7 +3391,7 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
 
     let order2_filled_event = TestOrderEventStubs::filled(
         &order2,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         Some(position_id), // Fill against the same position
         None,
@@ -3506,7 +3521,7 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -3560,7 +3575,7 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
 
     let order1_filled_event = TestOrderEventStubs::filled(
         &order1,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         Some(position_id),
         None,
@@ -3608,7 +3623,7 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
 
     let order2_filled_event = TestOrderEventStubs::filled(
         &order2,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-2")),
         Some(position_id), // Fill against the same position
         None,
@@ -3739,7 +3754,7 @@ fn test_flip_position_on_flat_position_then_filled_reusing_position_id(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -3808,7 +3823,7 @@ fn test_flip_position_on_flat_position_then_filled_reusing_position_id(
 
     let order1_filled_event = TestOrderEventStubs::filled(
         &order1,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         Some(position_id),
         None,
@@ -3924,7 +3939,7 @@ fn test_flip_position_when_netting_oms(mut execution_engine: ExecutionEngine) {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -3978,7 +3993,7 @@ fn test_flip_position_when_netting_oms(mut execution_engine: ExecutionEngine) {
 
     let order1_filled_event = TestOrderEventStubs::filled(
         &order1,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(TradeId::new("E-19700101-000000-001-001-1")),
         Some(position_id),
         None,
@@ -4171,13 +4186,13 @@ fn test_submit_order_with_quote_quantity_and_no_prices_denies(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4252,13 +4267,13 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4298,14 +4313,19 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
         .quote_quantity(true) // Quantity denominated in quote currency
         .build();
 
+    let orders = [
+        entry_order.clone(),
+        stop_loss_order.clone(),
+        take_profit_order.clone(),
+    ];
     let bracket = OrderList::new(
         OrderListId::from("OL-20240101-000000-001"),
         instrument.id,
         strategy_id,
         vec![
-            entry_order.clone(),
-            stop_loss_order.clone(),
-            take_profit_order.clone(),
+            entry_order.client_order_id(),
+            stop_loss_order.client_order_id(),
+            take_profit_order.client_order_id(),
         ],
         UnixNanos::default(),
     );
@@ -4316,12 +4336,22 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
         strategy_id,
         instrument_id: instrument.id,
         order_list: bracket,
+        order_inits: orders.iter().map(|o| o.init_event().clone()).collect(),
         exec_algorithm_id: None,
         position_id: None,
         params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
+
+    // Insert orders into cache (simulating what the strategy does)
+    for order in &orders {
+        execution_engine
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+            .unwrap();
+    }
 
     execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
 
@@ -4442,7 +4472,7 @@ fn test_submit_order_with_quote_quantity_and_quote_tick_converts_to_base_quantit
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     // Set up market with quote tick
@@ -4464,7 +4494,7 @@ fn test_submit_order_with_quote_quantity_and_quote_tick_converts_to_base_quantit
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4579,7 +4609,7 @@ fn test_submit_order_with_quote_quantity_and_trade_ticks_converts_to_base_quanti
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     // Set up market with trade tick
@@ -4601,7 +4631,7 @@ fn test_submit_order_with_quote_quantity_and_trade_ticks_converts_to_base_quanti
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4716,7 +4746,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     // Set up market with trade tick
@@ -4754,7 +4784,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4794,14 +4824,19 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         .price(Price::from_str("20.0").unwrap())
         .quote_quantity(true) // Quantity denominated in quote currency
         .build();
+    let orders = [
+        entry_order.clone(),
+        stop_loss_order.clone(),
+        take_profit_order.clone(),
+    ];
     let order_list = OrderList::new(
         OrderListId::from("OL-20240101-000000-001-001"),
         instrument.id,
         strategy_id,
         vec![
-            entry_order.clone(),
-            stop_loss_order.clone(),
-            take_profit_order.clone(),
+            entry_order.client_order_id(),
+            stop_loss_order.client_order_id(),
+            take_profit_order.client_order_id(),
         ],
         UnixNanos::default(),
     );
@@ -4843,6 +4878,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         strategy_id,
         instrument_id: instrument.id,
         order_list,
+        order_inits: orders.iter().map(|o| o.init_event().clone()).collect(),
         exec_algorithm_id: None,
         position_id: None,
         params: None,
@@ -4955,13 +4991,13 @@ fn test_submit_market_should_not_add_to_own_book() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5032,13 +5068,13 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5109,13 +5145,13 @@ fn test_submit_order_adds_to_own_book_bid() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5256,13 +5292,13 @@ fn test_submit_order_adds_to_own_book_ask() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5403,13 +5439,13 @@ fn test_cancel_order_removes_from_own_book() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5567,13 +5603,13 @@ fn test_own_book_status_filtering() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5769,13 +5805,13 @@ fn test_filled_order_removes_from_own_book() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5969,13 +6005,13 @@ fn test_order_updates_in_own_book() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -6200,7 +6236,7 @@ fn test_position_flip_with_own_order_book() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let account = CashAccount::default();
@@ -6213,7 +6249,7 @@ fn test_position_flip_with_own_order_book() {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -6447,13 +6483,13 @@ fn test_own_book_with_crossed_orders() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -6605,7 +6641,7 @@ fn test_own_book_with_contingent_orders() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
@@ -6774,7 +6810,7 @@ fn test_own_book_with_contingent_orders() {
 
     let entry_filled_event = TestOrderEventStubs::filled(
         &cached_entry_order,
-        &InstrumentAny::CurrencyPair(instrument),
+        &InstrumentAny::CurrencyPair(instrument.clone()),
         None, // trade_id
         None, // position_id
         None, // last_px
@@ -6875,7 +6911,7 @@ fn test_own_book_order_status_filtering_parameterized(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
@@ -6944,7 +6980,7 @@ fn test_own_book_order_status_filtering_parameterized(
 
                 let event = TestOrderEventStubs::filled(
                     &cached_order,
-                    &InstrumentAny::CurrencyPair(instrument),
+                    &InstrumentAny::CurrencyPair(instrument.clone()),
                     None,                         // trade_id
                     None,                         // position_id
                     None,                         // last_px
@@ -6968,7 +7004,7 @@ fn test_own_book_order_status_filtering_parameterized(
 
                 let event = TestOrderEventStubs::filled(
                     &cached_order,
-                    &InstrumentAny::CurrencyPair(instrument),
+                    &InstrumentAny::CurrencyPair(instrument.clone()),
                     None, // trade_id
                     None, // position_id
                     None, // last_px
@@ -7051,7 +7087,7 @@ fn test_own_book_combined_status_filtering() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
@@ -7237,7 +7273,7 @@ fn test_own_book_combined_status_filtering() {
 
     let partial_filled_event = TestOrderEventStubs::filled(
         &cached_partial_order,
-        &InstrumentAny::CurrencyPair(instrument),
+        &InstrumentAny::CurrencyPair(instrument.clone()),
         None,                         // trade_id
         None,                         // position_id
         None,                         // last_px
@@ -7341,7 +7377,7 @@ fn test_own_book_status_integrity_during_transitions() {
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(instrument.into())
+        .add_instrument(instrument.clone().into())
         .unwrap();
 
     let stub_client = StubExecutionClient::new(
@@ -7448,7 +7484,7 @@ fn test_own_book_status_integrity_during_transitions() {
 
     let partial_fill_event = TestOrderEventStubs::filled(
         &cached_order_1,
-        &InstrumentAny::CurrencyPair(instrument),
+        &InstrumentAny::CurrencyPair(instrument.clone()),
         None,                         // trade_id
         Some(PositionId::new("1")),   // position_id
         None,                         // last_px
@@ -7540,7 +7576,7 @@ fn test_own_book_status_integrity_during_transitions() {
 
     let first_partial_fill = TestOrderEventStubs::filled(
         &cached_order_0,
-        &InstrumentAny::CurrencyPair(instrument),
+        &InstrumentAny::CurrencyPair(instrument.clone()),
         Some(TradeId::new("001")),    // trade_id
         None,                         // position_id
         None,                         // last_px
@@ -7586,7 +7622,7 @@ fn test_own_book_status_integrity_during_transitions() {
 
     let complete_fill = TestOrderEventStubs::filled(
         &cached_order_0_updated,
-        &InstrumentAny::CurrencyPair(instrument),
+        &InstrumentAny::CurrencyPair(instrument.clone()),
         Some(TradeId::new("002")),    // trade_id
         None,                         // position_id
         None,                         // last_px
@@ -7871,7 +7907,7 @@ fn test_own_book_status_integrity_during_transitions() {
         execution_engine
             .cache()
             .borrow_mut()
-            .add_instrument(instrument.into())
+            .add_instrument(instrument.clone().into())
             .unwrap();
 
         let account = CashAccount::default();
@@ -7909,7 +7945,7 @@ fn test_own_book_status_integrity_during_transitions() {
         ));
         execution_engine.process(TestOrderEventStubs::filled(
             &order1,
-            &instrument.into(),
+            &instrument.clone().into(),
             Some(TradeId::new("T-1")),
             Some(position_id),
             None,
@@ -8000,7 +8036,7 @@ fn test_own_book_status_integrity_during_transitions() {
         execution_engine
             .cache()
             .borrow_mut()
-            .add_instrument(instrument.into())
+            .add_instrument(instrument.clone().into())
             .unwrap();
 
         let account = CashAccount::default();
@@ -8038,7 +8074,7 @@ fn test_own_book_status_integrity_during_transitions() {
         ));
         execution_engine.process(TestOrderEventStubs::filled(
             &order1,
-            &instrument.into(),
+            &instrument.clone().into(),
             Some(TradeId::new("T-1")),
             Some(position_id1),
             None,
@@ -8127,7 +8163,7 @@ fn test_own_book_status_integrity_during_transitions() {
         execution_engine
             .cache()
             .borrow_mut()
-            .add_instrument(instrument.into())
+            .add_instrument(instrument.clone().into())
             .unwrap();
 
         let account = CashAccount::default();
@@ -8166,7 +8202,7 @@ fn test_own_book_status_integrity_during_transitions() {
         ));
         execution_engine.process(TestOrderEventStubs::filled(
             &order1,
-            &instrument.into(),
+            &instrument.clone().into(),
             Some(TradeId::new("T-1")),
             Some(position_id),
             None,
@@ -8204,7 +8240,7 @@ fn test_own_book_status_integrity_during_transitions() {
         ));
         execution_engine.process(TestOrderEventStubs::filled(
             &order2,
-            &instrument.into(),
+            &instrument.clone().into(),
             Some(TradeId::new("T-2")),
             Some(position_id),
             None,
@@ -8464,7 +8500,7 @@ fn test_reconcile_fill_report_order_not_found(mut execution_engine: ExecutionEng
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(InstrumentAny::CurrencyPair(instrument))
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
         .unwrap();
 
     let report = create_fill_report(
@@ -8491,7 +8527,7 @@ fn test_reconcile_fill_report_applies_fill_event(mut execution_engine: Execution
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(InstrumentAny::CurrencyPair(instrument))
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -8539,7 +8575,7 @@ fn test_reconcile_fill_report_finds_order_by_venue_order_id(mut execution_engine
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(InstrumentAny::CurrencyPair(instrument))
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -8605,7 +8641,7 @@ fn test_reconcile_position_report_netting_mode(mut execution_engine: ExecutionEn
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(InstrumentAny::CurrencyPair(instrument))
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
         .unwrap();
 
     // No venue_position_id = netting mode
@@ -8629,7 +8665,7 @@ fn test_reconcile_position_report_hedging_mode_position_not_found(
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(InstrumentAny::CurrencyPair(instrument))
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
         .unwrap();
 
     // With venue_position_id = hedging mode
@@ -8665,7 +8701,7 @@ fn test_reconcile_execution_mass_status_with_order_reports(mut execution_engine:
     execution_engine
         .cache()
         .borrow_mut()
-        .add_instrument(InstrumentAny::CurrencyPair(instrument))
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Limit)

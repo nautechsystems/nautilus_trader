@@ -172,16 +172,16 @@ impl ParquetDataCatalog {
         Ok(())
     }
 
-    /// Consolidates data files for a specific data type and instrument.
+    /// Consolidates data files for a specific data type and identifier.
     ///
     /// This method consolidates Parquet files within a specific directory (defined by data type
-    /// and optional instrument ID) by merging multiple files into a single file. This improves
+    /// and optional identifier) by merging multiple files into a single file. This improves
     /// query performance and can reduce storage overhead.
     ///
     /// # Parameters
     ///
     /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
-    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
+    /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an instrument_id (e.g., "EUR/USD.SIM") or a bar_type (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     /// - `start`: Optional start timestamp to limit consolidation to files within this range.
     /// - `end`: Optional end timestamp to limit consolidation to files within this range.
     /// - `ensure_contiguous_files`: Whether to validate that consolidated intervals are contiguous (default: true).
@@ -227,12 +227,12 @@ impl ParquetDataCatalog {
     pub fn consolidate_data(
         &self,
         type_name: &str,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
     ) -> anyhow::Result<()> {
-        let directory = self.make_path(type_name, instrument_id)?;
+        let directory = self.make_path(type_name, identifier)?;
         self.consolidate_directory(&directory, start, end, ensure_contiguous_files)
     }
 
@@ -787,12 +787,16 @@ impl ParquetDataCatalog {
             // Query data for this period using query_typed_data
             let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
 
+            // Use optimize_file_loading=false to match Python behavior:
+            // During consolidation, we want to read only the specific files being consolidated,
+            // not the entire directory. This ensures precise file control during consolidation.
             let period_data = self.query_typed_data::<T>(
                 instrument_ids,
                 Some(UnixNanos::from(query_info.query_start)),
                 Some(UnixNanos::from(query_info.query_end)),
                 None,
                 Some(existing_files.clone()),
+                false, // optimize_file_loading=false for precise file control during consolidation
             )?;
 
             if period_data.is_empty() {
@@ -1187,7 +1191,7 @@ impl ParquetDataCatalog {
         Ok(())
     }
 
-    /// Resets the filenames of Parquet files for a specific data type and instrument ID.
+    /// Resets the filenames of Parquet files for a specific data type and identifier.
     ///
     /// This method renames files in a specific directory based on the actual timestamp
     /// range of their content. This is useful for correcting filenames after data
@@ -1196,7 +1200,7 @@ impl ParquetDataCatalog {
     /// # Parameters
     ///
     /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
-    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
+    /// - `identifier`: Optional identifier to target a specific instrument's data. Can be an instrument_id (e.g., "EUR/USD.SIM") or a bar_type (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
     ///
     /// # Returns
     ///
@@ -1227,9 +1231,9 @@ impl ParquetDataCatalog {
     pub fn reset_data_file_names(
         &self,
         data_cls: &str,
-        instrument_id: Option<String>,
+        identifier: Option<String>,
     ) -> anyhow::Result<()> {
-        let directory = self.make_path(data_cls, instrument_id)?;
+        let directory = self.make_path(data_cls, identifier)?;
         self.reset_file_names(&directory)
     }
 
@@ -1381,7 +1385,7 @@ impl ParquetDataCatalog {
         Ok(leaf_dirs)
     }
 
-    /// Deletes data within a specified time range for a specific data type and instrument.
+    /// Deletes data within a specified time range for a specific data type and identifier.
     ///
     /// This method identifies all parquet files that intersect with the specified time range
     /// and handles them appropriately:
@@ -1392,7 +1396,7 @@ impl ParquetDataCatalog {
     /// # Parameters
     ///
     /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
-    /// - `identifier`: Optional instrument ID to delete data for. If None, deletes data across all instruments.
+    /// - `identifier`: Optional identifier to delete data for. Can be an instrument_id (e.g., "EUR/USD.SIM") or a bar_type (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL"). If None, deletes data across all identifiers.
     /// - `start`: Optional start timestamp for the deletion range. If None, deletes from the beginning.
     /// - `end`: Optional end timestamp for the deletion range. If None, deletes to the end.
     ///
@@ -1606,6 +1610,7 @@ impl ParquetDataCatalog {
             match operation.operation_type.as_str() {
                 "split_before" => {
                     // Query data before the deletion range and write it
+                    // Use optimize_file_loading=false for precise file control during split operations
                     let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
                     let before_data = self.query_typed_data::<T>(
                         instrument_ids,
@@ -1613,6 +1618,7 @@ impl ParquetDataCatalog {
                         Some(UnixNanos::from(operation.query_end)),
                         None,
                         Some(operation.files.clone()),
+                        false, // optimize_file_loading=false for precise file control
                     )?;
 
                     if !before_data.is_empty() {
@@ -1628,6 +1634,7 @@ impl ParquetDataCatalog {
                 }
                 "split_after" => {
                     // Query data after the deletion range and write it
+                    // Use optimize_file_loading=false for precise file control during split operations
                     let instrument_ids = identifier.as_ref().map(|id| vec![id.clone()]);
                     let after_data = self.query_typed_data::<T>(
                         instrument_ids,
@@ -1635,6 +1642,7 @@ impl ParquetDataCatalog {
                         Some(UnixNanos::from(operation.query_end)),
                         None,
                         Some(operation.files.clone()),
+                        false, // optimize_file_loading=false for precise file control
                     )?;
 
                     if !after_data.is_empty() {

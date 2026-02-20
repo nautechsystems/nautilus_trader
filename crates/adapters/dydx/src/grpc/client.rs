@@ -18,6 +18,7 @@
 //! This module provides the main gRPC client for interacting with dYdX v4 validator nodes.
 //! It handles transaction signing, broadcasting, and querying account state.
 
+use cosmrs::Tx;
 use prost::Message as ProstMessage;
 use tonic::transport::Channel;
 
@@ -495,7 +496,7 @@ impl DydxGrpcClient {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub async fn get_tx(&mut self, hash: &str) -> Result<cosmrs::Tx, anyhow::Error> {
+    pub async fn get_tx(&mut self, hash: &str) -> Result<Tx, anyhow::Error> {
         let req = GetTxRequest {
             hash: hash.to_string(),
         };
@@ -504,7 +505,7 @@ impl DydxGrpcClient {
         if let Some(tx) = response.tx {
             // Convert through bytes since the types are incompatible
             let tx_bytes = tx.encode_to_vec();
-            cosmrs::Tx::try_from(tx_bytes.as_slice()).map_err(|e| anyhow::anyhow!("{e}"))
+            Tx::try_from(tx_bytes.as_slice()).map_err(|e| anyhow::anyhow!("{e}"))
         } else {
             anyhow::bail!("Transaction not found")
         }

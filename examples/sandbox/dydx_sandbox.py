@@ -17,8 +17,8 @@
 import asyncio
 from decimal import Decimal
 
-from nautilus_trader.adapters.dydx.config import DYDXDataClientConfig
-from nautilus_trader.adapters.dydx.factories import DYDXLiveDataClientFactory
+from nautilus_trader.adapters.dydx.config import DydxDataClientConfig
+from nautilus_trader.adapters.dydx.factories import DydxLiveDataClientFactory
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
@@ -66,7 +66,7 @@ async def main():
             use_pyo3=True,
         ),
         data_clients={
-            "DYDX": DYDXDataClientConfig(
+            "DYDX": DydxDataClientConfig(
                 wallet_address=None,  # 'DYDX_WALLET_ADDRESS' env var
                 instrument_provider=instrument_provider_config,
                 is_testnet=False,  # If client uses the testnet
@@ -101,7 +101,7 @@ async def main():
 
     # Register client factories with the node
     for data_client in config_node.data_clients:
-        node.add_data_client_factory(data_client, DYDXLiveDataClientFactory)
+        node.add_data_client_factory(data_client, DydxLiveDataClientFactory)
 
     for exec_client in config_node.exec_clients:
         node.add_exec_client_factory(exec_client, SandboxLiveExecClientFactory)

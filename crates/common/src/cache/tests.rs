@@ -411,6 +411,7 @@ fn test_position_ids_filtering(mut cache: Cache) {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -431,7 +432,7 @@ fn test_position_ids_filtering(mut cache: Cache) {
 
     let fill_a_event = TestOrderEventStubs::filled(
         &base_order,
-        &InstrumentAny::CurrencyPair(instr_a0),
+        &InstrumentAny::CurrencyPair(instr_a0.clone()),
         None,
         Some(PositionId::new("POS-A")),
         None,
@@ -445,7 +446,7 @@ fn test_position_ids_filtering(mut cache: Cache) {
         OrderEventAny::Filled(f) => f,
         _ => unreachable!(),
     };
-    let pos_a = Position::new(&InstrumentAny::CurrencyPair(instr_a0), fill_a);
+    let pos_a = Position::new(&InstrumentAny::CurrencyPair(instr_a0.clone()), fill_a);
 
     // Second open position on venue B
     let order_b = OrderTestBuilder::new(OrderType::Market)
@@ -456,7 +457,7 @@ fn test_position_ids_filtering(mut cache: Cache) {
 
     let fill_b_event = TestOrderEventStubs::filled(
         &order_b,
-        &InstrumentAny::CurrencyPair(instr_b0),
+        &InstrumentAny::CurrencyPair(instr_b0.clone()),
         None,
         Some(PositionId::new("POS-B")),
         None,
@@ -730,7 +731,7 @@ fn test_add_order_list() {
         order_list_id,
         instrument.id(),
         order.strategy_id(),
-        vec![order],
+        vec![order.client_order_id()],
         UnixNanos::default(),
     );
 
@@ -763,7 +764,7 @@ fn test_add_order_list_when_already_exists_errors() {
         order_list_id,
         instrument.id(),
         order.strategy_id(),
-        vec![order],
+        vec![order.client_order_id()],
         UnixNanos::default(),
     );
 
@@ -854,7 +855,7 @@ fn test_instrument_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
 #[rstest]
 fn test_instrument_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
     cache
-        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
         .unwrap();
 
     let result = cache.instrument(&audusd_sim.id);
@@ -872,13 +873,13 @@ fn test_instruments_when_empty(cache: Cache) {
 fn test_instruments_when_some(mut cache: Cache) {
     let esz1 = futures_contract_es(None, None);
     cache
-        .add_instrument(InstrumentAny::FuturesContract(esz1))
+        .add_instrument(InstrumentAny::FuturesContract(esz1.clone()))
         .unwrap();
 
     let result1 = cache.instruments(&esz1.id.venue, None);
     let result2 = cache.instruments(&esz1.id.venue, Some(&esz1.underlying));
-    assert_eq!(result1, vec![&InstrumentAny::FuturesContract(esz1)]);
-    assert_eq!(result2, vec![&InstrumentAny::FuturesContract(esz1)]);
+    assert_eq!(result1, vec![&InstrumentAny::FuturesContract(esz1.clone())]);
+    assert_eq!(result2, vec![&InstrumentAny::FuturesContract(esz1.clone())]);
 }
 
 #[rstest]
@@ -2198,7 +2199,7 @@ fn test_purge_position_cleans_up_account_positions_index() {
 fn test_update_own_order_book_with_market_order_does_not_panic(mut cache: Cache) {
     let audusd_sim = audusd_sim();
     cache
-        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
         .unwrap();
 
     // Create a LIMIT order to establish an own book for the instrument
@@ -2240,7 +2241,7 @@ fn test_update_own_order_book_with_market_order_does_not_panic(mut cache: Cache)
 
     let filled = TestOrderEventStubs::filled(
         &market_order_mut,
-        &InstrumentAny::CurrencyPair(audusd_sim),
+        &InstrumentAny::CurrencyPair(audusd_sim.clone()),
         Some(TradeId::new("T-001")),
         None,
         Some(Price::from("1.00010")),
@@ -2287,7 +2288,7 @@ fn test_purge_closed_orders_also_purges_order_lists() {
         order_list_id,
         instrument.id(),
         order1.strategy_id(),
-        vec![order1.clone(), order2.clone()],
+        vec![order1.client_order_id(), order2.client_order_id()],
         UnixNanos::default(),
     );
 
@@ -2377,7 +2378,7 @@ fn test_purge_closed_orders_does_not_purge_order_list_with_open_orders() {
         order_list_id,
         instrument.id(),
         order1.strategy_id(),
-        vec![order1.clone(), order2.clone()],
+        vec![order1.client_order_id(), order2.client_order_id()],
         UnixNanos::default(),
     );
 
@@ -2435,7 +2436,7 @@ fn test_purge_closed_orders_does_not_purge_order_list_with_open_orders() {
 fn test_force_remove_from_own_order_book(mut cache: Cache) {
     let audusd_sim = audusd_sim();
     cache
-        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
         .unwrap();
 
     let limit_order = OrderTestBuilder::new(OrderType::Limit)
@@ -2502,7 +2503,7 @@ fn test_force_remove_from_own_order_book(mut cache: Cache) {
 fn test_audit_own_order_books_with_inflight_orders(mut cache: Cache) {
     let audusd_sim = audusd_sim();
     cache
-        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
         .unwrap();
 
     let limit_order = OrderTestBuilder::new(OrderType::Limit)
@@ -2535,7 +2536,7 @@ fn test_audit_own_order_books_with_inflight_orders(mut cache: Cache) {
 fn test_audit_own_order_books_removes_closed(mut cache: Cache) {
     let audusd_sim = audusd_sim();
     cache
-        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
         .unwrap();
 
     let limit_order = OrderTestBuilder::new(OrderType::Limit)

@@ -29,7 +29,7 @@ use nautilus_core::{
         msgpack::{FromMsgPack, ToMsgPack},
     },
 };
-use pyo3::{basic::CompareOp, exceptions::PyValueError, prelude::*, types::PyDict};
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use super::ERROR_MONOTONICITY;
 use crate::{
@@ -218,7 +218,7 @@ pub fn pyobjects_to_instrument_closes(
 
     // Validate monotonically increasing by timestamp initialization
     if !crate::data::is_monotonically_increasing_by_init(&closes) {
-        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
     }
 
     Ok(closes)

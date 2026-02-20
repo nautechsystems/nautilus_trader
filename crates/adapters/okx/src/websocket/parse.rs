@@ -1733,6 +1733,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -2191,6 +2192,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // info
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -2273,6 +2275,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -2325,6 +2328,7 @@ mod tests {
             8,     // size_precision
             Price::from("0.01"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,
@@ -2472,6 +2476,7 @@ mod tests {
             None, // margin_maint
             None, // maker_fee
             None, // taker_fee
+            None, // info
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -2516,7 +2521,7 @@ mod tests {
 
         let fill_report_1 = parse_fill_report(
             &order_msg_1,
-            &InstrumentAny::CryptoPerpetual(instrument),
+            &InstrumentAny::CryptoPerpetual(instrument.clone()),
             account_id,
             None,
             None,
@@ -2604,6 +2609,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -2648,7 +2654,7 @@ mod tests {
 
         let fill_report_1 = parse_fill_report(
             &order_msg_1,
-            &InstrumentAny::CryptoPerpetual(instrument),
+            &InstrumentAny::CryptoPerpetual(instrument.clone()),
             account_id,
             None,
             None,
@@ -2734,6 +2740,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -2778,7 +2785,7 @@ mod tests {
 
         let fill_report_1 = parse_fill_report(
             &order_msg_1,
-            &InstrumentAny::CryptoPerpetual(instrument),
+            &InstrumentAny::CryptoPerpetual(instrument.clone()),
             account_id,
             None,
             None,
@@ -2867,6 +2874,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -2911,7 +2919,7 @@ mod tests {
 
         let fill_report_1 = parse_fill_report(
             &order_msg_1,
-            &InstrumentAny::CryptoPerpetual(instrument),
+            &InstrumentAny::CryptoPerpetual(instrument.clone()),
             account_id,
             None,
             None,
@@ -3004,7 +3012,7 @@ mod tests {
 
         let fill_report_1 = parse_fill_report(
             &order_msg_1,
-            &InstrumentAny::CryptoPerpetual(instrument),
+            &InstrumentAny::CryptoPerpetual(instrument.clone()),
             account_id,
             None,
             None,
@@ -3225,6 +3233,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             0.into(), // ts_event
             0.into(), // ts_init
         );
@@ -3291,6 +3300,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             0.into(), // ts_event
             0.into(), // ts_init
         );
@@ -3344,6 +3354,7 @@ mod tests {
             8,     // size_precision
             Price::from("0.01"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,
@@ -3429,6 +3440,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             0.into(), // ts_event
             0.into(), // ts_init
         );
@@ -3491,6 +3503,7 @@ mod tests {
             8,     // size_precision
             Price::from("0.01"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,
@@ -3580,6 +3593,7 @@ mod tests {
             8,
             Price::from("0.01"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,

@@ -147,6 +147,9 @@ pub struct LimitOrderParams {
     pub instrument_id: InstrumentId,
     /// Client-assigned order ID (u32 for dYdX protocol).
     pub client_order_id: u32,
+    /// Client metadata for bidirectional ClientOrderId encoding.
+    /// Used to store identity bits (trader/strategy/count) for deterministic decoding.
+    pub client_metadata: u32,
     /// Order side (Buy or Sell).
     pub side: OrderSide,
     /// Limit price.
