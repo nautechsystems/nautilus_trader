@@ -24,14 +24,14 @@ Prerequisites:
       DYDX_WALLET_ADDRESS (or DYDX_TESTNET_WALLET_ADDRESS for testnet)
 
 Usage:
-  python dydx_v4_data_tester.py
+  python dydx_data_tester.py
 
 """
 
-from nautilus_trader.adapters.dydx_v4 import DYDX_VENUE
-from nautilus_trader.adapters.dydx_v4 import DYDXv4DataClientConfig
-from nautilus_trader.adapters.dydx_v4 import DYDXv4LiveDataClientFactory
-from nautilus_trader.adapters.dydx_v4.constants import DYDX
+from nautilus_trader.adapters.dydx import DYDX_VENUE
+from nautilus_trader.adapters.dydx import DydxDataClientConfig
+from nautilus_trader.adapters.dydx import DydxLiveDataClientFactory
+from nautilus_trader.adapters.dydx.constants import DYDX
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -59,7 +59,7 @@ config_node = TradingNodeConfig(
         use_pyo3=True,
     ),
     data_clients={
-        DYDX: DYDXv4DataClientConfig(
+        DYDX: DydxDataClientConfig(
             wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=False,  # Mainnet by default; flip to True for testnet
@@ -98,7 +98,7 @@ tester = DataTester(config=config_tester)
 node.trader.add_actor(tester)
 
 # Register your client factories with the node (using v4 Rust-backed factory)
-node.add_data_client_factory(DYDX, DYDXv4LiveDataClientFactory)
+node.add_data_client_factory(DYDX, DydxLiveDataClientFactory)
 node.build()
 
 

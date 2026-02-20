@@ -17,7 +17,6 @@
    coinbase_intx.md
    databento.md
    dydx.md
-   dydx_v4.md
    interactive_brokers.md
    okx.md
    polymarket.md

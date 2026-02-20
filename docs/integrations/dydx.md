@@ -7,8 +7,7 @@ book and matching engine run on-chain as part of the validator process. Orders a
 Cosmos transactions via gRPC and settled each block. An Indexer service exposes REST and WebSocket
 APIs for market data and account state.
 
-This is the Rust-backed adapter with Python bindings. For the legacy pure-Python adapter, see
-[dYdX v3](dydx_v3.md).
+This is the Rust-backed adapter with Python bindings.
 
 ## Installation
 
@@ -47,11 +46,11 @@ The dYdX v4 adapter includes multiple components which can be used together or s
 - `DydxHttpClient`: Rust-backed HTTP client for Indexer REST API queries.
 - `DydxWebSocketClient`: Rust-backed WebSocket client for real-time market data and account updates.
 - `DydxGrpcClient`: Rust-backed gRPC client for Cosmos SDK transaction submission.
-- `DYDXv4InstrumentProvider`: Instrument parsing and loading functionality.
-- `DYDXv4DataClient`: Market data feed manager.
-- `DYDXv4ExecutionClient`: Account management and trade execution gateway.
-- `DYDXv4LiveDataClientFactory`: Factory for dYdX v4 data clients (used by the trading node builder).
-- `DYDXv4LiveExecClientFactory`: Factory for dYdX v4 execution clients (used by the trading node builder).
+- `DydxInstrumentProvider`: Instrument parsing and loading functionality.
+- `DydxDataClient`: Market data feed manager.
+- `DydxExecutionClient`: Account management and trade execution gateway.
+- `DydxLiveDataClientFactory`: Factory for dYdX v4 data clients (used by the trading node builder).
+- `DydxLiveExecClientFactory`: Factory for dYdX v4 execution clients (used by the trading node builder).
 
 :::note
 Most users will define a configuration for a live trading node (as below),
@@ -60,7 +59,7 @@ and won't need to work with these lower level components directly.
 
 :::warning First-time account activation
 A dYdX v4 trading account (sub-account 0) is created only after the wallet's first deposit or trade.
-Until then, every gRPC/Indexer query returns `NOT_FOUND`, so `DYDXv4ExecutionClient.connect()` fails.
+Until then, every gRPC/Indexer query returns `NOT_FOUND`, so `DydxExecutionClient.connect()` fails.
 
 Before starting a live `TradingNode`, send any positive amount of USDC or other supported collateral
 from the same wallet on the same network (mainnet/testnet). Once the transaction has finalised
@@ -305,7 +304,7 @@ Specify the subaccount number in the execution client config:
 ```python
 config = TradingNodeConfig(
     exec_clients={
-        "DYDX": DYDXv4ExecClientConfig(
+        "DYDX": DydxExecClientConfig(
             subaccount=0,  # Default subaccount
         ),
     },
@@ -375,14 +374,14 @@ Set `is_testnet=True` on both data and execution clients:
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        DYDX: DYDXv4DataClientConfig(
+        DYDX: DydxDataClientConfig(
             wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=True,
         ),
     },
     exec_clients={
-        DYDX: DYDXv4ExecClientConfig(
+        DYDX: DydxExecClientConfig(
             wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
             private_key=None,  # Falls back to DYDX_TESTNET_PRIVATE_KEY env var
             subaccount=0,
@@ -445,23 +444,23 @@ clients support environment variable fallbacks for credentials and network-speci
 Configure a live `TradingNode` to include dYdX v4 data and execution clients:
 
 ```python
-from nautilus_trader.adapters.dydx_v4 import DYDXv4DataClientConfig
-from nautilus_trader.adapters.dydx_v4 import DYDXv4ExecClientConfig
-from nautilus_trader.adapters.dydx_v4.constants import DYDX
+from nautilus_trader.adapters.dydx import DydxDataClientConfig
+from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.adapters.dydx.constants import DYDX
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
 
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        DYDX: DYDXv4DataClientConfig(
+        DYDX: DydxDataClientConfig(
             wallet_address=None,  # Falls back to env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=False,
         ),
     },
     exec_clients={
-        DYDX: DYDXv4ExecClientConfig(
+        DYDX: DydxExecClientConfig(
             wallet_address=None,  # Falls back to env var
             private_key=None,  # Falls back to env var
             subaccount=0,
@@ -475,15 +474,15 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and register the client factories:
 
 ```python
-from nautilus_trader.adapters.dydx_v4 import DYDXv4LiveDataClientFactory
-from nautilus_trader.adapters.dydx_v4 import DYDXv4LiveExecClientFactory
-from nautilus_trader.adapters.dydx_v4.constants import DYDX
+from nautilus_trader.adapters.dydx import DydxLiveDataClientFactory
+from nautilus_trader.adapters.dydx import DydxLiveExecClientFactory
+from nautilus_trader.adapters.dydx.constants import DYDX
 from nautilus_trader.live.node import TradingNode
 
 node = TradingNode(config=config)
 
-node.add_data_client_factory(DYDX, DYDXv4LiveDataClientFactory)
-node.add_exec_client_factory(DYDX, DYDXv4LiveExecClientFactory)
+node.add_data_client_factory(DYDX, DydxLiveDataClientFactory)
+node.add_exec_client_factory(DYDX, DydxLiveExecClientFactory)
 
 node.build()
 ```
@@ -514,7 +513,7 @@ permissioned key trading via authenticator IDs. When provided, transactions incl
 to enable trading via sub-accounts using delegated signing keys.
 
 ```python
-config = DYDXv4ExecClientConfig(
+config = DydxExecClientConfig(
     authenticator_ids=[1, 2],  # Your authenticator IDs
     is_testnet=False,
 )

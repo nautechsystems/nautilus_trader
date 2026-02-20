@@ -98,8 +98,7 @@ For detailed symbology documentation per exchange:
 
 - [Binance symbology](./binance.md#symbology)
 - [Bybit symbology](./bybit.md#symbology)
-- [dYdX v3 symbology](./dydx_v3.md#symbology)
-- [dYdX v4 symbology](./dydx_v4.md#symbology)
+- [dYdX symbology](./dydx.md#symbology)
 
 ## Venues
 

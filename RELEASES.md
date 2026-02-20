@@ -2,8 +2,6 @@
 
 Released on TBD (UTC).
 
-This will be the final release with support for the dYdX v3 (legacy) API. Future releases will only support dYdX v4 (Cosmos-based).
-
 ### Enhancements
 - Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads, thanks @shzhng
 - Added sandbox execution adapter in Rust
@@ -46,6 +44,9 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Improved tearsheet with dynamic Nautilus version and refined run info table (#3396), thanks @KaulSe
 
 ### Breaking Changes
+- Removed dYdX v3 (legacy) Python adapter (the v3 exchange was decommissioned at end of 2024)
+- Removed `dydx` optional install extra (the v4 Rust-backed adapter has no additional Python dependencies)
+- Renamed `nautilus_trader.adapters.dydx_v4` module to `nautilus_trader.adapters.dydx` and standardized class names to `Dydx` prefix (e.g. `DydxDataClientConfig`, `DydxLiveDataClientFactory`)
 - Removed dead `subscribe_order_book_snapshots` and `unsubscribe_order_book_snapshots` methods from `LiveMarketDataClient` (were never called by the data engine)
 - Removed OKX URL environment variable overrides (`OKX_BASE_URL_HTTP`, `OKX_BASE_URL_WS_*`, `OKX_DEMO_BASE_URL_WS_*`); use config `base_url_*` fields instead
 - Removed deprecated `get_ws_base_url` function from OKX Rust adapter; use `get_ws_base_url_private` or `get_ws_base_url_public` instead

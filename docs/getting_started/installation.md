@@ -48,7 +48,6 @@ Install optional dependencies as 'extras' for specific integrations:
 
 - `betfair`: Betfair adapter (integration) dependencies.
 - `docker`: Needed for Docker when using the IB gateway (with the Interactive Brokers adapter).
-- `dydx`: dYdX adapter (integration) dependencies.
 - `ib`: Interactive Brokers adapter (integration) dependencies.
 - `polymarket`: Polymarket adapter (integration) dependencies.
 - `visualization`: Plotly-based interactive tearsheets and charts.
