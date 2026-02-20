@@ -105,6 +105,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed directory URI handling in ParquetDataCatalog for S3 and cloud storage (#3378), thanks @KaulSe
 - Fixed instrument cache race condition during `LiveNode` (Rust) startup (#3385), thanks @filipmacek
 - Fixed quickstart MACD strategy logic (#3377), thanks for reporting @SisyphusCoin
+- Fixed value bar aggregators emitting zero-volume bars (#3608), thanks for reporting @ggianfran
 - Fixed reconciliation race condition where inferred fills were generated before real fills arrived, causing double-counting and overfill errors
 - Fixed reconciliation timing (for v2 Rust) - process instruments before reconciliation (#3415), thanks @filipmacek
 - Fixed `request_order_book_snapshot` and add Bybit support (#3416), thanks @dxwil
