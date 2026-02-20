@@ -17,7 +17,7 @@
 //!
 //! Prerequisites:
 //! - Set `DYDX_PRIVATE_KEY` (or `DYDX_TESTNET_PRIVATE_KEY` for testnet)
-//! - Optionally set `DYDX_WALLET_ADDRESS` (derived from private key if not set)
+//! - Optionally set `DYDX_WALLET_ADDRESS` (or `DYDX_TESTNET_WALLET_ADDRESS` for testnet)
 //!
 //! Run with: `cargo run --example dydx-grid-mm --package nautilus-dydx`
 
@@ -64,12 +64,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "DYDX_PRIVATE_KEY"
     };
     let private_key = get_env_option(private_key_env);
-    let wallet_address = get_env_option("DYDX_WALLET_ADDRESS");
+    let wallet_env = if is_testnet {
+        "DYDX_TESTNET_WALLET_ADDRESS"
+    } else {
+        "DYDX_WALLET_ADDRESS"
+    };
+    let wallet_address = get_env_option(wallet_env);
 
     if private_key.is_none() && wallet_address.is_none() {
-        return Err(
-            format!("Set {private_key_env} or DYDX_WALLET_ADDRESS environment variable").into(),
-        );
+        return Err(format!("Set {private_key_env} or {wallet_env} environment variable").into());
     }
 
     let data_config = DydxDataClientConfig {

@@ -39,6 +39,47 @@ dYdX v4 exclusively supports perpetual futures contracts. All markets are quoted
 in USDC.
 :::
 
+## Chain architecture
+
+Unlike centralized exchanges (CEXs) that expose a single REST/WebSocket API, dYdX v4 runs on its
+own **Cosmos SDK application-specific blockchain**. This means every trade is a Cosmos transaction
+that goes through consensus, and the adapter must manage sequences, gas, and block-height-based
+expiration.
+
+### Transport layers
+
+The adapter communicates through three independent transport layers:
+
+```
+                         ┌──────────────────────────────────────────────┐
+                         │              dYdX v4 Chain                   │
+                         │                                              │
+ ┌──────────┐  HTTP      │   ┌─────────────────────┐                   │
+ │          │───────────►│   │  Indexer (read-only) │                   │
+ │          │  WebSocket │   │  - REST API          │                   │
+ │ Nautilus │───────────►│   │  - Streaming API     │                   │
+ │ Adapter  │            │   └─────────────────────┘                   │
+ │          │  gRPC      │   ┌─────────────────────┐                   │
+ │          │───────────►│   │  Validator (write)   │                   │
+ └──────────┘            │   │  - Cosmos Tx submit  │                   │
+                         │   │  - Sequence mgmt     │                   │
+                         │   └─────────────────────┘                   │
+                         └──────────────────────────────────────────────┘
+```
+
+| Layer     | Target    | Direction  | Purpose                                        |
+|-----------|-----------|------------|------------------------------------------------|
+| HTTP      | Indexer   | Read-only  | Instrument metadata, historical data, account state |
+| WebSocket | Indexer   | Read-only  | Real-time market data, order/fill/position updates  |
+| gRPC      | Validator | Write      | Order placement, cancellation, and batch operations |
+
+### Block-based settlement
+
+dYdX blocks are produced approximately every **~0.5 seconds** (actual times vary). The adapter
+includes a `BlockTimeMonitor` that tracks observed block times from the WebSocket feed to
+dynamically estimate `seconds_per_block`. This estimate is used to convert time-based order expiry
+into block-height offsets for short-term orders.
+
 ## Architecture
 
 The dYdX v4 adapter includes multiple components which can be used together or separately:
@@ -160,11 +201,11 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 
 ### Batch operations
 
-| Operation    | Perpetuals | Notes            |
-|--------------|------------|------------------|
-| Batch submit | -          | *Not supported*. |
-| Batch modify | -          | *Not supported*. |
-| Batch cancel | ✓          |                  |
+| Operation    | Perpetuals | Notes                                                                                                                  |
+|--------------|------------|------------------------------------------------------------------------------------------------------------------------|
+| Batch submit | -          | *Not supported*.                                                                                                       |
+| Batch modify | -          | *Not supported*.                                                                                                       |
+| Batch cancel | ✓          | Partitioned: short-term orders use `MsgBatchCancel` (single gRPC call), long-term orders use batched `MsgCancelOrder`. |
 
 ### Position management
 
@@ -219,6 +260,68 @@ expected before the fill).
 See the [dYdX v4 order documentation](https://docs.dydx.exchange/api_integration-trading/short_term_vs_stateful)
 for full protocol-level details on short-term vs stateful order mechanics.
 
+#### Short-term orders
+
+Short-term orders live **in validator memory only** and expire by block height (max 20 blocks,
+roughly ~10 seconds at ~0.5s/block). They are the fastest order type on dYdX because they skip
+on-chain storage.
+
+Key properties:
+
+- **IOC and FOK are always short-term**, regardless of other parameters
+- **GTD orders** are automatically classified as short-term when the expiry falls within the
+  dynamic short-term window (`20 blocks × seconds_per_block`)
+- Use Good-Til-Block (GTB) for replay protection instead of Cosmos SDK sequences
+- Can be broadcast **concurrently** (no semaphore, cached sequence)
+- Expire silently without generating cancel events
+- Cannot be batched in a single transaction (one `MsgPlaceOrder` per tx)
+
+#### Long-term orders
+
+Long-term (stateful) orders are **stored on-chain** and expire by UTC timestamp. They generate
+explicit cancel events when they expire or are cancelled.
+
+Key properties:
+
+- **GTC** orders default to 90-day expiration
+- **GTD** orders use the user-provided expiry timestamp
+- Require proper Cosmos SDK sequence management (serialized via semaphore)
+- Must be broadcast **serially** with incrementing sequence numbers
+- Can be batched in a single transaction
+
+#### Conditional orders
+
+Conditional orders (stop-loss, take-profit) are **always stored on-chain** and triggered by
+price conditions on the validator.
+
+Key properties:
+
+- Always use timestamp-based expiry (default 90 days for GTC)
+- Always use the long-term broadcast path (serialized with semaphore)
+- Include `StopMarket`, `StopLimit`, `TakeProfitMarket`, and `TakeProfitLimit`
+
+#### Automatic routing
+
+The adapter determines order lifetime automatically using the `BlockTimeMonitor`:
+
+```
+max_short_term_secs = SHORT_TERM_ORDER_MAXIMUM_LIFETIME (20) × seconds_per_block
+```
+
+If the order's time until expiry is within `max_short_term_secs`, it is routed as short-term.
+Otherwise, it is routed as long-term. No manual configuration is needed.
+
+#### MARKET order implementation
+
+dYdX has no native market order type. The adapter implements `MARKET` orders as aggressive
+**IOC limit orders** priced at:
+
+- **Buy**: `oracle_price × (1 + 0.01)` (1% above oracle)
+- **Sell**: `oracle_price × (1 - 0.01)` (1% below oracle)
+
+This 1% slippage buffer (`DEFAULT_MARKET_ORDER_SLIPPAGE = 0.01`) ensures the order crosses the
+spread and fills immediately, while providing price protection against extreme slippage.
+
 ### Client order ID encoding
 
 dYdX requires `u32` client IDs on-chain, but Nautilus uses string-based `ClientOrderId` values
@@ -254,6 +357,117 @@ This protection is automatic and requires no user configuration. The warning log
 `[ENCODER] client_id ... collides with reconciled order` is informational. The order will
 still be submitted successfully with an alternative ID.
 :::
+
+## Broadcasting and retry strategy
+
+### Short-term broadcast
+
+Short-term orders use Good-Til-Block (GTB) for replay protection. The chain's `ClobDecorator`
+ante handler skips Cosmos SDK sequence checking for short-term messages, so:
+
+- **No semaphore** — broadcasts are fully concurrent
+- **Cached sequence** — no increment or allocation needed
+- **No retry** — if the broadcast fails, it fails immediately
+- Benign cancel errors are treated as success (see below)
+
+### Long-term broadcast
+
+Long-term and conditional orders require proper Cosmos SDK sequence management:
+
+- **Semaphore** with 1 permit serializes all long-term broadcasts
+- **Exponential backoff**: 500ms → 1s → 2s → 4s (max 5 retries)
+- **10-second total budget** prevents indefinite retry loops
+- On sequence mismatch, the sequence is **resynced from chain** before retry
+
+### Sequence mismatch detection
+
+| Error code | Source               | Meaning                                          |
+|------------|----------------------|--------------------------------------------------|
+| `code=32`  | Cosmos SDK           | Account sequence mismatch                        |
+| `code=104` | dYdX authenticator   | Signature verification failed (sequence-related) |
+
+Both trigger automatic resync + retry via the `RetryManager`.
+
+### Benign cancel errors
+
+These errors during short-term cancel operations are treated as **success**:
+
+| Error code  | Meaning                                                        |
+|-------------|----------------------------------------------------------------|
+| `code=19`   | Transaction already in mempool cache (duplicate tx)            |
+| `code=9`    | Cancel already exists in memclob with >= GoodTilBlock          |
+| `code=3006` | Order to cancel does not exist (already filled/expired/cancelled) |
+
+### Batch cancel partitioning
+
+When cancelling multiple orders, the adapter partitions them by lifetime:
+
+1. **Short-term orders** → Single `MsgBatchCancel` via `broadcast_short_term()`
+2. **Long-term orders** → Batched `MsgCancelOrder` messages via `broadcast_with_retry()`
+
+This ensures each group uses the appropriate broadcast strategy.
+
+## Rate limiting
+
+### gRPC rate limiting
+
+The adapter rate-limits gRPC `broadcast_tx` calls to prevent `ResourceExhausted` (429) errors
+from validator nodes.
+
+| Setting                       | Default | Description                               |
+|-------------------------------|---------|-------------------------------------------|
+| `grpc_rate_limit_per_second`  | `4`     | Maximum gRPC broadcast requests per second. Set to `None` to disable. |
+
+### Provider limits
+
+Known rate limits for public gRPC providers:
+
+| Provider   | Limit              | Notes           |
+|------------|--------------------|-----------------|
+| Polkachu   | 300 req/min (~5/s) |                 |
+| KingNodes  | 250 req/min (~4.2/s) |               |
+| AutoStake  | 4 req/s            |                 |
+
+The default of 4 req/s is conservative and works across all public providers.
+
+### Multiple gRPC URL fallback
+
+The adapter supports configuring multiple gRPC URLs for failover:
+
+```python
+exec_config = DydxExecClientConfig(
+    base_url_grpc="https://primary-grpc.example.com:443,https://fallback-grpc.example.com:443",
+    # ...
+)
+```
+
+## Price and size quantization
+
+dYdX uses integer-based quantization for prices and sizes. The adapter handles all conversions
+automatically via `OrderMessageBuilder`, but understanding the parameters helps with debugging.
+
+### Market parameters
+
+| Parameter                      | Description                                              |
+|--------------------------------|----------------------------------------------------------|
+| `atomic_resolution`            | Exponent for converting human-readable size to quantums  |
+| `quantum_conversion_exponent`  | Exponent for converting quantums to tokens               |
+| `step_base_quantums`           | Minimum order size step in quantums                      |
+| `subticks_per_tick`            | Price granularity within each tick                       |
+
+### Market order pricing
+
+Market orders use the oracle price with a 1% slippage buffer:
+
+- **Buy**: `oracle_price × 1.01`
+- **Sell**: `oracle_price × 0.99`
+
+The oracle price is cached from the Indexer and refreshed periodically.
+
+### Automatic handling
+
+All price and size quantization is handled automatically by `OrderMessageBuilder`.
+No manual conversion is needed when submitting orders through Nautilus.
 
 ## Data subscriptions
 
@@ -508,16 +722,54 @@ resolved automatically from environment variables based on the `is_testnet` sett
 
 ### Permissioned key trading
 
-For institutional setups with separated hot/cold wallet architectures, the adapter supports
-permissioned key trading via authenticator IDs. When provided, transactions include a TxExtension
-to enable trading via sub-accounts using delegated signing keys.
+#### What are API Trading Keys
+
+API Trading Keys let you delegate trading to a separate signing key without sharing your main
+wallet's seed phrase. The API key can place trades using all available margin in the owner's
+cross-margin account, but cannot withdraw funds or transfer assets.
+
+#### Creating an API key
+
+1. In the dYdX web app, navigate to **More → API Trading Keys**
+2. Click **Generate New API Key**
+3. Save the **API Wallet Address** and **Private Key** (shown once, not stored by dYdX)
+4. Click **Authorize API Key** — this registers the key on-chain as an authenticator
+5. The key is now active and can be used for trading
+
+See the [dYdX API Trading Keys guide](https://help.dydx.trade/en/articles/267486-api-trading-keys-creating-a-new-key-on-the-front-end) for full details on creating and managing API keys.
+
+#### Adapter configuration
+
+There are two ways to configure the adapter for API Trading Key usage:
+
+**Auto-resolution (recommended):** Set the API key's private key as `DYDX_PRIVATE_KEY` and the
+owner's wallet address as `DYDX_WALLET_ADDRESS`. The adapter detects the mismatch during connect
+and automatically queries the chain for matching authenticator IDs. No manual ID configuration
+needed.
 
 ```python
 config = DydxExecClientConfig(
-    authenticator_ids=[1, 2],  # Your authenticator IDs
-    is_testnet=False,
+    wallet_address="dydx1owner...",   # Owner account (holds margin)
+    private_key="0xapikey...",         # API Trading Key private key
+    # authenticator_ids resolved automatically
 )
 ```
+
+**Manual override:** If you know the authenticator IDs (e.g., from the dYdX TypeScript client),
+pass them directly to skip auto-resolution:
+
+```python
+config = DydxExecClientConfig(
+    wallet_address="dydx1owner...",
+    private_key="0xapikey...",
+    authenticator_ids=[1, 2],  # Skip auto-resolution
+)
+```
+
+:::note
+API Trading Keys only work with **cross-margin** accounts and cross markets. Isolated margin
+is not supported.
+:::
 
 ## Order books
 
