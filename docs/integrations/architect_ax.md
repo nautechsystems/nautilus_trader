@@ -128,7 +128,7 @@ for historical data backfill.
 | Order book (L3) | `OrderBookDelta`    | Individual order quantities.                                |
 | Trades          | `TradeTick`         | Real-time trade events from L1 subscription.                |
 | Bars/candles    | `Bar`               | OHLCV data (total volume only, no buy/sell breakdown).      |
-| Funding rates   | `FundingRateUpdate` | Polled via HTTP every 15 minutes (not real-time WebSocket). |
+| Funding rates   | `FundingRateUpdate` | Polled via HTTP (not real-time WebSocket); interval configurable. |
 
 :::note
 Historical quote tick requests are not supported by AX Exchange. Only real-time quote
@@ -250,9 +250,10 @@ from market data endpoints. This is handled automatically by the adapter configu
 | `http_proxy_url`                   | `None`    | Optional HTTP proxy URL.                                            |
 | `http_timeout_secs`                | `60`      | Timeout (seconds) for REST requests.                                |
 | `max_retries`                      | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`           | `1000`    | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`               | `10000`   | Maximum delay (milliseconds) between retries (exponential backoff). |
+| `retry_delay_initial_ms`           | `1,000`   | Initial delay (milliseconds) between retries.                       |
+| `retry_delay_max_ms`               | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
 | `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalog refreshes.            |
+| `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate poll requests.              |
 
 ### Execution client configuration options
 
@@ -266,8 +267,8 @@ from market data endpoints. This is handled automatically by the adapter configu
 | `http_proxy_url`         | `None`    | Optional HTTP proxy URL.                                            |
 | `http_timeout_secs`      | `60`      | Timeout (seconds) for REST requests.                                |
 | `max_retries`            | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms` | `1000`    | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`     | `10000`   | Maximum delay (milliseconds) between retries (exponential backoff). |
+| `retry_delay_initial_ms` | `1,000`   | Initial delay (milliseconds) between retries.                       |
+| `retry_delay_max_ms`     | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
 
 The most common use case is to configure a live `TradingNode` to include AX Exchange
 data and execution clients. To achieve this, add an `AX` section to your client

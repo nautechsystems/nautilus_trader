@@ -51,6 +51,8 @@ class AxDataClientConfig(LiveDataClientConfig, frozen=True):
         Maximum delay (milliseconds) between retries.
     update_instruments_interval_mins : PositiveInt, optional
         The interval (minutes) between reloading instruments from the venue.
+    funding_rate_poll_interval_mins : PositiveInt, optional
+        The interval (minutes) between polling for funding rate updates.
 
     """
 
@@ -65,6 +67,7 @@ class AxDataClientConfig(LiveDataClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000
     update_instruments_interval_mins: PositiveInt | None = 60
+    funding_rate_poll_interval_mins: PositiveInt | None = 15
 
 
 class AxExecClientConfig(LiveExecClientConfig, frozen=True):

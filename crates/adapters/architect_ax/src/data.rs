@@ -483,8 +483,11 @@ impl DataClient for AxDataClient {
     }
 
     fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
-        // TODO: Hardcoded for now
-        const POLL_INTERVAL_SECS: u64 = 900; // 15 minutes
+        let poll_interval_mins = self
+            .config
+            .funding_rate_poll_interval_mins
+            .unwrap_or(15)
+            .max(1);
 
         // Use 7-day lookback to capture latest rate across weekends/holidays
         let lookback = ChronoDuration::days(7);
@@ -507,7 +510,7 @@ impl DataClient for AxDataClient {
 
         let handle = get_runtime().spawn(async move {
             // First tick fires immediately for initial emission
-            let mut interval = tokio::time::interval(Duration::from_secs(POLL_INTERVAL_SECS));
+            let mut interval = tokio::time::interval(Duration::from_mins(poll_interval_mins));
 
             loop {
                 tokio::select! {

@@ -50,6 +50,8 @@ pub struct AxDataClientConfig {
     pub recv_window_ms: Option<u64>,
     /// Optional interval (minutes) for instrument refresh from REST.
     pub update_instruments_interval_mins: Option<u64>,
+    /// Optional funding rate poll interval in minutes.
+    pub funding_rate_poll_interval_mins: Option<u64>,
 }
 
 impl Default for AxDataClientConfig {
@@ -70,6 +72,7 @@ impl Default for AxDataClientConfig {
             heartbeat_interval_secs: Some(20),
             recv_window_ms: Some(5_000),
             update_instruments_interval_mins: Some(60),
+            funding_rate_poll_interval_mins: Some(15),
         }
     }
 }
