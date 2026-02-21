@@ -63,6 +63,7 @@ nautilus-serialization = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
+arrow-row = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 datafusion = { workspace = true }

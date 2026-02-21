@@ -147,13 +147,14 @@ impl ParquetDataCatalog {
     /// let catalog = ParquetDataCatalog::new(/* ... */);
     ///
     /// // Consolidate all files in the catalog
-    /// catalog.consolidate_catalog(None, None, None)?;
+    /// catalog.consolidate_catalog(None, None, None, None)?;
     ///
     /// // Consolidate only files within a specific time range
     /// catalog.consolidate_catalog(
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
-    ///     Some(true)
+    ///     Some(true),
+    ///     None
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -162,11 +163,18 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
+        deduplicate: Option<bool>,
     ) -> anyhow::Result<()> {
         let leaf_directories = self.find_leaf_data_directories()?;
 
         for directory in leaf_directories {
-            self.consolidate_directory(&directory, start, end, ensure_contiguous_files)?;
+            self.consolidate_directory(
+                &directory,
+                start,
+                end,
+                ensure_contiguous_files,
+                deduplicate,
+            )?;
         }
 
         Ok(())
@@ -211,6 +219,7 @@ impl ParquetDataCatalog {
     ///     Some("BTCUSD".to_string()),
     ///     None,
     ///     None,
+    ///     None,
     ///     None
     /// )?;
     ///
@@ -220,7 +229,8 @@ impl ParquetDataCatalog {
     ///     None,
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
-    ///     Some(true)
+    ///     Some(true),
+    ///     None
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -231,9 +241,10 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
+        deduplicate: Option<bool>,
     ) -> anyhow::Result<()> {
         let directory = self.make_path(type_name, identifier)?;
-        self.consolidate_directory(&directory, start, end, ensure_contiguous_files)
+        self.consolidate_directory(&directory, start, end, ensure_contiguous_files, deduplicate)
     }
 
     /// Consolidates Parquet files within a specific directory by merging them into a single file.
@@ -274,6 +285,7 @@ impl ParquetDataCatalog {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         ensure_contiguous_files: Option<bool>,
+        deduplicate: Option<bool>,
     ) -> anyhow::Result<()> {
         let parquet_files = self.list_parquet_files(directory)?;
 
@@ -325,6 +337,7 @@ impl ParquetDataCatalog {
                     &ObjectPath::from(path),
                     Some(self.compression),
                     Some(self.max_row_group_size),
+                    deduplicate,
                 )
                 .await
             })?;

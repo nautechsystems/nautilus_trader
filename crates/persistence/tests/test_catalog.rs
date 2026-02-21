@@ -421,7 +421,7 @@ fn test_rust_consolidate_catalog() {
 
     let bar_type = bars1[0].bar_type.to_string();
     catalog
-        .consolidate_data("bars", Some(bar_type.clone()), None, None, None)
+        .consolidate_data("bars", Some(bar_type.clone()), None, None, None, None)
         .unwrap();
 
     let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
@@ -451,11 +451,75 @@ fn test_rust_consolidate_catalog_with_time_range() {
             Some(UnixNanos::from(1)),
             Some(UnixNanos::from(2)),
             None,
+            None,
         )
         .unwrap();
 
     let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2), (3, 3)]);
+}
+
+#[rstest]
+fn test_rust_consolidate_with_deduplication() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Write bars [1, 2] and [2, 3] as separate files so ts=2 is duplicated
+    let bars_a = vec![create_bar(1), create_bar(2)];
+    catalog
+        .write_to_parquet(bars_a.clone(), None, None, None)
+        .unwrap();
+
+    let bars_b = vec![create_bar(2), create_bar(3)];
+    catalog
+        .write_to_parquet(bars_b, None, None, Some(true))
+        .unwrap();
+
+    let bar_type = bars_a[0].bar_type.to_string();
+
+    // Sanity check: two separate files exist
+    let files_before = catalog
+        .query_files("bars", Some(vec!["AUD/USD.SIM".to_string()]), None, None)
+        .unwrap();
+    assert_eq!(files_before.len(), 2);
+
+    // Without deduplication the combined data has 4 rows (ts=2 appears twice)
+    let raw = catalog
+        .query_typed_data::<Bar>(
+            Some(vec!["AUD/USD.SIM".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+    assert_eq!(raw.len(), 4);
+
+    // Consolidate with deduplication enabled; disable disjoint check since
+    // we intentionally wrote overlapping files to seed the duplicates
+    catalog
+        .consolidate_data("bars", Some(bar_type), None, None, Some(false), Some(true))
+        .unwrap();
+
+    // After consolidation there should be a single file
+    let files_after = catalog
+        .query_files("bars", Some(vec!["AUD/USD.SIM".to_string()]), None, None)
+        .unwrap();
+    assert_eq!(files_after.len(), 1);
+
+    // The data should contain exactly 3 unique rows (duplicate ts=2 removed)
+    let result = catalog
+        .query_typed_data::<Bar>(
+            Some(vec!["AUD/USD.SIM".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0].bar_type, bars_a[0].bar_type);
 }
 
 #[rstest]
@@ -1331,7 +1395,7 @@ fn test_consolidation_workflow_end_to_end() {
 
     // consolidate all files
     catalog
-        .consolidate_data("bars", Some(bar_type.clone()), None, None, None)
+        .consolidate_data("bars", Some(bar_type.clone()), None, None, None, None)
         .unwrap();
 
     // should have fewer files after consolidation

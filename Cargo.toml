@@ -115,6 +115,7 @@ arrow = { version = "57.3.0", default-features = false, features = [
   "json",
   "ipc",
 ] }
+arrow-row = "57.3.0"
 async-stream = "0.3.6"
 async-trait = "0.1.89"
 aws-lc-rs = { version = "1.16.0", default-features = false, features = [
