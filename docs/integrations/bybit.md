@@ -68,6 +68,75 @@ for the instrument ID. For example:
 - The BTCUSDT perpetual futures contract is identified with `-LINEAR`, such as `BTCUSDT-LINEAR`.
 - The BTCUSD inverse perpetual futures contract is identified with `-INVERSE`, such as `BTCUSD-INVERSE`.
 
+## Environments
+
+Bybit provides three trading environments. Configure the appropriate environment using the `demo` and `testnet` flags in your client configuration.
+
+| Environment  | Config                        | Description                                                      |
+|--------------|-------------------------------|------------------------------------------------------------------|
+| **Mainnet**  | `demo=False, testnet=False`   | Production trading with real funds.                              |
+| **Demo**     | `demo=True`                   | Practice trading with simulated funds on mainnet infrastructure. |
+| **Testnet**  | `testnet=True`                | Separate test network for development and integration testing.   |
+
+### Mainnet (Production)
+
+The default environment for live trading with real funds.
+
+```python
+config = BybitExecClientConfig(
+    api_key="YOUR_API_KEY",
+    api_secret="YOUR_API_SECRET",
+    # demo=False (default)
+    # testnet=False (default)
+)
+```
+
+Environment variables: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
+
+### Demo trading
+
+Demo trading uses Bybit's mainnet infrastructure with simulated funds. Create demo API keys from the [Bybit demo trading page](https://www.bybit.com/en/demo-trading).
+
+```python
+config = BybitExecClientConfig(
+    api_key="YOUR_DEMO_API_KEY",
+    api_secret="YOUR_DEMO_API_SECRET",
+    demo=True,
+)
+```
+
+Environment variables: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
+
+:::warning
+**Demo environment limitations:**
+
+- The WebSocket Trade API is **not supported** for demo trading. NautilusTrader automatically uses the HTTP REST API for order operations in demo mode.
+- Some advanced order features available via WebSocket (trigger orders, post-only with is_quote_quantity) are not available in demo mode.
+
+:::
+
+### Testnet
+
+A separate test network for development. Create testnet API keys from [testnet.bybit.com](https://testnet.bybit.com).
+
+```python
+config = BybitExecClientConfig(
+    api_key="YOUR_TESTNET_API_KEY",
+    api_secret="YOUR_TESTNET_API_SECRET",
+    testnet=True,
+)
+```
+
+Environment variables: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
+
+:::note
+Testnet supports all trading features including the WebSocket Trade API. It uses completely separate infrastructure from mainnet, so market data and liquidity differ significantly from production.
+:::
+
+### Environment priority
+
+If both `demo` and `testnet` are set to `True`, demo takes priority.
+
 ## Orders capability
 
 Bybit offers a flexible combination of trigger types, enabling a broader range of Nautilus orders.
@@ -492,6 +561,7 @@ The product types for each client must be specified in the configurations.
 | `use_http_batch_api`             | `False` | Use Bybit's HTTP batch trading API (deprecated). |
 | `use_spot_position_reports`      | `False` | Report Spot wallet balances as positions when `True`. |
 | `auto_repay_spot_borrows`        | `True`  | Automatically repay Spot margin borrows after BUY orders fully fill (Spot only). |
+| `repay_queue_interval_secs`      | `1.0`   | Interval (seconds) between processing repayment queues for spot borrows. |
 | `ignore_uncached_instrument_executions` | `False` | Ignore execution messages for instruments not yet cached. |
 | `max_retries`                    | `None` | Maximum retry attempts for order submission/cancel/modify calls. |
 | `retry_delay_initial_ms`         | `None` | Initial delay (milliseconds) between retries. |
@@ -581,6 +651,8 @@ We recommend using environment variables to manage your credentials.
 
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.
+
+## Contributing
 
 :::info
 For additional features or to contribute to the Bybit adapter, please see our

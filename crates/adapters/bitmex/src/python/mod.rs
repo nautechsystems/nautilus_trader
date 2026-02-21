@@ -37,8 +37,8 @@ pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::BitmexPositionSide>()?;
     m.add_class::<crate::http::client::BitmexHttpClient>()?;
     m.add_class::<crate::websocket::BitmexWebSocketClient>()?;
-    m.add_class::<crate::execution::canceller::CancelBroadcaster>()?;
-    m.add_class::<crate::execution::submitter::SubmitBroadcaster>()?;
+    m.add_class::<crate::broadcast::canceller::CancelBroadcaster>()?;
+    m.add_class::<crate::broadcast::submitter::SubmitBroadcaster>()?;
     m.add_function(wrap_pyfunction!(urls::get_bitmex_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_bitmex_ws_url, m)?)?;
 

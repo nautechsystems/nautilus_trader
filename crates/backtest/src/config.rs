@@ -13,12 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
+//! Configuration types for the backtest engine, venues, data, and run parameters.
 
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
+use ahash::AHashMap;
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::database::MessageBusConfig,
@@ -244,6 +243,7 @@ impl Default for BacktestEngineConfig {
 
 /// Represents a venue configuration for one specific backtest engine.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BacktestVenueConfig {
     /// The name of the venue.
     name: Ustr,
@@ -288,7 +288,7 @@ pub struct BacktestVenueConfig {
     /// The account default leverage (for margin accounts).
     default_leverage: Option<f64>,
     /// The instrument specific leverage configuration (for margin accounts).
-    leverages: Option<HashMap<Currency, f64>>,
+    leverages: Option<AHashMap<Currency, f64>>,
     /// Defines an exchange-calculated price boundary to prevent a market order from being
     /// filled at an extremely aggressive price.
     price_protection_points: u32,
@@ -316,7 +316,7 @@ impl BacktestVenueConfig {
         starting_balances: Vec<String>,
         base_currency: Option<Currency>,
         default_leverage: Option<f64>,
-        leverages: Option<HashMap<Currency, f64>>,
+        leverages: Option<AHashMap<Currency, f64>>,
         price_protection_points: Option<u32>,
     ) -> Self {
         Self {
@@ -334,7 +334,7 @@ impl BacktestVenueConfig {
             use_reduce_only: use_reduce_only.unwrap_or(true),
             bar_execution: bar_execution.unwrap_or(true),
             bar_adaptive_high_low_ordering: bar_adaptive_high_low_ordering.unwrap_or(false),
-            trade_execution: trade_execution.unwrap_or(false),
+            trade_execution: trade_execution.unwrap_or(true),
             starting_balances,
             base_currency,
             default_leverage,
@@ -344,8 +344,9 @@ impl BacktestVenueConfig {
     }
 }
 
-#[derive(Debug, Clone)]
 /// Represents the data configuration for one specific backtest run.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BacktestDataConfig {
     /// The path to the data catalog.
     catalog_path: String,
@@ -362,7 +363,7 @@ pub struct BacktestDataConfig {
     /// The client ID for the data configuration.
     client_id: Option<ClientId>,
     /// The metadata for the data catalog query.
-    metadata: Option<HashMap<String, String>>,
+    metadata: Option<AHashMap<String, String>>,
     /// The bar specification for the data catalog query.
     bar_spec: Option<BarSpecification>,
 }
@@ -378,7 +379,7 @@ impl BacktestDataConfig {
         end_time: Option<UnixNanos>,
         filter_expr: Option<String>,
         client_id: Option<ClientId>,
-        metadata: Option<HashMap<String, String>>,
+        metadata: Option<AHashMap<String, String>>,
         bar_spec: Option<BarSpecification>,
     ) -> Self {
         Self {
@@ -398,6 +399,7 @@ impl BacktestDataConfig {
 /// Represents the configuration for one specific backtest run.
 /// This includes a backtest engine with its actors and strategies, with the external inputs of venues and data.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BacktestRunConfig {
     /// The venue configurations for the backtest run.
     venues: Vec<BacktestVenueConfig>,

@@ -29,7 +29,7 @@ use nautilus_model::{identifiers::InstrumentId, types::Price};
 /// off-chain price feeds aggregated by dYdX validators.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DydxOraclePrice {

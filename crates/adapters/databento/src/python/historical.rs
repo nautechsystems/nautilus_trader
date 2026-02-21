@@ -18,7 +18,7 @@
 use std::path::PathBuf;
 
 use nautilus_core::{
-    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+    python::{IntoPyObjectNautilusExt, to_pyexception, to_pyvalue_err},
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -27,7 +27,6 @@ use nautilus_model::{
 };
 use pyo3::{
     IntoPyObjectExt,
-    exceptions::PyException,
     prelude::*,
     types::{PyDict, PyList},
 };
@@ -85,9 +84,7 @@ impl DatabentoHistoricalClient {
                     dict.set_item("end", res.end)?;
                     dict.into_py_any(py)
                 }),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling response: {e}"
-                ))),
+                Err(e) => Err(to_pyexception(format!("Error handling response: {e}"))),
             }
         })
     }
@@ -279,6 +276,42 @@ impl DatabentoHistoricalClient {
                 .await
                 .map_err(to_pyvalue_err)?;
             Python::attach(|py| depths.into_py_any(py))
+        })
+    }
+
+    #[pyo3(name = "get_range_order_book_deltas")]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_get_range_order_book_deltas<'py>(
+        &self,
+        py: Python<'py>,
+        dataset: String,
+        instrument_ids: Vec<InstrumentId>,
+        start: u64,
+        end: Option<u64>,
+        limit: Option<u64>,
+        price_precision: Option<u8>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        let symbols = inner
+            .prepare_symbols_from_instrument_ids(&instrument_ids)
+            .map_err(to_pyvalue_err)?;
+
+        let params = RangeQueryParams {
+            dataset,
+            symbols,
+            start: start.into(),
+            end: end.map(Into::into),
+            limit,
+            price_precision,
+        };
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let deltas = inner
+                .get_range_order_book_deltas(params)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::attach(|py| deltas.into_py_any(py))
         })
     }
 

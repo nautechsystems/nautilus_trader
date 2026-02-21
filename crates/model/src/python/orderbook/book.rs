@@ -328,6 +328,16 @@ impl OrderBook {
         self.get_quantity_for_price(price, order_side)
     }
 
+    #[pyo3(name = "get_quantity_at_level")]
+    fn py_get_quantity_at_level(
+        &self,
+        price: Price,
+        order_side: OrderSide,
+        size_precision: u8,
+    ) -> Quantity {
+        self.get_quantity_at_level(price, order_side, size_precision)
+    }
+
     #[pyo3(name = "simulate_fills")]
     fn py_simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
         self.simulate_fills(order)

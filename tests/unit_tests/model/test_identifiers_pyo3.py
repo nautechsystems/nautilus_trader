@@ -44,7 +44,7 @@ def test_account_identifier() -> None:
     # Assert
     assert account_id1 == account_id1
     assert account_id1 != account_id2
-    assert "SIM-02851908", account_id1.value
+    assert account_id1.value == "SIM-02851908"
     assert account_id1 == AccountId("SIM-02851908")
 
 

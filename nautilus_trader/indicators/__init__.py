@@ -53,6 +53,7 @@ from nautilus_trader.indicators.trend import ArcherMovingAveragesTrends
 from nautilus_trader.indicators.trend import AroonOscillator
 from nautilus_trader.indicators.trend import Bias
 from nautilus_trader.indicators.trend import DirectionalMovement
+from nautilus_trader.indicators.trend import IchimokuCloud
 from nautilus_trader.indicators.trend import LinearRegression
 from nautilus_trader.indicators.trend import MovingAverageConvergenceDivergence
 from nautilus_trader.indicators.trend import Swings
@@ -90,6 +91,7 @@ __all__ = [
     "FuzzyCandle",
     "FuzzyCandlesticks",
     "HullMovingAverage",
+    "IchimokuCloud",
     "Indicator",
     "KeltnerChannel",
     "KeltnerPosition",

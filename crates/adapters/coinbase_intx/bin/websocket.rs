@@ -18,13 +18,10 @@ use nautilus_coinbase_intx::{
     http::client::CoinbaseIntxHttpClient, websocket::client::CoinbaseIntxWebSocketClient,
 };
 use nautilus_model::identifiers::InstrumentId;
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let client = CoinbaseIntxHttpClient::from_env().unwrap();
 
@@ -57,10 +54,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         tokio::select! {
             Some(data) = stream.next() => {
-                tracing::debug!("Received from stream: {data:?}");
+                log::debug!("Received from stream: {data:?}");
             }
             _ = &mut sigint => {
-                tracing::info!("Received SIGINT, closing connection...");
+                log::info!("Received SIGINT, closing connection...");
                 client.close().await?;
                 break;
             }

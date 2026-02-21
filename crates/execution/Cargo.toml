@@ -50,8 +50,8 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
-futures = { workspace = true }
 criterion = { workspace = true }
+futures = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }

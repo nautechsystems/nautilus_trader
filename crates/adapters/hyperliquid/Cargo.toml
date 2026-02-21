@@ -1,7 +1,6 @@
 [package]
 name = "nautilus-hyperliquid"
 readme = "README.md"
-publish = false # Do not publish to crates.io yet
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -22,12 +21,10 @@ name = "nautilus_hyperliquid"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = []
+default = ["high-precision"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
-  "nautilus-data/extension-module",
-  "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
   "python",
@@ -36,13 +33,12 @@ extension-module = [
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
-  "nautilus-data/python",
-  "nautilus-execution/python",
   "nautilus-model/python",
   "nautilus-network/python",
   "pyo3",
   "pyo3-async-runtimes",
 ]
+high-precision = ["nautilus-model/high-precision"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -51,47 +47,36 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
-nautilus-data = { workspace = true }
-nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-serialization = { workspace = true }
+nautilus-system = { workspace = true }
 
 ahash = { workspace = true }
-anyhow = { workspace = true }
-arc-swap = { workspace = true }
-async-stream = { workspace = true }
-async-trait = { workspace = true }
-aws-lc-rs = { workspace = true }
-base64 = { workspace = true }
-bytes = { workspace = true }
-chrono = { workspace = true }
-dashmap = { workspace = true }
-derive_builder = { workspace = true }
-futures-util = { workspace = true }
-hex = { workspace = true }
-indexmap = { workspace = true }
-alloy = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-signer-local = { workspace = true }
 alloy-sol-types = { workspace = true }
-rmp-serde = { workspace = true }
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+ctrlc = { workspace = true }
+dashmap = { workspace = true }
+derive_builder = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
 log = { workspace = true }
+rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_urlencoded = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true } # Needed for example binaries
 url = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
@@ -102,11 +87,27 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+
 axum = { workspace = true }
 criterion = { workspace = true }
+dotenvy = { workspace = true }
 futures-util = { workspace = true }
 rstest = { workspace = true }
-tracing-test = { workspace = true }
+
+[[bin]]
+name = "hyperliquid-builder-fee-verify"
+path = "bin/builder_fee_verify.rs"
+doc = false
+
+[[bin]]
+name = "hyperliquid-builder-fee-approve"
+path = "bin/builder_fee_approve.rs"
+doc = false
+
+[[bin]]
+name = "hyperliquid-builder-fee-revoke"
+path = "bin/builder_fee_revoke.rs"
+doc = false
 
 [[bin]]
 name = "hyperliquid-http-public"
@@ -136,4 +137,18 @@ doc = false
 [[bin]]
 name = "hyperliquid-capture-test-data"
 path = "bin/capture_test_data.rs"
+doc = false
+
+# Run with `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid`.
+[[example]]
+name = "hyperliquid-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = []
+doc = false
+
+# Run with `cargo run --example hyperliquid-exec-tester --package nautilus-hyperliquid`.
+[[example]]
+name = "hyperliquid-exec-tester"
+path = "examples/node_exec_tester.rs"
+required-features = []
 doc = false

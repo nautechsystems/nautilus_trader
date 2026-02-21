@@ -468,6 +468,151 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         self.value = 0
 
 
+cdef class IchimokuCloud(Indicator):
+    """
+    Ichimoku Cloud (Kinko Hyo) with five components.
+
+    - Tenkan-sen (Conversion Line): (tenkan_period high + tenkan_period low) / 2.
+    - Kijun-sen (Base Line): (kijun_period high + kijun_period low) / 2.
+    - Senkou Span A (Leading Span A): (Tenkan + Kijun) / 2, displaced forward by displacement.
+    - Senkou Span B (Leading Span B): (senkou_period high + senkou_period low) / 2, displaced forward by displacement.
+    - Chikou Span (Lagging Span): Close displaced backward by displacement.
+
+    The indicator becomes ``initialized`` after ``senkou_period`` bars,
+    at which point tenkan_sen, kijun_sen are valid. The displaced outputs
+    (senkou_span_a, senkou_span_b, chikou_span) require an additional
+    ``displacement`` bars before they become non-zero.
+
+    Parameters
+    ----------
+    tenkan_period : int
+        Period for Tenkan-sen (default 9).
+    kijun_period : int
+        Period for Kijun-sen (default 26).
+    senkou_period : int
+        Period for Senkou Span B (default 52).
+    displacement : int
+        Displacement for leading/lagging spans (default 26).
+
+    Raises
+    ------
+    ValueError
+        If any period or displacement is not positive.
+    ValueError
+        If senkou_period is not >= kijun_period or kijun_period is not >= tenkan_period.
+    """
+
+    def __init__(
+        self,
+        int tenkan_period=9,
+        int kijun_period=26,
+        int senkou_period=52,
+        int displacement=26,
+    ):
+        Condition.positive_int(tenkan_period, "tenkan_period")
+        Condition.positive_int(kijun_period, "kijun_period")
+        Condition.positive_int(senkou_period, "senkou_period")
+        Condition.positive_int(displacement, "displacement")
+        Condition.is_true(
+            kijun_period >= tenkan_period,
+            "kijun_period was < tenkan_period",
+        )
+        Condition.is_true(
+            senkou_period >= kijun_period,
+            "senkou_period was < kijun_period",
+        )
+        super().__init__(params=[tenkan_period, kijun_period, senkou_period, displacement])
+
+        self.tenkan_period = tenkan_period
+        self.kijun_period = kijun_period
+        self.senkou_period = senkou_period
+        self.displacement = displacement
+
+        self._highs_tenkan = deque(maxlen=tenkan_period)
+        self._lows_tenkan = deque(maxlen=tenkan_period)
+        self._highs_kijun = deque(maxlen=kijun_period)
+        self._lows_kijun = deque(maxlen=kijun_period)
+        self._highs_senkou = deque(maxlen=senkou_period)
+        self._lows_senkou = deque(maxlen=senkou_period)
+        self._senkou_a = deque(maxlen=displacement)
+        self._senkou_b = deque(maxlen=displacement)
+        self._chikou = deque(maxlen=displacement)
+
+        self.tenkan_sen = 0.0
+        self.kijun_sen = 0.0
+        self.senkou_span_a = 0.0
+        self.senkou_span_b = 0.0
+        self.chikou_span = 0.0
+
+    cpdef void handle_bar(self, Bar bar):
+        Condition.not_none(bar, "bar")
+        self.update_raw(
+            bar.high.as_double(),
+            bar.low.as_double(),
+            bar.close.as_double(),
+        )
+
+    cpdef void update_raw(self, double high, double low, double close):
+        self._highs_tenkan.append(high)
+        self._lows_tenkan.append(low)
+        self._highs_kijun.append(high)
+        self._lows_kijun.append(low)
+        self._highs_senkou.append(high)
+        self._lows_senkou.append(low)
+
+        if not self.initialized:
+            self._set_has_inputs(True)
+
+            if (
+                len(self._highs_tenkan) >= self.tenkan_period
+                and len(self._highs_kijun) >= self.kijun_period
+                and len(self._highs_senkou) >= self.senkou_period
+            ):
+                self._set_initialized(True)
+
+        if len(self._highs_tenkan) >= self.tenkan_period:
+            self.tenkan_sen = (max(self._highs_tenkan) + min(self._lows_tenkan)) / 2.0
+
+        if len(self._highs_kijun) >= self.kijun_period:
+            self.kijun_sen = (max(self._highs_kijun) + min(self._lows_kijun)) / 2.0
+
+        cdef double mid52 = 0.0
+        if len(self._highs_senkou) >= self.senkou_period:
+            mid52 = (max(self._highs_senkou) + min(self._lows_senkou)) / 2.0
+
+        if self.initialized:
+            if len(self._senkou_a) == self.displacement:
+                self.senkou_span_a = self._senkou_a[0]
+
+            self._senkou_a.append((self.tenkan_sen + self.kijun_sen) / 2.0)
+
+            if len(self._senkou_b) == self.displacement:
+                self.senkou_span_b = self._senkou_b[0]
+
+            self._senkou_b.append(mid52)
+
+            if len(self._chikou) == self.displacement:
+                self.chikou_span = self._chikou[0]
+
+            self._chikou.append(close)
+
+    cpdef void _reset(self):
+        self._highs_tenkan.clear()
+        self._lows_tenkan.clear()
+        self._highs_kijun.clear()
+        self._lows_kijun.clear()
+        self._highs_senkou.clear()
+        self._lows_senkou.clear()
+        self._senkou_a.clear()
+        self._senkou_b.clear()
+        self._chikou.clear()
+        self.tenkan_sen = 0.0
+        self.kijun_sen = 0.0
+        self.senkou_span_a = 0.0
+        self.senkou_span_b = 0.0
+        self.chikou_span = 0.0
+
+
 cdef class LinearRegression(Indicator):
     """
     An indicator that calculates a simple linear regression.

@@ -15,32 +15,31 @@
 
 //! Python bindings from `pyo3`.
 
-pub mod enums;
-pub mod execution;
+#![allow(clippy::missing_errors_doc)]
+
+pub mod encoder;
+pub mod grpc;
 pub mod http;
+pub mod submitter;
 pub mod types;
 pub mod urls;
+pub mod wallet;
 pub mod websocket;
 
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.dydx`.
-///
-/// # Errors
-///
-/// Returns an error if any bindings fail to register with the Python module.
 #[pymodule]
 pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("__package__", "nautilus_trader.core.nautilus_pyo3.dydx")?;
     m.add_class::<crate::http::client::DydxHttpClient>()?;
     m.add_class::<crate::websocket::client::DydxWebSocketClient>()?;
     m.add_class::<crate::common::enums::DydxNetwork>()?;
     m.add_class::<crate::common::enums::DydxOrderSide>()?;
     m.add_class::<crate::common::enums::DydxOrderType>()?;
     m.add_class::<crate::types::DydxOraclePrice>()?;
-    m.add_class::<execution::PyDydxWallet>()?;
-    m.add_class::<execution::PyDydxGrpcClient>()?;
-    m.add_class::<execution::PyDydxOrderSubmitter>()?;
+    m.add_class::<wallet::PyDydxWallet>()?;
+    m.add_class::<grpc::PyDydxGrpcClient>()?;
+    m.add_class::<submitter::PyDydxOrderSubmitter>()?;
+    m.add_class::<encoder::PyDydxClientOrderIdEncoder>()?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_grpc_urls, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_grpc_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_http_url, m)?)?;

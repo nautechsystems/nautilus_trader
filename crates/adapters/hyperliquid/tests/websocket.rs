@@ -36,9 +36,7 @@ use axum::{
 };
 use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
-use nautilus_hyperliquid::{
-    common::HyperliquidProductType, websocket::client::HyperliquidWebSocketClient,
-};
+use nautilus_hyperliquid::websocket::client::HyperliquidWebSocketClient;
 use nautilus_model::{
     data::BarType,
     identifiers::{AccountId, InstrumentId},
@@ -312,12 +310,7 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
 }
 
 async fn connect_client(ws_url: &str, account_id: Option<AccountId>) -> HyperliquidWebSocketClient {
-    let mut client = HyperliquidWebSocketClient::new(
-        Some(ws_url.to_string()),
-        false,
-        HyperliquidProductType::Perp,
-        account_id,
-    );
+    let mut client = HyperliquidWebSocketClient::new(Some(ws_url.to_string()), false, account_id);
     cache_test_instruments(&mut client);
     client
 }
@@ -356,6 +349,7 @@ fn cache_test_instruments(client: &mut HyperliquidWebSocketClient) {
             3, // size_precision
             Price::from("0.01"),
             Quantity::from("0.001"),
+            None,
             None,
             None,
             None,
@@ -1155,7 +1149,7 @@ async fn test_subscribe_after_next_event_call() {
     // Try to get an event
     tokio::select! {
         _ = client.next_event() => {},
-        _ = tokio::time::sleep(Duration::from_millis(200)) => {}
+        () = tokio::time::sleep(Duration::from_millis(200)) => {}
     }
 
     // Subscribe should still work after next_event

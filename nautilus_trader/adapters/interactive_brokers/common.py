@@ -17,7 +17,9 @@ from decimal import Decimal
 from typing import Final
 from typing import Literal
 
+import msgspec.structs
 from ibapi.const import UNSET_DECIMAL
+from ibapi.const import UNSET_DOUBLE
 from ibapi.contract import FundAssetType
 from ibapi.contract import FundDistributionPolicyIndicator
 from ibapi.tag_value import TagValue
@@ -36,21 +38,6 @@ class ContractId(int):
     """
     ContractId type.
     """
-
-
-# https://interactivebrokers.github.io/tws-api/tick_types.html
-TickTypeMapping = {
-    0: "Bid Size",
-    1: "Bid Price",
-    2: "Ask Price",
-    3: "Ask Size",
-    4: "Last Price",
-    5: "Last Size",
-    6: "High",
-    7: "Low",
-    8: "Volume",
-    9: "Close Price",
-}
 
 
 class ComboLeg(NautilusConfig, frozen=True, omit_defaults=True, repr_omit_defaults=True):
@@ -139,7 +126,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     multiplier: str = ""
 
     # options
-    strike: float = 0.0
+    strike: float = UNSET_DOUBLE
     right: str = ""
 
     # If set to true, contract details requests and historical data queries can be performed pertaining
@@ -163,6 +150,17 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     options_chain_exchange: str | None = None
     min_expiry_days: int | None = None
     max_expiry_days: int | None = None
+
+    def __post_init__(self):
+        # ibapi 10.43 introduced a dual protocol: legacy string-based and protobuf.
+        # TWS/Gateway now responds in protobuf format regardless of request format.
+        # The protobuf decoder decodes unset double fields as 0.0 rather than
+        # UNSET_DOUBLE (sys.float_info.max). When strike=0.0 leaks into a subsequent
+        # reqContractDetails call, IB silently ignores the request (zero bytes back).
+        # We normalize here in __post_init__ so that all IBContract construction paths
+        # (direct `IBContract(**contract.__dict__)` and deserialization) are safe.
+        if self.strike == 0.0:
+            msgspec.structs.force_setattr(self, "strike", UNSET_DOUBLE)
 
 
 class IBOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
@@ -249,6 +247,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     minSize: Decimal = UNSET_DECIMAL
     sizeIncrement: Decimal = UNSET_DECIMAL
     suggestedSizeIncrement: Decimal = UNSET_DECIMAL
+    minAlgoSize: Decimal = UNSET_DECIMAL
 
     # BOND values
     cusip: str = ""
@@ -288,6 +287,35 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     )
     fundAssetType: FundAssetType = FundAssetType.NoneItem
     ineligibilityReasonList: list = None
+    eventContract1: str = ""
+    eventContractDescription1: str = ""
+    eventContractDescription2: str = ""
+
+    @classmethod
+    def from_contract_details(cls, contract_details) -> "IBContractDetails":
+        """
+        Create from a raw ibapi ContractDetails, normalizing ibapi 10.43 protobuf
+        issues.
+
+        ibapi 10.43's protobuf decoder (decoder.py:decodeContractDetails) has a typo:
+        it writes ``contractDetails.underConid`` (lowercase 'i') instead of the
+        canonical ``contractDetails.underConId`` (uppercase 'I'). This causes
+        ``IBContractDetails(**details.__dict__)`` to fail with "Unexpected keyword
+        argument 'underConid'". We normalize the key here before construction.
+
+        Unlike IBContract.strike (where 0.0 is a valid kwarg we fix in __post_init__),
+        "underConid" is an invalid kwarg that must be renamed in the dict before
+        the constructor sees it — hence this is a classmethod rather than __post_init__.
+
+        """
+        contract_details.contract = IBContract(**contract_details.contract.__dict__)
+        d = contract_details.__dict__.copy()
+        if "underConid" in d:
+            if not d.get("underConId"):
+                d["underConId"] = d.pop("underConid")
+            else:
+                d.pop("underConid")
+        return cls(**d)
 
 
 def dict_to_contract_details(dict_details: dict) -> IBContractDetails:
@@ -304,7 +332,7 @@ def dict_to_contract_details(dict_details: dict) -> IBContractDetails:
 
     # Deserialize Decimal fields from strings back to Decimal objects
     # These fields are known to be Decimal type in IBContractDetails
-    decimal_fields = ["minSize", "sizeIncrement", "suggestedSizeIncrement"]
+    decimal_fields = ["minSize", "sizeIncrement", "suggestedSizeIncrement", "minAlgoSize"]
     for field in decimal_fields:
         if field in details_copy and isinstance(details_copy[field], str):
             try:

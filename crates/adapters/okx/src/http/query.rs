@@ -38,17 +38,6 @@ use crate::{
     http::error::BuildError,
 };
 
-#[allow(dead_code)]
-fn serialize_string_vec<S>(values: &Option<Vec<String>>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    match values {
-        Some(vec) => serializer.serialize_str(&vec.join(",")),
-        None => serializer.serialize_none(),
-    }
-}
-
 /// Parameters for the POST /api/v5/account/set-position-mode endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]
 #[builder(setter(into, strip_option))]

@@ -24,7 +24,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
-use ustr::Ustr;
 
 use super::consts::DYDX_VENUE;
 use crate::proto::dydxprotocol::clob::order::{
@@ -106,8 +105,7 @@ pub fn parse_instrument_id<S: AsRef<str>>(ticker: S) -> InstrumentId {
     if !base.ends_with("-PERP") {
         base.push_str("-PERP");
     }
-    let symbol = Ustr::from(base.as_str());
-    InstrumentId::new(Symbol::from_ustr_unchecked(symbol), *DYDX_VENUE)
+    InstrumentId::new(Symbol::from_str_unchecked(&base), *DYDX_VENUE)
 }
 
 /// Parses a decimal string into a [`Price`].

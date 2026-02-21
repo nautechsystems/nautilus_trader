@@ -22,8 +22,9 @@ use super::{
     error::SbeDecodeError,
     models::{
         BinanceAccountInfo, BinanceAccountTrade, BinanceBalance, BinanceCancelOrderResponse,
-        BinanceDepth, BinanceExchangeInfoSbe, BinanceNewOrderResponse, BinanceOrderFill,
-        BinanceOrderResponse, BinancePriceLevel, BinanceSymbolSbe, BinanceTrade, BinanceTrades,
+        BinanceDepth, BinanceExchangeInfoSbe, BinanceKline, BinanceKlines, BinanceLotSizeFilterSbe,
+        BinanceNewOrderResponse, BinanceOrderFill, BinanceOrderResponse, BinancePriceFilterSbe,
+        BinancePriceLevel, BinanceSymbolFiltersSbe, BinanceSymbolSbe, BinanceTrade, BinanceTrades,
     },
 };
 use crate::common::sbe::{
@@ -37,11 +38,14 @@ use crate::common::sbe::{
         cancel_order_response_codec::SBE_TEMPLATE_ID as CANCEL_ORDER_TEMPLATE_ID,
         depth_response_codec::SBE_TEMPLATE_ID as DEPTH_TEMPLATE_ID,
         exchange_info_response_codec::SBE_TEMPLATE_ID as EXCHANGE_INFO_TEMPLATE_ID,
+        klines_response_codec::SBE_TEMPLATE_ID as KLINES_TEMPLATE_ID,
+        lot_size_filter_codec::SBE_TEMPLATE_ID as LOT_SIZE_FILTER_TEMPLATE_ID,
         message_header_codec::ENCODED_LENGTH as HEADER_LENGTH,
         new_order_full_response_codec::SBE_TEMPLATE_ID as NEW_ORDER_FULL_TEMPLATE_ID,
         order_response_codec::SBE_TEMPLATE_ID as ORDER_TEMPLATE_ID,
         orders_response_codec::SBE_TEMPLATE_ID as ORDERS_TEMPLATE_ID,
         ping_response_codec::SBE_TEMPLATE_ID as PING_TEMPLATE_ID,
+        price_filter_codec::SBE_TEMPLATE_ID as PRICE_FILTER_TEMPLATE_ID,
         server_time_response_codec::SBE_TEMPLATE_ID as SERVER_TIME_TEMPLATE_ID,
         trades_response_codec::SBE_TEMPLATE_ID as TRADES_TEMPLATE_ID,
     },
@@ -207,6 +211,90 @@ pub fn decode_trades(buf: &[u8]) -> Result<BinanceTrades, SbeDecodeError> {
         price_exponent,
         qty_exponent,
         trades,
+    })
+}
+
+/// Klines group item block length (from SBE codec).
+const KLINES_BLOCK_LENGTH: u16 = 120;
+
+/// Decode a klines (candlestick) response.
+///
+/// Returns the list of klines with their price and quantity exponents.
+///
+/// # Errors
+///
+/// Returns error if buffer is too short, schema mismatch, or group size exceeded.
+pub fn decode_klines(buf: &[u8]) -> Result<BinanceKlines, SbeDecodeError> {
+    let mut cursor = SbeCursor::new(buf);
+    let header = MessageHeader::decode_cursor(&mut cursor)?;
+    header.validate()?;
+
+    if header.template_id != KLINES_TEMPLATE_ID {
+        return Err(SbeDecodeError::UnknownTemplateId(header.template_id));
+    }
+
+    let price_exponent = cursor.read_i8()?;
+    let qty_exponent = cursor.read_i8()?;
+
+    let (block_len, count) = cursor.read_group_header()?;
+
+    if block_len != KLINES_BLOCK_LENGTH {
+        return Err(SbeDecodeError::InvalidBlockLength {
+            expected: KLINES_BLOCK_LENGTH,
+            actual: block_len,
+        });
+    }
+
+    let mut klines = Vec::with_capacity(count as usize);
+
+    for _ in 0..count {
+        cursor.require(KLINES_BLOCK_LENGTH as usize)?;
+
+        let open_time = cursor.read_i64_le()?;
+        let open_price = cursor.read_i64_le()?;
+        let high_price = cursor.read_i64_le()?;
+        let low_price = cursor.read_i64_le()?;
+        let close_price = cursor.read_i64_le()?;
+
+        let volume_slice = cursor.read_bytes(16)?;
+        let mut volume = [0u8; 16];
+        volume.copy_from_slice(volume_slice);
+
+        let close_time = cursor.read_i64_le()?;
+
+        let quote_volume_slice = cursor.read_bytes(16)?;
+        let mut quote_volume = [0u8; 16];
+        quote_volume.copy_from_slice(quote_volume_slice);
+
+        let num_trades = cursor.read_i64_le()?;
+
+        let taker_buy_base_volume_slice = cursor.read_bytes(16)?;
+        let mut taker_buy_base_volume = [0u8; 16];
+        taker_buy_base_volume.copy_from_slice(taker_buy_base_volume_slice);
+
+        let taker_buy_quote_volume_slice = cursor.read_bytes(16)?;
+        let mut taker_buy_quote_volume = [0u8; 16];
+        taker_buy_quote_volume.copy_from_slice(taker_buy_quote_volume_slice);
+
+        klines.push(BinanceKline {
+            open_time,
+            open_price,
+            high_price,
+            low_price,
+            close_price,
+            volume,
+            close_time,
+            quote_volume,
+            num_trades,
+            taker_buy_base_volume,
+            taker_buy_quote_volume,
+        });
+    }
+
+    Ok(BinanceKlines {
+        price_exponent,
+        qty_exponent,
+        klines,
     })
 }
 
@@ -768,6 +856,11 @@ const SYMBOL_BLOCK_LENGTH: usize = 19;
 /// # Errors
 ///
 /// Returns error if buffer is too short, schema mismatch, or template ID mismatch.
+///
+/// # Panics
+///
+/// This function will panic if filter byte slices cannot be converted to fixed-size arrays,
+/// which should not occur if the SBE data is well-formed.
 pub fn decode_exchange_info(buf: &[u8]) -> Result<BinanceExchangeInfoSbe, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
     let header = MessageHeader::decode_cursor(&mut cursor)?;
@@ -823,13 +916,74 @@ pub fn decode_exchange_info(buf: &[u8]) -> Result<BinanceExchangeInfoSbe, SbeDec
         let _allowed_self_trade_prevention_modes = cursor.read_u8()?;
         let _peg_instructions_allowed = cursor.read_u8()?;
 
-        // Filters nested group (JSON blobs)
         let (_filters_block_len, filters_count) = cursor.read_group_header()?;
-        let mut filters = Vec::with_capacity(filters_count as usize);
+        let mut filters = BinanceSymbolFiltersSbe::default();
+
         for _ in 0..filters_count {
-            let filter_json = cursor.read_var_string8()?;
-            if let Ok(value) = serde_json::from_str(&filter_json) {
-                filters.push(value);
+            let filter_bytes = cursor.read_var_bytes8()?;
+
+            // Filters can have header (8 bytes) or be raw body only,
+            // detect format by checking if bytes [2..4] contain a valid template_id
+            let (template_id, offset) = if filter_bytes.len() >= HEADER_LENGTH + 2 {
+                let potential_template = u16::from_le_bytes([filter_bytes[2], filter_bytes[3]]);
+                if potential_template == PRICE_FILTER_TEMPLATE_ID
+                    || potential_template == LOT_SIZE_FILTER_TEMPLATE_ID
+                {
+                    (potential_template, HEADER_LENGTH)
+                } else {
+                    let raw_template = u16::from_le_bytes([filter_bytes[0], filter_bytes[1]]);
+                    (raw_template, 2)
+                }
+            } else if filter_bytes.len() >= 2 {
+                let raw_template = u16::from_le_bytes([filter_bytes[0], filter_bytes[1]]);
+                (raw_template, 2)
+            } else {
+                continue;
+            };
+
+            // Filter body layout: exponent(1) + min(8) + max(8) + size(8) = 25 bytes
+            match template_id {
+                PRICE_FILTER_TEMPLATE_ID => {
+                    if filter_bytes.len() >= offset + 25 {
+                        let price_exp = filter_bytes[offset] as i8;
+                        let min_price = i64::from_le_bytes(
+                            filter_bytes[offset + 1..offset + 9].try_into().unwrap(),
+                        );
+                        let max_price = i64::from_le_bytes(
+                            filter_bytes[offset + 9..offset + 17].try_into().unwrap(),
+                        );
+                        let tick_size = i64::from_le_bytes(
+                            filter_bytes[offset + 17..offset + 25].try_into().unwrap(),
+                        );
+                        filters.price_filter = Some(BinancePriceFilterSbe {
+                            price_exponent: price_exp,
+                            min_price,
+                            max_price,
+                            tick_size,
+                        });
+                    }
+                }
+                LOT_SIZE_FILTER_TEMPLATE_ID => {
+                    if filter_bytes.len() >= offset + 25 {
+                        let qty_exp = filter_bytes[offset] as i8;
+                        let min_qty = i64::from_le_bytes(
+                            filter_bytes[offset + 1..offset + 9].try_into().unwrap(),
+                        );
+                        let max_qty = i64::from_le_bytes(
+                            filter_bytes[offset + 9..offset + 17].try_into().unwrap(),
+                        );
+                        let step_size = i64::from_le_bytes(
+                            filter_bytes[offset + 17..offset + 25].try_into().unwrap(),
+                        );
+                        filters.lot_size_filter = Some(BinanceLotSizeFilterSbe {
+                            qty_exponent: qty_exp,
+                            min_qty,
+                            max_qty,
+                            step_size,
+                        });
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -1582,10 +1736,8 @@ mod tests {
         buf.push(0); // allowed_self_trade_prevention_modes
         buf.push(0); // peg_instructions_allowed
 
-        // Filters nested group: 1 filter
-        buf.extend_from_slice(&create_group_header(0, 1));
-        let filter_json = r#"{"filterType":"PRICE_FILTER","minPrice":"0.01","maxPrice":"100000","tickSize":"0.01"}"#;
-        write_var_string(&mut buf, filter_json);
+        // Filters nested group: 0 filters (SBE binary filters are skipped)
+        buf.extend_from_slice(&create_group_header(0, 0));
 
         // Permission sets nested group: 1 set with 1 permission
         buf.extend_from_slice(&create_group_header(0, 1));
@@ -1617,7 +1769,8 @@ mod tests {
         assert!(!symbol.amend_allowed);
         assert!(symbol.is_spot_trading_allowed);
         assert!(!symbol.is_margin_trading_allowed);
-        assert_eq!(symbol.filters.len(), 1);
+        assert!(symbol.filters.price_filter.is_none()); // No filters in test data
+        assert!(symbol.filters.lot_size_filter.is_none());
         assert_eq!(symbol.permissions.len(), 1);
         assert_eq!(symbol.permissions[0], vec!["SPOT"]);
     }

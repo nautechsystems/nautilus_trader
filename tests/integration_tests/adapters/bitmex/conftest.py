@@ -128,7 +128,7 @@ def mock_http_client():
     mock.api_secret = "test_api_secret"
 
     # Mock account number retrieval
-    mock.get_margin = AsyncMock(return_value="1234567")
+    mock.get_account_number = AsyncMock(return_value="1234567")
 
     # Mock server time retrieval
     mock.get_server_time = AsyncMock(return_value=1234567890000)

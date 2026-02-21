@@ -17,13 +17,16 @@ use std::{collections::HashSet, sync::Arc};
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
-use nautilus_common::messages::execution::{
-    BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-    GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-    ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+use nautilus_common::{
+    clients::ExecutionClient,
+    messages::execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+    },
 };
 use nautilus_core::UnixNanos;
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
     defi::{
@@ -57,8 +60,6 @@ pub struct BlockchainExecutionClient {
     wallet_balance: WalletBalance,
     /// Contract interface for ERC-20 token interactions.
     erc20_contract: Erc20Contract,
-    /// Whether the client is currently connected.
-    connected: bool,
     /// HTTP RPC client for blockchain queries.
     http_rpc_client: Arc<BlockchainHttpRpcClient>,
 }
@@ -94,7 +95,6 @@ impl BlockchainExecutionClient {
 
         Ok(Self {
             core: core_client,
-            connected: false,
             wallet_balance,
             chain,
             cache,
@@ -155,7 +155,7 @@ impl BlockchainExecutionClient {
     /// Refreshes all wallet balances including native currency and tracked ERC-20 tokens.
     async fn refresh_wallet_balances(&mut self) -> anyhow::Result<()> {
         let native_currency_balance = self.fetch_native_currency_balance().await?;
-        tracing::info!(
+        log::info!(
             "Initializing wallet balance with native currency balance: {} {}",
             native_currency_balance.as_decimal(),
             native_currency_balance.currency
@@ -164,9 +164,7 @@ impl BlockchainExecutionClient {
             .set_native_currency_balance(native_currency_balance);
 
         // Fetch token balances from the blockchain.
-        if !self.wallet_balance.is_token_universe_initialized() {
-            // TODO sync from transfer events for tokens that wallet interacted with.
-        } else {
+        if self.wallet_balance.is_token_universe_initialized() {
             let tokens: Vec<Address> = self
                 .wallet_balance
                 .token_universe
@@ -175,10 +173,12 @@ impl BlockchainExecutionClient {
                 .collect();
             for token in tokens {
                 if let Ok(token_balance) = self.fetch_token_balance(&token).await {
-                    tracing::info!("Adding token balance to the wallet: {}", token_balance);
+                    log::info!("Adding token balance to the wallet: {token_balance}");
                     self.wallet_balance.add_token_balance(token_balance);
                 }
             }
+        } else {
+            // TODO sync from transfer events for tokens that wallet interacted with.
         }
 
         Ok(())
@@ -188,7 +188,7 @@ impl BlockchainExecutionClient {
 #[async_trait(?Send)]
 impl ExecutionClient for BlockchainExecutionClient {
     fn is_connected(&self) -> bool {
-        self.connected
+        self.core.is_connected()
     }
 
     fn client_id(&self) -> ClientId {
@@ -262,20 +262,20 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.connected {
-            tracing::warn!("Blockchain execution client already connected");
+        if self.core.is_connected() {
+            log::warn!("Blockchain execution client already connected");
             return Ok(());
         }
 
-        tracing::info!(
+        log::info!(
             "Connecting to blockchain execution client on chain {}",
             self.chain.name
         );
 
         self.refresh_wallet_balances().await?;
 
-        self.connected = true;
-        tracing::info!(
+        self.core.set_connected();
+        log::info!(
             "Blockchain execution client connected on chain {}",
             self.chain.name
         );
@@ -283,7 +283,7 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        self.connected = false;
+        self.core.set_disconnected();
         Ok(())
     }
 

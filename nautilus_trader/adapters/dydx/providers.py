@@ -13,74 +13,76 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Instrument provider for the dYdX venue.
+Instrument provider for the dYdX v4 venue.
+
+This provider uses the Rust-backed HTTP client to fetch instruments from dYdX.
+
 """
 
-from decimal import Decimal
 from typing import Any
 
-from grpc.aio._call import AioRpcError
-from v4_proto.dydxprotocol.feetiers import query_pb2 as fee_tier_query
-
-from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
-from nautilus_trader.adapters.dydx.common.constants import FEE_SCALING
-from nautilus_trader.adapters.dydx.common.credentials import get_wallet_address
-from nautilus_trader.adapters.dydx.grpc.account import DYDXAccountGRPCAPI
-from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
-from nautilus_trader.adapters.dydx.http.market import DYDXMarketHttpAPI
-from nautilus_trader.common.component import LiveClock
+from nautilus_trader.adapters.dydx.constants import DYDX_VENUE
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
-class DYDXInstrumentProvider(InstrumentProvider):
+class DydxInstrumentProvider(InstrumentProvider):
     """
-    Provides Nautilus instrument definitions from dYdX.
+    Provides Nautilus instrument definitions from dYdX v4.
+
+    This provider uses the Rust-backed HTTP client to fetch instruments
+    from the dYdX Indexer API.
 
     Parameters
     ----------
-    client : DYDXHttpClient
-        The dYdX HTTP client.
-    clock : LiveClock
-        The clock instance.
+    client : nautilus_pyo3.DydxHttpClient
+        The dYdX HTTP client (Rust-backed).
+    config : InstrumentProviderConfig, optional
+        The instrument provider configuration, by default None.
 
     """
 
     def __init__(
         self,
-        client: DYDXHttpClient,
-        grpc_account_client: DYDXAccountGRPCAPI,
-        clock: LiveClock,
+        client: nautilus_pyo3.DydxHttpClient,  # type: ignore[name-defined]
         config: InstrumentProviderConfig | None = None,
-        wallet_address: str | None = None,
-        is_testnet: bool = False,
-        venue: Venue = DYDX_VENUE,
     ) -> None:
-        """
-        Provide a way to load instruments from dYdX.
-        """
         super().__init__(config=config)
-        self._clock = clock
         self._client = client
-        self._venue = venue
-        self._wallet_address = wallet_address or get_wallet_address(is_testnet=is_testnet)
-
-        # GRPC API
-        self._grpc_account = grpc_account_client
-
-        # Http API
-        self._http_market = DYDXMarketHttpAPI(client=client, clock=clock)
-
         self._log_warnings = config.log_warnings if config else True
 
-    async def load_all_async(self, filters: dict[str, Any] | None = None) -> None:
+        self._instruments_pyo3: list[Any] = []
+
+    def instruments_pyo3(self) -> list[Any]:
+        """
+        Return all dYdX PyO3 instrument definitions held by the provider.
+
+        Returns
+        -------
+        list[nautilus_pyo3.Instrument]
+
+        """
+        return self._instruments_pyo3
+
+    async def load_all_async(self, filters: dict | None = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        await self._load_instruments()
+        pyo3_instruments = await self._client.request_instruments(
+            maker_fee=None,
+            taker_fee=None,
+        )
+
+        self._instruments_pyo3 = pyo3_instruments
+        instruments = instruments_from_pyo3(pyo3_instruments)
+        for instrument in instruments:
+            self.add(instrument=instrument)
+
+        self._log.info(f"Loaded {len(instruments)} instruments")
 
     async def load_ids_async(
         self,
@@ -88,75 +90,34 @@ class DYDXInstrumentProvider(InstrumentProvider):
         filters: dict | None = None,
     ) -> None:
         if not instrument_ids:
-            self._log.info("No instrument IDs given for loading.")
+            self._log.info("No instrument IDs given for loading")
             return
 
-        # Check all instrument IDs
         for instrument_id in instrument_ids:
-            PyCondition.equal(instrument_id.venue, self._venue, "instrument_id.venue", "DYDX")
+            PyCondition.equal(instrument_id.venue, DYDX_VENUE, "instrument_id.venue", "DYDX")
 
-        fee_tier: fee_tier_query.QueryUserFeeTierResponse | None = None
+        # dYdX doesn't support fetching individual instruments, so we load all and filter
+        await self.load_all_async(filters)
 
-        try:
-            fee_tier = await self._grpc_account.get_user_fee_tier(address=self._wallet_address)
-        except AioRpcError as e:
-            self._log.warning(f"Failed to get the user fee tier: {e}")
+        # Filter to only the requested instruments
+        loaded_ids = {inst.id for inst in self.get_all().values()}
+        missing = [str(iid) for iid in instrument_ids if iid not in loaded_ids]
+        if missing and self._log_warnings:
+            self._log.warning(f"Instruments not found: {missing}")
 
-        for instrument_id in instrument_ids:
-            await self._load_instruments(
-                symbol=instrument_id.symbol.value.removesuffix("-PERP"),
-                fee_tier=fee_tier,
-            )
-
-    async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
-        PyCondition.not_none(instrument_id, "instrument_id")
-        PyCondition.equal(instrument_id.venue, self._venue, "instrument_id.venue", "BINANCE")
-
-        filters_str = "..." if not filters else f" with filters {filters}..."
-        self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
-
-        await self._load_instruments(symbol=instrument_id.symbol.value.removesuffix("-PERP"))
-
-    async def _load_instruments(
+    async def load_async(
         self,
-        symbol: str | None = None,
-        fee_tier: fee_tier_query.QueryUserFeeTierResponse | None = None,
+        instrument_id: InstrumentId,
+        filters: dict | None = None,
     ) -> None:
-        markets = await self._http_market.fetch_instruments(symbol=symbol)
+        PyCondition.equal(instrument_id.venue, DYDX_VENUE, "instrument_id.venue", "DYDX")
 
-        if markets is None:
-            self._log.error("Failed to fetch the instruments")
+        # Check if already loaded
+        if self.find(instrument_id) is not None:
             return
 
-        maker_fee = Decimal(0)
-        taker_fee = Decimal(0)
+        # dYdX doesn't support fetching individual instruments, so we load all
+        await self.load_all_async(filters)
 
-        if fee_tier is None:
-            try:
-                fee_tier = await self._grpc_account.get_user_fee_tier(address=self._wallet_address)
-                maker_fee = Decimal(fee_tier.tier.maker_fee_ppm) / FEE_SCALING
-                taker_fee = Decimal(fee_tier.tier.taker_fee_ppm) / FEE_SCALING
-            except AioRpcError as e:
-                self._log.error(f"Failed to get the user fee tier: {e}. Set fees to zero.")
-
-        ts_init = self._clock.timestamp_ns()
-
-        for market in markets.markets.values():
-            try:
-                base_currency = market.parse_base_currency()
-                quote_currency = market.parse_quote_currency()
-
-                instrument = market.parse_to_instrument(
-                    base_currency=base_currency,
-                    quote_currency=quote_currency,
-                    maker_fee=maker_fee,
-                    taker_fee=taker_fee,
-                    ts_event=ts_init,
-                    ts_init=ts_init,
-                )
-                self.add_currency(base_currency)
-                self.add_currency(quote_currency)
-                self.add(instrument)
-            except ValueError as e:
-                if self._log_warnings:
-                    self._log.warning(f"Unable to parse instrument {market.ticker}: {e}")
+        if self.find(instrument_id) is None and self._log_warnings:
+            self._log.warning(f"Instrument {instrument_id} not found")

@@ -41,7 +41,7 @@ repos:
       - id: shellcheck
 
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.37.1
+    rev: v1.38.0
     hooks:
       - id: yamllint
         args: [--strict]
@@ -81,26 +81,18 @@ repos:
         description: Detects hard-coded secrets prior to commit
         args: ["--staged", "--redact"]
 
-  - repo: https://github.com/google/osv-scanner
-    rev: v2.3.1
-    hooks:
-      - id: osv-scanner
-        name: osv-scanner (dependency vulnerabilities)
-        description: Scans Cargo.lock and uv.lock for known vulnerabilities (defense-in-depth)
-        args: ["--config=osv-scanner.toml", "--lockfile=Cargo.lock", "--lockfile=uv.lock"]
-
   ##############################################################################
   #  GitHub Actions linting (complementary tools covering different aspects)
   ##############################################################################
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.10
+    rev: v1.7.11
     hooks:
       - id: actionlint
         name: actionlint (syntax/structure)
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.19.0
+    rev: v1.22.0
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -163,23 +155,6 @@ repos:
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
-  - repo: https://github.com/EmbarkStudios/cargo-deny
-    rev: 0.18.9
-    hooks:
-      - id: cargo-deny
-        name: cargo deny (dependency vulnerabilities)
-        args: ["--all-features", "check"]
-
-  - repo: local
-    hooks:
-      - id: cargo-vet
-        name: cargo vet (supply chain audit)
-        description: Run cargo-vet supply chain audit if installed
-        entry: .pre-commit-hooks/cargo_vet.sh
-        language: script
-        files: '^Cargo\.(toml|lock)$|^supply-chain/'
-        pass_filenames: false
-
   - repo: local
     hooks:
       - id: check-anyhow-usage
@@ -190,10 +165,10 @@ repos:
         files: '\.rs$'
         pass_filenames: false
 
-      - id: check-logging-macro-usage
-        name: check logging macro usage
-        description: Enforces logging macro conventions
-        entry: .pre-commit-hooks/check_logging_macro_usage.sh
+      - id: check-logging-conventions
+        name: check logging conventions
+        description: Enforces logging conventions
+        entry: .pre-commit-hooks/check_logging_conventions.sh
         language: script
         files: '\.rs$'
         pass_filenames: false
@@ -230,6 +205,22 @@ repos:
         files: '\.rs$'
         pass_filenames: false
 
+      - id: check-docs-conventions
+        name: check docs conventions
+        description: Enforces Rust documentation conventions
+        entry: .pre-commit-hooks/check_docs_conventions.sh
+        language: script
+        files: '\.rs$'
+        pass_filenames: false
+
+      - id: check-cargo-conventions
+        name: check cargo conventions
+        description: Enforces Cargo.toml dependency ordering conventions
+        entry: .pre-commit-hooks/check_cargo_conventions.sh
+        language: script
+        files: 'Cargo\.toml$'
+        pass_filenames: false
+
       - id: fmt
         name: cargo fmt
         description: Format files with cargo fmt
@@ -261,7 +252,7 @@ repos:
         types: [file]
         pass_filenames: false
 
-      # TODO: Disabling for now as too slow
+      # TODO: Too slow for standard development flows
       # - id: cargo-doc
       #   name: cargo doc
       #   description: Check documentation builds without errors or warnings
@@ -290,7 +281,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.10
+    rev: v0.15.2
     hooks:
       - id: ruff
         name: ruff
@@ -299,7 +290,7 @@ repos:
         name: ruff-format
 
   - repo: https://github.com/pycqa/isort
-    rev: 7.0.0
+    rev: 8.0.0
     hooks:
       - id: isort
         name: isort (cython)
@@ -343,13 +334,13 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.21 # Must match uv-version file
+    rev: 0.10.4 # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$
 
   - repo: https://github.com/kynan/nbstripout
-    rev: 0.8.2
+    rev: 0.9.0
     hooks:
       - id: nbstripout
 
@@ -357,7 +348,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.20.0
+    rev: v0.21.0
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

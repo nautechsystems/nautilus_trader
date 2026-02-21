@@ -19,6 +19,10 @@ while zero-cost abstractions and the absence of a garbage collector deliver C-li
 - Use workspace inheritance for shared dependencies (for example `serde = { workspace = true }`).
 - Only pin versions directly for crate-specific dependencies that are not part of the workspace.
 - Group workspace-provided dependencies before crate-only dependencies so the inheritance is easy to audit.
+- Keep related dependencies aligned: `capnp`/`capnpc` (exact), `arrow`/`parquet` (major.minor),
+  `datafusion`/`object_store`, and `dydx-proto`/`prost`/`tonic`. Pre-commit enforces this.
+- Adapter-only dependencies belong in the "Adapter dependencies" section of the workspace
+  `Cargo.toml`. Pre-commit prevents core crates from using them.
 
 ## Feature flag conventions
 
@@ -168,8 +172,7 @@ The `check_anyhow_usage.sh` pre-commit hook enforces these anyhow conventions au
 ### Logging
 
 - Fully qualify logging macros so the backend is explicit:
-  - Use `log::…` (`log::info!`, `log::warn!`, etc.) inside synchronous core crates.
-  - Use `tracing::…` (`tracing::debug!`, `tracing::info!`, etc.) for async runtimes, adapters, and peripheral components.
+  - Use `log::…` (`log::debug!`, `log::info!`, `log::warn!`, etc.) for all Rust components.
 - Start messages with a capitalised word, prefer complete sentences, and omit terminal periods (e.g. `"Processing batch"`, not `"Processing batch."`).
 
 :::info Automated enforcement
@@ -327,7 +330,14 @@ For enums with extensive derive attributes:
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.model")
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
 )]
 pub enum AccountType {
     /// An account with unleveraged cash assets only.
@@ -370,6 +380,34 @@ Always use the `FAILED` constant for `.expect()` messages related to correctness
 ```rust
 use nautilus_core::correctness::FAILED;
 ```
+
+### Type conversion patterns
+
+For types that parse from strings, provide both fallible and infallible conversions:
+
+1. **`FromStr`**: Fallible parsing via `.parse()` or `from_str()`. Returns `Result`.
+
+2. **`From<T: AsRef<str>>`**: Ergonomic infallible conversion that accepts `&str`, `String`, `Cow<str>`, etc. directly without requiring `.as_str()`.
+
+```rust
+impl FromStr for Symbol {
+    type Err = SymbolParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // parsing logic
+    }
+}
+
+impl<T: AsRef<str>> From<T> for Symbol {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
+    }
+}
+```
+
+**Design note**: The `From` impl may panic on invalid input. This is intentional for API ergonomics—use `FromStr` / `.parse()` when error handling is needed. The `From` impl provides convenience for cases where the input is known to be valid.
+
+**Constraint**: This pattern cannot be used for types that implement `AsRef<str>` themselves (e.g., string wrapper types), as it would conflict with the blanket `impl<T> From<T> for T`. For such types, provide separate `From<&str>` and `From<String>` impls instead.
 
 ### Constants and naming conventions
 
@@ -689,6 +727,31 @@ pub fn py_do_something() -> PyResult<()> {
 The `check_pyo3_conventions.sh` pre-commit hook enforces the `py_` prefix for PyO3 functions.
 :::
 
+### PyO3 enum conventions
+
+Enums exposed to Python should use the following `pyclass` attributes:
+
+- `frozen`: enums are immutable value types.
+- `eq, eq_int`: enables equality with other enum instances and integer discriminants.
+- `rename_all = "SCREAMING_SNAKE_CASE"`: standardizes Python variant names.
+- `from_py_object`: enables conversion from Python objects.
+
+:::warning Do not use the `hash` pyclass attribute with `eq_int` enums
+PyO3's auto-generated `__hash__` uses Rust's `DefaultHasher`, which produces different values
+than Python's `hash()` on the equivalent integer. Since `eq_int` makes `MyEnum.VARIANT == 1`
+true, the hash contract (`a == b` implies `hash(a) == hash(b)`) would be violated. Instead,
+provide a manual `__hash__` returning the discriminant directly:
+:::
+
+```rust
+#[pymethods]
+impl MyEnum {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+```
+
 ### Testing conventions
 
 - Use `mod tests` as the standard test module name unless you need to specifically compartmentalize.
@@ -713,6 +776,58 @@ fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
     assert_eq!(symbol.is_composite(), expected);
 }
 ```
+
+#### Property-based testing
+
+Use the `proptest` crate for property-based tests. Place these in a separate
+`property_tests` module (not inside `mod tests`) to keep deterministic unit
+tests separate from randomized property tests:
+
+```rust
+#[cfg(test)]
+mod property_tests {
+    use proptest::prelude::*;
+    use rstest::rstest;
+
+    use super::*;
+
+    // Define strategies for generating test inputs
+    fn my_strategy() -> impl Strategy<Value = MyType> {
+        prop_oneof![
+            Just(MyType::VariantA),
+            Just(MyType::VariantB),
+        ]
+    }
+
+    fn value_strategy() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            -1000.0..1000.0,
+            Just(0.0),
+        ]
+    }
+
+    // Group all property tests inside the proptest! macro
+    proptest! {
+        #[rstest]
+        fn prop_construction_roundtrip(
+            value in value_strategy(),
+            variant in my_strategy()
+        ) {
+            // Test invariants that should hold for all generated inputs
+        }
+    }
+}
+```
+
+Conventions:
+
+- Name the module `property_tests`, separate from `mod tests`.
+- Import `proptest::prelude::*` and `rstest::rstest`.
+- Define strategy functions returning `impl Strategy<Value = T>`.
+- Combine value ranges with edge cases using `prop_oneof!`.
+- Filter invalid combinations with `prop_filter_map`.
+- Prefix test names with `prop_`.
+- Mark each test inside `proptest!` with `#[rstest]`.
 
 #### Test naming
 
@@ -1043,11 +1158,11 @@ make check-capnp-schemas
 
 This target:
 
-1. Regenerates all schema files.
-2. Verifies no uncommitted changes exist.
-3. Fails if schemas are out of sync.
+1. Skips with a warning if `capnp` is not installed (acceptable for local development).
+2. Fails if regeneration errors occur (e.g., version mismatch).
+3. Regenerates schemas and fails if generated files differ from committed versions.
 
-CI runs this check automatically to catch drift.
+CI runs this check automatically to catch drift (capnp is always installed in CI).
 
 ### Testing with capnp feature
 

@@ -40,6 +40,7 @@ from nautilus_trader.common.component import remove_instance_component_clocks
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import StrategyId
@@ -634,6 +635,34 @@ class Trader(Component):
 
         strategy.stop()
 
+    def market_exit_strategy(self, strategy_id: StrategyId) -> None:
+        """
+        Market exit the strategy with the given `strategy_id`.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The strategy ID to market exit.
+
+        Raises
+        ------
+        ValueError
+            If a strategy with the given `strategy_id` is not found.
+
+        """
+        PyCondition.not_none(strategy_id, "strategy_id")
+
+        strategy = self._strategies.get(strategy_id)
+
+        if strategy is None:
+            raise ValueError(f"Cannot market exit strategy, {strategy_id} not found.")
+
+        if not strategy.is_running:
+            self._log.warning(f"Strategy {strategy_id} not running")
+            return
+
+        strategy.market_exit()
+
     def remove_actor(self, actor_id: ComponentId) -> None:
         """
         Remove the actor with the given `actor_id`.
@@ -859,16 +888,30 @@ class Trader(Component):
         # Generate report with positions and snapshots
         return ReportProvider.generate_positions_report(positions, snapshots)
 
-    def generate_account_report(self, venue: Venue) -> pd.DataFrame:
+    def generate_account_report(
+        self,
+        venue: Venue = None,
+        account_id: AccountId = None,
+    ) -> pd.DataFrame:
         """
         Generate an account report.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue for the account (used if account_id is not provided).
+        account_id : AccountId, optional
+            The account ID (takes priority if both venue and account_id are provided).
 
         Returns
         -------
         pd.DataFrame
 
         """
-        account = self._cache.account_for_venue(venue)
+        if account_id is None and venue is None:
+            raise ValueError("At least one of 'venue' or 'account_id' must be provided")
+
+        account = self._cache.account_for_venue(venue=venue, account_id=account_id)
 
         if account is None:
             return pd.DataFrame()

@@ -21,8 +21,8 @@ use anyhow::Context;
 use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick,
-        TradeTick,
+        Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
     },
     enums::{
         AccountType, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
@@ -48,7 +48,7 @@ use crate::common::{
         BybitTriggerDirection,
     },
     parse::{
-        get_currency, parse_millis_timestamp, parse_price_with_precision,
+        get_currency, parse_book_level, parse_millis_timestamp, parse_price_with_precision,
         parse_quantity_with_precision,
     },
 };
@@ -343,8 +343,7 @@ pub fn parse_ticker_linear_funding(
     let funding_rate = funding_rate_str
         .as_str()
         .parse::<Decimal>()
-        .context("invalid funding_rate value")?
-        .normalize();
+        .context("invalid funding_rate value")?;
 
     let next_funding_ns = if let Some(next_funding_time) = &data.next_funding_time {
         let next_funding_millis = next_funding_time
@@ -365,6 +364,112 @@ pub fn parse_ticker_linear_funding(
     ))
 }
 
+/// Parses a linear/inverse ticker payload into a [`MarkPriceUpdate`].
+///
+/// # Errors
+///
+/// Returns an error if the mark_price field is missing or cannot be parsed.
+pub fn parse_ticker_linear_mark_price(
+    data: &BybitWsTickerLinear,
+    instrument: &InstrumentAny,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<MarkPriceUpdate> {
+    let mark_price_str = data
+        .mark_price
+        .as_ref()
+        .context("Bybit ticker missing mark_price")?;
+
+    let price =
+        parse_price_with_precision(mark_price_str, instrument.price_precision(), "mark_price")?;
+
+    Ok(MarkPriceUpdate::new(
+        instrument.id(),
+        price,
+        ts_event,
+        ts_init,
+    ))
+}
+
+/// Parses a linear/inverse ticker payload into an [`IndexPriceUpdate`].
+///
+/// # Errors
+///
+/// Returns an error if the index_price field is missing or cannot be parsed.
+pub fn parse_ticker_linear_index_price(
+    data: &BybitWsTickerLinear,
+    instrument: &InstrumentAny,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<IndexPriceUpdate> {
+    let index_price_str = data
+        .index_price
+        .as_ref()
+        .context("Bybit ticker missing index_price")?;
+
+    let price =
+        parse_price_with_precision(index_price_str, instrument.price_precision(), "index_price")?;
+
+    Ok(IndexPriceUpdate::new(
+        instrument.id(),
+        price,
+        ts_event,
+        ts_init,
+    ))
+}
+
+/// Parses an option ticker payload into a [`MarkPriceUpdate`].
+///
+/// # Errors
+///
+/// Returns an error if the mark_price field cannot be parsed.
+pub fn parse_ticker_option_mark_price(
+    msg: &BybitWsTickerOptionMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<MarkPriceUpdate> {
+    let ts_event = parse_millis_i64(msg.ts, "ticker.ts")?;
+
+    let price = parse_price_with_precision(
+        &msg.data.mark_price,
+        instrument.price_precision(),
+        "mark_price",
+    )?;
+
+    Ok(MarkPriceUpdate::new(
+        instrument.id(),
+        price,
+        ts_event,
+        ts_init,
+    ))
+}
+
+/// Parses an option ticker payload into an [`IndexPriceUpdate`].
+///
+/// # Errors
+///
+/// Returns an error if the index_price field cannot be parsed.
+pub fn parse_ticker_option_index_price(
+    msg: &BybitWsTickerOptionMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<IndexPriceUpdate> {
+    let ts_event = parse_millis_i64(msg.ts, "ticker.ts")?;
+
+    let price = parse_price_with_precision(
+        &msg.data.index_price,
+        instrument.price_precision(),
+        "index_price",
+    )?;
+
+    Ok(IndexPriceUpdate::new(
+        instrument.id(),
+        price,
+        ts_event,
+        ts_init,
+    ))
+}
+
 pub(crate) fn parse_millis_i64(value: i64, field: &str) -> anyhow::Result<UnixNanos> {
     if value < 0 {
         Err(anyhow::anyhow!("{field} must be non-negative, was {value}"))
@@ -374,23 +479,6 @@ pub(crate) fn parse_millis_i64(value: i64, field: &str) -> anyhow::Result<UnixNa
             .ok_or_else(|| anyhow::anyhow!("millisecond timestamp overflowed"))?;
         Ok(UnixNanos::from(nanos))
     }
-}
-
-fn parse_book_level(
-    level: &[String],
-    price_precision: u8,
-    size_precision: u8,
-    label: &str,
-) -> anyhow::Result<(Price, Quantity)> {
-    let price_str = level
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("missing price component in {label} level"))?;
-    let size_str = level
-        .get(1)
-        .ok_or_else(|| anyhow::anyhow!("missing size component in {label} level"))?;
-    let price = parse_price_with_precision(price_str, price_precision, label)?;
-    let size = parse_quantity_with_precision(size_str, size_precision, label)?;
-    Ok((price, size))
 }
 
 /// Parses a WebSocket kline payload into a [`Bar`].
@@ -446,12 +534,13 @@ pub fn parse_ws_order_status_report(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
+    use crate::common::enums::BybitOrderSide;
+
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order.order_id.as_str());
     let order_side: OrderSide = order.side.into();
 
     // Bybit represents conditional orders using orderType + stopOrderType + triggerDirection + side
-    use crate::common::enums::BybitOrderSide;
     let order_type: OrderType = match (
         order.order_type,
         order.stop_order_type,
@@ -673,21 +762,24 @@ pub fn parse_ws_fill_report(
         LiquiditySide::Taker
     };
 
-    let commission_str = execution.exec_fee.trim_start_matches('-');
-    let commission_amount = commission_str
-        .parse::<f64>()
-        .with_context(|| format!("Failed to parse execFee='{}' as f64", execution.exec_fee))?
-        .abs();
+    let fee_decimal: Decimal = execution
+        .exec_fee
+        .parse()
+        .with_context(|| format!("Failed to parse execFee='{}'", execution.exec_fee))?;
 
-    // Use instrument quote currency for commission
     let commission_currency = instrument.quote_currency();
-    let commission = Money::new(commission_amount, commission_currency);
+    let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
+        format!(
+            "Failed to create commission from execFee='{}'",
+            execution.exec_fee
+        )
+    })?;
     let ts_event = parse_millis_timestamp(&execution.exec_time, "execution.execTime")?;
 
-    let client_order_id = if !execution.order_link_id.is_empty() {
-        Some(ClientOrderId::new(execution.order_link_id.as_str()))
-    } else {
+    let client_order_id = if execution.order_link_id.is_empty() {
         None
+    } else {
+        Some(ClientOrderId::new(execution.order_link_id.as_str()))
     };
 
     Ok(FillReport::new(
@@ -1250,6 +1342,66 @@ mod tests {
         );
         assert_eq!(funding.ts_event, ts_event);
         assert_eq!(funding.ts_init, TS);
+    }
+
+    #[rstest]
+    fn parse_ticker_linear_into_mark_price() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_ticker_linear.json");
+        let msg: BybitWsTickerLinearMsg = serde_json::from_str(&json).unwrap();
+
+        let ts_event = UnixNanos::new(1_673_272_861_686_000_000);
+
+        let mark_price =
+            parse_ticker_linear_mark_price(&msg.data, &instrument, ts_event, TS).unwrap();
+
+        assert_eq!(mark_price.instrument_id, instrument.id());
+        assert_eq!(mark_price.value, instrument.make_price(17217.33));
+        assert_eq!(mark_price.ts_event, ts_event);
+        assert_eq!(mark_price.ts_init, TS);
+    }
+
+    #[rstest]
+    fn parse_ticker_linear_into_index_price() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_ticker_linear.json");
+        let msg: BybitWsTickerLinearMsg = serde_json::from_str(&json).unwrap();
+
+        let ts_event = UnixNanos::new(1_673_272_861_686_000_000);
+
+        let index_price =
+            parse_ticker_linear_index_price(&msg.data, &instrument, ts_event, TS).unwrap();
+
+        assert_eq!(index_price.instrument_id, instrument.id());
+        assert_eq!(index_price.value, instrument.make_price(17227.36));
+        assert_eq!(index_price.ts_event, ts_event);
+        assert_eq!(index_price.ts_init, TS);
+    }
+
+    #[rstest]
+    fn parse_ticker_option_into_mark_price() {
+        let instrument = option_instrument();
+        let json = load_test_json("ws_ticker_option.json");
+        let msg: BybitWsTickerOptionMsg = serde_json::from_str(&json).unwrap();
+
+        let mark_price = parse_ticker_option_mark_price(&msg, &instrument, TS).unwrap();
+
+        assert_eq!(mark_price.instrument_id, instrument.id());
+        assert_eq!(mark_price.value, instrument.make_price(7.86976724));
+        assert_eq!(mark_price.ts_init, TS);
+    }
+
+    #[rstest]
+    fn parse_ticker_option_into_index_price() {
+        let instrument = option_instrument();
+        let json = load_test_json("ws_ticker_option.json");
+        let msg: BybitWsTickerOptionMsg = serde_json::from_str(&json).unwrap();
+
+        let index_price = parse_ticker_option_index_price(&msg, &instrument, TS).unwrap();
+
+        assert_eq!(index_price.instrument_id, instrument.id());
+        assert_eq!(index_price.value, instrument.make_price(16823.73));
+        assert_eq!(index_price.ts_init, TS);
     }
 
     #[rstest]

@@ -37,6 +37,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import OrderListId
@@ -49,6 +50,8 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -340,6 +343,46 @@ class TestCache:
 
         # Assert
         assert result == []
+
+    def test_add_order_list(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+        order_list = OrderList(
+            order_list_id=OrderListId("OL-001"),
+            orders=[order],
+        )
+
+        # Act
+        self.cache.add_order_list(order_list)
+
+        # Assert
+        assert self.cache.order_list_exists(order_list.id)
+        assert self.cache.order_list(order_list.id) == order_list
+        assert order_list.id in self.cache.order_list_ids()
+        assert order_list in self.cache.order_lists()
+
+    def test_add_order_list_when_already_exists_raises(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+        order_list = OrderList(
+            order_list_id=OrderListId("OL-001"),
+            orders=[order],
+        )
+        self.cache.add_order_list(order_list)
+
+        # Act, Assert
+        with pytest.raises(KeyError):
+            self.cache.add_order_list(order_list)
 
     def test_position_when_no_position_returns_none(self):
         # Arrange
@@ -1615,6 +1658,142 @@ class TestCache:
         assert self.cache.orders_closed_count() == 0
         assert self.cache.orders_open_count() == 0
 
+    def test_purge_closed_orders_also_purges_order_lists(self):
+        # Arrange - create two orders belonging to an order list
+        order_list_id = OrderListId("OL-001")
+        order1 = LimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-001"),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+            init_id=UUID4(),
+            ts_init=0,
+            order_list_id=order_list_id,
+        )
+        order2 = LimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-002"),
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00100"),
+            init_id=UUID4(),
+            ts_init=0,
+            order_list_id=order_list_id,
+        )
+
+        order_list = OrderList(
+            order_list_id=order_list_id,
+            orders=[order1, order2],
+        )
+
+        self.cache.add_order(order1, PositionId("P-1"))
+        self.cache.add_order(order2, PositionId("P-1"))
+        self.cache.add_order_list(order_list)
+        assert self.cache.order_list_exists(order_list.id)
+
+        order1.apply(TestEventStubs.order_submitted(order1))
+        self.cache.update_order(order1)
+        order1.apply(TestEventStubs.order_accepted(order1))
+        self.cache.update_order(order1)
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+        )
+        order1.apply(fill1)
+        self.cache.update_order(order1)
+
+        order2.apply(TestEventStubs.order_submitted(order2))
+        self.cache.update_order(order2)
+        order2.apply(TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")))
+        self.cache.update_order(order2)
+        order2.apply(TestEventStubs.order_canceled(order2))
+        self.cache.update_order(order2)
+
+        assert order1.is_closed
+        assert order2.is_closed
+
+        # Act
+        self.cache.purge_closed_orders(ts_now=0)
+
+        # Assert
+        assert not self.cache.order_exists(order1.client_order_id)
+        assert not self.cache.order_exists(order2.client_order_id)
+        assert not self.cache.order_list_exists(order_list.id)
+
+    def test_purge_closed_orders_does_not_purge_order_list_with_open_orders(self):
+        # Arrange - create two orders belonging to an order list
+        order_list_id = OrderListId("OL-001")
+        order1 = LimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-001"),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+            init_id=UUID4(),
+            ts_init=0,
+            order_list_id=order_list_id,
+        )
+        order2 = LimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-002"),
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00100"),
+            init_id=UUID4(),
+            ts_init=0,
+            order_list_id=order_list_id,
+        )
+
+        order_list = OrderList(
+            order_list_id=order_list_id,
+            orders=[order1, order2],
+        )
+
+        self.cache.add_order(order1, PositionId("P-1"))
+        self.cache.add_order(order2, PositionId("P-1"))
+        self.cache.add_order_list(order_list)
+
+        # Close order1, leave order2 open
+        order1.apply(TestEventStubs.order_submitted(order1))
+        self.cache.update_order(order1)
+        order1.apply(TestEventStubs.order_accepted(order1))
+        self.cache.update_order(order1)
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+        )
+        order1.apply(fill1)
+        self.cache.update_order(order1)
+
+        order2.apply(TestEventStubs.order_submitted(order2))
+        self.cache.update_order(order2)
+        order2.apply(TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")))
+        self.cache.update_order(order2)
+
+        assert order1.is_closed
+        assert order2.is_open
+
+        # Act
+        self.cache.purge_closed_orders(ts_now=0)
+
+        # Assert - order1 purged, order2 and list remain
+        assert not self.cache.order_exists(order1.client_order_id)
+        assert self.cache.order_exists(order2.client_order_id)
+        assert self.cache.order_list_exists(order_list.id)
+
     def test_position_snapshot_bytes_empty_when_no_snapshots(self):
         # Arrange
         position_id = PositionId("P-NONEXISTENT")
@@ -2201,6 +2380,648 @@ class TestCache:
         # Assert - verify queries still work
         orders_for_strategy = self.cache.orders(strategy_id=self.strategy.id)
         assert order not in orders_for_strategy
+
+    def test_account_for_venue_with_account_id_returns_account(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        # Act
+        result1 = self.cache.account_for_venue(account_id=account1_id)
+        result2 = self.cache.account_for_venue(account_id=account2_id)
+
+        # Assert
+        assert result1 == account1
+        assert result2 == account2
+
+    def test_account_for_venue_with_account_id_priority_over_venue(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        venue = Venue(account2_id.get_issuer())
+        self.cache.add_account(account2)
+
+        # Act - account_id should take priority
+        result = self.cache.account_for_venue(venue=venue, account_id=account1_id)
+
+        # Assert
+        assert result == account1  # account_id takes priority
+
+    def test_account_for_venue_with_none_parameters_raises(self):
+        # Arrange, Act, Assert
+        with pytest.raises(TypeError):
+            self.cache.account_for_venue()
+
+    def test_orders_with_account_id_filtering(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        # Create orders for different accounts
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account1_id))
+        self.cache.add_order(order1, PositionId("P-1"))
+
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=account2_id))
+        self.cache.add_order(order2, PositionId("P-2"))
+
+        # Act
+        orders_account1 = self.cache.orders(account_id=account1_id)
+        orders_account2 = self.cache.orders(account_id=account2_id)
+        all_orders = self.cache.orders()
+
+        # Assert
+        assert order1 in orders_account1
+        assert order2 not in orders_account1
+        assert order2 in orders_account2
+        assert order1 not in orders_account2
+        assert len(all_orders) == 2
+        assert order1 in all_orders
+        assert order2 in all_orders
+
+    def test_orders_open_with_account_id_filtering(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        # Create orders for different accounts
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account1_id))
+        self.cache.add_order(order1, PositionId("P-1"))
+        order1.apply(TestEventStubs.order_accepted(order1, account_id=account1_id))
+        self.cache.update_order(order1)
+
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=account2_id))
+        self.cache.add_order(order2, PositionId("P-2"))
+        order2.apply(TestEventStubs.order_accepted(order2, account_id=account2_id))
+        self.cache.update_order(order2)
+
+        # Act
+        orders_open_account1 = self.cache.orders_open(account_id=account1_id)
+        orders_open_account2 = self.cache.orders_open(account_id=account2_id)
+
+        # Assert
+        assert order1 in orders_open_account1
+        assert order2 not in orders_open_account1
+        assert order2 in orders_open_account2
+        assert order1 not in orders_open_account2
+
+    def test_positions_open_with_account_id_filtering(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        # Create positions for different accounts
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account1_id))
+        position1_id = PositionId("P-1")
+        self.cache.add_order(order1, position1_id)
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=position1_id,
+            account_id=account1_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
+        self.cache.add_position(position1, OmsType.HEDGING)
+
+        order2 = self.strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=account2_id))
+        position2_id = PositionId("P-2")
+        self.cache.add_order(order2, position2_id)
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=GBPUSD_SIM,
+            position_id=position2_id,
+            account_id=account2_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
+        self.cache.add_position(position2, OmsType.HEDGING)
+
+        # Act
+        positions_open_account1 = self.cache.positions_open(account_id=account1_id)
+        positions_open_account2 = self.cache.positions_open(account_id=account2_id)
+        all_positions_open = self.cache.positions_open()
+
+        # Assert
+        assert position1 in positions_open_account1
+        assert position2 not in positions_open_account1
+        assert position2 in positions_open_account2
+        assert position1 not in positions_open_account2
+        assert len(all_positions_open) == 2
+        assert position1 in all_positions_open
+        assert position2 in all_positions_open
+
+    def test_positions_open_with_account_id_and_instrument_filtering(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        # Create positions for different accounts on same instrument
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account1_id))
+        position1_id = PositionId("P-1")
+        self.cache.add_order(order1, position1_id)
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=position1_id,
+            account_id=account1_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
+        self.cache.add_position(position1, OmsType.HEDGING)
+
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=account2_id))
+        position2_id = PositionId("P-2")
+        self.cache.add_order(order2, position2_id)
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=position2_id,
+            account_id=account2_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position2 = Position(instrument=AUDUSD_SIM, fill=fill2)
+        self.cache.add_position(position2, OmsType.HEDGING)
+
+        # Act
+        positions_account1 = self.cache.positions_open(
+            instrument_id=AUDUSD_SIM.id,
+            account_id=account1_id,
+        )
+        positions_account2 = self.cache.positions_open(
+            instrument_id=AUDUSD_SIM.id,
+            account_id=account2_id,
+        )
+
+        # Assert
+        assert position1 in positions_account1
+        assert position2 not in positions_account1
+        assert position2 in positions_account2
+        assert position1 not in positions_account2
+
+    def test_position_snapshots_with_account_id_filtering(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        # Create positions for different accounts
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account1_id))
+        position1_id = PositionId("P-1")
+        self.cache.add_order(order1, position1_id)
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=position1_id,
+            account_id=account1_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
+        self.cache.snapshot_position(position1)
+
+        order2 = self.strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=account2_id))
+        position2_id = PositionId("P-2")
+        self.cache.add_order(order2, position2_id)
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=GBPUSD_SIM,
+            position_id=position2_id,
+            account_id=account2_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
+        self.cache.snapshot_position(position2)
+
+        # Act
+        snapshots_account1 = self.cache.position_snapshots(account_id=account1_id)
+        snapshots_account2 = self.cache.position_snapshots(account_id=account2_id)
+        all_snapshots = self.cache.position_snapshots()
+
+        # Assert
+        assert len(snapshots_account1) == 1
+        assert snapshots_account1[0].account_id == account1_id
+        assert len(snapshots_account2) == 1
+        assert snapshots_account2[0].account_id == account2_id
+        assert len(all_snapshots) == 2
+
+    def test_position_snapshot_ids_with_account_id_filtering(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        # Create positions for different accounts
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account1_id))
+        position1_id = PositionId("P-1")
+        self.cache.add_order(order1, position1_id)
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=position1_id,
+            account_id=account1_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
+        self.cache.snapshot_position(position1)
+
+        order2 = self.strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=account2_id))
+        position2_id = PositionId("P-2")
+        self.cache.add_order(order2, position2_id)
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=GBPUSD_SIM,
+            position_id=position2_id,
+            account_id=account2_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
+        self.cache.snapshot_position(position2)
+
+        # Act
+        snapshot_ids_account1 = self.cache.position_snapshot_ids(account_id=account1_id)
+        snapshot_ids_account2 = self.cache.position_snapshot_ids(account_id=account2_id)
+        all_snapshot_ids = self.cache.position_snapshot_ids()
+
+        # Assert
+        assert position1_id in snapshot_ids_account1
+        assert position2_id not in snapshot_ids_account1
+        assert position2_id in snapshot_ids_account2
+        assert position1_id not in snapshot_ids_account2
+        assert len(all_snapshot_ids) == 2
+
+    def test_client_order_ids_with_account_id_filtering(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        # Create orders for different accounts
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account1_id))
+        self.cache.add_order(order1, PositionId("P-1"))
+
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=account2_id))
+        self.cache.add_order(order2, PositionId("P-2"))
+
+        # Act
+        order_ids_account1 = self.cache.client_order_ids(account_id=account1_id)
+        order_ids_account2 = self.cache.client_order_ids(account_id=account2_id)
+        all_order_ids = self.cache.client_order_ids()
+
+        # Assert
+        assert order1.client_order_id in order_ids_account1
+        assert order2.client_order_id not in order_ids_account1
+        assert order2.client_order_id in order_ids_account2
+        assert order1.client_order_id not in order_ids_account2
+        assert len(all_order_ids) == 2
+
+    def test_positions_closed_with_account_id_filtering(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        # Create and close positions for different accounts
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account1_id))
+        position1_id = PositionId("P-1")
+        self.cache.add_order(order1, position1_id)
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=position1_id,
+            account_id=account1_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
+        self.cache.add_position(position1, OmsType.HEDGING)
+
+        # Close position1
+        order1_close = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        order1_close.apply(TestEventStubs.order_submitted(order1_close, account_id=account1_id))
+        self.cache.add_order(order1_close, position1_id)
+        fill1_close = TestEventStubs.order_filled(
+            order1_close,
+            instrument=AUDUSD_SIM,
+            position_id=position1_id,
+            account_id=account1_id,
+            last_px=Price.from_str("1.10000"),
+        )
+        position1.apply(fill1_close)
+        self.cache.update_position(position1)
+
+        order2 = self.strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=account2_id))
+        position2_id = PositionId("P-2")
+        self.cache.add_order(order2, position2_id)
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=GBPUSD_SIM,
+            position_id=position2_id,
+            account_id=account2_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
+        self.cache.add_position(position2, OmsType.HEDGING)
+
+        # Act
+        positions_closed_account1 = self.cache.positions_closed(account_id=account1_id)
+        positions_closed_account2 = self.cache.positions_closed(account_id=account2_id)
+
+        # Assert
+        assert position1 in positions_closed_account1
+        assert position2 not in positions_closed_account1
+        assert len(positions_closed_account2) == 0
+
+    def test_order_lists_with_account_id_filtering(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        # Create orders for different accounts
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account1_id))
+
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=account2_id))
+
+        # Create order lists
+        order_list1 = OrderList(
+            order_list_id=OrderListId("OL-001"),
+            orders=[order1],
+        )
+        order_list2 = OrderList(
+            order_list_id=OrderListId("OL-002"),
+            orders=[order2],
+        )
+
+        self.cache.add_order(order1, PositionId("P-1"))
+        self.cache.add_order(order2, PositionId("P-2"))
+        self.cache.add_order_list(order_list1)
+        self.cache.add_order_list(order_list2)
+
+        # Act
+        lists_account1 = self.cache.order_lists(account_id=account1_id)
+        lists_account2 = self.cache.order_lists(account_id=account2_id)
+        all_lists = self.cache.order_lists()
+
+        # Assert
+        assert order_list1 in lists_account1
+        assert order_list2 not in lists_account1
+        assert order_list2 in lists_account2
+        assert order_list1 not in lists_account2
+        assert len(all_lists) == 2
+
+    def test_order_list_ids_with_account_id_filtering(self):
+        # Arrange
+        account1_id = AccountId("SIM-001")
+        account1 = TestExecStubs.cash_account(account_id=account1_id)
+        self.cache.add_account(account1)
+
+        account2_id = AccountId("SIM-002")
+        account2 = TestExecStubs.cash_account(account_id=account2_id)
+        self.cache.add_account(account2)
+
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account1_id))
+
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=account2_id))
+
+        order_list1 = OrderList(
+            order_list_id=OrderListId("OL-001"),
+            orders=[order1],
+        )
+        order_list2 = OrderList(
+            order_list_id=OrderListId("OL-002"),
+            orders=[order2],
+        )
+
+        self.cache.add_order(order1, PositionId("P-1"))
+        self.cache.add_order(order2, PositionId("P-2"))
+        self.cache.add_order_list(order_list1)
+        self.cache.add_order_list(order_list2)
+
+        # Act
+        list_ids_account1 = self.cache.order_list_ids(account_id=account1_id)
+        list_ids_account2 = self.cache.order_list_ids(account_id=account2_id)
+        all_list_ids = self.cache.order_list_ids()
+
+        # Assert
+        assert order_list1.id in list_ids_account1
+        assert order_list2.id not in list_ids_account1
+        assert order_list2.id in list_ids_account2
+        assert order_list1.id not in list_ids_account2
+        assert len(all_list_ids) == 2
+
+    def test_build_index_with_position_having_none_account_id(self):
+        # Arrange - Create a position and manipulate account_id to be None
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.HEDGING)
+
+        # Act - Build index should not raise even with positions
+        self.cache.build_index()
+
+        # Assert - Index was built successfully
+        assert position_id in self.cache.position_ids()
+
+    def test_build_index_with_position_having_none_strategy_id(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.HEDGING)
+
+        # Clear and rebuild index
+        self.cache.clear_index()
+
+        # Act - Should not raise
+        self.cache.build_index()
+
+        # Assert
+        assert position_id in self.cache.position_ids()
 
 
 class TestExecutionCacheIntegrityCheck:

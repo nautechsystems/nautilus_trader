@@ -71,22 +71,4 @@ impl BitmexSymbolStatus {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)
     }
-
-    #[classattr]
-    #[pyo3(name = "OPEN")]
-    const fn py_open() -> Self {
-        Self::Open
-    }
-
-    #[classattr]
-    #[pyo3(name = "CLOSED")]
-    const fn py_closed() -> Self {
-        Self::Closed
-    }
-
-    #[classattr]
-    #[pyo3(name = "UNLISTED")]
-    const fn py_unlisted() -> Self {
-        Self::Unlisted
-    }
 }

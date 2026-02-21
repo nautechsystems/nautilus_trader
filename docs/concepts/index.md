@@ -27,6 +27,11 @@ trading strategies. The **Strategies** guide covers how to implement strategies 
 
 The **Instruments** guide covers the different instrument definition specifications for tradable assets and contracts.
 
+## [Value Types](value_types.md)
+
+The **Value Types** guide covers the immutable numeric types (`Price`, `Quantity`, `Money`) used throughout
+the platform, including their arithmetic behavior, precision handling, and type-specific constraints.
+
 ## [Data](data.md)
 
 The NautilusTrader platform defines a range of built-in data types crafted specifically to represent

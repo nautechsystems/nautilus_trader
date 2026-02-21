@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import shutil
 import sys
 from decimal import Decimal
 
@@ -20,6 +21,7 @@ import pandas as pd
 import pytest
 from fsspec.implementations.local import LocalFileSystem
 
+from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.adapters.databento.data_utils import databento_data
@@ -77,6 +79,8 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.events import PositionOpened
@@ -858,6 +862,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             oms_type=OmsType.NETTING,
             starting_balances=[Money(10_000, GBP)],
             book_type=BookType.L2_MBP,
+            trade_execution=False,
         )
 
         data = BetfairDataProvider.betfair_feed_parsed(market_id="1-166811431")
@@ -894,7 +899,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
         self.engine.run()
 
         # Assert
-        assert self.engine.kernel.msgbus.sent_count == 23_688
+        assert self.engine.kernel.msgbus.sent_count == 23_689
         assert self.engine.kernel.msgbus.pub_count == 26_806
         assert self.engine.iteration == 8_198
         account = self.engine.portfolio.account(self.venue)
@@ -1557,8 +1562,230 @@ class TestBacktestPnLAlignmentAcceptance:
         # We don't assert equality here since portfolio calculation has different behavior
 
 
+class TestBacktestCommandSettling:
+    """
+    Tests that the engine settle loop processes cascading commands within the same tick.
+    """
+
+    def test_cascading_stop_loss_on_fill_processed_same_tick(self):
+        """
+        Strategy submits stop-loss in on_order_filled; verify it's accepted on the same
+        tick.
+        """
+
+        # Arrange
+        class CascadingStopStrategy(Strategy):
+            def __init__(self):
+                super().__init__()
+                self.instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+                self.entry_filled = False
+                self.stop_order = None
+                self.tick_count = 0
+
+            def on_start(self):
+                self.subscribe_quote_ticks(self.instrument_id)
+
+            def on_quote_tick(self, tick: QuoteTick):
+                self.tick_count += 1
+
+                if self.tick_count == 1:
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(order)
+
+            def on_event(self, event):
+                if isinstance(event, OrderFilled) and not self.entry_filled:
+                    self.entry_filled = True
+
+                    self.stop_order = self.order_factory.stop_market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=Quantity.from_int(100_000),
+                        trigger_price=Price.from_str("0.69950"),
+                    )
+                    self.submit_order(self.stop_order)
+
+        config = BacktestEngineConfig(
+            logging=LoggingConfig(bypass_logging=True),
+        )
+        engine = BacktestEngine(config=config)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+        )
+
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+        engine.add_instrument(instrument)
+
+        timestamps = pd.date_range(start="2020-01-01", periods=3, freq="1min")
+        quotes = []
+        for i, ts in enumerate(timestamps):
+            bid = 0.70000 + (i * 0.00001)
+            quote = QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str(f"{bid:.5f}"),
+                ask_price=Price.from_str(f"{bid + 0.00002:.5f}"),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=pd.Timestamp(ts).value,
+                ts_init=pd.Timestamp(ts).value,
+            )
+            quotes.append(quote)
+
+        engine.add_data(quotes)
+        strategy = CascadingStopStrategy()
+        engine.add_strategy(strategy)
+
+        # Act
+        engine.run()
+
+        # Assert
+        assert strategy.entry_filled
+        assert strategy.stop_order is not None
+
+        # Stop-loss must be accepted on the same tick as the fill,
+        # not stranded until the next data point
+        stop_from_cache = engine.cache.order(strategy.stop_order.client_order_id)
+        assert stop_from_cache is not None
+
+        entry_fill_ts = engine.cache.orders()[0].ts_last
+        stop_accept_ts = stop_from_cache.ts_last
+        assert stop_accept_ts == entry_fill_ts
+
+        engine.dispose()
+
+    def test_multi_level_cascade_all_settled_same_tick(self):
+        """
+        Fill triggers stop-loss submission, stop-loss acceptance triggers a second
+        order; verify all processed in the same tick.
+        """
+
+        class MultiCascadeStrategy(Strategy):
+            def __init__(self):
+                super().__init__()
+                self.instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+                self.tick_count = 0
+                self.entry_order = None
+                self.stop_order = None
+                self.limit_order = None
+                self.entry_filled = False
+                self.stop_accepted = False
+
+            def on_start(self):
+                self.subscribe_quote_ticks(self.instrument_id)
+
+            def on_quote_tick(self, tick: QuoteTick):
+                self.tick_count += 1
+
+                if self.tick_count == 1:
+                    self.entry_order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=Quantity.from_int(100_000),
+                    )
+                    self.submit_order(self.entry_order)
+
+            def on_event(self, event):
+                # Level 1: entry fill → submit stop-loss
+                if isinstance(event, OrderFilled) and not self.entry_filled:
+                    self.entry_filled = True
+                    self.stop_order = self.order_factory.stop_market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=Quantity.from_int(100_000),
+                        trigger_price=Price.from_str("0.69950"),
+                    )
+                    self.submit_order(self.stop_order)
+
+                # Level 2: stop accepted → submit passive limit
+                if (
+                    isinstance(event, OrderAccepted)
+                    and self.stop_order is not None
+                    and event.client_order_id == self.stop_order.client_order_id
+                    and not self.stop_accepted
+                ):
+                    self.stop_accepted = True
+                    self.limit_order = self.order_factory.limit(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=Quantity.from_int(100_000),
+                        price=Price.from_str("0.70100"),
+                    )
+                    self.submit_order(self.limit_order)
+
+        config = BacktestEngineConfig(
+            logging=LoggingConfig(bypass_logging=True),
+        )
+        engine = BacktestEngine(config=config)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+        )
+
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+        engine.add_instrument(instrument)
+
+        timestamps = pd.date_range(start="2020-01-01", periods=3, freq="1min")
+        quotes = []
+        for i, ts in enumerate(timestamps):
+            bid = 0.70000 + (i * 0.00001)
+            quote = QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str(f"{bid:.5f}"),
+                ask_price=Price.from_str(f"{bid + 0.00002:.5f}"),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=pd.Timestamp(ts).value,
+                ts_init=pd.Timestamp(ts).value,
+            )
+            quotes.append(quote)
+
+        engine.add_data(quotes)
+        strategy = MultiCascadeStrategy()
+        engine.add_strategy(strategy)
+
+        # Act
+        engine.run()
+
+        # Assert - all three orders submitted and processed on the same tick
+        assert strategy.entry_filled
+        assert strategy.stop_accepted
+        assert strategy.limit_order is not None
+
+        entry_ts = engine.cache.order(strategy.entry_order.client_order_id).ts_last
+        stop_ts = engine.cache.order(strategy.stop_order.client_order_id).ts_last
+        limit_ts = engine.cache.order(strategy.limit_order.client_order_id).ts_last
+
+        assert stop_ts == entry_ts
+        assert limit_ts == entry_ts
+
+        # All three orders should exist: entry filled, stop + limit open
+        assert engine.cache.orders_open_count() == 2
+        assert engine.cache.orders_total_count() == 3
+
+        engine.dispose()
+
+
 @pytest.mark.xdist_group(name="databento_catalog")
 class TestBacktestNodeWithBacktestDataIterator:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        # Clear stale catalog data before each test
+        catalog_data_path = (
+            PACKAGE_ROOT / "tests" / "test_data" / "databento" / "options_catalog" / "data"
+        )
+        if catalog_data_path.exists():
+            shutil.rmtree(catalog_data_path)
+
     def test_backtest_same_with_and_without_data_configs(self) -> None:
         # Arrange
         messages_with_data: list = []
@@ -1619,8 +1846,8 @@ class TestBacktestNodeWithBacktestDataIterator:
         expected_spread_bar_messages = [
             "Historical Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12928.25,12928.25,12927.25,12927.25,4,1715248560000000000, ts=2024-05-09T09:56:00.000000000Z",
             "Historical Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12927.50,12928.00,12927.50,12928.00,3,1715248680000000000, ts=2024-05-09T09:58:00.000000000Z",
-            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12930.50,12930.25,12930.50,3,1715248800000000000, ts=2024-05-09T10:00:00.000000000Z",
-            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12931.75,12930.25,12931.75,8,1715248920000000000, ts=2024-05-09T10:02:00.000000000Z",
+            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12930.25,12930.25,12930.25,1,1715248800000000000, ts=2024-05-09T10:00:00.000000000Z",
+            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.50,12931.75,12930.25,12931.75,10,1715248920000000000, ts=2024-05-09T10:02:00.000000000Z",
             "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12933.00,12933.00,12932.50,12932.50,4,1715249040000000000, ts=2024-05-09T10:04:00.000000000Z",
         ]
         assert spread_bar_messages == expected_spread_bar_messages
@@ -1667,18 +1894,23 @@ class TestBacktestNodeWithBacktestDataIterator:
         engine, node = run_backtest(with_data=True)
 
         # Act
-        from nautilus_trader.analysis.config import TearsheetConfig
+        from nautilus_trader.analysis import TearsheetBarsWithFillsChart
+        from nautilus_trader.analysis import TearsheetConfig
+        from nautilus_trader.analysis import TearsheetEquityChart
+        from nautilus_trader.analysis import TearsheetStatsTableChart
         from nautilus_trader.analysis.tearsheet import create_tearsheet
 
         output_path = tmp_path / "tearsheet_with_bars_fills.html"
 
         tearsheet_config = TearsheetConfig(
-            charts=["stats_table", "equity", "bars_with_fills"],
-            chart_args={
-                "bars_with_fills": {
-                    "bar_type": "ESM4.XCME-1-MINUTE-LAST-EXTERNAL",
-                },
-            },
+            charts=[
+                TearsheetStatsTableChart(),
+                TearsheetEquityChart(),
+                TearsheetBarsWithFillsChart(
+                    bar_type="ESM4.XCME-1-MINUTE-LAST-EXTERNAL",
+                    title="Fills",
+                ),
+            ],
         )
 
         create_tearsheet(

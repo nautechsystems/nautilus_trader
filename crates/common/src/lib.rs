@@ -38,10 +38,11 @@
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `stubs`: Enables type stubs for use in testing scenarios.
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
 //! - `indicators`: Includes the `nautilus-indicators` crate and indicator utilities.
 //! - `capnp`: Enables [Cap'n Proto](https://capnproto.org/) serialization support.
+//! - `live`: Enables the Tokio async runtime for live trading.
+//! - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
@@ -55,6 +56,7 @@
 
 pub mod actor;
 pub mod cache;
+pub mod clients;
 pub mod clock;
 pub mod component;
 pub mod custom;

@@ -50,8 +50,6 @@ from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
-from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
-from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
@@ -87,7 +85,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        client: Any,  # nautilus_pyo3.HyperliquidHttpClient
+        client: nautilus_pyo3.HyperliquidHttpClient,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -114,27 +112,15 @@ class HyperliquidDataClient(LiveMarketDataClient):
         self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
         self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
-        # HTTP client
+        # HTTP client (uses EVM private key for authentication, not API key)
         self._http_client = client
-        # TODO: HyperliquidHttpClient doesn't expose api_key attribute yet
         self._log.info("HTTP client initialized", LogColor.BLUE)
 
-        # WebSocket clients
-        self._ws_clients: dict[
-            nautilus_pyo3.HyperliquidProductType,
-            nautilus_pyo3.HyperliquidWebSocketClient,
-        ] = {}
-        self._ws_client_futures: set[asyncio.Future] = set()
-
-        for product_type_str in ["PERP", "SPOT"]:
-            product_type = nautilus_pyo3.HyperliquidProductType.from_str(product_type_str)
-            ws_client = nautilus_pyo3.HyperliquidWebSocketClient(
-                url=config.base_url_ws,
-                testnet=config.testnet,
-                product_type=product_type,
-            )
-            self._ws_clients[product_type] = ws_client
-            self._log.info(f"Initialized WebSocket client for {product_type_str}", LogColor.BLUE)
+        # WebSocket client for market data
+        self._ws_client = nautilus_pyo3.HyperliquidWebSocketClient(
+            url=config.base_url_ws,
+            testnet=config.testnet,
+        )
 
     @property
     def instrument_provider(self) -> HyperliquidInstrumentProvider:
@@ -147,50 +133,20 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         instruments = self.instrument_provider.instruments_pyo3()
 
-        # Connect all WebSocket clients
-        for product_type_str, ws_client in self._ws_clients.items():
-            await ws_client.connect(
-                instruments,
-                self._handle_msg,
-            )
-            # NOTE: wait_until_active is not yet implemented in the Hyperliquid WebSocket client
-            # The connection still works without it, but we lose the synchronization guarantee
-            # that the WebSocket is fully active before subscribing
-            # TODO: Implement wait_until_active in HyperliquidWebSocketClient (Rust side)
-            # await ws_client.wait_until_active(timeout_secs=10.0)
-            self._log.info(
-                f"Connected to {product_type_str} WebSocket {ws_client.url}",
-                LogColor.BLUE,
-            )
+        await self._ws_client.connect(instruments, self._handle_msg)
+        self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
     async def _disconnect(self) -> None:
-        # Note: PyO3 HyperliquidHttpClient doesn't expose cancel_all_requests method
-        # The client will be cleaned up automatically when the object is destroyed
-
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
 
-        # Shutdown all WebSocket clients
-        for product_type_str, ws_client in self._ws_clients.items():
-            if not ws_client.is_closed():
-                self._log.info(f"Disconnecting {product_type_str} WebSocket")
-                await ws_client.close()
-                self._log.info(
-                    f"Disconnected from {product_type_str} WebSocket {ws_client.url}",
-                    LogColor.BLUE,
-                )
-
-        # Cancel all WebSocket client futures with timeout
-        if self._ws_client_futures:
-            self._log.debug(f"Canceling {len(self._ws_client_futures)} WebSocket client futures...")
-            await cancel_tasks_with_timeout(
-                self._ws_client_futures,
-                timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
-                logger=self._log,
+        if not self._ws_client.is_closed():
+            self._log.info("Disconnecting WebSocket")
+            await self._ws_client.close()
+            self._log.info(
+                f"Disconnected from WebSocket {self._ws_client.url}",
+                LogColor.BLUE,
             )
-            self._ws_client_futures.clear()
-
-        self._log.info("Disconnected from Hyperliquid", LogColor.GREEN)
 
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
@@ -224,20 +180,6 @@ class HyperliquidDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
 
-    def _get_ws_client_for_instrument(
-        self,
-        instrument_id: nautilus_pyo3.InstrumentId,
-    ) -> nautilus_pyo3.HyperliquidWebSocketClient:
-        product_type = nautilus_pyo3.hyperliquid_product_type_from_symbol(
-            instrument_id.symbol.value,
-        )
-        ws_client = self._ws_clients.get(product_type)
-        if ws_client is None:
-            raise ValueError(
-                f"No WebSocket client configured for product type {product_type}",
-            )
-        return ws_client
-
     # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
@@ -248,44 +190,31 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_book(pyo3_instrument_id)
-
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_book(pyo3_instrument_id)
+        await self._ws_client.subscribe_book(pyo3_instrument_id)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_quotes(pyo3_instrument_id)
+        await self._ws_client.subscribe_quotes(pyo3_instrument_id)
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_trades(pyo3_instrument_id)
-
-    async def _subscribe_bars(self, command: SubscribeBars) -> None:
-        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
-        pyo3_instrument_id = pyo3_bar_type.instrument_id
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_bars(pyo3_bar_type)
+        await self._ws_client.subscribe_trades(pyo3_instrument_id)
 
     async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_mark_prices(pyo3_instrument_id)
+        await self._ws_client.subscribe_mark_prices(pyo3_instrument_id)
 
     async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_index_prices(pyo3_instrument_id)
+        await self._ws_client.subscribe_index_prices(pyo3_instrument_id)
+
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
+        await self._ws_client.subscribe_bars(pyo3_bar_type)
 
     async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_funding_rates(pyo3_instrument_id)
+        await self._ws_client.subscribe_funding_rates(pyo3_instrument_id)
 
     async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         self._log.info(f"Unsubscribed from instrument updates for {command.instrument_id}")
@@ -295,49 +224,35 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_book(pyo3_instrument_id)
-
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_book(pyo3_instrument_id)
+        await self._ws_client.unsubscribe_book(pyo3_instrument_id)
 
     async def _unsubscribe_order_book(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_book(pyo3_instrument_id)
+        await self._ws_client.unsubscribe_book(pyo3_instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_quotes(pyo3_instrument_id)
+        await self._ws_client.unsubscribe_quotes(pyo3_instrument_id)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_trades(pyo3_instrument_id)
-
-    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
-        pyo3_instrument_id = pyo3_bar_type.instrument_id
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_bars(pyo3_bar_type)
+        await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
 
     async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_mark_prices(pyo3_instrument_id)
+        await self._ws_client.unsubscribe_mark_prices(pyo3_instrument_id)
 
     async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_index_prices(pyo3_instrument_id)
+        await self._ws_client.unsubscribe_index_prices(pyo3_instrument_id)
+
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
+        await self._ws_client.unsubscribe_bars(pyo3_bar_type)
 
     async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_funding_rates(pyo3_instrument_id)
+        await self._ws_client.unsubscribe_funding_rates(pyo3_instrument_id)
 
     # -- REQUESTS -----------------------------------------------------------------------------------
 

@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// SBE decode cursor - all read methods return SbeDecodeError::BufferUnderrun when buffer too short
+#![allow(clippy::missing_errors_doc)]
+
 //! Zero-copy SBE byte cursor for sequential decoding.
 
 use super::error::{MAX_GROUP_SIZE, SbeDecodeError};
@@ -242,6 +245,31 @@ impl<'a> SbeCursor<'a> {
             .map_err(|_| SbeDecodeError::InvalidUtf8)?;
         self.pos += len;
         Ok(s)
+    }
+
+    /// Skips a varData8 field (1-byte length prefix + binary data).
+    ///
+    /// Used for skipping binary fields that should not be decoded as UTF-8.
+    pub fn skip_var_data8(&mut self) -> Result<(), SbeDecodeError> {
+        let len = self.read_u8()? as usize;
+        if len > 0 {
+            self.advance(len)?;
+        }
+        Ok(())
+    }
+
+    /// Reads a varData8 field (1-byte length prefix + binary data).
+    ///
+    /// Returns the raw bytes without UTF-8 decoding.
+    pub fn read_var_bytes8(&mut self) -> Result<Vec<u8>, SbeDecodeError> {
+        let len = self.read_u8()? as usize;
+        if len == 0 {
+            return Ok(Vec::new());
+        }
+        self.require(len)?;
+        let bytes = self.buf[self.pos..self.pos + len].to_vec();
+        self.pos += len;
+        Ok(bytes)
     }
 
     /// Reads group header (u16 block_length + u32 num_in_group).

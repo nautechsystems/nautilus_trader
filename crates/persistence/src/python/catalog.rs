@@ -16,10 +16,14 @@
 use std::collections::HashMap;
 
 use nautilus_core::UnixNanos;
-use nautilus_model::data::{
-    Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+use nautilus_model::{
+    data::{
+        Bar, Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
+        TradeTick,
+    },
+    python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
-use pyo3::{exceptions::PyIOError, prelude::*};
+use pyo3::{exceptions::PyIOError, prelude::*, types::PyList};
 
 use crate::backend::catalog::ParquetDataCatalog;
 
@@ -296,6 +300,62 @@ impl ParquetDataCatalogV2 {
             .map_err(|e| PyIOError::new_err(format!("Failed to write index price updates: {e}")))
     }
 
+    /// Write instruments to Parquet files in the catalog.
+    ///
+    /// Instruments are stored by instrument ID in `data/instruments/{instrument_id}/instrument.parquet`.
+    /// Multiple instruments with the same ID are written as multiple rows in the same file.
+    ///
+    /// # Parameters
+    ///
+    /// - `data`: A Python list of instrument objects (e.g. CurrencyPair, Equity).
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of written file paths.
+    #[pyo3(signature = (data))]
+    pub fn write_instruments(&self, data: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
+        let py = data.py();
+        let list = data.cast::<PyList>()?;
+        let mut instruments = Vec::with_capacity(list.len());
+        for item in list.iter() {
+            let py_item: Py<PyAny> = item.unbind();
+            let instrument = pyobject_to_instrument_any(py, py_item)?;
+            instruments.push(instrument);
+        }
+        self.inner
+            .write_instruments(instruments)
+            .map(|paths| {
+                paths
+                    .into_iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect()
+            })
+            .map_err(|e| PyIOError::new_err(format!("Failed to write instruments: {e}")))
+    }
+
+    /// Query instruments from the catalog.
+    ///
+    /// # Parameters
+    ///
+    /// - `instrument_ids`: Optional list of instrument IDs to filter by. If `None`, returns all instruments.
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of instrument objects (e.g. CurrencyPair, Equity).
+    #[pyo3(signature = (instrument_ids=None))]
+    pub fn instruments(&self, instrument_ids: Option<Vec<String>>) -> PyResult<Vec<Py<PyAny>>> {
+        let rust_instruments = self
+            .inner
+            .query_instruments(instrument_ids)
+            .map_err(|e| PyIOError::new_err(format!("Failed to query instruments: {e}")))?;
+        Python::attach(|py| {
+            rust_instruments
+                .into_iter()
+                .map(|inst| instrument_any_to_pyobject(py, inst))
+                .collect()
+        })
+    }
+
     /// Extend file names in the catalog with additional timestamp information.
     ///
     /// # Parameters
@@ -555,18 +615,20 @@ impl ParquetDataCatalogV2 {
     /// # Parameters
     ///
     /// - `data_cls`: The data class name to query
-    /// - `instrument_ids`: Optional list of instrument IDs to filter by
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be instrument_id strings
+    ///   (e.g., "EUR/USD.SIM") or bar_type strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    ///   For bars, partial matching is supported.
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
     ///
     /// # Returns
     ///
     /// Returns a list of file paths matching the criteria.
-    #[pyo3(signature = (data_cls, instrument_ids=None, start=None, end=None))]
+    #[pyo3(signature = (data_cls, identifiers=None, start=None, end=None))]
     pub fn query_files(
         &self,
         data_cls: &str,
-        instrument_ids: Option<Vec<String>>,
+        identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
     ) -> PyResult<Vec<String>> {
@@ -575,7 +637,7 @@ impl ParquetDataCatalogV2 {
         let end_nanos = end.map(UnixNanos::from);
 
         self.inner
-            .query_files(data_cls, instrument_ids, start_nanos, end_nanos)
+            .query_files(data_cls, identifiers, start_nanos, end_nanos)
             .map_err(|e| PyIOError::new_err(format!("Failed to query files list: {e}")))
     }
 
@@ -602,6 +664,27 @@ impl ParquetDataCatalogV2 {
         self.inner
             .get_missing_intervals_for_request(start, end, data_cls, instrument_id)
             .map_err(|e| PyIOError::new_err(format!("Failed to get missing intervals: {e}")))
+    }
+
+    /// Query the first timestamp for a specific data class and instrument.
+    ///
+    /// # Parameters
+    ///
+    /// - `data_cls`: The data class name
+    /// - `instrument_id`: Optional instrument ID filter
+    ///
+    /// # Returns
+    ///
+    /// Returns the first timestamp as nanoseconds since Unix epoch, or None if no data exists.
+    #[pyo3(signature = (data_cls, instrument_id=None))]
+    pub fn query_first_timestamp(
+        &self,
+        data_cls: &str,
+        instrument_id: Option<String>,
+    ) -> PyResult<Option<u64>> {
+        self.inner
+            .query_first_timestamp(data_cls, instrument_id)
+            .map_err(|e| PyIOError::new_err(format!("Failed to query first timestamp: {e}")))
     }
 
     /// Query the last timestamp for a specific data class and instrument.
@@ -650,7 +733,9 @@ impl ParquetDataCatalogV2 {
     ///
     /// # Parameters
     ///
-    /// - `instrument_ids`: Optional list of instrument IDs to filter by
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be instrument_id strings
+    ///   (e.g., "EUR/USD.SIM") or bar_type strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    ///   For bars, partial matching is supported.
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
     /// - `where_clause`: Optional SQL WHERE clause for additional filtering
@@ -658,10 +743,10 @@ impl ParquetDataCatalogV2 {
     /// # Returns
     ///
     /// Returns a vector of `QuoteTick` objects matching the query criteria.
-    #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
+    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
     pub fn query_quote_ticks(
         &mut self,
-        instrument_ids: Option<Vec<String>>,
+        identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<String>,
@@ -671,13 +756,15 @@ impl ParquetDataCatalogV2 {
         let end_nanos = end.map(UnixNanos::from);
 
         // Use the backend catalog's generic query_typed_data function
+        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<QuoteTick>(
-                instrument_ids,
+                identifiers,
                 start_nanos,
                 end_nanos,
                 where_clause.as_deref(),
                 None,
+                true, // optimize_file_loading=true for directory-based registration (default)
             )
             .map_err(|e| PyIOError::new_err(format!("Failed to query data: {e}")))
     }
@@ -686,7 +773,9 @@ impl ParquetDataCatalogV2 {
     ///
     /// # Parameters
     ///
-    /// - `instrument_ids`: Optional list of instrument IDs to filter by
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be instrument_id strings
+    ///   (e.g., "EUR/USD.SIM") or bar_type strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    ///   For bars, partial matching is supported.
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
     /// - `where_clause`: Optional SQL WHERE clause for additional filtering
@@ -694,10 +783,10 @@ impl ParquetDataCatalogV2 {
     /// # Returns
     ///
     /// Returns a vector of `TradeTick` objects matching the query criteria.
-    #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
+    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
     pub fn query_trade_ticks(
         &mut self,
-        instrument_ids: Option<Vec<String>>,
+        identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<String>,
@@ -707,13 +796,15 @@ impl ParquetDataCatalogV2 {
         let end_nanos = end.map(UnixNanos::from);
 
         // Use the backend catalog's generic query_typed_data function
+        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<TradeTick>(
-                instrument_ids,
+                identifiers,
                 start_nanos,
                 end_nanos,
                 where_clause.as_deref(),
                 None,
+                true, // optimize_file_loading=true for directory-based registration (default)
             )
             .map_err(|e| PyIOError::new_err(format!("Failed to query data: {e}")))
     }
@@ -722,7 +813,9 @@ impl ParquetDataCatalogV2 {
     ///
     /// # Parameters
     ///
-    /// - `instrument_ids`: Optional list of instrument IDs to filter by
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be instrument_id strings
+    ///   (e.g., "EUR/USD.SIM") or bar_type strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    ///   For bars, partial matching is supported.
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
     /// - `where_clause`: Optional SQL WHERE clause for additional filtering
@@ -730,10 +823,10 @@ impl ParquetDataCatalogV2 {
     /// # Returns
     ///
     /// Returns a vector of `OrderBookDelta` objects matching the query criteria.
-    #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
+    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
     pub fn query_order_book_deltas(
         &mut self,
-        instrument_ids: Option<Vec<String>>,
+        identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<String>,
@@ -743,13 +836,15 @@ impl ParquetDataCatalogV2 {
         let end_nanos = end.map(UnixNanos::from);
 
         // Use the backend catalog's generic query_typed_data function
+        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<OrderBookDelta>(
-                instrument_ids,
+                identifiers,
                 start_nanos,
                 end_nanos,
                 where_clause.as_deref(),
                 None,
+                true, // optimize_file_loading=true for directory-based registration (default)
             )
             .map_err(|e| PyIOError::new_err(format!("Failed to query data: {e}")))
     }
@@ -758,7 +853,9 @@ impl ParquetDataCatalogV2 {
     ///
     /// # Parameters
     ///
-    /// - `instrument_ids`: Optional list of instrument IDs to filter by
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be instrument_id strings
+    ///   (e.g., "EUR/USD.SIM") or bar_type strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    ///   For bars, partial matching is supported (e.g., "EUR/USD.SIM" will match all bar types for that instrument).
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
     /// - `where_clause`: Optional SQL WHERE clause for additional filtering
@@ -766,10 +863,10 @@ impl ParquetDataCatalogV2 {
     /// # Returns
     ///
     /// Returns a vector of Bar objects matching the query criteria.
-    #[pyo3(signature = (instrument_ids=None, start=None, end=None, where_clause=None))]
+    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
     pub fn query_bars(
         &mut self,
-        instrument_ids: Option<Vec<String>>,
+        identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
         where_clause: Option<String>,
@@ -779,13 +876,15 @@ impl ParquetDataCatalogV2 {
         let end_nanos = end.map(UnixNanos::from);
 
         // Use the backend catalog's generic query_typed_data function
+        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<Bar>(
-                instrument_ids,
+                identifiers,
                 start_nanos,
                 end_nanos,
                 where_clause.as_deref(),
                 None,
+                true, // optimize_file_loading=true for directory-based registration (default)
             )
             .map_err(|e| PyIOError::new_err(format!("Failed to query data: {e}")))
     }
@@ -815,6 +914,7 @@ impl ParquetDataCatalogV2 {
         let end_nanos = end.map(UnixNanos::from);
 
         // Use the backend catalog's generic query_typed_data function
+        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<OrderBookDepth10>(
                 instrument_ids,
@@ -822,6 +922,7 @@ impl ParquetDataCatalogV2 {
                 end_nanos,
                 where_clause.as_deref(),
                 None,
+                true, // optimize_file_loading=true for directory-based registration (default)
             )
             .map_err(|e| PyIOError::new_err(format!("Failed to query data: {e}")))
     }
@@ -851,6 +952,7 @@ impl ParquetDataCatalogV2 {
         let end_nanos = end.map(UnixNanos::from);
 
         // Use the backend catalog's generic query_typed_data function
+        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<MarkPriceUpdate>(
                 instrument_ids,
@@ -858,6 +960,7 @@ impl ParquetDataCatalogV2 {
                 end_nanos,
                 where_clause.as_deref(),
                 None,
+                true, // optimize_file_loading=true for directory-based registration (default)
             )
             .map_err(|e| PyIOError::new_err(format!("Failed to query data: {e}")))
     }
@@ -887,6 +990,7 @@ impl ParquetDataCatalogV2 {
         let end_nanos = end.map(UnixNanos::from);
 
         // Use the backend catalog's generic query_typed_data function
+        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<IndexPriceUpdate>(
                 instrument_ids,
@@ -894,7 +998,177 @@ impl ParquetDataCatalogV2 {
                 end_nanos,
                 where_clause.as_deref(),
                 None,
+                true, // optimize_file_loading=true for directory-based registration (default)
             )
             .map_err(|e| PyIOError::new_err(format!("Failed to query data: {e}")))
+    }
+
+    /// List all data types available in the catalog.
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of data type names (as directory stems) in the catalog.
+    pub fn list_data_types(&self) -> PyResult<Vec<String>> {
+        self.inner
+            .list_data_types()
+            .map_err(|e| PyIOError::new_err(format!("Failed to list data types: {e}")))
+    }
+
+    /// List all backtest run IDs available in the catalog.
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of backtest run IDs (as directory stems) in the catalog.
+    pub fn list_backtest_runs(&self) -> PyResult<Vec<String>> {
+        self.inner
+            .list_backtest_runs()
+            .map_err(|e| PyIOError::new_err(format!("Failed to list backtest runs: {e}")))
+    }
+
+    /// List all live run IDs available in the catalog.
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of live run IDs (as directory stems) in the catalog.
+    pub fn list_live_runs(&self) -> PyResult<Vec<String>> {
+        self.inner
+            .list_live_runs()
+            .map_err(|e| PyIOError::new_err(format!("Failed to list live runs: {e}")))
+    }
+
+    /// Read data from a live run instance.
+    ///
+    /// # Parameters
+    ///
+    /// - `instance_id`: The ID of the live run instance
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of data objects from the live run, sorted by timestamp.
+    #[pyo3(signature = (instance_id))]
+    pub fn read_live_run(&self, instance_id: &str) -> PyResult<Vec<Py<PyAny>>> {
+        // Read data from backend
+        let data = self
+            .inner
+            .read_live_run(instance_id)
+            .map_err(|e| PyIOError::new_err(format!("Failed to read live run: {e}")))?;
+
+        // Convert Data enum variants to Python objects
+        Python::attach(|py| {
+            let mut python_objects = Vec::new();
+            for item in data {
+                let py_obj: Py<PyAny> = match item {
+                    Data::Quote(quote) => Py::new(py, quote)?.into(),
+                    Data::Trade(trade) => Py::new(py, trade)?.into(),
+                    Data::Bar(bar) => Py::new(py, bar)?.into(),
+                    Data::Delta(delta) => Py::new(py, delta)?.into(),
+                    Data::Deltas(deltas) => Py::new(py, (*deltas).clone())?.into(),
+                    Data::Depth10(depth) => Py::new(py, *depth)?.into(),
+                    Data::IndexPriceUpdate(price) => Py::new(py, price)?.into(),
+                    Data::MarkPriceUpdate(price) => Py::new(py, price)?.into(),
+                    Data::InstrumentClose(close) => Py::new(py, close)?.into(),
+                };
+                python_objects.push(py_obj);
+            }
+            Ok(python_objects)
+        })
+    }
+
+    /// Read data from a backtest run instance.
+    ///
+    /// # Parameters
+    ///
+    /// - `instance_id`: The ID of the backtest run instance
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of data objects from the backtest run, sorted by timestamp.
+    #[pyo3(signature = (instance_id))]
+    pub fn read_backtest(&self, instance_id: &str) -> PyResult<Vec<Py<PyAny>>> {
+        // Read data from backend
+        let data = self
+            .inner
+            .read_backtest(instance_id)
+            .map_err(|e| PyIOError::new_err(format!("Failed to read backtest: {e}")))?;
+
+        // Convert Data enum variants to Python objects
+        Python::attach(|py| {
+            let mut python_objects = Vec::new();
+            for item in data {
+                let py_obj: Py<PyAny> = match item {
+                    Data::Quote(quote) => Py::new(py, quote)?.into(),
+                    Data::Trade(trade) => Py::new(py, trade)?.into(),
+                    Data::Bar(bar) => Py::new(py, bar)?.into(),
+                    Data::Delta(delta) => Py::new(py, delta)?.into(),
+                    Data::Deltas(deltas) => Py::new(py, (*deltas).clone())?.into(),
+                    Data::Depth10(depth) => Py::new(py, *depth)?.into(),
+                    Data::IndexPriceUpdate(price) => Py::new(py, price)?.into(),
+                    Data::MarkPriceUpdate(price) => Py::new(py, price)?.into(),
+                    Data::InstrumentClose(close) => Py::new(py, close)?.into(),
+                };
+                python_objects.push(py_obj);
+            }
+            Ok(python_objects)
+        })
+    }
+
+    /// Convert stream data from feather files to parquet files.
+    ///
+    /// This method reads data from feather files generated during a backtest or live run
+    /// and writes it to the catalog in parquet format. It's useful for converting temporary
+    /// stream data into a more permanent and queryable format.
+    ///
+    /// # Parameters
+    ///
+    /// - `instance_id`: The ID of the backtest or live run instance
+    /// - `data_cls`: The data class name (e.g., "quotes", "trades", "bars")
+    /// - `subdirectory`: Optional subdirectory containing the feather files. Either "backtest" or "live" (default: "backtest")
+    /// - `identifiers`: Optional list of identifiers to filter by (instrument IDs or bar types)
+    /// - `use_ts_event_for_ts_init`: If true, replaces the `ts_init` column with `ts_event` column values before deserializing
+    ///
+    /// # Returns
+    ///
+    /// Returns nothing on success.
+    ///
+    /// # Examples
+    ///
+    /// ```python
+    /// # Convert backtest stream data to parquet
+    /// catalog.convert_stream_to_data(
+    ///     "instance-123",
+    ///     "quotes",
+    ///     subdirectory="backtest"
+    /// )
+    ///
+    /// # Convert live run data with identifier filtering
+    /// catalog.convert_stream_to_data(
+    ///     "instance-456",
+    ///     "trades",
+    ///     subdirectory="live",
+    ///     identifiers=["EUR/USD.SIM"]
+    /// )
+    /// ```
+    #[pyo3(signature = (instance_id, data_cls, subdirectory=None, identifiers=None, use_ts_event_for_ts_init=false))]
+    pub fn convert_stream_to_data(
+        &mut self,
+        instance_id: &str,
+        data_cls: &str,
+        subdirectory: Option<&str>,
+        identifiers: Option<Vec<String>>,
+        use_ts_event_for_ts_init: bool,
+    ) -> PyResult<()> {
+        let subdir = subdirectory.unwrap_or("backtest");
+        match self.inner.convert_stream_to_data(
+            instance_id,
+            data_cls,
+            Some(subdir),
+            identifiers,
+            use_ts_event_for_ts_init,
+        ) {
+            Ok(()) => Ok(()),
+            Err(e) => Err(PyIOError::new_err(format!(
+                "Failed to convert stream to data: {e}"
+            ))),
+        }
     }
 }

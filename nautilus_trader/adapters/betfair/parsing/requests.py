@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import hashlib
+from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
@@ -32,6 +33,7 @@ from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import LimitOnCloseOrder
 from betfair_parser.spec.betting.type_definitions import LimitOrder
 from betfair_parser.spec.betting.type_definitions import MarketOnCloseOrder
+from betfair_parser.spec.betting.type_definitions import MarketVersion
 from betfair_parser.spec.common import BetId
 from betfair_parser.spec.common import CustomerOrderRef
 from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
@@ -88,6 +90,18 @@ def make_customer_order_ref(client_order_id: ClientOrderId) -> CustomerOrderRef:
     From the Betfair docs:
     An optional reference customers can set to identify instructions. No validation will be done on uniqueness and the
     string is limited to 32 characters. If an empty string is provided it will be treated as null.
+
+    Uses the last 32 characters since UUIDs have more entropy at the end.
+
+    """
+    return client_order_id.value[-32:]
+
+
+def make_customer_order_ref_legacy(client_order_id: ClientOrderId) -> CustomerOrderRef:
+    """
+    Legacy truncation for backwards compatibility with pre-existing orders.
+
+    Orders placed before the truncation change used the first 32 characters.
 
     """
     return client_order_id.value[:32]
@@ -238,6 +252,7 @@ def nautilus_order_to_place_instructions(
 def order_submit_to_place_order_params(
     command: SubmitOrder,
     instrument: BettingInstrument,
+    market_version: MarketVersion | None = None,
 ) -> PlaceOrders:
     """
     Convert a SubmitOrder command into the data required by BetfairClient.
@@ -250,6 +265,7 @@ def order_submit_to_place_order_params(
             strategy_id=command.strategy_id.value,
         ),
         instructions=[nautilus_order_to_place_instructions(command, instrument)],
+        market_version=market_version,
     )
 
 
@@ -257,6 +273,7 @@ def order_update_to_replace_order_params(
     command: ModifyOrder,
     venue_order_id: VenueOrderId,
     instrument: BettingInstrument,
+    market_version: MarketVersion | None = None,
 ) -> ReplaceOrders:
     """
     Convert an ModifyOrder command into the data required by BetfairClient.
@@ -270,6 +287,7 @@ def order_update_to_replace_order_params(
                 new_price=command.price.as_double(),
             ),
         ],
+        market_version=market_version,
     )
 
 
@@ -336,8 +354,8 @@ def betfair_account_to_account_state(
             f"Cannot determine account currency: currency_code={currency_code!r}, "
             f"fallback_currency={fallback_currency}",
         )
-    free = float(account_funds.available_to_bet_balance)
-    locked = -float(account_funds.exposure)
+    free = Money(float(account_funds.available_to_bet_balance), currency)
+    locked = Money(-float(account_funds.exposure), currency)
     total = free + locked
     return AccountState(
         account_id=AccountId(f"{BETFAIR_VENUE.value}-{account_id}"),
@@ -346,9 +364,9 @@ def betfair_account_to_account_state(
         reported=reported,
         balances=[
             AccountBalance(
-                total=Money(total, currency),
-                locked=Money(locked, currency),
-                free=Money(free, currency),
+                total=total,
+                locked=locked,
+                free=free,
             ),
         ],
         margins=[],
@@ -397,12 +415,14 @@ def bet_to_order_status_report(
     client_order_id: ClientOrderId,
     ts_init,
     report_id,
+    cached_filled_qty: Quantity | None = None,
+    cached_avg_px: float | None = None,
 ) -> OrderStatusReport:
     is_bsp_order = order.price_size.size == 0.0 and order.bsp_liability != 0.0
 
     if not is_bsp_order and order.price_size.size != 0.0:
         qty = Quantity(order.price_size.size, BETFAIR_QUANTITY_PRECISION)
-        fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
+        api_fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
         price = BETFAIR_FLOAT_TO_PRICE[order.price_size.price]
     elif is_bsp_order:
         # BSP orders: bspLiability is in payout units, but size fields are in stake units
@@ -415,17 +435,39 @@ def bet_to_order_status_report(
             + order.size_voided
         )
         qty = Quantity(total_size, BETFAIR_QUANTITY_PRECISION)
-        fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
+        api_fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
 
         # BSP orders with limit price specified use price_size.price, pure BSP use average_price_matched
         if order.price_size.price > 0.0:
             price = BETFAIR_FLOAT_TO_PRICE[order.price_size.price]
-        elif order.average_price_matched > 0.0:
+        elif order.average_price_matched and order.average_price_matched > 0.0:
             price = Price(order.average_price_matched, BETFAIR_PRICE_PRECISION)
         else:
             price = Price(0.0, BETFAIR_PRICE_PRECISION)
     else:
         raise ValueError(f"Unknown order size {order.price_size.size=}, {order.bsp_liability=}")
+
+    # Use max of API and cached fill qty to handle stale API responses during reconciliation
+    if cached_filled_qty is not None and cached_filled_qty > api_fill_qty:
+        fill_qty = cached_filled_qty
+        avg_px = Decimal(str(cached_avg_px)) if cached_avg_px else None
+        use_cached = True
+    else:
+        fill_qty = api_fill_qty
+        avg_px = (
+            Decimal(str(order.average_price_matched))
+            if order.average_price_matched and order.average_price_matched > 0.0
+            else None
+        )
+        use_cached = False
+
+    order_status = determine_order_status(order)
+    if (
+        use_cached
+        and fill_qty > Quantity.zero(BETFAIR_QUANTITY_PRECISION)
+        and order_status == OrderStatus.ACCEPTED
+    ):
+        order_status = OrderStatus.PARTIALLY_FILLED
 
     return OrderStatusReport(
         account_id=account_id,
@@ -436,10 +478,11 @@ def bet_to_order_status_report(
         order_type=B2N_ORDER_TYPE[order.order_type],
         contingency_type=ContingencyType.NO_CONTINGENCY,
         time_in_force=B2N_TIME_IN_FORCE[order.persistence_type],
-        order_status=determine_order_status(order),
+        order_status=order_status,
         price=price,
         quantity=qty,
         filled_qty=fill_qty,
+        avg_px=avg_px,
         report_id=report_id,
         ts_accepted=dt_to_unix_nanos(pd.Timestamp(order.placed_date)),
         ts_triggered=0,
@@ -550,21 +593,29 @@ def hashed_trade_id(
     average_price_matched: float | None = None,
     size_matched: float | None = None,
 ) -> TradeId:
+    # Normalize floats to fixed precision to ensure consistent hashes
+    price_str = f"{price:.{BETFAIR_PRICE_PRECISION}f}"
+    size_str = f"{size:.{BETFAIR_QUANTITY_PRECISION}f}"
+    avp_str = (
+        f"{average_price_matched:.{BETFAIR_PRICE_PRECISION}f}" if average_price_matched else None
+    )
+    sm_str = f"{size_matched:.{BETFAIR_QUANTITY_PRECISION}f}" if size_matched else None
+
     data: bytes = msgspec.json.encode(
         (
             bet_id,
-            price,
-            size,
+            price_str,
+            size_str,
             side,
             persistence_type,
             order_type,
             placed_date,
             matched_date,
-            average_price_matched,
-            size_matched,
+            avp_str,
+            sm_str,
         ),
     )
-    return TradeId(hashlib.shake_256(msgspec.json.encode(data)).hexdigest(18))
+    return TradeId(hashlib.shake_256(data).hexdigest(18))
 
 
 def order_to_trade_id(uo: BetfairOrder) -> TradeId:

@@ -13,7 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::VecDeque, fmt::Debug, time::Duration};
+//! Redis-backed cache database for the system.
+//!
+//! # Architecture
+//!
+//! Uses two Redis connections with distinct roles:
+//! - **READ** (`self.con`): synchronous queries (`keys`, `read`, `load_all`),
+//!   owned by the main struct.
+//! - **WRITE**: owned by a background task on `get_runtime()`, receives
+//!   commands via an unbounded `tokio::sync::mpsc` channel.
+//!
+//! All write operations (`insert`, `update`, `delete`, `flush`) are routed
+//! through the command channel so they execute on the WRITE connection. This
+//! avoids cross-runtime I/O issues since the WRITE connection is always
+//! created on the Nautilus runtime.
+//!
+//! Synchronous callers (`close`, `flushdb_sync`) use `std::sync::mpsc` reply
+//! channels to block until the background task confirms completion. When
+//! called from the Nautilus runtime itself, `block_in_place` is used
+//! automatically to avoid stalling the worker thread.
+
+use std::{
+    collections::VecDeque,
+    fmt::Debug,
+    ops::ControlFlow,
+    pin::Pin,
+    sync::mpsc::{self, SyncSender},
+    time::Duration,
+};
 
 use ahash::AHashMap;
 use bytes::Bytes;
@@ -32,7 +59,7 @@ use nautilus_core::{UUID4, UnixNanos, correctness::check_slice_not_empty};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, DataType, QuoteTick, TradeTick},
+    data::{Bar, DataType, FundingRateUpdate, QuoteTick, TradeTick},
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
@@ -91,6 +118,7 @@ pub enum DatabaseOperation {
     Insert,
     Update,
     Delete,
+    Flush(SyncSender<()>),
     Close,
 }
 
@@ -136,8 +164,9 @@ pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
     pub trader_key: String,
     pub encoding: SerializationEncoding,
+    pub bulk_read_batch_size: Option<usize>,
     tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
-    handle: tokio::task::JoinHandle<()>,
+    handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Debug for RedisCacheDatabase {
@@ -175,6 +204,7 @@ impl RedisCacheDatabase {
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
         let encoding = config.encoding;
+        let bulk_read_batch_size = config.bulk_read_batch_size;
 
         let handle = get_runtime().spawn(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
@@ -187,8 +217,9 @@ impl RedisCacheDatabase {
             trader_id,
             trader_key,
             encoding,
+            bulk_read_batch_size,
             tx,
-            handle,
+            handle: Some(handle),
         })
     }
 
@@ -205,17 +236,26 @@ impl RedisCacheDatabase {
     pub fn close(&mut self) {
         log::debug!("Closing");
 
+        let Some(handle) = self.handle.take() else {
+            log::debug!("Already closed");
+            return;
+        };
+
         if let Err(e) = self.tx.send(DatabaseCommand::close()) {
             log::debug!("Error sending close command: {e:?}");
         }
 
         log_task_awaiting(CACHE_PROCESS);
 
-        tokio::task::block_in_place(|| {
-            if let Err(e) = get_runtime().block_on(&mut self.handle) {
+        let (tx, rx) = mpsc::sync_channel(1);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = handle.await {
                 log::error!("Error awaiting task '{CACHE_PROCESS}': {e:?}");
             }
+            let _ = tx.send(());
         });
+        let _ = blocking_recv(&rx);
 
         log::debug!("Closed");
     }
@@ -227,6 +267,26 @@ impl RedisCacheDatabase {
         {
             log::error!("Failed to flush database: {e:?}");
         }
+    }
+
+    /// Sends a flush command through the background task channel and blocks
+    /// until it completes. Safe to call from any runtime context.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command channel is closed or the reply is lost.
+    pub fn flushdb_sync(&self) -> anyhow::Result<()> {
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        let cmd = DatabaseCommand {
+            op_type: DatabaseOperation::Flush(reply_tx),
+            key: None,
+            payload: None,
+        };
+        self.tx
+            .send(cmd)
+            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))?;
+        blocking_recv(&reply_rx).map_err(|e| anyhow::anyhow!("Failed to flush database: {e}"))?;
+        Ok(())
     }
 
     /// Retrieves all keys matching the given `pattern` from Redis for this trader.
@@ -254,7 +314,12 @@ impl RedisCacheDatabase {
     ///
     /// Returns an error if the underlying Redis read operation fails.
     pub async fn read_bulk(&mut self, keys: &[String]) -> anyhow::Result<Vec<Option<Bytes>>> {
-        DatabaseQueries::read_bulk(&self.con, keys).await
+        match self.bulk_read_batch_size {
+            Some(batch_size) => {
+                DatabaseQueries::read_bulk_batched(&self.con, keys, batch_size).await
+            }
+            None => DatabaseQueries::read_bulk(&self.con, keys).await,
+        }
     }
 
     /// Sends an insert command for `key` with optional `payload` to Redis via the background task.
@@ -388,8 +453,20 @@ impl RedisCacheDatabase {
         _account_id: &AccountId,
         _event_id: &str,
     ) -> anyhow::Result<()> {
-        tracing::warn!("Deleting account events currently a no-op (pending redesign)");
+        log::warn!("Deleting account events currently a no-op (pending redesign)");
         Ok(())
+    }
+}
+
+fn blocking_recv<T>(rx: &mpsc::Receiver<T>) -> Result<T, mpsc::RecvError> {
+    let on_nautilus_runtime = tokio::runtime::Handle::try_current()
+        .ok()
+        .is_some_and(|h| h.id() == get_runtime().handle().id());
+
+    if on_nautilus_runtime {
+        tokio::task::block_in_place(|| rx.recv())
+    } else {
+        rx.recv()
     }
 }
 
@@ -408,24 +485,32 @@ async fn process_commands(
 
     // Buffering
     let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
-    let mut last_drain = std::time::Instant::now();
     let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
+
+    // A sleep used to trigger periodic flushing of the buffer.
+    // When `buffer_interval` is zero we skip using the timer and flush immediately
+    // after every message.
+    let flush_timer = tokio::time::sleep(buffer_interval);
+    tokio::pin!(flush_timer);
 
     // Continue to receive and handle messages until channel is hung up
     loop {
-        if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-            drain_buffer(&mut con, &trader_key, &mut buffer).await;
-            last_drain = std::time::Instant::now();
-        } else if let Some(cmd) = rx.recv().await {
-            tracing::trace!("Received {cmd:?}");
-
-            if matches!(cmd.op_type, DatabaseOperation::Close) {
-                break;
+        tokio::select! {
+            maybe_cmd = rx.recv() => {
+                let result = handle_command(
+                    maybe_cmd,
+                    &mut buffer,
+                    buffer_interval,
+                    &mut con,
+                    &trader_key,
+                ).await;
+                if result.is_break() {
+                    break;
+                }
             }
-            buffer.push_back(cmd);
-        } else {
-            tracing::debug!("Command channel closed");
-            break;
+            () = &mut flush_timer, if !buffer_interval.is_zero() => {
+                flush_buffer(&mut buffer, &mut con, &trader_key, &mut flush_timer, buffer_interval).await;
+            }
         }
     }
 
@@ -436,6 +521,64 @@ async fn process_commands(
 
     log_task_stopped(CACHE_PROCESS);
     Ok(())
+}
+
+async fn handle_command(
+    maybe_cmd: Option<DatabaseCommand>,
+    buffer: &mut VecDeque<DatabaseCommand>,
+    buffer_interval: Duration,
+    con: &mut ConnectionManager,
+    trader_key: &str,
+) -> ControlFlow<()> {
+    let Some(cmd) = maybe_cmd else {
+        log::debug!("Command channel closed");
+        return ControlFlow::Break(());
+    };
+
+    log::trace!("Received {cmd:?}");
+
+    match cmd.op_type {
+        DatabaseOperation::Close => {
+            if !buffer.is_empty() {
+                drain_buffer(con, trader_key, buffer).await;
+            }
+            return ControlFlow::Break(());
+        }
+        DatabaseOperation::Flush(reply_tx) => {
+            if !buffer.is_empty() {
+                drain_buffer(con, trader_key, buffer).await;
+            }
+            if let Err(e) = redis::cmd(REDIS_FLUSHDB).query_async::<()>(con).await {
+                log::error!("Failed to flush database: {e:?}");
+            }
+            let _ = reply_tx.send(());
+            return ControlFlow::Continue(());
+        }
+        _ => {}
+    }
+
+    buffer.push_back(cmd);
+
+    if buffer_interval.is_zero() {
+        drain_buffer(con, trader_key, buffer).await;
+    }
+
+    ControlFlow::Continue(())
+}
+
+async fn flush_buffer(
+    buffer: &mut VecDeque<DatabaseCommand>,
+    con: &mut ConnectionManager,
+    trader_key: &str,
+    flush_timer: &mut Pin<&mut tokio::time::Sleep>,
+    buffer_interval: Duration,
+) {
+    if !buffer.is_empty() {
+        drain_buffer(con, trader_key, buffer).await;
+    }
+    flush_timer
+        .as_mut()
+        .reset(tokio::time::Instant::now() + buffer_interval);
 }
 
 async fn drain_buffer(
@@ -456,7 +599,7 @@ async fn drain_buffer(
         let collection = match get_collection_key(&key) {
             Ok(collection) => collection,
             Err(e) => {
-                tracing::error!("{e}");
+                log::error!("{e}");
                 continue; // Continue to next message
             }
         };
@@ -468,24 +611,24 @@ async fn drain_buffer(
                 if let Some(payload) = msg.payload {
                     log::debug!("Processing INSERT for collection: {collection}, key: {key}");
                     if let Err(e) = insert(&mut pipe, collection, &key, payload) {
-                        tracing::error!("{e}");
+                        log::error!("{e}");
                     }
                 } else {
-                    tracing::error!("Null `payload` for `insert`");
+                    log::error!("Null `payload` for `insert`");
                 }
             }
             DatabaseOperation::Update => {
                 if let Some(payload) = msg.payload {
                     log::debug!("Processing UPDATE for collection: {collection}, key: {key}");
                     if let Err(e) = update(&mut pipe, collection, &key, payload) {
-                        tracing::error!("{e}");
+                        log::error!("{e}");
                     }
                 } else {
-                    tracing::error!("Null `payload` for `update`");
+                    log::error!("Null `payload` for `update`");
                 }
             }
             DatabaseOperation::Delete => {
-                tracing::debug!(
+                log::debug!(
                     "Processing DELETE for collection: {}, key: {}, payload: {:?}",
                     collection,
                     key,
@@ -493,15 +636,16 @@ async fn drain_buffer(
                 );
                 // `payload` can be `None` for a delete operation
                 if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
-                    tracing::error!("{e}");
+                    log::error!("{e}");
                 }
             }
             DatabaseOperation::Close => panic!("Close command should not be drained"),
+            DatabaseOperation::Flush(_) => panic!("Flush command should not be drained"),
         }
     }
 
     if let Err(e) = pipe.query_async::<()>(conn).await {
-        tracing::error!("{e}");
+        log::error!("{e}");
     }
 }
 
@@ -665,7 +809,7 @@ fn delete(
     key: &str,
     value: Option<Vec<Bytes>>,
 ) -> anyhow::Result<()> {
-    tracing::debug!(
+    log::debug!(
         "delete: collection={}, key={}, has_payload={}",
         collection,
         key,
@@ -809,12 +953,11 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn flush(&mut self) -> anyhow::Result<()> {
-        self.database.flushdb();
-        Ok(())
+        self.database.flushdb_sync()
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
-        tracing::debug!("Loading all data");
+        log::debug!("Loading all data");
 
         let (
             currencies,
@@ -1132,6 +1275,17 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    }
+
+    fn add_funding_rate(&self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    }
+
+    fn load_funding_rates(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
         anyhow::bail!("Loading market data for Redis cache adapter not supported")
     }
 

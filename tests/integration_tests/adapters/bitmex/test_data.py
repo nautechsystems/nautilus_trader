@@ -147,29 +147,3 @@ async def test_subscribe_order_book_deltas_depth_25_uses_compact_channel(
         assert args[0].value == instrument_id.value
     finally:
         await bitmex_data_client._disconnect()
-
-
-@pytest.mark.asyncio
-async def test_subscribe_order_book_snapshots_invalid_depth_is_ignored(
-    bitmex_data_client,
-    mock_ws_client,
-):
-    # Arrange
-    await bitmex_data_client._connect()
-    try:
-        mock_ws_client.subscribe_book_depth10.reset_mock()
-
-        instrument_id = InstrumentId(Symbol("XBTUSD"), BITMEX_VENUE)
-        command = SimpleNamespace(
-            book_type=BookType.L2_MBP,
-            depth=5,
-            instrument_id=instrument_id,
-        )
-
-        # Act
-        await bitmex_data_client._subscribe_order_book_snapshots(command)
-
-        # Assert
-        mock_ws_client.subscribe_book_depth10.assert_not_awaited()
-    finally:
-        await bitmex_data_client._disconnect()

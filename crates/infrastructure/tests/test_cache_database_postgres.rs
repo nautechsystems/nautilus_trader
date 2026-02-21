@@ -121,25 +121,25 @@ mod serial_tests {
 
         // Insert all instruments
         pg_cache
-            .add_instrument(&InstrumentAny::BinaryOption(binary_option))
+            .add_instrument(&InstrumentAny::BinaryOption(binary_option.clone()))
             .unwrap();
         pg_cache
-            .add_instrument(&InstrumentAny::CryptoFuture(crypto_future))
+            .add_instrument(&InstrumentAny::CryptoFuture(crypto_future.clone()))
             .unwrap();
         pg_cache
-            .add_instrument(&InstrumentAny::CryptoPerpetual(crypto_perpetual))
+            .add_instrument(&InstrumentAny::CryptoPerpetual(crypto_perpetual.clone()))
             .unwrap();
         pg_cache
-            .add_instrument(&InstrumentAny::CurrencyPair(currency_pair))
+            .add_instrument(&InstrumentAny::CurrencyPair(currency_pair.clone()))
             .unwrap();
         pg_cache
-            .add_instrument(&InstrumentAny::Equity(equity))
+            .add_instrument(&InstrumentAny::Equity(equity.clone()))
             .unwrap();
         pg_cache
-            .add_instrument(&InstrumentAny::FuturesContract(futures_contract))
+            .add_instrument(&InstrumentAny::FuturesContract(futures_contract.clone()))
             .unwrap();
         pg_cache
-            .add_instrument(&InstrumentAny::OptionContract(option_contract))
+            .add_instrument(&InstrumentAny::OptionContract(option_contract.clone()))
             .unwrap();
 
         // Wait for cache to update
@@ -230,7 +230,7 @@ mod serial_tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            InstrumentAny::BinaryOption(binary_option)
+            InstrumentAny::BinaryOption(binary_option.clone())
         );
         assert_eq!(
             pg_cache
@@ -238,7 +238,7 @@ mod serial_tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            InstrumentAny::CryptoFuture(crypto_future)
+            InstrumentAny::CryptoFuture(crypto_future.clone())
         );
         assert_eq!(
             pg_cache
@@ -246,7 +246,7 @@ mod serial_tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            InstrumentAny::CryptoPerpetual(crypto_perpetual)
+            InstrumentAny::CryptoPerpetual(crypto_perpetual.clone())
         );
         assert_eq!(
             pg_cache
@@ -254,7 +254,7 @@ mod serial_tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            InstrumentAny::CurrencyPair(currency_pair)
+            InstrumentAny::CurrencyPair(currency_pair.clone())
         );
         assert_eq!(
             pg_cache
@@ -262,7 +262,7 @@ mod serial_tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            InstrumentAny::Equity(equity)
+            InstrumentAny::Equity(equity.clone())
         );
         assert_eq!(
             pg_cache
@@ -270,7 +270,7 @@ mod serial_tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            InstrumentAny::FuturesContract(futures_contract)
+            InstrumentAny::FuturesContract(futures_contract.clone())
         );
         assert_eq!(
             pg_cache
@@ -278,7 +278,7 @@ mod serial_tests {
                 .await
                 .unwrap()
                 .unwrap(),
-            InstrumentAny::OptionContract(option_contract)
+            InstrumentAny::OptionContract(option_contract.clone())
         );
 
         // Check instrument list is correct
@@ -506,10 +506,8 @@ mod serial_tests {
             false,
         ));
         let last_event = account.last_event().unwrap();
-        if last_event.base_currency.is_some() {
-            pg_cache
-                .add_currency(&last_event.base_currency.unwrap())
-                .unwrap();
+        if let Some(base_currency) = &last_event.base_currency {
+            pg_cache.add_currency(base_currency).unwrap();
         }
         pg_cache.add_account(&account).unwrap();
         wait_until_async(
@@ -529,7 +527,7 @@ mod serial_tests {
         // Update account
         let new_account_state_event =
             cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
-        account.apply(new_account_state_event);
+        account.apply(new_account_state_event).unwrap();
         pg_cache.update_account(&account).unwrap();
         wait_until_async(
             || async {

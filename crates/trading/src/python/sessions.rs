@@ -73,30 +73,6 @@ impl ForexSession {
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
-
-    #[classattr]
-    #[pyo3(name = "SYDNEY")]
-    const fn py_no_position_side() -> Self {
-        Self::Sydney
-    }
-
-    #[classattr]
-    #[pyo3(name = "TOKYO")]
-    const fn py_flat() -> Self {
-        Self::Tokyo
-    }
-
-    #[classattr]
-    #[pyo3(name = "LONDON")]
-    const fn py_long() -> Self {
-        Self::London
-    }
-
-    #[classattr]
-    #[pyo3(name = "NEW_YORK")]
-    const fn py_short() -> Self {
-        Self::NewYork
-    }
 }
 
 /// Converts a UTC timestamp to the local time for the given Forex session.

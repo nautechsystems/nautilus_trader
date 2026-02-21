@@ -14,10 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::python::IntoPyObjectNautilusExt;
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use pyo3::{
     conversion::IntoPyObjectExt,
-    exceptions::PyValueError,
     prelude::*,
     types::{PyDict, PyList, PyNone},
 };
@@ -73,10 +72,6 @@ impl EnumIterator {
 
 /// Converts a JSON `Value::Object` into a Python `dict`.
 ///
-/// # Panics
-///
-/// Panics if creating a Python list fails due to an invalid iterator.
-///
 /// # Errors
 ///
 /// Returns a `PyErr` if:
@@ -93,7 +88,7 @@ pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
             }
         }
         // This shouldn't be reached in this function, but we include it for completeness
-        _ => return Err(PyValueError::new_err("Expected JSON object")),
+        _ => return Err(to_pyvalue_err("Expected JSON object")),
     }
 
     dict.into_py_any(py)
@@ -118,10 +113,12 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
         Value::Number(n) => {
             if n.is_i64() {
                 n.as_i64().unwrap().into_py_any(py)
+            } else if n.is_u64() {
+                n.as_u64().unwrap().into_py_any(py)
             } else if n.is_f64() {
                 n.as_f64().unwrap().into_py_any(py)
             } else {
-                Err(PyValueError::new_err("Unsupported JSON number type"))
+                Err(to_pyvalue_err("Unsupported JSON number type"))
             }
         }
         Value::Array(arr) => {
@@ -136,6 +133,12 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
         Value::Object(_) => value_to_pydict(py, val),
     }
 }
+
+// Re-export centralized Params conversion functions from nautilus_core
+// Backward compatibility: re-export pydict_to_params as an alias
+pub use nautilus_core::{
+    from_pydict as pydict_to_params, from_pydict, python::params::params_to_pydict,
+};
 
 /// Converts a list of `Money` values into a Python list of strings, or `None` if empty.
 ///

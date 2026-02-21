@@ -35,12 +35,15 @@ use super::{
         TardisInstrumentMiniInfo,
     },
 };
-use crate::{config::BookSnapshotOutput, machine::parse::parse_tardis_ws_message};
+use crate::{
+    common::consts::TARDIS_MACHINE_WS_URL, config::BookSnapshotOutput,
+    machine::parse::parse_tardis_ws_message,
+};
 
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
 )]
 #[derive(Debug, Clone)]
 pub struct TardisMachineClient {
@@ -65,10 +68,11 @@ impl TardisMachineClient {
     ) -> anyhow::Result<Self> {
         let base_url = base_url
             .map(ToString::to_string)
-            .or_else(|| env::var("TARDIS_MACHINE_WS_URL").ok())
+            .or_else(|| env::var(TARDIS_MACHINE_WS_URL).ok())
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Tardis Machine `base_url` must be provided or set in the 'TARDIS_MACHINE_WS_URL' environment variable"
+                    "Tardis Machine `base_url` must be provided or \
+                     set in the '{TARDIS_MACHINE_WS_URL}' environment variable"
                 )
             })?;
 
@@ -98,13 +102,13 @@ impl TardisMachineClient {
     }
 
     pub fn close(&mut self) {
-        tracing::debug!("Closing");
+        log::debug!("Closing");
 
         // Use Release ordering to ensure visibility to Acquire loads in is_closed()
         self.replay_signal.store(true, Ordering::Release);
         self.stream_signal.store(true, Ordering::Release);
 
-        tracing::debug!("Closed");
+        log::debug!("Closed");
     }
 
     /// Connects to the Tardis Machine replay WebSocket and yields parsed `Data` items.
@@ -172,7 +176,7 @@ where
             match result {
                 Ok(msg) => {
                     if matches!(msg, WsMessage::Disconnect(_)) {
-                        tracing::debug!("Received disconnect message: {msg:?}");
+                        log::debug!("Received disconnect message: {msg:?}");
                         continue;
                     }
 
@@ -187,7 +191,7 @@ where
                             yield Ok(data);
                         }
                     } else {
-                        tracing::error!("Missing instrument info for message: {msg:?}");
+                        log::error!("Missing instrument info for message: {msg:?}");
                         yield Err(Error::ConnectionClosed {
                             reason: "Missing instrument definition info".to_string()
                         });
@@ -195,7 +199,7 @@ where
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Error in WebSocket stream: {e:?}");
+                    log::error!("Error in WebSocket stream: {e:?}");
                     yield Err(e);
                     break;
                 }
@@ -225,7 +229,7 @@ pub fn determine_instrument_info(
     if let Some(inst) = instrument_map.get(&key) {
         Some(inst.clone())
     } else {
-        tracing::error!("Instrument definition info not available for {key:?}");
+        log::error!("Instrument definition info not available for {key:?}");
         None
     }
 }

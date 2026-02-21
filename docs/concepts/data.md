@@ -33,6 +33,27 @@ A high-performance order book implemented in Rust is available to maintain order
 Top-of-book data, such as `QuoteTick`, `TradeTick` and `Bar`, can also be used for backtesting, with markets operating on `L1_MBP` book types.
 :::
 
+### Delta flags and event boundaries
+
+Each `OrderBookDelta` carries a `flags` field using `RecordFlag` bitmask values
+to signal event boundaries to the `DataEngine`:
+
+- `F_LAST`: Marks the final delta in a logical event group. When `buffer_deltas`
+  is enabled, the `DataEngine` accumulates deltas and only publishes to
+  subscribers when it encounters `F_LAST`. Every event group **must** end with
+  a delta that has `F_LAST` set.
+- `F_SNAPSHOT`: Marks deltas that belong to a snapshot (as opposed to an
+  incremental update). Snapshot sequences begin with a `Clear` action followed
+  by `Add` deltas reconstructing the full book state. The last delta in a
+  snapshot has both `F_SNAPSHOT | F_LAST` set.
+
+:::warning
+A missing `F_LAST` on the final delta in an event group causes buffered consumers
+to accumulate deltas indefinitely without publishing. This applies to incremental
+updates and snapshots alike, including empty book snapshots where only a `Clear`
+delta is emitted.
+:::
+
 ## Instruments
 
 NautilusTrader supports a variety of instrument types across spot, derivatives, and specialty markets:
@@ -57,6 +78,7 @@ flowchart TD
     Futures --> FuturesSpread
     Futures --> CryptoFuture
     Futures --> CryptoPerpetual
+    Futures --> PerpetualContract
 
     Options --> OptionContract
     Options --> OptionSpread
@@ -77,6 +99,7 @@ flowchart TD
 | `FuturesSpread`      | Deliverable futures spread.                                                      |
 | `CryptoFuture`       | Deliverable futures with crypto assets as underlying and settlement.             |
 | `CryptoPerpetual`    | Crypto perpetual futures (perpetual swap).                                       |
+| `PerpetualContract`  | Asset-class agnostic perpetual swap (any underlying).                            |
 | `OptionContract`     | Generic option contract.                                                         |
 | `OptionSpread`       | Generic option spread.                                                           |
 | `CryptoOption`       | Crypto option contract.                                                          |
@@ -121,8 +144,8 @@ The platform implements various aggregation methods:
 | `VOLUME_IMBALANCE` | Aggregation of the buy/sell imbalance of traded volume.                    | Threshold    |
 | `VOLUME_RUNS`      | Aggregation of sequential runs of buy/sell traded volume.                  | Information  |
 | `VALUE`            | Aggregation of the notional value of trades (also known as "Dollar bars"). | Threshold    |
-| `VALUE_IMBALANCE`  | Aggregation of the buy/sell imbalance of trading by notional value.        | Information  |
-| `VALUE_RUNS`       | Aggregation of sequential buy/sell runs of trading by notional value.      | Threshold    |
+| `VALUE_IMBALANCE`  | Aggregation of the buy/sell imbalance of trading by notional value.        | Threshold    |
+| `VALUE_RUNS`       | Aggregation of sequential buy/sell runs of trading by notional value.      | Information  |
 | `RENKO`            | Aggregation based on fixed price movements (brick size in ticks).          | Threshold    |
 | `MILLISECOND`      | Aggregation of time intervals with millisecond granularity.                | Time         |
 | `SECOND`           | Aggregation of time intervals with second granularity.                     | Time         |
@@ -132,6 +155,34 @@ The platform implements various aggregation methods:
 | `WEEK`             | Aggregation of time intervals with week granularity.                       | Time         |
 | `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
 | `YEAR`             | Aggregation of time intervals with year granularity.                       | Time         |
+
+### Information-driven bars
+
+Information-driven bars adapt their sampling frequency to market activity rather than using fixed
+intervals. They are based on the concept of *aggressor side* — whether the trade initiator was a
+buyer or seller — and come in two families: **imbalance** and **runs**.
+
+**Imbalance bars** close when the *net* buy/sell activity reaches a threshold. Each trade contributes
+a signed value: positive for buyer-initiated trades and negative for seller-initiated. The bar closes
+when the absolute imbalance reaches the configured step. This means that opposing trades cancel each
+other out, so imbalance bars tend to form more slowly in balanced markets and faster during directional moves.
+
+**Runs bars** close when *consecutive* activity from the same aggressor side reaches a threshold.
+Unlike imbalance bars, runs bars reset their counter when the aggressor side changes.
+This makes them sensitive to sustained one-sided pressure rather than net imbalance.
+
+Both families have three variants based on what is measured:
+
+| Variant | Imbalance          | Runs          | What is measured                          |
+|:--------|:-------------------|:--------------|:------------------------------------------|
+| Tick    | `TICK_IMBALANCE`   | `TICK_RUNS`   | Number of trades (each trade counts as 1) |
+| Volume  | `VOLUME_IMBALANCE` | `VOLUME_RUNS` | Traded volume (quantity)                  |
+| Value   | `VALUE_IMBALANCE`  | `VALUE_RUNS`  | Notional value (price x quantity)         |
+
+:::note
+Information-driven bars require `TradeTick` data because they need the `aggressor_side` field
+to classify each trade. They cannot be aggregated from `QuoteTick` data alone.
+:::
 
 ### Types of aggregation
 
@@ -374,6 +425,51 @@ self.request_bars(bar_type)  # Indicator won't receive historical data
 self.register_indicator_for_bars(bar_type, self.ema)
 ```
 
+### Performance considerations
+
+Bar aggregators track OHLC prices via the fixed-point `Price` type. Threshold comparisons for
+tick and volume aggregators use integer arithmetic, while value-based and imbalance/runs aggregators
+currently use `f64` for notional value and signed accumulation (these are being migrated to
+fixed-point integer arithmetic). The choice of aggregation method has a modest impact on per-update
+overhead:
+
+- **Time bars** are the most efficient for high-throughput data. The aggregator simply accumulates
+  OHLCV state per update; bar emission is driven by a timer rather than per-tick logic.
+- **Threshold bars** (tick, volume, value) add a lightweight counter or accumulator check per update.
+  Volume and value bars may split a single large trade across multiple bars when it exceeds the
+  remaining threshold.
+- **Information-driven bars** (imbalance, runs) require tracking aggressor side and signed
+  accumulation per update. The overhead is slightly higher than threshold bars but still minimal.
+- **Renko bars** are price-driven and can emit multiple bars from a single large price move.
+  Otherwise the per-update cost is comparable to threshold bars.
+- **Composite bars** (bar-to-bar) are the most efficient way to produce higher-timeframe bars
+  when lower-timeframe bars are already available, as each input bar represents an already
+  aggregated period rather than a single tick.
+
+### Time bar configuration
+
+Time bar behavior is controlled through `DataEngineConfig`. The following options
+apply to all time-based aggregation (millisecond through year):
+
+| Option                              | Type   | Default       | Description                                                                                                                                     |
+|:------------------------------------|:-------|:--------------|:------------------------------------------------------------------------------------------------------------------------------------------------|
+| `time_bars_interval_type`           | `str`  | `"left-open"` | `"left-open"`: start excluded, end included. `"right-open"`: start included, end excluded.                                                      |
+| `time_bars_timestamp_on_close`      | `bool` | `True`        | When `True`, `ts_event` is the bar close time. When `False`, `ts_event` is the bar open time.                                                   |
+| `time_bars_skip_first_non_full_bar` | `bool` | `False`       | Skip emitting a bar when aggregation starts mid-interval, avoiding partial bars on startup.                                                     |
+| `time_bars_build_with_no_updates`   | `bool` | `True`        | When `True`, bars are emitted even if no market updates arrived during the interval.                                                            |
+| `time_bars_origin_offset`           | `dict` | `None`        | Maps `BarAggregation` types to `pd.Timedelta` offsets for shifting bar alignment (e.g., align to 09:30 market open).                            |
+| `time_bars_build_delay`             | `int`  | `0`           | Delay in microseconds before building a bar. Useful in backtests to ensure data at bar boundary timestamps is processed before the timer fires. |
+
+```python
+from nautilus_trader.data.config import DataEngineConfig
+
+config = DataEngineConfig(
+    time_bars_timestamp_on_close=True,
+    time_bars_build_with_no_updates=False,
+    time_bars_skip_first_non_full_bar=True,
+)
+```
+
 ## Timestamps
 
 The platform uses two fundamental timestamp fields that appear across many objects, including market data, orders, and events.
@@ -441,7 +537,7 @@ The `ts_init` field indicates when the message was originally received.
 
 ## Data flow
 
-The platform ensures consistency by flowing data through the same pathways across all system [environment contexts](/concepts/architecture.md#environment-contexts)
+The platform ensures consistency by flowing data through the same pathways across all system [environment contexts](architecture.md#environment-contexts)
 (e.g., `backtest`, `sandbox`, `live`). Data is primarily transported via the `MessageBus` to the `DataEngine`
 and then distributed to subscribed or registered handlers.
 
@@ -1758,3 +1854,9 @@ class GreeksData(Data):
         delta: float = 0.0,
   ) -> GreeksData: ...
 ```
+
+## Related guides
+
+- [Instruments](instruments.md) - Financial instruments referenced by data.
+- [Cache](cache.md) - Data storage and retrieval.
+- [Adapters](adapters.md) - Data sources and connectivity.

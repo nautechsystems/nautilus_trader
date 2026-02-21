@@ -82,7 +82,7 @@ def main() -> None:
     client_config = BlockchainDataClientConfig(
         chain=chain,
         dex_ids=[
-            DexType.UniswapV3,
+            DexType.UNISWAP_V3,
         ],
         http_rpc_url=http_rpc_url,
         wss_rpc_url=wss_rpc_url,

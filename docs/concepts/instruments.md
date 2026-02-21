@@ -11,6 +11,7 @@ currently a number of subclasses representing a range of *asset classes* and *in
 - `FuturesSpread`: Exchange-defined multi-leg futures strategy (e.g., calendar or inter-commodity) quoted as one instrument.
 - `CryptoFuture`: Dated, deliverable crypto futures contract with fixed expiry, underlying crypto, and settlement currency.
 - `CryptoPerpetual`: Perpetual futures contract (perpetual swap) on crypto with no expiry; can be inverse or quanto-settled.
+- `PerpetualContract`: Asset-class agnostic perpetual swap for any underlying (FX, equities, commodities, indexes, crypto).
 - `OptionContract`: Exchange-traded option (put or call) on an underlying with strike and expiry.
 - `OptionSpread`: Exchange-defined multi-leg options strategy (e.g., vertical, calendar, straddle) quoted as one instrument.
 - `CryptoOption`: Option on a crypto underlying with crypto quote/settlement; supports inverse or quanto styles.
@@ -110,16 +111,103 @@ def on_instrument(self, instrument: Instrument) -> None:
     pass
 ```
 
-## Precisions and increments
+## Precision
 
-The instrument objects are a convenient way to organize the specification of an
-instrument through *read-only* properties. Correct price and quantity precisions, as well as
-minimum price and size increments, multipliers and standard lot sizes, are available.
+Precision defines the number of decimal places allowed for prices and quantities on a
+given instrument. Every instrument specifies a `price_precision` and `size_precision`
+that determine the valid fractional resolution for that market.
 
-:::note
-Most of these limits are checked by the Nautilus `RiskEngine`, otherwise invalid
-values for prices and quantities *can* result in the exchange rejecting orders.
+NautilusTrader enforces precision strictly by design. This section explains the rationale
+and mechanics behind this approach.
+
+### Why precision is enforced
+
+**Realistic market simulation.** Real exchanges only accept prices and sizes at specific
+precisions. A crypto spot market may support prices to 2 decimal places (e.g., `50000.01`)
+while a different market supports 8 (e.g., `0.00012345`). Allowing arbitrary precision
+in a backtest would produce fills at price levels that could never exist in production,
+leading to misleading performance metrics.
+
+**Venue compatibility.** Most exchanges validate price and size precision on incoming
+orders and reject those that exceed the instrument's specification. Enforcing precision
+at the platform level catches a common class of these issues early. Note that venues may
+also enforce tick-multiple or step-size constraints beyond what the `RiskEngine` currently
+validates, so precision compliance alone does not guarantee venue acceptance.
+
+**Deterministic calculations.** Fixed-point arithmetic with explicit precision eliminates
+floating-point drift and ensures calculations are reproducible across platforms and
+environments. Two systems processing the same data will always produce identical results.
+
+**Data integrity.** The backtesting matching engine validates that all incoming market
+data (quotes, trades, bars) matches the instrument's declared precision. This catches
+mismatches between instrument definitions and data sources early, preventing silent
+corruption of fill prices and quantities.
+
+### How precision works
+
+Each instrument defines two precision values:
+
+| Field             | Constrains                           | Example            |
+|-------------------|--------------------------------------|--------------------|
+| `price_precision` | Order prices, trigger prices, fills. | `2` → `50000.01`  |
+| `size_precision`  | Order quantities, fill quantities.   | `5` → `1.00001`   |
+
+These precisions are paired with minimum increments:
+
+| Field             | Purpose                                  |
+|-------------------|------------------------------------------|
+| `price_increment` | Smallest valid price change (tick size). |
+| `size_increment`  | Smallest valid quantity change.          |
+
+The increment's own precision must exactly match the instrument's declared precision.
+For example, an instrument with `price_precision=2` and `price_increment=Price(0.01, 2)`
+is valid, but a mismatch between these values will raise an error at instrument creation.
+
+### Where precision is enforced
+
+Precision is validated at multiple levels throughout the platform:
+
+1. **Instrument creation**: The precision of `price_increment` and `size_increment` must
+   match `price_precision` and `size_precision` respectively.
+2. **Risk engine**: Before an order reaches the venue, the `RiskEngine` checks that the
+   order's price and quantity precision do not exceed the instrument's limits. Orders that
+   fail this check are denied.
+3. **Matching engine**: During backtesting, the matching engine validates that all incoming
+   market data matches the instrument's precision. Mismatches raise a `RuntimeError`
+   immediately.
+
+:::warning
+The `RiskEngine` does not round values automatically. If you create a `Price` with
+5 decimal places on an instrument that supports 2, the order will be denied. Use
+`instrument.make_price()` and `instrument.make_qty()` to round explicitly.
 :::
+
+### Working with instrument precision
+
+Use the instrument's factory methods to create values with correct precision:
+
+```python
+instrument = self.cache.instrument(instrument_id)
+
+price = instrument.make_price(0.90500)
+quantity = instrument.make_qty(150)
+```
+
+These methods round the input to the instrument's declared precision, ensuring the
+result will pass precision checks. Other validation rules still apply (e.g., min/max
+quantity limits), and `make_qty()` will raise if the rounded value is zero.
+
+:::tip
+Always use `instrument.make_price()` and `instrument.make_qty()` when creating order
+parameters. This avoids precision mismatch errors and ensures your values have the
+correct number of decimal places for the instrument.
+:::
+
+If you encounter precision mismatch errors during backtesting, verify that:
+
+1. The instrument definition matches your data source's precision.
+2. Data was not inadvertently rounded or truncated during loading.
+3. Custom data loaders preserve the original precision metadata.
 
 ## Limits
 
@@ -136,23 +224,6 @@ dependent and can include:
 :::note
 Most of these limits are checked by the Nautilus `RiskEngine`, otherwise exceeding
 published limits *can* result in the exchange rejecting orders.
-:::
-
-## Prices and quantities
-
-Instrument objects also offer a convenient way to create correct prices
-and quantities based on given values.
-
-```python
-instrument = self.cache.instrument(instrument_id)
-
-price = instrument.make_price(0.90500)
-quantity = instrument.make_qty(150)
-```
-
-:::tip
-The above is the recommended method for creating valid prices and quantities,
-such as when passing them to the order factory to create an order.
 :::
 
 ## Margins and fees
@@ -440,3 +511,8 @@ undefined behavior.
 See the `SyntheticInstrument` [API reference](../api_reference/model/instruments.md#class-syntheticinstrument-1)
 for a detailed understanding of input requirements and potential exceptions.
 :::
+
+## Related guides
+
+- [Data](data.md) - Market data types for instruments.
+- [Orders](orders.md) - Orders reference instruments.

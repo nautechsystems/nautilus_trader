@@ -44,6 +44,7 @@ use nautilus_bybit::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
+    data::BarType,
     identifiers::{InstrumentId, StrategyId, TraderId},
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -456,20 +457,21 @@ fn make_linear_pair(raw_symbol: &str, base: &str, quote: &str) -> CurrencyPair {
         5,
         Price::from("0.01"),
         Quantity::from("0.00001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
+        None,     // multiplier
+        None,     // lot_size
+        None,     // max_quantity
+        None,     // min_quantity
+        None,     // max_notional
+        None,     // min_notional
+        None,     // max_price
+        None,     // min_price
+        None,     // margin_init
+        None,     // margin_maint
+        None,     // maker_fee
+        None,     // taker_fee
+        None,     // info
+        0.into(), // ts_event
+        0.into(), // ts_init
     )
 }
 
@@ -1247,12 +1249,8 @@ async fn test_klines_subscription_flow() {
 
     client.connect().await.unwrap();
 
-    // Subscribe to klines using the high-level method
-    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
-    client
-        .subscribe_klines(instrument_id, "1".to_string())
-        .await
-        .unwrap();
+    let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-1-MINUTE-LAST-EXTERNAL");
+    client.subscribe_bars(bar_type).await.unwrap();
 
     // Wait for subscription
     wait_until_async(
@@ -1849,6 +1847,8 @@ mod conditional_order_tests {
                 None,  // post_only
                 None,  // reduce_only
                 false, // is_leverage
+                None,  // take_profit
+                None,  // stop_loss
             )
             .unwrap()
     }
@@ -2436,7 +2436,7 @@ async fn test_build_cancel_order_params_requires_order_id() {
     .await;
 
     let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
-    client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear));
+    client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear.clone()));
 
     let result =
         client.build_cancel_order_params(BybitProductType::Linear, btcusdt_linear.id, None, None);

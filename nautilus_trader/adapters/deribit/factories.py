@@ -26,7 +26,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
@@ -86,7 +86,7 @@ def get_cached_deribit_http_client(
 @lru_cache(1)
 def get_cached_deribit_instrument_provider(
     client: nautilus_pyo3.DeribitHttpClient,
-    instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = None,
+    product_types: tuple[DeribitProductType, ...] | None = None,
     config: InstrumentProviderConfig | None = None,
 ) -> DeribitInstrumentProvider:
     """
@@ -98,8 +98,8 @@ def get_cached_deribit_instrument_provider(
     ----------
     client : DeribitHttpClient
         The Deribit HTTP client.
-    instrument_kinds : tuple[DeribitInstrumentKind, ...], optional
-        The instrument kinds to load.
+    product_types : tuple[DeribitProductType, ...], optional
+        The product types to load.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
 
@@ -110,7 +110,7 @@ def get_cached_deribit_instrument_provider(
     """
     return DeribitInstrumentProvider(
         client=client,
-        instrument_kinds=instrument_kinds,
+        product_types=product_types,
         config=config,
     )
 
@@ -164,7 +164,7 @@ class DeribitLiveDataClientFactory(LiveDataClientFactory):
         )
         provider = get_cached_deribit_instrument_provider(
             client=client,
-            instrument_kinds=config.instrument_kinds,
+            product_types=config.product_types,
             config=config.instrument_provider,
         )
         return DeribitDataClient(
@@ -216,7 +216,7 @@ class DeribitLiveExecClientFactory(LiveExecClientFactory):
         DeribitExecutionClient
 
         """
-        client: nautilus_pyo3.DeribitHttpClient = get_cached_deribit_http_client(
+        http_client: nautilus_pyo3.DeribitHttpClient = get_cached_deribit_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
@@ -226,14 +226,15 @@ class DeribitLiveExecClientFactory(LiveExecClientFactory):
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
         )
+
         provider = get_cached_deribit_instrument_provider(
-            client=client,
-            instrument_kinds=config.instrument_kinds,
+            client=http_client,
+            product_types=config.product_types,
             config=config.instrument_provider,
         )
         return DeribitExecutionClient(
             loop=loop,
-            client=client,
+            http_client=http_client,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

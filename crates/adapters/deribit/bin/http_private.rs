@@ -26,13 +26,20 @@ use nautilus_model::identifiers::AccountId;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let is_testnet = !std::env::args().any(|x| x == "--mainnet");
-    let client =
-        DeribitHttpClient::new_with_env(None, None, is_testnet, Some(30), None, None, None, None)?;
+    let client = DeribitHttpClient::new_with_env(
+        None,
+        None,
+        None,
+        is_testnet,
+        Some(30),
+        None,
+        None,
+        None,
+        None,
+    )?;
 
     let account_id = AccountId::from("DERIBIT-001");
 

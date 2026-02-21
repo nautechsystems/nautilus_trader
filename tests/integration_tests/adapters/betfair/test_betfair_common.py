@@ -146,6 +146,8 @@ def test_is_session_error_returns_true(error_msg):
     [
         "PERMISSION_DENIED: Business rules do not allow order to be placed",
         "INSUFFICIENT_FUNDS: Not enough funds available",
+        "JSON_PARSE_ERROR: JSON is malformed: invalid character (byte 0)",
+        "JSON_PARSE_ERROR: Empty response body",
         "",
     ],
 )

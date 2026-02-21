@@ -15,30 +15,34 @@
 
 //! Error types for Kraken HTTP client operations.
 
-use std::fmt::Display;
+use thiserror::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum KrakenHttpError {
+    #[error("Network error: {0}")]
     NetworkError(String),
+
+    #[error("API error: {}", format_api_errors(.0))]
     ApiError(Vec<String>),
+
+    #[error("Parse error: {0}")]
     ParseError(String),
+
+    #[error("Authentication error: {0}")]
     AuthenticationError(String),
+
+    #[error("Missing credentials")]
     MissingCredentials,
 }
 
-impl Display for KrakenHttpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NetworkError(msg) => write!(f, "Network error: {msg}"),
-            Self::ApiError(errors) => write!(f, "API error: {}", errors.join(", ")),
-            Self::ParseError(msg) => write!(f, "Parse error: {msg}"),
-            Self::AuthenticationError(msg) => write!(f, "Authentication error: {msg}"),
-            Self::MissingCredentials => write!(f, "Missing credentials"),
-        }
+/// Formats API error messages, handling empty error arrays.
+fn format_api_errors(errors: &[String]) -> String {
+    if errors.is_empty() {
+        "unknown error (empty error list)".to_string()
+    } else {
+        errors.join(", ")
     }
 }
-
-impl std::error::Error for KrakenHttpError {}
 
 impl From<anyhow::Error> for KrakenHttpError {
     fn from(err: anyhow::Error) -> Self {

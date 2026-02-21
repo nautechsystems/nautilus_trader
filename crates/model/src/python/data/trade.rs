@@ -61,6 +61,11 @@ impl TradeTick {
     ///
     /// Returns a `PyErr` if attribute extraction or type conversion fails.
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        // Fast path: avoid property getters that trigger enum type deadlocks
+        if let Ok(tick) = obj.cast::<Self>() {
+            return Ok(*tick.borrow());
+        }
+
         let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
         let instrument_id =

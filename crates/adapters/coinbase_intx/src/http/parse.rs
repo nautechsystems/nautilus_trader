@@ -90,6 +90,7 @@ pub fn parse_spot_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         UnixNanos::from(definition.quote.timestamp),
         ts_init,
     );
@@ -156,6 +157,7 @@ pub fn parse_perp_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         UnixNanos::from(definition.quote.timestamp),
         ts_init,
     );
@@ -181,7 +183,7 @@ pub fn parse_instrument_any(
     match result {
         Ok(instrument) => instrument,
         Err(e) => {
-            tracing::warn!(
+            log::warn!(
                 "Failed to parse instrument {}: {e}",
                 instrument.instrument_id,
             );
@@ -249,7 +251,7 @@ fn parse_order_status(coinbase_order: &CoinbaseIntxOrder) -> anyhow::Result<Orde
                 CoinbaseIntxOrderEventType::Replaced => OrderStatus::Accepted,
                 // Safety fallback
                 _ => {
-                    tracing::debug!(
+                    log::debug!(
                         "Unexpected order status and last event type: {:?} {:?}",
                         coinbase_order.order_status,
                         coinbase_order.event_type
@@ -269,7 +271,7 @@ fn parse_order_status(coinbase_order: &CoinbaseIntxOrder) -> anyhow::Result<Orde
                 CoinbaseIntxOrderEventType::Expired => OrderStatus::Expired,
                 // Safety fallback
                 _ => {
-                    tracing::debug!(
+                    log::debug!(
                         "Unexpected order status and last event type: {:?} {:?}",
                         coinbase_order.order_status,
                         coinbase_order.event_type

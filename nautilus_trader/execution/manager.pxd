@@ -55,7 +55,8 @@ cdef class OrderManager:
     cdef readonly bint log_events
     cdef readonly bint log_commands
 
-    cdef dict _submit_order_commands
+    cdef dict[ClientOrderId, SubmitOrder] _submit_order_commands
+    cdef dict[ClientOrderId, Quantity] _oto_target_quantities
     cdef object _submit_order_handler
     cdef object _cancel_order_handler
     cdef object _modify_order_handler

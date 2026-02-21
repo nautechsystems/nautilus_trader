@@ -15,15 +15,15 @@
 
 use std::fmt::Display;
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, keccak256};
+use nautilus_model::identifiers::ClientOrderId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
 
 use crate::common::enums::{
-    HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
-    HyperliquidPositionType, HyperliquidSide, HyperliquidTpSl, HyperliquidTrailingOffsetType,
-    HyperliquidTriggerPriceType,
+    HyperliquidFillDirection, HyperliquidLeverageType,
+    HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidPositionType, HyperliquidSide,
 };
 
 /// Response from candleSnapshot endpoint (returns array directly).
@@ -57,6 +57,18 @@ impl Cloid {
         }
 
         Ok(Self(bytes))
+    }
+
+    /// Creates a `Cloid` from a Nautilus `ClientOrderId` by hashing it.
+    ///
+    /// Uses keccak256 hash and takes the first 16 bytes to create a deterministic
+    /// 128-bit CLOID from any client order ID format.
+    #[must_use]
+    pub fn from_client_order_id(client_order_id: ClientOrderId) -> Self {
+        let hash = keccak256(client_order_id.as_str().as_bytes());
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(&hash[..16]);
+        Self(bytes)
     }
 
     /// Converts the CLOID to a hex string with `0x` prefix.
@@ -122,10 +134,6 @@ pub struct HyperliquidAssetInfo {
     #[serde(default)]
     pub is_delisted: Option<bool>,
 }
-
-// -------------------------------------------------------------------------------------------------
-// === Extended Instrument Metadata Models ===
-// -------------------------------------------------------------------------------------------------
 
 /// Complete perpetuals metadata response from `POST /info` with `{ "type": "meta" }`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -238,10 +246,6 @@ pub struct SpotPair {
     /// Whether this is the canonical pair.
     pub is_canonical: bool,
 }
-
-// -------------------------------------------------------------------------------------------------
-// === Optional Context Payloads (for price precision refinement) ===
-// -------------------------------------------------------------------------------------------------
 
 /// Optional perpetuals metadata with asset contexts from `{ "type": "metaAndAssetCtxs" }`.
 /// Returns a tuple: `[PerpMeta, Vec<PerpAssetCtx>]`
@@ -385,6 +389,9 @@ pub struct HyperliquidFill {
     pub crossed: bool,
     /// Fee paid for this fill.
     pub fee: String,
+    /// Token the fee was paid in (e.g. "USDC", "HYPE").
+    #[serde(rename = "feeToken")]
+    pub fee_token: Ustr,
 }
 
 /// Represents order status response from `POST /info`.
@@ -534,250 +541,14 @@ pub enum HyperliquidExchangeResponse {
     },
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Conditional Order Models
-////////////////////////////////////////////////////////////////////////////////
-
-/// Extended trigger order parameters for advanced conditional orders.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidTriggerOrderParams {
-    /// Whether this is a market order when triggered (true) or limit order (false).
-    #[serde(rename = "isMarket")]
-    pub is_market: bool,
-    /// Trigger price.
-    #[serde(rename = "triggerPx")]
-    pub trigger_px: String,
-    /// Take profit or stop loss type.
-    pub tpsl: HyperliquidTpSl,
-    /// Optional trigger price type (last, mark, oracle). Defaults to mark price if not specified.
-    #[serde(rename = "triggerPxType", skip_serializing_if = "Option::is_none")]
-    pub trigger_px_type: Option<HyperliquidTriggerPriceType>,
+impl HyperliquidExchangeResponse {
+    pub fn is_ok(&self) -> bool {
+        matches!(self, Self::Status { status, .. } if status == RESPONSE_STATUS_OK)
+    }
 }
 
-/// Trailing stop order parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidTrailingStopParams {
-    /// Trailing offset value.
-    #[serde(
-        rename = "trailingOffset",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
-    )]
-    pub trailing_offset: Decimal,
-    /// Trailing offset type (price, percentage, basis_points).
-    #[serde(rename = "trailingOffsetType")]
-    pub trailing_offset_type: HyperliquidTrailingOffsetType,
-    /// Optional activation price - price at which the trailing stop becomes active.
-    #[serde(rename = "activationPx", skip_serializing_if = "Option::is_none")]
-    pub activation_px: Option<String>,
-    /// Take profit or stop loss type.
-    pub tpsl: HyperliquidTpSl,
-}
-
-/// Request to place a trigger order (stop or take profit).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidPlaceTriggerOrderRequest {
-    /// Asset ID.
-    #[serde(rename = "a")]
-    pub asset: AssetId,
-    /// Whether to buy or sell.
-    #[serde(rename = "b")]
-    pub is_buy: bool,
-    /// Order size.
-    #[serde(
-        rename = "s",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
-    )]
-    pub sz: Decimal,
-    /// Limit price (required if is_market is false).
-    #[serde(rename = "limitPx", skip_serializing_if = "Option::is_none")]
-    pub limit_px: Option<String>,
-    /// Trigger order parameters.
-    #[serde(flatten)]
-    pub trigger_params: HyperliquidTriggerOrderParams,
-    /// Whether this is a reduce-only order.
-    #[serde(rename = "reduceOnly", skip_serializing_if = "Option::is_none")]
-    pub reduce_only: Option<bool>,
-    /// Optional client order ID for tracking.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cloid: Option<Cloid>,
-}
-
-/// Request to modify an existing trigger order.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidModifyTriggerOrderRequest {
-    /// Order ID to modify.
-    pub oid: OrderId,
-    /// Asset ID.
-    #[serde(rename = "a")]
-    pub asset: AssetId,
-    /// New trigger price.
-    #[serde(rename = "triggerPx")]
-    pub trigger_px: String,
-    /// New limit price (if applicable).
-    #[serde(rename = "limitPx", skip_serializing_if = "Option::is_none")]
-    pub limit_px: Option<String>,
-    /// New order size (if changing).
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
-    )]
-    pub sz: Option<Decimal>,
-}
-
-/// Request to cancel a trigger order.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidCancelTriggerOrderRequest {
-    /// Asset ID.
-    #[serde(rename = "a")]
-    pub asset: AssetId,
-    /// Order ID to cancel.
-    pub oid: OrderId,
-}
-
-/// Trigger order status response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidTriggerOrderStatus {
-    /// Order ID.
-    pub oid: OrderId,
-    /// Order status.
-    pub status: HyperliquidOrderStatusEnum,
-    /// Timestamp when status was updated (milliseconds).
-    #[serde(rename = "statusTimestamp")]
-    pub status_timestamp: u64,
-    /// Trigger order information.
-    pub order: HyperliquidTriggerOrderInfo,
-}
-
-/// Information about a trigger order.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidTriggerOrderInfo {
-    /// Asset symbol.
-    pub coin: Ustr,
-    /// Order side.
-    pub side: HyperliquidSide,
-    /// Limit price (if limit order).
-    #[serde(rename = "limitPx", skip_serializing_if = "Option::is_none")]
-    pub limit_px: Option<String>,
-    /// Trigger price.
-    #[serde(rename = "triggerPx")]
-    pub trigger_px: String,
-    /// Order size.
-    pub sz: String,
-    /// Whether this is a market order when triggered.
-    #[serde(rename = "isMarket")]
-    pub is_market: bool,
-    /// Take profit or stop loss type.
-    pub tpsl: HyperliquidTpSl,
-    /// Order ID.
-    pub oid: OrderId,
-    /// Order creation timestamp (milliseconds).
-    pub timestamp: u64,
-    /// Whether the order has been triggered.
-    #[serde(default)]
-    pub triggered: bool,
-    /// Trigger timestamp (milliseconds, if triggered).
-    #[serde(rename = "triggerTime", skip_serializing_if = "Option::is_none")]
-    pub trigger_time: Option<u64>,
-}
-
-/// Bracket order request (entry + TP + SL).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidBracketOrderRequest {
-    /// Asset ID.
-    #[serde(rename = "a")]
-    pub asset: AssetId,
-    /// Whether to buy or sell.
-    #[serde(rename = "b")]
-    pub is_buy: bool,
-    /// Entry order size.
-    #[serde(
-        rename = "s",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
-    )]
-    pub sz: Decimal,
-    /// Entry order limit price.
-    #[serde(rename = "limitPx")]
-    pub limit_px: String,
-    /// Take profit trigger price.
-    #[serde(rename = "tpTriggerPx")]
-    pub tp_trigger_px: String,
-    /// Take profit limit price (if limit order).
-    #[serde(rename = "tpLimitPx", skip_serializing_if = "Option::is_none")]
-    pub tp_limit_px: Option<String>,
-    /// Whether TP is market order.
-    #[serde(rename = "tpIsMarket", default)]
-    pub tp_is_market: bool,
-    /// Stop loss trigger price.
-    #[serde(rename = "slTriggerPx")]
-    pub sl_trigger_px: String,
-    /// Stop loss limit price (if limit order).
-    #[serde(rename = "slLimitPx", skip_serializing_if = "Option::is_none")]
-    pub sl_limit_px: Option<String>,
-    /// Whether SL is market order.
-    #[serde(rename = "slIsMarket", default)]
-    pub sl_is_market: bool,
-    /// Optional client order ID for entry order.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cloid: Option<Cloid>,
-}
-
-/// OCO (One-Cancels-Other) order request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidOcoOrderRequest {
-    /// Asset ID.
-    #[serde(rename = "a")]
-    pub asset: AssetId,
-    /// Whether to buy or sell.
-    #[serde(rename = "b")]
-    pub is_buy: bool,
-    /// Order size.
-    #[serde(
-        rename = "s",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
-    )]
-    pub sz: Decimal,
-    /// First order trigger price.
-    #[serde(rename = "triggerPx1")]
-    pub trigger_px_1: String,
-    /// First order limit price (if applicable).
-    #[serde(rename = "limitPx1", skip_serializing_if = "Option::is_none")]
-    pub limit_px_1: Option<String>,
-    /// Whether first order is market.
-    #[serde(rename = "isMarket1", default)]
-    pub is_market_1: bool,
-    /// First order TP/SL type.
-    #[serde(rename = "tpsl1")]
-    pub tpsl_1: HyperliquidTpSl,
-    /// Second order trigger price.
-    #[serde(rename = "triggerPx2")]
-    pub trigger_px_2: String,
-    /// Second order limit price (if applicable).
-    #[serde(rename = "limitPx2", skip_serializing_if = "Option::is_none")]
-    pub limit_px_2: Option<String>,
-    /// Whether second order is market.
-    #[serde(rename = "isMarket2", default)]
-    pub is_market_2: bool,
-    /// Second order TP/SL type.
-    #[serde(rename = "tpsl2")]
-    pub tpsl_2: HyperliquidTpSl,
-    /// Whether orders are reduce-only.
-    #[serde(rename = "reduceOnly", skip_serializing_if = "Option::is_none")]
-    pub reduce_only: Option<bool>,
-}
+/// The success status string returned by the Hyperliquid exchange API.
+pub const RESPONSE_STATUS_OK: &str = "ok";
 
 #[cfg(test)]
 mod tests {
@@ -812,11 +583,49 @@ mod tests {
         let json = r#"{"status": "ok", "response": {"type": "order"}}"#;
 
         let response: HyperliquidExchangeResponse = serde_json::from_str(json).unwrap();
+        assert!(response.is_ok());
+    }
 
-        match response {
-            HyperliquidExchangeResponse::Status { status, .. } => assert_eq!(status, "ok"),
-            _ => panic!("Expected status response"),
-        }
+    #[rstest]
+    fn test_msgpack_serialization_matches_python() {
+        // Test that msgpack serialization includes the "type" tag properly.
+        // Python SDK serializes: {"type": "order", "orders": [...], "grouping": "na"}
+        // We need to verify rmp_serde::to_vec_named produces the same format.
+
+        let action = HyperliquidExecAction::Order {
+            orders: vec![],
+            grouping: HyperliquidExecGrouping::Na,
+            builder: None,
+        };
+
+        // First verify JSON is correct
+        let json = serde_json::to_string(&action).unwrap();
+        assert!(
+            json.contains(r#""type":"order""#),
+            "JSON should have type tag: {json}"
+        );
+
+        // Serialize with msgpack
+        let msgpack_bytes = rmp_serde::to_vec_named(&action).unwrap();
+
+        // Decode back to a generic Value to inspect the structure
+        let decoded: serde_json::Value = rmp_serde::from_slice(&msgpack_bytes).unwrap();
+
+        // The decoded value should have a "type" field
+        assert!(
+            decoded.get("type").is_some(),
+            "MsgPack should have type tag. Decoded: {decoded:?}"
+        );
+        assert_eq!(
+            decoded.get("type").unwrap().as_str().unwrap(),
+            "order",
+            "Type should be 'order'"
+        );
+        assert!(decoded.get("orders").is_some(), "Should have orders field");
+        assert!(
+            decoded.get("grouping").is_some(),
+            "Should have grouping field"
+        );
     }
 }
 
@@ -964,13 +773,14 @@ pub struct HyperliquidExecCancelOrderRequest {
 }
 
 /// Cancel specification for canceling orders by client order ID via exchange endpoint.
+///
+/// Note: Unlike order placement which uses abbreviated field names ("a", "c"),
+/// cancel-by-cloid uses full field names ("asset", "cloid") per the Hyperliquid API.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperliquidExecCancelByCloidRequest {
     /// Asset ID.
-    #[serde(rename = "a")]
     pub asset: AssetId,
     /// Client order ID to cancel.
-    #[serde(rename = "c")]
     pub cloid: Cloid,
 }
 
@@ -1323,6 +1133,13 @@ pub struct ClearinghouseState {
     /// Cross margin summary information.
     #[serde(default)]
     pub cross_margin_summary: Option<CrossMarginSummary>,
+    /// Withdrawable balance (top-level field).
+    #[serde(
+        default,
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+    )]
+    pub withdrawable: Option<Decimal>,
     /// Time of the state snapshot (milliseconds since epoch).
     #[serde(default)]
     pub time: Option<u64>,
@@ -1339,19 +1156,52 @@ pub struct AssetPosition {
     pub position_type: HyperliquidPositionType,
 }
 
+/// Leverage information for a position.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeverageInfo {
+    #[serde(rename = "type")]
+    pub leverage_type: HyperliquidLeverageType,
+    /// Leverage value.
+    pub value: u32,
+}
+
+/// Cumulative funding breakdown for a position.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CumFundingInfo {
+    /// All-time cumulative funding.
+    #[serde(
+        rename = "allTime",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub all_time: Decimal,
+    /// Funding since position opened.
+    #[serde(
+        rename = "sinceOpen",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub since_open: Decimal,
+    /// Funding since last position change.
+    #[serde(
+        rename = "sinceChange",
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub since_change: Decimal,
+}
+
 /// Detailed position data for an asset.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PositionData {
     /// Asset symbol/coin (e.g., "BTC").
-    pub coin: String,
-    /// Cumulative funding (entry price weighted by position size changes).
-    #[serde(
-        rename = "cumFunding",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
-    )]
-    pub cum_funding: Decimal,
+    pub coin: Ustr,
+    /// Cumulative funding breakdown.
+    #[serde(rename = "cumFunding")]
+    pub cum_funding: CumFundingInfo,
     /// Entry price for the position.
     #[serde(
         rename = "entryPx",
@@ -1360,12 +1210,8 @@ pub struct PositionData {
         default
     )]
     pub entry_px: Option<Decimal>,
-    /// Leverage used for the position.
-    #[serde(
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
-    )]
-    pub leverage: Decimal,
+    /// Leverage information for the position.
+    pub leverage: LeverageInfo,
     /// Liquidation price.
     #[serde(
         rename = "liquidationPx",
@@ -1381,13 +1227,9 @@ pub struct PositionData {
         deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
     )]
     pub margin_used: Decimal,
-    /// Maximum trade sizes allowed.
-    #[serde(
-        rename = "maxTradeSzs",
-        serialize_with = "crate::common::parse::serialize_vec_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_vec_decimal_from_str"
-    )]
-    pub max_trade_szs: Vec<Decimal>,
+    /// Maximum leverage allowed for this asset.
+    #[serde(rename = "maxLeverage", default)]
+    pub max_leverage: Option<u32>,
     /// Position value.
     #[serde(
         rename = "positionValue",
@@ -1453,8 +1295,9 @@ pub struct CrossMarginSummary {
     /// Withdrawable balance.
     #[serde(
         rename = "withdrawable",
-        serialize_with = "crate::common::parse::serialize_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+        default,
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
     )]
-    pub withdrawable: Decimal,
+    pub withdrawable: Option<Decimal>,
 }

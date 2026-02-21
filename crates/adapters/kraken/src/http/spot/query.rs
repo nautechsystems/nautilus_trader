@@ -90,6 +90,17 @@ impl KrakenSpotAddOrderParamsBuilder {
         {
             return Err("price is required for limit orders".to_string());
         }
+
+        // Validate price2 (limit price) is present for stop-loss-limit and take-profit-limit
+        if let Some(KrakenOrderType::StopLossLimit | KrakenOrderType::TakeProfitLimit) =
+            self.order_type
+            && (self.price2.is_none() || self.price2.as_ref().unwrap().is_none())
+        {
+            return Err(
+                "price2 (limit price) is required for stop-loss-limit and take-profit-limit orders"
+                    .to_string(),
+            );
+        }
         Ok(())
     }
 }

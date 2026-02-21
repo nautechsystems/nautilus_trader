@@ -26,6 +26,7 @@ use super::enums::{CoinbaseIntxWsChannel, WsMessageType, WsOperation};
 use crate::common::enums::{CoinbaseIntxInstrumentType, CoinbaseIntxSide};
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum NautilusWsMessage {
     Data(Data),
     DataVec(Vec<Data>),

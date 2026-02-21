@@ -40,6 +40,8 @@
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds as a Python extension module (used with `python`).
+//!
+//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -49,11 +51,12 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+pub mod broadcast;
 pub mod common;
 pub mod config;
 pub mod data;
-pub mod error;
 pub mod execution;
+pub mod factories;
 pub mod http;
 pub mod websocket;
 
@@ -62,13 +65,14 @@ pub mod python;
 
 // Re-exports
 pub use crate::{
-    common::{consts::BITMEX_VENUE, enums::BitmexSide},
-    data::BitmexDataClient,
-    execution::{
-        BitmexExecutionClient,
+    broadcast::{
         canceller::{BroadcasterMetrics, CancelBroadcaster, CancelBroadcasterConfig, ClientStats},
         submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
     },
+    common::{consts::BITMEX_VENUE, enums::BitmexSide},
+    data::BitmexDataClient,
+    execution::BitmexExecutionClient,
+    factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
     http::{client::BitmexHttpClient, error::BitmexHttpError},
     websocket::{client::BitmexWebSocketClient, error::BitmexWsError},
 };

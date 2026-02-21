@@ -23,28 +23,28 @@
 //! ## Supported Order Types
 //!
 //! ### Standard Orders
-//! - **Market**: Implemented as IOC (Immediate-or-Cancel) limit orders
-//! - **Limit**: Standard limit orders with GTC/IOC/ALO time-in-force
+//! - **Market**: Implemented as IOC (Immediate-or-Cancel) limit orders.
+//! - **Limit**: Standard limit orders with GTC/IOC/ALO time-in-force.
 //!
 //! ### Conditional/Trigger Orders
-//! - **StopMarket**: Protective stop that triggers at specified price and executes at market
-//! - **StopLimit**: Protective stop that triggers at specified price and executes at limit
-//! - **MarketIfTouched**: Profit-taking/entry order that triggers and executes at market
-//! - **LimitIfTouched**: Profit-taking/entry order that triggers and executes at limit
+//! - **StopMarket**: Protective stop that triggers at specified price and executes at market.
+//! - **StopLimit**: Protective stop that triggers at specified price and executes at limit.
+//! - **MarketIfTouched**: Profit-taking/entry order that triggers and executes at market.
+//! - **LimitIfTouched**: Profit-taking/entry order that triggers and executes at limit.
 //!
 //! ## Order Semantics
 //!
 //! ### Stop Orders (StopMarket/StopLimit)
-//! - Used for protective stops and risk management
-//! - Mapped to Hyperliquid's trigger orders with `tpsl: Sl`
-//! - Trigger when price reaches the stop level
-//! - Execute immediately (market) or at limit price
+//! - Used for protective stops and risk management.
+//! - Mapped to Hyperliquid's trigger orders with `tpsl: Sl`.
+//! - Trigger when price reaches the stop level.
+//! - Execute immediately (market) or at limit price.
 //!
 //! ### If Touched Orders (MarketIfTouched/LimitIfTouched)
-//! - Used for profit-taking or entry orders
-//! - Mapped to Hyperliquid's trigger orders with `tpsl: Tp`
-//! - Trigger when price reaches the target level
-//! - Execute immediately (market) or at limit price
+//! - Used for profit-taking or entry orders.
+//! - Mapped to Hyperliquid's trigger orders with `tpsl: Tp`.
+//! - Trigger when price reaches the target level.
+//! - Execute immediately (market) or at limit price.
 //!
 //! ## Trigger Price Logic
 //!
@@ -56,123 +56,80 @@
 //!
 //! ## Trigger Type Support
 //!
-//! Currently, Hyperliquid uses **last traded price** for all trigger evaluations.
-//!
-//! Future enhancement: Add support for mark/index price triggers if Hyperliquid API adds this feature.
-//! See OKX's `OKXTriggerType` and Bybit's `BybitTriggerType` for reference implementations.
-//!
-//! ## Integration with Other Adapters
-//!
-//! This implementation reuses patterns from:
-//! - **OKX**: Conditional order types and algo order API structure
-//! - **Bybit**: TP/SL mode detection and trigger direction logic
-//! - **BitMEX**: Stop order handling and trigger price validation
-//!
-//! See:
-//! - `crates/adapters/okx/src/common/consts.rs` - OKX_CONDITIONAL_ORDER_TYPES
-//! - `crates/adapters/bybit/src/common/enums.rs` - BybitStopOrderType, BybitTriggerType
-//! - `crates/adapters/bitmex/src/execution/mod.rs` - trigger_price handling
-
-use std::str::FromStr;
+//! Hyperliquid uses **mark price** for all trigger evaluations (TP/SL orders).
 
 use anyhow::Context;
 use nautilus_core::UnixNanos;
+pub use nautilus_core::serialization::{
+    deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
+    deserialize_vec_decimal_from_str, serialize_decimal_as_str, serialize_optional_decimal_as_str,
+    serialize_vec_decimal_as_str,
+};
 use nautilus_model::{
     data::bar::BarType,
     enums::{AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{ClientOrderId, InstrumentId, Symbol, TradeId, Venue},
     orders::{Order, any::OrderAny},
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serializer};
-use serde_json::Value;
 
 use crate::{
-    common::enums::{HyperliquidBarInterval, HyperliquidTpSl},
+    common::enums::{
+        HyperliquidBarInterval::{self, *},
+        HyperliquidOrderStatus, HyperliquidTpSl,
+    },
     http::models::{
-        AssetId, Cloid, CrossMarginSummary, HyperliquidExchangeResponse,
+        Cloid, CrossMarginSummary, HyperliquidExchangeResponse,
         HyperliquidExecCancelByCloidRequest, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
         HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
-        HyperliquidExecTriggerParams,
+        HyperliquidExecTriggerParams, RESPONSE_STATUS_OK,
     },
     websocket::messages::TrailingOffsetType,
 };
 
-/// Serializes decimal as string (lossless, no scientific notation).
-pub fn serialize_decimal_as_str<S>(decimal: &Decimal, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&decimal.normalize().to_string())
-}
-
-/// Deserializes decimal from string only (reject numbers to avoid precision loss).
-pub fn deserialize_decimal_from_str<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    Decimal::from_str(&s).map_err(serde::de::Error::custom)
-}
-
-/// Serialize optional decimal as string.
-pub fn serialize_optional_decimal_as_str<S>(
-    decimal: &Option<Decimal>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match decimal {
-        Some(d) => serializer.serialize_str(&d.normalize().to_string()),
-        None => serializer.serialize_none(),
+/// Creates a deterministic [`TradeId`] from fill fields common to both WS and HTTP responses.
+///
+/// Uses FNV-1a hash of `(hash, oid, px, sz, time, start_position)` to produce a unique
+/// identifier consistent across both data sources for the same physical fill.
+/// Includes `start_position` (running position before each fill) to disambiguate
+/// multiple partial fills within the same transaction at the same price/size.
+/// Format: `{fnv_hex}-{oid_hex}` (exactly 33 chars, within 36-char limit).
+pub fn make_fill_trade_id(
+    hash: &str,
+    oid: u64,
+    px: &str,
+    sz: &str,
+    time: u64,
+    start_position: &str,
+) -> TradeId {
+    // FNV-1a with fixed seed for deterministic output
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in hash.as_bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
     }
-}
-
-/// Deserialize optional decimal from string.
-pub fn deserialize_optional_decimal_from_str<'de, D>(
-    deserializer: D,
-) -> Result<Option<Decimal>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt = Option::<String>::deserialize(deserializer)?;
-    match opt {
-        Some(s) => {
-            let decimal = Decimal::from_str(&s).map_err(serde::de::Error::custom)?;
-            Ok(Some(decimal))
-        }
-        None => Ok(None),
+    for b in oid.to_le_bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
     }
-}
-
-/// Serialize vector of decimals as strings.
-pub fn serialize_vec_decimal_as_str<S>(
-    decimals: &Vec<Decimal>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    use serde::ser::SerializeSeq;
-    let mut seq = serializer.serialize_seq(Some(decimals.len()))?;
-    for decimal in decimals {
-        seq.serialize_element(&decimal.normalize().to_string())?;
+    for &b in px.as_bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
     }
-    seq.end()
-}
-
-/// Deserialize vector of decimals from strings.
-pub fn deserialize_vec_decimal_from_str<'de, D>(deserializer: D) -> Result<Vec<Decimal>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let strings = Vec::<String>::deserialize(deserializer)?;
-    strings
-        .into_iter()
-        .map(|s| Decimal::from_str(&s).map_err(serde::de::Error::custom))
-        .collect()
+    for &b in sz.as_bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    for b in time.to_le_bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    for &b in start_position.as_bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    TradeId::new(format!("{h:016x}-{oid:016x}"))
 }
 
 /// Round price down to the nearest valid tick size.
@@ -210,10 +167,36 @@ pub fn ensure_min_notional(
     }
 }
 
+/// Round a decimal to at most N significant figures.
+/// Hyperliquid requires prices to have at most 5 significant figures.
+pub fn round_to_sig_figs(value: Decimal, sig_figs: u32) -> Decimal {
+    if value.is_zero() {
+        return Decimal::ZERO;
+    }
+
+    // Find order of magnitude using log10
+    let abs_val = value.abs();
+    let float_val: f64 = abs_val.to_string().parse().unwrap_or(0.0);
+    let magnitude = float_val.log10().floor() as i32;
+
+    // Calculate shift to round to sig_figs
+    let shift = sig_figs as i32 - 1 - magnitude;
+    let factor = Decimal::from(10_i64.pow(shift.unsigned_abs()));
+
+    if shift >= 0 {
+        (value * factor).round() / factor
+    } else {
+        (value / factor).round() * factor
+    }
+}
+
 /// Normalize price to the specified number of decimal places.
 pub fn normalize_price(price: Decimal, decimals: u8) -> Decimal {
+    // First round to 5 significant figures (Hyperliquid requirement)
+    let sig_fig_price = round_to_sig_figs(price, 5);
+    // Then truncate to max decimal places
     let scale = Decimal::from(10_u64.pow(decimals as u32));
-    (price * scale).floor() / scale
+    (sig_fig_price * scale).floor() / scale
 }
 
 /// Normalize quantity to the specified number of decimal places.
@@ -246,9 +229,11 @@ pub fn normalize_order(
     Ok((final_price, final_qty))
 }
 
-/// Helper to parse millisecond timestamp to UnixNanos.
-pub fn parse_millis_to_nanos(millis: u64) -> UnixNanos {
-    UnixNanos::from(millis * 1_000_000)
+/// Converts millisecond timestamp to [`UnixNanos`].
+#[inline]
+pub fn millis_to_nanos(millis: u64) -> anyhow::Result<UnixNanos> {
+    let value = nautilus_core::datetime::millis_to_nanos(millis as f64)?;
+    Ok(UnixNanos::from(value))
 }
 
 /// Converts a Nautilus `TimeInForce` to Hyperliquid TIF.
@@ -264,74 +249,13 @@ pub fn time_in_force_to_hyperliquid_tif(
         (_, true) => Ok(HyperliquidExecTif::Alo), // Always use ALO for post-only orders
         (TimeInForce::Gtc, false) => Ok(HyperliquidExecTif::Gtc),
         (TimeInForce::Ioc, false) => Ok(HyperliquidExecTif::Ioc),
-        (TimeInForce::Fok, false) => Ok(HyperliquidExecTif::Ioc), // FOK maps to IOC in Hyperliquid
+        (TimeInForce::Fok, false) => {
+            anyhow::bail!("FOK time in force is not supported by Hyperliquid")
+        }
         _ => anyhow::bail!("Unsupported time in force for Hyperliquid: {tif:?}"),
     }
 }
 
-/// Extracts asset ID from instrument symbol.
-///
-/// For Hyperliquid, this typically involves parsing the symbol to get the underlying asset.
-/// Currently supports a hardcoded mapping for common assets.
-///
-/// # Errors
-///
-/// Returns an error if the symbol format is unsupported or the asset is not found.
-pub fn extract_asset_id_from_symbol(symbol: &str) -> anyhow::Result<AssetId> {
-    // For perpetuals, remove "-USD-PERP" or "-USD" suffix to get the base asset
-    let base = if let Some(base) = symbol.strip_suffix("-PERP") {
-        // Remove "-USD-PERP" -> Remove "-USD" from what remains
-        base.strip_suffix("-USD")
-            .ok_or_else(|| anyhow::anyhow!("Cannot extract asset from symbol: {symbol}"))?
-    } else if let Some(base) = symbol.strip_suffix("-USD") {
-        // Just "-USD" suffix
-        base
-    } else {
-        anyhow::bail!("Cannot extract asset ID from symbol: {symbol}")
-    };
-
-    // Convert symbol like "BTC" to asset index
-    // Asset indices from Hyperliquid testnet meta endpoint (as of October 2025)
-    // Source: https://api.hyperliquid-testnet.xyz/info
-    //
-    // NOTE: These indices may change. For production, consider querying the meta endpoint
-    // dynamically during initialization to avoid hardcoded mappings.
-    Ok(match base {
-        "SOL" => 0,    // Solana
-        "APT" => 1,    // Aptos
-        "ATOM" => 2,   // Cosmos
-        "BTC" => 3,    // Bitcoin
-        "ETH" => 4,    // Ethereum
-        "MATIC" => 5,  // Polygon
-        "BNB" => 6,    // Binance Coin
-        "AVAX" => 7,   // Avalanche
-        "DYDX" => 9,   // dYdX
-        "APE" => 10,   // ApeCoin
-        "OP" => 11,    // Optimism
-        "kPEPE" => 12, // Pepe (1k units)
-        "ARB" => 13,   // Arbitrum
-        "kSHIB" => 29, // Shiba Inu (1k units)
-        "WIF" => 78,   // Dogwifhat
-        "DOGE" => 173, // Dogecoin
-        _ => {
-            // For unknown assets, query the meta endpoint or add to this mapping
-            anyhow::bail!("Asset ID mapping not found for symbol: {symbol}")
-        }
-    })
-}
-
-/// Determines if a trigger order should be TP (take profit) or SL (stop loss).
-///
-/// Logic follows exchange patterns from OKX/Bybit:
-/// - For BUY orders: trigger above current price = SL, below = TP
-/// - For SELL orders: trigger below current price = SL, above = TP
-/// - For Market/Limit If Touched orders: always TP (triggered when price reaches target)
-///
-/// # Note
-///
-/// Hyperliquid's trigger logic:
-/// - StopMarket/StopLimit: Protective stops (SL)
-/// - MarketIfTouched/LimitIfTouched: Profit taking or entry orders (TP)
 fn determine_tpsl_type(
     order_type: OrderType,
     order_side: OrderSide,
@@ -381,11 +305,6 @@ fn determine_tpsl_type(
 ///
 /// Returns an error if the bar type uses an unsupported aggregation or step value.
 pub fn bar_type_to_interval(bar_type: &BarType) -> anyhow::Result<HyperliquidBarInterval> {
-    use crate::common::enums::HyperliquidBarInterval::{
-        EightHours, FifteenMinutes, FiveMinutes, FourHours, OneDay, OneHour, OneMinute, OneMonth,
-        OneWeek, ThirtyMinutes, ThreeDays, ThreeMinutes, TwelveHours, TwoHours,
-    };
-
     let spec = bar_type.spec();
     let step = spec.step.get();
 
@@ -424,49 +343,27 @@ pub fn bar_type_to_interval(bar_type: &BarType) -> anyhow::Result<HyperliquidBar
     Ok(interval)
 }
 
-/// Converts a Nautilus order into a Hyperliquid order request.
+/// Converts a Nautilus order to Hyperliquid request using a pre-resolved asset index.
 ///
-/// # Supported Order Types
-///
-/// - `Market`: Implemented as IOC limit order
-/// - `Limit`: Standard limit order with TIF (GTC/IOC/ALO)
-/// - `StopMarket`: Trigger order with market execution (protective stop)
-/// - `StopLimit`: Trigger order with limit price (protective stop)
-/// - `MarketIfTouched`: Trigger order with market execution (profit taking/entry)
-/// - `LimitIfTouched`: Trigger order with limit price (profit taking/entry)
-///
-/// # Conditional Order Patterns
-///
-/// Following patterns from OKX and Bybit adapters:
-/// - Stop orders (StopMarket/StopLimit) use `tpsl: Sl`
-/// - If Touched orders (MIT/LIT) use `tpsl: Tp`
-/// - Trigger price determines when order activates
-/// - Order side and trigger price relationship determines TP vs SL semantics
-///
-/// # Trigger Type Support
-///
-/// Hyperliquid currently uses last traded price for all triggers.
-/// Future enhancement: Add support for mark/index price triggers if Hyperliquid API supports it.
-pub fn order_to_hyperliquid_request(
+/// This variant is used when the caller has already resolved the asset index
+/// from the instrument cache (e.g., for SPOT instruments where the index
+/// cannot be derived from the symbol alone).
+pub fn order_to_hyperliquid_request_with_asset(
     order: &OrderAny,
+    asset: u32,
 ) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
-    let instrument_id = order.instrument_id();
-    let symbol = instrument_id.symbol.as_str();
-    let asset = extract_asset_id_from_symbol(symbol)
-        .with_context(|| format!("Failed to extract asset ID from symbol: {symbol}"))?;
-
     let is_buy = matches!(order.order_side(), OrderSide::Buy);
     let reduce_only = order.is_reduce_only();
     let order_side = order.order_side();
     let order_type = order.order_type();
 
-    // Convert price to decimal
+    // Normalize decimals to strip trailing zeros, matching the server's
+    // canonical form used for EIP-712 signing hash verification.
     let price_decimal = match order.price() {
         Some(price) => Decimal::from_str_exact(&price.to_string())
-            .with_context(|| format!("Failed to convert price to decimal: {price}"))?,
+            .with_context(|| format!("Failed to convert price to decimal: {price}"))?
+            .normalize(),
         None => {
-            // For market orders without price, use 0 as placeholder
-            // The actual market price will be determined by the exchange
             if matches!(
                 order_type,
                 OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched
@@ -478,25 +375,22 @@ pub fn order_to_hyperliquid_request(
         }
     };
 
-    // Convert size to decimal
-    let size_decimal =
-        Decimal::from_str_exact(&order.quantity().to_string()).with_context(|| {
+    let size_decimal = Decimal::from_str_exact(&order.quantity().to_string())
+        .with_context(|| {
             format!(
                 "Failed to convert quantity to decimal: {}",
                 order.quantity()
             )
-        })?;
+        })?
+        .normalize();
 
     // Determine order kind based on order type
     let kind = match order_type {
-        OrderType::Market => {
-            // Market orders in Hyperliquid are implemented as limit orders with IOC time-in-force
-            HyperliquidExecOrderKind::Limit {
-                limit: HyperliquidExecLimitParams {
-                    tif: HyperliquidExecTif::Ioc,
-                },
-            }
-        }
+        OrderType::Market => HyperliquidExecOrderKind::Limit {
+            limit: HyperliquidExecLimitParams {
+                tif: HyperliquidExecTif::Ioc,
+            },
+        },
         OrderType::Limit => {
             let tif =
                 time_in_force_to_hyperliquid_tif(order.time_in_force(), order.is_post_only())?;
@@ -509,16 +403,9 @@ pub fn order_to_hyperliquid_request(
                 let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
                     .with_context(|| {
                         format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?;
-
-                // Determine TP/SL based on order semantics
-                let tpsl = determine_tpsl_type(
-                    order_type,
-                    order_side,
-                    trigger_price_decimal,
-                    None, // Current market price not available here
-                );
-
+                    })?
+                    .normalize();
+                let tpsl = determine_tpsl_type(order_type, order_side, trigger_price_decimal, None);
                 HyperliquidExecOrderKind::Trigger {
                     trigger: HyperliquidExecTriggerParams {
                         is_market: true,
@@ -535,11 +422,9 @@ pub fn order_to_hyperliquid_request(
                 let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
                     .with_context(|| {
                         format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?;
-
-                // Determine TP/SL based on order semantics
+                    })?
+                    .normalize();
                 let tpsl = determine_tpsl_type(order_type, order_side, trigger_price_decimal, None);
-
                 HyperliquidExecOrderKind::Trigger {
                     trigger: HyperliquidExecTriggerParams {
                         is_market: false,
@@ -552,19 +437,17 @@ pub fn order_to_hyperliquid_request(
             }
         }
         OrderType::MarketIfTouched => {
-            // MIT orders trigger when price is reached and execute at market
-            // These are typically used for profit taking or entry orders
             if let Some(trigger_price) = order.trigger_price() {
                 let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
                     .with_context(|| {
                         format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?;
-
+                    })?
+                    .normalize();
                 HyperliquidExecOrderKind::Trigger {
                     trigger: HyperliquidExecTriggerParams {
                         is_market: true,
                         trigger_px: trigger_price_decimal,
-                        tpsl: HyperliquidExecTpSl::Tp, // MIT is typically for profit taking
+                        tpsl: HyperliquidExecTpSl::Tp,
                     },
                 }
             } else {
@@ -572,19 +455,17 @@ pub fn order_to_hyperliquid_request(
             }
         }
         OrderType::LimitIfTouched => {
-            // LIT orders trigger when price is reached and execute at limit price
-            // These are typically used for profit taking or entry orders with price control
             if let Some(trigger_price) = order.trigger_price() {
                 let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
                     .with_context(|| {
                         format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?;
-
+                    })?
+                    .normalize();
                 HyperliquidExecOrderKind::Trigger {
                     trigger: HyperliquidExecTriggerParams {
                         is_market: false,
                         trigger_px: trigger_price_decimal,
-                        tpsl: HyperliquidExecTpSl::Tp, // LIT is typically for profit taking
+                        tpsl: HyperliquidExecTpSl::Tp,
                     },
                 }
             } else {
@@ -594,17 +475,8 @@ pub fn order_to_hyperliquid_request(
         _ => anyhow::bail!("Unsupported order type for Hyperliquid: {order_type:?}"),
     };
 
-    // Convert client order ID to CLOID
-    let cloid = match Cloid::from_hex(order.client_order_id()) {
-        Ok(cloid) => Some(cloid),
-        Err(e) => {
-            anyhow::bail!(
-                "Failed to convert client order ID '{}' to CLOID: {}",
-                order.client_order_id(),
-                e
-            )
-        }
-    };
+    // Convert client order ID to CLOID by hashing
+    let cloid = Some(Cloid::from_client_order_id(order.client_order_id()));
 
     Ok(HyperliquidExecPlaceOrderRequest {
         asset,
@@ -617,58 +489,20 @@ pub fn order_to_hyperliquid_request(
     })
 }
 
-/// Converts a list of Nautilus orders into Hyperliquid order requests.
-pub fn orders_to_hyperliquid_requests(
-    orders: &[&OrderAny],
-) -> anyhow::Result<Vec<HyperliquidExecPlaceOrderRequest>> {
-    orders
-        .iter()
-        .map(|order| order_to_hyperliquid_request(order))
-        .collect()
-}
-
-/// Creates a JSON value representing multiple orders for the Hyperliquid exchange action.
-pub fn orders_to_hyperliquid_action_value(orders: &[&OrderAny]) -> anyhow::Result<Value> {
-    let requests = orders_to_hyperliquid_requests(orders)?;
-    serde_json::to_value(requests).context("failed to serialize orders to JSON")
-}
-
-/// Converts an OrderAny into a Hyperliquid order request.
-pub fn order_any_to_hyperliquid_request(
-    order: &OrderAny,
-) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
-    order_to_hyperliquid_request(order)
-}
-
-/// Converts a client order ID to a Hyperliquid cancel request.
-///
-/// # Errors
-///
-/// Returns an error if the symbol cannot be parsed or the client order ID is invalid.
-pub fn client_order_id_to_cancel_request(
+/// Converts a client order ID to a Hyperliquid cancel request using a pre-resolved asset index.
+pub fn client_order_id_to_cancel_request_with_asset(
     client_order_id: &str,
-    symbol: &str,
-) -> anyhow::Result<HyperliquidExecCancelByCloidRequest> {
-    let asset = extract_asset_id_from_symbol(symbol)
-        .with_context(|| format!("Failed to extract asset ID from symbol: {symbol}"))?;
-
-    let cloid = Cloid::from_hex(client_order_id).map_err(|e| {
-        anyhow::anyhow!("Failed to convert client order ID '{client_order_id}' to CLOID: {e}")
-    })?;
-
-    Ok(HyperliquidExecCancelByCloidRequest { asset, cloid })
-}
-
-/// Checks if a Hyperliquid exchange response indicates success.
-pub fn is_response_successful(response: &HyperliquidExchangeResponse) -> bool {
-    matches!(response, HyperliquidExchangeResponse::Status { status, .. } if status == "ok")
+    asset: u32,
+) -> HyperliquidExecCancelByCloidRequest {
+    let cloid = Cloid::from_client_order_id(ClientOrderId::from(client_order_id));
+    HyperliquidExecCancelByCloidRequest { asset, cloid }
 }
 
 /// Extracts error message from a Hyperliquid exchange response.
 pub fn extract_error_message(response: &HyperliquidExchangeResponse) -> String {
     match response {
         HyperliquidExchangeResponse::Status { status, response } => {
-            if status == "ok" {
+            if status == RESPONSE_STATUS_OK {
                 "Operation successful".to_string()
             } else {
                 // Try to extract error message from response data
@@ -712,12 +546,10 @@ pub fn parse_trigger_order_type(is_market: bool, tpsl: &HyperliquidTpSl) -> Orde
 ///
 /// A tuple of (OrderStatus, optional trigger status string).
 pub fn parse_order_status_with_trigger(
-    status: &str,
+    status: HyperliquidOrderStatus,
     trigger_activated: Option<bool>,
 ) -> (OrderStatus, Option<String>) {
-    use crate::common::enums::hyperliquid_status_to_order_status;
-
-    let base_status = hyperliquid_status_to_order_status(status);
+    let base_status = OrderStatus::from(status);
 
     // For conditional orders, add trigger status information
     if let Some(activated) = trigger_activated {
@@ -752,10 +584,6 @@ pub fn format_trailing_stop_info(
 /// # Returns
 ///
 /// `Ok(())` if parameters are valid, `Err` with description otherwise.
-///
-/// # Panics
-///
-/// This function does not panic - it returns errors instead of panicking.
 pub fn validate_conditional_order_params(
     trigger_px: Option<&str>,
     tpsl: Option<&HyperliquidTpSl>,
@@ -799,39 +627,40 @@ pub fn parse_account_balances_and_margins(
     let mut balances = Vec::new();
     let mut margins = Vec::new();
 
-    // Parse balance from cross margin summary
-    let currency = Currency::USD(); // Hyperliquid uses USDC/USD
+    let currency = Currency::USDC();
 
-    // Account value represents total collateral
-    let total_value = cross_margin_summary
+    let mut total_value = cross_margin_summary
         .account_value
         .to_string()
-        .parse::<f64>()?;
+        .parse::<f64>()?
+        .max(0.0);
 
-    // Withdrawable represents available balance
-    let withdrawable = cross_margin_summary
+    let free_value = cross_margin_summary
         .withdrawable
-        .to_string()
-        .parse::<f64>()?;
+        .map(|w| w.to_string().parse::<f64>())
+        .transpose()?
+        .unwrap_or(total_value)
+        .max(0.0);
 
-    // Total margin used is locked in positions
+    // Ensure total >= free to satisfy AccountBalance invariant
+    if free_value > total_value {
+        total_value = free_value;
+    }
+
+    let locked_value = total_value - free_value;
+
+    let total = Money::new(total_value, currency);
+    let locked = Money::new(locked_value, currency);
+    let free = Money::new(free_value, currency);
+
+    let balance = AccountBalance::new(total, locked, free);
+    balances.push(balance);
+
     let margin_used = cross_margin_summary
         .total_margin_used
         .to_string()
         .parse::<f64>()?;
 
-    // Calculate total, locked, and free
-    let total = Money::new(total_value, currency);
-    let locked = Money::new(margin_used, currency);
-    let free = Money::new(withdrawable, currency);
-
-    let balance = AccountBalance::new(total, locked, free);
-    balances.push(balance);
-
-    // Create margin balance for the account
-    // Initial margin = margin used (locked in positions)
-    // Maintenance margin can be approximated from leverage and position values
-    // For now, use margin_used as both initial and maintenance (conservative)
     if margin_used > 0.0 {
         let margin_instrument_id =
             InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("HYPERLIQUID"));
@@ -850,7 +679,11 @@ pub fn parse_account_balances_and_margins(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
     use serde::{Deserialize, Serialize};
 
     use super::*;
@@ -936,8 +769,6 @@ mod tests {
 
     #[rstest]
     fn test_round_down_to_tick() {
-        use rust_decimal_macros::dec;
-
         assert_eq!(round_down_to_tick(dec!(100.07), dec!(0.05)), dec!(100.05));
         assert_eq!(round_down_to_tick(dec!(100.03), dec!(0.05)), dec!(100.00));
         assert_eq!(round_down_to_tick(dec!(100.05), dec!(0.05)), dec!(100.05));
@@ -948,8 +779,6 @@ mod tests {
 
     #[rstest]
     fn test_round_down_to_step() {
-        use rust_decimal_macros::dec;
-
         assert_eq!(
             round_down_to_step(dec!(0.12349), dec!(0.0001)),
             dec!(0.1234)
@@ -963,8 +792,6 @@ mod tests {
 
     #[rstest]
     fn test_min_notional_validation() {
-        use rust_decimal_macros::dec;
-
         // Should pass
         assert!(ensure_min_notional(dec!(100), dec!(0.1), dec!(10)).is_ok());
         assert!(ensure_min_notional(dec!(100), dec!(0.11), dec!(10)).is_ok());
@@ -978,19 +805,39 @@ mod tests {
     }
 
     #[rstest]
-    fn test_normalize_price() {
-        use rust_decimal_macros::dec;
+    fn test_round_to_sig_figs() {
+        // BTC price ~$104,567 needs to round to 5 sig figs
+        assert_eq!(round_to_sig_figs(dec!(104567.3), 5), dec!(104570));
+        assert_eq!(round_to_sig_figs(dec!(104522.5), 5), dec!(104520));
+        assert_eq!(round_to_sig_figs(dec!(99999.9), 5), dec!(100000));
 
+        // Smaller prices should keep decimals
+        assert_eq!(round_to_sig_figs(dec!(1234.5), 5), dec!(1234.5));
+        assert_eq!(round_to_sig_figs(dec!(0.12345), 5), dec!(0.12345));
+        assert_eq!(round_to_sig_figs(dec!(0.123456), 5), dec!(0.12346));
+
+        // Sub-1 values with leading zeros must preserve 5 sig figs
+        assert_eq!(round_to_sig_figs(dec!(0.000123456), 5), dec!(0.00012346));
+        assert_eq!(round_to_sig_figs(dec!(0.000999999), 5), dec!(0.0010000)); // 6 sig figs -> 5
+
+        // Zero case
+        assert_eq!(round_to_sig_figs(dec!(0), 5), dec!(0));
+    }
+
+    #[rstest]
+    fn test_normalize_price() {
+        // Now includes 5 sig fig rounding first
         assert_eq!(normalize_price(dec!(100.12345), 2), dec!(100.12));
-        assert_eq!(normalize_price(dec!(100.19999), 2), dec!(100.19));
-        assert_eq!(normalize_price(dec!(100.999), 0), dec!(100));
-        assert_eq!(normalize_price(dec!(100.12345), 4), dec!(100.1234));
+        assert_eq!(normalize_price(dec!(100.19999), 2), dec!(100.2)); // Rounded to 5 sig figs first
+        assert_eq!(normalize_price(dec!(100.999), 0), dec!(101)); // 100.999 -> 101.00 (5 sig) -> 101
+        assert_eq!(normalize_price(dec!(100.12345), 4), dec!(100.12)); // 5 sig figs = 100.12
+
+        // BTC-like prices get rounded to 5 sig figs
+        assert_eq!(normalize_price(dec!(104567.3), 1), dec!(104570));
     }
 
     #[rstest]
     fn test_normalize_quantity() {
-        use rust_decimal_macros::dec;
-
         assert_eq!(normalize_quantity(dec!(1.12345), 3), dec!(1.123));
         assert_eq!(normalize_quantity(dec!(1.99999), 3), dec!(1.999));
         assert_eq!(normalize_quantity(dec!(1.999), 0), dec!(1));
@@ -999,8 +846,6 @@ mod tests {
 
     #[rstest]
     fn test_normalize_order_complete() {
-        use rust_decimal_macros::dec;
-
         let result = normalize_order(
             dec!(100.12345), // price
             dec!(0.123456),  // qty
@@ -1019,8 +864,6 @@ mod tests {
 
     #[rstest]
     fn test_normalize_order_min_notional_fail() {
-        use rust_decimal_macros::dec;
-
         let result = normalize_order(
             dec!(100.12345), // price
             dec!(0.05),      // qty (too small for min notional)
@@ -1037,8 +880,6 @@ mod tests {
 
     #[rstest]
     fn test_edge_cases() {
-        use rust_decimal_macros::dec;
-
         // Test with very small numbers
         assert_eq!(
             round_down_to_tick(dec!(0.000001), dec!(0.000001)),
@@ -1103,17 +944,20 @@ mod tests {
     #[rstest]
     fn test_parse_order_status_with_trigger() {
         // Test with open status and activated trigger
-        let (status, trigger_status) = parse_order_status_with_trigger("open", Some(true));
+        let (status, trigger_status) =
+            parse_order_status_with_trigger(HyperliquidOrderStatus::Open, Some(true));
         assert_eq!(status, OrderStatus::Accepted);
         assert_eq!(trigger_status, Some("activated".to_string()));
 
         // Test with open status and not activated
-        let (status, trigger_status) = parse_order_status_with_trigger("open", Some(false));
+        let (status, trigger_status) =
+            parse_order_status_with_trigger(HyperliquidOrderStatus::Open, Some(false));
         assert_eq!(status, OrderStatus::Accepted);
         assert_eq!(trigger_status, Some("pending".to_string()));
 
         // Test without trigger info
-        let (status, trigger_status) = parse_order_status_with_trigger("open", None);
+        let (status, trigger_status) =
+            parse_order_status_with_trigger(HyperliquidOrderStatus::Open, None);
         assert_eq!(status, OrderStatus::Accepted);
         assert_eq!(trigger_status, None);
     }
@@ -1139,8 +983,6 @@ mod tests {
 
     #[rstest]
     fn test_parse_trigger_price() {
-        use rust_decimal_macros::dec;
-
         // Valid price
         let result = parse_trigger_price("50000.0");
         assert!(result.is_ok());

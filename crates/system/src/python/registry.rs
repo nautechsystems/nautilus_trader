@@ -17,7 +17,7 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
-use nautilus_core::MUTEX_POISONED;
+use nautilus_core::{MUTEX_POISONED, python::to_pynotimplemented_err};
 use pyo3::prelude::*;
 
 use crate::factories::{ClientConfig, DataClientFactory};
@@ -121,9 +121,9 @@ impl FactoryRegistry {
         if let Some(extractor) = extractors.get(&factory_name) {
             extractor(py, factory)
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyNotImplementedError, _>(
-                format!("No factory extractor registered for '{factory_name}'"),
-            ))
+            Err(to_pynotimplemented_err(format!(
+                "No factory extractor registered for '{factory_name}'"
+            )))
         }
     }
 
@@ -151,9 +151,9 @@ impl FactoryRegistry {
         if let Some(extractor) = extractors.get(&config_type_name) {
             extractor(py, config)
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyNotImplementedError, _>(
-                format!("No config extractor registered for '{config_type_name}'"),
-            ))
+            Err(to_pynotimplemented_err(format!(
+                "No config extractor registered for '{config_type_name}'"
+            )))
         }
     }
 }

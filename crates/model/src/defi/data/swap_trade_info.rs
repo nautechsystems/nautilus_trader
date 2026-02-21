@@ -158,8 +158,8 @@ impl<'a> SwapTradeInfoCalculator<'a> {
         Self {
             token0,
             token1,
-            raw_swap_data,
             is_inverted,
+            raw_swap_data,
         }
     }
 

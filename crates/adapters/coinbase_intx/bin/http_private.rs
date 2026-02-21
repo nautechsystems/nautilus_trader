@@ -16,13 +16,10 @@
 use nautilus_coinbase_intx::http::client::CoinbaseIntxHttpClient;
 use nautilus_core::env::get_env_var;
 use nautilus_model::identifiers::{AccountId, Symbol};
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let mut client = CoinbaseIntxHttpClient::from_env().unwrap();
 
@@ -32,9 +29,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // vs the method names which Nautilus needs ("cancel_order", etc).
     // match client.inner.http_list_fee_rate_tiers().await {
     //     Ok(resp) => {
-    //         tracing::info!("Received {resp:?}");
+    //         log::info!("Received {resp:?}");
     //     }
-    //     Err(e) => tracing::error!("{e:?}"),
+    //     Err(e) => log::error!("{e:?}"),
     // }
 
     let symbol = Symbol::from("BTC-PERP");
@@ -48,10 +45,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request_order_status_reports(account_id, symbol)
         .await?;
 
-    tracing::info!("Received {} reports", reports.len());
+    log::info!("Received {} reports", reports.len());
 
     for report in reports {
-        tracing::info!("{report:?}");
+        log::info!("{report:?}");
     }
 
     Ok(())

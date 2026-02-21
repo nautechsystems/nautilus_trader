@@ -339,6 +339,18 @@ Failing to do so will result in data aggregation: L2 data will be reduced to a s
 
 In the main backtesting loop, new market data is processed for order execution before being dispatched to actors/strategies via the data engine.
 
+#### Command settling
+
+When an order fill triggers a strategy callback that submits additional orders (e.g., a stop-loss submitted
+in `on_order_filled`), those cascading commands are settled within the same timestamp/event cycle. The engine
+repeatedly drains venue command queues and any newly generated commands until no commands remain pending
+for the current timestamp. Simulation modules are run only once per cycle, after all commands have settled.
+
+When a `LatencyModel` is configured, commands are placed in the venue's inflight queue with a future
+timestamp derived from the simulated latency. The settle loop considers inflight commands that are due
+at the current timestamp as pending, so zero-latency or same-tick latency configurations still settle
+correctly. Commands with future timestamps are deferred and processed when the engine reaches that time.
+
 ### Fill modeling philosophy
 
 NautilusTrader treats historical order book and trade data as **immutable** during backtesting. What happened in the market is preserved exactly as recorded—fills never modify the underlying book state.
@@ -413,20 +425,76 @@ When a bar's open price gaps past the trigger price, the stop triggers immediate
 
 Example - SELL `STOP_MARKET` with trigger at 100:
 
-- Previous bar closes at 105
-- Next bar opens at 90 (overnight gap down)
-- Stop triggers at open and fills at 90
+- Previous bar closes at 105.
+- Next bar opens at 90 (overnight gap down).
+- Stop triggers at open and fills at 90.
 
 **Move-through scenario** (bar moves through trigger):
 When a bar opens normally and then its high or low moves through the trigger price, the stop fills at the trigger price. Since we only have OHLC data, we assume the market moved smoothly through the trigger and the order would have filled there.
 
 Example - SELL `STOP_MARKET` with trigger at 100:
 
-- Bar opens at 102 (no gap)
-- Bar low reaches 98, moving through trigger at 100
-- Stop fills at 100 (the trigger price)
+- Bar opens at 102 (no gap).
+- Bar low reaches 98, moving through trigger at 100.
+- Stop fills at 100 (the trigger price).
 
 This behavior caps potential slippage during orderly market moves while still modeling gap slippage accurately. For tick-level precision, use quote or trade tick data instead of bars.
+
+### Price protection
+
+Price protection defines an exchange-calculated price boundary that prevents marketable orders from
+executing at excessively aggressive prices. This models exchanges like Binance and CME that implement
+protection mechanisms for market and stop-market orders.
+
+**Configuration:**
+
+```python
+from nautilus_trader.backtest.config import BacktestVenueConfig
+
+venue_config = BacktestVenueConfig(
+    name="BINANCE",
+    oms_type="NETTING",
+    account_type="MARGIN",
+    starting_balances=["100_000 USDT"],
+    price_protection_points=100,  # 100 points = 1.00 offset for 2-decimal instruments
+)
+```
+
+**How it works:**
+
+The matching engine calculates the protection boundary from the current best bid/ask at fill time:
+
+- **BUY orders**: `protection_price = ask + (points × price_increment)`
+- **SELL orders**: `protection_price = bid - (points × price_increment)`
+
+The engine filters out fills beyond the protection boundary. For example, with `price_protection_points=100`
+on an instrument with `price_increment=0.01`:
+
+- Best ask is 1001.00.
+- Protection price = 1001.00 + (100 × 0.01) = 1002.00.
+- A BUY market order fills only at prices ≤ 1002.00.
+- Liquidity at 1003.00 or higher is filtered, leaving the order partially filled.
+
+**Trigger-time semantics:**
+
+The engine computes protection at fill time, not order submission time:
+
+- **Market orders**: Protection computed immediately when the order processes.
+- **Stop-market orders**: Protection computed when the stop triggers, using the bid/ask at that moment.
+
+This design allows stop orders to be submitted even when the opposite side of the book is empty,
+since the engine computes protection later when the stop triggers.
+
+**Order types affected:**
+
+- `MARKET`
+- `STOP_MARKET`
+
+Limit orders are unaffected since they already define a price boundary.
+
+:::note
+Set `price_protection_points=0` to disable price protection (default behavior).
+:::
 
 ### Slippage and spread handling
 
@@ -540,11 +608,53 @@ When processing a fill:
 4. A delta updates ask 100.00 to 120 units. Engine resets: `(original=120, consumed=0)`.
 5. New orders can now fill against the fresh 120 units.
 
+**Passive limit order fills on L1 data:**
+
+With L1 data (quotes, trades, bars), the book has only a single price level per side. When the market
+moves through a passive (MAKER) limit order's price, the engine must decide how to handle remaining
+order quantity after exhausting displayed liquidity.
+
+| `liquidity_consumption` | Behavior when market moves through passive limit |
+|-------------------------|--------------------------------------------------|
+| `False` (default)       | Fill entire order at limit price. Assumes market movement implies sufficient liquidity existed. |
+| `True`                  | Fill only against displayed liquidity. Order remains open for subsequent fills. |
+
+**Example scenario** (`liquidity_consumption=True`):
+
+1. Quote shows ask 100.10 with 50 units.
+2. You place BUY LIMIT at 100.05 for 1000 units (passive, resting below ask).
+3. Next quote shows ask 100.00 with 30 units (market moved through your limit).
+4. Order fills 30 units against displayed liquidity. 970 units remain open.
+5. Next quote shows ask 99.95 with 200 units.
+6. Order fills another 200 units. 770 units remain open.
+7. Fills continue as fresh liquidity arrives at crossed price levels.
+
+This behavior provides conservative fill simulation—your order only fills against liquidity
+actually observed in the data, rather than inferring liquidity from price movements.
+
 **Trade tick liquidity:**
 
 Trade ticks provide evidence of executable liquidity at the trade price. When a trade occurs at a price level
 not reflected in the current book, the engine can use the trade quantity as available liquidity, subject to
 the same consumption tracking rules (when enabled).
+
+**Trade consumption seeding:**
+
+When using L2/L3 book data and a trade tick triggers order matching (e.g., triggering a resting stop order),
+the trade itself consumed liquidity from the book. Before simulating fills for triggered orders, the engine
+pre-seeds the consumption maps with the trade's consumed volume. This prevents triggered orders from filling
+against liquidity that the triggering trade already consumed. This seeding is skipped for L1 books, where the
+trade tick has already updated the single top-of-book level directly.
+
+For example, if the book has 10 units at the best ask and a BUY trade of size 8 triggers a stop market BUY
+for 5 units, the stop order sees only 2 units remaining at best ask (10 - 8) and must fill the remaining
+3 units at the next price level. Without this seeding, the stop would incorrectly fill all 5 units at the
+best ask price.
+
+The engine uses a timestamp guard to avoid double-counting: if the book's most recent update (`ts_last`)
+is newer than the trade's event time (`ts_event`), seeding is skipped. This handles exchanges like Binance
+where depth deltas arrive before the corresponding trade tick, so the book already reflects the consumed
+liquidity, so additional seeding would over-penalize fills.
 
 :::note
 As the `FillModel` continues to evolve, future versions may introduce more sophisticated simulation of order execution dynamics, including:
@@ -566,9 +676,26 @@ not reflect sustained availability.
 
 ### Trade based execution
 
-When you have trade tick data, enable `trade_execution=True` in your venue configuration to trigger order fills
-based on trade activity. A trade tick indicates that liquidity was accessed at the trade price, allowing resting
-limit orders to match.
+Trade tick data triggers order fills by default (`trade_execution=True`). A trade tick indicates that liquidity
+was accessed at the trade price, allowing resting limit orders to match. This mirrors the default behavior
+for bar data (`bar_execution=True`).
+
+Advanced users who want to isolate execution to L1 book data only (quotes or order book updates) can disable
+trade-based execution:
+
+```python
+venue_config = BacktestVenueConfig(
+    name="SIM",
+    oms_type="NETTING",
+    account_type="CASH",
+    starting_balances=["100_000 USD"],
+    trade_execution=False,  # Disable trade-based fills
+)
+```
+
+When `trade_execution=False` or `bar_execution=False`, the respective data types skip order matching
+and maintenance operations (GTD order expiry, trailing stop activation, instrument expiration checks).
+Quote ticks always trigger maintenance, so this is typically acceptable when using multiple data types.
 
 The matching engine uses a "transient override" mechanism: during the matching process, it temporarily adjusts
 the matching core's Best Bid (for BUYER trades) or Best Ask (for SELLER trades) toward the trade price. This allows
@@ -580,7 +707,7 @@ modified (it remains immutable); only the matching core's internal price referen
 When a trade tick triggers order matching, the engine determines fills as follows:
 
 1. **Book reflects trade price**: If the order book has liquidity at the trade price, fills use book depth (standard behavior).
-2. **Book doesn't reflect trade price**: If the book's liquidity is at a different price, the engine uses a "trade-driven fill" at the trade price, capped to `min(order.leaves_qty, trade.size)`.
+2. **Book doesn't reflect trade price**: If the book's liquidity is at a different price, the engine uses a "trade-driven fill" at the order's limit price, capped to `min(order.leaves_qty, trade.size)`.
 
 This ensures that when a trade prints through the spread but the book hasn't updated, fills are bounded by what the trade tick actually evidences. When `liquidity_consumption=False` (default), the same trade size can fill multiple orders within an iteration. When `liquidity_consumption=True`, consumption tracking applies to trade-driven fills as well—repeated fills at the same trade price will be bounded by consumed liquidity until fresh data arrives.
 
@@ -597,20 +724,10 @@ the trade price. This means repeated trades at or beyond the spread can progress
 
 **Fill price:**
 
-- **SELLER trade at P**: The engine sets the core's Best Ask to P (if P < current ask). Resting BUY LIMIT orders at P or higher will fill at the trade price P (if book doesn't have that level) or at book prices (if book does).
-- **BUYER trade at P**: The engine sets the core's Best Bid to P (if P > current bid). Resting SELL LIMIT orders at P or lower will fill at the trade price P (if book doesn't have that level) or at book prices (if book does).
+- **SELLER trade at P**: The engine sets the core's Best Ask to P (if P < current ask). Resting BUY LIMIT orders at P or higher will fill at their limit price (if book doesn't have that level) or at book prices (if book does).
+- **BUYER trade at P**: The engine sets the core's Best Bid to P (if P > current bid). Resting SELL LIMIT orders at P or lower will fill at their limit price (if book doesn't have that level) or at book prices (if book does).
 
-**Example:**
-
-```python
-engine.add_venue(
-    venue=venue,
-    oms_type=OmsType.NETTING,
-    account_type=AccountType.CASH,
-    starting_balances=[Money(10_000, USDT)],
-    trade_execution=True,
-)
-```
+This conservative approach ensures fills occur at the order's limit price rather than potentially better trade prices. For example, a BUY LIMIT at 100.05 triggered by a SELLER trade at 100.00 will fill at 100.05, not 100.00.
 
 :::tip
 Combine trade data with book or quote data for best results: book/quote data establishes the baseline spread,
@@ -642,10 +759,73 @@ When using L2 order book data (e.g., 100ms throttled depth snapshots) combined w
 
 **Common misconception**: Users sometimes expect every trade tick to trigger fills. Remember:
 
-- Only trades on the **opposite** side can fill your orders
-- SELLER trades → potential BUY fills
-- BUYER trades → potential SELL fills
-- Book UPDATE events move the market but only trigger fills if prices cross your order
+- Only trades on the **opposite** side can fill your orders.
+- SELLER trades → potential BUY fills.
+- BUYER trades → potential SELL fills.
+- Book UPDATE events move the market but only trigger fills if prices cross your order.
+
+#### Queue position tracking
+
+When `queue_position=True` is enabled alongside `trade_execution=True`, the matching engine simulates
+queue position for limit orders. This provides more realistic fill behavior by tracking how many
+orders are "ahead" of your order at a given price level.
+
+**How it works:**
+
+1. **Order placement**: When a LIMIT order is accepted, the engine snapshots the current same-side
+   book depth at the order's price level. This represents the orders ahead in the queue.
+
+2. **Trade ticks**: When trade ticks occur at the order's price level, the "quantity ahead" is
+   decremented by the trade size. Only trades on the correct side affect the queue (BUYER trades
+   decrement queue for SELL orders, SELLER trades decrement queue for BUY orders). Trades with
+   `NO_AGGRESSOR` (common in historical datasets lacking aggressor metadata) affect both sides—
+   this is pessimistic but prevents orders from stalling indefinitely.
+
+3. **Fill eligibility**: The order becomes eligible to fill only when the quantity ahead reaches zero.
+   On the tick that clears the queue, only the excess volume (trade size minus queue ahead) is
+   available for fill—preventing overfill.
+
+4. **Price level DELETE**: If the order book level is deleted (BookAction.DELETE), the queue clears
+   immediately, making the order fill-eligible. UPDATE actions are ignored (queue unchanged).
+
+5. **Order modification**: If the order is modified (price or quantity change), the queue position
+   resets—the order moves to the back of the queue at its new price level.
+
+**Configuration:**
+
+```python
+from nautilus_trader.backtest.config import BacktestVenueConfig
+
+venue_config = BacktestVenueConfig(
+    name="SIM",
+    oms_type="NETTING",
+    account_type="MARGIN",
+    starting_balances=["100_000 USD"],
+    trade_execution=True,      # Required for queue_position
+    queue_position=True,       # Enable queue position tracking
+)
+```
+
+**Example scenario:**
+
+1. Order book shows 100 units at bid 100.00.
+2. You place a BUY LIMIT at 100.00 for 50 units. Queue ahead = 100.
+3. SELLER trade of 80 units at 100.00 → queue ahead = 20. No fill yet.
+4. SELLER trade of 30 units at 100.00 → queue clears with 10 excess. Fill = 10 units.
+5. Next SELLER trade of 50 units → fill remaining 40 units.
+
+**Limitations:**
+
+- Only applies to `LIMIT` orders. Stop-limit and limit-if-touched orders are not tracked in this implementation.
+- Queue position is per-order, not shared across multiple orders at the same price.
+- The queue snapshot is based on book state at order acceptance time.
+- Trades with `NO_AGGRESSOR` decrement queue for both sides, which may cause orders to fill sooner than in reality (pessimistic for queue estimation, but prevents stalling).
+
+:::note
+Queue position tracking provides a heuristic simulation of queue dynamics. Real exchange queue
+behavior depends on many factors (order priority rules, hidden orders, etc.) that cannot be
+perfectly reconstructed from historical data.
+:::
 
 ### Bar based execution
 
@@ -779,6 +959,46 @@ engine.add_venue(
 )
 ```
 
+### Internal bar aggregation timing
+
+When aggregating time bars internally from tick data, the data engine uses timers to close bars at
+interval boundaries. A timing edge case occurs when data arrives at the exact bar close timestamp—the
+timer may fire before processing boundary data.
+
+Configure `time_bars_build_delay` in `DataEngineConfig` to delay bar close timers:
+
+```python
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.data.config import DataEngineConfig
+
+config = BacktestEngineConfig(
+    data_engine=DataEngineConfig(
+        time_bars_build_delay=1,  # Microseconds
+    ),
+)
+```
+
+:::tip
+A small delay (1 microsecond) ensures boundary data is processed before the bar closes.
+Useful when tick data clusters at round interval timestamps.
+:::
+
+:::note
+Only affects internally aggregated bars (`AggregationSource.INTERNAL`).
+:::
+
+### Timer-only backtests
+
+The backtest engine supports running with timers but no market data. This is useful for scheduled
+operations or testing timer-based logic. Timers fire in chronological order, and timer callbacks
+can dynamically add data via `add_data_iterator()` which will be processed in sequence.
+
+:::warning
+Data added by timer callbacks at the exact start time should have timestamps **after** the start time.
+The engine reads the first data point before processing start-time timers, so dynamically added data
+with timestamps at or before the start time may not be processed in the expected order.
+:::
+
 ### Fill models
 
 Fill models simulate order execution dynamics during backtesting. They address a fundamental challenge:
@@ -853,17 +1073,17 @@ venue_config = BacktestVenueConfig(
 
 Simulates queue position by controlling the probability of a limit order filling when its price level is touched (but not crossed).
 
-- `0.0`: Never fills at touch (back of queue)
-- `0.5`: 50% chance of filling (middle of queue)
-- `1.0`: Always fills at touch (front of queue)
+- `0.0`: Never fills at touch (back of queue).
+- `0.5`: 50% chance of filling (middle of queue).
+- `1.0`: Always fills at touch (front of queue).
 
 **prob_slippage** (default: `0.0`)
 
 Simulates price slippage on each fill. Only applies to L1 data types (quotes, trades, bars) where real depth is unavailable. Affects all order types when executing as takers.
 
-- `0.0`: No slippage (fills at best price)
-- `0.5`: 50% chance of one tick slippage per fill
-- `1.0`: Always slips one tick
+- `0.0`: No slippage (fills at best price).
+- `0.5`: 50% chance of one tick slippage per fill.
+- `1.0`: Always slips one tick.
 
 #### Order book simulation models
 
@@ -875,6 +1095,12 @@ representing expected market liquidity. The matching engine fills orders against
 1. Before processing a fill, the matching engine calls `get_orderbook_for_fill_simulation()`.
 2. If the model returns a synthetic order book, fills execute against that book's liquidity.
 3. If the model returns `None`, standard fill logic applies.
+
+:::note
+When a custom fill model provides a simulated order book, the `liquidity_consumption` tracking is **not** applied.
+Custom fill models are expected to manage their own liquidity simulation within the returned order book.
+Liquidity consumption tracking only affects the built-in fill logic (when `get_orderbook_for_fill_simulation()` returns `None`).
+:::
 
 **Example: ThreeTierFillModel**
 
@@ -964,11 +1190,11 @@ Also verify that:
 
 When you attach a venue to the engine—either for live trading or a back‑test—you must pick one of three accounting modes by passing the `account_type` parameter:
 
-| Account type           | Typical use-case                                         | What the engine locks                                                                                              |
-| ---------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------|
-| Cash                   | Spot trading (e.g. BTC/USDT, stocks)                     | Notional value for every position a pending order would open.                                                      |
-| Margin                 | Derivatives or any product that allows leverage          | Initial margin for each order plus maintenance margin for open positions.                                          |
-| Betting                | Sports betting, book‑making                              | Stake required by the venue; no leverage.                                                                          |
+| Account type           | Typical use-case                                          | What the engine locks                                                                                              |
+| ---------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------|
+| Cash                   | Spot trading (e.g., BTC/USDT, stocks).                    | Notional value for every position a pending order would open.                                                      |
+| Margin                 | Derivatives or any product that allows leverage.          | Initial margin for each order plus maintenance margin for open positions.                                          |
+| Betting                | Sports betting, bookmaking.                               | Stake required by the venue; no leverage.                                                                          |
 
 Example of adding a `CASH` account for a backtest venue:
 
@@ -1137,9 +1363,9 @@ By default, `MarginAccount` uses `LeveragedMarginModel`.
 
 **Account balance impact:**
 
-- **Account Balance**: $10,000
-- **Standard Model**: Cannot trade (requires $3,300 margin)
-- **Leveraged Model**: Can trade (requires only $66 margin)
+- **Account Balance**: $10,000.
+- **Standard Model**: Cannot trade (requires $3,300 margin).
+- **Leveraged Model**: Can trade (requires only $66 margin).
 
 ### Real-world scenarios
 
@@ -1280,3 +1506,9 @@ margin_model=MarginModelConfig(
 ```
 
 The margin model will be automatically applied to the simulated exchange during backtest execution.
+
+## Related guides
+
+- [Strategies](strategies.md) - Develop strategies to backtest.
+- [Visualization](visualization.md) - Generate tearsheets from backtest results.
+- [Reports](reports.md) - Analyze backtest performance data.

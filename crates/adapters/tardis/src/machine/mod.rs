@@ -88,7 +88,7 @@ pub async fn replay_normalized(
     let options = serde_json::to_string(&options)?;
 
     let plain_url = format!("{path}{options}");
-    tracing::debug!("Connecting to {plain_url}");
+    log::debug!("Connecting to {plain_url}");
 
     let url = format!("{path}{}", urlencoding::encode(&options));
     stream_from_websocket(base_url, url, signal).await
@@ -113,7 +113,7 @@ pub async fn stream_normalized(
     let options = serde_json::to_string(&options)?;
 
     let plain_url = format!("{path}{options}");
-    tracing::debug!("Connecting to {plain_url}");
+    log::debug!("Connecting to {plain_url}");
 
     let url = format!("{path}{}", urlencoding::encode(&options));
     stream_from_websocket(base_url, url, signal).await
@@ -127,7 +127,7 @@ async fn stream_from_websocket(
     let (ws_stream, ws_resp) = connect_async(url).await?;
 
     handle_connection_response(ws_resp)?;
-    tracing::info!("Connected to {base_url}");
+    log::info!("Connected to {base_url}");
 
     Ok(stream! {
         let (writer, mut reader) = ws_stream.split();
@@ -136,11 +136,11 @@ async fn stream_from_websocket(
         // Timeout awaiting the next record before checking signal
         let timeout = Duration::from_millis(10);
 
-        tracing::info!("Streaming from websocket...");
+        log::info!("Streaming from websocket...");
 
         loop {
             if signal.load(Ordering::Relaxed) {
-                tracing::debug!("Shutdown signal received");
+                log::debug!("Shutdown signal received");
                 break;
             }
 
@@ -156,15 +156,15 @@ async fn stream_from_websocket(
                     | tungstenite::Message::Binary(_)
                     | tungstenite::Message::Pong(_)
                     | tungstenite::Message::Ping(_) => {
-                        tracing::trace!("Received {msg:?}");
+                        log::trace!("Received {msg:?}");
                         continue; // Skip and continue to the next message
                     }
                     tungstenite::Message::Close(Some(frame)) => {
                         let reason = frame.reason.to_string();
                         if frame.code == CloseCode::Normal {
-                            tracing::debug!("Connection closed normally: {reason}");
+                            log::debug!("Connection closed normally: {reason}");
                         } else {
-                            tracing::error!(
+                            log::error!(
                                 "Connection closed abnormally with code: {:?}, reason: {reason}", frame.code
                             );
                             yield Err(Error::ConnectionClosed { reason });
@@ -172,7 +172,7 @@ async fn stream_from_websocket(
                         break;
                     }
                     tungstenite::Message::Close(None) => {
-                        tracing::error!("Connection closed without a frame");
+                        log::error!("Connection closed without a frame");
                         yield Err(Error::ConnectionClosed {
                             reason: "No close frame provided".to_string()
                         });
@@ -182,19 +182,19 @@ async fn stream_from_websocket(
                         match serde_json::from_str::<WsMessage>(&msg) {
                             Ok(parsed_msg) => yield Ok(parsed_msg),
                             Err(e) => {
-                                tracing::error!("Failed to deserialize message: {msg}. Error: {e}");
+                                log::error!("Failed to deserialize message: {msg}. Error: {e}");
                                 yield Err(Error::Deserialization(e));
                             }
                         }
                     }
                 },
                 Some(Err(e)) => {
-                    tracing::error!("WebSocket error: {e}");
+                    log::error!("WebSocket error: {e}");
                     yield Err(Error::ConnectFailed(e));
                     break;
                 }
                 None => {
-                    tracing::error!("Connection closed unexpectedly");
+                    log::error!("Connection closed unexpectedly");
                     yield Err(Error::ConnectionClosed {
                         reason: "Unexpected connection close".to_string(),
                     });
@@ -203,7 +203,7 @@ async fn stream_from_websocket(
             }
         }
 
-        tracing::info!("Shutdown stream");
+        log::info!("Shutdown stream");
     })
 }
 
@@ -231,13 +231,13 @@ async fn heartbeat(
 
     loop {
         heartbeat_interval.tick().await;
-        tracing::trace!("Sending PING");
+        log::trace!("Sending PING");
 
         if let Err(e) = sender.send(tungstenite::Message::Ping(vec![].into())).await {
-            tracing::debug!("Heartbeat send failed (connection closed): {e}");
+            log::debug!("Heartbeat send failed (connection closed): {e}");
             break;
         }
     }
 
-    tracing::debug!("Heartbeat task exiting");
+    log::debug!("Heartbeat task exiting");
 }

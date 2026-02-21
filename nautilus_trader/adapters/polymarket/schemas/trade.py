@@ -20,10 +20,11 @@ import msgspec
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
+from nautilus_trader.adapters.polymarket.common.parsing import calculate_commission
 from nautilus_trader.adapters.polymarket.common.parsing import determine_order_side
+from nautilus_trader.adapters.polymarket.common.parsing import make_composite_trade_id
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketMakerOrder
 from nautilus_trader.core.datetime import secs_to_nanos
-from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.model.currencies import USDC_POS
@@ -31,7 +32,6 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.objects import Money
@@ -156,14 +156,16 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
         last_qty = instrument.make_qty(self.last_qty(filled_user_order_id))
         last_px = instrument.make_price(self.last_px(filled_user_order_id))
         fee_rate_bps = self.get_fee_rate_bps(filled_user_order_id)
-        commission = float(last_qty * last_px) * basis_points_as_percentage(fee_rate_bps)
+        commission = calculate_commission(last_qty, last_px, fee_rate_bps)
+        venue_order_id = self.venue_order_id(filled_user_order_id)
+        composite_trade_id = make_composite_trade_id(self.id, venue_order_id)
 
         return FillReport(
             account_id=account_id,
             instrument_id=instrument.id,
             client_order_id=client_order_id,
-            venue_order_id=self.venue_order_id(filled_user_order_id),
-            trade_id=TradeId(self.id),
+            venue_order_id=venue_order_id,
+            trade_id=composite_trade_id,
             order_side=self.order_side(filled_user_order_id),
             last_qty=last_qty,
             last_px=last_px,

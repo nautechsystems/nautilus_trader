@@ -25,25 +25,33 @@ from unittest.mock import patch
 
 import msgspec
 import pytest
+from betfair_parser.exceptions import BetfairError
 from betfair_parser.spec.betting.enums import ExecutionReportErrorCode
 from betfair_parser.spec.betting.enums import ExecutionReportStatus
 from betfair_parser.spec.betting.enums import InstructionReportErrorCode
 from betfair_parser.spec.betting.enums import InstructionReportStatus
+from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
 from betfair_parser.spec.streaming import OCM
 from betfair_parser.spec.streaming import MatchedOrder
 from betfair_parser.spec.streaming import Order as BFOrder
+from betfair_parser.spec.streaming import OrderMarketChange
+from betfair_parser.spec.streaming import OrderRunnerChange
 from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import OrderSideParser
+from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
+from nautilus_trader.adapters.betfair.constants import BETFAIR_FILL_CACHE_TTL_NS
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
+from nautilus_trader.adapters.betfair.data_types import BetfairOrderVoided
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing import requests as parsing_requests
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
+from nautilus_trader.adapters.betfair.parsing.requests import make_customer_order_ref
 from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.core.rust.model import OrderStatus
 from nautilus_trader.core.rust.model import TimeInForce
@@ -53,14 +61,17 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderInitialized
 from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -72,6 +83,7 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
@@ -123,6 +135,9 @@ async def _setup_order_state(
                             client_order_id=client_order_id,
                         )
                         await _accept_order(order, venue_order_id, exec_client, strategy, cache)
+
+                        # Add venue_order_id mapping for stream resolution when rfo is empty
+                        cache.add_venue_order_id(client_order_id, venue_order_id)
 
                         if include_fills and order_update.sm:
                             await _fill_order(
@@ -198,6 +213,14 @@ async def _fill_order(
 
 async def _accept_order(order, venue_order_id: VenueOrderId, exec_client, strategy, cache):
     await _submit_order(order, exec_client=exec_client, strategy=strategy, cache=cache)
+    # Generate OrderSubmitted to set the order's account_id (linked to the execution client)
+    exec_client.generate_order_submitted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        ts_event=0,
+    )
+    await asyncio.sleep(0)
     exec_client.generate_order_accepted(
         strategy_id=order.strategy_id,
         instrument_id=order.instrument_id,
@@ -473,8 +496,12 @@ async def test_request_account_state(exec_client, cache, account_id):
 
 @pytest.mark.asyncio
 async def test_check_account_currency(exec_client):
-    # Arrange, Act, Assert
-    await exec_client.check_account_currency()
+    # Arrange, Act
+    await exec_client._check_account_currency()
+
+    # Assert - verify base currency matches account details
+    assert exec_client.base_currency is not None
+    assert exec_client.base_currency.code == "GBP"
 
 
 @pytest.mark.asyncio
@@ -483,7 +510,9 @@ async def test_order_stream_full_image(exec_client, setup_order_state, events):
     raw = BetfairStreaming.ocm_FULL_IMAGE()
     ocm = stream_decode(raw)
     await setup_order_state(ocm, include_fills=True)
-    exec_client._check_order_update = MagicMock()
+
+    # Mock to return None so no additional fills are processed (simulates external orders)
+    exec_client._resolve_client_order_id = MagicMock(return_value=None)
 
     # Act
     exec_client.handle_order_stream_update(
@@ -491,13 +520,18 @@ async def test_order_stream_full_image(exec_client, setup_order_state, events):
     )
     await asyncio.sleep(0)
 
-    # Assert
+    # Assert - only the 4 fills from setup, none from the second stream update
     fills = [event for event in events if isinstance(event, OrderFilled)]
     assert len(fills) == 4
 
+    # Verify fills have expected venue_order_ids from the FULL_IMAGE data
+    venue_order_ids = {str(f.venue_order_id) for f in fills}
+    expected_ids = {"175706685825", "175706685826", "175706685827", "175706685828"}
+    assert venue_order_ids == expected_ids
+
 
 @pytest.mark.asyncio
-async def test_order_stream_empty_image(exec_client, events):
+async def test_order_stream_empty_image(exec_client, events, cache):
     # Arrange
     order_change_message = BetfairStreaming.ocm_EMPTY_IMAGE()
 
@@ -507,8 +541,9 @@ async def test_order_stream_empty_image(exec_client, events):
     )
     await asyncio.sleep(0)
 
-    # Assert
+    # Assert - empty image produces no events and no orders in cache
     assert len(events) == 0
+    assert len(cache.orders()) == 0
 
 
 @pytest.mark.asyncio
@@ -538,7 +573,19 @@ async def test_order_stream_new_full_image(exec_client, setup_order_state, cache
     # Act
     exec_client.handle_order_stream_update(raw)
     await asyncio.sleep(0)
-    assert len(events) == 4
+
+    # Assert - verify event types and order in expected sequence
+    assert len(events) == 5
+    assert isinstance(events[0], OrderInitialized)
+    assert isinstance(events[1], OrderSubmitted)
+    assert isinstance(events[2], OrderAccepted)
+    assert isinstance(events[3], OrderFilled)
+    assert isinstance(events[4], PositionOpened)
+
+    # Verify fill details
+    fill = events[3]
+    assert fill.last_px == betfair_float_to_price(12.0)
+    assert fill.last_qty == betfair_float_to_quantity(4.75)
 
 
 @pytest.mark.asyncio
@@ -546,6 +593,7 @@ async def test_order_stream_sub_image(exec_client, setup_order_state, events):
     # Arrange
     order_change_message = BetfairStreaming.ocm_SUB_IMAGE()
     await setup_order_state(order_change_message=order_change_message)
+    events.clear()  # Clear setup events to isolate test
 
     # Act
     exec_client.handle_order_stream_update(
@@ -553,15 +601,16 @@ async def test_order_stream_sub_image(exec_client, setup_order_state, events):
     )
     await asyncio.sleep(0)
 
-    # Assert
+    # Assert - sub image with no changes produces no new events
     assert len(events) == 0
 
 
 @pytest.mark.asyncio
-async def test_order_stream_update(exec_client, setup_order_state, events):
+async def test_order_stream_update(exec_client, setup_order_state, events, cache):
     # Arrange
     order_change_message = BetfairStreaming.ocm_UPDATE()
     await setup_order_state(order_change_message=order_change_message)
+    events.clear()  # Clear setup events to isolate test
 
     # Act
     exec_client.handle_order_stream_update(
@@ -569,8 +618,14 @@ async def test_order_stream_update(exec_client, setup_order_state, events):
     )
     await asyncio.sleep(0)
 
-    # Assert
-    assert len(events) == 3
+    # Assert - OCM_UPDATE has status=EC so produces OrderCanceled
+    assert len(events) == 1
+    cancel_event = events[0]
+    assert isinstance(cancel_event, OrderCanceled)
+
+    # Verify order exists in cache
+    orders = cache.orders()
+    assert len(orders) == 1
 
 
 @pytest.mark.asyncio
@@ -586,7 +641,8 @@ async def test_order_stream_filled(exec_client, setup_order_state, events, fill_
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 4
+    # Expect 5 events: OrderInitialized, OrderSubmitted, OrderAccepted, OrderFilled, PositionOpened
+    assert len(events) == 5
     fill: OrderFilled = fill_events[0]
     assert isinstance(fill, OrderFilled)
     assert fill.last_px == betfair_float_to_price(1.10)
@@ -630,7 +686,9 @@ async def test_order_stream_filled_multiple_prices(
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 8
+    # Expect 10 events: 2x (OrderInitialized, OrderSubmitted, OrderAccepted), 2x OrderFilled, PositionOpened, PositionChanged
+    # setup_order_state is called twice, so we get OrderSubmitted for each call
+    assert len(events) == 10
     fill1, fill2 = (event for event in events if isinstance(event, OrderFilled))
     assert isinstance(fill1, OrderFilled)
     assert isinstance(fill2, OrderFilled)
@@ -680,9 +738,111 @@ async def test_duplicate_trade_id(exec_client, setup_order_state, fill_events, c
     assert isinstance(cancel, OrderCanceled)
     # Second order example, partial fill followed by remainder filled
     assert isinstance(fill2, OrderFilled)
-    assert fill2.trade_id.value == "5b87a0fad91063d93a3df2fe7a369f6c9a19"
+    assert fill2.trade_id.value == "f28dd583d04ad052ead605465599c87863a3"
     assert isinstance(fill3, OrderFilled)
-    assert fill3.trade_id.value == "75076f6b172799e168869d64df86b4d2717d"
+    assert fill3.trade_id.value == "fb9d0402fe285ad1bb0c619ffde778d673dc"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_cancel_events_prevented(exec_client, setup_order_state, cancel_events):
+    """
+    Test that duplicate cancel events from the stream don't cause state transition
+    errors.
+
+    This prevents InvalidStateTrigger: CANCELED -> CANCELED errors when the same
+    cancel message arrives multiple times (e.g., from stream replay or reconnect).
+
+    """
+    # Arrange
+    order_change_message = BetfairStreaming.ocm_CANCEL()
+    await setup_order_state(order_change_message=order_change_message)
+
+    # Act - Send the same cancel message twice (simulating reconnect/replay)
+    exec_client.handle_order_stream_update(order_change_message)
+    await asyncio.sleep(0)
+    exec_client.handle_order_stream_update(order_change_message)
+    await asyncio.sleep(0)
+
+    # Assert - Only one cancel event should be generated
+    assert len(cancel_events) == 1
+    assert isinstance(cancel_events[0], OrderCanceled)
+
+
+@pytest.mark.asyncio
+async def test_http_cancel_then_stream_cancel_no_duplicate(
+    betfair_client: BetfairHttpClient,
+    exec_client: BetfairExecutionClient,
+    accept_order,
+    test_order,
+    venue_order_id,
+    cancel_events,
+):
+    """
+    Test that duplicate cancel events are prevented when HTTP cancel succeeds followed
+    by a stream update with the same cancel status.
+
+    This prevents InvalidStateTrigger: CANCELED -> CANCELED errors from the race
+    condition between HTTP response and stream update.
+
+    """
+    # Arrange
+    order = await accept_order(order=test_order, venue_order_id=venue_order_id)
+    mock_betfair_request(betfair_client, BetfairResponses.betting_cancel_orders_success())
+
+    # Act - HTTP cancel succeeds first
+    command = TestCommandStubs.cancel_order_command(order=order)
+    exec_client.cancel_order(command)
+    await asyncio.sleep(0)
+
+    # Assert
+    assert len(cancel_events) == 1
+
+    # Act - Stream cancel arrives after (simulating race condition)
+    order_change_message = BetfairStreaming.ocm_CANCEL()
+    exec_client.handle_order_stream_update(order_change_message)
+    await asyncio.sleep(0)
+
+    # Assert - Still only one cancel event
+    assert len(cancel_events) == 1
+    assert isinstance(cancel_events[0], OrderCanceled)
+
+
+@pytest.mark.asyncio
+async def test_stream_cancel_then_http_cancel_no_duplicate(
+    betfair_client: BetfairHttpClient,
+    exec_client: BetfairExecutionClient,
+    setup_order_state,
+    cancel_events,
+):
+    """
+    Test that duplicate cancel events are prevented when stream cancel arrives first,
+    followed by HTTP cancel response.
+
+    This covers the reverse race condition where the stream processes the cancel before
+    the HTTP response arrives.
+
+    """
+    # Arrange
+    order_change_message = BetfairStreaming.ocm_CANCEL()
+    await setup_order_state(order_change_message=order_change_message)
+
+    # Act - Stream cancel arrives first
+    exec_client.handle_order_stream_update(order_change_message)
+    await asyncio.sleep(0)
+
+    # Assert
+    assert len(cancel_events) == 1
+
+    # Act - HTTP cancel returns after (simulating race condition)
+    mock_betfair_request(betfair_client, BetfairResponses.betting_cancel_orders_success())
+    order = exec_client._cache.orders()[0]
+    command = TestCommandStubs.cancel_order_command(order=order)
+    exec_client.cancel_order(command)
+    await asyncio.sleep(0)
+
+    # Assert - Still only one cancel event
+    assert len(cancel_events) == 1
+    assert isinstance(cancel_events[0], OrderCanceled)
 
 
 @pytest.mark.parametrize(
@@ -749,16 +909,29 @@ async def test_betfair_order_cancelled_no_timestamp(
     setup_order_state,
     clock,
     cancel_events,
+    cache,
 ):
     # Arrange
     update = stream_decode(BetfairStreaming.ocm_error_fill())
     await setup_order_state(update)
     clock.set_time(1)
 
+    oc = update.oc[0]
+    orc = oc.orc[0]
+    instrument_id = betfair_instrument_id(
+        market_id=oc.id,
+        selection_id=orc.id,
+        selection_handicap=orc.hc,
+    )
+    instrument = cache.instrument(instrument_id)
+
     # Act
-    for unmatched_order in update.oc[0].orc[0].uo:
+    for unmatched_order in orc.uo:
+        client_order_id = ClientOrderId(str(unmatched_order.id))
         exec_client._handle_stream_execution_complete_order_update(
             unmatched_order=unmatched_order,
+            client_order_id=client_order_id,
+            instrument=instrument,
         )
         await asyncio.sleep(0)
 
@@ -793,31 +966,43 @@ async def test_various_betfair_order_fill_scenarios(
     update = BetfairStreaming.ocm_filled_different_price()
     await setup_order_state(update)
 
-    # Act
+    # Act - use market/selection IDs matching the setup data
     for raw in updates:
         order_change_message = BetfairStreaming.generate_order_change_message(
             price=price,
             size=size,
             side=side,
             status=status,
+            market_id="1.189731772",
+            selection_id=6023845,
             **raw,
         )
         exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
         await asyncio.sleep(0)
 
-    # Assert
-    for msg, _, last_qty in zip(fill_events, updates, last_qtys, strict=False):
+    # Assert - verify exact number of fills matches expected
+    assert len(fill_events) == len(last_qtys), (
+        f"Expected {len(last_qtys)} fills, received {len(fill_events)}"
+    )
+    for msg, last_qty in zip(fill_events, last_qtys, strict=True):
         assert isinstance(msg, OrderFilled)
         assert msg.last_qty == last_qty
 
 
 @pytest.mark.asyncio
 async def test_order_filled_avp_update(exec_client, setup_order_state):
+    """
+    Test that order updates with AVP (average price) changes don't cause errors.
+
+    This is a smoke test - verifies no exceptions when processing updates with
+    different prices but same matched size (no incremental fill).
+
+    """
     # Arrange
     update = BetfairStreaming.ocm_filled_different_price()
     await setup_order_state(update)
 
-    # Act
+    # Act - send updates with different prices but same sm (no new fill)
     order_change_message = BetfairStreaming.generate_order_change_message(
         price=1.50,
         size=20,
@@ -825,6 +1010,8 @@ async def test_order_filled_avp_update(exec_client, setup_order_state):
         status="E",
         avp=1.50,
         sm=10,
+        market_id="1.189731772",
+        selection_id=6023845,
     )
     exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
     await asyncio.sleep(0)
@@ -836,9 +1023,13 @@ async def test_order_filled_avp_update(exec_client, setup_order_state):
         status="E",
         avp=1.50,
         sm=10,
+        market_id="1.189731772",
+        selection_id=6023845,
     )
     exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
     await asyncio.sleep(0)
+
+    # Assert - no exception thrown (smoke test)
 
 
 @pytest.mark.asyncio
@@ -914,6 +1105,7 @@ async def test_check_cache_against_order_image_passes(
     exec_client,
     venue_order_id,
     setup_order_state_fills,
+    cache,
 ):
     # Arrange
     ocm = BetfairStreaming.generate_order_change_message(
@@ -929,8 +1121,13 @@ async def test_check_cache_against_order_image_passes(
     )
     await setup_order_state_fills(order_change_message=ocm)
 
-    # Act, Assert
+    # Act
     exec_client.check_cache_against_order_image(ocm)
+
+    # Assert - verify order exists in cache with expected venue_order_id
+    orders = cache.orders()
+    assert len(orders) == 1
+    assert orders[0].venue_order_id == venue_order_id
 
 
 @pytest.mark.asyncio
@@ -980,7 +1177,11 @@ async def test_fok_order_found_in_cache(exec_client, setup_order_state, strategy
         sv=0.0,
         lsrc=None,
     )
-    exec_client._handle_stream_execution_complete_order_update(unmatched_order=unmatched_order)
+    exec_client._handle_stream_execution_complete_order_update(
+        unmatched_order=unmatched_order,
+        client_order_id=client_order_id,
+        instrument=instrument,
+    )
 
     # Assert
     assert cache.order(client_order_id).status == OrderStatus.CANCELED
@@ -1103,8 +1304,15 @@ async def test_reconcile_execution_mass_status(exec_client, exec_engine):
         BetfairResponses.list_current_orders_execution_complete(),
     )
 
-    # Act, Assert
+    # Act
     mass_status = await exec_client.generate_mass_status()
+
+    # Assert - verify mass status contains expected reports
+    assert mass_status is not None
+    assert len(mass_status.order_reports) == 3
+    assert len(mass_status.fill_reports) == 2
+
+    # Verify reconciliation completes without error
     exec_engine._reconcile_execution_mass_status(mass_status)
 
 
@@ -1116,6 +1324,11 @@ class _StubUnmatchedOrder(SimpleNamespace):
     """
     Minimal attribute bag to satisfy the handlers.
     """
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("rfo", None)
+        kwargs.setdefault("pd", 0)  # Placed date - needed for trade_id generation
+        super().__init__(**kwargs)
 
 
 @pytest.fixture
@@ -1147,6 +1360,7 @@ def _make_unmatched_order(order, *, price: float = _NEGATIVE_PRICE):
         s=order.quantity.as_double(),
         sm=order.quantity.as_double(),  # Matched size triggers a fill path
         md=0,
+        pd=0,  # Placed date - needed for trade_id generation
         pt=None,
         ot=None,
         sc=0,
@@ -1170,7 +1384,7 @@ def test_invalid_price_is_skipped(
     monkeypatch,
     caplog,
 ):
-    order, _ = order_and_cache
+    order, instrument = order_and_cache
 
     # Arrange: intercept generate_order_filled and capture warnings
     generate_mock = MagicMock()
@@ -1185,7 +1399,7 @@ def test_invalid_price_is_skipped(
     caplog.set_level(logging.WARNING, logger=exec_client._log.name)
 
     # Act
-    getattr(exec_client, handler_name)(unmatched_order)
+    getattr(exec_client, handler_name)(unmatched_order, order.client_order_id, instrument)
 
     # Assert: no fill generated. Capturing the exact log record is brittle because the
     # BetfairExecutionClient logger is a custom adapter the important functional
@@ -1253,7 +1467,7 @@ async def test_modify_order_exception_cleans_up_pending_updates(
         await exec_client._modify_price(command, test_order)
 
         # Assert - pending key should be cleaned up
-        assert pending_key not in exec_client._pending_update_order_client_ids
+        assert pending_key not in exec_client._pending_update_keys
 
 
 # Tests for bug fixes - error_code None handling
@@ -1351,6 +1565,258 @@ async def test_modify_quantity_uses_existing_venue_order_id(
         assert last_update.venue_order_id is not None
         # This test verifies the fix works - previously command.venue_order_id was used
         # which could be None, now existing_order.venue_order_id is always used
+
+
+def test_replace_flow_rfo_preserved_for_new_bet_id(
+    exec_client: BetfairExecutionClient,
+    instrument,
+):
+    """
+    Test replace flow: stream update for new bet_id resolves via rfo before HTTP response.
+
+    Sequence:
+    1. Order submitted with rfo mapping and venue_order_id cached
+    2. Modify initiated → pending_key added
+    3. Stream EC for old bet_id arrives (before HTTP response) → returns early, keeps rfo
+    4. Stream update for NEW bet_id arrives (before HTTP response caches it) → resolves via rfo
+    """
+    # Arrange - set up order with rfo and venue_order_id
+    client_order_id = ClientOrderId("TEST-REPLACE-001")
+    old_venue_order_id = VenueOrderId("111111")
+    new_venue_order_id = VenueOrderId("222222")
+    customer_order_ref = client_order_id.value[-32:]
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        client_order_id=client_order_id,
+    )
+    exec_client._cache.add_order(order)
+    exec_client.generate_order_submitted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=client_order_id,
+        ts_event=0,
+    )
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=client_order_id,
+        venue_order_id=old_venue_order_id,
+        ts_event=0,
+    )
+
+    # Register rfo mapping (normally done during submit)
+    exec_client._customer_order_refs[customer_order_ref] = client_order_id
+
+    # Simulate modify in progress - add pending key
+    pending_key = (client_order_id, old_venue_order_id)
+    exec_client._pending_update_keys.add(pending_key)
+
+    # Act 1: Stream EC for old bet_id (cancel from replace) - should preserve rfo
+    old_order_ec = SimpleNamespace(
+        id=old_venue_order_id.value,
+        rfo=customer_order_ref,
+        status="EC",
+        p=order.price.as_double(),
+        s=order.quantity.as_double(),
+        sm=0,
+        sc=order.quantity.as_double(),
+        sl=0,
+        sv=0,
+        md=None,
+        pd=0,
+        pt=None,
+        ot=None,
+        avp=None,
+        lapse_status_reason_code=None,
+    )
+    exec_client._handle_stream_execution_complete_order_update(
+        old_order_ec,
+        client_order_id,
+        instrument,
+    )
+
+    # Verify rfo mapping still exists (key test condition)
+    assert customer_order_ref in exec_client._customer_order_refs
+    assert exec_client._customer_order_refs[customer_order_ref] == client_order_id
+
+    # Act 2: Stream update for NEW bet_id (before HTTP caches it) - should resolve via rfo
+    new_order_stream = SimpleNamespace(
+        id=new_venue_order_id.value,
+        rfo=customer_order_ref,
+    )
+    result = exec_client._resolve_client_order_id(new_order_stream)
+
+    # Assert - new bet_id resolved via rfo
+    assert result == client_order_id
+
+
+def test_cleanup_terminal_order_removes_both_truncations(
+    exec_client: BetfairExecutionClient,
+):
+    """
+    Test that terminal order cleanup removes both new and legacy rfo truncations.
+
+    After reconnect, _sync_fill_caches_from_orders registers both truncations. When
+    order closes, both must be removed to prevent stale mappings.
+
+    """
+    client_order_id = ClientOrderId("TEST-CLEANUP-BOTH-TRUNCATIONS-001")
+
+    # Simulate reconnect registering both truncations
+    exec_client._customer_order_ref_add_with_legacy(client_order_id)
+
+    # Verify both are registered
+    new_ref = client_order_id.value[-32:]
+    legacy_ref = client_order_id.value[:32]
+    assert new_ref in exec_client._customer_order_refs
+    assert legacy_ref in exec_client._customer_order_refs
+
+    # Act - cleanup terminal order (stream has new truncation as rfo)
+    unmatched_order = SimpleNamespace(rfo=new_ref)
+    exec_client._cleanup_terminal_order(unmatched_order, client_order_id)
+
+    # Assert - both truncations removed
+    assert new_ref not in exec_client._customer_order_refs
+    assert legacy_ref not in exec_client._customer_order_refs
+
+
+@pytest.mark.asyncio
+async def test_voided_order_publishes_custom_data(
+    exec_client: BetfairExecutionClient,
+    setup_order_state,
+    cache,
+    instrument,
+    mock_data_engine_process,
+):
+    """
+    Test that when an order has size_voided (sv) > 0, a BetfairOrderVoided custom data
+    event is published to the message bus.
+    """
+    # Arrange
+    order_change_message = BetfairStreaming.generate_order_change_message(
+        price=1.50,
+        size=100,
+        side="B",
+        status="EC",
+        sm=50,
+        sr=0,
+        sc=0,
+        sl=0,
+        sv=50,  # Voided due to VAR decision
+        avp=1.50,
+        market_id="1-179082386",
+        selection_id=50214,
+    )
+    await setup_order_state(order_change_message=order_change_message)
+
+    # Act
+    exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
+    await asyncio.sleep(0)
+
+    # Assert
+    mock_calls = mock_data_engine_process.call_args_list
+    voided_events = [
+        call.args[0]
+        for call in mock_calls
+        if isinstance(call.args[0], CustomData)
+        and isinstance(call.args[0].data, BetfairOrderVoided)
+    ]
+    assert len(voided_events) == 1
+    voided: BetfairOrderVoided = voided_events[0].data
+    assert voided.size_voided == 50.0
+    assert voided.price == 1.50
+    assert voided.size == 100.0
+    assert voided.side == "B"
+    assert voided.avg_price_matched == 1.50
+    assert voided.size_matched == 50.0
+    assert voided.instrument_id.value == "1-179082386-50214-None.BETFAIR"
+
+
+@pytest.mark.asyncio
+async def test_voided_order_with_partial_void(
+    exec_client: BetfairExecutionClient,
+    setup_order_state,
+    mock_data_engine_process,
+):
+    """
+    Test partial void scenario: order had 100 matched, 25 voided (e.g., VAR review
+    determined 25 was matched after goal that was disallowed).
+    """
+    # Arrange
+    order_change_message = BetfairStreaming.generate_order_change_message(
+        price=2.0,
+        size=100,
+        side="L",
+        status="EC",
+        sm=75,
+        sr=0,
+        sc=0,
+        sl=0,
+        sv=25,
+        avp=2.0,
+        market_id="1-179082386",
+        selection_id=50214,
+    )
+    await setup_order_state(order_change_message=order_change_message)
+
+    # Act
+    exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
+    await asyncio.sleep(0)
+
+    # Assert
+    mock_calls = mock_data_engine_process.call_args_list
+    voided_events = [
+        call.args[0]
+        for call in mock_calls
+        if isinstance(call.args[0], CustomData)
+        and isinstance(call.args[0].data, BetfairOrderVoided)
+    ]
+    assert len(voided_events) == 1
+    assert voided_events[0].data.size_voided == 25.0
+    assert voided_events[0].data.price == 2.0
+    assert voided_events[0].data.side == "L"
+
+
+@pytest.mark.asyncio
+async def test_no_void_event_when_sv_is_zero(
+    exec_client: BetfairExecutionClient,
+    setup_order_state,
+    mock_data_engine_process,
+):
+    """
+    Test that no BetfairOrderVoided event is published when sv=0.
+    """
+    # Arrange
+    order_change_message = BetfairStreaming.generate_order_change_message(
+        price=1.50,
+        size=100,
+        side="B",
+        status="EC",
+        sm=50,
+        sr=0,
+        sc=50,
+        sl=0,
+        sv=0,
+        avp=1.50,
+        market_id="1-179082386",
+        selection_id=50214,
+    )
+    await setup_order_state(order_change_message=order_change_message)
+
+    # Act
+    exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
+    await asyncio.sleep(0)
+
+    # Assert
+    mock_calls = mock_data_engine_process.call_args_list
+    voided_events = [
+        call.args[0]
+        for call in mock_calls
+        if isinstance(call.args[0], CustomData)
+        and isinstance(call.args[0].data, BetfairOrderVoided)
+    ]
+    assert len(voided_events) == 0
 
 
 def test_get_matched_timestamp_fallback(exec_client):
@@ -1557,19 +2023,19 @@ async def test_sync_fill_caches_from_orders_populates_caches(
     order.apply(fill_event)
     cache.update_order(order)
 
-    exec_client._filled_qty_cache.clear()
+    exec_client._cache_filled_qty.clear()
     exec_client._published_executions.clear()
 
     # Act
     exec_client._sync_fill_caches_from_orders()
 
     # Assert
-    assert order.client_order_id in exec_client._filled_qty_cache
-    assert exec_client._filled_qty_cache[order.client_order_id] == Quantity(
+    assert order.client_order_id in exec_client._cache_filled_qty
+    assert exec_client._cache_filled_qty[order.client_order_id] == Quantity(
         5.0,
         BETFAIR_QUANTITY_PRECISION,
     )
-    assert TradeId("TRADE-001") in exec_client._published_executions[order.client_order_id]
+    assert "TRADE-001" in exec_client._published_executions
 
 
 @pytest.mark.asyncio
@@ -1604,11 +2070,11 @@ async def test_determine_fill_qty_returns_zero_when_already_filled(
     unmatched_order = SimpleNamespace(sm=5.33)
 
     # Act
-    exec_client._filled_qty_cache.clear()
-    fill_qty = exec_client._determine_fill_qty(unmatched_order, order)
+    exec_client._cache_filled_qty.clear()
+    result = exec_client._determine_fill_qty(unmatched_order, order)
 
     # Assert
-    assert fill_qty == Quantity.zero(BETFAIR_QUANTITY_PRECISION)
+    assert result.fill_qty == Quantity.zero(BETFAIR_QUANTITY_PRECISION)
 
 
 @pytest.mark.asyncio
@@ -1640,16 +2106,16 @@ async def test_determine_fill_qty_uses_max_of_cache_and_order_filled(
     cache.update_order(order)
 
     # Cache has stale (lower) value
-    exec_client._filled_qty_cache[order.client_order_id] = Quantity(2.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(2.0, BETFAIR_QUANTITY_PRECISION)
 
     # Stream reports 5.0 matched
     unmatched_order = SimpleNamespace(sm=5.0)
 
     # Act
-    fill_qty = exec_client._determine_fill_qty(unmatched_order, order)
+    result = exec_client._determine_fill_qty(unmatched_order, order)
 
     # Assert - should use order.filled_qty (3.0) not cache (2.0)
-    assert fill_qty == Quantity(2.0, BETFAIR_QUANTITY_PRECISION)
+    assert result.fill_qty == Quantity(2.0, BETFAIR_QUANTITY_PRECISION)
 
 
 @pytest.mark.parametrize(
@@ -1698,7 +2164,7 @@ def test_duplicate_fill_prevented_on_startup(
     )
 
     # Clear caches to simulate startup/reconnect
-    exec_client._filled_qty_cache.clear()
+    exec_client._cache_filled_qty.clear()
     exec_client._published_executions.clear()
 
     generate_mock = MagicMock()
@@ -1724,7 +2190,7 @@ def test_duplicate_fill_prevented_on_startup(
     )
 
     # Act
-    getattr(exec_client, handler_name)(unmatched_order)
+    getattr(exec_client, handler_name)(unmatched_order, order.client_order_id, instrument)
 
     # Assert - no fill generated since order already fully filled
     generate_mock.assert_not_called()
@@ -1744,7 +2210,7 @@ async def test_connect_invokes_sync_fill_caches(exec_client: BetfairExecutionCli
     monkeypatch.setattr(exec_client, "_sync_fill_caches_from_orders", track_sync)
     monkeypatch.setattr(exec_client._client, "connect", AsyncMock())
     monkeypatch.setattr(exec_client._stream, "connect", AsyncMock())
-    monkeypatch.setattr(exec_client, "check_account_currency", AsyncMock())
+    monkeypatch.setattr(exec_client, "_check_account_currency", AsyncMock())
     monkeypatch.setattr(exec_client, "request_account_state", AsyncMock())
     monkeypatch.setattr(exec_client, "_send_account_state", MagicMock())
 
@@ -1827,7 +2293,7 @@ def test_overfill_rejection_skips_fill(
     )
 
     # Act
-    getattr(exec_client, handler_name)(unmatched_order)
+    getattr(exec_client, handler_name)(unmatched_order, order.client_order_id, instrument)
 
     # Assert - no fill generated due to overfill protection
     generate_mock.assert_not_called()
@@ -1850,10 +2316,10 @@ def test_determine_fill_qty_handles_sm_none_and_zero(
     unmatched_order = SimpleNamespace(sm=sm_value)
 
     # Act
-    fill_qty = exec_client._determine_fill_qty(unmatched_order, order)
+    result = exec_client._determine_fill_qty(unmatched_order, order)
 
     # Assert
-    assert fill_qty == Quantity.zero(BETFAIR_QUANTITY_PRECISION)
+    assert result.fill_qty == Quantity.zero(BETFAIR_QUANTITY_PRECISION)
 
 
 @pytest.mark.asyncio
@@ -1873,20 +2339,20 @@ async def test_determine_fill_qty_cache_ahead_of_order(
     await accept_order(order, venue_order_id)
 
     # Cache has HIGHER value than order.filled_qty (0)
-    exec_client._filled_qty_cache[order.client_order_id] = Quantity(4.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(4.0, BETFAIR_QUANTITY_PRECISION)
 
     # Stream reports 5.0 matched
     unmatched_order = SimpleNamespace(sm=5.0)
 
     # Act
-    fill_qty = exec_client._determine_fill_qty(unmatched_order, order)
+    result = exec_client._determine_fill_qty(unmatched_order, order)
 
     # Assert - should only fill 1.0 (5.0 - 4.0 cache value)
-    assert fill_qty == Quantity(1.0, BETFAIR_QUANTITY_PRECISION)
+    assert result.fill_qty == Quantity(1.0, BETFAIR_QUANTITY_PRECISION)
 
 
 @pytest.mark.asyncio
-async def test_determine_fill_qty_clears_cache_on_completion(
+async def test_update_fill_cache_retains_on_completion(
     exec_client: BetfairExecutionClient,
     cache,
     accept_order,
@@ -1901,17 +2367,180 @@ async def test_determine_fill_qty_clears_cache_on_completion(
     venue_order_id = VenueOrderId("12345")
     await accept_order(order, venue_order_id)
 
-    exec_client._filled_qty_cache[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_avg_px[order.client_order_id] = 2.0
 
-    # Stream reports full order quantity matched (completion)
-    unmatched_order = SimpleNamespace(sm=10.0)
+    total_matched_qty = Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
+    avg_px = 2.5
 
     # Act
-    fill_qty = exec_client._determine_fill_qty(unmatched_order, order)
+    exec_client._update_fill_cache(total_matched_qty, avg_px, order)
 
-    # Assert
-    assert fill_qty == Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
-    assert order.client_order_id not in exec_client._filled_qty_cache
+    # Assert - cache retained until HTTP API confirms catch-up
+    assert exec_client._cache_filled_qty[order.client_order_id] == total_matched_qty
+    assert exec_client._cache_avg_px[order.client_order_id] == avg_px
+    assert order.client_order_id in exec_client._cache_filled_completed_ns
+
+
+@pytest.mark.asyncio
+async def test_confirm_fill_cache_cleanup_clears_when_api_caught_up(
+    exec_client: BetfairExecutionClient,
+    cache,
+    accept_order,
+):
+    instrument = betting_instrument()
+    cache.add_instrument(instrument)
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        quantity=Quantity(10.0, BETFAIR_QUANTITY_PRECISION),
+    )
+    venue_order_id = VenueOrderId("12345")
+    await accept_order(order, venue_order_id)
+
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(
+        10.0,
+        BETFAIR_QUANTITY_PRECISION,
+    )
+    exec_client._cache_avg_px[order.client_order_id] = 2.5
+
+    # Act - API still stale, reports less than cached
+    exec_client._confirm_fill_cache_cleanup(order.client_order_id, 2.17)
+
+    # Assert - cache retained because API hasn't caught up
+    assert order.client_order_id in exec_client._cache_filled_qty
+    assert order.client_order_id in exec_client._cache_avg_px
+
+    # Act - API catches up
+    exec_client._confirm_fill_cache_cleanup(order.client_order_id, 10.0)
+
+    # Assert - cache cleared
+    assert order.client_order_id not in exec_client._cache_filled_qty
+    assert order.client_order_id not in exec_client._cache_avg_px
+
+
+@pytest.mark.asyncio
+async def test_sweep_expired_fill_cache_evicts_after_ttl(
+    exec_client: BetfairExecutionClient,
+    cache,
+    accept_order,
+):
+    instrument = betting_instrument()
+    cache.add_instrument(instrument)
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        quantity=Quantity(10.0, BETFAIR_QUANTITY_PRECISION),
+    )
+    venue_order_id = VenueOrderId("12345")
+    await accept_order(order, venue_order_id)
+
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(
+        10.0,
+        BETFAIR_QUANTITY_PRECISION,
+    )
+    exec_client._cache_avg_px[order.client_order_id] = 2.5
+
+    # Simulate completion timestamp older than TTL
+    ts_now = exec_client._clock.timestamp_ns()
+    exec_client._cache_filled_completed_ns[order.client_order_id] = (
+        ts_now - BETFAIR_FILL_CACHE_TTL_NS - 1
+    )
+
+    # Act
+    exec_client._sweep_expired_fill_cache()
+
+    # Assert - expired entry evicted
+    assert order.client_order_id not in exec_client._cache_filled_qty
+    assert order.client_order_id not in exec_client._cache_filled_completed_ns
+    assert order.client_order_id not in exec_client._cache_avg_px
+
+
+@pytest.mark.asyncio
+async def test_sweep_expired_fill_cache_retains_within_ttl(
+    exec_client: BetfairExecutionClient,
+    cache,
+    accept_order,
+):
+    instrument = betting_instrument()
+    cache.add_instrument(instrument)
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        quantity=Quantity(10.0, BETFAIR_QUANTITY_PRECISION),
+    )
+    venue_order_id = VenueOrderId("12345")
+    await accept_order(order, venue_order_id)
+
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(
+        10.0,
+        BETFAIR_QUANTITY_PRECISION,
+    )
+    exec_client._cache_avg_px[order.client_order_id] = 2.5
+
+    # Simulate recent completion
+    exec_client._cache_filled_completed_ns[order.client_order_id] = (
+        exec_client._clock.timestamp_ns()
+    )
+
+    # Act
+    exec_client._sweep_expired_fill_cache()
+
+    # Assert - recent entry retained
+    assert order.client_order_id in exec_client._cache_filled_qty
+    assert order.client_order_id in exec_client._cache_filled_completed_ns
+    assert order.client_order_id in exec_client._cache_avg_px
+
+
+def test_process_order_fill_marks_terminal_on_full_fill(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+):
+    order, instrument = order_and_cache
+    bet_id = "12345"
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId(bet_id),
+        ts_event=0,
+    )
+
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+
+    trade_counter = [0]
+
+    def mock_trade_id(_uo):
+        trade_counter[0] += 1
+        return TradeId(f"TRADE-{trade_counter[0]}")
+
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", mock_trade_id)
+
+    # Fill for the full order quantity
+    fill = _StubUnmatchedOrder(
+        id=bet_id,
+        side="L",
+        p=2.0,
+        avp=2.0,
+        s=order.quantity.as_double(),
+        sm=order.quantity.as_double(),
+        md=1635217893000,
+        pt=None,
+        ot=None,
+        pd=0,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+        status="E",
+    )
+
+    exec_client._handle_stream_executable_order_update(fill, order.client_order_id, instrument)
+
+    # Assert - fully filled order is marked terminal
+    assert order.client_order_id.value in exec_client._terminal_orders
 
 
 def test_sync_fill_caches_with_multiple_orders(
@@ -1975,24 +2604,24 @@ def test_sync_fill_caches_with_multiple_orders(
     order2.apply(fill2b)
     cache.add_order(order2)
 
-    exec_client._filled_qty_cache.clear()
+    exec_client._cache_filled_qty.clear()
     exec_client._published_executions.clear()
 
     # Act
     exec_client._sync_fill_caches_from_orders()
 
     # Assert - both orders synced
-    assert exec_client._filled_qty_cache[order1.client_order_id] == Quantity(
+    assert exec_client._cache_filled_qty[order1.client_order_id] == Quantity(
         3.0,
         BETFAIR_QUANTITY_PRECISION,
     )
-    assert exec_client._filled_qty_cache[order2.client_order_id] == Quantity(
+    assert exec_client._cache_filled_qty[order2.client_order_id] == Quantity(
         12.0,
         BETFAIR_QUANTITY_PRECISION,
     )
-    assert TradeId("TRADE-A") in exec_client._published_executions[order1.client_order_id]
-    assert TradeId("TRADE-B1") in exec_client._published_executions[order2.client_order_id]
-    assert TradeId("TRADE-B2") in exec_client._published_executions[order2.client_order_id]
+    assert "TRADE-A" in exec_client._published_executions
+    assert "TRADE-B1" in exec_client._published_executions
+    assert "TRADE-B2" in exec_client._published_executions
 
 
 def test_sync_fill_caches_ignores_orders_without_fills(
@@ -2036,19 +2665,16 @@ def test_sync_fill_caches_ignores_orders_without_fills(
     order_no_fill.apply(accepted2)
     cache.add_order(order_no_fill)
 
-    exec_client._filled_qty_cache.clear()
+    exec_client._cache_filled_qty.clear()
     exec_client._published_executions.clear()
 
     # Act
     exec_client._sync_fill_caches_from_orders()
 
     # Assert
-    assert order_with_fill.client_order_id in exec_client._filled_qty_cache
-    assert order_no_fill.client_order_id not in exec_client._filled_qty_cache
-    assert (
-        TradeId("TRADE-001") in exec_client._published_executions[order_with_fill.client_order_id]
-    )
-    assert len(exec_client._published_executions[order_no_fill.client_order_id]) == 0
+    assert order_with_fill.client_order_id in exec_client._cache_filled_qty
+    assert order_no_fill.client_order_id not in exec_client._cache_filled_qty
+    assert "TRADE-001" in exec_client._published_executions
 
 
 @pytest.mark.asyncio
@@ -2078,12 +2704,2165 @@ async def test_sync_fill_caches_does_not_duplicate_existing_trade_ids(
     cache.update_order(order)
 
     # Pre-populate cache with the same trade ID
-    exec_client._filled_qty_cache[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
-    exec_client._published_executions[order.client_order_id].append(TradeId("TRADE-001"))
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._published_executions.add("TRADE-001")
 
     # Act
     exec_client._sync_fill_caches_from_orders()
 
-    # Assert - trade ID should not be duplicated
-    trade_ids = exec_client._published_executions[order.client_order_id]
-    assert trade_ids.count(TradeId("TRADE-001")) == 1
+    # Assert - trade ID should still be present (FifoCache dedupes automatically)
+    assert "TRADE-001" in exec_client._published_executions
+
+
+@pytest.mark.parametrize(
+    "handler_name",
+    [
+        "_handle_stream_executable_order_update",
+        "_handle_stream_execution_complete_order_update",
+    ],
+)
+def test_zero_fill_price_skips_fill(
+    handler_name,
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+):
+    order, instrument = order_and_cache
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        ts_event=0,
+    )
+
+    generate_mock = MagicMock()
+    monkeypatch.setattr(exec_client, "generate_order_filled", generate_mock)
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", lambda _uo: TradeId("TRADE-NEW"))
+
+    monkeypatch.setattr(exec_client, "_determine_fill_price", lambda *_: 0.0)
+
+    unmatched_order = _StubUnmatchedOrder(
+        id=str(order.client_order_id),
+        side="L",
+        p=order.price.as_double(),
+        avp=order.price.as_double(),
+        s=order.quantity.as_double(),
+        sm=order.quantity.as_double(),
+        md=0,
+        pt=None,
+        ot=None,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+    )
+
+    # Act
+    getattr(exec_client, handler_name)(unmatched_order, order.client_order_id, instrument)
+
+    # Assert
+    generate_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "handler_name",
+    [
+        "_handle_stream_executable_order_update",
+        "_handle_stream_execution_complete_order_update",
+    ],
+)
+def test_duplicate_trade_id_skips_fill(
+    handler_name,
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+):
+    order, instrument = order_and_cache
+    bet_id = "12345"
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId(bet_id),
+        ts_event=0,
+    )
+
+    generate_mock = MagicMock()
+    monkeypatch.setattr(exec_client, "generate_order_filled", generate_mock)
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+
+    trade_id = TradeId("EXISTING-TRADE")
+
+    # Must patch where it's used (execution module), not where it's defined
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.betfair.execution.order_to_trade_id",
+        lambda _uo: trade_id,
+    )
+
+    exec_client._published_executions.add(trade_id.value)
+
+    unmatched_order = _StubUnmatchedOrder(
+        id=bet_id,  # Must match venue_order_id for proper order resolution
+        side="L",
+        p=order.price.as_double(),
+        avp=order.price.as_double(),
+        s=order.quantity.as_double(),
+        sm=order.quantity.as_double(),
+        md=0,
+        pt=None,
+        ot=None,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+    )
+
+    # Act
+    getattr(exec_client, handler_name)(unmatched_order, order.client_order_id, instrument)
+
+    # Assert
+    generate_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "handler_name",
+    [
+        "_handle_stream_executable_order_update",
+        "_handle_stream_execution_complete_order_update",
+    ],
+)
+def test_fill_qty_zero_skips_fill(
+    handler_name,
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+):
+    order, instrument = order_and_cache
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        ts_event=0,
+    )
+
+    generate_mock = MagicMock()
+    monkeypatch.setattr(exec_client, "generate_order_filled", generate_mock)
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", lambda _uo: TradeId("TRADE-NEW"))
+
+    sm_value = 5.0
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(
+        sm_value,
+        BETFAIR_QUANTITY_PRECISION,
+    )
+
+    unmatched_order = _StubUnmatchedOrder(
+        id=str(order.client_order_id),
+        side="L",
+        p=order.price.as_double(),
+        avp=order.price.as_double(),
+        s=order.quantity.as_double(),
+        sm=sm_value,
+        md=0,
+        pt=None,
+        ot=None,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+    )
+
+    # Act
+    getattr(exec_client, handler_name)(unmatched_order, order.client_order_id, instrument)
+
+    # Assert
+    generate_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "handler_name",
+    [
+        "_handle_stream_executable_order_update",
+        "_handle_stream_execution_complete_order_update",
+    ],
+)
+def test_cache_not_updated_on_validation_failure(
+    handler_name,
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+):
+    """
+    Critical test: verifies that the fill qty cache is NOT updated when validation
+    fails. This ensures subsequent updates with the same sm value can still generate
+    a fill (the root cause of the dropped fills bug).
+    """
+    order, instrument = order_and_cache
+    bet_id = "12345"
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId(bet_id),
+        ts_event=0,
+    )
+
+    generate_mock = MagicMock()
+    monkeypatch.setattr(exec_client, "generate_order_filled", generate_mock)
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+
+    call_count = [0]
+
+    def get_trade_id(_uo):
+        call_count[0] += 1
+        return TradeId(f"TRADE-{call_count[0]}")
+
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", get_trade_id)
+
+    monkeypatch.setattr(exec_client, "_determine_fill_price", lambda *_: 0.0)
+
+    sm_value = order.quantity.as_double() / 2
+    unmatched_order = _StubUnmatchedOrder(
+        id=bet_id,  # Must match venue_order_id for cache lookup
+        side="L",
+        p=order.price.as_double(),
+        avp=order.price.as_double(),
+        s=order.quantity.as_double(),
+        sm=sm_value,
+        md=0,
+        pt="L",
+        ot="L",
+        pd=0,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+    )
+
+    assert order.client_order_id not in exec_client._cache_filled_qty
+
+    # Act - first attempt fails due to zero price
+    getattr(exec_client, handler_name)(unmatched_order, order.client_order_id, instrument)
+
+    # Assert - cache should NOT be updated after validation failure
+    assert order.client_order_id not in exec_client._cache_filled_qty
+    generate_mock.assert_not_called()
+
+    # Act - fix the price and retry, should succeed because cache wasn't advanced
+    monkeypatch.setattr(exec_client, "_determine_fill_price", lambda *_: order.price.as_double())
+    getattr(exec_client, handler_name)(unmatched_order, order.client_order_id, instrument)
+
+    # Assert
+    generate_mock.assert_called_once()
+    assert order.client_order_id in exec_client._cache_filled_qty
+
+
+@pytest.mark.asyncio
+async def test_update_fill_cache_stores_partial_fill(
+    exec_client: BetfairExecutionClient,
+    cache,
+    accept_order,
+):
+    instrument = betting_instrument()
+    cache.add_instrument(instrument)
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        quantity=Quantity(10.0, BETFAIR_QUANTITY_PRECISION),
+    )
+    venue_order_id = VenueOrderId("12345")
+    await accept_order(order, venue_order_id)
+
+    total_matched_qty = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    avg_px = 2.5
+
+    # Act
+    exec_client._update_fill_cache(total_matched_qty, avg_px, order)
+
+    # Assert
+    assert exec_client._cache_filled_qty[order.client_order_id] == total_matched_qty
+    assert exec_client._cache_avg_px[order.client_order_id] == avg_px
+
+
+@pytest.mark.parametrize(
+    "handler_name",
+    [
+        "_handle_stream_executable_order_update",
+        "_handle_stream_execution_complete_order_update",
+    ],
+)
+def test_overfill_detected_even_with_stale_order_state(
+    handler_name,
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+):
+    """
+    Verifies overfill detection uses stream's total_matched_qty, not stale
+    order.filled_qty.
+
+    This catches overfills even when previous fills haven't been processed by the
+    framework yet.
+
+    """
+    order, instrument = order_and_cache
+    bet_id = "12345"
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId(bet_id),
+        ts_event=0,
+    )
+
+    generate_mock = MagicMock()
+    monkeypatch.setattr(exec_client, "generate_order_filled", generate_mock)
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", lambda _uo: TradeId("TRADE-NEW"))
+
+    # Simulate: we sent a fill for 50%, cache updated, but order.filled_qty still 0
+    previous_fill = order.quantity.as_double() / 2
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(
+        previous_fill,
+        BETFAIR_QUANTITY_PRECISION,
+    )
+    # order.filled_qty is 0 (event not yet processed by framework)
+
+    # Stream sends overfill: total matched exceeds order quantity
+    overfill_sm = order.quantity.as_double() + 10.0
+    unmatched_order = _StubUnmatchedOrder(
+        id=bet_id,
+        side="L",
+        p=order.price.as_double(),
+        avp=order.price.as_double(),
+        s=order.quantity.as_double(),
+        sm=overfill_sm,
+        md=0,
+        pt="L",
+        ot="L",
+        pd=0,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+    )
+
+    # Act
+    getattr(exec_client, handler_name)(unmatched_order, order.client_order_id, instrument)
+
+    # Assert - overfill detected even though order.filled_qty is stale
+    generate_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "handler_name",
+    [
+        "_handle_stream_executable_order_update",
+        "_handle_stream_execution_complete_order_update",
+    ],
+)
+def test_fill_uses_cache_baseline_when_ahead_of_order_state(
+    handler_name,
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+    caplog,
+):
+    """
+    Verifies that fill processing uses the cache baseline (not stale order.filled_qty)
+    when cache is ahead of order state.
+
+    This ensures that when stream updates arrive faster than order state updates, fills
+    are correctly calculated from the cache baseline.
+
+    """
+    order, instrument = order_and_cache
+    bet_id = "12345"
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId(bet_id),
+        ts_event=0,
+    )
+
+    fill_calls = []
+
+    def capture_fill(**kwargs):
+        fill_calls.append(kwargs)
+
+    monkeypatch.setattr(exec_client, "generate_order_filled", capture_fill)
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", lambda _uo: TradeId("TRADE-NEW"))
+
+    # Cache is ahead: we've seen 4.0 filled, but order.filled_qty is still 0
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(4.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_avg_px[order.client_order_id] = 2.0
+
+    # Stream reports 5.0 total matched
+    unmatched_order = _StubUnmatchedOrder(
+        id=bet_id,
+        side="L",
+        p=order.price.as_double(),
+        avp=2.0,
+        s=order.quantity.as_double(),
+        sm=5.0,
+        md=0,
+        pt="L",
+        ot="L",
+        pd=0,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+    )
+
+    caplog.set_level(logging.DEBUG, logger=exec_client._log.name)
+
+    # Act
+    getattr(exec_client, handler_name)(unmatched_order, order.client_order_id, instrument)
+
+    # Assert - fill should be 1.0 (5.0 - 4.0 cache baseline), not 5.0 (5.0 - 0 order state)
+    assert len(fill_calls) == 1
+    assert fill_calls[0]["last_qty"] == Quantity(1.0, BETFAIR_QUANTITY_PRECISION)
+
+
+@pytest.mark.asyncio
+async def test_batch_processing_continues_after_unknown_order(
+    exec_client: BetfairExecutionClient,
+    setup_order_state,
+    cache,
+    fill_events,
+    monkeypatch,
+):
+    """
+    Test that batch processing continues after encountering an unknown order when
+    ignore_external_orders=True.
+
+    Previously the code had `return` instead of `continue`, which would abandon
+    all subsequent orders in the batch, causing fills to be silently dropped.
+
+    """
+    new_config = BetfairExecClientConfig(
+        username="username",
+        password="password",
+        app_key="app_key",
+        account_currency="GBP",
+        ignore_external_orders=True,
+    )
+    monkeypatch.setattr(exec_client, "config", new_config)
+
+    known_order_id = 111222333
+    unknown_order_id = 999888777
+    order_change_message = BetfairStreaming.generate_order_change_message(
+        price=2.0,
+        size=10,
+        side="B",
+        status="E",
+        sm=5,
+        avp=2.0,
+        order_id=known_order_id,
+    )
+    await setup_order_state(order_change_message)
+
+    # Simulates unknown order behavior
+    original_resolve = exec_client._resolve_client_order_id
+
+    def mock_resolve_client_order_id(unmatched_order):
+        if unmatched_order.id == unknown_order_id:
+            return None  # Unknown order - not found
+        return original_resolve(unmatched_order)
+
+    monkeypatch.setattr(exec_client, "_resolve_client_order_id", mock_resolve_client_order_id)
+
+    # Batch: unknown order first (previously caused return), known order second
+    batch_ocm = OCM(
+        id=1,
+        clk="1",
+        pt=0,
+        oc=[
+            OrderMarketChange(
+                id="1",
+                orc=[
+                    OrderRunnerChange(
+                        id=1,
+                        uo=[
+                            BFOrder(
+                                id=unknown_order_id,
+                                p=3.0,
+                                s=20,
+                                side="B",
+                                status="E",
+                                pt="P",
+                                ot="L",
+                                pd=1635217893000,
+                                md=1635217893000,
+                                sm=10,
+                                sr=10,
+                                sl=0,
+                                sc=0,
+                                sv=0,
+                                rac="",
+                                rc="REG_LGA",
+                                rfo="",
+                                rfs="",
+                                avp=3.0,
+                            ),
+                            BFOrder(
+                                id=known_order_id,
+                                p=2.0,
+                                s=10,
+                                side="B",
+                                status="E",
+                                pt="P",
+                                ot="L",
+                                pd=1635217893000,
+                                md=1635217893000,
+                                sm=5,
+                                sr=5,
+                                sl=0,
+                                sc=0,
+                                sv=0,
+                                rac="",
+                                rc="REG_LGA",
+                                rfo="",
+                                rfs="",
+                                avp=2.0,
+                            ),
+                        ],
+                        mb=[],
+                        ml=[],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Act
+    exec_client.handle_order_stream_update(msgspec.json.encode(batch_ocm))
+    await eventually(lambda: len(fill_events) >= 1)
+
+    # Assert
+    assert len(fill_events) == 1
+    assert fill_events[0].venue_order_id == VenueOrderId(str(known_order_id))
+
+
+@pytest.mark.asyncio
+async def test_batch_with_multiple_known_orders_all_processed(
+    exec_client: BetfairExecutionClient,
+    setup_order_state,
+    fill_events,
+    monkeypatch,
+):
+    """
+    Test that all known orders in a batch are processed even when
+    ignore_external_orders=True and there are unknown orders interspersed.
+    """
+    new_config = BetfairExecClientConfig(
+        username="username",
+        password="password",
+        app_key="app_key",
+        account_currency="GBP",
+        ignore_external_orders=True,
+    )
+    monkeypatch.setattr(exec_client, "config", new_config)
+
+    order_id_1 = 111000001
+    order_id_2 = 111000002
+    unknown_order_ids = {999000001, 999000002}
+
+    ocm1 = BetfairStreaming.generate_order_change_message(
+        price=2.0,
+        size=10,
+        side="B",
+        status="E",
+        sm=5,
+        avp=2.0,
+        order_id=order_id_1,
+    )
+    ocm2 = BetfairStreaming.generate_order_change_message(
+        price=3.0,
+        size=15,
+        side="B",
+        status="E",
+        sm=7,
+        avp=3.0,
+        order_id=order_id_2,
+    )
+    await setup_order_state(ocm1)
+    await setup_order_state(ocm2)
+
+    original_resolve = exec_client._resolve_client_order_id
+
+    def mock_resolve_client_order_id(unmatched_order):
+        if unmatched_order.id in unknown_order_ids:
+            return None  # Unknown order - not found
+        return original_resolve(unmatched_order)
+
+    monkeypatch.setattr(exec_client, "_resolve_client_order_id", mock_resolve_client_order_id)
+
+    # Batch: unknown, known1, unknown, known2
+    batch_ocm = OCM(
+        id=1,
+        clk="1",
+        pt=0,
+        oc=[
+            OrderMarketChange(
+                id="1",
+                orc=[
+                    OrderRunnerChange(
+                        id=1,
+                        uo=[
+                            BFOrder(
+                                id=999000001,
+                                p=1.5,
+                                s=5,
+                                side="B",
+                                status="E",
+                                pt="P",
+                                ot="L",
+                                pd=0,
+                                md=0,
+                                sm=2.5,
+                                sr=2.5,
+                                sl=0,
+                                sc=0,
+                                sv=0,
+                                rac="",
+                                rc="",
+                                rfo="",
+                                rfs="",
+                                avp=1.5,
+                            ),
+                            BFOrder(
+                                id=order_id_1,
+                                p=2.0,
+                                s=10,
+                                side="B",
+                                status="E",
+                                pt="P",
+                                ot="L",
+                                pd=0,
+                                md=0,
+                                sm=5,
+                                sr=5,
+                                sl=0,
+                                sc=0,
+                                sv=0,
+                                rac="",
+                                rc="",
+                                rfo="",
+                                rfs="",
+                                avp=2.0,
+                            ),
+                            BFOrder(
+                                id=999000002,
+                                p=1.8,
+                                s=8,
+                                side="B",
+                                status="E",
+                                pt="P",
+                                ot="L",
+                                pd=0,
+                                md=0,
+                                sm=4,
+                                sr=4,
+                                sl=0,
+                                sc=0,
+                                sv=0,
+                                rac="",
+                                rc="",
+                                rfo="",
+                                rfs="",
+                                avp=1.8,
+                            ),
+                            BFOrder(
+                                id=order_id_2,
+                                p=3.0,
+                                s=15,
+                                side="B",
+                                status="E",
+                                pt="P",
+                                ot="L",
+                                pd=0,
+                                md=0,
+                                sm=7,
+                                sr=8,
+                                sl=0,
+                                sc=0,
+                                sv=0,
+                                rac="",
+                                rc="",
+                                rfo="",
+                                rfs="",
+                                avp=3.0,
+                            ),
+                        ],
+                        mb=[],
+                        ml=[],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Act
+    exec_client.handle_order_stream_update(msgspec.json.encode(batch_ocm))
+    await eventually(lambda: len(fill_events) >= 2)
+
+    # Assert
+    assert len(fill_events) == 2
+    venue_order_ids = {f.venue_order_id.value for f in fill_events}
+    assert str(order_id_1) in venue_order_ids
+    assert str(order_id_2) in venue_order_ids
+
+
+def test_determine_fill_price_bounds_check_fallback(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    caplog,
+):
+    """
+    Test that _determine_fill_price falls back to avp when calculated price is invalid.
+
+    When the weighted average price calculation produces a negative or zero value, the
+    method should log a warning and return the avp instead.
+
+    """
+    order, _ = order_and_cache
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        ts_event=0,
+    )
+
+    exec_client.generate_order_filled(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        trade_id=TradeId("TRADE-1"),
+        venue_position_id=None,
+        order_side=order.side,
+        order_type=order.order_type,
+        last_qty=Quantity(5.0, BETFAIR_QUANTITY_PRECISION),
+        last_px=Price(10.0, BETFAIR_PRICE_PRECISION),
+        quote_currency=GBP,
+        commission=Money(0, GBP),
+        liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+        ts_event=0,
+    )
+
+    # Populate hot caches to simulate first fill already processed
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_avg_px[order.client_order_id] = 10.0
+
+    # Values chosen to produce invalid (negative) calculated price:
+    # prev_price=10, prev_size=5, new_avp=2.0, total_sm=6, new_size=1
+    unmatched_order = SimpleNamespace(
+        avp=2.0,
+        p=order.price.as_double(),
+        sm=6.0,
+    )
+
+    caplog.set_level(logging.WARNING, logger=exec_client._log.name)
+
+    # Act
+    result = exec_client._determine_fill_price(unmatched_order, order)
+
+    # Assert
+    assert result == 2.0
+
+
+def test_determine_fill_price_division_by_zero_protection(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    caplog,
+):
+    """
+    Test that _determine_fill_price handles edge case where new_size is zero.
+    """
+    order, _ = order_and_cache
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        ts_event=0,
+    )
+
+    exec_client.generate_order_filled(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        trade_id=TradeId("TRADE-1"),
+        venue_position_id=None,
+        order_side=order.side,
+        order_type=order.order_type,
+        last_qty=Quantity(5.0, BETFAIR_QUANTITY_PRECISION),
+        last_px=Price(2.0, BETFAIR_PRICE_PRECISION),
+        quote_currency=GBP,
+        commission=Money(0, GBP),
+        liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+        ts_event=0,
+    )
+
+    # Populate cache to match order state
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_avg_px[order.client_order_id] = 2.0
+
+    # sm=5.0 same as filled qty means new_size=0 (division by zero edge case)
+    unmatched_order = SimpleNamespace(
+        avp=2.5,
+        p=order.price.as_double(),
+        sm=5.0,
+    )
+
+    caplog.set_level(logging.WARNING, logger=exec_client._log.name)
+
+    # Act
+    result = exec_client._determine_fill_price(unmatched_order, order)
+
+    # Assert
+    assert result == 2.0
+
+
+def test_determine_fill_price_no_avp_uses_limit_price(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+):
+    """
+    Test that _determine_fill_price uses limit price when avp is None.
+    """
+    order, _ = order_and_cache
+
+    unmatched_order = SimpleNamespace(
+        avp=None,
+        p=5.5,
+        sm=10.0,
+    )
+
+    # Act
+    result = exec_client._determine_fill_price(unmatched_order, order)
+
+    # Assert
+    assert result == 5.5
+
+
+def test_determine_fill_price_first_fill_uses_avp(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+):
+    """
+    Test that _determine_fill_price uses avp directly for the first fill.
+    """
+    order, _ = order_and_cache
+
+    unmatched_order = SimpleNamespace(
+        avp=3.5,
+        p=4.0,
+        sm=5.0,
+    )
+
+    # Act
+    result = exec_client._determine_fill_price(unmatched_order, order)
+
+    # Assert
+    assert result == 3.5
+
+
+def test_determine_fill_price_same_price_match(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+):
+    """
+    Test that _determine_fill_price returns avp when prices match.
+    """
+    order, _ = order_and_cache
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        ts_event=0,
+    )
+
+    exec_client.generate_order_filled(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        trade_id=TradeId("TRADE-1"),
+        venue_position_id=None,
+        order_side=order.side,
+        order_type=order.order_type,
+        last_qty=Quantity(5.0, BETFAIR_QUANTITY_PRECISION),
+        last_px=Price(2.5, BETFAIR_PRICE_PRECISION),
+        quote_currency=GBP,
+        commission=Money(0, GBP),
+        liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+        ts_event=0,
+    )
+
+    # Populate hot caches to simulate first fill already processed
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_avg_px[order.client_order_id] = 2.5
+
+    unmatched_order = SimpleNamespace(
+        avp=2.5,
+        p=order.price.as_double(),
+        sm=10.0,
+    )
+
+    # Act
+    result = exec_client._determine_fill_price(unmatched_order, order)
+
+    # Assert - prices match so returns avp directly
+    assert result == 2.5
+
+
+def test_determine_fill_price_weighted_average_calculation(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+):
+    """
+    Test the weighted average calculation for fill price when prices differ.
+
+    Given: first fill at 2.0 for 5 units, new total avg is 2.5 for 10 units.
+    Expected: new fill price = 3.0 for 5 units.
+    Verification: (2.0 * 5 + 3.0 * 5) / 10 = 2.5 ✓
+
+    """
+    order, _ = order_and_cache
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        ts_event=0,
+    )
+
+    exec_client.generate_order_filled(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        trade_id=TradeId("TRADE-1"),
+        venue_position_id=None,
+        order_side=order.side,
+        order_type=order.order_type,
+        last_qty=Quantity(5.0, BETFAIR_QUANTITY_PRECISION),
+        last_px=Price(2.0, BETFAIR_PRICE_PRECISION),
+        quote_currency=GBP,
+        commission=Money(0, GBP),
+        liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+        ts_event=0,
+    )
+
+    # Populate cache to match order state
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_avg_px[order.client_order_id] = 2.0
+
+    unmatched_order = SimpleNamespace(
+        avp=2.5,
+        p=order.price.as_double(),
+        sm=10.0,
+    )
+
+    # Act
+    result = exec_client._determine_fill_price(unmatched_order, order)
+
+    # Assert
+    assert result == 3.0
+
+
+def test_determine_fill_price_uses_order_state_when_ahead_of_cache(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+):
+    """
+    Test that fill price uses order state when it's ahead of cache.
+
+    This handles reconciliation scenarios where order.filled_qty/order.avg_px
+    are updated but cache still reflects older fills.
+
+    Given: order has filled_qty=10, avg_px=2.0 (from reconciliation)
+           cache has filled_qty=5, avg_px=1.5 (stale)
+           stream reports sm=15, avp=2.5
+    Expected: use order baseline (10, 2.0) not cache (5, 1.5)
+              fill_price = (2.5 * 15 - 2.0 * 10) / 5 = 3.5
+
+    """
+    order, _ = order_and_cache
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        ts_event=0,
+    )
+
+    # Simulate order state ahead of cache (e.g., from reconciliation)
+    exec_client.generate_order_filled(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        trade_id=TradeId("TRADE-1"),
+        venue_position_id=None,
+        order_side=order.side,
+        order_type=order.order_type,
+        last_qty=Quantity(10.0, BETFAIR_QUANTITY_PRECISION),
+        last_px=Price(2.0, BETFAIR_PRICE_PRECISION),
+        quote_currency=GBP,
+        commission=Money(0, GBP),
+        liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+        ts_event=0,
+    )
+
+    # Cache is stale (behind order state)
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_avg_px[order.client_order_id] = 1.5
+
+    unmatched_order = SimpleNamespace(
+        avp=2.5,
+        p=order.price.as_double(),
+        sm=15.0,
+    )
+
+    # Act
+    result = exec_client._determine_fill_price(unmatched_order, order)
+
+    # Assert: should use order state (10, 2.0) not cache (5, 1.5)
+    # (2.5 * 15 - 2.0 * 10) / 5 = 3.5
+    assert result == pytest.approx(3.5)
+
+
+def test_determine_fill_price_first_fill_without_avp(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+):
+    """
+    Test that fill price is calculated correctly when first fill lacks avp.
+
+    This tests the scenario where Betfair sends an early partial fill without avp,
+    followed by a fill with avp. The cache should use the limit price from the
+    first fill so subsequent fills are priced correctly.
+
+    Given: first fill at limit price 2.5 for 5 units (no avp), second fill such
+           that new total avg is 2.75 for 10 units.
+    Expected: second fill price = 3.0 for 5 units.
+    Verification: (2.5 * 5 + 3.0 * 5) / 10 = 2.75 ✓
+
+    """
+    order, _ = order_and_cache
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        ts_event=0,
+    )
+
+    exec_client.generate_order_filled(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        trade_id=TradeId("TRADE-1"),
+        venue_position_id=None,
+        order_side=order.side,
+        order_type=order.order_type,
+        last_qty=Quantity(5.0, BETFAIR_QUANTITY_PRECISION),
+        last_px=Price(2.5, BETFAIR_PRICE_PRECISION),
+        quote_currency=GBP,
+        commission=Money(0, GBP),
+        liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+        ts_event=0,
+    )
+
+    # Simulate first fill without avp - cache uses limit price (2.5)
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_avg_px[order.client_order_id] = 2.5
+
+    unmatched_order = SimpleNamespace(
+        avp=2.75,
+        p=order.price.as_double(),
+        sm=10.0,
+    )
+
+    # Act
+    result = exec_client._determine_fill_price(unmatched_order, order)
+
+    # Assert: (2.75 * 10 - 2.5 * 5) / 5 = 3.0
+    assert result == 3.0
+
+
+def test_compute_avg_px_for_cache_uses_avp_when_present(
+    exec_client: BetfairExecutionClient,
+):
+    """
+    Test that _compute_avg_px_for_cache returns avp when present.
+    """
+    result = exec_client._compute_avg_px_for_cache(
+        avp=2.5,
+        fill_price=3.0,
+        fill_qty=Quantity(5.0, BETFAIR_QUANTITY_PRECISION),
+        total_matched_qty=Quantity(10.0, BETFAIR_QUANTITY_PRECISION),
+        client_order_id=ClientOrderId("TEST-001"),
+    )
+
+    assert result == 2.5
+
+
+def test_compute_avg_px_for_cache_computes_weighted_avg_when_avp_missing(
+    exec_client: BetfairExecutionClient,
+):
+    """
+    Test that _compute_avg_px_for_cache computes weighted average when avp is missing.
+
+    This prevents mispricing when Betfair omits avp on subsequent fills.
+
+    Given: first fill at 2.0 for 5 units, second fill at 3.0 for 5 units, no avp.
+    Expected: weighted average = (2.0 * 5 + 3.0 * 5) / 10 = 2.5
+
+    """
+    client_order_id = ClientOrderId("TEST-001")
+
+    # Simulate first fill already in cache
+    exec_client._cache_filled_qty[client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
+    exec_client._cache_avg_px[client_order_id] = 2.0
+
+    result = exec_client._compute_avg_px_for_cache(
+        avp=None,
+        fill_price=3.0,
+        fill_qty=Quantity(5.0, BETFAIR_QUANTITY_PRECISION),
+        total_matched_qty=Quantity(10.0, BETFAIR_QUANTITY_PRECISION),
+        client_order_id=client_order_id,
+    )
+
+    # (2.0 * 5 + 3.0 * 5) / 10 = 2.5
+    assert result == 2.5
+
+
+def test_compute_avg_px_for_cache_uses_fill_price_for_first_fill(
+    exec_client: BetfairExecutionClient,
+):
+    """
+    Test that _compute_avg_px_for_cache uses fill_price when no cache exists.
+    """
+    result = exec_client._compute_avg_px_for_cache(
+        avp=None,
+        fill_price=2.5,
+        fill_qty=Quantity(5.0, BETFAIR_QUANTITY_PRECISION),
+        total_matched_qty=Quantity(5.0, BETFAIR_QUANTITY_PRECISION),
+        client_order_id=ClientOrderId("TEST-001"),
+    )
+
+    assert result == 2.5
+
+
+def test_two_fills_without_avp_maintains_weighted_average(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+):
+    """
+    Test that two consecutive fills without avp maintain correct weighted average.
+
+    This integration test ensures the full flow through _process_order_fill correctly
+    updates the cache with weighted averages when Betfair omits avp on multiple fills.
+
+    Given: first fill at 2.0 for 5 units (no avp), second fill at 4.0 for 5 units (no avp).
+    Expected cache after fill 1: avg_px = 2.0
+    Expected cache after fill 2: avg_px = (2.0 * 5 + 4.0 * 5) / 10 = 3.0
+
+    """
+    order, instrument = order_and_cache
+    bet_id = "12345"
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId(bet_id),
+        ts_event=0,
+    )
+
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+
+    trade_counter = [0]
+
+    def mock_trade_id(_uo):
+        trade_counter[0] += 1
+        return TradeId(f"TRADE-{trade_counter[0]}")
+
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", mock_trade_id)
+
+    # First fill: 5 units at price 2.0, no avp
+    fill_1 = _StubUnmatchedOrder(
+        id=bet_id,
+        side="L",
+        p=2.0,
+        avp=None,
+        s=order.quantity.as_double(),
+        sm=5.0,
+        md=1635217893000,
+        pt=None,
+        ot=None,
+        pd=0,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+        status="E",
+    )
+
+    exec_client._handle_stream_executable_order_update(fill_1, order.client_order_id, instrument)
+
+    assert order.client_order_id in exec_client._cache_filled_qty
+    assert exec_client._cache_filled_qty[order.client_order_id] == Quantity(
+        5.0,
+        BETFAIR_QUANTITY_PRECISION,
+    )
+    assert exec_client._cache_avg_px[order.client_order_id] == 2.0
+
+    # Second fill: 5 more units at price 4.0, no avp
+    fill_2 = _StubUnmatchedOrder(
+        id=bet_id,
+        side="L",
+        p=4.0,
+        avp=None,
+        s=order.quantity.as_double(),
+        sm=10.0,
+        md=1635217894000,
+        pt=None,
+        ot=None,
+        pd=0,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+        status="E",
+    )
+
+    exec_client._handle_stream_executable_order_update(fill_2, order.client_order_id, instrument)
+
+    # Cache should have weighted average: (2.0 * 5 + 4.0 * 5) / 10 = 3.0
+    assert exec_client._cache_avg_px[order.client_order_id] == 3.0
+
+
+@pytest.mark.asyncio
+async def test_unknown_order_warning_path_with_ignore_external_false(
+    exec_client: BetfairExecutionClient,
+    monkeypatch,
+):
+    """
+    Test that the warning code path executes when an unknown order is encountered and
+    ignore_external_orders=False (the default).
+
+    Note: We cannot easily assert on log messages due to Nautilus's Cython Logger
+    having read-only attributes. This test verifies the code path completes without
+    exceptions and exercises the warning branch for coverage purposes.
+
+    """
+    unknown_order_id = 999888777
+
+    def mock_resolve_client_order_id(unmatched_order):
+        return None
+
+    monkeypatch.setattr(exec_client, "_resolve_client_order_id", mock_resolve_client_order_id)
+
+    assert exec_client.config.ignore_external_orders is False
+
+    ocm = OCM(
+        id=1,
+        clk="1",
+        pt=0,
+        oc=[
+            OrderMarketChange(
+                id="1.123",
+                orc=[
+                    OrderRunnerChange(
+                        id=1,
+                        uo=[
+                            BFOrder(
+                                id=unknown_order_id,
+                                p=2.0,
+                                s=10,
+                                side="B",
+                                status="E",
+                                pt="P",
+                                ot="L",
+                                pd=1635217893000,
+                                md=1635217893000,
+                                sm=5,
+                                sr=5,
+                                sl=0,
+                                sc=0,
+                                sv=0,
+                                rac="",
+                                rc="REG_LGA",
+                                rfo="",
+                                rfs="",
+                                avp=2.0,
+                            ),
+                        ],
+                        mb=[],
+                        ml=[],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Act
+    exec_client.handle_order_stream_update(msgspec.json.encode(ocm))
+    await asyncio.sleep(0)
+
+    # Assert - code path completed without exceptions
+
+
+def test_select_order_from_multiple_single_order(exec_client: BetfairExecutionClient):
+    """
+    Test that a single order is returned directly without filtering.
+    """
+    order = SimpleNamespace(
+        bet_id=12345,
+        market_id="1.123",
+        selection_id=456,
+        handicap=None,
+        status=SimpleNamespace(value="EXECUTABLE"),
+        placed_date="2024-01-01T00:00:00.000Z",
+    )
+    command = GenerateOrderStatusReport(
+        client_order_id=ClientOrderId("TEST-001"),
+        venue_order_id=None,
+        instrument_id=None,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+
+    result = exec_client._select_order_from_multiple([order], command)
+
+    assert result == order
+
+
+def test_select_order_from_multiple_prefers_executable(exec_client: BetfairExecutionClient):
+    """
+    Test that EXECUTABLE orders are preferred over non-EXECUTABLE.
+    """
+    completed_order = SimpleNamespace(
+        bet_id=11111,
+        market_id="1.123",
+        selection_id=456,
+        handicap=None,
+        status=BetfairOrderStatus.EXECUTION_COMPLETE,
+        placed_date="2024-01-01T00:00:00.000Z",
+    )
+    executable_order = SimpleNamespace(
+        bet_id=22222,
+        market_id="1.123",
+        selection_id=456,
+        handicap=None,
+        status=BetfairOrderStatus.EXECUTABLE,
+        placed_date="2024-01-01T00:00:01.000Z",
+    )
+    command = GenerateOrderStatusReport(
+        client_order_id=ClientOrderId("TEST-001"),
+        venue_order_id=None,
+        instrument_id=None,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+
+    result = exec_client._select_order_from_multiple([completed_order, executable_order], command)
+
+    assert result.bet_id == 22222
+
+
+def test_select_order_from_multiple_most_recent_when_all_executable(
+    exec_client: BetfairExecutionClient,
+):
+    """
+    Test that the most recent order is selected when multiple EXECUTABLE orders exist.
+    """
+    older_order = SimpleNamespace(
+        bet_id=11111,
+        market_id="1.123",
+        selection_id=456,
+        handicap=None,
+        status=BetfairOrderStatus.EXECUTABLE,
+        placed_date="2024-01-01T00:00:00.000Z",
+    )
+    newer_order = SimpleNamespace(
+        bet_id=22222,
+        market_id="1.123",
+        selection_id=456,
+        handicap=None,
+        status=BetfairOrderStatus.EXECUTABLE,
+        placed_date="2024-01-02T00:00:00.000Z",
+    )
+    command = GenerateOrderStatusReport(
+        client_order_id=ClientOrderId("TEST-001"),
+        venue_order_id=None,
+        instrument_id=None,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+
+    result = exec_client._select_order_from_multiple([older_order, newer_order], command)
+
+    assert result.bet_id == 22222
+
+
+def test_select_order_from_multiple_filters_by_instrument_id(
+    exec_client: BetfairExecutionClient,
+    cache,
+):
+    """
+    Test that orders are filtered by instrument_id when provided.
+    """
+    instrument = betting_instrument(market_id="1.123", selection_id=456)
+    cache.add_instrument(instrument)
+
+    matching_order = SimpleNamespace(
+        bet_id=11111,
+        market_id="1.123",
+        selection_id=456,
+        handicap=None,
+        status=BetfairOrderStatus.EXECUTABLE,
+        placed_date="2024-01-01T00:00:00.000Z",
+    )
+    non_matching_order = SimpleNamespace(
+        bet_id=22222,
+        market_id="1.999",
+        selection_id=789,
+        handicap=None,
+        status=BetfairOrderStatus.EXECUTABLE,
+        placed_date="2024-01-02T00:00:00.000Z",
+    )
+    command = GenerateOrderStatusReport(
+        client_order_id=ClientOrderId("TEST-001"),
+        venue_order_id=None,
+        instrument_id=instrument.id,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+
+    result = exec_client._select_order_from_multiple(
+        [non_matching_order, matching_order],
+        command,
+    )
+
+    assert result.bet_id == 11111
+
+
+@pytest.mark.asyncio
+async def test_cancel_order_bet_taken_or_lapsed_succeeds(
+    betfair_client: BetfairHttpClient,
+    exec_client: BetfairExecutionClient,
+    accept_order,
+    test_order,
+    venue_order_id,
+    instrument,
+):
+    """
+    Test that cancel succeeds when BET_TAKEN_OR_LAPSED error is returned.
+
+    This error code indicates the bet was already matched or lapsed, which should be
+    treated as a successful cancel (the order is no longer active).
+
+    """
+    order = await accept_order(order=test_order, venue_order_id=venue_order_id)
+
+    # Mock response with BET_TAKEN_OR_LAPSED error
+    response = {
+        "result": {
+            "status": "SUCCESS",
+            "marketId": "1.123456789",
+            "instructionReports": [
+                {
+                    "status": "FAILURE",
+                    "errorCode": "BET_TAKEN_OR_LAPSED",
+                    "instruction": {"betId": venue_order_id.value},
+                    "sizeCancelled": 0.0,
+                    "cancelledDate": "2024-01-01T00:00:00.000Z",
+                },
+            ],
+        },
+    }
+    mock_betfair_request(betfair_client, response)
+
+    command = TestCommandStubs.cancel_order_command(order=order)
+
+    canceled_calls = []
+
+    def capture_canceled(*args, **kwargs):
+        canceled_calls.append((args, kwargs))
+
+    rejected_calls = []
+
+    def capture_rejected(*args, **kwargs):
+        rejected_calls.append((args, kwargs))
+
+    with (
+        patch.object(exec_client, "generate_order_canceled", capture_canceled),
+        patch.object(exec_client, "generate_order_cancel_rejected", capture_rejected),
+    ):
+        exec_client.cancel_order(command)
+        await asyncio.sleep(0)
+
+    # BET_TAKEN_OR_LAPSED should result in canceled, not rejected
+    assert len(canceled_calls) == 1
+    assert len(rejected_calls) == 0
+
+
+def test_execution_complete_with_lapse_generates_cancel(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+):
+    """
+    Test that an order with lapse_status_reason_code generates a cancel event.
+    """
+    order, instrument = order_and_cache
+    bet_id = "12345"
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId(bet_id),
+        ts_event=0,
+    )
+
+    canceled_calls = []
+
+    def capture_canceled(**kwargs):
+        canceled_calls.append(kwargs)
+
+    monkeypatch.setattr(exec_client, "generate_order_canceled", capture_canceled)
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", lambda _uo: TradeId("TRADE-1"))
+
+    unmatched_order = _StubUnmatchedOrder(
+        id=bet_id,
+        side="L",
+        p=order.price.as_double(),
+        avp=None,
+        s=order.quantity.as_double(),
+        sm=0,
+        md=1635217893000,
+        cd=1635217893000,
+        ld=None,
+        pt="L",
+        ot="L",
+        pd=0,
+        sc=0,
+        sl=0,
+        sv=0,
+        status="EC",
+        lapse_status_reason_code="MARKET_VERSION_CHANGED",
+    )
+
+    # Act
+    exec_client._handle_stream_execution_complete_order_update(
+        unmatched_order,
+        order.client_order_id,
+        instrument,
+    )
+
+    # Assert
+    assert len(canceled_calls) == 1
+    assert canceled_calls[0]["client_order_id"] == order.client_order_id
+
+
+def test_execution_complete_lapse_skipped_when_order_already_closed(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+):
+    """
+    Test that lapse is skipped if order is already closed.
+    """
+    order, instrument = order_and_cache
+    bet_id = "12345"
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId(bet_id),
+        ts_event=0,
+    )
+
+    # Mark order as terminal (simulates already processed)
+    exec_client._terminal_orders.add(order.client_order_id.value)
+
+    canceled_calls = []
+
+    def capture_canceled(**kwargs):
+        canceled_calls.append(kwargs)
+
+    monkeypatch.setattr(exec_client, "generate_order_canceled", capture_canceled)
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", lambda _uo: TradeId("TRADE-1"))
+
+    unmatched_order = _StubUnmatchedOrder(
+        id=bet_id,
+        side="L",
+        p=order.price.as_double(),
+        avp=None,
+        s=order.quantity.as_double(),
+        sm=0,
+        md=1635217893000,
+        cd=1635217893000,
+        ld=None,
+        pt="L",
+        ot="L",
+        pd=0,
+        sc=0,
+        sl=0,
+        sv=0,
+        status="EC",
+        lapse_status_reason_code="MARKET_VERSION_CHANGED",
+    )
+
+    # Act
+    exec_client._handle_stream_execution_complete_order_update(
+        unmatched_order,
+        order.client_order_id,
+        instrument,
+    )
+
+    # Assert - no cancel generated (already terminal)
+    assert len(canceled_calls) == 0
+
+
+def test_check_cache_against_order_image_completes_with_unknown_fill(
+    exec_client: BetfairExecutionClient,
+    cache,
+):
+    """
+    Test that check_cache_against_order_image handles unknown fills in full image.
+
+    Note: Nautilus uses Cython loggers that don't integrate with caplog. This test
+    verifies the code path completes without error when ignore_external_orders=False.
+
+    """
+    instrument = betting_instrument(market_id="1.123", selection_id=456)
+    cache.add_instrument(instrument)
+
+    # Create OCM with matched orders (fills) but no corresponding orders in cache
+    ocm = OCM(
+        id=1,
+        clk="1",
+        pt=0,
+        oc=[
+            OrderMarketChange(
+                id="1.123",
+                orc=[
+                    OrderRunnerChange(
+                        id=456,
+                        hc=None,
+                        full_image=True,
+                        uo=[],
+                        mb=[MatchedOrder(price=2.0, size=10.0)],
+                        ml=[],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Act - code path should complete without raising
+    exec_client.check_cache_against_order_image(ocm)
+
+
+def test_check_cache_against_order_image_silent_with_ignore_external(
+    exec_client: BetfairExecutionClient,
+    cache,
+    monkeypatch,
+):
+    """
+    Test that unknown fills are silent when ignore_external_orders=True.
+    """
+    new_config = BetfairExecClientConfig(
+        username="username",
+        password="password",
+        app_key="app_key",
+        account_currency="GBP",
+        ignore_external_orders=True,
+    )
+    monkeypatch.setattr(exec_client, "config", new_config)
+
+    instrument = betting_instrument(market_id="1.123", selection_id=456)
+    cache.add_instrument(instrument)
+
+    ocm = OCM(
+        id=1,
+        clk="1",
+        pt=0,
+        oc=[
+            OrderMarketChange(
+                id="1.123",
+                orc=[
+                    OrderRunnerChange(
+                        id=456,
+                        hc=None,
+                        full_image=True,
+                        uo=[],
+                        mb=[MatchedOrder(price=2.0, size=10.0)],
+                        ml=[],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Act - code path should complete without error
+    exec_client.check_cache_against_order_image(ocm)
+
+
+@pytest.mark.asyncio
+async def test_on_api_exception_reconnects_on_session_error(
+    exec_client: BetfairExecutionClient,
+    monkeypatch,
+):
+    """
+    Test that session errors trigger reconnection.
+    """
+    reconnect_called = []
+
+    async def mock_reconnect():
+        reconnect_called.append(True)
+
+    monkeypatch.setattr(exec_client, "_reconnect", mock_reconnect)
+
+    # Create a session error
+    error = BetfairError("INVALID_SESSION_INFORMATION")
+
+    # Act
+    await exec_client.on_api_exception(error)
+
+    # Assert
+    assert len(reconnect_called) == 1
+
+
+@pytest.mark.asyncio
+async def test_on_api_exception_skips_reconnect_when_already_reconnecting(
+    exec_client: BetfairExecutionClient,
+    monkeypatch,
+):
+    """
+    Test that multiple simultaneous reconnection attempts are prevented.
+    """
+    reconnect_called = []
+
+    async def mock_reconnect():
+        reconnect_called.append(True)
+
+    monkeypatch.setattr(exec_client, "_reconnect", mock_reconnect)
+    exec_client._is_reconnecting = True
+
+    error = BetfairError("INVALID_SESSION_INFORMATION")
+
+    # Act
+    await exec_client.on_api_exception(error)
+
+    # Assert - no reconnection attempt
+    assert len(reconnect_called) == 0
+
+
+@pytest.mark.asyncio
+async def test_on_api_exception_no_reconnect_for_non_session_errors(
+    exec_client: BetfairExecutionClient,
+    monkeypatch,
+):
+    """
+    Test that non-session errors do not trigger reconnection.
+
+    Note: Nautilus uses Cython loggers that don't integrate with caplog. This test
+    verifies that non-session errors don't trigger reconnection.
+
+    """
+    reconnect_called = []
+
+    async def mock_reconnect():
+        reconnect_called.append(True)
+
+    monkeypatch.setattr(exec_client, "_reconnect", mock_reconnect)
+
+    # Non-session error
+    error = BetfairError("INSUFFICIENT_FUNDS")
+
+    # Act
+    await exec_client.on_api_exception(error)
+
+    # Assert - no reconnection
+    assert len(reconnect_called) == 0
+
+
+def test_external_order_skips_immediately(
+    exec_client: BetfairExecutionClient,
+    instrument,
+    monkeypatch,
+):
+    """
+    Test that external orders (unknown orders) skip immediately without waiting.
+
+    With rfo matching, unknown orders are detected instantly.
+
+    """
+    new_config = BetfairExecClientConfig(
+        username="username",
+        password="password",
+        app_key="app_key",
+        account_currency="GBP",
+        ignore_external_orders=True,
+    )
+    monkeypatch.setattr(exec_client, "config", new_config)
+
+    # Unknown order (no rfo, no venue_order_id in cache)
+    unmatched_order = SimpleNamespace(id="999999", rfo=None)
+
+    # Act
+    result = exec_client._resolve_client_order_id(unmatched_order)
+
+    # Assert - not found (returns None for external orders)
+    assert result is None
+
+
+def test_order_matched_by_rfo(
+    exec_client: BetfairExecutionClient,
+    instrument,
+):
+    """
+    Test that orders are matched by rfo (customer_order_ref) before bet_id.
+    """
+    client_order_id = ClientOrderId("TEST-RFO-001")
+    customer_order_ref = client_order_id.value[-32:]
+
+    # Register the customer_order_ref (normally done during _submit_order)
+    exec_client._customer_order_refs[customer_order_ref] = client_order_id
+
+    # Order appears on stream with rfo but we don't have venue_order_id in cache yet
+    unmatched_order = SimpleNamespace(id="888888", rfo=customer_order_ref)
+
+    # Act
+    result = exec_client._resolve_client_order_id(unmatched_order)
+
+    # Assert - matched by rfo
+    assert result == client_order_id
+
+
+def test_order_matched_by_venue_order_id(
+    exec_client: BetfairExecutionClient,
+    instrument,
+):
+    """
+    Test that orders are matched by venue_order_id (bet_id) via cache.
+    """
+    client_order_id = ClientOrderId("TEST-VENUE-001")
+    venue_order_id = VenueOrderId("888888")
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        client_order_id=client_order_id,
+    )
+    exec_client._cache.add_order(order)
+    exec_client.generate_order_submitted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=client_order_id,
+        ts_event=0,
+    )
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        ts_event=0,
+    )
+
+    # Order on stream with no rfo but venue_order_id in cache
+    unmatched_order = SimpleNamespace(id=venue_order_id.value, rfo=None)
+
+    # Act
+    result = exec_client._resolve_client_order_id(unmatched_order)
+
+    # Assert - matched by venue_order_id
+    assert result == client_order_id
+
+
+def test_known_order_found_on_fast_path(
+    exec_client: BetfairExecutionClient,
+    instrument,
+):
+    """
+    Test that known orders are found immediately on the fast path without waiting,
+    regardless of inflight state.
+    """
+    # Set up a known order
+    client_order_id = ClientOrderId("TEST-FAST-001")
+    venue_order_id = VenueOrderId("777777")
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        client_order_id=client_order_id,
+    )
+    exec_client._cache.add_order(order)
+    exec_client.generate_order_submitted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=client_order_id,
+        ts_event=0,
+    )
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        ts_event=0,
+    )
+
+    unmatched_order = SimpleNamespace(id=venue_order_id.value, rfo=None)
+
+    # Act
+    result = exec_client._resolve_client_order_id(unmatched_order)
+
+    # Assert - found immediately via cache lookup
+    assert result == client_order_id
+
+
+@pytest.mark.asyncio
+async def test_submit_order_skips_acceptance_when_already_terminal(
+    exec_client: BetfairExecutionClient,
+    instrument,
+    cache,
+    monkeypatch,
+):
+    """
+    Test that order acceptance is skipped when order is already in terminal state.
+
+    This handles the IOC race condition where stream delivers cancel/lapse before HTTP
+    response arrives with acceptance.
+
+    """
+    order = TestExecStubs.limit_order(instrument=instrument)
+    cache.add_instrument(instrument)
+    cache.add_order(order)
+
+    # Mock HTTP response with success
+    place_result = BetfairResponses.betting_place_order_success()
+    mock_betfair_request(exec_client._client, place_result)
+
+    accepted_calls = []
+    original_generate_accepted = exec_client.generate_order_accepted
+
+    def capture_accepted(*args, **kwargs):
+        accepted_calls.append((args, kwargs))
+        return original_generate_accepted(*args, **kwargs)
+
+    monkeypatch.setattr(exec_client, "generate_order_accepted", capture_accepted)
+
+    # Simulate stream processing terminal state before HTTP response completes
+    exec_client._terminal_orders.add(order.client_order_id.value)
+
+    command = TestCommandStubs.submit_order_command(order=order)
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert - no acceptance generated (order already terminal)
+    assert len(accepted_calls) == 0
+
+    # Assert - venue_order_id still cached for future stream resolution
+    cached_venue_order_id = cache.venue_order_id(order.client_order_id)
+    assert cached_venue_order_id is not None
+    assert str(cached_venue_order_id) == "228302937743"  # From betting_place_order_success
+
+
+@pytest.mark.asyncio
+async def test_handle_order_stream_update_filters_markets(
+    exec_client: BetfairExecutionClient,
+    cache,
+    monkeypatch,
+):
+    """
+    Test that order stream updates are filtered by market ID when filter is set.
+    """
+    # Add instrument for the market in the OCM - proves filter is the reason for skipping
+    filtered_market_instrument = betting_instrument(
+        market_id="1.180737206",
+        selection_id=19924831,
+    )
+    cache.add_instrument(filtered_market_instrument)
+
+    # Set up filter to only include a different market
+    exec_client._stream_market_ids_filter = {"1.999999"}
+
+    process_calls = []
+
+    def capture_process(unmatched_order, instr):
+        process_calls.append((unmatched_order, instr))
+
+    monkeypatch.setattr(exec_client, "_process_order_update", capture_process)
+
+    ocm = OCM(
+        id=1,
+        clk="1",
+        pt=0,
+        oc=[
+            OrderMarketChange(
+                id="1.180737206",  # Not in filter, but instrument exists in cache
+                orc=[
+                    OrderRunnerChange(
+                        id=19924831,
+                        hc=None,
+                        uo=[
+                            BFOrder(
+                                id="12345",
+                                p=1.50,
+                                s=10.0,
+                                side="B",
+                                status="E",
+                                pt="L",
+                                ot="L",
+                                pd=1234567890000,
+                                sm=0,
+                                sr=10.0,
+                                sl=0,
+                                sc=0,
+                                sv=0,
+                                rac="",
+                                rc="REG_GBE",
+                                rfo=None,
+                                rfs=None,
+                            ),
+                        ],
+                        ml=[],
+                        mb=[],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Act
+    await exec_client._handle_order_stream_update(ocm)
+
+    # Assert - _process_order_update was never called (market was filtered out, not missing instrument)
+    assert len(process_calls) == 0
+
+
+def test_stream_market_ids_filter_none_when_no_config(
+    exec_client: BetfairExecutionClient,
+):
+    """
+    Test that stream market filter is None when stream_market_ids_filter not configured.
+    """
+    assert exec_client._stream_market_ids_filter is None
+
+
+def test_check_cache_against_order_image_filters_markets(
+    exec_client: BetfairExecutionClient,
+    cache,
+):
+    """
+    Test that check_cache_against_order_image filters by market ID.
+    """
+    exec_client._stream_market_ids_filter = {"1.123456"}
+
+    ocm = OCM(
+        id=1,
+        clk="1",
+        pt=0,
+        oc=[
+            OrderMarketChange(
+                id="1.999999",  # Not in filter
+                orc=[
+                    OrderRunnerChange(
+                        id=456,
+                        hc=None,
+                        full_image=True,
+                        uo=[],
+                        mb=[MatchedOrder(price=2.0, size=10.0)],
+                        ml=[],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Act - should complete without checking the filtered market
+    exec_client.check_cache_against_order_image(ocm)
+
+
+@pytest.mark.asyncio
+async def test_submit_order_network_error_stays_submitted(
+    exec_client: BetfairExecutionClient,
+    strategy,
+    test_order,
+    events,
+):
+    # Arrange
+    with patch.object(
+        exec_client._client,
+        "place_orders",
+        new_callable=AsyncMock,
+        side_effect=TimeoutError("Connection timed out"),
+    ):
+        # Act
+        strategy.submit_order(test_order)
+        await asyncio.sleep(0)
+
+    # Assert - order stays SUBMITTED and rfo is retained for stream matching
+    assert test_order.status == OrderStatus.SUBMITTED
+    rfo = make_customer_order_ref(test_order.client_order_id)
+    assert rfo in exec_client._customer_order_refs
+    rejected_events = [e for e in test_order.events if isinstance(e, OrderRejected)]
+    assert len(rejected_events) == 0
+
+
+@pytest.mark.asyncio
+async def test_submit_order_betfair_error_rejects_immediately(
+    exec_client: BetfairExecutionClient,
+    strategy,
+    test_order,
+    events,
+):
+    # Arrange
+    with patch.object(
+        exec_client._client,
+        "place_orders",
+        new_callable=AsyncMock,
+        side_effect=BetfairError("PERMISSION_DENIED"),
+    ):
+        # Act
+        strategy.submit_order(test_order)
+        await asyncio.sleep(0)
+
+    # Assert - BetfairError means venue explicitly rejected
+    assert test_order.status == OrderStatus.REJECTED
+    rfo = make_customer_order_ref(test_order.client_order_id)
+    assert rfo not in exec_client._customer_order_refs

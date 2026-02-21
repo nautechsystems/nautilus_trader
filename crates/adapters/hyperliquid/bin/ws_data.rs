@@ -16,30 +16,26 @@
 use std::{env, time::Duration};
 
 use nautilus_hyperliquid::{
-    common::{HyperliquidProductType, consts::ws_url},
-    http::HyperliquidHttpClient,
+    common::consts::ws_url, http::HyperliquidHttpClient,
     websocket::client::HyperliquidWebSocketClient,
 };
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use tokio::{pin, signal};
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::DEBUG)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let args: Vec<String> = env::args().collect();
     let testnet = args.get(1).is_some_and(|s| s == "testnet");
 
-    tracing::info!("Starting Hyperliquid WebSocket data example");
-    tracing::info!("Testnet: {testnet}");
+    log::info!("Starting Hyperliquid WebSocket data example");
+    log::info!("Testnet: {testnet}");
 
     // Load instruments first
     let http_client = HyperliquidHttpClient::new(testnet, None, None)?;
     let instruments = http_client.request_instruments().await?;
-    tracing::info!("Loaded {} instruments", instruments.len());
+    log::info!("Loaded {} instruments", instruments.len());
 
     // Find BTC-USD-PERP instrument (raw_symbol is "BTC" for BTC-USD-PERP)
     let btc_inst = instruments
@@ -50,31 +46,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         InstrumentAny::CryptoPerpetual(inst) => inst.id,
         _ => return Err("Expected CryptoPerpetual instrument".into()),
     };
-    tracing::info!("Using instrument: {}", instrument_id);
+    log::info!("Using instrument: {instrument_id}");
 
     let ws_url = ws_url(testnet);
-    tracing::info!("WebSocket URL: {ws_url}");
+    log::info!("WebSocket URL: {ws_url}");
 
-    let mut client = HyperliquidWebSocketClient::new(
-        Some(ws_url.to_string()),
-        testnet,
-        HyperliquidProductType::Perp,
-        None,
-    );
+    let mut client = HyperliquidWebSocketClient::new(Some(ws_url.to_string()), testnet, None);
 
     // Cache instruments before connecting
     client.cache_instruments(instruments);
 
     client.connect().await?;
-    tracing::info!("Connected to Hyperliquid WebSocket");
+    log::info!("Connected to Hyperliquid WebSocket");
 
     // Wait for connection to be fully established
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    tracing::info!("Subscribing to trades for {}", instrument_id);
+    log::info!("Subscribing to trades for {instrument_id}");
     client.subscribe_trades(instrument_id).await?;
 
-    tracing::info!("Subscribing to BBO for {}", instrument_id);
+    log::info!("Subscribing to BBO for {instrument_id}");
     client.subscribe_quotes(instrument_id).await?;
 
     // Wait briefly to ensure subscriptions are processed
@@ -89,10 +80,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::select! {
             Some(message) = client.next_event() => {
                 message_count += 1;
-                tracing::info!("Message #{}: {:?}", message_count, message);
+                log::info!("Message #{message_count}: {message:?}");
             }
             _ = &mut sigint => {
-                tracing::info!("Received SIGINT, closing connection...");
+                log::info!("Received SIGINT, closing connection...");
                 client.disconnect().await?;
                 break;
             }
@@ -100,6 +91,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    tracing::info!("Received {} total messages", message_count);
+    log::info!("Received {message_count} total messages");
     Ok(())
 }

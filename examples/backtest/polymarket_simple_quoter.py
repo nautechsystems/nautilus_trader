@@ -28,7 +28,6 @@ Data sources:
 """
 
 import asyncio
-import time
 from decimal import Decimal
 
 import pandas as pd
@@ -52,7 +51,7 @@ from nautilus_trader.model.objects import Money
 #   python nautilus_trader/adapters/polymarket/scripts/active_markets.py
 # To find BTC/ETH UpDown markets specifically, run:
 #   python nautilus_trader/adapters/polymarket/scripts/list_updown_markets.py
-MARKET_SLUG = "fed-rate-hike-in-2025"
+MARKET_SLUG = "gta-vi-released-before-june-2026"
 
 
 async def run_backtest(
@@ -137,7 +136,7 @@ async def run_backtest(
     engine.add_strategy(strategy=strategy)
 
     print("\nStarting backtest...")
-    time.sleep(0.1)
+    await asyncio.sleep(0.1)
 
     # Run backtest
     engine.run()

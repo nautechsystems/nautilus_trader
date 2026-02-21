@@ -68,14 +68,28 @@ pub mod capnp;
 #[cfg(feature = "capnp")]
 macro_rules! include_capnp_module {
     ($name:ident, $path:expr) => {
-        #[cfg(all(feature = "capnp", not(docs_rs)))]
-        #[allow(clippy::all, warnings, dead_code, missing_debug_implementations)]
+        #[cfg(all(feature = "capnp", not(docsrs)))]
+        #[allow(
+            clippy::all,
+            clippy::missing_errors_doc,
+            clippy::missing_panics_doc,
+            warnings,
+            dead_code,
+            missing_debug_implementations
+        )]
         pub mod $name {
             include!(concat!(env!("OUT_DIR"), $path));
         }
 
-        #[cfg(all(feature = "capnp", docs_rs))]
-        #[allow(clippy::all, warnings, dead_code, missing_debug_implementations)]
+        #[cfg(all(feature = "capnp", docsrs))]
+        #[allow(
+            clippy::all,
+            clippy::missing_errors_doc,
+            clippy::missing_panics_doc,
+            warnings,
+            dead_code,
+            missing_debug_implementations
+        )]
         pub mod $name {
             include!(concat!(
                 env!("CARGO_MANIFEST_DIR"),

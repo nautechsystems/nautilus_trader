@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// SBE stream decoders - all methods return StreamDecodeError on decode failure
+#![allow(clippy::missing_errors_doc)]
+
 //! Binance SBE market data stream decoders (schema 1:0).
 //!
 //! These decoders are hand-written for the 4 market data stream message types:
@@ -23,6 +26,8 @@
 //!
 //! All decoders return `Result<T, StreamDecodeError>` to safely handle malformed
 //! or truncated network data without panicking.
+
+use std::fmt::Display;
 
 use crate::common::sbe::{cursor::SbeCursor, error::SbeDecodeError};
 
@@ -69,13 +74,13 @@ pub enum StreamDecodeError {
     UnknownTemplateId(u16),
 }
 
-impl std::fmt::Display for StreamDecodeError {
+impl Display for StreamDecodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::BufferTooShort { expected, actual } => {
                 write!(
                     f,
-                    "Buffer too short: expected {expected} bytes, got {actual}"
+                    "Buffer too short: expected {expected} bytes, was {actual}"
                 )
             }
             Self::GroupSizeTooLarge { count, max } => {
@@ -83,7 +88,7 @@ impl std::fmt::Display for StreamDecodeError {
             }
             Self::InvalidUtf8 => write!(f, "Invalid UTF-8 in symbol"),
             Self::SchemaMismatch { expected, actual } => {
-                write!(f, "Schema mismatch: expected {expected}, got {actual}")
+                write!(f, "Schema mismatch: expected {expected}, was {actual}")
             }
             Self::UnknownTemplateId(id) => write!(f, "Unknown template ID: {id}"),
         }

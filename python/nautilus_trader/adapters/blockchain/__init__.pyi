@@ -2,11 +2,18 @@
 # ruff: noqa: D401
 
 import builtins
+from nautilus_trader import infrastructure
+from nautilus_trader import model
 import typing
 
-import nautilus_trader.infrastructure
-import nautilus_trader.model
+__all__ = [
+    "BlockchainDataClientConfig",
+    "BlockchainDataClientFactory",
+    "BlockchainExecutionClientFactory",
+    "DexPoolFilters",
+]
 
+@typing.final
 class BlockchainDataClientConfig:
     r"""
     Configuration for blockchain data clients.
@@ -14,8 +21,8 @@ class BlockchainDataClientConfig:
 
     def __init__(
         self,
-        chain: nautilus_trader.model.Chain,
-        dex_ids: typing.Sequence[nautilus_trader.model.DexType],
+        chain: model.Chain,
+        dex_ids: typing.Sequence[model.DexType],
         http_rpc_url: builtins.str,
         rpc_requests_per_second: builtins.int | None,
         multicall_calls_per_rpc_request: builtins.int | None,
@@ -23,13 +30,12 @@ class BlockchainDataClientConfig:
         use_hypersync_for_live_data: builtins.bool,
         from_block: builtins.int | None,
         pool_filters: DexPoolFilters | None,
-        postgres_cache_database_config: nautilus_trader.infrastructure.PostgresConnectOptions
-        | None,
+        postgres_cache_database_config: infrastructure.PostgresConnectOptions | None,
     ) -> None:
         r"""
         Creates a new `BlockchainDataClientConfig` instance.
         """
-    def chain(self) -> nautilus_trader.model.Chain:
+    def chain(self) -> model.Chain:
         r"""
         Returns the chain configuration.
         """
@@ -54,6 +60,7 @@ class BlockchainDataClientConfig:
         Returns the starting block for sync.
         """
 
+@typing.final
 class BlockchainDataClientFactory:
     r"""
     Factory for creating blockchain data clients.
@@ -62,6 +69,13 @@ class BlockchainDataClientFactory:
     (Ethereum, Arbitrum, Base, Polygon) with appropriate RPC and HyperSync configurations.
     """
 
+@typing.final
+class BlockchainExecutionClientFactory:
+    r"""
+    Factory for creating blockchain execution clients.
+    """
+
+@typing.final
 class DexPoolFilters:
     r"""
     Defines filtering criteria for the DEX pool universe that the data client will operate on.

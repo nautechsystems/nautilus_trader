@@ -27,7 +27,6 @@ use nautilus_common::{
     clock::Clock,
     factories::OrderFactory,
 };
-use nautilus_core::time::get_atomic_clock_static;
 use nautilus_execution::order_manager::manager::OrderManager;
 use nautilus_model::identifiers::{ActorId, ClientOrderId, StrategyId, TraderId};
 use nautilus_portfolio::portfolio::Portfolio;
@@ -42,27 +41,30 @@ use super::config::StrategyConfig;
 /// to satisfy the trait bounds of [`Strategy`](super::Strategy) and
 /// [`DataActor`](nautilus_common::actor::data_actor::DataActor).
 pub struct StrategyCore {
-    /// The underlying data actor core.
-    pub actor: DataActorCore,
+    pub(crate) actor: DataActorCore,
     /// The strategy configuration.
     pub config: StrategyConfig,
-    /// The order manager.
-    pub order_manager: Option<OrderManager>,
-    /// The order factory.
-    pub order_factory: Option<OrderFactory>,
-    /// The portfolio.
-    pub portfolio: Option<Rc<RefCell<Portfolio>>>,
-    /// Maps client order IDs to GTD expiry timer names.
-    pub gtd_timers: AHashMap<ClientOrderId, Ustr>,
+    pub(crate) order_manager: Option<OrderManager>,
+    pub(crate) order_factory: Option<OrderFactory>,
+    pub(crate) portfolio: Option<Rc<RefCell<Portfolio>>>,
+    pub(crate) gtd_timers: AHashMap<ClientOrderId, Ustr>,
+    pub(crate) is_exiting: bool,
+    pub(crate) pending_stop: bool,
+    pub(crate) market_exit_attempts: u64,
+    pub(crate) market_exit_timer_name: Ustr,
+    pub(crate) market_exit_tag: Ustr,
 }
 
 impl Debug for StrategyCore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StrategyCore")
+        f.debug_struct(stringify!(StrategyCore))
             .field("actor", &self.actor)
             .field("config", &self.config)
             .field("order_manager", &self.order_manager)
             .field("order_factory", &self.order_factory)
+            .field("is_exiting", &self.is_exiting)
+            .field("pending_stop", &self.pending_stop)
+            .field("market_exit_attempts", &self.market_exit_attempts)
             .finish()
     }
 }
@@ -78,6 +80,12 @@ impl StrategyCore {
             log_commands: config.log_commands,
         };
 
+        let strategy_id = config
+            .strategy_id
+            .map(|id| id.inner().to_string())
+            .unwrap_or_default();
+        let market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id}"));
+
         Self {
             actor: DataActorCore::new(actor_config),
             config,
@@ -85,6 +93,11 @@ impl StrategyCore {
             order_factory: None,
             portfolio: None,
             gtd_timers: AHashMap::new(),
+            is_exiting: false,
+            pending_stop: false,
+            market_exit_attempts: 0,
+            market_exit_timer_name,
+            market_exit_tag: Ustr::from("MARKET_EXIT"),
         }
     }
 
@@ -107,23 +120,64 @@ impl StrategyCore {
 
         let strategy_id = StrategyId::from(self.actor.actor_id.inner().as_str());
 
+        // Update market exit timer name with actual strategy ID
+        self.market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id}"));
+
         self.order_factory = Some(OrderFactory::new(
             trader_id,
             strategy_id,
             None,
             None,
-            get_atomic_clock_static(),
+            clock.clone(),
             self.config.use_uuid_client_order_ids,
             self.config.use_hyphens_in_client_order_ids,
         ));
 
-        self.order_manager = Some(OrderManager::new(
-            clock, cache, false, // active_local
-        ));
+        self.order_manager = Some(OrderManager::new(clock, cache, false, None, None, None));
 
         self.portfolio = Some(portfolio);
 
         Ok(())
+    }
+
+    /// Returns a mutable reference to the [`OrderFactory`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    pub fn order_factory(&mut self) -> &mut OrderFactory {
+        self.order_factory
+            .as_mut()
+            .expect("Strategy not registered: OrderFactory not initialized")
+    }
+
+    /// Returns a mutable reference to the [`OrderManager`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    pub fn order_manager(&mut self) -> &mut OrderManager {
+        self.order_manager
+            .as_mut()
+            .expect("Strategy not registered: OrderManager not initialized")
+    }
+
+    /// Returns a reference to the [`Portfolio`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    pub fn portfolio(&self) -> &Rc<RefCell<Portfolio>> {
+        self.portfolio
+            .as_ref()
+            .expect("Strategy not registered: Portfolio not initialized")
+    }
+
+    /// Resets the market exit state.
+    pub fn reset_market_exit_state(&mut self) {
+        self.is_exiting = false;
+        self.pending_stop = false;
+        self.market_exit_attempts = 0;
     }
 }
 
@@ -169,6 +223,9 @@ mod tests {
         assert!(core.order_manager.is_none());
         assert!(core.order_factory.is_none());
         assert!(core.portfolio.is_none());
+        assert!(!core.is_exiting);
+        assert!(!core.pending_stop);
+        assert_eq!(core.market_exit_attempts, 0);
     }
 
     #[rstest]

@@ -42,7 +42,7 @@ use super::nanos::Nanos;
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
 )]
 pub struct Quota {
     pub(crate) max_burst: NonZeroU32,
@@ -53,13 +53,19 @@ pub struct Quota {
 impl Quota {
     /// Construct a quota for a number of cells per second. The given number of cells is also
     /// assumed to be the maximum burst size.
+    ///
+    /// Returns `None` if `max_burst` is so large that the replenish interval rounds to zero
+    /// nanoseconds (i.e. `max_burst > 1_000_000_000`).
     #[must_use]
-    pub const fn per_second(max_burst: NonZeroU32) -> Self {
+    pub const fn per_second(max_burst: NonZeroU32) -> Option<Self> {
         let replenish_interval_ns = Duration::from_secs(1).as_nanos() / (max_burst.get() as u128);
-        Self {
+        if replenish_interval_ns == 0 {
+            return None;
+        }
+        Some(Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),
-        }
+        })
     }
 
     /// Construct a quota for a number of cells per 60-second period. The given number of cells is
@@ -77,8 +83,7 @@ impl Quota {
     /// of cells is also assumed to be the maximum burst size.
     #[must_use]
     pub const fn per_hour(max_burst: NonZeroU32) -> Self {
-        let replenish_interval_ns =
-            Duration::from_secs(60 * 60).as_nanos() / (max_burst.get() as u128);
+        let replenish_interval_ns = Duration::from_hours(1).as_nanos() / (max_burst.get() as u128);
         Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),

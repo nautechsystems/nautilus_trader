@@ -31,44 +31,35 @@
 
 use futures_util::StreamExt;
 use nautilus_binance::{
-    common::{
-        enums::{BinanceEnvironment, BinanceProductType},
-        parse::parse_spot_instrument,
-        sbe::stream::mantissa_to_f64,
-    },
-    http::client::{BinanceHttpClient, BinanceInstrument},
-    spot::websocket::{
-        client::BinanceSpotWebSocketClient,
-        handler::{MarketDataMessage, decode_market_data},
-        messages::NautilusWsMessage,
+    common::{enums::BinanceEnvironment, sbe::stream::mantissa_to_f64},
+    spot::{
+        http::client::BinanceSpotHttpClient,
+        websocket::streams::{
+            client::BinanceSpotWebSocketClient,
+            messages::{BinanceSpotWsMessage, NautilusSpotDataWsMessage},
+            parse::{MarketDataMessage, decode_market_data},
+        },
     },
 };
-use nautilus_core::nanos::UnixNanos;
-use nautilus_model::{data::Data, instruments::InstrumentAny};
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use nautilus_model::data::Data;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::from_default_env().add_directive("info".parse()?))
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     // Read credentials from environment (required for SBE streams)
     let api_key = std::env::var("BINANCE_API_KEY").ok();
     let api_secret = std::env::var("BINANCE_API_SECRET").ok();
 
     if api_key.is_none() || api_secret.is_none() {
-        tracing::error!("Ed25519 credentials required for Binance SBE streams");
-        tracing::error!("Set BINANCE_API_KEY and BINANCE_API_SECRET environment variables");
+        log::error!("Ed25519 credentials required for Binance SBE streams");
+        log::error!("Set BINANCE_API_KEY and BINANCE_API_SECRET environment variables");
         anyhow::bail!("Missing required Ed25519 credentials");
     }
-    tracing::info!("Using Ed25519 authentication for SBE streams");
+    log::info!("Using Ed25519 authentication for SBE streams");
 
-    // Fetch instruments via HTTP (JSON API)
-    tracing::info!("Fetching instruments from Binance Spot API...");
-    let http_client = BinanceHttpClient::new(
-        BinanceProductType::Spot,
+    log::info!("Fetching instruments from Binance Spot API...");
+    let http_client = BinanceSpotHttpClient::new(
         BinanceEnvironment::Mainnet,
         None, // api_key (not needed for public endpoints)
         None, // api_secret
@@ -77,13 +68,11 @@ async fn main() -> anyhow::Result<()> {
         None, // timeout_secs
         None, // proxy_url
     )?;
-    http_client.exchange_info().await?;
 
-    // Get cached symbols and parse to instruments
-    let instruments = parse_spot_instruments(&http_client);
-    tracing::info!(count = instruments.len(), "Parsed instruments");
+    let instruments = http_client.request_instruments().await?;
+    log::info!("Parsed instruments: count={}", instruments.len());
 
-    tracing::info!("Creating Binance Spot WebSocket client...");
+    log::info!("Creating Binance Spot WebSocket client...");
     let mut ws_client = BinanceSpotWebSocketClient::new(
         None, // url (default SBE endpoint)
         api_key, api_secret, None, // heartbeat
@@ -91,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
 
     ws_client.cache_instruments(instruments);
 
-    tracing::info!("Connecting to Binance Spot SBE WebSocket...");
+    log::info!("Connecting to Binance Spot SBE WebSocket...");
     ws_client.connect().await?;
 
     // Subscribe to trades and quotes for BTC and ETH
@@ -101,10 +90,10 @@ async fn main() -> anyhow::Result<()> {
         "btcusdt@bestBidAsk".to_string(),
         "ethusdt@bestBidAsk".to_string(),
     ];
-    tracing::info!("Subscribing to streams: {:?}", streams);
+    log::info!("Subscribing to streams: {streams:?}");
     ws_client.subscribe(streams).await?;
 
-    tracing::info!("Listening for messages (Ctrl+C to stop)...");
+    log::info!("Listening for messages (Ctrl+C to stop)...");
 
     let stream = ws_client.stream();
     tokio::pin!(stream);
@@ -120,90 +109,81 @@ async fn main() -> anyhow::Result<()> {
                 message_count += 1;
 
                 match msg {
-                    NautilusWsMessage::Data(data_vec) => {
-                        for data in &data_vec {
-                            match data {
-                                Data::Trade(trade) => {
-                                    trade_count += 1;
-                                    tracing::info!(
-                                        msg = message_count,
-                                        instrument = %trade.instrument_id,
-                                        price = %trade.price,
-                                        size = %trade.size,
-                                        side = ?trade.aggressor_side,
-                                        trade_id = %trade.trade_id,
-                                        "Trade"
-                                    );
-                                }
-                                Data::Quote(quote) => {
-                                    quote_count += 1;
-                                    tracing::info!(
-                                        msg = message_count,
-                                        instrument = %quote.instrument_id,
-                                        bid = %quote.bid_price,
-                                        ask = %quote.ask_price,
-                                        bid_size = %quote.bid_size,
-                                        ask_size = %quote.ask_size,
-                                        "Quote"
-                                    );
-                                }
-                                _ => {
-                                    tracing::debug!(msg = message_count, "Other data: {data:?}");
+                    BinanceSpotWsMessage::Data(data_msg) => match data_msg {
+                        NautilusSpotDataWsMessage::Data(data_vec) => {
+                            for data in &data_vec {
+                                match data {
+                                    Data::Trade(trade) => {
+                                        trade_count += 1;
+                                        log::info!(
+                                            "Trade: msg={message_count}, instrument={}, price={}, size={}, side={:?}, trade_id={}",
+                                            trade.instrument_id,
+                                            trade.price,
+                                            trade.size,
+                                            trade.aggressor_side,
+                                            trade.trade_id
+                                        );
+                                    }
+                                    Data::Quote(quote) => {
+                                        quote_count += 1;
+                                        log::info!(
+                                            "Quote: msg={message_count}, instrument={}, bid={}, ask={}, bid_size={}, ask_size={}",
+                                            quote.instrument_id,
+                                            quote.bid_price,
+                                            quote.ask_price,
+                                            quote.bid_size,
+                                            quote.ask_size
+                                        );
+                                    }
+                                    _ => {
+                                        log::debug!("Other data: msg={message_count}, data={data:?}");
+                                    }
                                 }
                             }
                         }
-                    }
-                    NautilusWsMessage::Deltas(deltas) => {
-                        tracing::info!(
-                            msg = message_count,
-                            instrument = %deltas.instrument_id,
-                            num_deltas = deltas.deltas.len(),
-                            "OrderBook deltas"
-                        );
-                    }
-                    NautilusWsMessage::RawBinary(data) => {
-                        // Try to decode and display SBE data
-                        match decode_and_display_sbe(&data) {
-                            Ok(()) => {}
-                            Err(e) => {
-                                tracing::warn!(
-                                    msg = message_count,
-                                    len = data.len(),
-                                    error = %e,
-                                    "Raw binary (decode failed)"
-                                );
+                        NautilusSpotDataWsMessage::Deltas(deltas) => {
+                            log::info!(
+                                "OrderBook deltas: msg={message_count}, instrument={}, num_deltas={}",
+                                deltas.instrument_id,
+                                deltas.deltas.len()
+                            );
+                        }
+                        NautilusSpotDataWsMessage::RawBinary(data) => {
+                            match decode_and_display_sbe(&data) {
+                                Ok(()) => {}
+                                Err(e) => {
+                                    log::warn!(
+                                        "Raw binary (decode failed): msg={message_count}, len={}, error={e}",
+                                        data.len()
+                                    );
+                                }
                             }
                         }
+                        NautilusSpotDataWsMessage::RawJson(json) => {
+                            log::debug!("Raw JSON: msg={message_count}, json={json}");
+                        }
+                        NautilusSpotDataWsMessage::Instrument(inst) => {
+                            log::info!("Instrument: {inst:?}");
+                        }
+                    },
+                    BinanceSpotWsMessage::Error(err) => {
+                        log::error!("WebSocket error: code={}, msg={}", err.code, err.msg);
                     }
-                    NautilusWsMessage::RawJson(json) => {
-                        tracing::debug!(msg = message_count, "Raw JSON: {json}");
-                    }
-                    NautilusWsMessage::Error(err) => {
-                        tracing::error!(code = err.code, msg = %err.msg, "WebSocket error");
-                    }
-                    NautilusWsMessage::Reconnected => {
-                        tracing::warn!("WebSocket reconnected");
-                    }
-                    NautilusWsMessage::Instrument(inst) => {
-                        tracing::info!("Instrument: {inst:?}");
+                    BinanceSpotWsMessage::Reconnected => {
+                        log::warn!("WebSocket reconnected");
                     }
                 }
 
                 if message_count.is_multiple_of(50) {
                     let elapsed = start_time.elapsed().as_secs_f64();
                     let rate = message_count as f64 / elapsed;
-                    tracing::info!(
-                        messages = message_count,
-                        trades = trade_count,
-                        quotes = quote_count,
-                        elapsed_secs = format!("{elapsed:.1}"),
-                        rate = format!("{rate:.1}/s"),
-                        "Statistics"
+                    log::info!(
+                        "Statistics: messages={message_count}, trades={trade_count}, quotes={quote_count}, elapsed_secs={elapsed:.1}, rate={rate:.1}/s"
                     );
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                tracing::info!("Received Ctrl+C, shutting down...");
+                log::info!("Received Ctrl+C, shutting down...");
                 break;
             }
         }
@@ -212,33 +192,12 @@ async fn main() -> anyhow::Result<()> {
     ws_client.close().await?;
 
     let elapsed = start_time.elapsed().as_secs_f64();
-    tracing::info!(
-        total_messages = message_count,
-        trades = trade_count,
-        quotes = quote_count,
-        elapsed_secs = format!("{elapsed:.1}"),
-        avg_rate = format!("{:.1}/s", message_count as f64 / elapsed),
-        "Final statistics"
+    let avg_rate = message_count as f64 / elapsed;
+    log::info!(
+        "Final statistics: total_messages={message_count}, trades={trade_count}, quotes={quote_count}, elapsed_secs={elapsed:.1}, avg_rate={avg_rate:.1}/s"
     );
 
     Ok(())
-}
-
-/// Parse instruments from HTTP client cache.
-fn parse_spot_instruments(http_client: &BinanceHttpClient) -> Vec<InstrumentAny> {
-    let ts = UnixNanos::default();
-    let mut instruments = Vec::new();
-
-    for entry in http_client.instruments() {
-        if let BinanceInstrument::Spot(symbol) = entry.value() {
-            match parse_spot_instrument(symbol, ts, ts) {
-                Ok(instrument) => instruments.push(instrument),
-                Err(e) => tracing::trace!(symbol = %symbol.symbol, error = %e, "Skipped symbol"),
-            }
-        }
-    }
-
-    instruments
 }
 
 /// Decode and display raw SBE binary data.
@@ -255,14 +214,10 @@ fn decode_and_display_sbe(data: &[u8]) -> anyhow::Result<()> {
                         |dt| dt.format("%H:%M:%S%.6f").to_string(),
                     );
 
-                tracing::info!(
-                    symbol = %event.symbol,
-                    side = side,
-                    price = format!("{price:.2}"),
-                    qty = format!("{qty:.6}"),
-                    id = trade.id,
-                    time = ts,
-                    "Trade (raw SBE)"
+                log::info!(
+                    "Trade (raw SBE): symbol={}, side={side}, price={price:.2}, qty={qty:.6}, id={}, time={ts}",
+                    event.symbol,
+                    trade.id
                 );
             }
         }
@@ -276,32 +231,27 @@ fn decode_and_display_sbe(data: &[u8]) -> anyhow::Result<()> {
                 |dt| dt.format("%H:%M:%S%.6f").to_string(),
             );
 
-            tracing::info!(
-                symbol = %event.symbol,
-                bid = format!("{bid:.2}"),
-                ask = format!("{ask:.2}"),
-                bid_size = format!("{bid_size:.6}"),
-                ask_size = format!("{ask_size:.6}"),
-                time = ts,
-                "Quote (raw SBE)"
+            log::info!(
+                "Quote (raw SBE): symbol={}, bid={bid:.2}, ask={ask:.2}, bid_size={bid_size:.6}, ask_size={ask_size:.6}, time={ts}",
+                event.symbol
             );
         }
         MarketDataMessage::DepthSnapshot(event) => {
-            tracing::info!(
-                symbol = %event.symbol,
-                bids = event.bids.len(),
-                asks = event.asks.len(),
-                "Depth snapshot (raw SBE)"
+            log::info!(
+                "Depth snapshot (raw SBE): symbol={}, bids={}, asks={}",
+                event.symbol,
+                event.bids.len(),
+                event.asks.len()
             );
         }
         MarketDataMessage::DepthDiff(event) => {
-            tracing::info!(
-                symbol = %event.symbol,
-                bids = event.bids.len(),
-                asks = event.asks.len(),
-                first_update_id = event.first_book_update_id,
-                last_update_id = event.last_book_update_id,
-                "Depth diff (raw SBE)"
+            log::info!(
+                "Depth diff (raw SBE): symbol={}, bids={}, asks={}, first_update_id={}, last_update_id={}",
+                event.symbol,
+                event.bids.len(),
+                event.asks.len(),
+                event.first_book_update_id,
+                event.last_book_update_id
             );
         }
     }

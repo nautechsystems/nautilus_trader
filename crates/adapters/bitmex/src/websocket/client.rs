@@ -75,7 +75,7 @@ use crate::common::{
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
 )]
 pub struct BitmexWebSocketClient {
     url: String,
@@ -266,11 +266,11 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket connection fails or authentication fails (if credentials provided).
     ///
-    /// # Panics
-    ///
-    /// Panics if subscription or authentication messages fail to serialize to JSON.
     pub async fn connect(&mut self) -> Result<(), BitmexWsError> {
         let (client, raw_rx) = self.connect_inner().await?;
+
+        // Reset shutdown signal so is_active() works after close+reconnect
+        self.signal.store(false, Ordering::Relaxed);
 
         // Replace connection state so all clones see the underlying WebSocketClient's state
         self.connection_mode.store(client.connection_mode_atomic());
@@ -296,7 +296,7 @@ impl BitmexWebSocketClient {
                 .map(|entry| entry.value().clone())
                 .collect();
             if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(cached_instruments)) {
-                tracing::error!("Failed to replay instruments to handler: {e}");
+                log::error!("Failed to replay instruments to handler: {e}");
             }
         }
 
@@ -331,7 +331,10 @@ impl BitmexWebSocketClient {
                     return;
                 }
 
-                tracing::debug!(count = topics.len(), "Resubscribing to confirmed subscriptions");
+                log::debug!(
+                    "Resubscribing to confirmed subscriptions: count={}",
+                    topics.len()
+                );
 
                 for topic in &topics {
                     subscriptions.mark_subscribe(topic.as_str());
@@ -349,8 +352,10 @@ impl BitmexWebSocketClient {
                     }
                 }
 
-                if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { topics: payloads }) {
-                    tracing::error!(error = %e, "Failed to send resubscribe command");
+                if let Err(e) =
+                    cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { topics: payloads })
+                {
+                    log::error!("Failed to send resubscribe command: {e}");
                 }
             };
 
@@ -389,16 +394,20 @@ impl BitmexWebSocketClient {
                         };
 
                         if !confirmed_topics.is_empty() {
-                            tracing::debug!(count = confirmed_topics.len(), "Marking confirmed subscriptions as pending for replay");
+                            log::debug!(
+                                "Marking confirmed subscriptions as pending for replay: count={}",
+                                confirmed_topics.len()
+                            );
                             for topic in confirmed_topics {
                                 subscriptions.mark_failure(&topic);
                             }
                         }
 
                         if let Some(cred) = &credential {
-                            tracing::debug!("Re-authenticating after reconnection");
+                            log::debug!("Re-authenticating after reconnection");
 
-                            let expires = (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
+                            let expires =
+                                (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
                             let signature = cred.sign("GET", "/realtime", expires, "");
 
                             let auth_message = BitmexAuthentication {
@@ -407,52 +416,55 @@ impl BitmexWebSocketClient {
                             };
 
                             if let Ok(payload) = serde_json::to_string(&auth_message) {
-                                if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Authenticate { payload }) {
-                                    tracing::error!(error = %e, "Failed to send reconnection auth command");
+                                if let Err(e) = cmd_tx_for_reconnect
+                                    .send(HandlerCommand::Authenticate { payload })
+                                {
+                                    log::error!("Failed to send reconnection auth command: {e}");
                                 }
                             } else {
-                                tracing::error!("Failed to serialize reconnection auth message");
+                                log::error!("Failed to serialize reconnection auth message");
                             }
                         }
 
                         // Unauthenticated sessions resubscribe immediately after reconnection,
                         // authenticated sessions wait for Authenticated message
                         if credential.is_none() {
-                            tracing::debug!("No authentication required, resubscribing immediately");
+                            log::debug!("No authentication required, resubscribing immediately");
                             resubscribe_all();
                         }
 
-                        // TODO: Implement proper Reconnected event forwarding to consumers.
-                        // Currently intercepted for internal housekeeping only. Will add new
-                        // message type from WebSocketClient to notify consumers of reconnections.
+                        if handler.send(NautilusWsMessage::Reconnected).is_err() {
+                            log::error!("Failed to forward reconnect event (receiver dropped)");
+                            break;
+                        }
 
                         continue;
                     }
                     Some(NautilusWsMessage::Authenticated) => {
-                        tracing::debug!("Authenticated after reconnection, resubscribing");
+                        log::debug!("Authenticated after reconnection, resubscribing");
                         resubscribe_all();
                         continue;
                     }
                     Some(msg) => {
                         if handler.send(msg).is_err() {
-                            tracing::error!("Failed to send message (receiver dropped)");
+                            log::error!("Failed to send message (receiver dropped)");
                             break;
                         }
                     }
                     None => {
                         // Stream ended - check if it's a stop signal
                         if handler.is_stopped() {
-                            tracing::debug!("Stop signal received, ending message processing");
+                            log::debug!("Stop signal received, ending message processing");
                             break;
                         }
                         // Otherwise it's an unexpected stream end
-                        tracing::warn!("WebSocket stream ended unexpectedly");
+                        log::warn!("WebSocket stream ended unexpectedly");
                         break;
                     }
                 }
             }
 
-            tracing::debug!("Handler task exiting");
+            log::debug!("Handler task exiting");
         });
 
         self.task_handle = Some(Arc::new(stream_handle));
@@ -460,6 +472,10 @@ impl BitmexWebSocketClient {
         if self.credential.is_some()
             && let Err(e) = self.authenticate().await
         {
+            if let Some(handle) = self.task_handle.take() {
+                handle.abort();
+            }
+            self.signal.store(true, Ordering::Relaxed);
             return Err(e);
         }
 
@@ -484,7 +500,7 @@ impl BitmexWebSocketClient {
                 }
             }
             Err(e) => {
-                tracing::error!(error = %e, "Failed to serialize subscribe message");
+                log::error!("Failed to serialize subscribe message: {e}");
             }
         }
 
@@ -524,6 +540,7 @@ impl BitmexWebSocketClient {
             reconnect_backoff_factor: None,   // Use default
             reconnect_jitter_ms: None,        // Use default
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let keyed_quotas = vec![];
@@ -640,10 +657,6 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if closing fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the task handle cannot be unwrapped (should never happen in normal usage).
     pub async fn close(&mut self) -> Result<(), BitmexWsError> {
         log::debug!("Starting close process");
 
@@ -693,10 +706,6 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket is not connected or if sending the subscription message fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if serialization of WebSocket messages fails (should never happen).
     pub async fn subscribe(&self, topics: Vec<String>) -> Result<(), BitmexWsError> {
         log::debug!("Subscribing to topics: {topics:?}");
 
@@ -760,7 +769,7 @@ impl BitmexWebSocketClient {
         let cmd = HandlerCommand::Unsubscribe { topics: payloads };
 
         if let Err(e) = self.send_cmd(cmd).await {
-            tracing::debug!(error = %e, "Failed to send unsubscribe command");
+            log::debug!("Failed to send unsubscribe command: {e}");
         }
 
         Ok(())
@@ -875,7 +884,7 @@ impl BitmexWebSocketClient {
 
         // Index symbols don't have quotes (bid/ask), only a single price
         if is_index_symbol(&instrument_id.symbol.inner()) {
-            tracing::warn!("Ignoring quote subscription for index symbol: {symbol}");
+            log::warn!("Ignoring quote subscription for index symbol: {symbol}");
             return Ok(());
         }
 
@@ -895,7 +904,7 @@ impl BitmexWebSocketClient {
 
         // Index symbols don't have trades
         if is_index_symbol(&symbol) {
-            tracing::warn!("Ignoring trade subscription for index symbol: {symbol}");
+            log::warn!("Ignoring trade subscription for index symbol: {symbol}");
             return Ok(());
         }
 

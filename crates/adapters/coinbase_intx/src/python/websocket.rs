@@ -43,7 +43,9 @@
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{
+    IntoPyObjectNautilusExt, call_python, to_pyruntime_err, to_pyvalue_err,
+};
 use nautilus_model::{
     data::BarType,
     identifiers::InstrumentId,
@@ -53,7 +55,7 @@ use nautilus_model::{
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     },
 };
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::prelude::*;
 
 use crate::websocket::{CoinbaseIntxWebSocketClient, messages::NautilusWsMessage};
 
@@ -200,7 +202,7 @@ impl CoinbaseIntxWebSocketClient {
             client
                 .wait_until_active(timeout_secs)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(to_pyruntime_err)?;
             Ok(())
         })
     }
@@ -441,11 +443,5 @@ impl CoinbaseIntxWebSocketClient {
             }
             Ok(())
         })
-    }
-}
-
-pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (py_obj,)) {
-        tracing::error!("Error calling Python: {e}");
     }
 }

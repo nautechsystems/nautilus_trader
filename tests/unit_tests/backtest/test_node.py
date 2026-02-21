@@ -69,7 +69,17 @@ class DummyStreamingCatalog:
     ):
         return file_paths
 
-    def backend_session(self, data_cls, identifiers, start, end, session, files):
+    def backend_session(
+        self,
+        data_cls,
+        identifiers,
+        start,
+        end,
+        session,
+        files,
+        optimize_file_loading,
+        **kwargs,
+    ):
         return session
 
 
@@ -467,7 +477,7 @@ class TestBacktestNodeStreaming:
             node.run()
 
         # Assert - with 10K ticks and 1K chunk size, should have multiple chunks
-        assert chunk_count > 1, f"Expected multiple chunks, got {chunk_count}"
+        assert chunk_count > 1, f"Expected multiple chunks, was {chunk_count}"
 
     def test_streaming_clears_data_between_chunks(self):
         """

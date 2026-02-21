@@ -2419,6 +2419,35 @@ class TestTestValueBarAggregator:
         assert last_bar.close == Price.from_str("102.50")
         assert last_bar.volume == Quantity.from_str("30")
 
+    def test_high_price_low_step_does_not_emit_zero_volume_bars(self):
+        # Arrange: price * min_size >> step causes size_chunk to round to zero
+        handler = []
+        bar_spec = BarSpecification(100, BarAggregation.VALUE, PriceType.LAST)
+        bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+        aggregator = ValueBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+        )
+
+        tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1000.00000"),
+            size=Quantity.from_int(3),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("value-precision-1"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick)
+
+        # Assert: 3 bars (one per min-size unit), not 30 zero-volume bars
+        assert len(handler) == 3
+        for bar in handler:
+            assert bar.volume == Quantity.from_int(1)
+
 
 class TestValueImbalanceBarAggregator:
     def test_emits_when_value_imbalance_reaches_threshold(self):
@@ -2581,6 +2610,77 @@ class TestValueImbalanceBarAggregator:
 
         # Assert
         assert len(handler) == 1
+
+    def test_high_price_low_step_does_not_emit_zero_volume_bars(self):
+        # Arrange: price * min_size >> step causes size_chunk to round to zero
+        handler = []
+        bar_spec = BarSpecification(100, BarAggregation.VALUE_IMBALANCE, PriceType.LAST)
+        bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+        aggregator = ValueImbalanceBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+        )
+
+        tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1000.00000"),
+            size=Quantity.from_int(3),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("value-imbalance-precision-1"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick)
+
+        # Assert: 3 bars (one per min-size unit), not 30 zero-volume bars
+        assert len(handler) == 3
+        for bar in handler:
+            assert bar.volume == Quantity.from_int(1)
+
+    def test_opposite_side_min_size_overshoot_emits_bar(self):
+        # Arrange: opposite-side flatten amount < min_size, clamp overshoots threshold
+        handler = []
+        bar_spec = BarSpecification(100, BarAggregation.VALUE_IMBALANCE, PriceType.LAST)
+        bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+        aggregator = ValueImbalanceBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+        )
+
+        # Build seller imbalance of -50 (below step=100, no bar yet)
+        tick1 = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("10.00000"),
+            size=Quantity.from_int(5),
+            aggressor_side=AggressorSide.SELLER,
+            trade_id=TradeId("imbalance-opp-1"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Opposite-side buyer tick: flatten amount 50/1000=0.05 < min_size (1),
+        # clamp overshoots imbalance from -50 to +950, crossing threshold
+        tick2 = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1000.00000"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("imbalance-opp-2"),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick1)
+        aggregator.handle_trade_tick(tick2)
+
+        # Assert
+        assert len(handler) == 1
+        assert handler[0].volume == Quantity.from_int(6)
 
 
 class TestValueRunsBarAggregator:
@@ -2749,6 +2849,35 @@ class TestValueRunsBarAggregator:
         # Assert
         assert len(handler) == 1
         assert handler[0].high == Price.from_str("10.00000")
+
+    def test_high_price_low_step_does_not_emit_zero_volume_bars(self):
+        # Arrange: price * min_size >> step causes size_chunk to round to zero
+        handler = []
+        bar_spec = BarSpecification(100, BarAggregation.VALUE_RUNS, PriceType.LAST)
+        bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+        aggregator = ValueRunsBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+        )
+
+        tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1000.00000"),
+            size=Quantity.from_int(3),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("value-runs-precision-1"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick)
+
+        # Assert: 3 bars (one per min-size unit), not 30 zero-volume bars
+        assert len(handler) == 3
+        for bar in handler:
+            assert bar.volume == Quantity.from_int(1)
 
 
 class TestRenkoBarAggregator:
@@ -3524,7 +3653,7 @@ class TestTimeBarAggregator:
         bar_spec = BarSpecification(2, BarAggregation.SECOND, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec, AggregationSource.INTERNAL)
 
-        # Start exactly at a 2-second boundary (2024-12-01 00:00:00)
+        # Act - process ticks and advance time to trigger bars
         start_time_ns = dt_to_unix_nanos(pd.Timestamp("2024-12-01 00:00:00", tz="UTC"))
         clock.set_time(start_time_ns)
 
@@ -3538,6 +3667,10 @@ class TestTimeBarAggregator:
         )
         aggregator.start_timer()
 
+        events = clock.advance_time(start_time_ns)
+        for event in events:
+            event.handle()
+
         # Create trade ticks at 0.5 second intervals
         tick1 = TradeTick(
             instrument_id=instrument_id,
@@ -3549,6 +3682,9 @@ class TestTimeBarAggregator:
             ts_init=start_time_ns + 500_000_000,
         )
 
+        aggregator.handle_trade_tick(tick1)
+        clock.set_time(tick1.ts_event)
+
         tick2 = TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str("1.00002"),
@@ -3558,6 +3694,9 @@ class TestTimeBarAggregator:
             ts_event=start_time_ns + 1_000_000_000,  # 1 second after start
             ts_init=start_time_ns + 1_000_000_000,
         )
+
+        aggregator.handle_trade_tick(tick2)
+        clock.set_time(tick2.ts_event)
 
         tick3 = TradeTick(
             instrument_id=instrument_id,
@@ -3569,25 +3708,18 @@ class TestTimeBarAggregator:
             ts_init=start_time_ns + 1_500_000_000,
         )
 
-        # Act - process ticks and advance time to trigger first bar
-        aggregator.handle_trade_tick(tick1)
-        clock.set_time(tick1.ts_event)
-
-        aggregator.handle_trade_tick(tick2)
-        clock.set_time(tick2.ts_event)
-
         aggregator.handle_trade_tick(tick3)
         clock.set_time(tick3.ts_event)
 
         # Advance to exactly 2 seconds to trigger the first bar
         events = clock.advance_time(start_time_ns + 2_000_000_000)
-        if events:
-            events[0].handle()
+        for event in events:
+            event.handle()
 
         # Assert - we should have received the first bar since we had data for the full period
         assert len(handler) == 1, f"Expected 1 bar but got {len(handler)} bars"
-        # The bar closes at start_time (00:00:00) because fire_immediately=True
-        assert handler[0].ts_event == start_time_ns
+
+        assert handler[0].ts_event == start_time_ns + 2_000_000_000
         assert handler[0].open == Price.from_str("1.00001")
         assert handler[0].close == Price.from_str("1.00003")
         assert handler[0].volume == Quantity.from_int(300000)
@@ -4309,7 +4441,6 @@ class TestSpreadQuoteAggregator:
         )
         self.cache = Cache()
         self.greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )
@@ -4891,7 +5022,6 @@ class TestSpreadQuoteAggregator:
         from nautilus_trader.model.instruments import CryptoFuture
 
         greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )
@@ -5698,7 +5828,6 @@ class TestSpreadQuoteAggregator:
         # Note: Not adding underlying trade tick, so greeks will be missing
 
         greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=cache,
             clock=self.clock,
         )
@@ -5776,7 +5905,6 @@ class TestSpreadQuoteAggregatorHistoricalMode:
         )
         self.cache = Cache()
         self.greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )
@@ -6314,3 +6442,65 @@ class TestTimeBarAggregatorHistoricalMode:
 
         # Assert
         assert aggregator.historical_mode is False
+
+    def test_historical_mode_prevents_building_bars_for_timer_events_before_last_data_update(self):
+        """
+        Test that timer events firing before the last data update timestamp do not build
+        bars.
+
+        This prevents building bars for timer events that fire before the last data
+        update we've processed. This can happen when there are gaps in a time series
+        with historical data (market closed, first new data gets built with a timer
+        close to the close before the gap).
+
+        """
+        # Arrange
+        aggregator = TimeBarAggregator(
+            instrument=AUDUSD_SIM,
+            bar_type=self.bar_type,
+            handler=self.handler.append,
+            clock=self.clock,
+            build_with_no_updates=False,
+        )
+        aggregator.set_historical_mode(True, self.handler.append)
+
+        # Time T1: 10:00:00 - first data update (starts timer)
+        ts_t1 = dt_to_unix_nanos(pd.Timestamp("2024-01-01 10:00:00", tz="UTC"))
+        tick1 = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=ts_t1,
+            ts_init=ts_t1,
+        )
+
+        # Time T2: 10:30:00 - second data update after gap (30 minutes gap)
+        ts_t2 = dt_to_unix_nanos(pd.Timestamp("2024-01-01 10:30:00", tz="UTC"))
+        tick2 = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid_price=Price.from_str("1.00002"),
+            ask_price=Price.from_str("1.00005"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=ts_t2,
+            ts_init=ts_t2,
+        )
+
+        # Act - process first data update (triggers timer start, ts_last = ts_t1)
+        aggregator.handle_quote_tick(tick1)
+
+        # Process second data update after gap
+        # This will:
+        # 1. Update builder with ts_init=ts_t2, setting _builder.ts_last = ts_t2
+        # 2. Process historical events: advance clock from ts_t1 to ts_t2
+        # 3. Collect timer events at 10:01:00, 10:02:00, ..., 10:30:00
+        # 4. For each timer event, call _build_bar
+        # 5. In _build_bar, timer events with ts_event < ts_t2 (10:01:00 to 10:29:00) should be skipped
+        aggregator.handle_quote_tick(tick2)
+
+        # Assert
+        assert len(self.handler) == 2
+        assert self.handler[0].ts_init == ts_t1
+        assert self.handler[1].ts_init == ts_t2

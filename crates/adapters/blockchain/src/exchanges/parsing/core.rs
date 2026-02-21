@@ -31,7 +31,7 @@ use alloy::primitives::Address;
 pub fn extract_address_from_bytes(bytes: &[u8]) -> anyhow::Result<Address> {
     anyhow::ensure!(
         bytes.len() >= 32,
-        "Topic must be at least 32 bytes, got {}",
+        "Topic must be at least 32 bytes, was {}",
         bytes.len()
     );
     Ok(Address::from_slice(&bytes[12..32]))
@@ -48,7 +48,7 @@ pub fn extract_address_from_bytes(bytes: &[u8]) -> anyhow::Result<Address> {
 pub fn extract_u32_from_bytes(bytes: &[u8]) -> anyhow::Result<u32> {
     anyhow::ensure!(
         bytes.len() >= 32,
-        "Topic must be at least 32 bytes, got {}",
+        "Topic must be at least 32 bytes, was {}",
         bytes.len()
     );
     Ok(u32::from_be_bytes(bytes[28..32].try_into()?))
@@ -65,7 +65,7 @@ pub fn extract_u32_from_bytes(bytes: &[u8]) -> anyhow::Result<u32> {
 pub fn extract_i32_from_bytes(bytes: &[u8]) -> anyhow::Result<i32> {
     anyhow::ensure!(
         bytes.len() >= 32,
-        "Topic must be at least 32 bytes, got {}",
+        "Topic must be at least 32 bytes, was {}",
         bytes.len()
     );
     Ok(i32::from_be_bytes(bytes[28..32].try_into()?))
@@ -88,7 +88,7 @@ pub fn validate_signature_bytes(
     let actual_hex = hex::encode(actual);
     anyhow::ensure!(
         actual_hex == expected_hex,
-        "Invalid event signature for '{event_name}': expected {expected_hex}, got {actual_hex}",
+        "Invalid event signature for '{event_name}': expected {expected_hex}, was {actual_hex}",
     );
     Ok(())
 }

@@ -600,11 +600,15 @@ class BetfairStreaming:
         sm=0,
         sr=0,
         sc=0,
+        sl=0,
+        sv=0,
         avp=0,
         order_id: int = 248485109136,
         client_order_id: str = "",
         mb: list[MatchedOrder] | None = None,
         ml: list[MatchedOrder] | None = None,
+        market_id: str = "1",
+        selection_id: int = 1,
     ) -> OCM:
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
         assert isinstance(order_id, int)
@@ -614,10 +618,10 @@ class BetfairStreaming:
             pt=0,
             oc=[
                 OrderMarketChange(
-                    id="1",
+                    id=market_id,
                     orc=[
                         OrderRunnerChange(
-                            id=1,
+                            id=selection_id,
                             uo=[
                                 Order(
                                     id=order_id,
@@ -631,9 +635,9 @@ class BetfairStreaming:
                                     md=int(pd.Timestamp.utcnow().timestamp()),
                                     sm=sm,
                                     sr=sr,
-                                    sl=0,
+                                    sl=sl,
                                     sc=sc,
-                                    sv=0,
+                                    sv=sv,
                                     rac="",
                                     rc="REG_LGA",
                                     rfo=client_order_id,

@@ -27,7 +27,7 @@ use pyo3::{
 };
 use ustr::Ustr;
 
-use crate::timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2};
+use crate::timer::{TimeEvent, TimeEventCallback, TimeEventHandler};
 
 #[pyo3::pyclass(
     module = "nautilus_trader.core.nautilus_pyo3.common",
@@ -39,8 +39,8 @@ use crate::timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2};
 ///
 /// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
 /// when the event's timestamp is reached.
-#[allow(non_camel_case_types)]
 #[derive(Debug)]
+#[allow(non_camel_case_types)]
 pub struct TimeEventHandler_Py {
     /// The time event.
     pub event: TimeEvent,
@@ -48,12 +48,12 @@ pub struct TimeEventHandler_Py {
     pub callback: Py<PyAny>,
 }
 
-impl From<TimeEventHandlerV2> for TimeEventHandler_Py {
+impl From<TimeEventHandler> for TimeEventHandler_Py {
     /// # Panics
     ///
-    /// Panics if the provided `TimeEventHandlerV2` contains a Rust callback,
+    /// Panics if the provided `TimeEventHandler` contains a Rust callback,
     /// since only Python callbacks are supported by this handler.
-    fn from(value: TimeEventHandlerV2) -> Self {
+    fn from(value: TimeEventHandler) -> Self {
         Self {
             event: value.event,
             callback: match value.callback {
@@ -189,7 +189,7 @@ mod tests {
     struct TestTimeEventSender;
 
     impl TimeEventSender for TestTimeEventSender {
-        fn send(&self, _handler: crate::timer::TimeEventHandlerV2) {
+        fn send(&self, _handler: crate::timer::TimeEventHandler) {
             // Test implementation - just ignore the events
         }
     }

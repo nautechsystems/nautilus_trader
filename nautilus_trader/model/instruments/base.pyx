@@ -42,6 +42,7 @@ from nautilus_trader.model.instruments.futures_contract cimport FuturesContract
 from nautilus_trader.model.instruments.futures_spread cimport FuturesSpread
 from nautilus_trader.model.instruments.option_contract cimport OptionContract
 from nautilus_trader.model.instruments.option_spread cimport OptionSpread
+from nautilus_trader.model.instruments.perpetual_contract cimport PerpetualContract
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick_scheme.base cimport TICK_SCHEMES
@@ -49,6 +50,15 @@ from nautilus_trader.model.tick_scheme.base cimport get_tick_scheme
 
 
 EXPIRING_INSTRUMENT_CLASSES = {
+    InstrumentClass.FUTURE,
+    InstrumentClass.FUTURES_SPREAD,
+    InstrumentClass.OPTION,
+    InstrumentClass.OPTION_SPREAD,
+}
+
+# Instrument classes for which the backtest engine runs built-in expiration.
+# Futures: close at market or settlement_prices. Options: exercise/expiry logic in engine.
+ENGINE_EXPIRING_INSTRUMENT_CLASSES = {
     InstrumentClass.FUTURE,
     InstrumentClass.FUTURES_SPREAD,
     InstrumentClass.OPTION,
@@ -436,7 +446,7 @@ cdef class Instrument(Data):
         bool
 
         """
-        return False
+        return len(self.legs()) > 1
 
     cpdef list legs(self):
         """
@@ -763,12 +773,17 @@ cdef class Instrument(Data):
         Quantity quantity,
         Price price,
         bint use_quote_for_inverse=False,
+        Currency target_currency=None,
+        Price conversion_price=None,
     ):
         """
         Calculate the notional value.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
+
+        If `target_currency` and `conversion_price` are provided, the notional
+        value will be converted to the target currency.
 
         Parameters
         ----------
@@ -778,6 +793,10 @@ cdef class Instrument(Data):
             The price for the calculation.
         use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
+        target_currency : Currency, optional
+            The target currency for conversion.
+        conversion_price : Price, optional
+            The price to use for currency conversion.
 
         Returns
         -------
@@ -787,14 +806,20 @@ cdef class Instrument(Data):
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
 
+        cdef Money notional
         if self.is_inverse:
             if use_quote_for_inverse:
                 # Quantity is notional in quote currency
-                return Money(quantity, self.quote_currency)
-
-            return Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.base_currency)
+                notional = Money(quantity, self.quote_currency)
+            else:
+                notional = Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.base_currency)
         else:
-            return Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
+            notional = Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
+
+        if target_currency is not None and conversion_price is not None:
+            return Money(notional.as_f64_c() * conversion_price.as_f64_c(), target_currency)
+
+        return notional
 
     cpdef Quantity calculate_base_quantity(
         self,
@@ -847,7 +872,9 @@ cpdef list[Instrument] instruments_from_pyo3(list pyo3_instruments):
             instruments.append(OptionContract.from_pyo3_c(pyo3_instrument))
         elif isinstance(pyo3_instrument, nautilus_pyo3.OptionSpread):
             instruments.append(OptionSpread.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.PerpetualContract):
+            instruments.append(PerpetualContract.from_pyo3_c(pyo3_instrument))
         else:
-            RuntimeError(f"Instrument {pyo3_instrument} not supported")
+            raise RuntimeError(f"Instrument {pyo3_instrument} not supported")
 
     return instruments

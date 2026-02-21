@@ -21,15 +21,12 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use nautilus_bitmex::{http::client::BitmexHttpClient, websocket::client::BitmexWebSocketClient};
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
-    tracing::info!("Fetching instruments from HTTP API...");
+    log::info!("Fetching instruments from HTTP API...");
     let http_client = BitmexHttpClient::new(
         None,     // base_url: defaults to production
         None,     // api_key
@@ -50,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request_instruments(true) // active_only
         .await?;
 
-    tracing::info!("Fetched {} instruments", instruments.len());
+    log::info!("Fetched {} instruments", instruments.len());
 
     let mut ws_client = BitmexWebSocketClient::new(
         None, // url: defaults to wss://ws.bitmex.com/realtime
@@ -87,10 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         tokio::select! {
             Some(event) = stream.next() => {
-                tracing::debug!("{event:?}");
+                log::debug!("{event:?}");
             }
             _ = &mut sigint => {
-                tracing::info!("Received SIGINT, closing connection...");
+                log::info!("Received SIGINT, closing connection...");
                 ws_client.close().await?;
                 break;
             }

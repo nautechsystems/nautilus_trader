@@ -194,16 +194,16 @@ def test_unregistered_actor_properties_work():
     assert actor.trader_id is None
     assert actor.actor_id is not None
 
-    # State should be PreInitialized for unregistered actor
+    # State should be PRE_INITIALIZED for unregistered actor
     from nautilus_trader.core.nautilus_pyo3 import ComponentState
 
-    assert actor.state() == ComponentState.PreInitialized  # TODO
+    assert actor.state() == ComponentState.PRE_INITIALIZED
 
     # trader_id should be None for unregistered actor
     assert actor.trader_id is None
 
     # Status checks should work
-    assert not actor.is_ready()  # Should be False in PreInitialized state
+    assert not actor.is_ready()  # Should be False in PRE_INITIALIZED state
     assert not actor.is_running()
     assert not actor.is_stopped()
     assert not actor.is_disposed()

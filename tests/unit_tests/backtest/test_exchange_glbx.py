@@ -45,6 +45,7 @@ from nautilus_trader.trading import Strategy
 
 
 _ESH4_GLBX = TestInstrumentProvider.es_future(2024, 3)
+_ESM4_GLBX = TestInstrumentProvider.es_future(2024, 6)
 
 
 class TestSimulatedExchangeGlbx:
@@ -252,10 +253,12 @@ class TestSimulatedExchangeGlbx:
         self.exchange.process(one_nano_past_activation)
 
         # Act
-        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns)
+        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns + 1)
 
         # Assert
-        assert self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns == 1_710_513_000_000_000_000
+        assert (
+            self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns + 1 == 1_710_513_000_000_000_001
+        )
         assert order.status == OrderStatus.CANCELED
 
     def test_process_exchange_past_instrument_expiration_closed_open_position(self) -> None:
@@ -280,10 +283,12 @@ class TestSimulatedExchangeGlbx:
         self.exchange.process(one_nano_past_activation)
 
         # Act
-        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns)
+        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns + 1)
 
         # Assert
-        assert self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns == 1_710_513_000_000_000_000
+        assert (
+            self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns + 1 == 1_710_513_000_000_000_001
+        )
         assert order.status == OrderStatus.FILLED
         position = self.cache.positions()[0]
         assert position.is_closed
@@ -322,3 +327,134 @@ class TestSimulatedExchangeGlbx:
 
         # Assert
         assert self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns == 1_710_513_000_000_000_000
+
+    def test_expiration_fires_only_once_on_repeated_process_calls(self) -> None:
+        # Arrange: Open a position before expiration
+        one_nano_past_activation = _ESH4_GLBX.activation_ns + 1
+        tick = TestDataStubs.quote_tick(
+            instrument=_ESH4_GLBX,
+            bid_price=4010.00,
+            ask_price=4011.00,
+            ts_init=one_nano_past_activation,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market(
+            _ESH4_GLBX.id,
+            OrderSide.BUY,
+            Quantity.from_int(10),
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(one_nano_past_activation)
+
+        assert order.status == OrderStatus.FILLED
+        assert self.cache.positions_open_count() == 1
+
+        # Act: Process past expiration, then process again
+        one_nano_past_expiration = _ESH4_GLBX.expiration_ns + 1
+        self.exchange.process(one_nano_past_expiration)
+        self.exchange.process(one_nano_past_expiration + 1_000_000)
+
+        # Assert: Position closed exactly once
+        assert self.cache.positions_open_count() == 0
+        assert self.cache.positions_total_count() == 1
+        assert self.cache.positions()[0].is_closed
+
+    def test_multiple_instruments_expire_at_different_times(self) -> None:
+        # Arrange: Add a second future with later expiration
+        self.exchange.add_instrument(_ESM4_GLBX)
+        self.cache.add_instrument(_ESM4_GLBX)
+
+        # Use the later activation so both contracts are active
+        one_nano_past_activation = max(_ESH4_GLBX.activation_ns, _ESM4_GLBX.activation_ns) + 1
+        tick_h4 = TestDataStubs.quote_tick(
+            instrument=_ESH4_GLBX,
+            bid_price=4010.00,
+            ask_price=4011.00,
+            ts_init=one_nano_past_activation,
+        )
+        tick_m4 = TestDataStubs.quote_tick(
+            instrument=_ESM4_GLBX,
+            bid_price=4020.00,
+            ask_price=4021.00,
+            ts_init=one_nano_past_activation,
+        )
+        self.data_engine.process(tick_h4)
+        self.data_engine.process(tick_m4)
+        self.exchange.process_quote_tick(tick_h4)
+        self.exchange.process_quote_tick(tick_m4)
+
+        order_h4 = self.strategy.order_factory.market(
+            _ESH4_GLBX.id,
+            OrderSide.BUY,
+            Quantity.from_int(10),
+        )
+        order_m4 = self.strategy.order_factory.market(
+            _ESM4_GLBX.id,
+            OrderSide.BUY,
+            Quantity.from_int(5),
+        )
+        self.strategy.submit_order(order_h4)
+        self.strategy.submit_order(order_m4)
+        self.exchange.process(one_nano_past_activation)
+
+        assert self.cache.positions_open_count() == 2
+
+        # Act: Advance past first expiration only
+        self.exchange.process(_ESH4_GLBX.expiration_ns + 1)
+
+        # Assert: Only ESH4 position closed
+        open_positions = self.cache.positions_open()
+        assert len(open_positions) == 1
+        assert open_positions[0].instrument_id == _ESM4_GLBX.id
+
+        # Act: Advance past second expiration
+        self.exchange.process(_ESM4_GLBX.expiration_ns + 1)
+
+        # Assert: Both positions now closed
+        assert self.cache.positions_open_count() == 0
+        assert self.cache.positions_total_count() == 2
+
+    def test_reset_re_enables_expiration_processing(self) -> None:
+        # Arrange: Open position and expire it
+        one_nano_past_activation = _ESH4_GLBX.activation_ns + 1
+        tick = TestDataStubs.quote_tick(
+            instrument=_ESH4_GLBX,
+            bid_price=4010.00,
+            ask_price=4011.00,
+            ts_init=one_nano_past_activation,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market(
+            _ESH4_GLBX.id,
+            OrderSide.BUY,
+            Quantity.from_int(10),
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(one_nano_past_activation)
+        self.exchange.process(_ESH4_GLBX.expiration_ns + 1)
+
+        assert self.cache.positions_open_count() == 0
+
+        # Act: Reset and run a second cycle
+        self.exchange.reset()
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order2 = self.strategy.order_factory.market(
+            _ESH4_GLBX.id,
+            OrderSide.BUY,
+            Quantity.from_int(5),
+        )
+        self.strategy.submit_order(order2)
+        self.exchange.process(one_nano_past_activation)
+
+        assert self.cache.positions_open_count() == 1
+
+        self.exchange.process(_ESH4_GLBX.expiration_ns + 1)
+
+        # Assert: Expiration fires again after reset
+        assert self.cache.positions_open_count() == 0

@@ -726,8 +726,6 @@ The Databento data client provides the following configuration options:
 | `venue_dataset_map`       | `None`  | Optional mapping of Nautilus venues to Databento dataset codes. |
 | `parent_symbols`          | `None`  | Optional mapping `{dataset: {parent symbols}}` to preload definition trees (e.g., `{"GLBX.MDP3": {"ES.FUT", "ES.OPT"}}`). |
 | `instrument_ids`          | `None`  | Sequence of Nautilus `InstrumentId` values to preload definitions for at startup. |
-| `http_proxy_url`          | `None`  | Optional HTTP proxy URL. |
-| `ws_proxy_url`            | `None`  | Optional WebSocket proxy URL. |
 
 :::tip
 We recommend using environment variables to manage your credentials.
@@ -789,6 +787,8 @@ Databento restarts their live gateways every Sunday at the following times (all 
 | All other datasets | 10:30                  |
 
 The default 10-minute timeout handles typical maintenance restarts. For unattended systems running through the maintenance window, consider using `reconnect_timeout_mins=None` or a longer timeout. See the [Databento Maintenance Schedule](https://databento.com/docs/api-reference-live/basics/maintenance-schedule) for details.
+
+## Contributing
 
 :::info
 For additional features or to contribute to the Databento adapter, please see our

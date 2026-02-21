@@ -35,8 +35,12 @@
 //! - Public streams: No authentication required
 //! - User data streams: Requires listen key (obtained via REST API)
 
+pub mod data;
+pub mod execution;
 pub mod http;
 pub mod websocket;
 
+pub use data::BinanceFuturesDataClient;
+pub use execution::BinanceFuturesExecutionClient;
 pub use http::client::BinanceFuturesHttpClient;
 pub use websocket::client::BinanceFuturesWebSocketClient;

@@ -1,7 +1,0 @@
-{
-    "channel": "v4_trades",
-    "connection_id": "7ad53844-1f2c-4d86-83d1-42f6562844f3",
-    "id": "ETH-USD",
-    "message_id": 1905,
-    "type": "unsubscribed"
-}

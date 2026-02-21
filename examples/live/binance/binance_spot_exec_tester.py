@@ -39,7 +39,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Strategy config params
 symbol = "ETHUSDT"
 instrument_id = InstrumentId.from_str(f"{symbol}.{BINANCE}")
-order_qty = Decimal("0.01")
+order_qty = Decimal("0.02")
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -80,12 +80,7 @@ config_node = TradingNodeConfig(
         BINANCE: BinanceDataClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
-            # key_type=BinanceKeyType.ED25519,
             account_type=BinanceAccountType.SPOT,
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
-            us=False,  # If client is for Binance US
-            testnet=False,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
@@ -93,12 +88,7 @@ config_node = TradingNodeConfig(
         BINANCE: BinanceExecClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
-            # key_type=BinanceKeyType.ED25519,
             account_type=BinanceAccountType.SPOT,
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
-            us=False,  # If client is for Binance US
-            testnet=False,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
             max_retries=3,
         ),
@@ -118,11 +108,13 @@ config_strat = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
     order_qty=order_qty,
+    # open_position_on_start_qty=order_qty,
+    enable_limit_buys=True,
+    enable_limit_sells=False,
     # enable_stop_buys=True,
     # enable_stop_sells=True,
-    # open_position_on_start_qty=order_qty,
     # tob_offset_ticks=0,
-    # log_data=False,
+    log_data=False,
 )
 
 # Instantiate your strategy

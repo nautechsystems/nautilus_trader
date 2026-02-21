@@ -43,9 +43,12 @@ pub const MAX_SQRT_RATIO: U160 = U160::from_limbs([
 /// Panics if the absolute tick exceeds [`PoolTick::MAX_TICK`].
 #[inline]
 pub fn get_sqrt_ratio_at_tick(tick: i32) -> U160 {
+    // Validate range before abs() to avoid overflow panic on i32::MIN
+    assert!(
+        (PoolTick::MIN_TICK..=PoolTick::MAX_TICK).contains(&tick),
+        "Tick {tick} out of bounds"
+    );
     let abs_tick = tick.abs();
-
-    assert!(abs_tick <= PoolTick::MAX_TICK, "Tick {tick} out of bounds");
 
     // Equivalent: ratio = 2**128 / sqrt(1.0001) if abs_tick & 0x1 else 1 << 128
     let mut ratio = if abs_tick & 0x1 != 0 {

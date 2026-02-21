@@ -386,7 +386,7 @@ cdef class Stochastics(Indicator):
         if d_method not in (StochasticsDMethod.RATIO, StochasticsDMethod.MOVING_AVERAGE):
             raise ValueError(
                 f"d_method must be '{StochasticsDMethod.RATIO}' or "
-                f"'{StochasticsDMethod.MOVING_AVERAGE}', got '{d_method}'"
+                f"'{StochasticsDMethod.MOVING_AVERAGE}', was '{d_method}'"
             )
 
         params = [period_k, period_d, slowing, get_ma_type_name(ma_type), d_method]
@@ -627,7 +627,10 @@ cdef class CommodityChannelIndex(Indicator):
             mean=self._ma.value,
         )
         if self._ma.initialized:
-            self.value = (typical_price - self._ma.value) / (self.scalar * self._mad)
+            if self._mad > 0:
+                self.value = (typical_price - self._ma.value) / (self.scalar * self._mad)
+            else:
+                self.value = 0.0
 
         # Initialization logic
         if not self.initialized:
@@ -816,8 +819,10 @@ cdef class RelativeVolatilityIndex(Indicator):
                 self._pos_ma.update_raw(0)
                 self._neg_ma.update_raw(0)
 
-            self.value = self.scalar * self._pos_ma.value
-            self.value = self.value / (self._pos_ma.value + self._neg_ma.value)
+            if self._pos_ma.value + self._neg_ma.value == 0.0:
+                self.value = 0.0
+            else:
+                self.value = self.scalar * self._pos_ma.value / (self._pos_ma.value + self._neg_ma.value)
 
 
         self._previous_close = close

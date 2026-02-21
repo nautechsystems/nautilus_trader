@@ -38,8 +38,8 @@ use nautilus_bybit::{
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
     data::BarType,
-    enums::PositionSideSpecified,
-    identifiers::AccountId,
+    enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, Venue},
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
@@ -49,6 +49,25 @@ use serde_json::{Value, json};
 
 type SettleCoinQueries = Arc<tokio::sync::Mutex<Vec<(String, Option<String>)>>>;
 
+/// Captured order submission for validation in tests.
+#[allow(dead_code)]
+#[derive(Clone, Debug, Default)]
+struct CapturedOrder {
+    category: String,
+    symbol: String,
+    side: String,
+    order_type: String,
+    qty: String,
+    price: Option<String>,
+    trigger_price: Option<String>,
+    trigger_direction: Option<String>,
+    time_in_force: Option<String>,
+    market_unit: Option<String>,
+    reduce_only: Option<bool>,
+    is_leverage: Option<i32>,
+    order_link_id: Option<String>,
+}
+
 #[allow(dead_code)]
 #[derive(Clone)]
 struct TestServerState {
@@ -57,6 +76,7 @@ struct TestServerState {
     settle_coin_queries: SettleCoinQueries,
     realtime_requests: Arc<tokio::sync::Mutex<usize>>,
     history_requests: Arc<tokio::sync::Mutex<usize>>,
+    order_submissions: Arc<tokio::sync::Mutex<Vec<CapturedOrder>>>,
 }
 
 impl Default for TestServerState {
@@ -66,6 +86,7 @@ impl Default for TestServerState {
             settle_coin_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             realtime_requests: Arc::new(tokio::sync::Mutex::new(0)),
             history_requests: Arc::new(tokio::sync::Mutex::new(0)),
+            order_submissions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
         }
     }
 }
@@ -278,6 +299,138 @@ async fn handle_post_order(headers: axum::http::HeaderMap, body: axum::body::Byt
     }
 
     // Return successful order response
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {
+            "orderId": "test-order-id-12345",
+            "orderLinkId": order_req.get("orderLinkId").and_then(|v| v.as_str()).unwrap_or("")
+        },
+        "retExtInfo": {},
+        "time": 1704470400123i64
+    }))
+    .into_response()
+}
+
+/// Stateful order handler that captures order details for test validation.
+#[allow(dead_code)]
+async fn handle_post_order_with_capture(
+    State(state): State<TestServerState>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if !headers.contains_key("X-BAPI-API-KEY")
+        || !headers.contains_key("X-BAPI-SIGN")
+        || !headers.contains_key("X-BAPI-TIMESTAMP")
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "retCode": 10003,
+                "retMsg": "Invalid API key",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    let Ok(order_req): Result<Value, _> = serde_json::from_slice(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "retCode": 10001,
+                "retMsg": "Invalid JSON body",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    };
+
+    if order_req.get("category").is_none()
+        || order_req.get("symbol").is_none()
+        || order_req.get("side").is_none()
+        || order_req.get("orderType").is_none()
+        || order_req.get("qty").is_none()
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "retCode": 10001,
+                "retMsg": "Missing required order parameters",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    let captured = CapturedOrder {
+        category: order_req
+            .get("category")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        symbol: order_req
+            .get("symbol")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        side: order_req
+            .get("side")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        order_type: order_req
+            .get("orderType")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        qty: order_req
+            .get("qty")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        price: order_req
+            .get("price")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        trigger_price: order_req
+            .get("triggerPrice")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        trigger_direction: order_req
+            .get("triggerDirection")
+            .and_then(|v| v.as_i64())
+            .map(|v| v.to_string()),
+        time_in_force: order_req
+            .get("timeInForce")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        market_unit: order_req
+            .get("marketUnit")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        reduce_only: order_req.get("reduceOnly").and_then(|v| v.as_bool()),
+        is_leverage: order_req
+            .get("isLeverage")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32),
+        order_link_id: order_req
+            .get("orderLinkId")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+    };
+
+    {
+        let mut orders = state.order_submissions.lock().await;
+        orders.push(captured);
+    }
+
     Json(json!({
         "retCode": 0,
         "retMsg": "OK",
@@ -1400,7 +1553,6 @@ async fn test_order_deduplication_by_order_id() {
 
     // Test deduplication by querying both realtime and history for a specific instrument
     // This avoids the settle coin iteration complexity
-    use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
     let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT"));
 
     let reports = client
@@ -1872,6 +2024,7 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
         None,
         None,
         None,
+        None,
         0.into(),
         0.into(),
     );
@@ -2322,5 +2475,622 @@ async fn test_request_bars_continues_pagination_when_first_page_only_partial() {
     assert!(
         request_count >= 2,
         "Should have made at least 2 requests to paginate past partial bars"
+    );
+}
+
+#[allow(dead_code)]
+fn create_order_capture_test_router(state: TestServerState) -> Router {
+    Router::new()
+        .route("/v5/market/time", get(handle_get_server_time))
+        .route("/v5/market/instruments-info", get(handle_get_instruments))
+        .route("/v5/order/create", post(handle_post_order_with_capture))
+        .route("/v5/order/realtime", get(handle_get_orders))
+        .route("/v5/account/fee-rate", get(handle_get_fee_rate))
+        .with_state(state)
+}
+
+async fn start_order_capture_test_server()
+-> Result<(SocketAddr, TestServerState), Box<dyn std::error::Error + Send + Sync>> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = TestServerState::default();
+    let router = create_order_capture_test_router(state.clone());
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    wait_for_server(addr, "/v5/market/time").await;
+
+    Ok((addr, state))
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_stop_market_with_trigger_price() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None)
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let client_order_id = ClientOrderId::from("stop-market-test-1");
+    let quantity = Quantity::new(0.001, 3);
+    let trigger_price = Price::new(100_000.0, 2);
+
+    let result = client
+        .submit_order(
+            account_id,
+            BybitProductType::Linear,
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            OrderType::StopMarket,
+            quantity,
+            None, // time_in_force
+            None, // price (not used for market orders)
+            Some(trigger_price),
+            None,  // post_only
+            false, // reduce_only
+            false, // is_quote_quantity
+            false, // is_leverage
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1, "Should have captured one order");
+
+    let order = &orders[0];
+    assert_eq!(order.category, "linear");
+    assert_eq!(order.symbol, "BTCUSDT");
+    assert_eq!(order.side, "Buy");
+    assert_eq!(order.order_type, "Market");
+    assert_eq!(
+        order.trigger_price.as_deref(),
+        Some("100000.00"),
+        "Should have trigger price"
+    );
+
+    // Buy stop triggers on rise (triggerDirection=1)
+    assert_eq!(
+        order.trigger_direction.as_deref(),
+        Some("1"),
+        "Buy stop should trigger on rise"
+    );
+
+    // Market orders don't send timeInForce
+    assert!(
+        order.time_in_force.is_none(),
+        "Market orders should not have timeInForce"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None)
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let client_order_id = ClientOrderId::from("stop-limit-test-1");
+    let quantity = Quantity::new(0.001, 3);
+    let trigger_price = Price::new(99_000.0, 2);
+    let limit_price = Price::new(98_500.0, 2);
+
+    let result = client
+        .submit_order(
+            account_id,
+            BybitProductType::Linear,
+            instrument_id,
+            client_order_id,
+            OrderSide::Sell,
+            OrderType::StopLimit,
+            quantity,
+            Some(TimeInForce::Gtc),
+            Some(limit_price),
+            Some(trigger_price),
+            None,  // post_only
+            true,  // reduce_only
+            false, // is_quote_quantity
+            false, // is_leverage
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1, "Should have captured one order");
+
+    let order = &orders[0];
+    assert_eq!(order.category, "linear");
+    assert_eq!(order.symbol, "BTCUSDT");
+    assert_eq!(order.side, "Sell");
+    assert_eq!(order.order_type, "Limit");
+    assert_eq!(
+        order.price.as_deref(),
+        Some("98500.00"),
+        "Should have limit price"
+    );
+    assert_eq!(
+        order.trigger_price.as_deref(),
+        Some("99000.00"),
+        "Should have trigger price"
+    );
+
+    // Sell stop triggers on fall (triggerDirection=2)
+    assert_eq!(
+        order.trigger_direction.as_deref(),
+        Some("2"),
+        "Sell stop should trigger on fall"
+    );
+    assert_eq!(order.time_in_force.as_deref(), Some("GTC"));
+    assert_eq!(order.reduce_only, Some(true));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_market_if_touched_trigger_direction() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None)
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let client_order_id = ClientOrderId::from("mit-test-1");
+    let quantity = Quantity::new(0.001, 3);
+    let trigger_price = Price::new(95_000.0, 2);
+
+    // MarketIfTouched Buy triggers on FALL (opposite of stop)
+    let result = client
+        .submit_order(
+            account_id,
+            BybitProductType::Linear,
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            OrderType::MarketIfTouched,
+            quantity,
+            None,
+            None,
+            Some(trigger_price),
+            None,
+            false,
+            false,
+            false,
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    let order = &orders[0];
+
+    // Buy MIT triggers on fall (triggerDirection=2) - opposite of Buy Stop
+    assert_eq!(
+        order.trigger_direction.as_deref(),
+        Some("2"),
+        "Buy MIT should trigger on fall"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_post_only() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None)
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let client_order_id = ClientOrderId::from("post-only-test-1");
+    let quantity = Quantity::new(0.001, 3);
+    let price = Price::new(100_000.0, 2);
+
+    let result = client
+        .submit_order(
+            account_id,
+            BybitProductType::Linear,
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            quantity,
+            Some(TimeInForce::Gtc), // This will be overridden by post_only
+            Some(price),
+            None,
+            Some(true), // post_only
+            false,
+            false,
+            false,
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    let order = &orders[0];
+    assert_eq!(order.order_type, "Limit");
+    assert_eq!(
+        order.time_in_force.as_deref(),
+        Some("PostOnly"),
+        "Post-only orders should have timeInForce=PostOnly"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_spot_market_base_quantity() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Spot, None)
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-SPOT"), Venue::from("BYBIT"));
+    let client_order_id = ClientOrderId::from("spot-base-qty-test-1");
+    let quantity = Quantity::new(0.001, 3);
+
+    let result = client
+        .submit_order(
+            account_id,
+            BybitProductType::Spot,
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            OrderType::Market,
+            quantity,
+            None,
+            None,
+            None,
+            None,
+            false,
+            false, // is_quote_quantity=false -> baseCoin
+            true,  // is_leverage
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    let order = &orders[0];
+    assert_eq!(order.category, "spot");
+    assert_eq!(order.order_type, "Market");
+    assert_eq!(
+        order.market_unit.as_deref(),
+        Some("baseCoin"),
+        "SPOT market order with is_quote_quantity=false should use baseCoin"
+    );
+    assert_eq!(
+        order.is_leverage,
+        Some(1),
+        "is_leverage=true should send isLeverage=1"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_spot_market_quote_quantity() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Spot, None)
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-SPOT"), Venue::from("BYBIT"));
+    let client_order_id = ClientOrderId::from("spot-quote-qty-test-1");
+    let quantity = Quantity::new(100.0, 2); // 100 USDT worth
+
+    let result = client
+        .submit_order(
+            account_id,
+            BybitProductType::Spot,
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            OrderType::Market,
+            quantity,
+            None,
+            None,
+            None,
+            None,
+            false,
+            true,  // is_quote_quantity=true -> quoteCoin
+            false, // is_leverage
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    let order = &orders[0];
+    assert_eq!(order.category, "spot");
+    assert_eq!(order.order_type, "Market");
+    assert_eq!(
+        order.market_unit.as_deref(),
+        Some("quoteCoin"),
+        "SPOT market order with is_quote_quantity=true should use quoteCoin"
+    );
+    assert_eq!(
+        order.is_leverage,
+        Some(0),
+        "is_leverage=false should send isLeverage=0"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_linear_does_not_send_market_unit() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None)
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let client_order_id = ClientOrderId::from("linear-market-test-1");
+    let quantity = Quantity::new(0.001, 3);
+
+    let result = client
+        .submit_order(
+            account_id,
+            BybitProductType::Linear,
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            OrderType::Market,
+            quantity,
+            None,
+            None,
+            None,
+            None,
+            false,
+            true,  // is_quote_quantity - should be ignored for LINEAR
+            false, // is_leverage - only for SPOT
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    let order = &orders[0];
+    assert_eq!(order.category, "linear");
+    assert!(
+        order.market_unit.is_none(),
+        "LINEAR market orders should not have marketUnit"
+    );
+    assert!(
+        order.is_leverage.is_none(),
+        "LINEAR orders should not have isLeverage"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_limit_if_touched_trigger_direction() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None)
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let client_order_id = ClientOrderId::from("lit-test-1");
+    let quantity = Quantity::new(0.001, 3);
+    let trigger_price = Price::new(105_000.0, 2);
+    let limit_price = Price::new(105_500.0, 2);
+
+    // LimitIfTouched Sell triggers on RISE (opposite of stop)
+    let result = client
+        .submit_order(
+            account_id,
+            BybitProductType::Linear,
+            instrument_id,
+            client_order_id,
+            OrderSide::Sell,
+            OrderType::LimitIfTouched,
+            quantity,
+            Some(TimeInForce::Gtc),
+            Some(limit_price),
+            Some(trigger_price),
+            None,
+            false,
+            false,
+            false,
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    let order = &orders[0];
+    assert_eq!(order.order_type, "Limit");
+    assert_eq!(
+        order.trigger_price.as_deref(),
+        Some("105000.00"),
+        "Should have trigger price"
+    );
+    assert_eq!(
+        order.price.as_deref(),
+        Some("105500.00"),
+        "Should have limit price"
+    );
+
+    // Sell LIT triggers on rise (triggerDirection=1) - opposite of Sell Stop
+    assert_eq!(
+        order.trigger_direction.as_deref(),
+        Some("1"),
+        "Sell LIT should trigger on rise"
     );
 }

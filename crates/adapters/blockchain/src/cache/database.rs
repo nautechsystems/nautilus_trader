@@ -142,7 +142,7 @@ impl BlockchainCacheDatabase {
         &self,
         chain: &Chain,
     ) -> anyhow::Result<CachedBlocksConsistencyStatus> {
-        tracing::info!("Fetching block consistency status");
+        log::info!("Fetching block consistency status");
 
         let result: (i64, i64) = sqlx::query_as(
             r"
@@ -1045,7 +1045,7 @@ impl BlockchainCacheDatabase {
     /// Returns an error if the database operations fail.
     pub async fn toggle_perf_sync_settings(&self, enable: bool) -> anyhow::Result<()> {
         if enable {
-            tracing::info!("Enabling performance sync settings for bulk operations");
+            log::info!("Enabling performance sync settings for bulk operations");
 
             // Set synchronous_commit to OFF for maximum write performance
             sqlx::query("SET synchronous_commit = OFF")
@@ -1059,9 +1059,9 @@ impl BlockchainCacheDatabase {
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to set work_mem: {e}"))?;
 
-            tracing::debug!("Performance settings enabled: synchronous_commit=OFF, work_mem=256MB");
+            log::debug!("Performance settings enabled: synchronous_commit=OFF, work_mem=256MB");
         } else {
-            tracing::info!("Restoring default safe database performance settings");
+            log::info!("Restoring default safe database performance settings");
 
             // Restore synchronous_commit to ON for data safety
             sqlx::query("SET synchronous_commit = ON")

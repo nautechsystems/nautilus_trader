@@ -27,7 +27,7 @@ use nautilus_model::{
     position::Position,
 };
 
-use crate::{cache::Cache, clock::Clock, msgbus};
+use crate::{cache::Cache, clock::Clock, msgbus, msgbus::TypedHandler};
 
 /// Type alias for a greeks filter function.
 pub type GreeksFilter = Box<dyn Fn(&GreeksData) -> bool>;
@@ -368,7 +368,7 @@ impl GreeksCalculator {
                 .unwrap_or_default()
                 .as_f64();
             let (delta, _, _) = self.modify_greeks(
-                multiplier.as_f64(),
+                1.0,
                 0.0,
                 underlying_instrument_id,
                 underlying_price + spot_shock,
@@ -385,7 +385,7 @@ impl GreeksCalculator {
                 GreeksData::from_delta(instrument_id, delta, multiplier.as_f64(), ts_event);
 
             if let Some(pos) = position {
-                greeks_data.pnl = multiplier * ((underlying_price + spot_shock) - pos.avg_px_open);
+                greeks_data.pnl = (underlying_price + spot_shock) - pos.avg_px_open;
                 greeks_data.price = greeks_data.pnl;
             }
 
@@ -395,7 +395,7 @@ impl GreeksCalculator {
         let mut greeks_data = None;
         let underlying = instrument.underlying().unwrap();
         let underlying_str = format!("{}.{}", underlying, instrument_id.venue);
-        let underlying_instrument_id = InstrumentId::from(underlying_str.as_str());
+        let underlying_instrument_id = InstrumentId::from(underlying_str);
 
         // Use cached greeks if requested
         if use_cached_greeks && let Some(cached_greeks) = cache.greeks(&instrument_id) {
@@ -403,10 +403,10 @@ impl GreeksCalculator {
         }
 
         if greeks_data.is_none() {
-            let utc_now_ns = if ts_event != UnixNanos::default() {
-                ts_event
-            } else {
+            let utc_now_ns = if ts_event == UnixNanos::default() {
                 self.clock.borrow().timestamp_ns()
+            } else {
+                ts_event
             };
 
             let utc_now = utc_now_ns.to_datetime_utc();
@@ -458,7 +458,6 @@ impl GreeksCalculator {
                 strike,
                 expiry_in_years,
                 option_mid_price,
-                multiplier.as_f64(),
             );
             let (delta, gamma, vega) = self.modify_greeks(
                 greeks.delta,
@@ -495,7 +494,7 @@ impl GreeksCalculator {
                 gamma,
                 vega,
                 greeks.theta,
-                (greeks.delta / multiplier.as_f64()).abs(),
+                greeks.itm_prob,
             ));
 
             // Adding greeks to cache if requested
@@ -513,7 +512,7 @@ impl GreeksCalculator {
                     instrument_id.symbol.as_str()
                 )
                 .into();
-                msgbus::publish(topic, &greeks_data.clone().unwrap());
+                msgbus::publish_greeks(topic, &greeks_data.clone().unwrap());
             }
         }
 
@@ -534,7 +533,6 @@ impl GreeksCalculator {
                 greeks_data.is_call,
                 greeks_data.strike,
                 shocked_time_to_expiry,
-                greeks_data.multiplier,
             );
             let (delta, gamma, vega) = self.modify_greeks(
                 greeks.delta,
@@ -571,7 +569,7 @@ impl GreeksCalculator {
                 gamma,
                 vega,
                 greeks.theta,
-                (greeks.delta / greeks_data.multiplier).abs(),
+                greeks.itm_prob,
             );
         }
 
@@ -688,10 +686,8 @@ impl GreeksCalculator {
     ///
     /// Returns an error if any underlying greeks calculation fails.
     ///
-    /// # Panics
-    ///
-    /// Panics if `greeks_filter` is `Some` but the filter function panics when called.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::missing_panics_doc)] // Guarded by is_none check
     pub fn portfolio_greeks(
         &self,
         underlyings: Option<Vec<String>>,
@@ -733,6 +729,7 @@ impl GreeksCalculator {
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            None, // account_id
             Some(side),
         );
         let open_positions: Vec<Position> = open_positions.iter().map(|&p| p.clone()).collect();
@@ -793,38 +790,20 @@ impl GreeksCalculator {
     /// Useful for reading greeks from a backtesting data catalog and caching them for later use.
     pub fn subscribe_greeks<F>(&self, underlying: &str, handler: Option<F>)
     where
-        F: Fn(GreeksData) + 'static + Send + Sync,
+        F: Fn(&GreeksData) + 'static,
     {
         let pattern = format!("data.GreeksData.instrument_id={underlying}*").into();
 
         if let Some(custom_handler) = handler {
-            let handler = msgbus::handler::TypedMessageHandler::with_any(
-                move |greeks: &dyn std::any::Any| {
-                    if let Some(greeks_data) = greeks.downcast_ref::<GreeksData>() {
-                        custom_handler(greeks_data.clone());
-                    }
-                },
-            );
-            msgbus::subscribe(
-                pattern,
-                msgbus::handler::ShareableMessageHandler(Rc::new(handler)),
-                None,
-            );
+            let typed_handler = TypedHandler::from(custom_handler);
+            msgbus::subscribe_greeks(pattern, typed_handler, None);
         } else {
             let cache_ref = self.cache.clone();
-            let default_handler = msgbus::handler::TypedMessageHandler::with_any(
-                move |greeks: &dyn std::any::Any| {
-                    if let Some(greeks_data) = greeks.downcast_ref::<GreeksData>() {
-                        let mut cache = cache_ref.borrow_mut();
-                        cache.add_greeks(greeks_data.clone()).unwrap_or_default();
-                    }
-                },
-            );
-            msgbus::subscribe(
-                pattern,
-                msgbus::handler::ShareableMessageHandler(Rc::new(default_handler)),
-                None,
-            );
+            let typed_handler = TypedHandler::from(move |greeks: &GreeksData| {
+                let mut cache = cache_ref.borrow_mut();
+                cache.add_greeks(greeks.clone()).unwrap_or_default();
+            });
+            msgbus::subscribe_greeks(pattern, typed_handler, None);
         }
     }
 }

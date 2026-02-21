@@ -34,19 +34,26 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
         The Betfair account password.
     app_key : str, optional
         The Betfair application key.
-    cert_dir : str, optional
-        The local directory that contains the Betfair certificates.
+    certs_dir : str, optional
+        The local directory that contains the Betfair SSL certificates.
     instrument_config : BetfairInstrumentProviderConfig, None
         The Betfair instrument provider config.
     subscription_delay_secs : PositiveInt, default 3
         The delay (seconds) before sending the *initial* subscription message.
     keep_alive_secs : PositiveInt, default 36_000 (10 hours)
         The keep alive interval (seconds) for the HTTP client.
+    subscribe_race_data : bool, default False
+        If True, sends a ``raceSubscription`` on the stream to receive Race Change
+        Messages (RCM) with live GPS tracking data (Total Performance Data).
     stream_conflate_ms : PositiveInt, optional
         The Betfair data stream conflation setting. Default of `None` means no explicit value is
         set for the conflation interval. Betfair interprets this as using its default behaviour for
         conflation. The default typically applies conflation, so you need to ensure
         stream_conflate_ms=0 is explicitly set to guarantee no conflation.
+    stream_heartbeat_ms : PositiveInt, default 5000
+        The Betfair stream heartbeat interval (milliseconds). Betfair will send
+        heartbeat messages at this interval during quiet periods, preventing
+        silent connection drops. Valid range is 500-5000. Set to `None` to omit.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
 
@@ -60,7 +67,9 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     instrument_config: BetfairInstrumentProviderConfig | None = None
     subscription_delay_secs: PositiveInt | None = 3
     keep_alive_secs: PositiveInt = 36_000  # 10 hours
+    subscribe_race_data: bool = False
     stream_conflate_ms: PositiveInt | None = None
+    stream_heartbeat_ms: PositiveInt | None = 5000
     proxy_url: str | None = None
 
 
@@ -79,7 +88,7 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     app_key : str, optional
         The Betfair application key.
     certs_dir : str, optional
-        The local directory that contains the Betfair certificates.
+        The local directory that contains the Betfair SSL certificates.
     instrument_config : BetfairInstrumentProviderConfig, None
         The Betfair instrument provider config.
     calculate_account_state : bool, default True
@@ -90,10 +99,29 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     reconcile_market_ids_only : bool, default False
         If True, reconciliation only requests orders matching the market IDs listed
         in the `instrument_config`. If False, all orders are reconciled.
+    stream_market_ids_filter : list[str], optional
+        If provided, only process order stream updates for these market IDs.
+        Updates for other markets are silently skipped. Useful to reduce warning
+        spam when sharing a Betfair account across multiple trading nodes.
     ignore_external_orders : bool, default False
         If True, orders received over the stream that aren't found in the cache
         will be silently ignored. This is useful when multiple trading nodes
         share the same Betfair account across different markets.
+    use_market_version : bool, default False
+        If True, automatically attach the latest market version to placeOrders
+        and replaceOrders requests. When the market version has advanced beyond
+        the version sent with the order, Betfair will lapse the bet rather than
+        matching it against a changed book. This provides price protection by
+        preventing orders from being matched when the market has moved.
+    order_request_rate_per_second : PositiveInt, default 20
+        The rate limit (requests/second) for order endpoints (placeOrders,
+        replaceOrders, cancelOrders). Order endpoints use a separate rate
+        limit bucket from general API endpoints (5/sec) so order placement
+        is not throttled by account state polling or reconciliation queries.
+    stream_heartbeat_ms : PositiveInt, default 5000
+        The Betfair order stream heartbeat interval (milliseconds). Betfair will
+        send heartbeat messages at this interval during quiet periods, preventing
+        silent connection drops. Valid range is 500-5000. Set to `None` to omit.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
 
@@ -108,5 +136,9 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     calculate_account_state: bool = True
     request_account_state_secs: NonNegativeInt = 300
     reconcile_market_ids_only: bool = False
+    stream_market_ids_filter: list[str] | None = None
     ignore_external_orders: bool = False
+    use_market_version: bool = False
+    order_request_rate_per_second: PositiveInt = 20
+    stream_heartbeat_ms: PositiveInt | None = 5000
     proxy_url: str | None = None

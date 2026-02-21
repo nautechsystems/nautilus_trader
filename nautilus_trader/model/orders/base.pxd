@@ -206,6 +206,7 @@ cdef class Order:
     cdef void _canceled(self, OrderCanceled event)
     cdef void _expired(self, OrderExpired event)
     cdef void _filled(self, OrderFilled event)
+    cdef void _update_quantity(self, Quantity quantity)
     cdef double _calculate_avg_px(self, double last_qty, double last_px)
     cdef void _set_slippage(self)
 

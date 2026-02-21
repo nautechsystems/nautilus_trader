@@ -40,7 +40,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis", from_py_object)
 )]
 pub struct ProfitFactor {}
 

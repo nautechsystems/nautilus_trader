@@ -31,6 +31,7 @@ use nautilus_model::{
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
     KEY_SIZE_PRECISION, decode_price_with_sentinel, decode_quantity_with_sentinel, extract_column,
+    validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -191,15 +192,8 @@ impl DecodeFromRecordBatch for OrderBookDelta {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 7, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 8, DataType::UInt64)?;
 
-        if price_values.value_length() != PRECISION_BYTES {
-            return Err(EncodingError::ParseError(
-                "price",
-                format!(
-                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
-                    price_values.value_length()
-                ),
-            ));
-        }
+        validate_precision_bytes(price_values, "price")?;
+        validate_precision_bytes(size_values, "size")?;
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
@@ -541,7 +535,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("price") && err.to_string().contains("row 0"),
-            "Expected price error at row 0, got: {err}"
+            "Expected price error at row 0, was: {err}"
         );
     }
 
@@ -584,7 +578,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("BookAction"),
-            "Expected BookAction error, got: {err}"
+            "Expected BookAction error, was: {err}"
         );
     }
 
@@ -628,7 +622,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("instrument_id"),
-            "Expected missing instrument_id error, got: {err}"
+            "Expected missing instrument_id error, was: {err}"
         );
     }
 

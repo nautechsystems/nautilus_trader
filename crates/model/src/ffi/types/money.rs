@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{AddAssign, SubAssign};
-
 use crate::types::{Currency, Money, money::MoneyRaw};
 
 // TODO: Document panic
@@ -34,16 +32,4 @@ pub extern "C" fn money_from_raw(raw: MoneyRaw, currency: Currency) -> Money {
 #[unsafe(no_mangle)]
 pub extern "C" fn money_as_f64(money: &Money) -> f64 {
     money.as_f64()
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn money_add_assign(mut a: Money, b: Money) {
-    a.add_assign(b);
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn money_sub_assign(mut a: Money, b: Money) {
-    a.sub_assign(b);
 }

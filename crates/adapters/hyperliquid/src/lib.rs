@@ -37,6 +37,8 @@
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds as a Python extension module (used with `python`).
+//!
+//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -50,6 +52,7 @@ pub mod common;
 pub mod config;
 pub mod data;
 pub mod execution;
+pub mod factories;
 pub mod http;
 pub mod signing;
 pub mod websocket;
@@ -61,6 +64,10 @@ pub use crate::{
     config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
     data::HyperliquidDataClient,
     execution::HyperliquidExecutionClient,
+    factories::{
+        HyperliquidDataClientFactory, HyperliquidExecFactoryConfig,
+        HyperliquidExecutionClientFactory,
+    },
     http::client::HyperliquidHttpClient,
     websocket::client::HyperliquidWebSocketClient,
 };

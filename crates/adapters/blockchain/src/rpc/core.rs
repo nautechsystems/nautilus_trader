@@ -62,7 +62,7 @@ pub struct CoreBlockchainRpcClient {
 
 impl Debug for CoreBlockchainRpcClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CoreBlockchainRpcClient")
+        f.debug_struct(stringify!(CoreBlockchainRpcClient))
             .field("chain", &self.chain)
             .field("wss_rpc_url", &self.wss_rpc_url)
             .field("request_id", &self.request_id)
@@ -125,6 +125,7 @@ impl CoreBlockchainRpcClient {
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(1_000),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let client =

@@ -19,12 +19,16 @@
 //! message queues, and time event channels. It manages thread-local storage for
 //! system-wide components that need to be accessible across threads.
 
-use std::{cell::OnceCell, fmt::Debug, sync::Arc};
+use std::{
+    cell::{OnceCell, RefCell},
+    fmt::Debug,
+    sync::Arc,
+};
 
 use crate::{
     messages::{data::DataCommand, execution::TradingCommand},
-    msgbus::{self, switchboard::MessagingSwitchboard},
-    timer::TimeEventHandlerV2,
+    msgbus::{self, MessagingSwitchboard},
+    timer::TimeEventHandler,
 };
 
 /// Trait for data command sending that can be implemented for both sync and async runners.
@@ -36,16 +40,33 @@ pub trait DataCommandSender {
     fn execute(&self, command: DataCommand);
 }
 
-/// Synchronous implementation of DataCommandSender for backtest environments.
+/// Synchronous [`DataCommandSender`] for backtest environments.
+///
+/// Buffers commands in a thread-local queue for deferred execution,
+/// avoiding `RefCell` re-entrancy when sent from event handler callbacks.
 #[derive(Debug)]
 pub struct SyncDataCommandSender;
 
 impl DataCommandSender for SyncDataCommandSender {
     fn execute(&self, command: DataCommand) {
-        // TODO: Placeholder, we still need to queue and drain even for sync
-        let endpoint = MessagingSwitchboard::data_engine_execute();
-        msgbus::send_any(endpoint, &command);
+        DATA_CMD_QUEUE.with(|q| q.borrow_mut().push(command));
     }
+}
+
+/// Drain all buffered data commands, dispatching each to the data engine.
+pub fn drain_data_cmd_queue() {
+    DATA_CMD_QUEUE.with(|q| {
+        let commands: Vec<DataCommand> = q.borrow_mut().drain(..).collect();
+        let endpoint = MessagingSwitchboard::data_engine_execute();
+        for cmd in commands {
+            msgbus::send_data_command(endpoint, cmd);
+        }
+    });
+}
+
+/// Returns `true` if the data command queue is empty.
+pub fn data_cmd_queue_is_empty() -> bool {
+    DATA_CMD_QUEUE.with(|q| q.borrow().is_empty())
 }
 
 /// Gets the global data command sender.
@@ -73,16 +94,24 @@ pub fn get_data_cmd_sender() -> Arc<dyn DataCommandSender> {
 /// Panics if a sender has already been set.
 pub fn set_data_cmd_sender(sender: Arc<dyn DataCommandSender>) {
     DATA_CMD_SENDER.with(|s| {
-        if s.set(sender).is_err() {
-            panic!("Data command sender can only be set once");
-        }
+        assert!(
+            s.set(sender).is_ok(),
+            "Data command sender can only be set once"
+        );
+    });
+}
+
+/// Sets the global data command sender if not already set (idempotent).
+pub fn init_data_cmd_sender(sender: Arc<dyn DataCommandSender>) {
+    DATA_CMD_SENDER.with(|s| {
+        let _ = s.set(sender); // Ignore if already set
     });
 }
 
 /// Trait for time event sending that can be implemented for both sync and async runners.
 pub trait TimeEventSender: Debug + Send + Sync {
     /// Sends a time event handler.
-    fn send(&self, handler: TimeEventHandlerV2);
+    fn send(&self, handler: TimeEventHandler);
 }
 
 /// Gets the global time event sender.
@@ -117,9 +146,10 @@ pub fn try_get_time_event_sender() -> Option<Arc<dyn TimeEventSender>> {
 /// Panics if a sender has already been set.
 pub fn set_time_event_sender(sender: Arc<dyn TimeEventSender>) {
     TIME_EVENT_SENDER.with(|s| {
-        if s.set(sender).is_err() {
-            panic!("Time event sender can only be set once");
-        }
+        assert!(
+            s.set(sender).is_ok(),
+            "Time event sender can only be set once"
+        );
     });
 }
 
@@ -130,6 +160,35 @@ pub trait TradingCommandSender {
     /// - **Sync runners** send the command to a queue for synchronous execution.
     /// - **Async runners** send the command to a channel for asynchronous execution.
     fn execute(&self, command: TradingCommand);
+}
+
+/// Synchronous [`TradingCommandSender`] for backtest environments.
+///
+/// Buffers commands in a thread-local queue for deferred execution,
+/// avoiding `RefCell` re-entrancy when sent from event handler callbacks.
+#[derive(Debug)]
+pub struct SyncTradingCommandSender;
+
+impl TradingCommandSender for SyncTradingCommandSender {
+    fn execute(&self, command: TradingCommand) {
+        TRADING_CMD_QUEUE.with(|q| q.borrow_mut().push(command));
+    }
+}
+
+/// Drain all buffered trading commands, dispatching each to the exec engine.
+pub fn drain_trading_cmd_queue() {
+    TRADING_CMD_QUEUE.with(|q| {
+        let commands: Vec<TradingCommand> = q.borrow_mut().drain(..).collect();
+        let endpoint = MessagingSwitchboard::exec_engine_execute();
+        for cmd in commands {
+            msgbus::send_trading_command(endpoint, cmd);
+        }
+    });
+}
+
+/// Returns `true` if the trading command queue is empty.
+pub fn trading_cmd_queue_is_empty() -> bool {
+    TRADING_CMD_QUEUE.with(|q| q.borrow().is_empty())
 }
 
 /// Gets the global trading command sender.
@@ -147,6 +206,14 @@ pub fn get_trading_cmd_sender() -> Arc<dyn TradingCommandSender> {
     })
 }
 
+/// Attempts to get the global trading command sender without panicking.
+///
+/// Returns `None` if the sender is not initialized (e.g., in test environments).
+#[must_use]
+pub fn try_get_trading_cmd_sender() -> Option<Arc<dyn TradingCommandSender>> {
+    EXEC_CMD_SENDER.with(|sender| sender.get().cloned())
+}
+
 /// Sets the global trading command sender.
 ///
 /// This should be called by the runner when it initializes.
@@ -157,9 +224,17 @@ pub fn get_trading_cmd_sender() -> Arc<dyn TradingCommandSender> {
 /// Panics if a sender has already been set.
 pub fn set_exec_cmd_sender(sender: Arc<dyn TradingCommandSender>) {
     EXEC_CMD_SENDER.with(|s| {
-        if s.set(sender).is_err() {
-            panic!("Trading command sender can only be set once");
-        }
+        assert!(
+            s.set(sender).is_ok(),
+            "Trading command sender can only be set once"
+        );
+    });
+}
+
+/// Sets the global trading command sender if not already set (idempotent).
+pub fn init_exec_cmd_sender(sender: Arc<dyn TradingCommandSender>) {
+    EXEC_CMD_SENDER.with(|s| {
+        let _ = s.set(sender); // Ignore if already set
     });
 }
 
@@ -167,4 +242,6 @@ thread_local! {
     static TIME_EVENT_SENDER: OnceCell<Arc<dyn TimeEventSender>> = const { OnceCell::new() };
     static DATA_CMD_SENDER: OnceCell<Arc<dyn DataCommandSender>> = const { OnceCell::new() };
     static EXEC_CMD_SENDER: OnceCell<Arc<dyn TradingCommandSender>> = const { OnceCell::new() };
+    static DATA_CMD_QUEUE: RefCell<Vec<DataCommand>> = const { RefCell::new(Vec::new()) };
+    static TRADING_CMD_QUEUE: RefCell<Vec<TradingCommand>> = const { RefCell::new(Vec::new()) };
 }

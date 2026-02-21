@@ -52,6 +52,13 @@ which explains why the APIs remain distinct rather than unified.
 - **`KrakenSpotHttpClient`** / **`KrakenSpotWebSocketClient`**: For spot trading pairs (e.g., `BTC/USD`, `ETH/EUR`).
 - **`KrakenFuturesHttpClient`** / **`KrakenFuturesWebSocketClient`**: For perpetual and fixed-maturity futures (e.g., `PF_XBTUSD`, `PI_ETHUSD`).
 
+### Bitcoin symbol format
+
+| Market  | Format | Example      | Notes                                            |
+|---------|--------|--------------|--------------------------------------------------|
+| Spot    | `BTC`  | `BTC/USD`    | XBT normalized to BTC (base or quote position).  |
+| Futures | `XBT`  | `PI_XBTUSD`  | Uses Kraken's native XBT format.                 |
+
 ## Examples
 
 See the `bin/` directory for example usage:
@@ -68,6 +75,8 @@ This crate provides feature flags to control source code inclusion during compil
 
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module (used with `python`).
+
+[High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
 
 ## Documentation
 

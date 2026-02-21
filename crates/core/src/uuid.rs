@@ -23,7 +23,7 @@ use std::{
     str::FromStr,
 };
 
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
@@ -36,7 +36,7 @@ pub(crate) const UUID4_LEN: usize = 37;
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core", from_py_object)
 )]
 pub struct UUID4 {
     /// The UUID v4 value as a fixed-length C string byte array (includes null terminator).
@@ -162,26 +162,14 @@ impl FromStr for UUID4 {
 }
 
 impl From<&str> for UUID4 {
-    /// Creates a [`UUID4`] from a string slice.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `value` string is not a valid UUID version 4 RFC 4122.
     fn from(value: &str) -> Self {
-        value
-            .parse()
-            .expect("`value` should be a valid UUID version 4 (RFC 4122)")
+        Self::from_str(value).expect("Invalid UUID4 string")
     }
 }
 
 impl From<String> for UUID4 {
-    /// Creates a [`UUID4`] from a string.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `value` string is not a valid UUID version 4 RFC 4122.
     fn from(value: String) -> Self {
-        Self::from(value.as_str())
+        Self::from_str(&value).expect("Invalid UUID4 string")
     }
 }
 

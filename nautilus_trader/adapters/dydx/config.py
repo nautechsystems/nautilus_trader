@@ -13,17 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Define the dYdX configuration classes.
+Configuration classes for dYdX v4 adapter.
+
+These classes provide Python-side configuration for the Rust-backed dYdX v4 clients.
+
 """
 
+from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.config import PositiveInt
 
 
-class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
+class DydxDataClientConfig(LiveDataClientConfig, frozen=True):
     """
-    Configuration for ``DYDXDataClient`` instances.
+    Configuration for ``DydxDataClient`` instances.
 
     Parameters
     ----------
@@ -31,33 +34,39 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
         The dYdX wallet address.
         If ``None`` then will source `DYDX_WALLET_ADDRESS` or
         `DYDX_TESTNET_WALLET_ADDRESS` environment variables.
-    testnet : bool, default False
+    is_testnet : bool, default False
         If the client is connecting to the dYdX testnet API.
-    update_instruments_interval_mins : PositiveInt or None, default 60
-        The interval (minutes) between reloading instruments from the venue.
+    base_url_http : str, optional
+        The base URL for HTTP API endpoints.
+        If ``None`` then will use the default URL for the selected network.
+    base_url_ws : str, optional
+        The base URL for WebSocket connections.
+        If ``None`` then will use the default URL for the selected network.
+    bars_timestamp_on_close : bool, default True
+        If bar `ts_event` timestamps should be the bar close time.
+        If False, the venue-native open time will be used.
     max_retries : PositiveInt, optional
-        The maximum number of retries for HTTP retries or websocket reconnects.
+        The maximum number of retries for HTTP requests or websocket reconnects.
     retry_delay_initial_ms : PositiveInt, optional
-        The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
+        The initial delay (milliseconds) between retries.
     retry_delay_max_ms : PositiveInt, optional
         The maximum delay (milliseconds) between retries.
-    proxy_url : str, optional
-        The proxy URL for HTTP requests.
 
     """
 
     wallet_address: str | None = None
     is_testnet: bool = False
-    update_instruments_interval_mins: PositiveInt | None = 60
-    max_retries: PositiveInt | None = None
-    retry_delay_initial_ms: PositiveInt | None = None
-    retry_delay_max_ms: PositiveInt | None = None
-    proxy_url: str | None = None
+    bars_timestamp_on_close: bool = True
+    base_url_http: str | None = None
+    base_url_ws: str | None = None
+    max_retries: PositiveInt | None = 3
+    retry_delay_initial_ms: PositiveInt | None = 1_000
+    retry_delay_max_ms: PositiveInt | None = 10_000
 
 
-class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
+class DydxExecClientConfig(LiveExecClientConfig, frozen=True):
     """
-    Configuration for ``DYDXExecutionClient`` instances.
+    Configuration for ``DydxExecutionClient`` instances.
 
     Parameters
     ----------
@@ -65,44 +74,51 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
         The dYdX wallet address.
         If ``None`` then will source `DYDX_WALLET_ADDRESS` or
         `DYDX_TESTNET_WALLET_ADDRESS` environment variables.
-    subaccount : int, optional
+    subaccount : int, default 0
         The subaccount number.
         The venue creates subaccount 0 by default.
-    mnemonic : str, optional
-        The mnemonic string which is used to generate the private key.
-        The private key is used to sign transactions like submitting orders.
-        If ``None`` then will source `DYDX_MNEMONIC` or
-        `DYDX_TESTNET_MNEMONIC` environment variables.
-    base_url_http : str, optional
-        The HTTP client custom endpoint override.
-    base_url_ws : str, optional
-        The WebSocket client custom endpoint override.
+    private_key : str, optional
+        The hex-encoded private key used to sign transactions like submitting orders.
+        If ``None`` then will source `DYDX_PRIVATE_KEY` or
+        `DYDX_TESTNET_PRIVATE_KEY` environment variables.
+    authenticator_ids : list[int], optional
+        List of authenticator IDs for permissioned key trading.
+        When provided, transactions will include a TxExtension to enable trading
+        via sub-accounts using delegated signing keys. This is an advanced feature
+        for institutional setups with separated hot/cold wallet architectures.
     is_testnet : bool, default False
         If the client is connecting to the dYdX testnet API.
+    base_url_http : str, optional
+        The HTTP client custom endpoint override.
+        If ``None`` then will use the default URL for the selected network.
+    base_url_ws : str, optional
+        The WebSocket client custom endpoint override.
+        If ``None`` then will use the default URL for the selected network.
+    base_url_grpc : str, optional
+        The gRPC client custom endpoint override.
+        If ``None`` then will use the default URL for the selected network.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
-        The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
+        The initial delay (milliseconds) between retries.
     retry_delay_max_ms : PositiveInt, optional
         The maximum delay (milliseconds) between retries.
-    proxy_url : str, optional
-        The proxy URL for HTTP requests.
-    track_cancel_timeout_secs : float, default 60
-        The maximum time (seconds) to track an order after sending a cancel request.
-    track_cancel_interval_secs : float, default 0.1
-        The interval (seconds) between checking the order status after sending a cancel request.
+    grpc_rate_limit_per_second : PositiveInt, optional
+        The maximum number of gRPC requests per second.
+        Default ``4`` is safe for all known providers (Polkachu 5/s, KingNodes ~4.2/s, AutoStake 4/s).
+        Set to ``None`` to disable rate limiting.
 
     """
 
     wallet_address: str | None = None
     subaccount: int = 0
-    mnemonic: str | None = None
+    private_key: str | None = None
+    authenticator_ids: list[int] | None = None
+    is_testnet: bool = False
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    is_testnet: bool = False
-    max_retries: PositiveInt | None = None
-    retry_delay_initial_ms: PositiveInt | None = None
-    retry_delay_max_ms: PositiveInt | None = None
-    proxy_url: str | None = None
-    track_cancel_timeout_secs: float = 60
-    track_cancel_interval_secs: float = 0.1
+    base_url_grpc: str | None = None
+    max_retries: PositiveInt | None = 3
+    retry_delay_initial_ms: PositiveInt | None = 1_000
+    retry_delay_max_ms: PositiveInt | None = 10_000
+    grpc_rate_limit_per_second: PositiveInt | None = 4

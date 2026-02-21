@@ -89,6 +89,7 @@ pub fn parse_spot_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         definition.time.into(),
         ts_init,
     );
@@ -153,6 +154,7 @@ pub fn parse_perp_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         definition.time.into(),
         ts_init,
     );
@@ -173,7 +175,7 @@ pub fn parse_instrument_any(
             parse_perp_instrument(instrument, None, None, None, None, ts_init).map(Some)
         }
         CoinbaseIntxInstrumentType::Index => {
-            tracing::warn!(
+            log::warn!(
                 "Index instrument parsing not implemented {}",
                 instrument.product_id,
             );
@@ -184,7 +186,7 @@ pub fn parse_instrument_any(
     match result {
         Ok(instrument) => instrument,
         Err(e) => {
-            tracing::warn!("Failed to parse instrument {}: {e}", instrument.product_id,);
+            log::warn!("Failed to parse instrument {}: {e}", instrument.product_id,);
             None
         }
     }

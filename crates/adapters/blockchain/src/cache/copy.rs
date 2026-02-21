@@ -222,12 +222,12 @@ impl<'a> PostgresCopyHandler<'a> {
         // Finish the COPY operation
         copy_in.finish().await.map_err(|e| {
             // Log detailed information about the failed batch
-            tracing::error!("COPY operation failed for pool_swap batch:");
-            tracing::error!("  Chain ID: {}", chain_id);
-            tracing::error!("  Batch size: {}", swaps.len());
+            log::error!("COPY operation failed for pool_swap batch:");
+            log::error!("  Chain ID: {chain_id}");
+            log::error!("  Batch size: {}", swaps.len());
 
             if !swaps.is_empty() {
-                tracing::error!(
+                log::error!(
                     "  Block range: {} to {}",
                     swaps.iter().map(|s| s.block).min().unwrap_or(0),
                     swaps.iter().map(|s| s.block).max().unwrap_or(0)
@@ -236,18 +236,18 @@ impl<'a> PostgresCopyHandler<'a> {
 
             // Log first few swaps with key details
             for (i, swap) in swaps.iter().take(5).enumerate() {
-                tracing::error!(
+                log::error!(
                     "  Swap[{}]: tx={} log_idx={} block={} pool={}",
                     i,
                     swap.transaction_hash,
                     swap.log_index,
                     swap.block,
-                    swap.instrument_id.to_string()
+                    swap.instrument_id
                 );
             }
 
             if swaps.len() > 5 {
-                tracing::error!("  ... and {} more swaps", swaps.len() - 5);
+                log::error!("  ... and {} more swaps", swaps.len() - 5);
             }
 
             anyhow::anyhow!("Failed to finish COPY operation: {e}")
@@ -298,12 +298,12 @@ impl<'a> PostgresCopyHandler<'a> {
         // Finish the COPY operation
         copy_in.finish().await.map_err(|e| {
             // Log detailed information about the failed batch
-            tracing::error!("COPY operation failed for pool_liquidity batch:");
-            tracing::error!("  Chain ID: {}", chain_id);
-            tracing::error!("  Batch size: {}", updates.len());
+            log::error!("COPY operation failed for pool_liquidity batch:");
+            log::error!("  Chain ID: {chain_id}");
+            log::error!("  Batch size: {}", updates.len());
 
             if !updates.is_empty() {
-                tracing::error!(
+                log::error!(
                     "  Block range: {} to {}",
                     updates.iter().map(|u| u.block).min().unwrap_or(0),
                     updates.iter().map(|u| u.block).max().unwrap_or(0)
@@ -312,7 +312,7 @@ impl<'a> PostgresCopyHandler<'a> {
 
             // Log first few liquidity updates with key details
             for (i, update) in updates.iter().take(5).enumerate() {
-                tracing::error!(
+                log::error!(
                     "  Update[{}]: tx={} log_idx={} block={} pool={} type={}",
                     i,
                     update.transaction_hash,
@@ -324,7 +324,7 @@ impl<'a> PostgresCopyHandler<'a> {
             }
 
             if updates.len() > 5 {
-                tracing::error!("  ... and {} more updates", updates.len() - 5);
+                log::error!("  ... and {} more updates", updates.len() - 5);
             }
 
             anyhow::anyhow!("Failed to finish COPY operation: {e}")
@@ -709,12 +709,12 @@ impl<'a> PostgresCopyHandler<'a> {
         // Finish the COPY operation
         copy_in.finish().await.map_err(|e| {
             // Log detailed information about the failed batch
-            tracing::error!("COPY operation failed for temp_pool_collect batch:");
-            tracing::error!("  Chain ID: {}", chain_id);
-            tracing::error!("  Batch size: {}", collects.len());
+            log::error!("COPY operation failed for temp_pool_collect batch:");
+            log::error!("  Chain ID: {chain_id}");
+            log::error!("  Batch size: {}", collects.len());
 
             if !collects.is_empty() {
-                tracing::error!(
+                log::error!(
                     "  Block range: {} to {}",
                     collects.iter().map(|c| c.block).min().unwrap_or(0),
                     collects.iter().map(|c| c.block).max().unwrap_or(0)
@@ -723,7 +723,7 @@ impl<'a> PostgresCopyHandler<'a> {
 
             // Log first few collects with key details
             for (i, collect) in collects.iter().take(5).enumerate() {
-                tracing::error!(
+                log::error!(
                     "  Collect[{}]: tx={} log_idx={} block={} pool={} owner={}",
                     i,
                     collect.transaction_hash,
@@ -735,7 +735,7 @@ impl<'a> PostgresCopyHandler<'a> {
             }
 
             if collects.len() > 5 {
-                tracing::error!("  ... and {} more collects", collects.len() - 5);
+                log::error!("  ... and {} more collects", collects.len() - 5);
             }
 
             anyhow::anyhow!("Failed to finish COPY operation: {e}")

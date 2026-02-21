@@ -206,7 +206,7 @@ impl Erc20Contract {
             Ok(results) => results,
             Err(e) => {
                 // Multicall failed (likely expired/broken contract causing RPC failure)
-                tracing::warn!(
+                log::warn!(
                     "Batch multicall failed: {}. Falling back to individual fetches for {} tokens",
                     e,
                     token_addresses.len()
@@ -220,10 +220,8 @@ impl Erc20Contract {
                             token_infos.insert(*token_address, Ok(info));
                         }
                         Err(e) => {
-                            tracing::debug!(
-                                "Token {} failed individual fetch (likely expired/broken): {}",
-                                token_address,
-                                e
+                            log::debug!(
+                                "Token {token_address} failed individual fetch (likely expired/broken): {e}"
                             );
                             token_infos.insert(*token_address, Err(e));
                         }
@@ -240,7 +238,7 @@ impl Erc20Contract {
 
             // Check if we have all 3 results for this token.
             if base_idx + 2 >= results.len() {
-                tracing::error!("Incomplete results from multicall for token {token_address}");
+                log::error!("Incomplete results from multicall for token {token_address}");
                 token_infos.insert(
                     *token_address,
                     Err(TokenInfoError::UnexpectedResultCount {

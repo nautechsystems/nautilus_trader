@@ -145,7 +145,7 @@ impl GreeksActor {
     /// Subscribes to greeks data for a specific underlying.
     pub fn subscribe_to_greeks(&self, underlying: &str) {
         self.greeks_calculator
-            .subscribe_greeks::<fn(GreeksData)>(underlying, None);
+            .subscribe_greeks::<fn(&GreeksData)>(underlying, None);
     }
 }
 

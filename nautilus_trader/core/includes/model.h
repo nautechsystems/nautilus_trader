@@ -604,6 +604,20 @@ typedef enum OptionKind {
 } OptionKind;
 
 /**
+ * Defines when OTO (One-Triggers-Other) child orders are released.
+ */
+typedef enum OtoTriggerMode {
+    /**
+     * Release child order(s) pro-rata to each partial fill (default).
+     */
+    PARTIAL = 0,
+    /**
+     * Release child order(s) only once the parent is fully filled.
+     */
+    FULL = 1,
+} OtoTriggerMode;
+
+/**
  * The status for a specific order.
  *
  * An order is considered _open_ for the following status:
@@ -2515,6 +2529,21 @@ const char *option_kind_to_cstr(enum OptionKind value);
  */
 enum OptionKind option_kind_from_cstr(const char *ptr);
 
+const char *oto_trigger_mode_to_cstr(enum OtoTriggerMode value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ *
+ * Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `OtoTriggerMode` variant.
+ */
+enum OtoTriggerMode oto_trigger_mode_from_cstr(const char *ptr);
+
 const char *order_side_to_cstr(enum OrderSide value);
 
 /**
@@ -3065,6 +3094,27 @@ void orderbook_apply_delta(struct OrderBook_API *book, const struct OrderBookDel
 
 void orderbook_apply_deltas(struct OrderBook_API *book, const struct OrderBookDeltas_API *deltas);
 
+/**
+ * Creates an `OrderBookDeltas` snapshot from the current order book state.
+ *
+ * This is the reverse operation of `orderbook_apply_deltas`: it converts the current book state
+ * back into a snapshot format with a `Clear` delta followed by `Add` deltas for all orders.
+ *
+ * # Parameters
+ *
+ * * `book` - The order book to convert.
+ * * `sequence` - The message sequence number for the snapshot.
+ * * `ts_event` - UNIX timestamp (nanoseconds) when the book event occurred.
+ * * `ts_init` - UNIX timestamp (nanoseconds) when the instance was created.
+ *
+ * # Returns
+ *
+ * An `OrderBookDeltas_API` containing a snapshot of the current order book state.
+ */
+struct OrderBookDeltas_API orderbook_to_snapshot_deltas(const struct OrderBook_API *book,
+                                                        uint64_t ts_event,
+                                                        uint64_t ts_init);
+
 void orderbook_apply_depth(struct OrderBook_API *book, const struct OrderBookDepth10_t *depth);
 
 CVec orderbook_bids(struct OrderBook_API *book);
@@ -3125,6 +3175,11 @@ double orderbook_get_quantity_for_price(struct OrderBook_API *book,
                                         struct Price_t price,
                                         enum OrderSide order_side);
 
+struct Quantity_t orderbook_get_quantity_at_level(const struct OrderBook_API *book,
+                                                  struct Price_t price,
+                                                  enum OrderSide order_side,
+                                                  uint8_t size_precision);
+
 /**
  * Updates the order book with a quote tick.
  *
@@ -3172,6 +3227,8 @@ struct Price_t level_price(const struct BookLevel_API *level);
 CVec level_orders(const struct BookLevel_API *level);
 
 double level_size(const struct BookLevel_API *level);
+
+QuantityRaw level_size_raw(const struct BookLevel_API *level);
 
 double level_exposure(const struct BookLevel_API *level);
 
@@ -3257,32 +3314,16 @@ struct Money_t money_from_raw(MoneyRaw raw, struct Currency_t currency);
 
 double money_as_f64(const struct Money_t *money);
 
-void money_add_assign(struct Money_t a, struct Money_t b);
-
-void money_sub_assign(struct Money_t a, struct Money_t b);
-
 struct Price_t price_new(double value, uint8_t precision);
 
 struct Price_t price_from_raw(PriceRaw raw, uint8_t precision);
 
 double price_as_f64(const struct Price_t *price);
 
-void price_add_assign(struct Price_t a, struct Price_t b);
-
-void price_sub_assign(struct Price_t a, struct Price_t b);
-
 struct Quantity_t quantity_new(double value, uint8_t precision);
 
 struct Quantity_t quantity_from_raw(QuantityRaw raw, uint8_t precision);
 
 double quantity_as_f64(const struct Quantity_t *qty);
-
-void quantity_add_assign(struct Quantity_t a, struct Quantity_t b);
-
-void quantity_add_assign_u64(struct Quantity_t a, uint64_t b);
-
-void quantity_sub_assign(struct Quantity_t a, struct Quantity_t b);
-
-void quantity_sub_assign_u64(struct Quantity_t a, uint64_t b);
 
 struct Quantity_t quantity_saturating_sub(struct Quantity_t a, struct Quantity_t b);

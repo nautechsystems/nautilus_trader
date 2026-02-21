@@ -82,7 +82,7 @@ To facilitate this, nearly all configuration and domain objects can be serialize
 
 ## Common core
 
-The common system core is utilized by all node [environment contexts](/concepts/architecture.md#environment-contexts) (`backtest`, `sandbox`, and `live`).
+The common system core is utilized by all node [environment contexts](architecture.md#environment-contexts) (`backtest`, `sandbox`, and `live`).
 User-defined `Actor`, `Strategy` and `ExecAlgorithm` components are managed consistently across these environment contexts.
 
 ## Backtesting

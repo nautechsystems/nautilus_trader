@@ -61,7 +61,13 @@ pub trait Account: 'static + Send {
     fn currencies(&self) -> Vec<Currency>;
     fn starting_balances(&self) -> AHashMap<Currency, Money>;
     fn balances(&self) -> AHashMap<Currency, AccountBalance>;
-    fn apply(&mut self, event: AccountState);
+    /// Applies an account state event to update the account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the account state cannot be applied (e.g., negative balance
+    /// when borrowing is not allowed for a cash account).
+    fn apply(&mut self, event: AccountState) -> anyhow::Result<()>;
     fn purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64);
 
     /// Calculates locked balance for the order parameters.
@@ -71,7 +77,7 @@ pub trait Account: 'static + Send {
     /// Returns an error if calculating locked balance fails.
     fn calculate_balance_locked(
         &mut self,
-        instrument: InstrumentAny,
+        instrument: &InstrumentAny,
         side: OrderSide,
         quantity: Quantity,
         price: Price,
@@ -85,8 +91,8 @@ pub trait Account: 'static + Send {
     /// Returns an error if calculating PnLs fails.
     fn calculate_pnls(
         &self,
-        instrument: InstrumentAny,
-        fill: OrderFilled,
+        instrument: &InstrumentAny,
+        fill: &OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>>;
 
@@ -97,7 +103,7 @@ pub trait Account: 'static + Send {
     /// Returns an error if calculating commission fails.
     fn calculate_commission(
         &self,
-        instrument: InstrumentAny,
+        instrument: &InstrumentAny,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,

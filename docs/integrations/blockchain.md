@@ -76,10 +76,17 @@ Inherits from `BaseContract` to leverage Multicall3 for efficient batch operatio
 | `http_rpc_url`                  | Required | HTTPS RPC endpoint used for EVM calls and Multicall requests. |
 | `wss_rpc_url`                   | `None`  | Optional WSS endpoint for streaming live updates. |
 | `rpc_requests_per_second`       | `None`  | Optional throttle for outbound RPC calls (requests per second). |
-| `multicall_calls_per_rpc_request` | `100` | Maximum number of Multicall targets batched per RPC request. |
+| `multicall_calls_per_rpc_request` | `200` | Maximum number of Multicall targets batched per RPC request. |
 | `use_hypersync_for_live_data`   | `True`  | When `True`, bootstrap and stream using Hypersync for lower-latency diffs. |
 | `from_block`                    | `None`  | Optional starting block height for historical backfill. |
 | `pool_filters`                  | `DexPoolFilters()` | Filtering rules applied when selecting DEX pools to monitor. |
 | `postgres_cache_database_config`| `None`  | Optional `PostgresConnectOptions` enabling on-disk caching of decoded pool state. |
-| `http_proxy_url`                | `None`  | Optional HTTP proxy URL for RPC requests. |
-| `ws_proxy_url`                  | `None`  | Optional WebSocket proxy URL for RPC connections. |
+| `http_proxy_url`                | `None`  | Reserved for future use; not yet configurable via the constructor. |
+| `ws_proxy_url`                  | `None`  | Reserved for future use; not yet configurable via the constructor. |
+
+## Contributing
+
+:::info
+For additional features or to contribute to the Blockchain adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

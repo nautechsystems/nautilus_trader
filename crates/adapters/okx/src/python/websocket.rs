@@ -45,7 +45,7 @@ use std::str::FromStr;
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{call_python, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     enums::{OrderSide, OrderType, PositionSide, TimeInForce},
@@ -56,7 +56,8 @@ use nautilus_model::{
     },
     types::{Price, Quantity},
 };
-use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
+use pyo3::{IntoPyObjectExt, prelude::*};
+use ustr::Ustr;
 
 use crate::{
     common::enums::{OKXInstrumentType, OKXTradeMode, OKXVipLevel},
@@ -316,7 +317,7 @@ impl OKXWebSocketClient {
                             call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::Raw(msg) => {
-                            tracing::debug!("Received raw message, skipping: {msg}");
+                            log::debug!("Received raw message, skipping: {msg}");
                         }
                     }
                 }
@@ -338,7 +339,7 @@ impl OKXWebSocketClient {
             client
                 .wait_until_active(timeout_secs)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(to_pyruntime_err)?;
             Ok(())
         })
     }
@@ -1051,9 +1052,7 @@ impl OKXWebSocketClient {
                 Option<Price>,
                 Option<bool>,
                 Option<bool>,
-            ) = obj
-                .extract(py)
-                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
+            ) = obj.extract(py).map_err(to_pyruntime_err)?;
 
             domain_orders.push((
                 instrument_type,
@@ -1095,9 +1094,7 @@ impl OKXWebSocketClient {
                 InstrumentId,
                 Option<ClientOrderId>,
                 Option<VenueOrderId>,
-            ) = obj
-                .extract(py)
-                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
+            ) = obj.extract(py).map_err(to_pyruntime_err)?;
             batched_cancels.push((instrument_id, client_order_id, order_id));
         }
 
@@ -1134,9 +1131,7 @@ impl OKXWebSocketClient {
                 ClientOrderId,
                 Option<Price>,
                 Option<Quantity>,
-            ) = obj
-                .extract(py)
-                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
+            ) = obj.extract(py).map_err(to_pyruntime_err)?;
             let inst_type =
                 OKXInstrumentType::from_str(&instrument_type).map_err(to_pyvalue_err)?;
             domain_orders.push((
@@ -1190,11 +1185,13 @@ impl OKXWebSocketClient {
         self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
-}
 
-pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (py_obj,)) {
-        tracing::error!("Error calling Python: {e}");
+    #[pyo3(name = "cache_inst_id_codes")]
+    fn py_cache_inst_id_codes(&self, mappings: Vec<(String, u64)>) {
+        let ustr_mappings = mappings
+            .into_iter()
+            .map(|(inst_id, code)| (Ustr::from(&inst_id), code));
+        self.cache_inst_id_codes(ustr_mappings);
     }
 }
 
@@ -1204,6 +1201,6 @@ where
 {
     Python::attach(|py| match data_converter(py) {
         Ok(py_obj) => call_python(py, callback, py_obj),
-        Err(e) => tracing::error!("Failed to convert data to Python object: {e}"),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     });
 }

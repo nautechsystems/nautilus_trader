@@ -26,6 +26,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
+from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
@@ -33,9 +34,26 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
+
+def make_composite_trade_id(trade_id: str, venue_order_id: VenueOrderId) -> TradeId:
+    """
+    Create a composite trade_id to ensure uniqueness across multi-order fills.
+
+    When multiple orders are filled by a single market order, Polymarket sends one
+    TRADE message with a single `id` for all fills. This function creates a unique
+    trade_id for each fill by combining the original trade ID with part of the
+    venue order ID.
+
+    Format: {trade_id[:27]}-{venue_order_id[-8:]} = 36 chars (TradeId max length)
+
+    """
+    return TradeId(f"{trade_id[:27]}-{str(venue_order_id)[-8:]}")
 
 
 def validate_ethereum_address(address: str) -> None:
@@ -153,8 +171,8 @@ def parse_polymarket_instrument(
         # end_date_iso can be missing in some conditions that are part of an event that has it
         expiration_ns = (pd.Timestamp.now(tz="UTC") + pd.DateOffset(years=10)).value
 
-    maker_fee = Decimal(str(market_info["maker_base_fee"]))
-    taker_fee = Decimal(str(market_info["taker_base_fee"]))
+    maker_fee = basis_points_as_decimal(Decimal(str(market_info["maker_base_fee"])))
+    taker_fee = basis_points_as_decimal(Decimal(str(market_info["taker_base_fee"])))
 
     ts_init = ts_init if ts_init is not None else time.time_ns()
 
@@ -209,3 +227,50 @@ def update_instrument(
         ts_init=ts_init,
         info=instrument.info,
     )
+
+
+def basis_points_as_decimal(basis_points: Decimal) -> Decimal:
+    """
+    Convert basis points to a decimal fraction.
+
+    Parameters
+    ----------
+    basis_points : Decimal
+        The fee rate in basis points (1 bp = 0.01%).
+
+    Returns
+    -------
+    Decimal
+        The decimal fraction (e.g., 100 bp -> 0.01).
+
+    """
+    return basis_points / Decimal(10_000)
+
+
+def calculate_commission(
+    quantity: Decimal,
+    price: Decimal,
+    fee_rate_bps: Decimal,
+) -> float:
+    """
+    Calculate commission from trade parameters and fee rate.
+
+    Polymarket rounds fees to 4 decimal places (0.0001 USDC minimum).
+
+    Parameters
+    ----------
+    quantity : Decimal
+        The fill quantity.
+    price : Decimal
+        The fill price.
+    fee_rate_bps : Decimal
+        The fee rate in basis points.
+
+    Returns
+    -------
+    float
+        The commission amount rounded to 4 decimal places.
+
+    """
+    commission = float(quantity * price) * basis_points_as_percentage(fee_rate_bps)
+    return round(commission, 4)

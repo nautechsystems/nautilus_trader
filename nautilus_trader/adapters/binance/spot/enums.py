@@ -99,6 +99,7 @@ class BinanceSpotEventType(Enum):
     balanceUpdate = "balanceUpdate"
     executionReport = "executionReport"
     listStatus = "listStatus"
+    listenKeyExpired = "listenKeyExpired"
 
 
 class BinanceSpotEnumParser(BinanceEnumParser):

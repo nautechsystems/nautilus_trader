@@ -18,8 +18,9 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::{
-    IntoPyObjectNautilusExt, serialization::from_dict_pyo3, to_pyvalue_err,
+use nautilus_core::{
+    from_pydict,
+    python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3, to_pyvalue_err},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
@@ -34,7 +35,7 @@ use crate::{
 impl CryptoFuture {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment,ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment,ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, info=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -62,7 +63,15 @@ impl CryptoFuture {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        info: Option<Py<PyDict>>,
     ) -> PyResult<Self> {
+        // Convert Python dict to Params
+        let info_map = if let Some(info_dict) = info {
+            Python::attach(|py| from_pydict(py, info_dict))?
+        } else {
+            None
+        };
+
         Self::new_checked(
             instrument_id,
             raw_symbol,
@@ -88,6 +97,7 @@ impl CryptoFuture {
             margin_maint,
             maker_fee,
             taker_fee,
+            info_map,
             ts_event.into(),
             ts_init.into(),
         )
@@ -259,8 +269,21 @@ impl CryptoFuture {
 
     #[getter]
     #[pyo3(name = "info")]
-    fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        Ok(PyDict::new(py).into())
+    fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        // Convert HashMap<String, serde_json::Value> back to Python dict
+        if let Some(ref info_map) = self.info {
+            let py_dict = PyDict::new(py);
+            for (key, value) in info_map {
+                // Convert serde_json::Value back to Python object via JSON
+                let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
+                let py_value =
+                    PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
+                py_dict.set_item(key, py_value)?;
+            }
+            Ok(py_dict.unbind())
+        } else {
+            Ok(PyDict::new(py).unbind())
+        }
     }
 
     #[getter]
@@ -304,7 +327,19 @@ impl CryptoFuture {
         dict.set_item("margin_maint", self.margin_maint.to_string())?;
         dict.set_item("multiplier", self.multiplier.to_string())?;
         dict.set_item("lot_size", self.lot_size.to_string())?;
-        dict.set_item("info", PyDict::new(py))?;
+        // Serialize info dict
+        if let Some(ref info_map) = self.info {
+            let info_dict = PyDict::new(py);
+            for (key, value) in info_map {
+                let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
+                let py_value =
+                    PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
+                info_dict.set_item(key, py_value)?;
+            }
+            dict.set_item("info", info_dict)?;
+        } else {
+            dict.set_item("info", PyDict::new(py))?;
+        }
         dict.set_item("maker_fee", self.maker_fee.to_string())?;
         dict.set_item("taker_fee", self.taker_fee.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;

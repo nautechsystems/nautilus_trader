@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.orders.base cimport Order
 
@@ -86,3 +87,36 @@ cdef class OrderList:
             f"strategy_id={self.strategy_id}, "
             f"orders={self.orders})"
         )
+
+    cpdef bint is_bracket(self):
+        """
+        Return whether this order list represents a bracket order.
+
+        A bracket order has exactly 3 orders: an entry order (OTO contingency)
+        with exactly 2 child orders (OUO contingency, not OCO) that are
+        reduce-only TP/SL orders.
+
+        Returns
+        -------
+        bool
+
+        """
+        if len(self.orders) != 3:
+            return False
+
+        cdef Order entry = self.first
+        if entry.contingency_type != ContingencyType.OTO:
+            return False
+
+        cdef Order child
+        cdef int ouo_child_count = 0
+        for child in self.orders[1:]:
+            if child.parent_order_id != entry.client_order_id:
+                return False
+            if child.contingency_type != ContingencyType.OUO:
+                return False
+            if not child.is_reduce_only:
+                return False
+            ouo_child_count += 1
+
+        return ouo_child_count == 2

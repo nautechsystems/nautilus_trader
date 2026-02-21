@@ -47,13 +47,11 @@ use crate::{common::credential::KrakenCredential, websocket::error::KrakenWsErro
 /// Topics use colon format: `feed:symbol` (e.g., `trades:PF_ETHUSD`).
 pub const KRAKEN_FUTURES_WS_TOPIC_DELIMITER: char = ':';
 
-const WS_PING_MSG: &str = r#"{"event":"ping"}"#;
-
 /// WebSocket client for the Kraken Futures v1 streaming API.
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
 )]
 pub struct KrakenFuturesWebSocketClient {
     url: String,
@@ -218,7 +216,7 @@ impl KrakenFuturesWebSocketClient {
             })
             .map_err(|e| KrakenWsError::ChannelError(e.to_string()))?;
 
-        tracing::debug!("Futures WebSocket authentication successful");
+        log::debug!("Futures WebSocket authentication successful");
         Ok(())
     }
 
@@ -229,7 +227,7 @@ impl KrakenFuturesWebSocketClient {
         if let Ok(tx) = self.cmd_tx.try_read()
             && let Err(e) = tx.send(HandlerCommand::InitializeInstruments(instruments))
         {
-            tracing::debug!("Failed to send instruments to handler: {e}");
+            log::debug!("Failed to send instruments to handler: {e}");
         }
     }
 
@@ -240,13 +238,13 @@ impl KrakenFuturesWebSocketClient {
         if let Ok(tx) = self.cmd_tx.try_read()
             && let Err(e) = tx.send(HandlerCommand::UpdateInstrument(instrument))
         {
-            tracing::debug!("Failed to send instrument update to handler: {e}");
+            log::debug!("Failed to send instrument update to handler: {e}");
         }
     }
 
     /// Connects to the WebSocket server.
     pub async fn connect(&mut self) -> Result<(), KrakenWsError> {
-        tracing::debug!("Connecting to Futures WebSocket: {}", self.url);
+        log::debug!("Connecting to Futures WebSocket: {}", self.url);
 
         self.signal.store(false, Ordering::Relaxed);
 
@@ -256,13 +254,14 @@ impl KrakenFuturesWebSocketClient {
             url: self.url.clone(),
             headers: vec![],
             heartbeat: self.heartbeat_secs,
-            heartbeat_msg: Some(WS_PING_MSG.to_string()),
+            heartbeat_msg: None, // Use WebSocket ping frames, not text messages
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let ws_client =
@@ -300,7 +299,7 @@ impl KrakenFuturesWebSocketClient {
                         if signal.load(Ordering::Relaxed) {
                             continue;
                         }
-                        tracing::info!("WebSocket reconnected, resubscribing");
+                        log::info!("WebSocket reconnected, resubscribing");
 
                         // Mark all confirmed as failed to transition to pending for replay
                         let confirmed_topics = subscriptions.all_topics();
@@ -310,7 +309,7 @@ impl KrakenFuturesWebSocketClient {
 
                         let topics = subscriptions.all_topics();
                         if topics.is_empty() {
-                            tracing::debug!("No subscriptions to restore after reconnection");
+                            log::debug!("No subscriptions to restore after reconnection");
                         } else {
                             // Check if we have private subscriptions that need re-authentication
                             let has_private_subs = topics.iter().any(|t| {
@@ -330,9 +329,8 @@ impl KrakenFuturesWebSocketClient {
                                             response_tx: tx,
                                         },
                                     ) {
-                                        tracing::error!(
-                                            error = %e,
-                                            "Failed to request challenge for reconnect"
+                                        log::error!(
+                                            "Failed to request challenge for reconnect: {e}"
                                         );
                                     } else {
                                         match tokio::time::timeout(
@@ -351,46 +349,44 @@ impl KrakenFuturesWebSocketClient {
                                                                 signed_challenge: signed,
                                                             },
                                                         ) {
-                                                            tracing::error!(
-                                                                error = %e,
-                                                                "Failed to set auth credentials"
+                                                            log::error!(
+                                                                "Failed to set auth credentials: {e}"
                                                             );
                                                         } else {
-                                                            tracing::debug!(
+                                                            log::debug!(
                                                                 "Re-authenticated after reconnect"
                                                             );
                                                         }
                                                     }
                                                     Err(e) => {
-                                                        tracing::error!(
-                                                            error = %e,
-                                                            "Failed to sign challenge for reconnect"
+                                                        log::error!(
+                                                            "Failed to sign challenge for reconnect: {e}"
                                                         );
                                                     }
                                                 }
                                             }
                                             Ok(Err(_)) => {
-                                                tracing::error!(
+                                                log::error!(
                                                     "Challenge channel closed during reconnect"
                                                 );
                                             }
                                             Err(_) => {
-                                                tracing::error!(
+                                                log::error!(
                                                     "Timeout waiting for challenge during reconnect"
                                                 );
                                             }
                                         }
                                     }
                                 } else {
-                                    tracing::warn!(
+                                    log::warn!(
                                         "Private subscriptions exist but no credentials available"
                                     );
                                 }
                             }
 
-                            tracing::info!(
-                                count = topics.len(),
-                                "Resubscribing after reconnection"
+                            log::info!(
+                                "Resubscribing after reconnection: count={}",
+                                topics.len()
                             );
 
                             for topic in &topics {
@@ -430,9 +426,9 @@ impl KrakenFuturesWebSocketClient {
                                 if let Some(cmd) = cmd
                                     && let Err(e) = cmd_tx_for_reconnect.send(cmd)
                                 {
-                                    tracing::error!(
-                                        error = %e, topic,
-                                        "Failed to send resubscribe command"
+                                    log::error!(
+                                        "Failed to send resubscribe command: error={e}, \
+                                        topic={topic}"
                                     );
                                 }
 
@@ -441,41 +437,41 @@ impl KrakenFuturesWebSocketClient {
                         }
 
                         if let Err(e) = out_tx.send(KrakenFuturesWsMessage::Reconnected) {
-                            tracing::debug!("Output channel closed: {e}");
+                            log::debug!("Output channel closed: {e}");
                             break;
                         }
                         continue;
                     }
                     Some(msg) => {
                         if let Err(e) = out_tx.send(msg) {
-                            tracing::debug!("Output channel closed: {e}");
+                            log::debug!("Output channel closed: {e}");
                             break;
                         }
                     }
                     None => {
-                        tracing::debug!("Handler stream ended");
+                        log::debug!("Handler stream ended");
                         break;
                     }
                 }
             }
 
-            tracing::debug!("Futures handler task exiting");
+            log::debug!("Futures handler task exiting");
         });
 
         self.task_handle = Some(Arc::new(stream_handle));
 
-        tracing::debug!("Futures WebSocket connected successfully");
+        log::debug!("Futures WebSocket connected successfully");
         Ok(())
     }
 
     /// Disconnects from the WebSocket server.
     pub async fn disconnect(&mut self) -> Result<(), KrakenWsError> {
-        tracing::debug!("Disconnecting Futures WebSocket");
+        log::debug!("Disconnecting Futures WebSocket");
 
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
-            tracing::debug!(
+            log::debug!(
                 "Failed to send disconnect command (handler may already be shut down): {e}"
             );
         }
@@ -484,15 +480,15 @@ impl KrakenFuturesWebSocketClient {
             match Arc::try_unwrap(task_handle) {
                 Ok(handle) => {
                     match tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await {
-                        Ok(Ok(())) => tracing::debug!("Task handle completed successfully"),
-                        Ok(Err(e)) => tracing::error!("Task handle encountered an error: {e:?}"),
+                        Ok(Ok(())) => log::debug!("Task handle completed successfully"),
+                        Ok(Err(e)) => log::error!("Task handle encountered an error: {e:?}"),
                         Err(_) => {
-                            tracing::warn!("Timeout waiting for task handle");
+                            log::warn!("Timeout waiting for task handle");
                         }
                     }
                 }
                 Err(arc_handle) => {
-                    tracing::debug!("Cannot take ownership of task handle, aborting");
+                    log::debug!("Cannot take ownership of task handle, aborting");
                     arc_handle.abort();
                 }
             }
@@ -566,6 +562,40 @@ impl KrakenFuturesWebSocketClient {
     ) -> Result<(), KrakenWsError> {
         let symbol = instrument_id.symbol;
         let key = format!("index:{symbol}");
+
+        if !self.subscriptions.remove_reference(&key) {
+            return Ok(());
+        }
+
+        self.subscriptions.mark_unsubscribe(&key);
+        self.subscriptions.confirm_unsubscribe(&key);
+        self.maybe_unsubscribe_ticker(symbol).await
+    }
+
+    /// Subscribes to funding rate updates for the given instrument.
+    pub async fn subscribe_funding_rate(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), KrakenWsError> {
+        let symbol = instrument_id.symbol;
+        let key = format!("funding:{symbol}");
+
+        if !self.subscriptions.add_reference(&key) {
+            return Ok(());
+        }
+
+        self.subscriptions.mark_subscribe(&key);
+        self.subscriptions.confirm_subscribe(&key);
+        self.ensure_ticker_subscribed(symbol).await
+    }
+
+    /// Unsubscribes from funding rate updates for the given instrument.
+    pub async fn unsubscribe_funding_rate(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), KrakenWsError> {
+        let symbol = instrument_id.symbol;
+        let key = format!("funding:{symbol}");
 
         if !self.subscriptions.remove_reference(&key) {
             return Ok(());
@@ -792,7 +822,7 @@ impl KrakenFuturesWebSocketClient {
         if let Ok(tx) = self.cmd_tx.try_read()
             && let Err(e) = tx.send(HandlerCommand::SetAccountId(account_id))
         {
-            tracing::debug!("Failed to send account_id to handler: {e}");
+            log::debug!("Failed to send account_id to handler: {e}");
         }
     }
 
@@ -818,7 +848,7 @@ impl KrakenFuturesWebSocketClient {
                 strategy_id,
             })
         {
-            tracing::debug!("Failed to cache client order: {e}");
+            log::debug!("Failed to cache client order: {e}");
         }
     }
 
@@ -835,7 +865,7 @@ impl KrakenFuturesWebSocketClient {
 
         // TODO: Send via WebSocket client when we have direct access
         // For now, the Python layer will handle the challenge request/response flow
-        tracing::debug!(
+        log::debug!(
             "Challenge request prepared for API key: {}",
             credential.api_key_masked()
         );

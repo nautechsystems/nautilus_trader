@@ -66,6 +66,7 @@ pub mod formatting;
 pub mod math;
 pub mod message;
 pub mod nanos;
+pub mod params;
 pub mod stack_str;
 
 pub mod parsing;
@@ -86,10 +87,12 @@ pub mod python;
 compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, and Windows");
 
 // Re-exports
+#[cfg(feature = "python")]
+pub use crate::params::from_pydict;
 pub use crate::{
     drop::CleanDrop,
-    message::Params,
     nanos::UnixNanos,
+    params::Params,
     shared::{SharedCell, WeakCell},
     stack_str::{STACKSTR_CAPACITY, StackStr},
     time::AtomicTime,

@@ -25,13 +25,14 @@ import numpy as np
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
-from nautilus_trader.analysis.config import TearsheetConfig
+from nautilus_trader.analysis import TearsheetBarsWithFillsChart
+from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.analysis import TearsheetEquityChart
+from nautilus_trader.analysis import TearsheetStatsTableChart
 from nautilus_trader.analysis.tearsheet import create_bars_with_fills
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import MarginModelConfig
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.backtest.option_exercise import OptionExerciseConfig
-from nautilus_trader.backtest.option_exercise import OptionExerciseModule
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -47,7 +48,6 @@ from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.greeks_data import GreeksData
@@ -248,26 +248,6 @@ class OptionStrategy(Strategy):
         self.subscribe_bars(self.bar_type_2)
         self.subscribe_bars(self.bar_type_3)
 
-        # Subscribing to custom greeks data if it's already stored
-        self.user_log(
-            f"Subscribing to GreeksData for options, load_greeks={self.config.load_greeks}",
-        )
-        self.subscribe_data(
-            DataType(GreeksData),
-            instrument_id=self.config.option_id,
-            params={
-                "append_data": False,
-            },  # prepending data ensures that greeks are cached and available before on_bar
-        )
-        self.subscribe_data(
-            DataType(GreeksData),
-            instrument_id=self.config.option_id2,
-            params={"append_data": False},
-        )
-        self.greeks.subscribe_greeks(
-            InstrumentId.from_str("ES*.XCME"),
-        )  # adds all ES greeks read from the message bus to the cache
-
     def on_instrument(self, instrument):
         self.user_log(f"Received instrument: {instrument}")
 
@@ -348,7 +328,6 @@ class OptionStrategy(Strategy):
         self.user_log("Calculating portfolio greeks...")
         portfolio_greeks = self.greeks.portfolio_greeks(
             use_cached_greeks=self.config.load_greeks,
-            publish_greeks=(not self.config.load_greeks),
             # underlyings=["ES"],
             # spot_shock=10.,
             # vol_shock=0.0,
@@ -386,8 +365,6 @@ class OptionStrategy(Strategy):
         self.unsubscribe_bars(self.bar_type_3)
         self.unsubscribe_quote_ticks(self.config.option_id)
         self.unsubscribe_quote_ticks(self.config.option_id2)
-        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
-        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
         self.unsubscribe_quote_ticks(self.config.spread_id, params=self.default_data_params)
         self.unsubscribe_quote_ticks(self.config.spread_id2, params=self.default_data_params)
 
@@ -509,16 +486,6 @@ margin_model = MarginModelConfig(
     model_type="standard",
 )  # Use standard margin model for options trading
 
-modules = [
-    ImportableActorConfig(
-        actor_path=OptionExerciseModule.fully_qualified_name(),
-        config_path=OptionExerciseConfig.fully_qualified_name(),
-        config={
-            "auto_exercise_enabled": True,
-        },
-    ),
-]
-
 venues = [
     BacktestVenueConfig(
         name="XCME",
@@ -528,7 +495,6 @@ venues = [
         starting_balances=["1_000_000 USD"],
         margin_model=margin_model,
         fill_model=fill_model,
-        modules=modules,
     ),
 ]
 
@@ -551,10 +517,6 @@ results = node.run()
 
 # %%
 if not load_greeks:
-    catalog.convert_stream_to_data(
-        results[0].instance_id,
-        GreeksData,
-    )
     catalog.convert_stream_to_data(
         results[0].instance_id,
         Bar,
@@ -592,12 +554,14 @@ fig
 # %%
 # Test tearsheet integration with bars_with_fills chart using node and instance_id
 tearsheet_config = TearsheetConfig(
-    charts=["stats_table", "equity", "bars_with_fills"],
-    chart_args={
-        "bars_with_fills": {
-            "bar_type": f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL",
-        },
-    },
+    charts=[
+        TearsheetStatsTableChart(),
+        TearsheetEquityChart(),
+        TearsheetBarsWithFillsChart(
+            bar_type=f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL",
+            title="Bars with Order Fills",
+        ),
+    ],
     theme="nautilus_dark",
 )
 

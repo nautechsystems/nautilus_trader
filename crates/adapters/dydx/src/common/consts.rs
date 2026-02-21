@@ -57,6 +57,11 @@ pub const DYDX_HTTP_URL: &str = "https://indexer.dydx.trade";
 /// dYdX v4 mainnet WebSocket URL.
 pub const DYDX_WS_URL: &str = "wss://indexer.dydx.trade/v4/ws";
 
+/// dYdX v4 mainnet REST API URL (Cosmos LCD for chain queries).
+///
+/// Used for querying on-chain state like authenticators.
+pub const DYDX_REST_URL: &str = "https://dydx-ops-rest.kingnodes.com";
+
 /// dYdX v4 mainnet gRPC URLs (public validator nodes with fallbacks).
 ///
 /// Multiple nodes are provided for redundancy. The client should attempt to connect
@@ -89,6 +94,11 @@ pub const DYDX_TESTNET_HTTP_URL: &str = "https://indexer.v4testnet.dydx.exchange
 
 /// dYdX v4 testnet WebSocket URL.
 pub const DYDX_TESTNET_WS_URL: &str = "wss://indexer.v4testnet.dydx.exchange/v4/ws";
+
+/// dYdX v4 testnet REST API URL (Cosmos LCD for chain queries).
+///
+/// Used for querying on-chain state like authenticators.
+pub const DYDX_TESTNET_REST_URL: &str = "https://test-dydx-rest.kingnodes.com";
 
 /// dYdX v4 testnet gRPC URLs (public validator nodes with fallbacks).
 ///

@@ -56,7 +56,7 @@ impl Default for EstimationConfig {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct SizeForImpactResult {
     /// Target slippage requested in basis points.
@@ -281,7 +281,7 @@ fn binary_search_for_size(
             {
                 high *= U256::from(2);
                 expansions += 1;
-                tracing::debug!(
+                log::debug!(
                     "Expanding upper bound (expansion {}/{}): new high={}",
                     expansions,
                     config.max_bound_expansions,
@@ -294,9 +294,8 @@ fn binary_search_for_size(
     }
 
     if iterations >= config.max_iterations {
-        tracing::warn!(
-            "Binary search did not converge after {} iterations, returning conservative estimate",
-            iterations
+        log::warn!(
+            "Binary search did not converge after {iterations} iterations, returning conservative estimate"
         );
     }
 

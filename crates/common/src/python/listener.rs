@@ -17,7 +17,7 @@
 
 use bytes::Bytes;
 use futures::pin_mut;
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, call_python, to_pyruntime_err};
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -65,11 +65,5 @@ impl MessageBusListener {
             }
             Ok(())
         })
-    }
-}
-
-fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (py_obj,)) {
-        tracing::error!("Error calling Python: {e}");
     }
 }

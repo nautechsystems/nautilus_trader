@@ -239,7 +239,7 @@ impl StackStr {
     #[inline]
     #[must_use]
     pub const fn as_ptr(&self) -> *const c_char {
-        self.value.as_ptr() as *const c_char
+        self.value.as_ptr().cast::<c_char>()
     }
 
     /// Returns the value as a C string slice.
@@ -639,7 +639,7 @@ mod tests {
     #[rstest]
     fn test_value_field_at_offset_zero() {
         let s = StackStr::new("hello");
-        let struct_ptr = &s as *const StackStr as *const u8;
+        let struct_ptr = std::ptr::from_ref(&s).cast::<u8>();
         let first_byte = unsafe { *struct_ptr };
         assert_eq!(first_byte, b'h');
     }

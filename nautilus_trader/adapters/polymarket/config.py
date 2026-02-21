@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveFloat
@@ -27,6 +28,8 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
 
     Parameters
     ----------
+    instrument_config : PolymarketInstrumentProviderConfig, optional
+        The Polymarket instrument provider config.
     venue : Venue, default POLYMARKET_VENUE
         The venue for the client.
     private_key : str, optional
@@ -57,6 +60,8 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
         The delay (seconds) prior to the first websocket connection to allow initial subscriptions to arrive.
     ws_connection_delay_secs : PositiveFloat, default 0.1
         The delay (seconds) prior to making a new websocket connection to allow non-initial subscriptions to arrive.
+    ws_max_subscriptions_per_connection : PositiveInt, default 200
+        The maximum number of subscriptions per WebSocket connection (Polymarket limit is 500).
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between updating Polymarket instruments.
     compute_effective_deltas : bool, default False
@@ -68,6 +73,7 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
 
     """
 
+    instrument_config: PolymarketInstrumentProviderConfig | None = None
     venue: Venue = POLYMARKET_VENUE
     private_key: str | None = None
     signature_type: int = 0
@@ -79,6 +85,7 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws: str | None = None
     ws_connection_initial_delay_secs: PositiveFloat = 5
     ws_connection_delay_secs: PositiveFloat = 0.1
+    ws_max_subscriptions_per_connection: PositiveInt = 200
     update_instruments_interval_mins: PositiveInt | None = 60
     compute_effective_deltas: bool = False
     drop_quotes_missing_side: bool = True
@@ -90,6 +97,8 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
 
     Parameters
     ----------
+    instrument_config : PolymarketInstrumentProviderConfig, optional
+        The Polymarket instrument provider config.
     venue : Venue, default POLYMARKET_VENUE
         The venue for the client.
     private_key : str, optional
@@ -116,6 +125,8 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
+    ws_max_subscriptions_per_connection : PositiveInt, default 200
+        The maximum number of subscriptions per WebSocket connection (Polymarket limit is 500).
     max_retries : PositiveInt, optional
         The maximum number of times a submit or cancel order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
@@ -138,6 +149,7 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
 
     """
 
+    instrument_config: PolymarketInstrumentProviderConfig | None = None
     venue: Venue = POLYMARKET_VENUE
     private_key: str | None = None
     signature_type: int = 0
@@ -147,6 +159,7 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     passphrase: str | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    ws_max_subscriptions_per_connection: PositiveInt = 200
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None

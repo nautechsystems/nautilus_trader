@@ -15,6 +15,9 @@
 
 //! Enumerations for Deribit WebSocket channels and operations.
 
+use std::fmt::Display;
+
+use nautilus_model::enums::BookAction;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
@@ -39,16 +42,25 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.deribit",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
 )]
 pub enum DeribitUpdateInterval {
     /// Raw updates - immediate delivery of each event.
     /// Requires authentication.
+    #[strum(serialize = "raw", serialize = "Raw")]
     Raw,
     /// Aggregated updates every 100 milliseconds (default).
     #[default]
+    #[strum(serialize = "100ms", serialize = "Ms100")]
     Ms100,
     /// Aggregated updates every 2 ticks.
+    #[strum(serialize = "agg2", serialize = "Agg2")]
     Agg2,
 }
 
@@ -70,7 +82,7 @@ impl DeribitUpdateInterval {
     }
 }
 
-impl std::fmt::Display for DeribitUpdateInterval {
+impl Display for DeribitUpdateInterval {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
@@ -95,7 +107,12 @@ impl std::fmt::Display for DeribitUpdateInterval {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.deribit",
+        from_py_object
+    )
 )]
 pub enum DeribitWsChannel {
     // Public Market Data Channels
@@ -125,6 +142,9 @@ pub enum DeribitWsChannel {
     Announcements,
     /// Chart trades: `chart.trades.{instrument}.{resolution}`
     ChartTrades,
+    /// Instrument state changes: `instrument.state.{kind}.{currency}`
+    /// Used for instrument lifecycle notifications (created, started, settled, closed, terminated)
+    InstrumentState,
 
     // Private User Channels (for future execution support)
     /// User orders: `user.orders.{instrument}.{interval}`
@@ -148,6 +168,10 @@ impl DeribitWsChannel {
     ///
     /// * `instrument_or_currency` - The instrument name (e.g., "BTC-PERPETUAL") or currency (e.g., "BTC")
     /// * `interval` - Optional update interval. Defaults to `Ms100` (100ms) if not specified.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called on `InstrumentState` variant. Use `format_instrument_state_channel()` instead.
     ///
     /// # Note
     ///
@@ -180,7 +204,26 @@ impl DeribitWsChannel {
             Self::UserPortfolio => format!("user.portfolio.{instrument_or_currency}"),
             Self::UserChanges => format!("user.changes.{instrument_or_currency}.{interval_str}"),
             Self::UserAccessLog => "user.access_log".to_string(),
+            Self::InstrumentState => {
+                // InstrumentState requires kind and currency, use format_instrument_state_channel() instead
+                panic!(
+                    "InstrumentState channel requires kind and currency parameters, use format_instrument_state_channel() instead"
+                )
+            }
         }
+    }
+
+    /// Formats the instrument state channel for subscription.
+    ///
+    /// Returns the full channel string: `instrument.state.{kind}.{currency}`
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - Instrument kind: "future", "option", "spot", "future_combo", "option_combo", or "any"
+    /// * `currency` - Currency: "BTC", "ETH", "USDC", "USDT", "EURR", or "any"
+    #[must_use]
+    pub fn format_instrument_state_channel(kind: &str, currency: &str) -> String {
+        format!("instrument.state.{kind}.{currency}")
     }
 
     /// Parses a channel string to extract the channel type.
@@ -224,6 +267,8 @@ impl DeribitWsChannel {
             Some(Self::UserChanges)
         } else if channel == "user.access_log" {
             Some(Self::UserAccessLog)
+        } else if channel.starts_with("instrument.state.") {
+            Some(Self::InstrumentState)
         } else {
             None
         }
@@ -240,6 +285,20 @@ impl DeribitWsChannel {
                 | Self::UserChanges
                 | Self::UserAccessLog
         )
+    }
+
+    /// Returns whether a channel string requires authentication.
+    ///
+    /// This includes private `user.*` channels and any channel with
+    /// a `.raw` interval (book, trades, ticker) which Deribit gates
+    /// behind auth.
+    #[must_use]
+    pub fn requires_auth(channel: &str) -> bool {
+        match Self::from_channel_string(channel) {
+            Some(ch) if ch.is_private() => true,
+            Some(_) => channel.ends_with(".raw"),
+            None => false,
+        }
     }
 }
 
@@ -332,6 +391,7 @@ impl DeribitWsMethod {
     Clone, Debug, Display, PartialEq, Eq, Hash, AsRefStr, EnumString, Serialize, Deserialize,
 )]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum DeribitBookAction {
     /// New price level added.
     #[serde(rename = "new")]
@@ -342,6 +402,16 @@ pub enum DeribitBookAction {
     /// Price level removed.
     #[serde(rename = "delete")]
     Delete,
+}
+
+impl From<DeribitBookAction> for BookAction {
+    fn from(action: DeribitBookAction) -> Self {
+        match action {
+            DeribitBookAction::New => Self::Add,
+            DeribitBookAction::Change => Self::Update,
+            DeribitBookAction::Delete => Self::Delete,
+        }
+    }
 }
 
 /// Deribit order book message type.
@@ -356,6 +426,50 @@ pub enum DeribitBookMsgType {
     /// Incremental update.
     #[serde(rename = "change")]
     Change,
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_requires_auth_user_channels() {
+        assert!(DeribitWsChannel::requires_auth("user.orders.any.any.raw"));
+        assert!(DeribitWsChannel::requires_auth("user.trades.any.any.raw"));
+        assert!(DeribitWsChannel::requires_auth("user.portfolio.any"));
+        assert!(DeribitWsChannel::requires_auth("user.changes.any.any.raw"));
+        assert!(DeribitWsChannel::requires_auth("user.access_log"));
+    }
+
+    #[rstest]
+    fn test_requires_auth_raw_channels() {
+        assert!(DeribitWsChannel::requires_auth("book.BTC-PERPETUAL.raw"));
+        assert!(DeribitWsChannel::requires_auth("book.ETH-25DEC25.raw"));
+        assert!(DeribitWsChannel::requires_auth("trades.BTC-PERPETUAL.raw"));
+        assert!(DeribitWsChannel::requires_auth("ticker.BTC-PERPETUAL.raw"));
+    }
+
+    #[rstest]
+    fn test_requires_auth_public_channels() {
+        assert!(!DeribitWsChannel::requires_auth(
+            "book.BTC-PERPETUAL.none.10.100ms"
+        ));
+        assert!(!DeribitWsChannel::requires_auth(
+            "book.BTC-PERPETUAL.none.20.agg2"
+        ));
+        assert!(!DeribitWsChannel::requires_auth(
+            "trades.BTC-PERPETUAL.100ms"
+        ));
+        assert!(!DeribitWsChannel::requires_auth(
+            "ticker.BTC-PERPETUAL.100ms"
+        ));
+        assert!(!DeribitWsChannel::requires_auth("quote.BTC-PERPETUAL"));
+        assert!(!DeribitWsChannel::requires_auth("deribit_price_index.btc"));
+        assert!(!DeribitWsChannel::requires_auth("platform_state"));
+        assert!(!DeribitWsChannel::requires_auth("announcements"));
+    }
 }
 
 /// Deribit heartbeat types.

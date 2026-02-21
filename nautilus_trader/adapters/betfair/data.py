@@ -28,12 +28,18 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing.common import merge_instrument_fields
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
+from nautilus_trader.adapters.betfair.parsing.rcm import RCM
+from nautilus_trader.adapters.betfair.parsing.rcm import BetfairRCMParser
+from nautilus_trader.adapters.betfair.parsing.rcm import is_rcm_message
+from nautilus_trader.adapters.betfair.parsing.rcm import rcm_decode
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
+from nautilus_trader.adapters.betfair.sockets import BetfairRaceStreamClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.data.messages import SubscribeData
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstrumentClose
 from nautilus_trader.data.messages import SubscribeInstruments
@@ -42,6 +48,7 @@ from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstrumentClose
 from nautilus_trader.data.messages import UnsubscribeInstruments
@@ -104,6 +111,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self._log.info(f"{config.account_currency=}", LogColor.BLUE)
         self._log.info(f"{config.subscription_delay_secs=}", LogColor.BLUE)
         self._log.info(f"{config.keep_alive_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.subscribe_race_data=}", LogColor.BLUE)
         self._log.info(f"{config.stream_conflate_ms=}", LogColor.BLUE)
 
         # Clients
@@ -113,11 +121,20 @@ class BetfairDataClient(LiveMarketDataClient):
             message_handler=self.on_market_update,
             certs_dir=config.certs_dir,
         )
+        self._race_stream: BetfairRaceStreamClient | None = None
+        if config.subscribe_race_data:
+            self._race_stream = BetfairRaceStreamClient(
+                http_client=self._client,
+                message_handler=self.on_race_stream_update,
+                certs_dir=config.certs_dir,
+            )
+
         self._is_reconnecting = (
             False  # Necessary for coordination, as the clients rely on each other
         )
 
         self._parser = BetfairParser(currency=config.account_currency)
+        self._rcm_parser = BetfairRCMParser()
 
         # Async tasks
         self._keep_alive_task: asyncio.Task | None = None
@@ -126,6 +143,10 @@ class BetfairDataClient(LiveMarketDataClient):
         self._subscription_status = SubscriptionStatus.UNSUBSCRIBED
         self._subscribed_instrument_ids: set[InstrumentId] = set()
         self._subscribed_market_ids: set[InstrumentId] = set()
+
+        self._mcm_update_count: int = 0
+        self._rcm_update_count: int = 0
+        self._is_reconnecting_race_stream = False
 
     @property
     def instrument_provider(self) -> BetfairInstrumentProvider:
@@ -142,6 +163,12 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _connect(self) -> None:
         await self._client.connect()
         await self._stream.connect()
+        if self._race_stream:
+            try:
+                await self._race_stream.connect()
+            except Exception as e:
+                self._log.error(f"Race stream connect failed: {e}")
+                self._race_stream = None
 
         # Pass any preloaded instruments into the engine
         if self._instrument_provider.count == 0:
@@ -168,6 +195,7 @@ class BetfairDataClient(LiveMarketDataClient):
             country_codes=self.instrument_provider.config.country_codes,
             market_types=self.instrument_provider.config.market_types,
             conflate_ms=self.config.stream_conflate_ms,
+            heartbeat_ms=self.config.stream_heartbeat_ms,
         )
 
     async def _keep_alive(self) -> None:
@@ -189,10 +217,19 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _reconnect(self) -> None:
         self._log.info("Reconnecting to Betfair")
         self._is_reconnecting = True
-        await self._client.reconnect()
-        await self._stream.reconnect()
-        await self.stream_subscribe()
-        self._is_reconnecting = False
+
+        # Full reconnect subsumes any in-flight race-only reconnect
+        self._is_reconnecting_race_stream = False
+
+        try:
+            await self._client.reconnect()
+            await self._stream.reconnect()
+            if self._race_stream:
+                await self._race_stream.reconnect()
+        except Exception as e:
+            self._log.error(f"Reconnection failed: {e}")
+        finally:
+            self._is_reconnecting = False
 
     async def _disconnect(self) -> None:
         # Cancel tasks
@@ -203,22 +240,23 @@ class BetfairDataClient(LiveMarketDataClient):
 
         self._log.info("Closing streaming socket")
         await self._stream.disconnect()
+        if self._race_stream:
+            await self._race_stream.disconnect()
 
         self._log.info("Closing BetfairClient")
         await self._client.disconnect()
 
     def _reset(self) -> None:
-        if self._stream.is_active():
+        if self._stream.is_active() or (self._race_stream and self._race_stream.is_active()):
             self._log.error("Cannot reset a connected data client")
             return
 
         self._subscribed_instrument_ids = set()
 
     def _dispose(self) -> None:
-        if self._stream.is_active():
+        if self._stream.is_active() or (self._race_stream and self._race_stream.is_active()):
             self._log.error("Cannot dispose a connected data client")
 
-    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         self._log.info("Skipping subscribe_order_book_deltas, Betfair subscribes automatically")
 
@@ -241,10 +279,13 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
         pass  # Subscribed as part of orderbook
 
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
-        #  subscription message - when we have a use case
-        self._log.warning("Betfair does not support unsubscribing")
+    async def _subscribe(self, command: SubscribeData) -> None:
+        # Noop: RCM data subscribed via raceSubscription in stream_subscribe
+        pass
+
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
+        # Noop: race stream cannot be selectively unsubscribed
+        pass
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
@@ -272,25 +313,57 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         self._log.info("Skipping unsubscribe_bars, not applicable for Betfair")
 
-    # -- STREAMS ----------------------------------------------------------------------------------
-
     def on_market_update(self, raw: bytes) -> None:
         """
-        Handle an update from the data stream socket.
+        Handle an update from the market stream socket.
         """
         self._log.debug(f"[RECV]: {raw.decode()}")
+
+        # RCM messages can arrive on market stream during replays
+        if is_rcm_message(raw):
+            rcm = rcm_decode(raw)
+            self._on_rcm_update(rcm=rcm)
+            return
+
         update = stream_decode(raw)
         if isinstance(update, MCM):
             self._on_market_update(mcm=update)
         elif isinstance(update, Connection):
-            pass
+            self._log.info(f"Market stream authenticated: {update.connection_id}")
         elif isinstance(update, Status):
             self._handle_status_message(update=update)
         else:
             raise RuntimeError
 
+    def on_race_stream_update(self, raw: bytes) -> None:
+        """
+        Handle an update from the race stream socket.
+
+        Isolated from market stream status handling so race failures do not trigger
+        reconnection of the market stream.
+
+        """
+        self._log.debug(f"[RACE RECV]: {raw.decode()}")
+
+        if is_rcm_message(raw):
+            rcm = rcm_decode(raw)
+            self._on_rcm_update(rcm=rcm)
+            return
+
+        update = stream_decode(raw)
+        if isinstance(update, Connection):
+            self._log.info(f"Race stream authenticated: {update.connection_id}")
+        elif isinstance(update, Status):
+            self._handle_race_status_message(update=update)
+        else:
+            self._log.warning(f"Unexpected race stream message: {type(update).__name__}")
+
     def _on_market_update(self, mcm: MCM) -> None:
         self._check_stream_unhealthy(update=mcm)
+        self._mcm_update_count += 1
+        if self._mcm_update_count == 1:
+            self._log.info("Market stream active, receiving data", LogColor.GREEN)
+
         updates = self._parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data=}")
@@ -299,6 +372,16 @@ class BetfairDataClient(LiveMarketDataClient):
                 self._on_instrument(data)
             else:
                 self._handle_data(data)
+
+    def _on_rcm_update(self, rcm: RCM) -> None:
+        self._rcm_update_count += 1
+        if self._rcm_update_count == 1:
+            self._log.info("Race stream active, receiving data", LogColor.GREEN)
+
+        updates = self._rcm_parser.parse(rcm=rcm)
+        for data in updates:
+            self._log.debug(f"{data=}")
+            self._handle_data(data)
 
     def _on_instrument(self, instrument: BettingInstrument):
         cache_instrument = self._cache.instrument(instrument.id)
@@ -330,8 +413,71 @@ class BetfairDataClient(LiveMarketDataClient):
             self._log.warning(f"Betfair API error: {update.error_message}")
 
             if update.connection_closed:
-                self._log.warning("Betfair connection closed")
+                self._log.warning("Betfair market stream connection closed")
                 if self._is_reconnecting:
                     self._log.info("Reconnect already in progress")
                     return
                 self.create_task(self._reconnect())
+
+    # Auth/entitlement errors that will never succeed on retry
+    _RACE_STREAM_FATAL_ERRORS = {
+        StatusErrorCode.NO_APP_KEY,
+        StatusErrorCode.INVALID_APP_KEY,
+        StatusErrorCode.NOT_AUTHORIZED,
+        StatusErrorCode.SUBSCRIPTION_LIMIT_EXCEEDED,
+        StatusErrorCode.MAX_CONNECTION_LIMIT_EXCEEDED,
+    }
+
+    def _handle_race_status_message(self, update: Status) -> None:
+        if update.is_error:
+            self._log.warning(f"Betfair race stream error: {update.error_message}")
+            if update.error_code in self._RACE_STREAM_FATAL_ERRORS:
+                self._log.error(
+                    f"Race stream disabled: {update.error_code.name} "
+                    "(check TPD entitlement on your Betfair app key)",
+                )
+                self.create_task(self._close_race_stream())
+                return
+            if update.connection_closed:
+                if self._is_reconnecting or self._is_reconnecting_race_stream:
+                    self._log.info("Reconnect already in progress")
+                    return
+                self._log.warning(
+                    "Race stream connection closed, reconnecting (market stream unaffected)",
+                )
+                self._is_reconnecting_race_stream = True
+                self.create_task(self._reconnect_race_stream())
+
+    async def _close_race_stream(self) -> None:
+        try:
+            if self._race_stream:
+                await self._race_stream.disconnect()
+        except Exception as e:
+            self._log.error(f"Race stream disconnect failed: {e}")
+        finally:
+            self._race_stream = None
+
+    async def _reconnect_race_stream(self) -> None:
+        try:
+            if self._is_reconnecting:
+                self._log.info("Full reconnect in progress, deferring race stream recovery")
+                return
+
+            # Renew session token without resetting shared HTTP client state
+            try:
+                await self._client.keep_alive()
+            except Exception as e:
+                self._log.warning(f"Race stream keep_alive failed ({e}), refreshing session")
+                await self._client.reconnect()
+
+            # Re-check after awaiting, full reconnect may have started
+            if self._is_reconnecting:
+                self._log.info("Full reconnect took over, aborting race stream recovery")
+                return
+
+            if self._race_stream:
+                await self._race_stream.reconnect()
+        except Exception as e:
+            self._log.error(f"Race stream reconnection failed: {e}")
+        finally:
+            self._is_reconnecting_race_stream = False

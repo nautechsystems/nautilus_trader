@@ -18,6 +18,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use ahash::AHashMap;
 use nautilus_core::{
     UUID4,
     ffi::{
@@ -46,8 +47,8 @@ use crate::{
 /// dereferenced to `LogGuard`, providing access to `LogGuard`'s methods without
 /// having to manually access the underlying `LogGuard` instance.
 #[repr(C)]
-#[allow(non_camel_case_types)]
 #[derive(Debug)]
+#[allow(non_camel_case_types)]
 pub struct LogGuard_API(Box<LogGuard>);
 
 impl Deref for LogGuard_API {
@@ -113,9 +114,11 @@ pub unsafe extern "C" fn logging_init(
         level_stdout,
         level_file,
         component_levels,
+        AHashMap::new(), // module_level - not exposed to FFI
         u8_as_bool(log_components_only),
         u8_as_bool(is_colored),
         u8_as_bool(print_config),
+        false, // use_tracing - not exposed to FFI
     );
 
     // Configure file rotation if max_file_size > 0

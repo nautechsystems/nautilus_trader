@@ -18,14 +18,15 @@
 //! This module provides DeFi subscription and request helper methods
 //! for the `DataClientAdapter`. All code in this module requires the `defi` feature flag.
 
-use std::fmt::{Debug, Display};
-
-use nautilus_common::messages::defi::{
-    DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
-    SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
-    SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
-    UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates,
-    UnsubscribePoolSwaps,
+use nautilus_common::{
+    clients::log_command_error,
+    messages::defi::{
+        DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
+        SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
+        SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
+        UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates,
+        UnsubscribePoolSwaps,
+    },
 };
 
 use crate::client::DataClientAdapter;
@@ -69,7 +70,7 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client request fails.
     #[inline]
-    pub fn execute_defi_request(&self, cmd: &DefiRequestCommand) -> anyhow::Result<()> {
+    pub fn execute_defi_request(&self, cmd: DefiRequestCommand) -> anyhow::Result<()> {
         match cmd {
             DefiRequestCommand::PoolSnapshot(cmd) => self.request_pool_snapshot(cmd),
         }
@@ -270,12 +271,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the client fails to process the pool snapshot request.
-    pub fn request_pool_snapshot(&self, req: &RequestPoolSnapshot) -> anyhow::Result<()> {
+    pub fn request_pool_snapshot(&self, req: RequestPoolSnapshot) -> anyhow::Result<()> {
         self.client.request_pool_snapshot(req)
     }
-}
-
-#[inline(always)]
-fn log_command_error<C: Debug, E: Display>(cmd: &C, e: &E) {
-    log::error!("Error on {cmd:?}: {e}");
 }

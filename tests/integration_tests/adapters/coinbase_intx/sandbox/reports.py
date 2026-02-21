@@ -23,7 +23,6 @@ from nautilus_trader.core import nautilus_pyo3
 
 
 async def run():
-    nautilus_pyo3.init_tracing()
     _guard = init_logging(level_stdout=LogLevel.TRACE)
 
     http_client = get_coinbase_intx_http_client()

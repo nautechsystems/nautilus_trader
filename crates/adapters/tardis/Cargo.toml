@@ -21,7 +21,7 @@ name = "nautilus_tardis"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["replay"]
+default = ["replay", "high-precision"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -41,6 +41,7 @@ python = [
   "replay",
 ]
 replay = []
+high-precision = ["nautilus-model/high-precision"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -52,11 +53,13 @@ nautilus-core = { workspace = true }
 nautilus-cryptography = { workspace = true }
 nautilus-model = { workspace = true, features = ["python"] }
 nautilus-serialization = { workspace = true }
+nautilus-system = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
 async-stream = { workspace = true }
+async-trait = { workspace = true }
 chrono = { workspace = true }
 csv = { workspace = true }
 derive_builder = { workspace = true }
@@ -75,8 +78,7 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tokio-util = { workspace = true }
 urlencoding = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
@@ -86,9 +88,11 @@ pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
+dotenvy = { workspace = true }
+nautilus-live = { workspace = true }
+nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true }
 rstest = { workspace = true }
-tracing-test = { workspace = true }
 
 [[bin]]
 name = "tardis-csv"
@@ -110,4 +114,11 @@ doc = false
 [[bin]]
 name = "stream_deltas_bench"
 path = "bin/stream_deltas_bench.rs"
+doc = false
+
+# Run with `cargo run --example tardis-data-tester -p nautilus-tardis`
+[[example]]
+name = "tardis-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = []
 doc = false

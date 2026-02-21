@@ -23,14 +23,13 @@ use std::{
 
 use nautilus_core::{
     UnixNanos,
-    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+    python::{IntoPyObjectNautilusExt, to_pykey_err, to_pyvalue_err},
     serialization::{
         Serializable,
         msgpack::{FromMsgPack, ToMsgPack},
     },
 };
 use pyo3::{
-    exceptions::PyKeyError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
@@ -172,24 +171,24 @@ impl FundingRateUpdate {
 
         let instrument_id_str: String = dict
             .get_item("instrument_id")?
-            .ok_or_else(|| PyErr::new::<PyKeyError, _>("Missing 'instrument_id' field"))?
+            .ok_or_else(|| to_pykey_err("Missing 'instrument_id' field"))?
             .extract()?;
         let instrument_id = InstrumentId::from_str(&instrument_id_str).map_err(to_pyvalue_err)?;
 
         let rate_str: String = dict
             .get_item("rate")?
-            .ok_or_else(|| PyErr::new::<PyKeyError, _>("Missing 'rate' field"))?
+            .ok_or_else(|| to_pykey_err("Missing 'rate' field"))?
             .extract()?;
         let rate = Decimal::from_str(&rate_str).map_err(to_pyvalue_err)?;
 
         let ts_event: u64 = dict
             .get_item("ts_event")?
-            .ok_or_else(|| PyErr::new::<PyKeyError, _>("Missing 'ts_event' field"))?
+            .ok_or_else(|| to_pykey_err("Missing 'ts_event' field"))?
             .extract()?;
 
         let ts_init: u64 = dict
             .get_item("ts_init")?
-            .ok_or_else(|| PyErr::new::<PyKeyError, _>("Missing 'ts_init' field"))?
+            .ok_or_else(|| to_pykey_err("Missing 'ts_init' field"))?
             .extract()?;
 
         let next_funding_ns: Option<u64> = dict

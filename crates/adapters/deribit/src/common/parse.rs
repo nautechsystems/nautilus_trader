@@ -25,26 +25,80 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
-    enums::{
-        AccountType, AggressorSide, AssetClass, BookType, CurrencyType, OptionKind, OrderSide,
-    },
+    enums::{AccountType, AggressorSide, BookType, OptionKind, OrderSide},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol, TradeId, Venue},
-    instruments::{
-        CryptoFuture, CryptoPerpetual, CurrencyPair, OptionContract, any::InstrumentAny,
-    },
+    instruments::{CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, any::InstrumentAny},
     orderbook::OrderBook,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
 use crate::{
-    common::consts::DERIBIT_VENUE,
-    http::models::{
-        DeribitAccountSummary, DeribitInstrument, DeribitInstrumentKind, DeribitOptionType,
-        DeribitOrderBook, DeribitPublicTrade, DeribitTradingViewChartData,
+    common::{
+        consts::DERIBIT_VENUE,
+        enums::{DeribitOptionType, DeribitProductType},
     },
+    http::models::{
+        DeribitAccountSummary, DeribitInstrument, DeribitOrderBook, DeribitPublicTrade,
+        DeribitTradingViewChartData,
+    },
+    websocket::messages::DeribitPortfolioMsg,
 };
+
+/// Parses a Deribit instrument ID into kind and currency for WebSocket channel subscription.
+///
+/// Deribit instrument naming conventions (per Deribit docs):
+/// - **Future**: `{CURRENCY}-{DMMMYY}` (e.g., "BTC-25MAR23", "BTC-5AUG23")
+/// - **Perpetual**: `{CURRENCY}-PERPETUAL` (e.g., "BTC-PERPETUAL")
+/// - **Option**: `{CURRENCY}-{DMMMYY}-{STRIKE}-{C|P}` (e.g., "BTC-25MAR23-420-C", "BTC-5AUG23-580-P")
+/// - **Linear Option**: `{BASE}_{QUOTE}-{DMMMYY}-{STRIKE}-{C|P}` (e.g., "XRP_USDC-30JUN23-0d625-C")
+///   - Note: `d` is used as decimal point for decimal strikes (0d625 = 0.625)
+/// - **Spot**: `{BASE}_{QUOTE}` (e.g., "BTC_USDC")
+///
+/// Returns `(kind, currency)` tuple for `instrument.state.{kind}.{currency}` channel.
+///
+/// Valid kinds: `future`, `option`, `spot`, `future_combo`, `option_combo`, `any`
+/// Valid currencies: `BTC`, `ETH`, `USDC`, `USDT`, `EURR`, `any`
+#[must_use]
+pub fn parse_instrument_kind_currency(instrument_id: &InstrumentId) -> (String, String) {
+    let symbol = instrument_id.symbol.as_str();
+
+    // Determine kind from instrument name pattern
+    // Order matters: check most specific patterns first
+    let kind = if symbol.contains("PERPETUAL") {
+        "future" // Perpetuals are treated as futures in Deribit API
+    } else if symbol.ends_with("-C") || symbol.ends_with("-P") {
+        // Options end with -C (call) or -P (put)
+        "option"
+    } else if symbol.contains('_') && !symbol.contains('-') {
+        // Spot pairs have underscore but no dash (e.g., "BTC_USDC")
+        "spot"
+    } else {
+        // Default to future for expiry dates like "BTC-25MAR23"
+        "future"
+    };
+
+    // Extract currency (first part before '-' or '_')
+    // For most instruments, currency is the first segment
+    let currency = if let Some(idx) = symbol.find('-') {
+        // Futures, perpetuals, options: "BTC-..." → "BTC"
+        // Linear options: "XRP_USDC-..." → extract base currency "XRP"
+        let first_part = &symbol[..idx];
+        if let Some(underscore_idx) = first_part.find('_') {
+            first_part[..underscore_idx].to_string()
+        } else {
+            first_part.to_string()
+        }
+    } else if let Some(idx) = symbol.find('_') {
+        // Spot: "BTC_USDC" → "BTC"
+        symbol[..idx].to_string()
+    } else {
+        "any".to_string()
+    };
+
+    (kind.to_string(), currency)
+}
 
 /// Extracts server timestamp from response and converts to UnixNanos.
 ///
@@ -73,10 +127,8 @@ pub fn parse_deribit_instrument_any(
     ts_event: UnixNanos,
 ) -> anyhow::Result<Option<InstrumentAny>> {
     match instrument.kind {
-        DeribitInstrumentKind::Spot => {
-            parse_spot_instrument(instrument, ts_init, ts_event).map(Some)
-        }
-        DeribitInstrumentKind::Future => {
+        DeribitProductType::Spot => parse_spot_instrument(instrument, ts_init, ts_event).map(Some),
+        DeribitProductType::Future => {
             // Check if it's a perpetual
             if instrument.instrument_name.as_str().contains("PERPETUAL") {
                 parse_perpetual_instrument(instrument, ts_init, ts_event).map(Some)
@@ -84,11 +136,15 @@ pub fn parse_deribit_instrument_any(
                 parse_future_instrument(instrument, ts_init, ts_event).map(Some)
             }
         }
-        DeribitInstrumentKind::Option => {
+        DeribitProductType::Option => {
             parse_option_instrument(instrument, ts_init, ts_event).map(Some)
         }
-        DeribitInstrumentKind::FutureCombo | DeribitInstrumentKind::OptionCombo => {
-            // Skip combos for initial implementation
+        DeribitProductType::FutureCombo | DeribitProductType::OptionCombo => {
+            log::debug!(
+                "Skipping combo instrument: {} (kind={:?})",
+                instrument.instrument_name,
+                instrument.kind
+            );
             Ok(None)
         }
     }
@@ -102,24 +158,12 @@ fn parse_spot_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
 
-    let base_currency = Currency::new(
-        instrument.base_currency,
-        8,
-        0,
-        instrument.base_currency,
-        CurrencyType::Crypto,
-    );
-    let quote_currency = Currency::new(
-        instrument.quote_currency,
-        8,
-        0,
-        instrument.quote_currency,
-        CurrencyType::Crypto,
-    );
+    let base_currency = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
-    let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
+    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
         .context("Failed to parse maker_commission")?;
@@ -147,6 +191,7 @@ fn parse_spot_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     );
@@ -162,37 +207,23 @@ fn parse_perpetual_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
 
-    let base_currency = Currency::new(
-        instrument.base_currency,
-        8,
-        0,
-        instrument.base_currency,
-        CurrencyType::Crypto,
-    );
-    let quote_currency = Currency::new(
-        instrument.quote_currency,
-        8,
-        0,
-        instrument.quote_currency,
-        CurrencyType::Crypto,
-    );
-    let settlement_currency = instrument.settlement_currency.map_or(base_currency, |c| {
-        Currency::new(c, 8, 0, c, CurrencyType::Crypto)
-    });
+    let base_currency = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
+    let settlement_currency = instrument
+        .settlement_currency
+        .map_or(base_currency, Currency::get_or_create_crypto);
 
     let is_inverse = instrument
         .instrument_type
         .as_ref()
         .is_some_and(|t| t == "reversed");
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
-    let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
+    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     // Contract size represents the multiplier (e.g., 10 USD per contract for BTC-PERPETUAL)
-    let multiplier = Some(Quantity::from(
-        instrument.contract_size.to_string().as_str(),
-    ));
+    let multiplier = Some(Quantity::from_decimal(instrument.contract_size)?);
     let lot_size = Some(size_increment);
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
@@ -223,6 +254,7 @@ fn parse_perpetual_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     );
@@ -238,23 +270,11 @@ fn parse_future_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
 
-    let underlying = Currency::new(
-        instrument.base_currency,
-        8,
-        0,
-        instrument.base_currency,
-        CurrencyType::Crypto,
-    );
-    let quote_currency = Currency::new(
-        instrument.quote_currency,
-        8,
-        0,
-        instrument.quote_currency,
-        CurrencyType::Crypto,
-    );
-    let settlement_currency = instrument.settlement_currency.map_or(underlying, |c| {
-        Currency::new(c, 8, 0, c, CurrencyType::Crypto)
-    });
+    let underlying = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
+    let settlement_currency = instrument
+        .settlement_currency
+        .map_or(underlying, Currency::get_or_create_crypto);
 
     let is_inverse = instrument
         .instrument_type
@@ -268,14 +288,12 @@ fn parse_future_instrument(
         .context("Missing expiration_timestamp for future")? as u64
         * 1_000_000; // milliseconds to nanoseconds
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
-    let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
+    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     // Contract size represents the multiplier
-    let multiplier = Some(Quantity::from(
-        instrument.contract_size.to_string().as_str(),
-    ));
+    let multiplier = Some(Quantity::from_decimal(instrument.contract_size)?);
     let lot_size = Some(size_increment); // Use min_trade_amount as lot size
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
@@ -308,6 +326,7 @@ fn parse_future_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     );
@@ -315,22 +334,25 @@ fn parse_future_instrument(
     Ok(InstrumentAny::CryptoFuture(future))
 }
 
-/// Parses an options instrument into an [`OptionContract`].
+/// Parses an options instrument into a [`CryptoOption`].
 fn parse_option_instrument(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
     ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
-
-    // Underlying is the base currency symbol (e.g., "BTC")
-    let underlying = instrument.base_currency;
-
-    // Settlement currency for Deribit options
+    let underlying = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
     let settlement = instrument
         .settlement_currency
         .unwrap_or(instrument.base_currency);
-    let currency = Currency::new(settlement, 8, 0, settlement, CurrencyType::Crypto);
+    let settlement_currency = Currency::get_or_create_crypto(settlement);
+
+    // Determine if inverse (settled in base currency) or linear (settled in quote/USDC)
+    let is_inverse = instrument
+        .instrument_type
+        .as_ref()
+        .is_some_and(|t| t == "reversed");
 
     // Determine option kind
     let option_kind = match instrument.option_type {
@@ -341,7 +363,7 @@ fn parse_option_instrument(
 
     // Parse strike price
     let strike = instrument.strike.context("Missing strike for option")?;
-    let strike_price = Price::from(strike.to_string().as_str());
+    let strike_price = Price::from_decimal(strike)?;
 
     // Convert timestamps from milliseconds to nanoseconds
     let activation_ns = (instrument.creation_timestamp as u64) * 1_000_000;
@@ -350,46 +372,51 @@ fn parse_option_instrument(
         .context("Missing expiration_timestamp for option")? as u64
         * 1_000_000;
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
 
     // Contract size is the multiplier (e.g., 1.0 for BTC options)
-    let multiplier = Quantity::from(instrument.contract_size.to_string().as_str());
-    let lot_size = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let multiplier = Quantity::from_decimal(instrument.contract_size)?;
+    let lot_size = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_trade_amount = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
         .context("Failed to parse maker_commission")?;
     let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
         .context("Failed to parse taker_commission")?;
 
-    let option = OptionContract::new(
+    let option = CryptoOption::new(
         instrument_id,
         instrument.instrument_name.into(),
-        AssetClass::Cryptocurrency,
-        None, // exchange - Deribit doesn't provide separate exchange field
         underlying,
+        quote_currency,
+        settlement_currency,
+        is_inverse,
         option_kind,
         strike_price,
-        currency,
         UnixNanos::from(activation_ns),
         UnixNanos::from(expiration_ns),
         price_increment.precision,
+        lot_size.precision,
         price_increment,
-        multiplier,
         lot_size,
-        None, // max_quantity
-        Some(min_quantity),
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
+        Some(multiplier),
+        Some(lot_size),
+        None,
+        Some(min_trade_amount),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     );
 
-    Ok(InstrumentAny::OptionContract(option))
+    Ok(InstrumentAny::CryptoOption(option))
 }
 
 /// Parses Deribit account summaries into a Nautilus [`AccountState`].
@@ -416,10 +443,7 @@ pub fn parse_account_state(
 
         // Skip balances with empty currency codes
         if ccy_str.is_empty() {
-            tracing::debug!(
-                "Skipping balance detail with empty currency code | raw_data={:?}",
-                summary
-            );
+            log::debug!("Skipping balance detail with empty currency code | raw_data={summary:?}");
             continue;
         }
 
@@ -428,10 +452,14 @@ pub fn parse_account_state(
             Some("DERIBIT - Parsing account state"),
         );
 
-        // Parse balance: total (equity includes unrealized PnL), locked, free
-        // Note: Deribit's available_funds = equity - initial_margin, so we must use equity for total
-        let total = Money::new(summary.equity, currency);
-        let free = Money::new(summary.available_funds, currency);
+        // Parse balance using margin_balance (not equity):
+        // - total: margin_balance (equity minus fee reserves)
+        // - free: available_funds
+        // - locked: total - free = initial_margin
+        //
+        // Key: available_funds = margin_balance - initial_margin
+        let total = Money::from_decimal(summary.margin_balance, currency)?;
+        let free = Money::from_decimal(summary.available_funds, currency)?;
         let locked = Money::from_raw(total.raw - free.raw, currency);
 
         let balance = AccountBalance::new(total, locked, free);
@@ -442,11 +470,13 @@ pub fn parse_account_state(
             (summary.initial_margin, summary.maintenance_margin)
         {
             // Only create margin balance if there are actual margin requirements
-            if initial_margin > 0.0 || maintenance_margin > 0.0 {
-                let initial = Money::new(initial_margin, currency);
-                let maintenance = Money::new(maintenance_margin, currency);
+            if !initial_margin.is_zero() || !maintenance_margin.is_zero() {
+                let initial = Money::from_decimal(initial_margin, currency)?;
+                let maintenance = Money::from_decimal(maintenance_margin, currency)?;
 
                 // Create a synthetic instrument_id for account-level margins
+                // SAFETY: Format string "ACCOUNT-{currency}" always produces valid ASCII
+                // symbol since currency codes are uppercase alphanumeric (e.g., BTC, ETH, USDT)
                 let margin_instrument_id = InstrumentId::new(
                     Symbol::from_str_unchecked(format!("ACCOUNT-{}", summary.currency)),
                     Venue::new("DERIBIT"),
@@ -485,6 +515,91 @@ pub fn parse_account_state(
     ))
 }
 
+/// Parses a Deribit WebSocket portfolio message into a Nautilus [`AccountState`].
+///
+/// This function converts real-time portfolio updates from the `user.portfolio.{currency}`
+/// subscription channel into Nautilus account state events.
+///
+/// # Returns
+///
+/// An `AccountState` containing balances and margin information.
+///
+/// # Errors
+///
+/// Returns an error if Money conversion fails for any balance field.
+pub fn parse_portfolio_to_account_state(
+    portfolio: &DeribitPortfolioMsg,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<AccountState> {
+    let ccy_str = portfolio.currency.trim();
+
+    // Skip empty currency codes
+    if ccy_str.is_empty() {
+        anyhow::bail!("Portfolio message has empty currency code");
+    }
+
+    let currency = Currency::get_or_create_crypto_with_context(
+        ccy_str,
+        Some("DERIBIT - Parsing portfolio update"),
+    );
+
+    // Parse balance using margin_balance (not equity):
+    // - total: margin_balance (equity minus fee reserves, used for margin calculations)
+    // - free: available_funds (what can be used for new orders)
+    // - locked: derived as (total - free) which equals initial_margin
+    //
+    // Key relationship: available_funds = margin_balance - initial_margin
+    // So: locked = margin_balance - available_funds = initial_margin
+    //
+    // Using margin_balance instead of equity ensures locked is always non-negative
+    // and accurately reflects the margin requirement.
+    let total = Money::from_decimal(portfolio.margin_balance, currency)?;
+    let free = Money::from_decimal(portfolio.available_funds, currency)?;
+    let locked = Money::from_raw(total.raw - free.raw, currency);
+
+    let balance = AccountBalance::new(total, locked, free);
+    let balances = vec![balance];
+
+    // Parse margin balances
+    let mut margins = Vec::new();
+    let initial_margin = portfolio.initial_margin;
+    let maintenance_margin = portfolio.maintenance_margin;
+
+    // Only create margin balance if there are actual margin requirements
+    if !initial_margin.is_zero() || !maintenance_margin.is_zero() {
+        let initial = Money::from_decimal(initial_margin, currency)?;
+        let maintenance = Money::from_decimal(maintenance_margin, currency)?;
+
+        // Create a synthetic instrument_id for account-level margins
+        let margin_instrument_id = InstrumentId::new(
+            Symbol::from_str_unchecked(format!("ACCOUNT-{}", portfolio.currency)),
+            Venue::new("DERIBIT"),
+        );
+
+        margins.push(MarginBalance::new(
+            initial,
+            maintenance,
+            margin_instrument_id,
+        ));
+    }
+
+    let account_type = AccountType::Margin;
+    let is_reported = true;
+
+    Ok(AccountState::new(
+        account_id,
+        account_type,
+        balances,
+        margins,
+        is_reported,
+        UUID4::new(),
+        ts_init, // Use ts_init for both since we don't have server timestamp in portfolio msg
+        ts_init,
+        None,
+    ))
+}
+
 // Parses a Deribit public trade into a Nautilus [`TradeTick`].
 ///
 /// # Errors
@@ -505,8 +620,8 @@ pub fn parse_trade_tick(
         "sell" => AggressorSide::Seller,
         other => anyhow::bail!("Invalid trade direction: {other}"),
     };
-    let price = Price::new(trade.price, price_precision);
-    let size = Quantity::new(trade.amount, size_precision);
+    let price = Price::from_decimal_dp(trade.price, price_precision)?;
+    let size = Quantity::from_decimal_dp(trade.amount, size_precision)?;
     let ts_event = UnixNanos::from((trade.timestamp as u64) * NANOSECONDS_IN_MILLISECOND);
     let trade_id = TradeId::new(&trade.trade_id);
 
@@ -632,6 +747,54 @@ pub fn parse_order_book(
     Ok(book)
 }
 
+/// Converts a Nautilus BarType to a Deribit chart resolution.
+///
+/// Deribit resolutions: "1", "3", "5", "10", "15", "30", "60", "120", "180", "360", "720", "1D"
+pub fn bar_spec_to_resolution(bar_type: &BarType) -> String {
+    use nautilus_model::enums::BarAggregation;
+
+    let spec = bar_type.spec();
+    match spec.aggregation {
+        BarAggregation::Minute => {
+            let step = spec.step.get();
+            // Map to nearest Deribit resolution
+            match step {
+                1 => "1".to_string(),
+                2..=3 => "3".to_string(),
+                4..=5 => "5".to_string(),
+                6..=10 => "10".to_string(),
+                11..=15 => "15".to_string(),
+                16..=30 => "30".to_string(),
+                31..=60 => "60".to_string(),
+                61..=120 => "120".to_string(),
+                121..=180 => "180".to_string(),
+                181..=360 => "360".to_string(),
+                361..=720 => "720".to_string(),
+                _ => "1D".to_string(),
+            }
+        }
+        BarAggregation::Hour => {
+            let step = spec.step.get();
+            match step {
+                1 => "60".to_string(),
+                2 => "120".to_string(),
+                3 => "180".to_string(),
+                4..=6 => "360".to_string(),
+                7..=12 => "720".to_string(),
+                _ => "1D".to_string(),
+            }
+        }
+        BarAggregation::Day => "1D".to_string(),
+        _ => {
+            log::warn!(
+                "Unsupported bar aggregation {:?}, defaulting to 1 minute",
+                spec.aggregation
+            );
+            "1".to_string()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::instruments::Instrument;
@@ -659,7 +822,7 @@ mod tests {
         let instrument = instrument_any.expect("Should parse perpetual instrument");
 
         let InstrumentAny::CryptoPerpetual(perpetual) = instrument else {
-            panic!("Expected CryptoPerpetual, got {instrument:?}");
+            panic!("Expected CryptoPerpetual, was {instrument:?}");
         };
         assert_eq!(perpetual.id(), InstrumentId::from("BTC-PERPETUAL.DERIBIT"));
         assert_eq!(perpetual.raw_symbol(), Symbol::from("BTC-PERPETUAL"));
@@ -696,7 +859,7 @@ mod tests {
         let instrument = instrument_any.expect("Should parse future instrument");
 
         let InstrumentAny::CryptoFuture(future) = instrument else {
-            panic!("Expected CryptoFuture, got {instrument:?}");
+            panic!("Expected CryptoFuture, was {instrument:?}");
         };
         assert_eq!(future.id(), InstrumentId::from("BTC-27DEC24.DERIBIT"));
         assert_eq!(future.raw_symbol(), Symbol::from("BTC-27DEC24"));
@@ -740,9 +903,9 @@ mod tests {
                 .unwrap();
         let instrument = instrument_any.expect("Should parse option instrument");
 
-        // Verify it's an OptionContract
-        let InstrumentAny::OptionContract(option) = instrument else {
-            panic!("Expected OptionContract, got {instrument:?}");
+        // Verify it's a CryptoOption
+        let InstrumentAny::CryptoOption(option) = instrument else {
+            panic!("Expected CryptoOption, was {instrument:?}");
         };
 
         assert_eq!(
@@ -750,23 +913,26 @@ mod tests {
             InstrumentId::from("BTC-27DEC24-100000-C.DERIBIT")
         );
         assert_eq!(option.raw_symbol(), Symbol::from("BTC-27DEC24-100000-C"));
-        assert_eq!(option.underlying(), Some("BTC".into()));
-        assert_eq!(option.asset_class(), AssetClass::Cryptocurrency);
-        assert_eq!(option.option_kind(), Some(OptionKind::Call));
-        assert_eq!(option.strike_price(), Some(Price::from("100000")));
-        assert_eq!(option.currency.code, "BTC");
+        assert_eq!(option.underlying.code.as_str(), "BTC");
+        assert_eq!(option.quote_currency.code.as_str(), "BTC");
+        assert_eq!(option.settlement_currency.code.as_str(), "BTC");
+        assert!(option.is_inverse);
+        assert_eq!(option.option_kind, OptionKind::Call);
+        assert_eq!(option.strike_price, Price::from("100000"));
         assert_eq!(
-            option.activation_ns(),
-            Some(UnixNanos::from(1719561600000_u64 * 1_000_000))
+            option.activation_ns,
+            UnixNanos::from(1719561600000_u64 * 1_000_000)
         );
         assert_eq!(
-            option.expiration_ns(),
-            Some(UnixNanos::from(1735300800000_u64 * 1_000_000))
+            option.expiration_ns,
+            UnixNanos::from(1735300800000_u64 * 1_000_000)
         );
-        assert_eq!(option.price_precision(), 4);
-        assert_eq!(option.price_increment(), Price::from("0.0005"));
-        assert_eq!(option.multiplier(), Quantity::from("1"));
-        assert_eq!(option.lot_size(), Some(Quantity::from("0.1")));
+        assert_eq!(option.price_precision, 4);
+        assert_eq!(option.price_increment, Price::from("0.0005"));
+        assert_eq!(option.size_precision, 1);
+        assert_eq!(option.size_increment, Quantity::from("0.1"));
+        assert_eq!(option.multiplier, Quantity::from("1"));
+        assert_eq!(option.lot_size, Quantity::from("0.1"));
         assert_eq!(option.maker_fee, dec!(0.0003));
         assert_eq!(option.taker_fee, dec!(0.0003));
     }
@@ -799,27 +965,25 @@ mod tests {
             .expect("BTC balance should exist");
 
         // From test data:
-        // balance: 302.60065765, equity: 302.61869214, available_funds: 301.38059622
-        // initial_margin: 1.24669592, session_upl: 0.05271555
+        // margin_balance: 302.62729214, available_funds: 301.38059622
+        // initial_margin: 1.24669592
         //
-        // Using equity (correct):
-        // total = equity = 302.61869214
+        // Using margin_balance:
+        // total = margin_balance = 302.62729214
         // free = available_funds = 301.38059622
-        // locked = total - free = 302.61869214 - 301.38059622 = 1.23809592
-        //
-        // This is close to initial_margin (1.24669592), small difference due to other factors
-        assert_eq!(btc_balance.total.as_f64(), 302.61869214);
+        // locked = total - free = 302.62729214 - 301.38059622 = 1.24669592 (exactly initial_margin!)
+        assert_eq!(btc_balance.total.as_f64(), 302.62729214);
         assert_eq!(btc_balance.free.as_f64(), 301.38059622);
 
-        // Verify locked is positive and close to initial_margin
+        // Verify locked equals initial_margin exactly
         let locked = btc_balance.locked.as_f64();
         assert!(
             locked > 0.0,
             "Locked should be positive when positions exist"
         );
         assert!(
-            (locked - 1.24669592).abs() < 0.01,
-            "Locked ({locked}) should be close to initial_margin (1.24669592)"
+            (locked - 1.24669592).abs() < 0.0001,
+            "Locked ({locked}) should equal initial_margin (1.24669592)"
         );
 
         // Test ETH balance (no positions)
@@ -829,10 +993,10 @@ mod tests {
             .find(|b| b.currency.code == "ETH")
             .expect("ETH balance should exist");
 
-        // From test data: balance: 100, equity: 100, available_funds: 99.999598
-        // total = equity = 100
+        // From test data: margin_balance: 100, available_funds: 99.999598, initial_margin: 0.000402
+        // total = margin_balance = 100
         // free = available_funds = 99.999598
-        // locked = 100 - 99.999598 = 0.000402 (matches initial_margin)
+        // locked = 100 - 99.999598 = 0.000402 (equals initial_margin)
         assert_eq!(eth_balance.total.as_f64(), 100.0);
         assert_eq!(eth_balance.free.as_f64(), 99.999598);
         assert_eq!(eth_balance.locked.as_f64(), 0.000402);
@@ -993,14 +1157,14 @@ mod tests {
         let spread = book.spread().expect("Spread should exist");
         assert!(
             (spread - 0.5).abs() < 0.0001,
-            "Spread should be 0.5, got {spread}"
+            "Spread should be 0.5, was {spread}"
         );
 
         // Verify midpoint ((87003.0 + 87002.5) / 2 = 87002.75)
         let midpoint = book.midpoint().expect("Midpoint should exist");
         assert!(
             (midpoint - 87002.75).abs() < 0.0001,
-            "Midpoint should be 87002.75, got {midpoint}"
+            "Midpoint should be 87002.75, was {midpoint}"
         );
 
         // Verify level counts match input data
@@ -1056,5 +1220,174 @@ mod tests {
             asks_map.contains_key(&dec!(87031.5)),
             "Asks map should contain worst ask price"
         );
+    }
+
+    fn make_instrument_id(symbol: &str) -> InstrumentId {
+        InstrumentId::new(Symbol::from(symbol), Venue::from("DERIBIT"))
+    }
+
+    #[rstest]
+    fn test_parse_futures_and_perpetuals() {
+        // Perpetuals are classified as "future" in Deribit API
+        let cases = [
+            ("BTC-PERPETUAL", "future", "BTC"),
+            ("ETH-PERPETUAL", "future", "ETH"),
+            ("SOL-PERPETUAL", "future", "SOL"),
+            // Futures with expiry dates
+            ("BTC-25MAR23", "future", "BTC"),
+            ("BTC-5AUG23", "future", "BTC"), // Single digit day
+            ("ETH-28MAR25", "future", "ETH"),
+        ];
+
+        for (symbol, expected_kind, expected_currency) in cases {
+            let (kind, currency) = parse_instrument_kind_currency(&make_instrument_id(symbol));
+            assert_eq!(kind, expected_kind, "kind mismatch for {symbol}");
+            assert_eq!(
+                currency, expected_currency,
+                "currency mismatch for {symbol}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_parse_options() {
+        let cases = [
+            // Standard options: {CURRENCY}-{DMMMYY}-{STRIKE}-{C|P}
+            ("BTC-25MAR23-420-C", "option", "BTC"),
+            ("BTC-5AUG23-580-P", "option", "BTC"),
+            ("ETH-28MAR25-4000-C", "option", "ETH"),
+            // Linear option with decimal strike (d = decimal point)
+            ("XRP_USDC-30JUN23-0d625-C", "option", "XRP"),
+        ];
+
+        for (symbol, expected_kind, expected_currency) in cases {
+            let (kind, currency) = parse_instrument_kind_currency(&make_instrument_id(symbol));
+            assert_eq!(kind, expected_kind, "kind mismatch for {symbol}");
+            assert_eq!(
+                currency, expected_currency,
+                "currency mismatch for {symbol}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot() {
+        let cases = [
+            ("BTC_USDC", "spot", "BTC"),
+            ("ETH_USDT", "spot", "ETH"),
+            ("SOL_USDC", "spot", "SOL"),
+        ];
+
+        for (symbol, expected_kind, expected_currency) in cases {
+            let (kind, currency) = parse_instrument_kind_currency(&make_instrument_id(symbol));
+            assert_eq!(kind, expected_kind, "kind mismatch for {symbol}");
+            assert_eq!(
+                currency, expected_currency,
+                "currency mismatch for {symbol}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_parse_portfolio_to_account_state() {
+        let json_data = load_test_json("ws_portfolio.json");
+        let notification: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+
+        // Extract the data field from the notification
+        let data = notification
+            .get("params")
+            .and_then(|p| p.get("data"))
+            .expect("Test data must have params.data");
+
+        let portfolio: DeribitPortfolioMsg =
+            serde_json::from_value(data.clone()).expect("Should deserialize portfolio message");
+
+        // Verify deserialization
+        assert_eq!(portfolio.currency, "USDT");
+        assert_eq!(portfolio.equity, dec!(55.00055));
+        assert_eq!(portfolio.balance, dec!(55.00055));
+        assert_eq!(portfolio.available_funds, dec!(53.868247));
+        assert_eq!(portfolio.margin_balance, dec!(54.968258));
+        assert_eq!(portfolio.initial_margin, dec!(1.100011));
+        assert_eq!(portfolio.maintenance_margin, dec!(0.0));
+
+        // Test parsing to AccountState
+        let account_id = AccountId::new("DERIBIT-master");
+        let ts_init = UnixNanos::from(1700000000000000000_u64);
+
+        let account_state =
+            parse_portfolio_to_account_state(&portfolio, account_id, ts_init).unwrap();
+
+        // Verify account state
+        assert_eq!(account_state.account_id, account_id);
+        assert_eq!(account_state.account_type, AccountType::Margin);
+        assert!(account_state.is_reported);
+
+        // Verify balances (should have 1 balance for USDT)
+        assert_eq!(account_state.balances.len(), 1);
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.currency.code, "USDT");
+        assert_eq!(balance.total.as_f64(), 54.968258); // margin_balance
+        assert_eq!(balance.free.as_f64(), 53.868247); // available_funds
+
+        // locked = total - free = 54.968258 - 53.868247 = 1.100011 (equals initial_margin)
+        let locked = balance.locked.as_f64();
+        assert!(
+            (locked - 1.100011).abs() < 0.0001,
+            "Locked ({locked}) should be close to 1.100011 (initial_margin)"
+        );
+
+        // Verify margins (should have 1 margin since initial_margin > 0)
+        assert_eq!(account_state.margins.len(), 1);
+        let margin = &account_state.margins[0];
+        assert_eq!(margin.initial.as_f64(), 1.100011);
+        assert_eq!(margin.maintenance.as_f64(), 0.0);
+        assert_eq!(
+            margin.instrument_id,
+            InstrumentId::from("ACCOUNT-USDT.DERIBIT")
+        );
+    }
+
+    #[rstest]
+    #[case::minute_1(1, "MINUTE", "1")]
+    #[case::minute_2(2, "MINUTE", "3")]
+    #[case::minute_3(3, "MINUTE", "3")]
+    #[case::minute_4(4, "MINUTE", "5")]
+    #[case::minute_5(5, "MINUTE", "5")]
+    #[case::minute_6(6, "MINUTE", "10")]
+    #[case::minute_10(10, "MINUTE", "10")]
+    #[case::minute_11(11, "MINUTE", "15")]
+    #[case::minute_15(15, "MINUTE", "15")]
+    #[case::minute_16(16, "MINUTE", "30")]
+    #[case::minute_30(30, "MINUTE", "30")]
+    #[case::minute_31(31, "MINUTE", "60")]
+    #[case::minute_60(60, "MINUTE", "60")]
+    #[case::minute_61(61, "MINUTE", "120")]
+    #[case::minute_120(120, "MINUTE", "120")]
+    #[case::minute_121(121, "MINUTE", "180")]
+    #[case::minute_180(180, "MINUTE", "180")]
+    #[case::minute_181(181, "MINUTE", "360")]
+    #[case::minute_360(360, "MINUTE", "360")]
+    #[case::minute_361(361, "MINUTE", "720")]
+    #[case::minute_720(720, "MINUTE", "720")]
+    #[case::minute_721(721, "MINUTE", "1D")]
+    #[case::hour_1(1, "HOUR", "60")]
+    #[case::hour_2(2, "HOUR", "120")]
+    #[case::hour_3(3, "HOUR", "180")]
+    #[case::hour_4(4, "HOUR", "360")]
+    #[case::hour_6(6, "HOUR", "360")]
+    #[case::hour_7(7, "HOUR", "720")]
+    #[case::hour_12(12, "HOUR", "720")]
+    #[case::hour_13(13, "HOUR", "1D")]
+    #[case::day_1(1, "DAY", "1D")]
+    fn test_bar_spec_to_resolution(
+        #[case] step: u64,
+        #[case] aggregation: &str,
+        #[case] expected: &str,
+    ) {
+        let bar_type_str = format!("BTC-PERPETUAL.DERIBIT-{step}-{aggregation}-LAST-EXTERNAL");
+        let bar_type = BarType::from(bar_type_str.as_str());
+        let resolution = bar_spec_to_resolution(&bar_type);
+        assert_eq!(resolution, expected);
     }
 }

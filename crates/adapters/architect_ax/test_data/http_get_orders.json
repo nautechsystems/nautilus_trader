@@ -1,0 +1,43 @@
+{
+  "orders": [
+    {
+      "ts": 1704067200,
+      "tn": 500000000,
+      "oid": "O-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "u": "test_user@example.com",
+      "s": "EURUSD-PERP",
+      "p": "1.08400",
+      "q": 1000,
+      "xq": 300,
+      "rq": 700,
+      "o": "PARTIALLY_FILLED",
+      "d": "B",
+      "tif": "GTC",
+      "cid": 12345,
+      "r": null,
+      "tag": "strategy-1",
+      "txt": null
+    },
+    {
+      "ts": 1704067100,
+      "tn": 0,
+      "oid": "O-01ARZ3NDEKTSV4RRFFQ69G5FBW",
+      "u": "test_user@example.com",
+      "s": "GBPUSD-PERP",
+      "p": "1.27200",
+      "q": 500,
+      "xq": 500,
+      "rq": 0,
+      "o": "FILLED",
+      "d": "S",
+      "tif": "IOC",
+      "cid": null,
+      "r": null,
+      "tag": null,
+      "txt": null
+    }
+  ],
+  "total_count": 2,
+  "limit": 100,
+  "offset": 0
+}

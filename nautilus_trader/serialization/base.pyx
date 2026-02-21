@@ -74,6 +74,7 @@ from nautilus_trader.model.instruments.futures_spread cimport FuturesSpread
 from nautilus_trader.model.instruments.index cimport IndexInstrument
 from nautilus_trader.model.instruments.option_contract cimport OptionContract
 from nautilus_trader.model.instruments.option_spread cimport OptionSpread
+from nautilus_trader.model.instruments.perpetual_contract cimport PerpetualContract
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 
 from nautilus_trader.execution.reports import ExecutionMassStatus
@@ -135,6 +136,7 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     IndexInstrument.__name__: IndexInstrument.to_dict_c,
     OptionContract.__name__: OptionContract.to_dict_c,
     OptionSpread.__name__: OptionSpread.to_dict_c,
+    PerpetualContract.__name__: PerpetualContract.to_dict_c,
     OrderBookDelta.__name__: OrderBookDelta.to_dict_c,
     OrderBookDeltas.__name__: OrderBookDeltas.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
@@ -202,6 +204,7 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     IndexInstrument.__name__: IndexInstrument.from_dict_c,
     OptionContract.__name__: OptionContract.from_dict_c,
     OptionSpread.__name__: OptionSpread.from_dict_c,
+    PerpetualContract.__name__: PerpetualContract.from_dict_c,
     OrderBookDelta.__name__: OrderBookDelta.from_dict_c,
     OrderBookDeltas.__name__: OrderBookDeltas.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
@@ -272,6 +275,7 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     IndexInstrument,
     OptionContract,
     OptionSpread,
+    PerpetualContract,
     OrderBookDelta,
     OrderBookDeltas,
     TradeTick,

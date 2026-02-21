@@ -81,13 +81,13 @@ async fn gather_instruments_info(
         let exchange = options.exchange;
         let client = &http_client;
 
-        tracing::info!("Requesting instruments for {exchange}");
+        log::info!("Requesting instruments for {exchange}");
 
         async move {
             match client.instruments_info(exchange, None, None).await {
                 Ok(instruments) => Some((exchange, instruments)),
                 Err(e) => {
-                    tracing::error!("Error fetching instruments for {exchange}: {e}");
+                    log::error!("Error fetching instruments for {exchange}: {e}");
                     None
                 }
             }
@@ -97,7 +97,7 @@ async fn gather_instruments_info(
     let results: HashMap<TardisExchange, Vec<TardisInstrumentInfo>> =
         join_all(futures).await.into_iter().flatten().collect();
 
-    tracing::info!("Received all instruments");
+    log::info!("Received all instruments");
 
     results
 }
@@ -114,8 +114,8 @@ async fn gather_instruments_info(
 ///
 /// Panics if unable to determine the output path (current directory fallback fails).
 pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> anyhow::Result<()> {
-    tracing::info!("Starting replay");
-    tracing::info!("Config filepath: {config_filepath:?}");
+    log::info!("Starting replay");
+    log::info!("Config filepath: {config_filepath:?}");
 
     // Load and parse the replay configuration
     let config_data = fs::read_to_string(config_filepath)
@@ -135,16 +135,16 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         })
         .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 
-    tracing::info!("Output path: {path:?}");
+    log::info!("Output path: {path:?}");
 
     let normalize_symbols = config.normalize_symbols.unwrap_or(true);
-    tracing::info!("normalize_symbols={normalize_symbols}");
+    log::info!("normalize_symbols={normalize_symbols}");
 
     let book_snapshot_output = config
         .book_snapshot_output
         .clone()
         .unwrap_or(BookSnapshotOutput::Deltas);
-    tracing::info!("book_snapshot_output={book_snapshot_output:?}");
+    log::info!("book_snapshot_output={book_snapshot_output:?}");
 
     let http_client = TardisHttpClient::new(None, None, None, normalize_symbols)?;
     let mut machine_client = TardisMachineClient::new(
@@ -178,7 +178,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         }
     }
 
-    tracing::info!("Starting tardis-machine stream");
+    log::info!("Starting tardis-machine stream");
     let stream = machine_client.replay(config.options).await?;
     pin_mut!(stream);
 
@@ -216,7 +216,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                     }
                     Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
                     Data::Delta(delta) => {
-                        tracing::warn!(
+                        log::warn!(
                             "Skipping individual delta message for {} (use Deltas batch instead)",
                             delta.instrument_id
                         );
@@ -224,7 +224,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                     Data::MarkPriceUpdate(_)
                     | Data::IndexPriceUpdate(_)
                     | Data::InstrumentClose(_) => {
-                        tracing::debug!(
+                        log::debug!(
                             "Skipping unsupported data type for instrument {}",
                             msg.instrument_id()
                         );
@@ -233,11 +233,11 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
                 msg_count += 1;
                 if msg_count % 100_000 == 0 {
-                    tracing::debug!("Processed {} messages", msg_count.separate_with_commas());
+                    log::debug!("Processed {} messages", msg_count.separate_with_commas());
                 }
             }
             Err(e) => {
-                tracing::error!("Stream error: {e:?}");
+                log::error!("Stream error: {e:?}");
                 break;
             }
         }
@@ -270,7 +270,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         batch_and_write_bars(bars, &bar_type, cursor.date_utc, &path);
     }
 
-    tracing::info!(
+    log::info!(
         "Replay completed after {} messages",
         msg_count.separate_with_commas()
     );
@@ -402,7 +402,7 @@ fn batch_and_write_deltas(
     match book_deltas_to_arrow_record_batch_bytes(deltas) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
-            tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
+            log::error!("Error converting `{typename}` to Arrow: {e:?}");
         }
     }
 }
@@ -418,7 +418,7 @@ fn batch_and_write_depths(
     match book_depth10_to_arrow_record_batch_bytes(depths) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
-            tracing::error!("Error converting OrderBookDepth10 to Arrow: {e:?}");
+            log::error!("Error converting OrderBookDepth10 to Arrow: {e:?}");
         }
     }
 }
@@ -433,7 +433,7 @@ fn batch_and_write_quotes(
     match quotes_to_arrow_record_batch_bytes(quotes) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
-            tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
+            log::error!("Error converting `{typename}` to Arrow: {e:?}");
         }
     }
 }
@@ -448,7 +448,7 @@ fn batch_and_write_trades(
     match trades_to_arrow_record_batch_bytes(trades) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
-            tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
+            log::error!("Error converting `{typename}` to Arrow: {e:?}");
         }
     }
 }
@@ -458,16 +458,16 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, pat
     let batch = match bars_to_arrow_record_batch_bytes(bars) {
         Ok(batch) => batch,
         Err(e) => {
-            tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
+            log::error!("Error converting `{typename}` to Arrow: {e:?}");
             return;
         }
     };
 
     let filepath = path.join(parquet_filepath_bars(bar_type, date));
     if let Err(e) = write_parquet_local(batch, &filepath) {
-        tracing::error!("Error writing {filepath:?}: {e:?}");
+        log::error!("Error writing {filepath:?}: {e:?}");
     } else {
-        tracing::info!("File written: {filepath:?}");
+        log::info!("File written: {filepath:?}");
     }
 }
 
@@ -479,9 +479,10 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, pat
 /// reliably represented as UnixNanos without overflow issues.
 fn assert_post_epoch(date: NaiveDate) {
     let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).expect("UNIX epoch must exist");
-    if date < epoch {
-        panic!("Tardis replay filenames require dates on or after 1970-01-01; received {date}");
-    }
+    assert!(
+        date >= epoch,
+        "Tardis replay filenames require dates on or after 1970-01-01; received {date}"
+    );
 }
 
 /// Converts an ISO 8601 timestamp to a filesystem-safe format.
@@ -563,9 +564,9 @@ fn write_batch(
 ) {
     let filepath = path.join(parquet_filepath(typename, instrument_id, date));
     if let Err(e) = write_parquet_local(batch, &filepath) {
-        tracing::error!("Error writing {filepath:?}: {e:?}");
+        log::error!("Error writing {filepath:?}: {e:?}");
     } else {
-        tracing::info!("File written: {filepath:?}");
+        log::info!("File written: {filepath:?}");
     }
 }
 

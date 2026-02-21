@@ -25,7 +25,7 @@ use crate::enums::{BetSide, OrderSideSpecified};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct Bet {
     price: Decimal,
@@ -79,9 +79,14 @@ impl Bet {
     ///
     /// Panics if the side is not [BetSide::Lay].
     pub fn from_liability(price: Decimal, liability: Decimal, side: BetSide) -> Self {
-        if side != BetSide::Lay {
-            panic!("Liability-based betting is only applicable for Lay side.");
-        }
+        assert!(
+            side == BetSide::Lay,
+            "Liability-based betting is only applicable for Lay side."
+        );
+        assert!(
+            price > Decimal::ONE,
+            "Price must be greater than 1.0 for lay liability calculation, was {price}"
+        );
         let adjusted_volume = liability / (price - Decimal::ONE);
         Self::new(price, adjusted_volume, side)
     }
@@ -167,7 +172,7 @@ impl Display for Bet {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct BetPosition {
     price: Decimal,
@@ -350,25 +355,64 @@ pub fn calc_bets_pnl(bets: &[Bet]) -> Decimal {
         .fold(Decimal::ZERO, |acc, bet| acc + bet.outcome_win_payoff())
 }
 
+/// Checks that `probability` is non-zero.
+///
+/// # Errors
+///
+/// Returns an error if `probability` is zero.
+pub fn check_probability_non_zero(probability: Decimal) -> anyhow::Result<()> {
+    if probability.is_zero() {
+        anyhow::bail!("invalid probability: must be non-zero")
+    }
+    Ok(())
+}
+
+/// Checks that `probability` is invertible (not equal to 1.0).
+///
+/// # Errors
+///
+/// Returns an error if `probability` is 1.0.
+pub fn check_probability_invertible(probability: Decimal) -> anyhow::Result<()> {
+    if probability == Decimal::ONE {
+        anyhow::bail!("invalid probability: must not be 1.0 (inverse would be zero)")
+    }
+    Ok(())
+}
+
 /// Converts a probability and volume into a Bet.
 ///
 /// For a BUY side, this creates a BACK bet; for SELL, a LAY bet.
-pub fn probability_to_bet(probability: Decimal, volume: Decimal, side: OrderSideSpecified) -> Bet {
+///
+/// # Errors
+///
+/// Returns an error if `probability` is zero.
+pub fn probability_to_bet(
+    probability: Decimal,
+    volume: Decimal,
+    side: OrderSideSpecified,
+) -> anyhow::Result<Bet> {
+    check_probability_non_zero(probability)?;
     let price = Decimal::ONE / probability;
-    match side {
+    let bet = match side {
         OrderSideSpecified::Buy => Bet::new(price, volume / price, BetSide::Back),
         OrderSideSpecified::Sell => Bet::new(price, volume / price, BetSide::Lay),
-    }
+    };
+    Ok(bet)
 }
 
 /// Converts a probability and volume into a Bet using the inverse probability.
 ///
 /// The side is also inverted (BUY becomes SELL and vice versa).
+///
+/// # Errors
+///
+/// Returns an error if `probability` is 1.0 or its inverse is zero.
 pub fn inverse_probability_to_bet(
     probability: Decimal,
     volume: Decimal,
     side: OrderSideSpecified,
-) -> Bet {
+) -> anyhow::Result<Bet> {
+    check_probability_invertible(probability)?;
     let inverse_probability = Decimal::ONE - probability;
     let inverse_side = match side {
         OrderSideSpecified::Buy => OrderSideSpecified::Sell,
@@ -857,7 +901,7 @@ mod tests {
     #[rstest]
     fn test_probability_to_bet_back_simple() {
         // Using OrderSideSpecified in place of ProbSide.
-        let bet = probability_to_bet(dec!(0.50), dec!(50.0), OrderSideSpecified::Buy);
+        let bet = probability_to_bet(dec!(0.50), dec!(50.0), OrderSideSpecified::Buy).unwrap();
         let expected = Bet::new(dec!(2.0), dec!(25.0), BetSide::Back);
         assert_eq!(bet, expected);
         assert_eq!(bet.outcome_win_payoff(), dec!(25.0));
@@ -866,7 +910,7 @@ mod tests {
 
     #[rstest]
     fn test_probability_to_bet_back_high_prob() {
-        let bet = probability_to_bet(dec!(0.64), dec!(50.0), OrderSideSpecified::Buy);
+        let bet = probability_to_bet(dec!(0.64), dec!(50.0), OrderSideSpecified::Buy).unwrap();
         let expected = Bet::new(dec!(1.5625), dec!(32.0), BetSide::Back);
         assert_eq!(bet, expected);
         assert_eq!(bet.outcome_win_payoff(), dec!(18.0));
@@ -875,7 +919,7 @@ mod tests {
 
     #[rstest]
     fn test_probability_to_bet_back_low_prob() {
-        let bet = probability_to_bet(dec!(0.40), dec!(50.0), OrderSideSpecified::Buy);
+        let bet = probability_to_bet(dec!(0.40), dec!(50.0), OrderSideSpecified::Buy).unwrap();
         let expected = Bet::new(dec!(2.5), dec!(20.0), BetSide::Back);
         assert_eq!(bet, expected);
         assert_eq!(bet.outcome_win_payoff(), dec!(30.0));
@@ -884,7 +928,7 @@ mod tests {
 
     #[rstest]
     fn test_probability_to_bet_sell() {
-        let bet = probability_to_bet(dec!(0.80), dec!(50.0), OrderSideSpecified::Sell);
+        let bet = probability_to_bet(dec!(0.80), dec!(50.0), OrderSideSpecified::Sell).unwrap();
         let expected = Bet::new(dec_str("1.25"), dec_str("40"), BetSide::Lay);
         assert_eq!(bet, expected);
         assert_eq!(bet.outcome_win_payoff(), dec_str("-10"));
@@ -894,11 +938,13 @@ mod tests {
     #[rstest]
     fn test_inverse_probability_to_bet() {
         // Original bet with SELL side
-        let original_bet = probability_to_bet(dec!(0.80), dec!(100.0), OrderSideSpecified::Sell);
+        let original_bet =
+            probability_to_bet(dec!(0.80), dec!(100.0), OrderSideSpecified::Sell).unwrap();
         // Equivalent reverse bet by buying the inverse probability
-        let reverse_bet = probability_to_bet(dec!(0.20), dec!(100.0), OrderSideSpecified::Buy);
+        let reverse_bet =
+            probability_to_bet(dec!(0.20), dec!(100.0), OrderSideSpecified::Buy).unwrap();
         let inverse_bet =
-            inverse_probability_to_bet(dec!(0.80), dec!(100.0), OrderSideSpecified::Sell);
+            inverse_probability_to_bet(dec!(0.80), dec!(100.0), OrderSideSpecified::Sell).unwrap();
 
         assert_eq!(
             original_bet.outcome_win_payoff(),
@@ -920,9 +966,10 @@ mod tests {
 
     #[rstest]
     fn test_inverse_probability_to_bet_example2() {
-        let original_bet = probability_to_bet(dec!(0.64), dec!(50.0), OrderSideSpecified::Sell);
+        let original_bet =
+            probability_to_bet(dec!(0.64), dec!(50.0), OrderSideSpecified::Sell).unwrap();
         let inverse_bet =
-            inverse_probability_to_bet(dec!(0.64), dec!(50.0), OrderSideSpecified::Sell);
+            inverse_probability_to_bet(dec!(0.64), dec!(50.0), OrderSideSpecified::Sell).unwrap();
 
         assert_eq!(original_bet.stake, dec!(32.0));
         assert_eq!(original_bet.outcome_win_payoff(), dec!(-18.0));

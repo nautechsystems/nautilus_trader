@@ -154,8 +154,8 @@ impl KrakenFuturesRawHttpClient {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(rate_limit),
-                Some(Self::default_quota(rate_limit)),
+                Self::rate_limiter_quotas(rate_limit)?,
+                Some(Self::default_quota(rate_limit)?),
                 timeout_secs,
                 proxy_url,
             )
@@ -206,8 +206,8 @@ impl KrakenFuturesRawHttpClient {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(rate_limit),
-                Some(Self::default_quota(rate_limit)),
+                Self::rate_limiter_quotas(rate_limit)?,
+                Some(Self::default_quota(rate_limit)?),
                 timeout_secs,
                 proxy_url,
             )
@@ -252,17 +252,22 @@ impl KrakenFuturesRawHttpClient {
         HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
     }
 
-    fn default_quota(max_requests_per_second: u32) -> Quota {
-        Quota::per_second(NonZeroU32::new(max_requests_per_second).unwrap_or_else(|| {
-            NonZeroU32::new(KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND).unwrap()
-        }))
+    fn default_quota(max_requests_per_second: u32) -> anyhow::Result<Quota> {
+        let burst = NonZeroU32::new(max_requests_per_second).unwrap_or(
+            NonZeroU32::new(KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND).expect("non-zero"),
+        );
+        Quota::per_second(burst).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid max_requests_per_second: {max_requests_per_second} exceeds maximum"
+            )
+        })
     }
 
-    fn rate_limiter_quotas(max_requests_per_second: u32) -> Vec<(String, Quota)> {
-        vec![(
+    fn rate_limiter_quotas(max_requests_per_second: u32) -> anyhow::Result<Vec<(String, Quota)>> {
+        Ok(vec![(
             KRAKEN_GLOBAL_RATE_KEY.to_string(),
-            Self::default_quota(max_requests_per_second),
-        )]
+            Self::default_quota(max_requests_per_second)?,
+        )])
     }
 
     fn rate_limit_keys(endpoint: &str) -> Vec<String> {
@@ -315,7 +320,7 @@ impl KrakenFuturesRawHttpClient {
                     })?;
 
                     let base_url = &self.base_url;
-                    tracing::debug!(
+                    log::debug!(
                         "Kraken Futures auth: endpoint={endpoint}, nonce={nonce}, base_url={base_url}"
                     );
 
@@ -412,7 +417,7 @@ impl KrakenFuturesRawHttpClient {
                 KrakenHttpError::AuthenticationError(format!("Failed to sign request: {e}"))
             })?;
 
-        tracing::debug!(
+        log::debug!(
             "Kraken Futures GET with query: endpoint={endpoint}, query={query_string}, nonce={nonce}"
         );
 
@@ -506,7 +511,7 @@ impl KrakenFuturesRawHttpClient {
         })?;
 
         let nonce = self.generate_nonce();
-        tracing::debug!("Generated nonce {nonce} for {endpoint}");
+        log::debug!("Generated nonce {nonce} for {endpoint}");
 
         let signature = credential
             .sign_futures(endpoint, &post_data, nonce)
@@ -553,7 +558,7 @@ impl KrakenFuturesRawHttpClient {
         })?;
 
         serde_json::from_str(&response_text).map_err(|e| {
-            tracing::error!("Failed to parse response from {endpoint}: {response_text}");
+            log::error!("Failed to parse response from {endpoint}: {response_text}");
             KrakenHttpError::ParseError(format!("Failed to deserialize response: {e}"))
         })
     }
@@ -888,7 +893,7 @@ impl KrakenFuturesRawHttpClient {
 /// into Nautilus domain objects.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
 )]
 pub struct KrakenFuturesHttpClient {
     pub(crate) inner: Arc<KrakenFuturesRawHttpClient>,
@@ -1095,7 +1100,7 @@ impl KrakenFuturesHttpClient {
                     Ok(instrument) => Some(instrument),
                     Err(e) => {
                         let symbol = &fut_instrument.symbol;
-                        tracing::warn!("Failed to parse futures instrument {symbol}: {e}");
+                        log::warn!("Failed to parse futures instrument {symbol}: {e}");
                         None
                     }
                 }
@@ -1209,7 +1214,7 @@ impl KrakenFuturesHttpClient {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse futures trade tick: {e}");
+                    log::warn!("Failed to parse futures trade tick: {e}");
                 }
             }
         }
@@ -1278,7 +1283,7 @@ impl KrakenFuturesHttpClient {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse futures bar: {e}");
+                    log::warn!("Failed to parse futures bar: {e}");
                 }
             }
         }
@@ -1420,7 +1425,7 @@ impl KrakenFuturesHttpClient {
                 }
                 _ => {
                     let account_type = &account.account_type;
-                    tracing::debug!("Unknown account type: {account_type}");
+                    log::debug!("Unknown account type: {account_type}");
                 }
             }
         }
@@ -1476,7 +1481,7 @@ impl KrakenFuturesHttpClient {
                     Ok(report) => all_reports.push(report),
                     Err(e) => {
                         let order_id = &order.order_id;
-                        tracing::warn!("Failed to parse futures order {order_id}: {e}");
+                        log::warn!("Failed to parse futures order {order_id}: {e}");
                     }
                 }
             }
@@ -1513,7 +1518,7 @@ impl KrakenFuturesHttpClient {
                         Ok(report) => all_reports.push(report),
                         Err(e) => {
                             let order_id = &event.order_id;
-                            tracing::warn!("Failed to parse futures order event {order_id}: {e}");
+                            log::warn!("Failed to parse futures order event {order_id}: {e}");
                         }
                     }
                 }
@@ -1576,7 +1581,7 @@ impl KrakenFuturesHttpClient {
                     Ok(report) => all_reports.push(report),
                     Err(e) => {
                         let fill_id = &fill.fill_id;
-                        tracing::warn!("Failed to parse futures fill {fill_id}: {e}");
+                        log::warn!("Failed to parse futures fill {fill_id}: {e}");
                     }
                 }
             }
@@ -1621,7 +1626,7 @@ impl KrakenFuturesHttpClient {
                     Ok(report) => all_reports.push(report),
                     Err(e) => {
                         let symbol = &position.symbol;
-                        tracing::warn!("Failed to parse futures position {symbol}: {e}");
+                        log::warn!("Failed to parse futures position {symbol}: {e}");
                     }
                 }
             }
@@ -1690,12 +1695,16 @@ impl KrakenFuturesHttpClient {
             _ => anyhow::bail!("Unsupported order type: {order_type:?}"),
         };
 
+        let kraken_side: KrakenOrderSide = order_side
+            .try_into()
+            .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+
         let mut builder = KrakenFuturesSendOrderParamsBuilder::default();
         builder
             .cli_ord_id(client_order_id.to_string())
             .broker(NAUTILUS_KRAKEN_BROKER_ID)
             .symbol(raw_symbol)
-            .side(KrakenOrderSide::from(order_side))
+            .side(kraken_side)
             .size(quantity.to_string())
             .order_type(kraken_order_type);
 

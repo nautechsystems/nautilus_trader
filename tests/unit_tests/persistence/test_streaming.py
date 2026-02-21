@@ -16,6 +16,9 @@
 import copy
 from collections import Counter
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.cache.cache import Cache
@@ -670,3 +673,149 @@ class TestPersistenceStreaming:
         # Verify the instrument is the same as the original
         read_instrument = instruments[0]
         assert read_instrument == instrument
+
+    def test_convert_stream_to_data_use_ts_event_for_ts_init(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+    ) -> None:
+        # Arrange
+        self.catalog = catalog_betfair
+
+        # Create test infrastructure
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        cache.add_instrument(instrument)
+
+        # Create writer
+        instance_id = "test_instance_ts_event_ts_init"
+        writer = StreamingFeatherWriter(
+            path=f"{self.catalog.path}/backtest/{instance_id}",
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[TradeTick],
+        )
+
+        # Create trade ticks with different ts_event and ts_init values
+        # ts_event represents when the event occurred, ts_init represents when Nautilus received it
+        trade1 = TestDataStubs.trade_tick(
+            instrument=instrument,
+            ts_event=1_000_000_000,
+            ts_init=1_100_000_000,  # 100ms later
+        )
+        trade2 = TestDataStubs.trade_tick(
+            instrument=instrument,
+            ts_event=2_000_000_000,
+            ts_init=2_200_000_000,  # 200ms later
+        )
+        trade3 = TestDataStubs.trade_tick(
+            instrument=instrument,
+            ts_event=3_000_000_000,
+            ts_init=3_300_000_000,  # 300ms later
+        )
+
+        # Write trade ticks
+        writer.write(trade1)
+        writer.write(trade2)
+        writer.write(trade3)
+        writer.close()
+
+        # Act - convert stream to data with use_ts_event_for_ts_init=True
+        self.catalog.convert_stream_to_data(
+            instance_id,
+            TradeTick,
+            use_ts_event_for_ts_init=True,
+        )
+
+        # Assert - verify ts_init was replaced with ts_event values
+        # Read trade ticks from catalog
+        trade_ticks = self.catalog.trade_ticks(instrument_ids=[str(instrument.id)])
+
+        # Verify we got 3 trade ticks
+        assert len(trade_ticks) == 3
+
+        # Sort by ts_event to ensure consistent ordering
+        trade_ticks = sorted(trade_ticks, key=lambda x: x.ts_event)
+
+        # Verify ts_init equals ts_event for all trade ticks
+        # Original values were: ts_event=1_000_000_000, ts_init=1_100_000_000
+        assert trade_ticks[0].ts_event == 1_000_000_000
+        assert trade_ticks[0].ts_init == trade_ticks[0].ts_event
+
+        # Original values were: ts_event=2_000_000_000, ts_init=2_200_000_000
+        assert trade_ticks[1].ts_event == 2_000_000_000
+        assert trade_ticks[1].ts_init == trade_ticks[1].ts_event
+
+        # Original values were: ts_event=3_000_000_000, ts_init=3_300_000_000
+        assert trade_ticks[2].ts_event == 3_000_000_000
+        assert trade_ticks[2].ts_init == trade_ticks[2].ts_event
+
+    def test_convert_stream_to_data_preserves_feather_schema_in_parquet(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+    ) -> None:
+        # Arrange: write bar to feather then convert to parquet (direct table write).
+        self.catalog = catalog_betfair
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        cache.add_instrument(instrument)
+
+        instance_id = "test_instance_schema_match"
+        writer = StreamingFeatherWriter(
+            path=f"{self.catalog.path}/backtest/{instance_id}",
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[Bar],
+        )
+
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type_internal = BarType(
+            instrument.id,
+            bar_spec,
+            AggregationSource.INTERNAL,
+        )
+        bar = Bar(
+            bar_type=bar_type_internal,
+            open=Price.from_str("1.00002"),
+            high=Price.from_str("1.00004"),
+            low=Price.from_str("1.00001"),
+            close=Price.from_str("1.00003"),
+            volume=Quantity.from_int(1_000_000),
+            ts_event=1000,
+            ts_init=1000,
+        )
+        writer.write(bar)
+        writer.close()
+
+        feather_files = list(
+            self.catalog.fs.glob(
+                f"{self.catalog.path}/backtest/{instance_id}/bar/**/*.feather",
+            ),
+        )
+        assert len(feather_files) >= 1
+        feather_path = feather_files[0]
+
+        with self.catalog.fs.open(feather_path) as f:
+            feather_table = pa.ipc.open_stream(f).read_all()
+        transformed_feather_table = ParquetDataCatalog._apply_stream_conversion_transforms(
+            feather_table,
+            use_ts_event_for_ts_init=False,
+            convert_bar_type_to_external=True,
+        )
+
+        self.catalog.convert_stream_to_data(instance_id, Bar)
+
+        parquet_files = list(
+            self.catalog.fs.glob(f"{self.catalog.path}/data/bar/**/*.parquet"),
+        )
+        assert len(parquet_files) >= 1
+        with self.catalog.fs.open(parquet_files[0]) as f:
+            parquet_table = pq.read_table(f)
+
+        assert parquet_table.schema.equals(
+            transformed_feather_table.schema,
+            check_metadata=True,
+        )

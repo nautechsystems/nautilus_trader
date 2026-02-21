@@ -36,9 +36,7 @@ pub fn encode_sqrt_ratio_x96(amount0: u128, amount1: u128) -> U160 {
     let amount0_u256 = U256::from(amount0);
     let amount1_u256 = U256::from(amount1);
 
-    if amount1_u256.is_zero() {
-        panic!("Division by zero");
-    }
+    assert!(!amount1_u256.is_zero(), "Division by zero");
     if amount0_u256.is_zero() {
         return U160::ZERO;
     }
@@ -57,9 +55,7 @@ pub fn encode_sqrt_ratio_x96(amount0: u128, amount1: u128) -> U160 {
         let sqrt_amount0 = FullMath::sqrt(amount0_u256);
         let sqrt_amount1 = FullMath::sqrt(amount1_u256);
 
-        if sqrt_amount1.is_zero() {
-            panic!("Division by zero in sqrt");
-        }
+        assert!(!sqrt_amount1.is_zero(), "Division by zero in sqrt");
 
         let q96 = U256::from(1u128) << 96;
 
@@ -119,15 +115,14 @@ fn get_next_sqrt_price_from_amount0_rounding_up(
             .expect("div_rounding_up failed");
 
         // Check if result fits in U160
-        if result > U256::from(U160::MAX) {
-            panic!("Result overflows U160");
-        }
+        assert!(result <= U256::from(U160::MAX), "Result overflows U160");
         U160::from(result)
     } else {
         // require((product = amount * sqrtPX96) / amount == sqrtPX96 && numerator1 > product);
-        if !((product / amount) == sqrt_price_x96 && numerator > product) {
-            panic!("Invalid conditions for amount0 removal: overflow or underflow detected")
-        }
+        assert!(
+            (product / amount) == sqrt_price_x96 && numerator > product,
+            "Invalid conditions for amount0 removal: overflow or underflow detected"
+        );
 
         let denominator = numerator - product;
         let result = FullMath::mul_div_rounding_up(numerator, sqrt_price_x96, denominator)
@@ -168,9 +163,10 @@ fn get_next_sqrt_price_from_amount1_rounding_down(
         };
 
         // require(sqrtPX96 > quotient);
-        if U256::from(sqrt_price_x96) <= quotient {
-            panic!("sqrt_price_x96 must be greater than quotient");
-        }
+        assert!(
+            U256::from(sqrt_price_x96) > quotient,
+            "sqrt_price_x96 must be greater than quotient"
+        );
 
         // always fits 160 bits
         U160::from(U256::from(sqrt_price_x96) - quotient)

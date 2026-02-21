@@ -215,8 +215,7 @@ cdef class StopMarketOrder(Order):
             self._venue_order_ids.append(self.venue_order_id)
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
-            self.quantity = event.quantity
-            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
+            self._update_quantity(event.quantity)
         if event.trigger_price is not None:
             self.trigger_price = event.trigger_price
 

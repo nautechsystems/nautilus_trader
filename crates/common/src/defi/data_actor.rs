@@ -18,10 +18,9 @@
 //! This module provides DeFi subscription and unsubscription helper methods
 //! for the `DataActorCore`. All code in this module requires the `defi` feature flag.
 
-use indexmap::IndexMap;
-use nautilus_core::UUID4;
+use nautilus_core::{Params, UUID4};
 use nautilus_model::{
-    defi::Blockchain,
+    defi::{Block, Blockchain, Pool, PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolSwap},
     identifiers::{ClientId, InstrumentId},
 };
 
@@ -38,7 +37,7 @@ use crate::{
         },
     },
     messages::data::DataCommand,
-    msgbus::{MStr, Topic, handler::ShareableMessageHandler},
+    msgbus::{MStr, Topic, TypedHandler},
 };
 
 impl DataActorCore {
@@ -46,14 +45,14 @@ impl DataActorCore {
     pub fn subscribe_blocks(
         &mut self,
         topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<Block>,
         chain: Blockchain,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
-        self.add_subscription(topic, handler);
+        self.add_block_subscription(topic, handler);
 
         let command = DefiSubscribeCommand::Blocks(SubscribeBlocks {
             chain,
@@ -70,14 +69,14 @@ impl DataActorCore {
     pub fn subscribe_pool(
         &mut self,
         topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<Pool>,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
-        self.add_subscription(topic, handler);
+        self.add_pool_subscription(topic, handler);
 
         let command = DefiSubscribeCommand::Pool(SubscribePool {
             instrument_id,
@@ -94,14 +93,14 @@ impl DataActorCore {
     pub fn subscribe_pool_swaps(
         &mut self,
         topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<PoolSwap>,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
-        self.add_subscription(topic, handler);
+        self.add_pool_swap_subscription(topic, handler);
 
         let command = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
             instrument_id,
@@ -118,14 +117,14 @@ impl DataActorCore {
     pub fn subscribe_pool_liquidity_updates(
         &mut self,
         topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<PoolLiquidityUpdate>,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
-        self.add_subscription(topic, handler);
+        self.add_pool_liquidity_subscription(topic, handler);
 
         let command = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
             instrument_id,
@@ -142,14 +141,14 @@ impl DataActorCore {
     pub fn subscribe_pool_fee_collects(
         &mut self,
         topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<PoolFeeCollect>,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
-        self.add_subscription(topic, handler);
+        self.add_pool_collect_subscription(topic, handler);
 
         let command = DefiSubscribeCommand::PoolFeeCollects(SubscribePoolFeeCollects {
             instrument_id,
@@ -166,14 +165,14 @@ impl DataActorCore {
     pub fn subscribe_pool_flash_events(
         &mut self,
         topic: MStr<Topic>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<PoolFlash>,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
-        self.add_subscription(topic, handler);
+        self.add_pool_flash_subscription(topic, handler);
 
         let command = DefiSubscribeCommand::PoolFlashEvents(SubscribePoolFlashEvents {
             instrument_id,
@@ -191,12 +190,12 @@ impl DataActorCore {
         &mut self,
         chain: Blockchain,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
         let topic = get_defi_blocks_topic(chain);
-        self.remove_subscription(topic);
+        self.remove_block_subscription(topic);
 
         let command = DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
             chain,
@@ -214,12 +213,12 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
         let topic = get_defi_pool_topic(instrument_id);
-        self.remove_subscription(topic);
+        self.remove_pool_subscription(topic);
 
         let command = DefiUnsubscribeCommand::Pool(UnsubscribePool {
             instrument_id,
@@ -237,12 +236,12 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
         let topic = get_defi_pool_swaps_topic(instrument_id);
-        self.remove_subscription(topic);
+        self.remove_pool_swap_subscription(topic);
 
         let command = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
             instrument_id,
@@ -260,12 +259,12 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
         let topic = get_defi_liquidity_topic(instrument_id);
-        self.remove_subscription(topic);
+        self.remove_pool_liquidity_subscription(topic);
 
         let command =
             DefiUnsubscribeCommand::PoolLiquidityUpdates(UnsubscribePoolLiquidityUpdates {
@@ -284,12 +283,12 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
         let topic = get_defi_collect_topic(instrument_id);
-        self.remove_subscription(topic);
+        self.remove_pool_collect_subscription(topic);
 
         let command = DefiUnsubscribeCommand::PoolFeeCollects(UnsubscribePoolFeeCollects {
             instrument_id,
@@ -307,12 +306,12 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
         let topic = get_defi_flash_topic(instrument_id);
-        self.remove_subscription(topic);
+        self.remove_pool_flash_subscription(topic);
 
         let command = DefiUnsubscribeCommand::PoolFlashEvents(UnsubscribePoolFlashEvents {
             instrument_id,

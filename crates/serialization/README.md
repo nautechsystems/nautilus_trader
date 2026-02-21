@@ -142,7 +142,7 @@ This crate supports three serialization formats for market data types. Choose th
 
 | Format       | Serialize | Deserialize | Size      | Use case                                    |
 |--------------|-----------|-------------|-----------|---------------------------------------------|
-| Cap'n Proto  | ~267ns    | ~530ns      | 264 bytes | High-frequency data streams, IPC, caching.  |
+| Cap'n Proto  | ~267ns    | ~350ns      | 264 bytes | High-frequency data streams, IPC, caching.  |
 | JSON         | ~332ns    | ~779ns      | 174 bytes | Human-readable output, debugging, APIs.     |
 | MsgPack      | ~375ns    | ~634ns      | 134 bytes | Compact storage, network transmission.      |
 | Arrow        | TBD       | TBD         | Columnar  | Batch processing, Parquet, IPC, analytics.  |

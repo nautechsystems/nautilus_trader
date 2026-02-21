@@ -15,10 +15,9 @@
 
 //! Enums for dYdX WebSocket operations, channels, and message types.
 
-use std::collections::HashMap;
-
+use chrono::{DateTime, Utc};
 use nautilus_model::{
-    data::{Data, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas},
     events::AccountState,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
@@ -29,8 +28,8 @@ use strum::{AsRefStr, Display, EnumString, FromRepr};
 use super::{
     error::DydxWebSocketError,
     messages::{
-        DydxOraclePriceMarket, DydxWsChannelBatchDataMsg, DydxWsChannelDataMsg, DydxWsConnectedMsg,
-        DydxWsSubaccountsChannelData, DydxWsSubaccountsSubscribed, DydxWsSubscriptionMsg,
+        DydxWsConnectedMsg, DydxWsSubaccountsChannelData, DydxWsSubaccountsSubscribed,
+        DydxWsSubscriptionMsg,
     },
 };
 
@@ -71,6 +70,7 @@ pub enum DydxWsOperation {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Hash,
@@ -112,7 +112,8 @@ pub enum DydxWsChannel {
     #[serde(rename = "v4_block_height")]
     #[strum(serialize = "v4_block_height")]
     BlockHeight,
-    /// Unknown/unrecognized channel type.
+    /// Unknown/unrecognized channel type (default when field is missing).
+    #[default]
     #[serde(other)]
     #[strum(to_string = "unknown")]
     Unknown,
@@ -143,6 +144,7 @@ impl DydxWsChannel {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Hash,
@@ -162,7 +164,8 @@ pub enum DydxWsMessageType {
     Subscribed,
     /// Unsubscription confirmed.
     Unsubscribed,
-    /// Channel data update.
+    /// Channel data update (default for missing type field).
+    #[default]
     ChannelData,
     /// Batch channel data update.
     ChannelBatchData,
@@ -174,7 +177,9 @@ pub enum DydxWsMessageType {
     Unknown,
 }
 
-/// High level message emitted by the dYdX WebSocket client.
+/// Control messages for the fallback parsing path.
+///
+/// Channel data is handled directly via `DydxWsFeedMessage` in `handle_feed_message()`.
 #[derive(Debug, Clone)]
 pub enum DydxWsMessage {
     /// Subscription acknowledgement.
@@ -185,12 +190,6 @@ pub enum DydxWsMessage {
     SubaccountsSubscribed(DydxWsSubaccountsSubscribed),
     /// Connected acknowledgement with connection_id.
     Connected(DydxWsConnectedMsg),
-    /// Channel data update.
-    ChannelData(DydxWsChannelDataMsg),
-    /// Batch of channel data updates.
-    ChannelBatchData(DydxWsChannelBatchDataMsg),
-    /// Block height update from chain.
-    BlockHeight(u64),
     /// Error received from the venue or client lifecycle.
     Error(DydxWebSocketError),
     /// Raw message payload that does not yet have a typed representation.
@@ -223,10 +222,16 @@ pub enum NautilusWsMessage {
     SubaccountSubscribed(Box<DydxWsSubaccountsSubscribed>),
     /// Raw subaccounts channel data (orders/fills) for execution client parsing.
     SubaccountsChannelData(Box<DydxWsSubaccountsChannelData>),
-    /// Oracle price updates from markets channel (for execution client).
-    OraclePrices(HashMap<String, DydxOraclePriceMarket>),
-    /// Block height update from chain.
-    BlockHeight(u64),
+    /// Mark price update from oracle prices.
+    MarkPrice(MarkPriceUpdate),
+    /// Index price update from oracle prices.
+    IndexPrice(IndexPriceUpdate),
+    /// Funding rate update from market trading data.
+    FundingRate(FundingRateUpdate),
+    /// Block height update from chain with timestamp.
+    BlockHeight { height: u64, time: DateTime<Utc> },
+    /// New instrument discovered via WebSocket that needs HTTP fetch.
+    NewInstrumentDiscovered { ticker: String },
     /// Error message.
     Error(DydxWebSocketError),
     /// Reconnection notification.

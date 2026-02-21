@@ -15,9 +15,12 @@
 
 //! Enumerations mapping dYdX v4 concepts onto idiomatic Nautilus variants.
 
-use nautilus_model::enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide};
+use nautilus_model::{
+    data::BarSpecification,
+    enums::{BarAggregation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide},
+};
 use serde::{Deserialize, Serialize};
-use strum::{AsRefStr, Display, EnumIter, EnumString};
+use strum::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr};
 
 use crate::{error::DydxError, grpc::types::ChainId};
 
@@ -109,7 +112,12 @@ pub enum DydxTimeInForce {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", eq, eq_int)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.dydx",
+        eq,
+        eq_int,
+        from_py_object
+    )
 )]
 pub enum DydxOrderSide {
     /// Buy order.
@@ -169,7 +177,12 @@ impl From<DydxOrderSide> for OrderSide {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", eq, eq_int)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.dydx",
+        eq,
+        eq_int,
+        from_py_object
+    )
 )]
 pub enum DydxOrderType {
     /// Limit order with specified price.
@@ -572,7 +585,12 @@ pub enum DydxTradeType {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", eq, eq_int)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.dydx",
+        eq,
+        eq_int,
+        from_py_object
+    )
 )]
 pub enum DydxTransferType {
     /// Transfer into the account.
@@ -595,6 +613,7 @@ pub enum DydxTransferType {
     Eq,
     Hash,
     AsRefStr,
+    IntoStaticStr,
     EnumIter,
     EnumString,
     Serialize,
@@ -604,7 +623,12 @@ pub enum DydxTransferType {
 #[derive(Default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", eq, eq_int)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.dydx",
+        eq,
+        eq_int,
+        from_py_object
+    )
 )]
 pub enum DydxCandleResolution {
     /// 1 minute candles.
@@ -636,6 +660,32 @@ pub enum DydxCandleResolution {
     #[serde(rename = "1DAY")]
     #[strum(serialize = "1DAY")]
     OneDay,
+}
+
+impl DydxCandleResolution {
+    /// Maps a Nautilus [`BarSpecification`] to a dYdX candle resolution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the step/aggregation combination is not supported.
+    pub fn from_bar_spec(spec: &BarSpecification) -> anyhow::Result<Self> {
+        match spec.step.get() {
+            1 => match spec.aggregation {
+                BarAggregation::Minute => Ok(Self::OneMinute),
+                BarAggregation::Hour => Ok(Self::OneHour),
+                BarAggregation::Day => Ok(Self::OneDay),
+                _ => anyhow::bail!("Unsupported bar aggregation: {:?}", spec.aggregation),
+            },
+            5 if spec.aggregation == BarAggregation::Minute => Ok(Self::FiveMinutes),
+            15 if spec.aggregation == BarAggregation::Minute => Ok(Self::FifteenMinutes),
+            30 if spec.aggregation == BarAggregation::Minute => Ok(Self::ThirtyMinutes),
+            4 if spec.aggregation == BarAggregation::Hour => Ok(Self::FourHours),
+            step => anyhow::bail!(
+                "Unsupported bar step: {step} with aggregation {:?}",
+                spec.aggregation
+            ),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -845,7 +895,7 @@ mod tests {
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
 )]
 pub enum DydxNetwork {
     /// dYdX mainnet (dydx-mainnet-1)

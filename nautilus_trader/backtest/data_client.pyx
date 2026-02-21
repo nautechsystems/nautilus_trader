@@ -238,20 +238,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             return
 
         self._add_subscription_order_book_deltas(command.instrument_id)
-        # Do nothing else for backtest
-
-    cpdef void subscribe_order_book_snapshots(self, SubscribeOrderBook command):
-        Condition.not_none(command.instrument_id, "instrument_id")
-
-        if not self._cache.instrument(command.instrument_id):
-            self._log.error(
-                f"Cannot find instrument {command.instrument_id} to subscribe for `OrderBook` data, "
-                "no data has been loaded for this instrument.",
-            )
-            return
-
-        self._add_subscription_order_book_snapshots(command.instrument_id)
-        # Do nothing else for backtest
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void subscribe_order_book_depth(self, SubscribeOrderBook command):
         Condition.not_none(command.instrument_id, "instrument_id")
@@ -263,7 +250,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
-        self._add_subscription_order_book_snapshots(command.instrument_id)
+        self._add_subscription_order_book_depth(command.instrument_id)
         self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void subscribe_quote_ticks(self, SubscribeQuoteTicks command):
@@ -372,16 +359,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._remove_subscription_order_book_deltas(command.instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_order_book_snapshots(self, UnsubscribeOrderBook command):
-        Condition.not_none(command.instrument_id, "instrument_id")
-
-        self._remove_subscription_order_book_snapshots(command.instrument_id)
-        # Do nothing else for backtest
-
     cpdef void unsubscribe_order_book_depth(self, UnsubscribeOrderBook command):
         Condition.not_none(command.instrument_id, "instrument_id")
 
-        self._remove_subscription_order_book_snapshots(command.instrument_id)
+        self._remove_subscription_order_book_depth(command.instrument_id)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_quote_ticks(self, UnsubscribeQuoteTicks command):

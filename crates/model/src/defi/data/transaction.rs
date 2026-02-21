@@ -23,7 +23,7 @@ use crate::defi::{chain::Chain, hex::deserialize_hex_number};
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct Transaction {
     /// The blockchain network identifier where this transaction occurred.
@@ -73,10 +73,10 @@ impl Transaction {
             block_number,
             from,
             to,
+            value,
+            transaction_index,
             gas,
             gas_price,
-            transaction_index,
-            value,
         }
     }
 }

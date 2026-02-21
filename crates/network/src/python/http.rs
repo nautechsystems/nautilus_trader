@@ -23,7 +23,10 @@ use std::{
 };
 
 use bytes::Bytes;
-use nautilus_core::{collections::into_ustr_vec, python::to_pyvalue_err};
+use nautilus_core::{
+    collections::into_ustr_vec,
+    python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
+};
 use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyDict};
 use reqwest::blocking::Client;
 
@@ -164,7 +167,7 @@ impl HttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let keys = keys.map(into_ustr_vec);
-            rate_limiter.await_keys_ready(keys).await;
+            rate_limiter.await_keys_ready(keys.as_deref()).await;
             client
                 .send_request(
                     method.into(),
@@ -281,9 +284,7 @@ fn params_to_hashmap(
     };
 
     let Ok(dict) = params.cast::<PyDict>() else {
-        return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-            "params must be a dict",
-        ));
+        return Err(to_pytype_err("params must be a dict"));
     };
 
     let mut result = HashMap::new();
@@ -566,7 +567,7 @@ pub fn http_download(
     let mut response = request_builder.send().map_err(to_pyvalue_err)?;
 
     if !response.status().is_success() {
-        return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+        return Err(to_pyruntime_err(format!(
             "HTTP error: {}",
             response.status()
         )));
@@ -580,7 +581,7 @@ pub fn http_download(
 
 #[cfg(test)]
 mod tests {
-    use std::net::{SocketAddr, TcpListener as StdTcpListener};
+    use std::net::SocketAddr;
 
     use axum::{Router, routing::get};
     use pyo3::types::{PyDict, PyList, PyTuple};
@@ -816,12 +817,6 @@ mod tests {
         assert!(err.to_string().contains("params must be a dict"));
     }
 
-    fn get_unique_port() -> u16 {
-        let listener =
-            StdTcpListener::bind("127.0.0.1:0").expect("Failed to bind temporary TcpListener");
-        listener.local_addr().unwrap().port()
-    }
-
     async fn create_test_router() -> Router {
         Router::new()
             .route("/get", get(|| async { "hello-world!" }))
@@ -831,8 +826,7 @@ mod tests {
     }
 
     async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
-        let port = get_unique_port();
-        let listener = TcpListener::bind(format!("127.0.0.1:{port}")).await?;
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
 
         tokio::spawn(async move {

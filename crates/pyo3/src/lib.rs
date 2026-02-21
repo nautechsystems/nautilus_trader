@@ -41,6 +41,8 @@
 //! - `postgres`: Enables PostgreSQL (sqlx) back-ends in dependent crates.
 //! - `redis`: Enables Redis based infrastructure in dependent crates.
 //! - `hypersync`: Enables hypersync support (fast parallel hash maps) where available.
+//! - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
+//! - `defi`: Enables DeFi (Decentralized Finance) support including blockchain adapters.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -188,6 +190,13 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Adapters
     ////////////////////////////////////////////////////////////////////////////////
 
+    let n = "architect";
+    let submodule = pyo3::wrap_pymodule!(nautilus_architect_ax::python::architect);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
     let n = "binance";
     let submodule = pyo3::wrap_pymodule!(nautilus_binance::python::binance);
     m.add_wrapped(submodule)?;
@@ -253,6 +262,13 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     let n = "okx";
     let submodule = pyo3::wrap_pymodule!(nautilus_okx::python::okx);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
+    let n = "sandbox";
+    let submodule = pyo3::wrap_pymodule!(nautilus_sandbox::python::sandbox);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     #[cfg(feature = "cython-compat")]

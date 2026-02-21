@@ -54,6 +54,7 @@ def get_cached_ib_client(
     client_id: int = 1,
     dockerized_gateway: DockerizedIBGatewayConfig | None = None,
     fetch_all_open_orders: bool = False,
+    request_timeout_secs: int = 60,
 ) -> InteractiveBrokersClient:
     """
     Retrieve or create a cached InteractiveBrokersClient using the provided key.
@@ -87,6 +88,8 @@ def get_cached_ib_client(
     fetch_all_open_orders : bool, default False
         If True, uses reqAllOpenOrders to fetch orders from all API clients and TWS GUI.
         If False, uses reqOpenOrders to fetch only orders from current client ID session.
+    request_timeout_secs : int, default 60
+        The timeout (seconds) to wait for request responses (contract details, etc.).
 
     Returns
     -------
@@ -114,7 +117,7 @@ def get_cached_ib_client(
         )
         PyCondition.not_none(port, "Please provide the `port` for the IB TWS or Gateway.")
 
-    client_key: tuple = (host, port, client_id, fetch_all_open_orders)
+    client_key: tuple = (host, port, client_id)
 
     if client_key not in IB_CLIENTS:
         client = InteractiveBrokersClient(
@@ -126,9 +129,15 @@ def get_cached_ib_client(
             port=port,
             client_id=client_id,
             fetch_all_open_orders=fetch_all_open_orders,
+            request_timeout_secs=request_timeout_secs,
         )
         client.start()
         IB_CLIENTS[client_key] = client
+    elif fetch_all_open_orders:
+        # Upgrade existing client to fetch all open orders if requested
+        # This handles the case where data client is created first (without the flag)
+        # and exec client is created later (with the flag)
+        IB_CLIENTS[client_key]._fetch_all_open_orders = True
 
     return IB_CLIENTS[client_key]
 
@@ -219,6 +228,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             port=config.ibg_port,
             client_id=config.ibg_client_id,
             dockerized_gateway=config.dockerized_gateway,
+            request_timeout_secs=config.request_timeout_secs,
         )
 
         # Get instrument provider singleton
@@ -240,7 +250,6 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             config=config,
             name=name,
             connection_timeout=config.connection_timeout,
-            request_timeout=config.request_timeout,
         )
 
         return data_client
@@ -293,6 +302,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             client_id=config.ibg_client_id,
             dockerized_gateway=config.dockerized_gateway,
             fetch_all_open_orders=config.fetch_all_open_orders,
+            request_timeout_secs=config.request_timeout_secs,
         )
 
         # Get instrument provider singleton
@@ -308,7 +318,11 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var."
         )
 
-        account_id = AccountId(f"{name or IB_VENUE.value}-{ib_account}")
+        # Use name if provided, otherwise use account_id issuer from the account string
+        # This allows multiple IB execution clients with different names/accounts
+        # The account_issuer will be used as the client_id and allows routing by account_id
+        account_issuer = name or IB_VENUE.value
+        account_id = AccountId(f"{account_issuer}-{ib_account}")
 
         # Create client
         exec_client = InteractiveBrokersExecutionClient(

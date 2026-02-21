@@ -128,7 +128,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         # Check if we already have this instrument
         if instrument_id:
             instrument = self.find(instrument_id)
-
             if instrument is not None:
                 return instrument
 
@@ -137,15 +136,12 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             return await self._load_bag_contract(contract)
 
         # For non-BAG contracts, use regular loading
-        await self.load_with_return_async(contract)
-        instrument_id = self.contract_id_to_instrument_id.get(contract_id)
-
-        if instrument_id is None:
+        instrument_ids = await self.load_with_return_async(contract)
+        if instrument_ids is None:
             self._log.error(f"Failed to load instrument for contract {contract}")
             raise ValueError(f"Instrument not found for contract {contract}")
 
-        instrument = self.find(instrument_id)
-
+        instrument = self.find(instrument_ids[0])
         if instrument is None:
             self._log.error(f"Failed to load instrument for contract {contract}")
             raise ValueError(f"Instrument not found for contract {contract}")
@@ -164,7 +160,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             # First, load all individual leg instruments and collect their details
             leg_contract_details = []
             leg_tuples = []
-
             for combo_leg in bag_contract.comboLegs:
                 # Create a more complete leg contract using information from the combo leg
                 leg_contract = IBContract(
@@ -217,8 +212,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         instrument_id: InstrumentId,
     ) -> IBContract | None:
         venue = instrument_id.venue.value
-        possible_exchanges = VENUE_MEMBERS.get(venue, [venue])
 
+        possible_exchanges = VENUE_MEMBERS.get(venue, [venue])
         if len(possible_exchanges) == 1:
             return instrument_id_to_ib_contract(
                 instrument_id,
@@ -242,7 +237,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
     def get_price_magnifier(self, instrument_id: InstrumentId) -> int:
         contract_details = self.contract_details.get(instrument_id)
-
         if contract_details:
             return contract_details.priceMagnifier
 
@@ -253,7 +247,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             (InstrumentId.from_str(i) if isinstance(i, str) else i)
             for i in (self._load_ids_on_start or [])
         ]
-
         start_ib_contracts = [
             (IBContract(**c) if isinstance(c, dict) else c)
             for c in (self._load_contracts_on_start or [])
@@ -281,13 +274,11 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         loaded instruments.
         """
         loaded_instrument_ids = []
-
         for instrument_id in instrument_ids:
             loaded_ids = await self.load_with_return_async(
                 instrument_id,
                 filters,
             )
-
             if loaded_ids:
                 loaded_instrument_ids.extend(loaded_ids)
 
@@ -312,7 +303,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         """
         contract_details: list | None = None
-
         if isinstance(instrument_id, InstrumentId):
             venue = instrument_id.venue.value
 
@@ -322,8 +312,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 return None
         elif isinstance(instrument_id, IBContract):
             contract = instrument_id
-            contract_details = await self.get_contract_details(contract)
 
+            contract_details = await self.get_contract_details(contract)
             if contract_details:
                 full_contract = contract_details[0].contract
                 venue = self.determine_venue_from_contract(full_contract)
@@ -375,7 +365,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         # VENUE_MEMBERS associates a MIC venue to several possible IB exchanges
         possible_exchanges = VENUE_MEMBERS.get(venue, [venue])
-
         try:
             for exchange in possible_exchanges:
                 contract = instrument_id_to_ib_contract(
@@ -386,15 +375,14 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 )
 
                 self._log.info(f"Attempting to find instrument for {contract=}")
-                contract_details: list = await self.get_contract_details(contract)
 
+                contract_details: list = await self.get_contract_details(contract)
                 if contract_details:
                     processed_ids = self._process_contract_details(
                         contract_details,
                         venue,
                         force_instrument_update,
                     )
-
                     return bool(processed_ids)  # Return True if any instruments were processed
         except ValueError as e:
             self._log.error(str(e))
@@ -411,7 +399,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         try:
             # Parse the spread ID to get individual legs
             leg_tuples = generic_spread_id_to_list(spread_instrument_id)
-
             if not leg_tuples:
                 self._log.error(f"Spread instrument {spread_instrument_id} has no legs")
                 return False
@@ -422,7 +409,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
             # First, load all individual leg instruments to get their contract details
             leg_contract_details = []
-
             for leg_instrument_id, ratio in leg_tuples:
                 self._log.info(f"Loading leg instrument: {leg_instrument_id} (ratio: {ratio})")
 
@@ -544,6 +530,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self.contract_id_to_instrument_id[bag_contract.conId] = instrument_id
 
         self._log.info(f"Successfully created spread instrument: {spread_instrument}")
+
         return spread_instrument
 
     async def get_contract_details(
@@ -552,7 +539,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     ) -> list[ContractDetails]:
         try:
             details = await self._client.get_contract_details(contract=contract)
-
             if not details:
                 self._log.debug(f"No contract details returned for {contract}")
                 return []
@@ -580,13 +566,21 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             and (contract.build_futures_chain or contract.build_options_chain)
         ) or (self._build_futures_chain or self._build_options_chain):
             # Return Underlying contract details with Future Chains
-            details = await self.get_future_chain_details(qualified.contract)
+            future_chain_details = await self.get_future_chain_details(qualified.contract)
+
+            if future_chain_details is not None:
+                details.extend(future_chain_details)
+            else:
+                self._log.warning(f"Failed to fetch future chain details for {qualified.contract}")
 
         if (
             contract.secType in ["STK", "CONTFUT", "FUT", "IND"] and contract.build_options_chain
         ) or self._build_options_chain:
             # Return Underlying contract details with Option Chains, including for the Future Chains if apply
             for detail in set(details):
+                if detail.contract.secType == "CONTFUT":
+                    continue
+
                 if contract.lastTradeDateOrContractMonth:
                     option_contracts_detail = await self.get_option_chain_details_by_expiry(
                         underlying=detail.contract,
@@ -600,6 +594,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                         max_expiry=max_expiry,
                         exchange=contract.options_chain_exchange or contract.exchange,
                     )
+
                 details.extend(option_contracts_detail)
 
         return details
@@ -627,21 +622,18 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         exchange: str | None = None,
     ) -> list[ContractDetails]:
         chains = await self._client.get_option_chains(underlying)
-
         if not chains:
             self._log.warning(
-                f"No option chains available for {underlying.symbol}.{underlying.exchange}",
+                f"No option chains available for {underlying.symbol}.{underlying.exchange} with expiry {underlying.lastTradeDateOrContractMonth}",
             )
             return []
 
-        filtered_chains = [chain for chain in chains if chain[0] == (exchange or "SMART")]
         details = []
-
+        filtered_chains = [chain for chain in chains if chain[0] == (exchange or "SMART")]
         for chain in filtered_chains:
             expirations = sorted(
                 exp for exp in chain[1] if (min_expiry <= pd.Timestamp(exp, tz="UTC") <= max_expiry)
             )
-
             for expiration in expirations:
                 option_contracts_detail = await self.get_option_chain_details_by_expiry(
                     underlying=underlying,
@@ -685,7 +677,14 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             )
             return []
 
-        option_details = [d for d in option_details if d.underConId == underlying.conId]  # type: ignore[assignment]
+        # These are raw ibapi ContractDetails (not yet converted to IBContractDetails).
+        # ibapi 10.43's protobuf decoder writes "underConid" (lowercase 'i') instead of
+        # the legacy "underConId" (uppercase 'I'), so we check both attribute names.
+        option_details = [  # type: ignore[assignment]
+            d
+            for d in option_details
+            if (d.underConId or getattr(d, "underConid", 0)) == underlying.conId
+        ]
         self._log.info(
             f"Received {len(option_details)} Option Contracts for "
             f"{underlying.symbol}.{underlying.primaryExchange or underlying.exchange} expiring on {last_trading_date}",
@@ -717,7 +716,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             return "IBCMDTY"
 
         # Use the exchange from the contract
-        exchange = contract.primaryExchange if contract.exchange == "SMART" else contract.exchange
+        if contract.exchange == "SMART" and contract.primaryExchange:
+            exchange = contract.primaryExchange
+        else:
+            exchange = contract.exchange
         venue = None
 
         if self._convert_exchange_to_mic_venue:
@@ -767,16 +769,13 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         """
         processed_instrument_ids = []
-
         for details in copy.deepcopy(contract_details):
-            if not isinstance(details.contract, IBContract):
+            if not isinstance(details, IBContractDetails):
+                details = IBContractDetails.from_contract_details(details)
+            elif not isinstance(details.contract, IBContract):
                 details.contract = IBContract(**details.contract.__dict__)
 
-            if not isinstance(details, IBContractDetails):
-                details = IBContractDetails(**details.__dict__)
-
             sec_type = details.contract.secType
-
             if self._is_filtered_sec_type(sec_type):
                 self._log.warning(
                     f"Skipping filtered {sec_type=} for contract {details.contract}",
@@ -797,7 +796,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
             if self.config.filter_callable is not None:
                 filter_callable = resolve_path(self.config.filter_callable)
-
                 if not filter_callable(instrument):
                     continue
 

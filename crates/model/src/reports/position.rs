@@ -30,7 +30,7 @@ use crate::{
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct PositionStatusReport {
     /// The account ID associated with the position.
@@ -358,14 +358,8 @@ mod tests {
             None,
         );
 
-        assert_eq!(
-            long_100.signed_decimal_qty,
-            Decimal::from_f64_retain(100.5).unwrap()
-        );
-        assert_eq!(
-            short_200.signed_decimal_qty,
-            Decimal::from_f64_retain(-200.75).unwrap()
-        );
+        assert_eq!(long_100.signed_decimal_qty, dec!(100.5));
+        assert_eq!(short_200.signed_decimal_qty, dec!(-200.75));
     }
 
     #[rstest]

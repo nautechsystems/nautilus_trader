@@ -67,6 +67,8 @@ pub struct KrakenWsParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interval: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_trigger: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snap_orders: Option<bool>,

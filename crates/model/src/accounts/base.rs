@@ -19,8 +19,12 @@
 //! in this file.
 
 use ahash::AHashMap;
-use nautilus_core::{UnixNanos, datetime::secs_to_nanos_unchecked};
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use nautilus_core::{
+    UnixNanos,
+    correctness::{FAILED, check_equal},
+    datetime::secs_to_nanos_unchecked,
+};
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -35,7 +39,7 @@ use crate::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct BaseAccount {
     pub id: AccountId,
@@ -43,7 +47,7 @@ pub struct BaseAccount {
     pub base_currency: Option<Currency>,
     pub calculate_account_state: bool,
     pub events: Vec<AccountState>,
-    pub commissions: AHashMap<Currency, f64>,
+    pub commissions: AHashMap<Currency, Money>,
     pub balances: AHashMap<Currency, AccountBalance>,
     pub balances_starting: AHashMap<Currency, Money>,
 }
@@ -155,53 +159,49 @@ impl BaseAccount {
 
     /// Updates the account balances with the provided list of `AccountBalance` instances.
     ///
-    /// # Panics
-    ///
-    /// Panics if any updated `AccountBalance` has a total less than zero.
-    pub fn update_balances(&mut self, balances: Vec<AccountBalance>) {
+    /// Note: This method does NOT validate negative balances. Derived account types
+    /// (CashAccount, MarginAccount) should perform their own validation in apply():
+    /// - MarginAccount: allows negative balances (normal for margin trading)
+    /// - CashAccount: rejects negative unless `allow_borrowing` is true
+    pub fn update_balances(&mut self, balances: &[AccountBalance]) {
         for balance in balances {
-            // clone real balance without reference
-            if balance.total.raw < 0 {
-                // TODO raise AccountBalanceNegative event
-                panic!("Cannot update balances with total less than 0.0")
-            } else {
-                // clear asset balance
-                self.balances.insert(balance.currency, balance);
-            }
+            self.balances.insert(balance.currency, *balance);
         }
     }
 
     pub fn update_commissions(&mut self, commission: Money) {
-        if commission.as_decimal() == Decimal::ZERO {
+        // TODO: Remove once from_raw enforces canonical precision alignment (v2)
+        let commission = commission.normalized();
+        if commission.is_zero() {
             return;
         }
-
         let currency = commission.currency;
-        let total_commissions = self.commissions.get(&currency).unwrap_or(&0.0);
-
         self.commissions
-            .insert(currency, total_commissions + commission.as_f64());
+            .entry(currency)
+            .and_modify(|total| *total = *total + commission)
+            .or_insert(commission);
     }
 
     /// Returns the total commission for the specified currency.
     #[must_use]
     pub fn commission(&self, currency: &Currency) -> Option<Money> {
-        self.commissions
-            .get(currency)
-            .map(|&amount| Money::new(amount, *currency))
+        self.commissions.get(currency).copied()
     }
 
     /// Returns a map of all commissions by currency.
     #[must_use]
     pub fn commissions(&self) -> AHashMap<Currency, Money> {
-        self.commissions
-            .iter()
-            .map(|(currency, &amount)| (*currency, Money::new(amount, *currency)))
-            .collect()
+        self.commissions.clone()
     }
 
+    /// Applies an [`AccountState`] event, updating balances.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `event.account_id` does not match this account's ID.
     pub fn base_apply(&mut self, event: AccountState) {
-        self.update_balances(event.balances.clone());
+        check_equal(&event.account_id, &self.id, "event.account_id", "self.id").expect(FAILED);
+        self.update_balances(&event.balances);
         self.events.push(event);
     }
 
@@ -238,12 +238,9 @@ impl BaseAccount {
     ///
     /// This function never returns an error (TBD).
     ///
-    /// # Panics
-    ///
-    /// Panics if `side` is not [`OrderSide::Buy`] or [`OrderSide::Sell`].
     pub fn base_calculate_balance_locked(
         &mut self,
-        instrument: InstrumentAny,
+        instrument: &InstrumentAny,
         side: OrderSide,
         quantity: Quantity,
         price: Price,
@@ -275,26 +272,29 @@ impl BaseAccount {
 
     /// Calculates profit and loss amounts for a filled order.
     ///
+    /// For cash accounts, this calculates the balance impact of a fill:
+    /// - BUY: gain base currency quantity, lose quote currency notional.
+    /// - SELL: lose base currency quantity, gain quote currency notional.
+    ///
+    /// Note: Unlike betting accounts, cash accounts do NOT cap to position quantity.
+    /// The full fill quantity is used for PnL calculation.
+    ///
     /// # Errors
     ///
     /// This function never returns an error (TBD).
     ///
-    /// # Panics
-    ///
-    /// Panics if `fill.order_side` is neither [`OrderSide::Buy`] nor [`OrderSide::Sell`].
     pub fn base_calculate_pnls(
         &self,
-        instrument: InstrumentAny,
-        fill: OrderFilled,
-        position: Option<Position>,
+        instrument: &InstrumentAny,
+        fill: &OrderFilled,
+        _position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         let mut pnls: AHashMap<Currency, Money> = AHashMap::new();
         let base_currency = instrument.base_currency();
 
-        let fill_qty_value = position.map_or(fill.last_qty.as_f64(), |pos| {
-            pos.quantity.as_f64().min(fill.last_qty.as_f64())
-        });
-        let fill_qty = Quantity::new(fill_qty_value, fill.last_qty.precision);
+        // No quantity capping (betting accounts cap to position qty, cash accounts don't)
+        let fill_qty = fill.last_qty;
+        let fill_qty_value = fill_qty.as_f64();
 
         let notional = instrument.calculate_notional_value(fill_qty, fill.last_px, None);
 
@@ -340,7 +340,7 @@ impl BaseAccount {
     )]
     pub fn base_calculate_commission(
         &self,
-        instrument: InstrumentAny,
+        instrument: &InstrumentAny,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
@@ -431,5 +431,21 @@ mod tests {
         assert_eq!(account.events.len(), 1);
         assert_eq!(account.events[0].ts_event, event3.ts_event);
         assert_eq!(account.base_last_event().unwrap().ts_event, event3.ts_event);
+    }
+
+    #[rstest]
+    fn test_update_commissions_sub_canonical_raw_skipped() {
+        use crate::{
+            events::account::stubs::cash_account_state,
+            types::{Currency, Money},
+        };
+
+        let mut account = BaseAccount::new(cash_account_state(), true);
+        let usd = Currency::USD();
+
+        // Sub-canonical raw (1 < tick size for USD precision 2) normalizes to zero
+        account.update_commissions(Money::from_raw(1, usd));
+
+        assert!(account.commission(&usd).is_none());
     }
 }

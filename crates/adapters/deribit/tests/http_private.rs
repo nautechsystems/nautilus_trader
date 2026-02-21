@@ -29,6 +29,7 @@ use nautilus_deribit::http::{
     client::DeribitRawHttpClient, error::DeribitHttpError, query::GetAccountSummariesParams,
 };
 use nautilus_network::http::{HttpClient, Method};
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
 #[derive(Clone, Default)]
@@ -196,19 +197,19 @@ async fn test_get_account_summaries_success() {
     // Verify BTC summary
     let btc = &summaries[0];
     assert_eq!(btc.currency.as_str(), "BTC");
-    assert_eq!(btc.equity, 302.61869214);
-    assert_eq!(btc.balance, 302.60065765);
-    assert_eq!(btc.available_funds, 301.38059622);
-    assert_eq!(btc.margin_balance, 302.62729214);
-    assert_eq!(btc.initial_margin, Some(1.24669592));
-    assert_eq!(btc.maintenance_margin, Some(0.8857841));
-    assert_eq!(btc.total_pl, Some(-0.33084225));
+    assert_eq!(btc.equity, dec!(302.61869214));
+    assert_eq!(btc.balance, dec!(302.60065765));
+    assert_eq!(btc.available_funds, dec!(301.38059622));
+    assert_eq!(btc.margin_balance, dec!(302.62729214));
+    assert_eq!(btc.initial_margin, Some(dec!(1.24669592)));
+    assert_eq!(btc.maintenance_margin, Some(dec!(0.8857841)));
+    assert_eq!(btc.total_pl, Some(dec!(-0.33084225)));
 
     // Verify ETH summary
     let eth = &summaries[1];
     assert_eq!(eth.currency.as_str(), "ETH");
-    assert_eq!(eth.equity, 100.0);
-    assert_eq!(eth.balance, 100.0);
+    assert_eq!(eth.equity, dec!(100.0));
+    assert_eq!(eth.balance, dec!(100.0));
 
     assert_eq!(
         *state
@@ -233,7 +234,7 @@ async fn test_get_account_summaries_missing_credentials() {
         DeribitHttpError::MissingCredentials => {
             // Expected error type
         }
-        other => panic!("Expected MissingCredentials, got: {other:?}"),
+        other => panic!("Expected MissingCredentials, was: {other:?}"),
     }
 }
 

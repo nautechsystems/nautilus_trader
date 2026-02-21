@@ -21,10 +21,10 @@ import os
 import threading
 import time
 
+import pandas as pd
 from ibapi.common import MarketDataTypeEnum as IBMarketDataTypeEnum
 
 from nautilus_trader.adapters.interactive_brokers.common import IB
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import (
@@ -77,7 +77,21 @@ class DemoStrategy(Strategy):
         Handle strategy start event.
         """
         self.request_instrument(self.config.instrument_id)
-
+        # self.request_instruments(
+        #     venue=IB_VENUE,
+        #     params={
+        #         "ib_contracts": [
+        #             {
+        #                 "secType": "IND",
+        #                 "symbol": "SPX",
+        #                 "exchange": "CBOE",
+        #                 "build_options_chain": True,
+        #                 "min_expiry_days": 0,
+        #                 "max_expiry_days": 5,
+        #             },
+        #         ],
+        #     },
+        # )
         # self.request_instruments(
         #     venue=IB_VENUE,
         #     params={
@@ -88,8 +102,23 @@ class DemoStrategy(Strategy):
         #                 "symbol": "ES",
         #                 "build_futures_chain": True,
         #                 "build_options_chain": True,
-        #                 "min_expiry_days": 10,
-        #                 "max_expiry_days": 11,
+        #                 "min_expiry_days": 0,
+        #                 "max_expiry_days": 2,
+        #             },
+        #         ),
+        #     },
+        # )
+        # self.request_instruments(
+        #     venue=IB_VENUE,
+        #     params={
+        #         "ib_contracts": (
+        #             {
+        #                 "secType": "IND",
+        #                 "exchange": "EUREX",
+        #                 "symbol": "ESTX50",
+        #                 "build_options_chain": True,
+        #                 "min_expiry_days": 0,
+        #                 "max_expiry_days": 2,
         #             },
         #         ),
         #     },
@@ -100,17 +129,20 @@ class DemoStrategy(Strategy):
 
         self.instrument = self.cache.instrument(self.config.instrument_id)
 
-        # utc_now = self._clock.utc_now()
-        # start = utc_now - pd.Timedelta(
-        #     minutes=30,
-        # )
-        # self.request_bars(
-        #     BarType.from_str(f"{self.config.instrument_id}-1-MINUTE-LAST-EXTERNAL"),
-        #     start,
-        # )
+        utc_now = self._clock.utc_now()
+        start = utc_now - pd.Timedelta(
+            minutes=30,
+        )
+        self.request_bars(
+            BarType.from_str(f"{self.config.instrument_id}-1-MINUTE-LAST-EXTERNAL"),
+            start,
+        )
 
-        # utc_now = self.clock.utc_now()
-        # self.subscribe_bars(self.config.bar_type, params={"start_ns":(utc_now - pd.Timedelta(minutes=2)).value})
+        utc_now = self.clock.utc_now()
+        self.subscribe_bars(
+            self.config.bar_type,
+            params={"start_ns": (utc_now - pd.Timedelta(minutes=2)).value},
+        )
 
         # Prepare values for order
         last_price = self.instrument.make_price(46745)
@@ -223,19 +255,33 @@ class DemoStrategy(Strategy):
         # -----------------------------------------------------
 
         self.log.info("Portfolio -> Account information:", color=LogColor.CYAN)
-        margins_init = self.portfolio.margins_init(IB_VENUE)
-        self.log.info(f"Initial margin: {margins_init}", color=LogColor.CYAN)
 
-        margins_maint = self.portfolio.margins_maint(IB_VENUE)
-        self.log.info(f"Maintenance margin: {margins_maint}", color=LogColor.CYAN)
+        # Get account_id from orders or positions (IB is multi-venue, so we use account_id instead of venue)
+        account_id = None
+        orders_open = self.cache.orders_open(instrument_id=self.config.instrument_id)
+        if orders_open:
+            account_id = orders_open[0].account_id
+        else:
+            positions_open = self.cache.positions_open(instrument_id=self.config.instrument_id)
+            if positions_open:
+                account_id = positions_open[0].account_id
 
-        balances_locked = self.portfolio.balances_locked(IB_VENUE)
-        self.log.info(f"Locked balance: {balances_locked}", color=LogColor.CYAN)
+        if account_id:
+            margins_init = self.portfolio.margins_init(account_id=account_id)
+            self.log.info(f"Initial margin: {margins_init}", color=LogColor.CYAN)
+
+            margins_maint = self.portfolio.margins_maint(account_id=account_id)
+            self.log.info(f"Maintenance margin: {margins_maint}", color=LogColor.CYAN)
+
+            balances_locked = self.portfolio.balances_locked(account_id=account_id)
+            self.log.info(f"Locked balance: {balances_locked}", color=LogColor.CYAN)
+        else:
+            self.log.warning("No account_id found from orders or positions", color=LogColor.YELLOW)
 
 
 # %%
 # Tested instrument id
-instrument_id = "YMZ5.XCBT"  # "^SPX.XCBO", "ES.XCME", "AAPL.XNAS", "YMU5.XCBT"
+instrument_id = "YMH6.XCBT"  # "^SPX.XCBO", "ES.XCME", "AAPL.XNAS", "YMU5.XCBT"
 
 instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
     symbology_method=SymbologyMethod.IB_SIMPLIFIED,
@@ -257,6 +303,7 @@ ib_data_client_config = InteractiveBrokersDataClientConfig(
     use_regular_trading_hours=False,
     instrument_provider=instrument_provider_config,
     market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,
+    ibg_client_id=2,
 )
 
 ib_exec_client_config = InteractiveBrokersExecClientConfig(
@@ -264,6 +311,7 @@ ib_exec_client_config = InteractiveBrokersExecClientConfig(
     instrument_provider=instrument_provider_config,
     routing=RoutingConfig(default=True),
     account_id=os.environ.get("TWS_ACCOUNT"),
+    ibg_client_id=2,
 )
 
 database_config = DatabaseConfig(
@@ -284,11 +332,10 @@ data_engine_config = LiveDataEngineConfig(
 logging_config = LoggingConfig(log_level="INFO")
 
 # Configure the trading node
-# IMPORTANT: you must use the imported IB variable so this client works properly
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=logging_config,
-    cache=cache_config,
+    # cache=cache_config,
     data_clients={IB: ib_data_client_config},
     exec_clients={IB: ib_exec_client_config},
     data_engine=data_engine_config,

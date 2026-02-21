@@ -6,21 +6,49 @@
 #include <Python.h>
 
 /**
- * Provides a means of accumulating and draining time event handlers.
+ * Provides a means of accumulating and draining time event handlers using a priority queue.
+ *
+ * Events are maintained in timestamp order using a binary heap, allowing efficient
+ * retrieval of the next event to process.
  */
 typedef struct TimeEventAccumulator TimeEventAccumulator;
 
-typedef struct TimeEventAccumulatorAPI {
+/**
+ * FFI wrapper for [`TimeEventAccumulator`].
+ */
+typedef struct TimeEventAccumulator_API {
     struct TimeEventAccumulator *_0;
-} TimeEventAccumulatorAPI;
+} TimeEventAccumulator_API;
 
-struct TimeEventAccumulatorAPI time_event_accumulator_new(void);
+/**
+ * Creates a new [`TimeEventAccumulator_API`] instance.
+ */
+struct TimeEventAccumulator_API time_event_accumulator_new(void);
 
-void time_event_accumulator_drop(struct TimeEventAccumulatorAPI accumulator);
+/**
+ * Drops a [`TimeEventAccumulator_API`] instance.
+ */
+void time_event_accumulator_drop(struct TimeEventAccumulator_API accumulator);
 
-void time_event_accumulator_advance_clock(struct TimeEventAccumulatorAPI *accumulator,
+/**
+ * Advance the clock and push events to the heap.
+ */
+void time_event_accumulator_advance_clock(struct TimeEventAccumulator_API *accumulator,
                                           TestClock_API *clock,
                                           uint64_t to_time_ns,
                                           uint8_t set_time);
 
-CVec time_event_accumulator_drain(struct TimeEventAccumulatorAPI *accumulator);
+/**
+ * Peek at the next event timestamp.
+ *
+ * Returns `u64::MAX` if the heap is empty.
+ */
+uint64_t time_event_accumulator_peek_next_time(const struct TimeEventAccumulator_API *accumulator);
+
+/**
+ * Pop the next event if its timestamp is at or before `ts`.
+ *
+ * Returns a handler with `callback_ptr = NULL` if no event is available.
+ */
+TimeEventHandler_t time_event_accumulator_pop_next_at_or_before(struct TimeEventAccumulator_API *accumulator,
+                                                                uint64_t ts);

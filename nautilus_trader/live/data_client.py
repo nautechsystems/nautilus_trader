@@ -39,8 +39,10 @@ from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDeltas
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
@@ -591,12 +593,12 @@ class LiveMarketDataClient(MarketDataClient):
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        self._add_subscription_order_book_snapshots(command.instrument_id)
+    def subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
+        self._add_subscription_order_book_depth(command.instrument_id)
         self.create_task(
-            self._subscribe_order_book_snapshots(command),
-            log_msg=f"subscribe: order_book_snapshots {command.instrument_id}",
-            success_msg=f"Subscribed {command.instrument_id} order book snapshots; depth={command.depth}",
+            self._subscribe_order_book_depth(command),
+            log_msg=f"subscribe: order_book_depth {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} order book depth; depth={command.depth}",
             success_color=LogColor.BLUE,
         )
 
@@ -714,12 +716,12 @@ class LiveMarketDataClient(MarketDataClient):
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        self._remove_subscription_order_book_snapshots(command.instrument_id)
+    def unsubscribe_order_book_depth(self, command: UnsubscribeOrderBook) -> None:
+        self._remove_subscription_order_book_depth(command.instrument_id)
         self.create_task(
-            self._unsubscribe_order_book_snapshots(command),
-            log_msg=f"unsubscribe: order_book_snapshots {command.instrument_id}",
-            success_msg=f"Unsubscribed {command.instrument_id} order book snapshots",
+            self._unsubscribe_order_book_depth(command),
+            log_msg=f"unsubscribe: order_book_depth {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} order book depth",
             success_color=LogColor.BLUE,
         )
 
@@ -823,6 +825,42 @@ class LiveMarketDataClient(MarketDataClient):
             log_msg=f"request: instruments for {request.venue}",
         )
 
+    def request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(
+            f"Request {request.instrument_id} order_book_deltas{time_range_str}{limit_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_order_book_deltas(request),
+            log_msg=f"request: order_book_deltas {request.instrument_id}",
+        )
+
+    def request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        depth_str = f" depth={request.depth}"
+        self._log.info(
+            f"Request {request.instrument_id} order_book_depth{time_range_str}{limit_str}{depth_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_order_book_depth(request),
+            log_msg=f"request: order_book_depth {request.instrument_id}",
+        )
+
+    def request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(
+            f"Request {request.instrument_id} order_book_snapshot{limit_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_order_book_snapshot(request),
+            log_msg=f"request: order_book_snapshot {request.instrument_id}",
+        )
+
     def request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         time_range_str = format_utc_timerange(request.start, request.end)
         limit_str = f" limit={request.limit}" if request.limit != 0 else ""
@@ -847,6 +885,18 @@ class LiveMarketDataClient(MarketDataClient):
             log_msg=f"request: trades {request.instrument_id}",
         )
 
+    def request_funding_rates(self, request: RequestFundingRates) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(
+            f"Request {request.instrument_id} funding rates{time_range_str}{limit_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_funding_rates(request),
+            log_msg=f"request: funding rates {request.instrument_id}",
+        )
+
     def request_bars(self, request: RequestBars) -> None:
         time_range_str = format_utc_timerange(request.start, request.end)
         limit_str = f" limit={request.limit}" if request.limit != 0 else ""
@@ -854,30 +904,6 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._request_bars(request),
             log_msg=f"request: bars {request.bar_type}",
-        )
-
-    def request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
-        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
-        self._log.info(
-            f"Request {request.instrument_id} order_book_snapshot{limit_str}",
-            LogColor.BLUE,
-        )
-        self.create_task(
-            self._request_order_book_snapshot(request),
-            log_msg=f"request: order_book_snapshot {request.instrument_id}",
-        )
-
-    def request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
-        time_range_str = format_utc_timerange(request.start, request.end)
-        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
-        depth_str = f" depth={request.depth}"
-        self._log.info(
-            f"Request {request.instrument_id} order_book_depth{time_range_str}{limit_str}{depth_str}",
-            LogColor.BLUE,
-        )
-        self.create_task(
-            self._request_order_book_depth(request),
-            log_msg=f"request: order_book_depth {request.instrument_id}",
         )
 
     ############################################################################
@@ -913,9 +939,9 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+    async def _subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
+            "implement the `_subscribe_order_book_depth` coroutine",  # pragma: no cover
         )
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
@@ -978,9 +1004,9 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_unsubscribe_order_book_deltas` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
+    async def _unsubscribe_order_book_depth(self, command: UnsubscribeOrderBook) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "implement the `_unsubscribe_order_book_snapshots` coroutine",  # pragma: no cover
+            "implement the `_unsubscribe_order_book_depth` coroutine",  # pragma: no cover
         )
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
@@ -1048,19 +1074,29 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_request_trade_ticks` coroutine",  # pragma: no cover
         )
 
+    async def _request_funding_rates(self, request: RequestFundingRates) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_request_funding_rates` coroutine",  # pragma: no cover
+        )
+
     async def _request_bars(self, request: RequestBars) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_bars` coroutine",  # pragma: no cover
         )
 
-    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
-        raise NotImplementedError(
-            "implement the `_request_order_book_snapshot` coroutine",  # pragma: no cover
+    async def _request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_request_order_book_deltas` coroutine",  # pragma: no cover
         )
 
     async def _request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_order_book_depth` coroutine",  # pragma: no cover
+        )
+
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        raise NotImplementedError(
+            "implement the `_request_order_book_snapshot` coroutine",  # pragma: no cover
         )
 
     async def cancel_pending_tasks(self, timeout_secs: float = 5.0) -> None:

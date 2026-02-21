@@ -22,21 +22,6 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-extension-module = [
-  "nautilus-analysis/extension-module",
-  "nautilus-common/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-model/extension-module",
-  "python",
-  "pyo3/extension-module",
-]
-python = [
-  "nautilus-analysis/python",
-  "nautilus-common/python",
-  "nautilus-core/python",
-  "nautilus-model/python",
-  "pyo3",
-]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -54,9 +39,6 @@ rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
-
-pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

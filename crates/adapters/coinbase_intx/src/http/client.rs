@@ -89,8 +89,9 @@ pub struct CoinbaseIntxResponse<T> {
 }
 
 // https://docs.cdp.coinbase.com/intx/docs/rate-limits#rest-api-rate-limits
-pub static COINBASE_INTX_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(100).unwrap()));
+pub static COINBASE_INTX_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(100).expect("non-zero")).expect("valid constant")
+});
 
 /// Provides a lower-level HTTP client for connecting to the [Coinbase International](https://coinbase.com) REST API.
 ///
@@ -246,25 +247,25 @@ impl CoinbaseIntxHttpInnerClient {
             None
         };
 
-        tracing::trace!("Request: {url:?} {body:?}");
+        log::trace!("Request: {url:?} {body:?}");
 
         let resp = self
             .client
             .request(method.clone(), url, None, headers, body, None, None)
             .await?;
 
-        tracing::trace!("Response: {resp:?}");
+        log::trace!("Response: {resp:?}");
 
         if resp.status.is_success() {
             let coinbase_response: T = serde_json::from_slice(&resp.body).map_err(|e| {
-                tracing::error!("Failed to deserialize CoinbaseResponse: {e}");
+                log::error!("Failed to deserialize CoinbaseResponse: {e}");
                 CoinbaseIntxHttpError::JsonError(e.to_string())
             })?;
 
             Ok(coinbase_response)
         } else {
             let error_body = String::from_utf8_lossy(&resp.body);
-            tracing::error!(
+            log::error!(
                 "HTTP error {} with body: {error_body}",
                 resp.status.as_str()
             );
@@ -618,7 +619,10 @@ impl CoinbaseIntxHttpInnerClient {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx",
+        from_py_object
+    )
 )]
 pub struct CoinbaseIntxHttpClient {
     pub(crate) inner: Arc<CoinbaseIntxHttpInnerClient>,
@@ -1095,7 +1099,7 @@ impl CoinbaseIntxHttpClient {
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
         let resp = self.inner.http_create_order(params).await?;
-        tracing::debug!("Submitted order: {resp:?}");
+        log::debug!("Submitted order: {resp:?}");
 
         let instrument = self.get_instrument_from_cache(resp.symbol)?;
         let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -1125,7 +1129,7 @@ impl CoinbaseIntxHttpClient {
             .inner
             .http_cancel_order(client_order_id.as_str(), portfolio_id)
             .await?;
-        tracing::debug!("Canceled order: {resp:?}");
+        log::debug!("Canceled order: {resp:?}");
 
         let instrument = self.get_instrument_from_cache(resp.symbol)?;
         let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -1167,7 +1171,7 @@ impl CoinbaseIntxHttpClient {
 
         let mut reports: Vec<OrderStatusReport> = Vec::with_capacity(resp.len());
         for order in resp {
-            tracing::debug!("Canceled order: {order:?}");
+            log::debug!("Canceled order: {order:?}");
             let report = parse_order_status_report(
                 order,
                 account_id,
@@ -1214,7 +1218,7 @@ impl CoinbaseIntxHttpClient {
             .inner
             .http_modify_order(client_order_id.as_str(), params)
             .await?;
-        tracing::debug!("Modified order {}", resp.client_order_id);
+        log::debug!("Modified order {}", resp.client_order_id);
 
         let instrument = self.get_instrument_from_cache(resp.symbol)?;
         let ts_init = get_atomic_clock_realtime().get_time_ns();

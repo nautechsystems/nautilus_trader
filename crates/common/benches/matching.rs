@@ -15,74 +15,84 @@
 
 use std::hint::black_box;
 
-use criterion::{Criterion, criterion_group, criterion_main};
-use nautilus_common::msgbus::matching::is_matching_backtracking;
-use rand::{Rng, SeedableRng, rngs::StdRng};
-use regex::Regex;
-use ustr::Ustr;
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use nautilus_common::msgbus::matching::{is_matching, is_matching_backtracking};
 
-fn create_topics(n: usize, rng: &mut StdRng) -> Vec<Ustr> {
-    let cat = ["data", "info", "order"];
-    let model = ["quotes", "trades", "orderbooks", "depths"];
-    let venue = ["BINANCE", "BYBIT", "OKX", "FTX", "KRAKEN"];
-    let instrument = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"];
+const TOPIC: &str = "data.quotes.BINANCE.ETHUSDT";
+const TOPIC_BYTES: &[u8] = b"data.quotes.BINANCE.ETHUSDT";
 
-    let mut topics = Vec::new();
-    for _ in 0..n {
-        let cat = cat[rng.random_range(0..cat.len())];
-        let model = model[rng.random_range(0..model.len())];
-        let venue = venue[rng.random_range(0..venue.len())];
-        let instrument = instrument[rng.random_range(0..instrument.len())];
-        topics.push(Ustr::from(&format!("{cat}.{model}.{venue}.{instrument}")));
-    }
-    topics
+struct PatternCase {
+    name: &'static str,
+    pattern: &'static str,
+    pattern_bytes: &'static [u8],
 }
 
-fn bench_matching(c: &mut Criterion) {
-    let pattern = "data.*.BINANCE.ETH???";
+const PATTERNS: &[PatternCase] = &[
+    PatternCase {
+        name: "exact",
+        pattern: "data.quotes.BINANCE.ETHUSDT",
+        pattern_bytes: b"data.quotes.BINANCE.ETHUSDT",
+    },
+    PatternCase {
+        name: "star_end",
+        pattern: "data.quotes.BINANCE.*",
+        pattern_bytes: b"data.quotes.BINANCE.*",
+    },
+    PatternCase {
+        name: "star_middle",
+        pattern: "data.*.BINANCE.ETHUSDT",
+        pattern_bytes: b"data.*.BINANCE.ETHUSDT",
+    },
+    PatternCase {
+        name: "multi_star",
+        pattern: "data.*.BINANCE.*",
+        pattern_bytes: b"data.*.BINANCE.*",
+    },
+    PatternCase {
+        name: "question",
+        pattern: "data.quotes.BINANCE.ETHUS?T",
+        pattern_bytes: b"data.quotes.BINANCE.ETHUS?T",
+    },
+    PatternCase {
+        name: "multi_question",
+        pattern: "data.quotes.BINANCE.ETH????",
+        pattern_bytes: b"data.quotes.BINANCE.ETH????",
+    },
+    PatternCase {
+        name: "mixed",
+        pattern: "data.*.BINANCE.ETH*",
+        pattern_bytes: b"data.*.BINANCE.ETH*",
+    },
+    PatternCase {
+        name: "no_match",
+        pattern: "order.*.BYBIT.*",
+        pattern_bytes: b"order.*.BYBIT.*",
+    },
+];
 
-    {
-        let mut rng = StdRng::seed_from_u64(42);
-        let mut regex_group = c.benchmark_group("Regex matching");
+fn bench_is_matching(c: &mut Criterion) {
+    let mut group = c.benchmark_group("is_matching");
 
-        for ele in [1, 10, 100, 1000] {
-            let topics = create_topics(ele, &mut rng);
-
-            // Compile regex once; measure only matching performance
-            regex_group.bench_function(format!("{ele} topics"), |b| {
-                let regex = Regex::new(pattern).unwrap();
-
-                b.iter(|| {
-                    for topic in &topics {
-                        black_box(regex.is_match(topic));
-                    }
-                });
-            });
-        }
-
-        regex_group.finish();
+    for case in PATTERNS {
+        group.bench_with_input(BenchmarkId::new("bytes", case.name), &case, |b, case| {
+            b.iter(|| black_box(is_matching(TOPIC_BYTES, case.pattern_bytes)));
+        });
     }
 
-    {
-        let mut rng = StdRng::seed_from_u64(42);
-        let mut iter_group = c.benchmark_group("Iterative backtracking matching");
-        let pattern = pattern.into();
-
-        for ele in [1, 10, 100, 1000] {
-            let topics = create_topics(ele, &mut rng);
-
-            iter_group.bench_function(format!("{ele} topics"), |b| {
-                b.iter(|| {
-                    for topic in &topics {
-                        black_box(is_matching_backtracking(topic.into(), pattern));
-                    }
-                });
-            });
-        }
-
-        iter_group.finish();
-    }
+    group.finish();
 }
 
-criterion_group!(benches, bench_matching);
+fn bench_is_matching_backtracking(c: &mut Criterion) {
+    let mut group = c.benchmark_group("is_matching_backtracking");
+
+    for case in PATTERNS {
+        group.bench_with_input(BenchmarkId::new("mstr", case.name), &case, |b, case| {
+            b.iter(|| black_box(is_matching_backtracking(TOPIC.into(), case.pattern.into())));
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_is_matching, bench_is_matching_backtracking);
 criterion_main!(benches);

@@ -14,12 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 """
 The Deribit adapter provides integration with the Deribit cryptocurrency derivatives
-exchange.
+exchange, supporting live market data ingest and order execution.
 
 This adapter supports:
-- Market data streaming via WebSocket (trades, order book, quotes)
-- Instrument definitions for futures, options, and perpetuals
-- Multiple currencies (BTC, ETH, USDC, USDT, EURR)
+- Market data streaming via WebSocket (trades, order book, quotes).
+- Order execution via WebSocket (market, limit, stop market, stop limit).
+- Instrument definitions for futures, options, spot, and combo instruments.
+- Multiple currencies (BTC, ETH, USDC, USDT, EURR).
 
 """
 
@@ -37,11 +38,9 @@ from nautilus_trader.adapters.deribit.factories import get_cached_deribit_instru
 from nautilus_trader.adapters.deribit.providers import DeribitInstrumentProvider
 from nautilus_trader.core.nautilus_pyo3 import DeribitCurrency
 from nautilus_trader.core.nautilus_pyo3 import DeribitHttpClient
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
-from nautilus_trader.core.nautilus_pyo3 import DeribitOptionType
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.core.nautilus_pyo3 import DeribitUpdateInterval
 from nautilus_trader.core.nautilus_pyo3 import DeribitWebSocketClient
-from nautilus_trader.core.nautilus_pyo3 import DeribitWsChannel
 
 
 __all__ = [
@@ -54,14 +53,12 @@ __all__ = [
     "DeribitExecClientConfig",
     "DeribitExecutionClient",
     "DeribitHttpClient",
-    "DeribitInstrumentKind",
     "DeribitInstrumentProvider",
     "DeribitLiveDataClientFactory",
     "DeribitLiveExecClientFactory",
-    "DeribitOptionType",
+    "DeribitProductType",
     "DeribitUpdateInterval",
     "DeribitWebSocketClient",
-    "DeribitWsChannel",
     "get_cached_deribit_http_client",
     "get_cached_deribit_instrument_provider",
 ]

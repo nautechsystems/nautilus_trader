@@ -634,3 +634,8 @@ Running multiple `TradingNode` or `BacktestNode` instances **concurrently** in t
 For production deployments, add multiple strategies to a **single TradingNode** within a process.
 For parallel execution or workload isolation, run each node in its own separate process.
 :::
+
+## Related guides
+
+- [Overview](overview.md) - High-level introduction to NautilusTrader.
+- [Message Bus](message_bus.md) - Core messaging infrastructure.

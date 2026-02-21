@@ -51,11 +51,11 @@ integration guide.
 
 Kraken supports two primary product categories:
 
-| Product Type             | Supported | Notes                                                    |
-|--------------------------|-----------|----------------------------------------------------------|
-| Spot                     | ✓         | Standard cryptocurrency pairs with margin support.       |
-| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD-margined (`PF_`) perpetual swaps.|
-| Futures (Dated/Flex)     | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.       |
+| Product Type             | Supported | Notes                                                     |
+|--------------------------|-----------|-----------------------------------------------------------|
+| Spot                     | ✓         | Standard cryptocurrency pairs with margin support.        |
+| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD-margined (`PF_`) perpetual swaps. |
+| Futures (Dated/Flex)     | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.        |
 
 :::note
 **Dual-product deployments**: When both `SPOT` and `FUTURES` product types are
@@ -71,16 +71,16 @@ The Kraken adapter supports real-time bar (OHLC) streaming for Spot markets via
 WebSocket. The following intervals are available:
 
 | Interval   | BarType specification |
-|------------|----------------------|
-| 1 minute   | `1-MINUTE-LAST`      |
-| 5 minutes  | `5-MINUTE-LAST`      |
-| 15 minutes | `15-MINUTE-LAST`     |
-| 30 minutes | `30-MINUTE-LAST`     |
-| 1 hour     | `1-HOUR-LAST`        |
-| 4 hours    | `4-HOUR-LAST`        |
-| 1 day      | `1-DAY-LAST`         |
-| 1 week     | `1-WEEK-LAST`        |
-| 15 days    | `15-DAY-LAST`        |
+|------------|-----------------------|
+| 1 minute   | `1-MINUTE-LAST`       |
+| 5 minutes  | `5-MINUTE-LAST`       |
+| 15 minutes | `15-MINUTE-LAST`      |
+| 30 minutes | `30-MINUTE-LAST`      |
+| 1 hour     | `1-HOUR-LAST`         |
+| 4 hours    | `4-HOUR-LAST`         |
+| 1 day      | `1-DAY-LAST`          |
+| 1 week     | `1-WEEK-LAST`         |
+| 15 days    | `15-DAY-LAST`         |
 
 :::note
 **Futures limitation**: Kraken Futures does not support bar streaming via
@@ -123,6 +123,23 @@ trades and aggregating bars locally) rather than `EXTERNAL` exchange-provided ba
 
 ## Symbology
 
+### Bitcoin symbol format (BTC vs XBT)
+
+Kraken uses different Bitcoin symbol conventions across their APIs:
+
+| Market  | Symbol Format | Example            | Notes                                       |
+|---------|---------------|--------------------|---------------------------------------------|
+| Spot    | `BTC`         | `BTC/USD.KRAKEN`   | Adapter normalizes XBT → BTC at load time.  |
+| Futures | `XBT`         | `PI_XBTUSD.KRAKEN` | Uses Kraken's native XBT format.            |
+
+:::note
+Kraken's REST API returns `XBT` for Bitcoin (following ISO 4217 conventions for
+supranational currencies), but their WebSocket v2 API requires the `BTC` format.
+The adapter automatically normalizes spot symbols to `BTC` when loading instruments,
+whether XBT appears as the base currency (e.g., `XBT/USD` → `BTC/USD`) or quote
+currency (e.g., `ETH/XBT` → `ETH/BTC`). Futures retain Kraken's native `XBT` format.
+:::
+
 ### Spot markets
 
 NautilusTrader uses ISO 4217-A3 format for Kraken Spot instrument symbols,
@@ -136,13 +153,8 @@ InstrumentId.from_str("BTC/USD.KRAKEN")   # Spot BTC/USD
 InstrumentId.from_str("ETH/USD.KRAKEN")   # Spot ETH/USD
 InstrumentId.from_str("SOL/USD.KRAKEN")   # Spot SOL/USD
 InstrumentId.from_str("BTC/USDT.KRAKEN")  # Spot BTC/USDT
+InstrumentId.from_str("ETH/BTC.KRAKEN")   # Spot ETH/BTC (normalized from ETH/XBT)
 ```
-
-:::note
-Kraken's native API uses different asset codes (e.g., `XBT` for Bitcoin,
-`XETHZUSD` for ETH/USD). The adapter translates between NautilusTrader's
-standardized format and Kraken's native format automatically.
-:::
 
 ### Futures markets
 
@@ -165,14 +177,14 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 ### Order types
 
-| Order Type             | Spot | Futures | Notes                                            |
-|------------------------|------|---------|--------------------------------------------------|
-| `MARKET`               | ✓    | ✓       | Immediate execution at market price.             |
-| `LIMIT`                | ✓    | ✓       | Execution at specified price or better.          |
-| `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop-loss).            |
-| `MARKET_IF_TOUCHED`    | ✓    | ✓       | Conditional market order (take-profit).          |
-| `STOP_LIMIT`           | ✓    | ✓       | Conditional limit order (stop-loss-limit).       |
-| `LIMIT_IF_TOUCHED`     | ✓    | -       | *Futures: not yet implemented*.                  |
+| Order Type             | Spot | Futures | Notes                                      |
+|------------------------|------|---------|--------------------------------------------|
+| `MARKET`               | ✓    | ✓       | Immediate execution at market price.       |
+| `LIMIT`                | ✓    | ✓       | Execution at specified price or better.    |
+| `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop-loss).      |
+| `MARKET_IF_TOUCHED`    | ✓    | ✓       | Conditional market order (take-profit).    |
+| `STOP_LIMIT`           | ✓    | ✓       | Conditional limit order (stop-loss-limit). |
+| `LIMIT_IF_TOUCHED`     | ✓    | -       | *Futures: not yet implemented*.            |
 
 ### Time in force
 

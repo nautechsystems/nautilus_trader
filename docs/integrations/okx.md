@@ -569,7 +569,7 @@ The OKX data client provides the following configuration options:
 | `base_url_ws`                        | `None`                          | Override for the market data WebSocket endpoint. |
 | `api_key`                            | `None`      | Falls back to `OKX_API_KEY` environment variable when unset. |
 | `api_secret`                         | `None`      | Falls back to `OKX_API_SECRET` environment variable when unset. |
-| `api_passphrase`                     | `None`      | Falls back to `OKX_PASSPHRASE` environment variable when unset. |
+| `api_passphrase`                     | `None`      | Falls back to `OKX_API_PASSPHRASE` environment variable when unset. |
 | `is_demo`                            | `False`                         | Connects to the OKX demo environment when `True`. |
 | `http_timeout_secs`                  | `60`                            | Request timeout (seconds) for REST market data calls. |
 | `max_retries`                        | `3`                             | Maximum retry attempts for recoverable REST errors. |
@@ -593,7 +593,7 @@ The OKX execution client provides the following configuration options:
 | `base_url_ws`              | `None`      | Override for the private WebSocket endpoint. |
 | `api_key`                  | `None`      | Falls back to `OKX_API_KEY` environment variable when unset. |
 | `api_secret`               | `None`      | Falls back to `OKX_API_SECRET` environment variable when unset. |
-| `api_passphrase`           | `None`      | Falls back to `OKX_PASSPHRASE` environment variable when unset. |
+| `api_passphrase`           | `None`      | Falls back to `OKX_API_PASSPHRASE` environment variable when unset. |
 | `margin_mode`              | `None`      | Margin mode for derivatives trading (`ISOLATED` or `CROSS`). Only applies to SWAP/FUTURES/OPTIONS. Defaults to `ISOLATED` if not specified. |
 | `use_spot_margin`          | `False`     | Enables margin/leverage for SPOT trading. When `True`, uses `spot_isolated` trade mode. When `False`, uses `cash` trade mode (no leverage). Only applies to SPOT instruments. |
 | `is_demo`                  | `False`     | Connects to the OKX demo trading environment. |
@@ -603,6 +603,7 @@ The OKX execution client provides the following configuration options:
 | `max_retries`              | `3`         | Maximum retry attempts for recoverable REST errors. |
 | `retry_delay_initial_ms`   | `1,000`     | Initial delay (milliseconds) applied before retrying a failed request. |
 | `retry_delay_max_ms`       | `10,000`    | Upper bound for the exponential backoff delay between retries. |
+| `use_spot_cash_position_reports` | `False` | Generate position reports for SPOT CASH instruments based on wallet balances. |
 | `http_proxy_url`           | `None`      | Optional HTTP proxy URL. |
 | `ws_proxy_url`             | `None`      | Optional WebSocket proxy URL. |
 
@@ -651,6 +652,8 @@ node.add_data_client_factory(OKX, OKXLiveDataClientFactory)
 node.add_exec_client_factory(OKX, OKXLiveExecClientFactory)
 node.build()
 ```
+
+## Contributing
 
 :::info
 For additional features or to contribute to the OKX adapter, please see our

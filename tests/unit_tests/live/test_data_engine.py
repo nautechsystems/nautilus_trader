@@ -153,7 +153,7 @@ class TestLiveDataEngine:
         )
 
         handler = []
-        request = request = RequestQuoteTicks(
+        request = RequestQuoteTicks(
             instrument_id=InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
             start=None,
             end=None,

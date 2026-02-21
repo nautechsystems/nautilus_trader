@@ -13,15 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::AtomicTime;
+use std::{cell::RefCell, rc::Rc};
+
 use nautilus_model::identifiers::{OrderListId, StrategyId, TraderId};
 
 use super::get_datetime_tag;
+use crate::clock::Clock;
 
-#[repr(C)]
 #[derive(Debug)]
 pub struct OrderListIdGenerator {
-    clock: &'static AtomicTime,
+    clock: Rc<RefCell<dyn Clock>>,
     trader_id: TraderId,
     strategy_id: StrategyId,
     count: usize,
@@ -30,11 +31,11 @@ pub struct OrderListIdGenerator {
 impl OrderListIdGenerator {
     /// Creates a new [`OrderListIdGenerator`] instance.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
         initial_count: usize,
-        clock: &'static AtomicTime,
+        clock: Rc<RefCell<dyn Clock>>,
     ) -> Self {
         Self {
             clock,
@@ -58,7 +59,7 @@ impl OrderListIdGenerator {
     }
 
     pub fn generate(&mut self) -> OrderListId {
-        let datetime_tag = get_datetime_tag(self.clock.get_time_ms());
+        let datetime_tag = get_datetime_tag(self.clock.borrow().timestamp_ms());
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = self.strategy_id.get_tag();
         self.count += 1;
@@ -72,21 +73,23 @@ impl OrderListIdGenerator {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::time::get_atomic_clock_static;
+    use std::{cell::RefCell, rc::Rc};
+
     use nautilus_model::{
         identifiers::{OrderListId, StrategyId, TraderId},
         stubs::TestDefault,
     };
     use rstest::rstest;
 
-    use crate::generators::order_list_id::OrderListIdGenerator;
+    use crate::{clock::TestClock, generators::order_list_id::OrderListIdGenerator};
 
     fn get_order_list_id_generator(initial_count: Option<usize>) -> OrderListIdGenerator {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
         OrderListIdGenerator::new(
             TraderId::test_default(),
             StrategyId::test_default(),
             initial_count.unwrap_or(0),
-            get_atomic_clock_static(),
+            clock,
         )
     }
 

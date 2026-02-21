@@ -29,7 +29,7 @@ Then execute this file:
 
     python tests/integration_tests/adapters/tardis/sandbox/run_replay.py
 
-Export ``RUST_LOG=debug`` if you want verbose logging from the Rust side.
+Export ``NAUTILUS_LOG=debug`` for verbose Rust logging (defaults to INFO).
 
 """
 

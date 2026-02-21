@@ -429,3 +429,82 @@ class TestBinanceInstrumentProvider:
         assert btc_perp is not None
         assert btc_perp.maker_fee == Decimal("0.0002")
         assert btc_perp.taker_fee == Decimal("0.0005")
+
+    @pytest.mark.asyncio
+    async def test_futures_instruments_have_correct_margin_values(
+        self,
+        binance_http_client,
+        live_logger,
+        monkeypatch,
+    ):
+        """
+        Test that margin_init and margin_maint are set to 1 for Binance futures.
+
+        Per Binance API docs, requiredMarginPercent and maintMarginPercent fields
+        should be ignored. Margin calculation should be purely leverage-based:
+        margin = notional / leverage.
+
+        See: https://github.com/nautechsystems/nautilus_trader/issues/3420
+
+        """
+        # Arrange
+        exchange_info_response = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_futures_market_exchange_info.json",
+        )
+
+        account_info = BinanceFuturesAccountInfo(
+            feeTier=0,
+            canTrade=True,
+            canDeposit=True,
+            canWithdraw=True,
+            updateTime=1234567890000,
+            assets=[],
+        )
+
+        responses = [exchange_info_response]
+
+        async def mock_send_request(
+            self,
+            http_method: str,
+            url_path: str,
+            payload: dict[str, str],
+            ratelimiter_keys: list[str] | None = None,
+        ) -> bytes:
+            return responses.pop()
+
+        async def mock_query_account_info(recv_window: str | None = None):
+            return account_info
+
+        monkeypatch.setattr(
+            target=BinanceHttpClient,
+            name="send_request",
+            value=mock_send_request,
+        )
+
+        self.provider = BinanceFuturesInstrumentProvider(
+            client=binance_http_client,
+            clock=self.clock,
+            account_type=BinanceAccountType.USDT_FUTURES,
+        )
+
+        monkeypatch.setattr(
+            self.provider._http_account,
+            "query_futures_account_info",
+            mock_query_account_info,
+        )
+
+        # Act
+        await self.provider.load_all_async()
+
+        # Assert - perpetual instrument
+        btc_perp = self.provider.find(InstrumentId(Symbol("BTCUSDT-PERP"), Venue("BINANCE")))
+        assert btc_perp is not None
+        assert btc_perp.margin_init == Decimal(1)
+        assert btc_perp.margin_maint == Decimal(1)
+
+        # Assert - quarterly future instrument
+        btc_future = self.provider.find(InstrumentId(Symbol("BTCUSDT_220325"), Venue("BINANCE")))
+        assert btc_future is not None
+        assert btc_future.margin_init == Decimal(1)
+        assert btc_future.margin_maint == Decimal(1)

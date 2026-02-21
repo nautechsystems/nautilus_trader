@@ -39,9 +39,7 @@ use nautilus_bybit::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     println!("=== Bybit HTTP Client Demo ===\n");
 

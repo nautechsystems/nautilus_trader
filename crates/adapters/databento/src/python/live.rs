@@ -73,10 +73,10 @@ impl DatabentoLiveClient {
         callback: Py<PyAny>,
         callback_pyo3: Py<PyAny>,
     ) -> PyResult<()> {
-        tracing::debug!("Processing messages...");
+        log::debug!("Processing messages...");
         // Continue to process messages until channel is hung up
         while let Some(msg) = msg_rx.recv().await {
-            tracing::trace!("Received message: {msg:?}");
+            log::trace!("Received message: {msg:?}");
 
             match msg {
                 LiveMessage::Data(data) => Python::attach(|py| {
@@ -86,7 +86,7 @@ impl DatabentoLiveClient {
                 LiveMessage::Instrument(data) => {
                     Python::attach(|py| match instrument_any_to_pyobject(py, data) {
                         Ok(py_obj) => call_python(py, &callback, py_obj),
-                        Err(e) => tracing::error!("Failed creating instrument: {e}"),
+                        Err(e) => log::error!("Failed creating instrument: {e}"),
                     });
                 }
                 LiveMessage::Status(data) => Python::attach(|py| {
@@ -118,7 +118,7 @@ impl DatabentoLiveClient {
         }
 
         msg_rx.close();
-        tracing::debug!("Closed message receiver");
+        log::debug!("Closed message receiver");
 
         Ok(())
     }
@@ -132,7 +132,7 @@ fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         // TODO: Improve this by checking for the actual exception type
         if !e.to_string().contains("CancelledError") {
-            tracing::error!("Error calling Python: {e}");
+            log::error!("Error calling Python: {e}");
         }
     }
 }
@@ -250,7 +250,7 @@ impl DatabentoLiveClient {
             return Err(to_pyruntime_err("Client already running"));
         }
 
-        tracing::debug!("Starting client");
+        log::debug!("Starting client");
 
         self.is_running = true;
 
@@ -285,13 +285,13 @@ impl DatabentoLiveClient {
             );
 
             match proc_handle {
-                Ok(()) => tracing::debug!("Message processor completed"),
-                Err(e) => tracing::error!("Message processor error: {e}"),
+                Ok(()) => log::debug!("Message processor completed"),
+                Err(e) => log::error!("Message processor error: {e}"),
             }
 
             match feed_handle {
-                Ok(()) => tracing::debug!("Feed handler completed"),
-                Err(e) => tracing::error!("Feed handler error: {e}"),
+                Ok(()) => log::debug!("Feed handler completed"),
+                Err(e) => log::error!("Feed handler error: {e}"),
             }
 
             Ok(())
@@ -307,7 +307,7 @@ impl DatabentoLiveClient {
             return Err(to_pyruntime_err("Client already closed"));
         }
 
-        tracing::debug!("Closing client");
+        log::debug!("Closing client");
 
         if !self.is_closed() {
             self.send_command(LiveCommand::Close)?;

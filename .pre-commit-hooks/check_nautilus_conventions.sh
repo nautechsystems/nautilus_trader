@@ -3,8 +3,9 @@
 # 1. Nautilus domain types should not be fully qualified in code
 #    (identifiers, data types, enums, etc. should be imported and used directly)
 # 2. Box-style banner comments are not allowed
-# 3. std::fmt conventions: import Debug (use as `impl Debug`), but fully qualify
-#    std::fmt::Formatter and std::fmt::Result (do not import them)
+# 3. std::fmt conventions: import Debug/Display (use as `impl Debug`/`impl Display`),
+#    but fully qualify std::fmt::Formatter and std::fmt::Result (do not import them)
+# 4. debug_struct should always use stringify! macro for its value
 #
 # Use '// nautilus-import-ok' comment to allow specific exceptions
 
@@ -177,6 +178,23 @@ if [[ -n "$fmt_debug_output" ]]; then
   done <<< "$fmt_debug_output"
 fi
 
+# Check 1b: impl std::fmt::Display should be impl Display
+fmt_display_output=$(rg -n --no-heading 'impl\s+std::fmt::Display' crates --type rust 2> /dev/null || true)
+
+if [[ -n "$fmt_display_output" ]]; then
+  echo
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
+      file="${BASH_REMATCH[1]}"
+      line_num="${BASH_REMATCH[2]}"
+      line_content="${BASH_REMATCH[3]}"
+      echo -e "${RED}Error:${NC} Use 'impl Display' instead of 'impl std::fmt::Display' in $file:$line_num"
+      echo "  ${line_content:0:100}"
+      FMT_VIOLATIONS=$((FMT_VIOLATIONS + 1))
+    fi
+  done <<< "$fmt_display_output"
+fi
+
 # Check 2: Formatter and Result should not be imported from std::fmt
 # Match patterns like: use std::fmt::Formatter, use std::fmt::{..., Formatter, ...}
 fmt_import_output=$(rg -n --no-heading 'use\s+std::fmt::\{[^}]*(Formatter|Result)[^}]*\}|use\s+std::fmt::(Formatter|Result)\b' crates --type rust 2> /dev/null || true)
@@ -233,20 +251,67 @@ if [[ -n "$bare_formatter_output" ]]; then
   done <<< "$bare_formatter_output"
 fi
 
+# Check 5: debug_struct should use stringify! macro, not string literals
+# Catches: debug_struct("TypeName") - should be debug_struct(stringify!(TypeName))
+debug_struct_output=$(rg -n --no-heading 'debug_struct\("[A-Z]' crates --type rust 2> /dev/null || true)
+
+if [[ -n "$debug_struct_output" ]]; then
+  echo
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
+      file="${BASH_REMATCH[1]}"
+      line_num="${BASH_REMATCH[2]}"
+      line_content="${BASH_REMATCH[3]}"
+      echo -e "${RED}Error:${NC} Use stringify! macro with debug_struct in $file:$line_num"
+      echo "  ${line_content:0:100}"
+      echo "  Use: debug_struct(stringify!(TypeName)) instead of debug_struct(\"TypeName\")"
+      FMT_VIOLATIONS=$((FMT_VIOLATIONS + 1))
+    fi
+  done <<< "$debug_struct_output"
+fi
+
 if [ $FMT_VIOLATIONS -gt 0 ]; then
   echo
   echo -e "${RED}Found $FMT_VIOLATIONS std::fmt convention violation(s)${NC}"
   echo
   echo -e "${YELLOW}To fix:${NC}"
-  echo "  - Import Debug and use as: impl Debug for MyType"
+  echo "  - Import Debug/Display and use as: impl Debug for MyType, impl Display for MyType"
   echo "  - Do NOT import Formatter or Result, use fully qualified:"
   echo "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result"
+  echo "  - Use stringify! with debug_struct: f.debug_struct(stringify!(MyType))"
 else
   echo "✓ std::fmt conventions are valid"
 fi
 
+# Check for ", got" phrasing in error messages
+echo "Checking for ', got' phrasing..."
+
+# Search for ", got" followed by space, punctuation, or end-of-line
+got_output=$(rg -n ', got[[:space:][:punct:]]|, got$' \
+  crates tests examples nautilus_trader \
+  --type rust --type py --type cython \
+  --glob '!docs/**' \
+  2> /dev/null || true)
+
+if [[ -n "$got_output" ]]; then
+  GOT_VIOLATIONS=$(echo "$got_output" | wc -l | tr -d ' ')
+  echo
+  echo "$got_output" | head -20
+  echo
+  echo -e "${RED}Found $GOT_VIOLATIONS ', got' phrasing violation(s)${NC}"
+  echo
+  echo -e "${YELLOW}To fix:${NC} Use more descriptive alternatives:"
+  echo "  - ', was' for type mismatches"
+  echo "  - ', received' for input validation"
+  echo "  - ', found' for search/lookup results"
+  echo "  See: docs/developer_guide/coding_standards.md#terminology-and-phrasing"
+else
+  GOT_VIOLATIONS=0
+  echo "✓ No ', got' phrasing found"
+fi
+
 # Exit with error if any violations found
-if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -gt 0 ]; then
+if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -gt 0 ] || [ "$GOT_VIOLATIONS" -gt 0 ]; then
   exit 1
 fi
 

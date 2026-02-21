@@ -358,3 +358,10 @@ Coinbase International returns HTTP 429 when you exceed the 100 requests/sec all
 - **Graceful Shutdown**: The adapter properly handles graceful shutdown, ensuring all pending messages are processed before disconnecting.
 - **Thread Safety**: All adapter components are thread-safe, allowing them to be used from multiple threads concurrently.
 - **Execution Model**: The adapter can be configured with a single Coinbase International portfolio per execution client. For trading multiple portfolios, you can create multiple execution clients.
+
+## Contributing
+
+:::info
+For additional features or to contribute to the Coinbase International adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

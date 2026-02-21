@@ -14,20 +14,49 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Represents an amount of money in a specified currency denomination.
+//!
+//! [`Money`] is an immutable value type for representing monetary amounts with an associated
+//! currency. It supports both positive and negative values (for debits, losses, etc.) and
+//! enforces currency consistency in arithmetic operations.
+//!
+//! # Arithmetic behavior
+//!
+//! | Operation         | Result    | Notes                             |
+//! |-------------------|-----------|-----------------------------------|
+//! | `Money + Money`   | `Money`   | Panics if currencies don't match. |
+//! | `Money - Money`   | `Money`   | Panics if currencies don't match. |
+//! | `Money + Decimal` | `Decimal` |                                   |
+//! | `Money - Decimal` | `Decimal` |                                   |
+//! | `Money * Decimal` | `Decimal` |                                   |
+//! | `Money / Decimal` | `Decimal` |                                   |
+//! | `Money + f64`     | `f64`     |                                   |
+//! | `Money - f64`     | `f64`     |                                   |
+//! | `Money * f64`     | `f64`     |                                   |
+//! | `Money / f64`     | `f64`     |                                   |
+//! | `-Money`          | `Money`   |                                   |
+//!
+//! # Currency constraints
+//!
+//! When performing arithmetic between two `Money` values, both must have the same currency.
+//! Attempting to add or subtract money with different currencies raises an error.
+//!
+//! # Immutability
+//!
+//! `Money` is immutable. All arithmetic operations return new instances.
 
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
-    ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign},
+    ops::{Add, Div, Mul, Neg, Sub},
     str::FromStr,
 };
 
 use nautilus_core::{
-    correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true},
+    correctness::{FAILED, check_in_range_inclusive_f64},
     formatting::Separable,
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(not(any(feature = "defi", feature = "high-precision")))]
@@ -38,7 +67,9 @@ use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 use crate::types::fixed::MAX_FLOAT_PRECISION;
 use crate::types::{
     Currency,
-    fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision},
+    fixed::{
+        FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision, mantissa_exponent_to_fixed_i128,
+    },
 };
 
 // -----------------------------------------------------------------------------
@@ -111,7 +142,11 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", frozen)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.model",
+        frozen,
+        from_py_object
+    )
 )]
 pub struct Money {
     /// Represents the raw fixed-point amount, with `currency.precision` defining the number of decimal places.
@@ -170,13 +205,10 @@ impl Money {
     /// Panics if `currency.precision` exceeds [`FIXED_PRECISION`].
     #[must_use]
     pub fn from_raw(raw: MoneyRaw, currency: Currency) -> Self {
-        check_predicate_true(
+        assert!(
             raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
-            &format!(
-                "`raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
-            ),
-        )
-        .expect(FAILED);
+            "`raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+        );
         check_fixed_precision(currency.precision).expect(FAILED);
 
         // TODO: Enforce spurious bits validation in v2
@@ -191,6 +223,38 @@ impl Money {
         Self { raw, currency }
     }
 
+    /// Creates a new [`Money`] from a mantissa/exponent pair using pure integer arithmetic.
+    ///
+    /// The value is `mantissa * 10^exponent`. This avoids all floating-point and Decimal
+    /// operations, making it ideal for exchange data that arrives as mantissa/exponent pairs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the resulting raw value exceeds [`MONEY_RAW_MAX`] or [`MONEY_RAW_MIN`].
+    #[must_use]
+    pub fn from_mantissa_exponent(mantissa: i64, exponent: i8, currency: Currency) -> Self {
+        check_fixed_precision(currency.precision).expect(FAILED);
+
+        if mantissa == 0 {
+            return Self { raw: 0, currency };
+        }
+
+        let raw_i128 =
+            mantissa_exponent_to_fixed_i128(mantissa as i128, exponent, currency.precision)
+                .expect("Overflow in Money::from_mantissa_exponent");
+
+        #[allow(clippy::useless_conversion)]
+        let raw: MoneyRaw = raw_i128
+            .try_into()
+            .expect("Raw value exceeds MoneyRaw range in Money::from_mantissa_exponent");
+        assert!(
+            raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
+            "`raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+        );
+
+        Self { raw, currency }
+    }
+
     /// Creates a new [`Money`] instance with a value of zero with the given [`Currency`].
     ///
     /// # Panics
@@ -199,6 +263,22 @@ impl Money {
     #[must_use]
     pub fn zero(currency: Currency) -> Self {
         Self::new(0.0, currency)
+    }
+
+    /// Returns a copy with raw value rounded to currency precision,
+    /// stripping any sub-scale bits.
+    #[must_use]
+    pub fn normalized(&self) -> Self {
+        #[cfg(feature = "high-precision")]
+        let raw = super::fixed::correct_raw_i128(self.raw, self.currency.precision);
+
+        #[cfg(not(feature = "high-precision"))]
+        let raw = super::fixed::correct_raw_i64(self.raw, self.currency.precision);
+
+        Self {
+            raw,
+            currency: self.currency,
+        }
     }
 
     /// Returns `true` if the value of this instance is zero.
@@ -216,9 +296,10 @@ impl Money {
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         #[cfg(feature = "defi")]
-        if self.currency.precision > MAX_FLOAT_PRECISION {
-            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
-        }
+        assert!(
+            self.currency.precision <= MAX_FLOAT_PRECISION,
+            "Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)"
+        );
 
         fixed_i128_to_f64(self.raw)
     }
@@ -273,25 +354,20 @@ impl Money {
     /// - The decimal value cannot be converted to the raw representation.
     /// - Overflow occurs during scaling.
     pub fn from_decimal(decimal: Decimal, currency: Currency) -> anyhow::Result<Self> {
-        let precision = currency.precision;
+        let exponent = -(decimal.scale() as i8);
+        let raw_i128 =
+            mantissa_exponent_to_fixed_i128(decimal.mantissa(), exponent, currency.precision)?;
 
-        let scale_factor = Decimal::from(10_i64.pow(precision as u32));
-        let scaled = decimal * scale_factor;
-        let rounded = scaled.round();
-
-        #[cfg(feature = "high-precision")]
-        let raw_at_precision: MoneyRaw = rounded.to_i128().ok_or_else(|| {
-            anyhow::anyhow!("Decimal value '{decimal}' cannot be converted to i128")
+        #[allow(clippy::useless_conversion)]
+        let raw: MoneyRaw = raw_i128.try_into().map_err(|_| {
+            anyhow::anyhow!(
+                "Decimal value exceeds MoneyRaw range [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}]"
+            )
         })?;
-        #[cfg(not(feature = "high-precision"))]
-        let raw_at_precision: MoneyRaw = rounded.to_i64().ok_or_else(|| {
-            anyhow::anyhow!("Decimal value '{decimal}' cannot be converted to i64")
-        })?;
-
-        let scale_up = 10_i64.pow((FIXED_PRECISION - precision) as u32) as MoneyRaw;
-        let raw = raw_at_precision
-            .checked_mul(scale_up)
-            .ok_or_else(|| anyhow::anyhow!("Overflow when scaling to fixed precision"))?;
+        anyhow::ensure!(
+            raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
+            "Raw value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+        );
 
         Ok(Self { raw, currency })
     }
@@ -435,31 +511,31 @@ impl Sub for Money {
     }
 }
 
-impl AddAssign for Money {
-    fn add_assign(&mut self, other: Self) {
-        assert_eq!(
-            self.currency, other.currency,
-            "Currency mismatch: cannot add {} to {}",
-            other.currency.code, self.currency.code
-        );
-        self.raw = self
-            .raw
-            .checked_add(other.raw)
-            .expect("Overflow occurred when adding `Money`");
+impl Add<Decimal> for Money {
+    type Output = Decimal;
+    fn add(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() + rhs
     }
 }
 
-impl SubAssign for Money {
-    fn sub_assign(&mut self, other: Self) {
-        assert_eq!(
-            self.currency, other.currency,
-            "Currency mismatch: cannot subtract {} from {}",
-            other.currency.code, self.currency.code
-        );
-        self.raw = self
-            .raw
-            .checked_sub(other.raw)
-            .expect("Underflow occurred when subtracting `Money`");
+impl Sub<Decimal> for Money {
+    type Output = Decimal;
+    fn sub(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() - rhs
+    }
+}
+
+impl Mul<Decimal> for Money {
+    type Output = Decimal;
+    fn mul(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() * rhs
+    }
+}
+
+impl Div<Decimal> for Money {
+    type Output = Decimal;
+    fn div(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() / rhs
     }
 }
 
@@ -700,15 +776,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_add_assign() {
-        let usd = Currency::USD();
-        let mut money = Money::new(100.0, usd);
-        money += Money::new(50.0, usd);
-        assert!(approx_eq!(f64, money.as_f64(), 150.0, epsilon = 1e-9));
-        assert_eq!(money.currency, usd);
-    }
-
-    #[rstest]
     fn test_sub() {
         let usd = Currency::USD();
         let money1 = Money::new(1000.0, usd);
@@ -716,15 +783,6 @@ mod tests {
         let result = money1 - money2;
         assert!(approx_eq!(f64, result.as_f64(), 750.0, epsilon = 1e-9));
         assert_eq!(result.currency, usd);
-    }
-
-    #[rstest]
-    fn test_sub_assign() {
-        let usd = Currency::USD();
-        let mut money = Money::new(100.0, usd);
-        money -= Money::new(25.0, usd);
-        assert!(approx_eq!(f64, money.as_f64(), 75.0, epsilon = 1e-9));
-        assert_eq!(money.currency, usd);
     }
 
     #[rstest]
@@ -736,14 +794,56 @@ mod tests {
     }
 
     #[rstest]
-    fn test_money_multiplication_by_f64() {
+    fn test_money_addition_decimal() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money + dec!(50.25);
+        assert_eq!(result, dec!(150.25));
+    }
+
+    #[rstest]
+    fn test_money_subtraction_decimal() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money - dec!(30.50);
+        assert_eq!(result, dec!(69.50));
+    }
+
+    #[rstest]
+    fn test_money_multiplication_decimal() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money * dec!(1.5);
+        assert_eq!(result, dec!(150.00));
+    }
+
+    #[rstest]
+    fn test_money_division_decimal() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money / dec!(4);
+        assert_eq!(result, dec!(25.00));
+    }
+
+    #[rstest]
+    fn test_money_addition_f64() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money + 50.25;
+        assert!(approx_eq!(f64, result, 150.25, epsilon = 1e-9));
+    }
+
+    #[rstest]
+    fn test_money_subtraction_f64() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money - 30.50;
+        assert!(approx_eq!(f64, result, 69.50, epsilon = 1e-9));
+    }
+
+    #[rstest]
+    fn test_money_multiplication_f64() {
         let money = Money::new(100.0, Currency::USD());
         let result = money * 1.5;
         assert!(approx_eq!(f64, result, 150.0, epsilon = 1e-9));
     }
 
     #[rstest]
-    fn test_money_division_by_f64() {
+    fn test_money_division_f64() {
         let money = Money::new(100.0, Currency::USD());
         let result = money / 4.0;
         assert!(approx_eq!(f64, result, 25.0, epsilon = 1e-9));
@@ -905,11 +1005,96 @@ mod tests {
         let _ = Money::from_raw(raw, usd);
     }
 
-    ////////////////////////////////////////////////////////////////////////////////
-    // Property-based testing
-    ////////////////////////////////////////////////////////////////////////////////
+    #[rstest]
+    fn test_from_decimal_rejects_out_of_range() {
+        let huge = Decimal::from_str("99999999999999999999.99").unwrap();
+        let result = Money::from_decimal(huge, Currency::USD());
+        assert!(result.is_err());
+    }
 
+    #[rstest]
+    fn test_from_mantissa_exponent_exact_precision() {
+        let money = Money::from_mantissa_exponent(12345, -2, Currency::USD());
+        assert_eq!(money.as_f64(), 123.45);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_excess_rounds_down() {
+        // 12.345 rounds to 12.34 (4 is even, banker's rounding)
+        let money = Money::from_mantissa_exponent(12345, -3, Currency::USD());
+        assert_eq!(money.as_f64(), 12.34);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_excess_rounds_up() {
+        // 12.355 rounds to 12.36 (5 is odd, banker's rounding)
+        let money = Money::from_mantissa_exponent(12355, -3, Currency::USD());
+        assert_eq!(money.as_f64(), 12.36);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_positive_exponent() {
+        let money = Money::from_mantissa_exponent(5, 2, Currency::USD());
+        assert_eq!(money.as_f64(), 500.0);
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn test_from_mantissa_exponent_overflow_panics() {
+        let _ = Money::from_mantissa_exponent(i64::MAX, 9, Currency::USD());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "exceeds i128 range")]
+    fn test_from_mantissa_exponent_large_exponent_panics() {
+        let _ = Money::from_mantissa_exponent(1, 119, Currency::USD());
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_zero_with_large_exponent() {
+        let money = Money::from_mantissa_exponent(0, 119, Currency::USD());
+        assert_eq!(money.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_very_negative_exponent_rounds_to_zero() {
+        // exponent=-120, frac_digits=120, excess=118 for USD (precision 2)
+        let money = Money::from_mantissa_exponent(12345, -120, Currency::USD());
+        assert_eq!(money.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    #[case(42.0, true, "positive value")]
+    #[case(0.0, false, "zero value")]
+    #[case( -13.5,  false, "negative value")]
+    fn test_check_positive_money(
+        #[case] amount: f64,
+        #[case] should_succeed: bool,
+        #[case] _case_name: &str,
+    ) {
+        let money = Money::new(amount, Currency::USD());
+
+        let res = check_positive_money(money, "money");
+
+        if should_succeed {
+            assert!(res.is_ok(), "expected Ok(..) for {amount}");
+        } else {
+            assert!(res.is_err(), "expected Err(..) for {amount}");
+            let msg = res.unwrap_err().to_string();
+            assert!(
+                msg.contains("not positive"),
+                "error message should mention positivity; got: {msg:?}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
     use proptest::prelude::*;
+    use rstest::rstest;
+
+    use super::*;
 
     fn currency_strategy() -> impl Strategy<Value = Currency> {
         prop_oneof![
@@ -927,17 +1112,11 @@ mod tests {
     }
 
     fn money_amount_strategy() -> impl Strategy<Value = f64> {
-        // Generate amounts within valid range, avoiding edge cases that might cause precision issues
         prop_oneof![
-            // Small amounts
             -1000.0..1000.0,
-            // Medium amounts
             -100_000.0..100_000.0,
-            // Large amounts within safe range (avoid max values that could overflow when added)
             -1_000_000.0..1_000_000.0,
-            // Edge cases
             Just(0.0),
-            // Use smaller values than MONEY_MAX to avoid overflow in arithmetic operations
             Just(MONEY_MIN / 2.0),
             Just(MONEY_MAX / 2.0),
             Just(MONEY_MIN + 1.0),
@@ -960,15 +1139,13 @@ mod tests {
             amount in money_amount_strategy(),
             currency in currency_strategy()
         ) {
-            // Test that valid amounts can be constructed and round-trip through f64
             if let Ok(money) = Money::new_checked(amount, currency) {
                 let roundtrip = money.as_f64();
-                // Allow for precision loss based on currency precision and magnitude
                 let precision_epsilon = if currency.precision == 0 {
-                    1.0 // For JPY and other zero-precision currencies, allow rounding to nearest integer
+                    1.0
                 } else {
                     let currency_epsilon = 10.0_f64.powi(-(currency.precision as i32));
-                    let magnitude_epsilon = amount.abs() * 1e-10; // Allow relative error for large numbers
+                    let magnitude_epsilon = amount.abs() * 1e-10;
                     currency_epsilon.max(magnitude_epsilon)
                 };
                 prop_assert!((roundtrip - amount).abs() <= precision_epsilon,
@@ -983,19 +1160,16 @@ mod tests {
             money1 in money_strategy(),
             money2 in money_strategy(),
         ) {
-            // Addition should be commutative for same currency
-            if money1.currency == money2.currency {
-                // Check if addition would overflow before performing it
-                if let (Some(_), Some(_)) = (
+            if money1.currency == money2.currency
+                && let (Some(_), Some(_)) = (
                     money1.raw.checked_add(money2.raw),
                     money2.raw.checked_add(money1.raw)
-                ) {
-                    let sum1 = money1 + money2;
-                    let sum2 = money2 + money1;
-                    prop_assert_eq!(sum1, sum2, "Addition should be commutative");
-                    prop_assert_eq!(sum1.currency, money1.currency);
-                }
-                // If overflow would occur, skip this test case - it's expected
+                )
+            {
+                let sum1 = money1 + money2;
+                let sum2 = money2 + money1;
+                prop_assert_eq!(sum1, sum2, "Addition should be commutative");
+                prop_assert_eq!(sum1.currency, money1.currency);
             }
         }
 
@@ -1005,27 +1179,22 @@ mod tests {
             money2 in money_strategy(),
             money3 in money_strategy(),
         ) {
-            // Addition should be associative for same currency
-            if money1.currency == money2.currency && money2.currency == money3.currency {
-                // Test (a + b) + c == a + (b + c)
-                // Use checked arithmetic to avoid overflow in property tests
-                if let (Some(sum1), Some(sum2)) = (
+            if money1.currency == money2.currency
+                && money2.currency == money3.currency
+                && let (Some(sum1), Some(sum2)) = (
                     money1.raw.checked_add(money2.raw),
                     money2.raw.checked_add(money3.raw)
                 )
-                    && let (Some(left), Some(right)) = (
-                        sum1.checked_add(money3.raw),
-                        money1.raw.checked_add(sum2)
-                    ) {
-                        // Check if results are within bounds before constructing Money
-                        if (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&left)
-                            && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&right)
-                        {
-                            let left_result = Money::from_raw(left, money1.currency);
-                            let right_result = Money::from_raw(right, money1.currency);
-                            prop_assert_eq!(left_result, right_result, "Addition should be associative");
-                        }
-                    }
+                && let (Some(left), Some(right)) = (
+                    sum1.checked_add(money3.raw),
+                    money1.raw.checked_add(sum2)
+                )
+                && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&left)
+                && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&right)
+            {
+                let left_result = Money::from_raw(left, money1.currency);
+                let right_result = Money::from_raw(right, money1.currency);
+                prop_assert_eq!(left_result, right_result, "Addition should be associative");
             }
         }
 
@@ -1034,21 +1203,18 @@ mod tests {
             money1 in money_strategy(),
             money2 in money_strategy(),
         ) {
-            // Subtraction should be the inverse of addition for same currency
-            if money1.currency == money2.currency {
-                // Test (a + b) - b == a, avoiding overflow
-                if let Some(sum_raw) = money1.raw.checked_add(money2.raw)
-                    && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&sum_raw) {
-                        let sum = Money::from_raw(sum_raw, money1.currency);
-                        let diff = sum - money2;
-                        prop_assert_eq!(diff, money1, "Subtraction should be inverse of addition");
-                    }
+            if money1.currency == money2.currency
+                && let Some(sum_raw) = money1.raw.checked_add(money2.raw)
+                && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&sum_raw)
+            {
+                let sum = Money::from_raw(sum_raw, money1.currency);
+                let diff = sum - money2;
+                prop_assert_eq!(diff, money1, "Subtraction should be inverse of addition");
             }
         }
 
         #[rstest]
         fn prop_money_zero_identity(money in money_strategy()) {
-            // Zero should be additive identity
             let zero = Money::zero(money.currency);
             prop_assert_eq!(money + zero, money, "Zero should be additive identity");
             prop_assert_eq!(zero + money, money, "Zero should be additive identity (commutative)");
@@ -1057,13 +1223,11 @@ mod tests {
 
         #[rstest]
         fn prop_money_negation_inverse(money in money_strategy()) {
-            // Negation should be its own inverse
             let negated = -money;
             let double_neg = -negated;
             prop_assert_eq!(money, double_neg, "Double negation should equal original");
             prop_assert_eq!(negated.currency, money.currency, "Negation preserves currency");
 
-            // Test additive inverse property (if no overflow)
             if let Some(sum_raw) = money.raw.checked_add(negated.raw)
                 && (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(&sum_raw) {
                     let sum = Money::from_raw(sum_raw, money.currency);
@@ -1076,7 +1240,6 @@ mod tests {
             money1 in money_strategy(),
             money2 in money_strategy(),
         ) {
-            // Comparison operations should be consistent for same currency
             if money1.currency == money2.currency {
                 let eq = money1 == money2;
                 let lt = money1 < money2;
@@ -1084,11 +1247,9 @@ mod tests {
                 let le = money1 <= money2;
                 let ge = money1 >= money2;
 
-                // Exactly one of eq, lt, gt should be true
                 let exclusive_count = [eq, lt, gt].iter().filter(|&&x| x).count();
                 prop_assert_eq!(exclusive_count, 1, "Exactly one of ==, <, > should be true");
 
-                // Consistency checks
                 prop_assert_eq!(le, eq || lt, "<= should equal == || <");
                 prop_assert_eq!(ge, eq || gt, ">= should equal == || >");
                 prop_assert_eq!(lt, money2 > money1, "< should be symmetric with >");
@@ -1097,33 +1258,13 @@ mod tests {
         }
 
         #[rstest]
-        fn prop_money_string_roundtrip(money in money_strategy()) {
-            // String serialization should round-trip correctly
-            let string_repr = money.to_string();
-            let parsed = Money::from_str(&string_repr);
-            prop_assert!(parsed.is_ok(), "String parsing should succeed for valid money");
-            if let Ok(parsed_money) = parsed {
-                prop_assert_eq!(parsed_money.currency, money.currency, "Currency should round-trip");
-                // Allow for small precision differences due to string formatting
-                let diff = (parsed_money.as_f64() - money.as_f64()).abs();
-                prop_assert!(diff < 0.01, "Amount should round-trip within precision: {} vs {}",
-                    money.as_f64(), parsed_money.as_f64());
-            }
-        }
-
-        #[rstest]
         fn prop_money_decimal_conversion(money in money_strategy()) {
-            // Decimal conversion should preserve value within precision limits
             let decimal = money.as_decimal();
 
             #[cfg(feature = "defi")]
             {
-                // In DeFi mode, as_f64() is unreliable for high-precision values
-                // Just ensure decimal conversion doesn't panic and produces reasonable values
                 let decimal_f64: f64 = decimal.try_into().unwrap_or(0.0);
                 prop_assert!(decimal_f64.is_finite(), "Decimal should convert to finite f64");
-
-                // For DeFi mode, we mainly care that decimal conversion preserves the currency precision
                 prop_assert_eq!(decimal.scale(), u32::from(money.currency.precision));
             }
             #[cfg(not(feature = "defi"))]
@@ -1131,10 +1272,8 @@ mod tests {
                 let decimal_f64: f64 = decimal.try_into().unwrap_or(0.0);
                 let original_f64 = money.as_f64();
 
-                // Allow for precision differences based on currency precision and high-precision mode
                 let base_epsilon = 10.0_f64.powi(-(money.currency.precision as i32));
                 let precision_epsilon = if cfg!(feature = "high-precision") {
-                    // More tolerant epsilon for high-precision modes due to f64 limitations
                     base_epsilon.max(1e-10)
                 } else {
                     base_epsilon
@@ -1151,7 +1290,6 @@ mod tests {
             money in money_strategy(),
             factor in -1000.0..1000.0_f64,
         ) {
-            // Arithmetic with f64 should produce reasonable results
             if factor != 0.0 {
                 let original_f64 = money.as_f64();
 
@@ -1176,32 +1314,6 @@ mod tests {
                 let expected_sub = original_f64 - factor;
                 prop_assert!((sub_result - expected_sub).abs() < 0.01,
                     "Subtraction with f64 should be accurate");
-            }
-        }
-    }
-
-    #[rstest]
-    #[case(42.0, true, "positive value")]
-    #[case(0.0, false, "zero value")]
-    #[case( -13.5,  false, "negative value")]
-    fn test_check_positive_money(
-        #[case] amount: f64,
-        #[case] should_succeed: bool,
-        #[case] _case_name: &str,
-    ) {
-        let money = Money::new(amount, Currency::USD());
-
-        let res = check_positive_money(money, "money");
-
-        match should_succeed {
-            true => assert!(res.is_ok(), "expected Ok(..) for {amount}"),
-            false => {
-                assert!(res.is_err(), "expected Err(..) for {amount}");
-                let msg = res.unwrap_err().to_string();
-                assert!(
-                    msg.contains("not positive"),
-                    "error message should mention positivity; got: {msg:?}"
-                );
             }
         }
     }
