@@ -5,113 +5,225 @@
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-analysis]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-backtest]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-backtest]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-bitmex]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-bitmex]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-blockchain]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-blockchain]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-bybit]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-bybit]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-cli]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-cli]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-coinbase-intx]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-coinbase-intx]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-common]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-common]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-core]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-core]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-cryptography]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-cryptography]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-data]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-data]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-databento]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-databento]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-execution]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-execution]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-indicators]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-indicators]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-infrastructure]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-infrastructure]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-kraken]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-kraken]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-live]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-live]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-model]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-model]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-network]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-network]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-okx]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-okx]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-persistence]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-persistence]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-portfolio]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-portfolio]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-risk]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-risk]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-serialization]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-serialization]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-system]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-system]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-tardis]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-tardis]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[unpublished.nautilus-testkit]]
 version = "0.53.0"
 audited_as = "0.52.0"
 
+[[unpublished.nautilus-testkit]]
+version = "0.54.0"
+audited_as = "0.53.0"
+
 [[unpublished.nautilus-trading]]
 version = "0.53.0"
 audited_as = "0.52.0"
+
+[[unpublished.nautilus-trading]]
+version = "0.54.0"
+audited_as = "0.53.0"
 
 [[publisher.bumpalo]]
 version = "3.20.2"
@@ -2118,6 +2230,18 @@ delta = "2.1.0 -> 2.1.1"
 notes = "Fairly trivial changes, no chance of security regression."
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
+[[audits.mozilla.audits.flatbuffers]]
+who = "Benjamin VanderSloot <bvandersloot@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "23.5.26"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.flatbuffers]]
+who = "Benjamin VanderSloot <bvandersloot@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "23.5.26 -> 25.12.19"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
 [[audits.mozilla.audits.fnv]]
 who = "Bobby Holley <bobbyholley@gmail.com>"
 criteria = "safe-to-deploy"
@@ -2475,6 +2599,18 @@ Use of powerful capabilities is limited to invoking `rustc -vV` to get version
 information for parsing version information.
 """
 aggregated-from = "https://raw.githubusercontent.com/mozilla/cargo-vet/main/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.seahash]]
+who = "Benjamin VanderSloot <bvandersloot@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "4.1.0"
+notes = """
+Uses unsafe to compute a non-cryptographic hash over &[u8],
+grabbing u64s out of the buffer for XORs. Logic looks sound,
+careful not to read over the end of the buffer, and the unsafety
+is well contained.
+"""
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.serde]]
 who = "Erich Gubler <erichdongubler@gmail.com>"

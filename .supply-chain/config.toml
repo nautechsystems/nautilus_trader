@@ -951,7 +951,7 @@ version = "0.49.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.deranged]]
-version = "0.5.6"
+version = "0.5.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.derivative]]
@@ -1105,10 +1105,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.fixedbitset]]
 version = "0.5.7"
-criteria = "safe-to-deploy"
-
-[[exemptions.flatbuffers]]
-version = "25.12.19"
 criteria = "safe-to-deploy"
 
 [[exemptions.flate2]]
@@ -1376,7 +1372,7 @@ version = "0.1.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.js-sys]]
-version = "0.3.86"
+version = "0.3.87"
 criteria = "safe-to-deploy"
 
 [[exemptions.json-writer]]
@@ -2139,10 +2135,6 @@ criteria = "safe-to-deploy"
 version = "1.2.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.seahash]]
-version = "4.1.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.sec1]]
 version = "0.7.3"
 criteria = "safe-to-deploy"
@@ -2616,23 +2608,23 @@ version = "0.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen]]
-version = "0.2.109"
+version = "0.2.110"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-futures]]
-version = "0.4.59"
+version = "0.4.60"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro]]
-version = "0.2.109"
+version = "0.2.110"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro-support]]
-version = "0.2.109"
+version = "0.2.110"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-shared]]
-version = "0.2.109"
+version = "0.2.110"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-streams]]
@@ -2648,7 +2640,7 @@ version = "0.4.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.web-sys]]
-version = "0.3.86"
+version = "0.3.87"
 criteria = "safe-to-deploy"
 
 [[exemptions.web-time]]
