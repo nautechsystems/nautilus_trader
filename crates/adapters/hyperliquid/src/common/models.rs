@@ -643,7 +643,7 @@ pub struct HyperliquidAccountState {
 
 impl HyperliquidAccountState {
     pub fn new() -> Self {
-        Default::default()
+        Self::default()
     }
 
     /// Get balance for an asset, returns zero balance if not found

@@ -19,6 +19,7 @@ use ahash::AHashMap;
 use alloy::primitives::Address;
 use futures_util::Stream;
 use hypersync_client::{
+    StreamConfig,
     net_types::{BlockField, BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
@@ -141,7 +142,7 @@ impl HyperSyncClient {
         let cancellation_token = self.cancellation_token.clone();
 
         let _task = get_runtime().spawn(async move {
-            let mut rx = match client.stream(query, Default::default()).await {
+            let mut rx = match client.stream(query, StreamConfig::default()).await {
                 Ok(rx) => rx,
                 Err(e) => {
                     log::error!("Failed to create DEX event stream: {e}");
@@ -261,7 +262,7 @@ impl HyperSyncClient {
         let mut rx = self
             .client
             .clone()
-            .stream(query, Default::default())
+            .stream(query, StreamConfig::default())
             .await
             .expect("Failed to create stream");
 
@@ -336,7 +337,7 @@ impl HyperSyncClient {
         let mut rx = self
             .client
             .clone()
-            .stream(query, Default::default())
+            .stream(query, StreamConfig::default())
             .await
             .unwrap();
 

@@ -199,14 +199,14 @@ async fn test_conditional_orders(
     log::info!("");
     log::info!("Example code:");
     log::info!(
-        r#"
+        r"
     let action = HyperliquidExecAction::Order {{
         orders: vec![stop_market_buy],
         grouping: HyperliquidExecGrouping::Na,
         builder: None,
     }};
     let response = client.post_action(&action).await?;
-    "#
+    "
     );
 
     // Display the JSON serialization to show the exact API format

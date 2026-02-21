@@ -1148,13 +1148,13 @@ impl BlockchainCacheDatabase {
         dex: &DexType,
     ) -> anyhow::Result<Option<u64>> {
         let result = sqlx::query_as::<_, (Option<i64>,)>(
-            r#"
+            r"
             SELECT
                 last_full_sync_pools_block_number
             FROM dex
             WHERE chain_id = $1
             AND name = $2
-            "#,
+            ",
         )
         .bind(chain_id as i32)
         .bind(dex.to_string())
@@ -1177,14 +1177,14 @@ impl BlockchainCacheDatabase {
         pool_identifier: &PoolIdentifier,
     ) -> anyhow::Result<Option<u64>> {
         let result = sqlx::query_as::<_, (Option<i64>,)>(
-            r#"
+            r"
             SELECT
                 last_full_sync_block_number
             FROM pool
             WHERE chain_id = $1
             AND dex_name = $2
             AND pool_identifier = $3
-            "#,
+            ",
         )
         .bind(chain_id as i32)
         .bind(dex.to_string())

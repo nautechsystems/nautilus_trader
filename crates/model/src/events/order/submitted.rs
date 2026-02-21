@@ -310,7 +310,7 @@ mod tests {
             InstrumentId::from("EURUSD.SIM"),
             ClientOrderId::from("O-19700101-000000-001-001-1"),
             AccountId::from("SIM-001"),
-            Default::default(),
+            UUID4::default(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
         )

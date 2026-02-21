@@ -63,17 +63,17 @@ impl ParquetDataCatalogV2 {
             // For GZIP, LZO, BROTLI, LZ4, ZSTD we need to use the default level
             // since we can't pass the level parameter through PyO3
             2 => {
-                let level = Default::default();
+                let level = parquet::basic::GzipLevel::default();
                 parquet::basic::Compression::GZIP(level)
             }
             3 => parquet::basic::Compression::LZO,
             4 => {
-                let level = Default::default();
+                let level = parquet::basic::BrotliLevel::default();
                 parquet::basic::Compression::BROTLI(level)
             }
             5 => parquet::basic::Compression::LZ4,
             6 => {
-                let level = Default::default();
+                let level = parquet::basic::ZstdLevel::default();
                 parquet::basic::Compression::ZSTD(level)
             }
             _ => parquet::basic::Compression::SNAPPY,

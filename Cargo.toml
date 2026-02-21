@@ -459,15 +459,29 @@ dbg_macro = "warn"
 redundant_clone = "warn"
 unnecessary_to_owned = "warn"
 inefficient_to_string = "warn"
-needless_borrow = "warn"
 cloned_instead_of_copied = "warn"
+
+# Needless code
+needless_borrow = "warn"
+needless_bool = "warn"
+needless_borrows_for_generic_args = "warn"
+needless_collect = "warn"
+# needless_continue = "warn" # TODO: Enable (68 warnings)
+needless_late_init = "warn"
+needless_lifetimes = "warn"
+needless_match = "warn"
+needless_option_as_deref = "warn"
+# needless_pass_by_ref_mut = "warn" # TODO: Enable (102 warnings)
+# needless_pass_by_value = "warn" # TODO: Enable (398 warnings)
+needless_range_loop = "warn"
+# needless_raw_strings = "warn" # TODO: Enable (43 warnings)
+needless_raw_string_hashes = "warn"
+needless_return = "warn"
+needless_update = "warn"
 
 # Code simplification
 redundant_closure = "warn"
-# redundant_closure_for_method_calls = "warn" # Causes clippy ICE (rust-lang/rust-clippy#14756)
-needless_return = "warn"
-needless_bool = "warn"
-needless_collect = "warn"
+# redundant_closure_for_method_calls = "warn" # Causes clippy ICE on Rust 1.93
 collapsible_if = "warn"
 collapsible_else_if = "warn"
 useless_conversion = "warn"
@@ -502,8 +516,12 @@ manual_range_contains = "warn"
 manual_string_new = "warn"
 manual_instant_elapsed = "warn"
 
+# Pointer casts
+ref_as_ptr = "warn"
+
 # Style/idioms
 use_self = "warn"
+# default_trait_access = "warn" # TODO: Enable (~170 warnings)
 redundant_field_names = "warn"
 match_like_matches_macro = "warn"
 manual_map = "warn"

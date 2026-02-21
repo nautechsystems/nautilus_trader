@@ -1248,7 +1248,7 @@ fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<DateTime<Utc>> {
 #[cfg(test)]
 mod tests {
     use nautilus_common::messages::execution::{BatchCancelOrders, CancelOrder};
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::identifiers::{
         ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
     };
@@ -1278,7 +1278,7 @@ mod tests {
                     instrument_id,
                     client_order_id: client_order_id1,
                     venue_order_id: Some(venue_order_id1),
-                    command_id: Default::default(),
+                    command_id: UUID4::default(),
                     ts_init: UnixNanos::default(),
                     params: None,
                 },
@@ -1289,12 +1289,12 @@ mod tests {
                     instrument_id,
                     client_order_id: client_order_id2,
                     venue_order_id: Some(venue_order_id2),
-                    command_id: Default::default(),
+                    command_id: UUID4::default(),
                     ts_init: UnixNanos::default(),
                     params: None,
                 },
             ],
-            command_id: Default::default(),
+            command_id: UUID4::default(),
             ts_init: UnixNanos::default(),
             params: None,
         };
@@ -1326,7 +1326,7 @@ mod tests {
             strategy_id: StrategyId::from("STRATEGY-001"),
             instrument_id: InstrumentId::from("BTC-USDT.OKX"),
             cancels: vec![],
-            command_id: Default::default(),
+            command_id: UUID4::default(),
             ts_init: UnixNanos::default(),
             params: None,
         };

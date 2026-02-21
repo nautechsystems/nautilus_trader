@@ -430,7 +430,7 @@ impl Default for InnerHttpClient {
         let client = reqwest::Client::new();
         Self {
             client,
-            header_keys: Default::default(),
+            header_keys: Arc::default(),
         }
     }
 }

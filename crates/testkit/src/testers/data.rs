@@ -849,7 +849,7 @@ impl DataTester {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::OrderBookDelta,
         enums::{InstrumentCloseType, MarketStatusAction},
@@ -1168,7 +1168,7 @@ mod tests {
 
         let event = TimeEvent::new(
             "TEST".into(),
-            Default::default(),
+            UUID4::default(),
             UnixNanos::default(),
             UnixNanos::default(),
         );

@@ -613,7 +613,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{cache::Cache, clock::TestClock};
-    use nautilus_core::{UUID4, WeakCell};
+    use nautilus_core::{UUID4, UnixNanos, WeakCell};
     use nautilus_model::{
         enums::{OrderSide, OrderType, TriggerType},
         events::{OrderAccepted, OrderSubmitted},
@@ -643,8 +643,8 @@ mod tests {
             client_order_id: ClientOrderId::from("O-001"),
             account_id: AccountId::from("ACCOUNT-001"),
             event_id: UUID4::new(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
         });
         let accepted = OrderEventAny::Accepted(OrderAccepted {
             trader_id: TraderId::from("TRADER-001"),
@@ -654,8 +654,8 @@ mod tests {
             venue_order_id: VenueOrderId::from("V-001"),
             account_id: AccountId::from("ACCOUNT-001"),
             event_id: UUID4::new(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
             reconciliation: 0,
         });
 
