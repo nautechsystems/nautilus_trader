@@ -1,6 +1,6 @@
 # NautilusTrader 1.223.0 Beta
 
-Released on TBD (UTC).
+Released on 21st February 2026 (UTC).
 
 ### Enhancements
 - Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads, thanks @shzhng
