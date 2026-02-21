@@ -7,6 +7,9 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Removed Coinbase International (`COINBASE_INTX`) adapter, see RFC (#3555)
 
+### Security
+- Bumped all eligible GitHub Actions pinned SHAs to latest versions (2-week release policy)
+
 ### Fixes
 
 ### Internal Improvements
@@ -23,7 +26,7 @@ Released on 21st February 2026 (UTC).
 - Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads, thanks @shzhng
 - Added sandbox execution adapter in Rust
 - Added multi-account execution support (#3194), thanks @faysou
-- Added NASDAQ ITCH 5.0 parser
+- Added Nasdaq ITCH 5.0 parser
 - Added grid market maker example strategy in Rust
 - Added `OrderBookDeltas` historical request support (#3438), thanks @faysou
 - Added `market_exit()` method for `Strategy` with configurable `market_exit_time_in_force` and `market_exit_reduce_only` options (supports venues requiring IOC for market orders)

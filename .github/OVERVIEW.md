@@ -12,6 +12,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **common-setup**: prepares the environment (OS packages, Rust toolchain, Python, sccache, pre-commit).
 - **common-test-data**: caches large test data under `tests/test_data/large`.
 - **common-wheel-build**: builds and installs Python wheels across Linux, macOS, and Windows for multiple Python versions.
+- **install-capnp**: installs the Cap'n Proto compiler with caching across Linux, macOS, and Windows.
 - **publish-wheels**: publishes built wheels to Cloudflare R2, manages old wheel cleanup and index generation.
 - **upload-artifact-wheel**: uploads the latest wheel artifact to GitHub Actions.
 
@@ -24,9 +25,12 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs and via cron.
 - **copilot-setup-steps.yml**: environment setup for GitHub Copilot coding agent.
 - **coverage.yml**: coverage report generation for the `nightly` branch.
-- **docker.yml**: builds and pushes Docker images (`nautilus_trader`, `jupyterlab`) using Buildx and QEMU.
+- **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`) using Buildx and native ARM runners.
+- **nightly-docs-features-check.yml**: nightly docs.rs build checks and crate feature compatibility verification.
 - **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
+- **nightly-tests.yml**: extended test suites (turmoil network tests) that are too slow for PR builds.
 - **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
+- **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny, cargo-vet, osv-scanner).
 - **trigger-reindexing.yml**: triggers documentation reindexing for search.
 
 ## Security

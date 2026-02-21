@@ -82,7 +82,7 @@ runs:
     - name: Install cargo-nextest
       if: inputs.build-type != 'pre-commit'
       # https://github.com/taiki-e/install-action # v2.53.2
-      uses: taiki-e/install-action@59679e24ffb0dbbbc136684eda7fcd21fe9eddea # v2.63.0
+      uses: taiki-e/install-action@f176c07a0a40cbfdd08ee9aa8bf1655701d11e69 # v2.67.25
       with:
         tool: nextest
 
@@ -128,7 +128,7 @@ runs:
     # > Python
     - name: Set up Python environment
       # https://github.com/actions/setup-python
-      uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -150,7 +150,7 @@ runs:
     - name: Cache Python site-packages
       id: cached-site-packages
       # https://github.com/actions/cache
-      uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ~/.local/lib/python${{ inputs.python-version }}/site-packages
         key: ${{ runner.os }}-${{ inputs.python-version }}-site-packages
@@ -170,7 +170,7 @@ runs:
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
+      uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
       with:
         version: ${{ env.UV_VERSION }}
 
@@ -185,7 +185,7 @@ runs:
       if: runner.os != 'macOS'
       id: cached-uv
       # https://github.com/actions/cache
-      uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ${{ env.UV_CACHE_DIR }}
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('**/uv.lock') }}
@@ -198,7 +198,7 @@ runs:
       if: runner.os != 'macOS'
       id: cached-pre-commit
       # https://github.com/actions/cache
-      uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ~/.cache/pre-commit
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
