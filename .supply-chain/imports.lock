@@ -49,14 +49,6 @@ audited_as = "0.52.0"
 version = "0.54.0"
 audited_as = "0.53.0"
 
-[[unpublished.nautilus-coinbase-intx]]
-version = "0.53.0"
-audited_as = "0.52.0"
-
-[[unpublished.nautilus-coinbase-intx]]
-version = "0.54.0"
-audited_as = "0.53.0"
-
 [[unpublished.nautilus-common]]
 version = "0.53.0"
 audited_as = "0.52.0"

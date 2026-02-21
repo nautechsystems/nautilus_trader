@@ -346,7 +346,7 @@ For a complete parameter list see the `StrategyConfig` [API Reference](../api_re
 | Setting                     | Default | Description                                                                                                            |
 |-----------------------------|---------|------------------------------------------------------------------------------------------------------------------------|
 | `oms_type`                  | None    | Specifies the [OMS type](../concepts/execution#oms-configuration), for position ID handling and order processing flow. |
-| `use_uuid_client_order_ids` | False   | If UUID4's should be used for client order ID values (required for some venues such as Coinbase Intx). |
+| `use_uuid_client_order_ids` | False   | If UUID4's should be used for client order ID values. |
 | `external_order_claims`     | None    | Lists instrument IDs for external orders the strategy should claim, aiding accurate order management. |
 | `manage_contingent_orders`  | False   | If enabled, the strategy automatically manages OTO, OCO, and OUO contingent orders. |
 | `manage_gtd_expiry`         | False   | If enabled, the strategy manages GTD expirations, ensuring orders remain active as intended. |

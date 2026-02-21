@@ -476,7 +476,6 @@ Adapters support loading API credentials from environment variables when not pro
 Some venues require additional credentials:
 
 - OKX: `OKX_API_PASSPHRASE`
-- Coinbase INTX: `COINBASE_INTX_API_PASSPHRASE`, `COINBASE_INTX_PORTFOLIO_ID`
 
 **Implementation pattern:**
 

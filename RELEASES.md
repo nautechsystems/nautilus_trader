@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 ### Breaking Changes
+- Removed Coinbase International (`COINBASE_INTX`) adapter, see RFC (#3555)
 
 ### Fixes
 

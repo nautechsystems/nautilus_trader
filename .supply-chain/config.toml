@@ -40,9 +40,6 @@ audit-as-crates-io = true
 [policy.nautilus-cli]
 audit-as-crates-io = true
 
-[policy.nautilus-coinbase-intx]
-audit-as-crates-io = true
-
 [policy.nautilus-common]
 audit-as-crates-io = true
 
@@ -1520,10 +1517,6 @@ version = "0.52.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-cli]]
-version = "0.52.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.nautilus-coinbase-intx]]
 version = "0.52.0"
 criteria = "safe-to-deploy"
 
