@@ -147,10 +147,26 @@ impl SandboxInner {
             }
         }
     }
+
+    fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+        let instrument_id = deltas.instrument_id;
+
+        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+        if let Some(instrument) = instrument {
+            self.ensure_matching_engine(&instrument);
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id)
+                && let Err(e) = engine.get_engine_mut().process_order_book_deltas(deltas)
+            {
+                log::error!("Error processing order book deltas: {e}");
+            }
+        }
+    }
 }
 
 /// Registered message handlers for later deregistration.
 struct RegisteredHandlers {
+    deltas_pattern: MStr<Pattern>,
+    deltas_handler: TypedHandler<OrderBookDeltas>,
     quote_pattern: MStr<Pattern>,
     quote_handler: TypedHandler<QuoteTick>,
     trade_pattern: MStr<Pattern>,
@@ -250,8 +266,8 @@ impl SandboxExecutionClient {
 
     /// Registers message handlers for market data subscriptions.
     ///
-    /// This subscribes to quotes, trades, and bars for the configured venue,
-    /// routing all received data to the matching engines.
+    /// This subscribes to order book deltas, quotes, trades, and bars for the
+    /// configured venue, routing all received data to the matching engines.
     fn register_message_handlers(&self) {
         if self.handlers.borrow().is_some() {
             log::warn!("Sandbox message handlers already registered");
@@ -260,6 +276,18 @@ impl SandboxExecutionClient {
 
         let inner_weak = WeakCell::from(Rc::downgrade(&self.inner));
         let venue = self.config.venue;
+
+        // Order book deltas handler
+        let deltas_handler = {
+            let inner = inner_weak.clone();
+            TypedHandler::from(move |deltas: &OrderBookDeltas| {
+                if deltas.instrument_id.venue == venue
+                    && let Some(inner_rc) = inner.upgrade()
+                {
+                    inner_rc.borrow_mut().process_order_book_deltas(deltas);
+                }
+            })
+        };
 
         // Quote tick handler
         let quote_handler = {
@@ -297,17 +325,21 @@ impl SandboxExecutionClient {
             })
         };
 
-        // Subscribe patterns (bar topic is data.bars.{bar_type} so use wildcard)
+        // Subscribe patterns
+        let deltas_pattern: MStr<Pattern> = format!("data.book.deltas.{venue}.*").into();
         let quote_pattern: MStr<Pattern> = format!("data.quotes.{venue}.*").into();
         let trade_pattern: MStr<Pattern> = format!("data.trades.{venue}.*").into();
         let bar_pattern: MStr<Pattern> = "data.bars.*".into();
 
+        msgbus::subscribe_book_deltas(deltas_pattern, deltas_handler.clone(), Some(10));
         msgbus::subscribe_quotes(quote_pattern, quote_handler.clone(), Some(10));
         msgbus::subscribe_trades(trade_pattern, trade_handler.clone(), Some(10));
         msgbus::subscribe_bars(bar_pattern, bar_handler.clone(), Some(10));
 
         // Store handlers for later deregistration
         *self.handlers.borrow_mut() = Some(RegisteredHandlers {
+            deltas_pattern,
+            deltas_handler,
             quote_pattern,
             quote_handler,
             trade_pattern,
@@ -325,6 +357,7 @@ impl SandboxExecutionClient {
     /// Deregisters message handlers to stop receiving market data.
     fn deregister_message_handlers(&self) {
         if let Some(handlers) = self.handlers.borrow_mut().take() {
+            msgbus::unsubscribe_book_deltas(handlers.deltas_pattern, &handlers.deltas_handler);
             msgbus::unsubscribe_quotes(handlers.quote_pattern, &handlers.quote_handler);
             msgbus::unsubscribe_trades(handlers.trade_pattern, &handlers.trade_handler);
             msgbus::unsubscribe_bars(handlers.bar_pattern, &handlers.bar_handler);

@@ -38,8 +38,6 @@ use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-// -- FIXTURES ---------------------------------------------------------------------------
-
 #[fixture]
 fn trader_id() -> TraderId {
     TraderId::from("SANDBOX-001")
@@ -159,8 +157,6 @@ fn setup_order_event_handler() {
     msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
 }
 
-// -- CONFIG TESTS ---------------------------------------------------------------------------
-
 #[rstest]
 fn test_config_default() {
     let config = SandboxExecutionClientConfig::default();
@@ -237,8 +233,6 @@ fn test_config_to_matching_engine_config(config: SandboxExecutionClientConfig) {
     assert!(!engine_config.use_random_ids);
     assert!(engine_config.use_reduce_only);
 }
-
-// -- EXECUTION CLIENT LIFECYCLE TESTS ---------------------------------------------------------------------------
 
 #[rstest]
 fn test_client_initial_state(execution_client: SandboxExecutionClient, venue: Venue) {
@@ -335,8 +329,6 @@ fn test_client_stop_when_not_started(mut execution_client: SandboxExecutionClien
 
     assert!(result.is_ok());
 }
-
-// -- MARKET DATA PROCESSING TESTS ---------------------------------------------------------------------------
 
 #[rstest]
 fn test_process_quote_tick_creates_matching_engine(
@@ -453,8 +445,6 @@ fn test_process_bar_disabled(test_context: TestContext, instrument: InstrumentAn
     assert_eq!(test_context.client.matching_engine_count(), 0);
 }
 
-// -- RESET TESTS ---------------------------------------------------------------------------
-
 #[rstest]
 fn test_reset_with_no_engines(execution_client: SandboxExecutionClient) {
     setup_order_event_handler();
@@ -466,8 +456,6 @@ fn test_reset_with_no_engines(execution_client: SandboxExecutionClient) {
 
     assert_eq!(execution_client.matching_engine_count(), 0);
 }
-
-// -- GETTER TESTS ---------------------------------------------------------------------------
 
 #[rstest]
 fn test_client_id(execution_client: SandboxExecutionClient, client_id: ClientId) {
