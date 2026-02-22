@@ -41,6 +41,7 @@ use nautilus_binance::{
         },
     },
 };
+use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::data::Data;
 
 #[tokio::main]
@@ -61,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
     log::info!("Fetching instruments from Binance Spot API...");
     let http_client = BinanceSpotHttpClient::new(
         BinanceEnvironment::Mainnet,
+        get_atomic_clock_realtime(),
         None, // api_key (not needed for public endpoints)
         None, // api_secret
         None, // base_url_override

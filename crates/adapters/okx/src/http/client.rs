@@ -48,7 +48,8 @@ use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var, time::get_atomic_clock_realtime,
+    AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, IndexPriceUpdate, MarkPriceUpdate, TradeTick},
@@ -1018,6 +1019,7 @@ impl OKXRawHttpClient {
 pub struct OKXHttpClient {
     pub(crate) inner: Arc<OKXRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    clock: &'static AtomicTime,
     cache_initialized: AtomicBool,
 }
 
@@ -1034,6 +1036,7 @@ impl Clone for OKXHttpClient {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
             cache_initialized,
+            clock: self.clock,
         }
     }
 }
@@ -1076,12 +1079,13 @@ impl OKXHttpClient {
             )?),
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: AtomicBool::new(false),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     /// Creates a new authenticated [`OKXHttpClient`] using environment variables and
@@ -1133,6 +1137,7 @@ impl OKXHttpClient {
             )?),
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: AtomicBool::new(false),
+            clock: get_atomic_clock_realtime(),
         })
     }
 

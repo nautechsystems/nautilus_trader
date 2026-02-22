@@ -28,7 +28,8 @@ use std::{
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
+    AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BookOrder, FundingRateUpdate, TradeTick},
@@ -1053,6 +1054,7 @@ impl AxRawHttpClient {
 pub struct AxHttpClient {
     pub(crate) inner: Arc<AxRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
 }
 
@@ -1062,6 +1064,7 @@ impl Clone for AxHttpClient {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
             cache_initialized: self.cache_initialized.clone(),
+            clock: self.clock,
         }
     }
 }
@@ -1101,6 +1104,7 @@ impl AxHttpClient {
             )?),
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1135,6 +1139,7 @@ impl AxHttpClient {
             )?),
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1169,7 +1174,7 @@ impl AxHttpClient {
 
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     /// Checks if the client is initialized.

@@ -13,6 +13,7 @@ Released on TBD (UTC).
 ### Fixes
 
 ### Internal Improvements
+- Standardized use of atomic clock across adapters
 
 ### Documentation Updates
 

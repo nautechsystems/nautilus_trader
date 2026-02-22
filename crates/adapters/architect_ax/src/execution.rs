@@ -794,7 +794,7 @@ impl ExecutionClient for AxExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
 
-        let ts_now = get_atomic_clock_realtime().get_time_ns();
+        let ts_now = self.clock.get_time_ns();
 
         let start = lookback_mins.map(|mins| {
             let lookback_ns = mins * 60 * 1_000_000_000;

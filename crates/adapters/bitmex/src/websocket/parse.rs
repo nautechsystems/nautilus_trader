@@ -19,7 +19,7 @@ use std::{num::NonZero, str::FromStr};
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
+use nautilus_core::{UnixNanos, uuid::UUID4};
 #[cfg(test)]
 use nautilus_model::types::Currency;
 use nautilus_model::{
@@ -511,6 +511,7 @@ pub fn parse_order_msg(
     msg: &BitmexOrderMsg,
     instrument: &InstrumentAny,
     order_type_cache: &DashMap<ClientOrderId, OrderType>,
+    ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account)); // TODO: Revisit
     let instrument_id = parse_instrument_id(msg.symbol);
@@ -560,7 +561,6 @@ pub fn parse_order_msg(
     let ts_accepted =
         parse_optional_datetime_to_unix_nanos(&Some(msg.transact_time), "transact_time");
     let ts_last = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "timestamp");
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -672,6 +672,7 @@ pub fn parse_order_update_msg(
     msg: &BitmexOrderUpdateMsg,
     instrument: &InstrumentAny,
     account_id: AccountId,
+    ts_init: UnixNanos,
 ) -> Option<OrderUpdated> {
     // For BitMEX updates, we don't have trader_id or strategy_id from the exchange
     // These will be populated by the execution engine when it matches the venue_order_id
@@ -701,7 +702,6 @@ pub fn parse_order_update_msg(
 
     let event_id = UUID4::new();
     let ts_event = parse_optional_datetime_to_unix_nanos(&msg.timestamp, "timestamp");
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     Some(OrderUpdated::new(
         trader_id,
@@ -737,6 +737,7 @@ pub fn parse_order_update_msg(
 pub fn parse_execution_msg(
     msg: BitmexExecutionMsg,
     instrument: &InstrumentAny,
+    ts_init: UnixNanos,
 ) -> Option<FillReport> {
     let exec_type = msg.exec_type?;
 
@@ -840,7 +841,6 @@ pub fn parse_execution_msg(
     let client_order_id = msg.cl_ord_id.map(ClientOrderId::new);
     let venue_position_id = None; // Not applicable on BitMEX
     let ts_event = parse_optional_datetime_to_unix_nanos(&msg.transact_time, "transact_time");
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     Some(FillReport::new(
         account_id,
@@ -869,6 +869,7 @@ pub fn parse_execution_msg(
 pub fn parse_position_msg(
     msg: BitmexPositionMsg,
     instrument: &InstrumentAny,
+    ts_init: UnixNanos,
 ) -> PositionStatusReport {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let instrument_id = parse_instrument_id(msg.symbol);
@@ -879,7 +880,6 @@ pub fn parse_position_msg(
         .avg_entry_price
         .and_then(|p| Decimal::from_str(&p.to_string()).ok());
     let ts_last = parse_optional_datetime_to_unix_nanos(&msg.timestamp, "timestamp");
-    let ts_init = get_atomic_clock_realtime().get_time_ns();
 
     PositionStatusReport::new(
         account_id,
@@ -1359,7 +1359,7 @@ mod tests {
         let msg: BitmexOrderMsg = serde_json::from_str(&json_data).unwrap();
         let cache = DashMap::new();
         let instrument = create_test_perpetual_instrument();
-        let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
+        let report = parse_order_msg(&msg, &instrument, &cache, UnixNanos::default()).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -1393,7 +1393,7 @@ mod tests {
         let cache = DashMap::new();
         let instrument = create_test_perpetual_instrument();
 
-        let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
+        let report = parse_order_msg(&msg, &instrument, &cache, UnixNanos::default()).unwrap();
 
         assert_eq!(report.order_type, OrderType::Limit);
     }
@@ -1409,7 +1409,7 @@ mod tests {
 
         let cache = DashMap::new();
         let instrument = create_test_perpetual_instrument();
-        let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
+        let report = parse_order_msg(&msg, &instrument, &cache, UnixNanos::default()).unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Rejected);
         assert_eq!(
@@ -1429,7 +1429,7 @@ mod tests {
 
         let cache = DashMap::new();
         let instrument = create_test_perpetual_instrument();
-        let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
+        let report = parse_order_msg(&msg, &instrument, &cache, UnixNanos::default()).unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Rejected);
         assert_eq!(
@@ -1449,7 +1449,7 @@ mod tests {
 
         let cache = DashMap::new();
         let instrument = create_test_perpetual_instrument();
-        let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
+        let report = parse_order_msg(&msg, &instrument, &cache, UnixNanos::default()).unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Rejected);
         assert_eq!(report.cancel_reason, None);
@@ -1460,7 +1460,7 @@ mod tests {
         let json_data = load_test_json("ws_execution.json");
         let msg: BitmexExecutionMsg = serde_json::from_str(&json_data).unwrap();
         let instrument = create_test_perpetual_instrument();
-        let fill = parse_execution_msg(msg, &instrument).unwrap();
+        let fill = parse_execution_msg(msg, &instrument, UnixNanos::default()).unwrap();
 
         assert_eq!(fill.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(fill.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -1493,7 +1493,7 @@ mod tests {
         msg.exec_type = Some(BitmexExecType::Settlement);
 
         let instrument = create_test_perpetual_instrument();
-        let result = parse_execution_msg(msg, &instrument);
+        let result = parse_execution_msg(msg, &instrument, UnixNanos::default());
         assert!(result.is_none());
     }
 
@@ -1509,7 +1509,7 @@ mod tests {
 
         // Should return None since it's not a Trade
         let instrument = create_test_perpetual_instrument();
-        let result = parse_execution_msg(msg, &instrument);
+        let result = parse_execution_msg(msg, &instrument, UnixNanos::default());
         assert!(result.is_none());
     }
 
@@ -1521,7 +1521,7 @@ mod tests {
         msg.exec_type = Some(BitmexExecType::Liquidation);
 
         let instrument = create_test_perpetual_instrument();
-        let fill = parse_execution_msg(msg, &instrument).unwrap();
+        let fill = parse_execution_msg(msg, &instrument, UnixNanos::default()).unwrap();
 
         assert_eq!(fill.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(fill.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -1537,7 +1537,7 @@ mod tests {
         msg.exec_type = Some(BitmexExecType::Bankruptcy);
 
         let instrument = create_test_perpetual_instrument();
-        let fill = parse_execution_msg(msg, &instrument).unwrap();
+        let fill = parse_execution_msg(msg, &instrument, UnixNanos::default()).unwrap();
 
         assert_eq!(fill.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(fill.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -1552,7 +1552,7 @@ mod tests {
         msg.exec_type = Some(BitmexExecType::Settlement);
 
         let instrument = create_test_perpetual_instrument();
-        let result = parse_execution_msg(msg, &instrument);
+        let result = parse_execution_msg(msg, &instrument, UnixNanos::default());
         assert!(result.is_none());
     }
 
@@ -1563,7 +1563,7 @@ mod tests {
         msg.exec_type = Some(BitmexExecType::TrialFill);
 
         let instrument = create_test_perpetual_instrument();
-        let result = parse_execution_msg(msg, &instrument);
+        let result = parse_execution_msg(msg, &instrument, UnixNanos::default());
         assert!(result.is_none());
     }
 
@@ -1574,7 +1574,7 @@ mod tests {
         msg.exec_type = Some(BitmexExecType::Funding);
 
         let instrument = create_test_perpetual_instrument();
-        let result = parse_execution_msg(msg, &instrument);
+        let result = parse_execution_msg(msg, &instrument, UnixNanos::default());
         assert!(result.is_none());
     }
 
@@ -1585,7 +1585,7 @@ mod tests {
         msg.exec_type = Some(BitmexExecType::Insurance);
 
         let instrument = create_test_perpetual_instrument();
-        let result = parse_execution_msg(msg, &instrument);
+        let result = parse_execution_msg(msg, &instrument, UnixNanos::default());
         assert!(result.is_none());
     }
 
@@ -1596,7 +1596,7 @@ mod tests {
         msg.exec_type = Some(BitmexExecType::Rebalance);
 
         let instrument = create_test_perpetual_instrument();
-        let result = parse_execution_msg(msg, &instrument);
+        let result = parse_execution_msg(msg, &instrument, UnixNanos::default());
         assert!(result.is_none());
     }
 
@@ -1621,7 +1621,7 @@ mod tests {
                 serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
             msg.exec_type = Some(exec_type.clone());
 
-            let result = parse_execution_msg(msg, &instrument);
+            let result = parse_execution_msg(msg, &instrument, UnixNanos::default());
             assert!(
                 result.is_none(),
                 "Expected None for exec_type {exec_type:?}"
@@ -1634,7 +1634,7 @@ mod tests {
         let json_data = load_test_json("ws_position.json");
         let msg: BitmexPositionMsg = serde_json::from_str(&json_data).unwrap();
         let instrument = create_test_perpetual_instrument();
-        let report = parse_position_msg(msg, &instrument);
+        let report = parse_position_msg(msg, &instrument, UnixNanos::default());
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -1651,7 +1651,7 @@ mod tests {
         msg.current_qty = Some(-500);
 
         let instrument = create_test_perpetual_instrument();
-        let report = parse_position_msg(msg, &instrument);
+        let report = parse_position_msg(msg, &instrument, UnixNanos::default());
         assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from(500));
     }
@@ -1663,7 +1663,7 @@ mod tests {
         msg.current_qty = Some(0);
 
         let instrument = create_test_perpetual_instrument();
-        let report = parse_position_msg(msg, &instrument);
+        let report = parse_position_msg(msg, &instrument, UnixNanos::default());
         assert_eq!(report.position_side.as_position_side(), PositionSide::Flat);
         assert_eq!(report.quantity, Quantity::from(0));
     }

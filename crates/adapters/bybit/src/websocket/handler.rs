@@ -26,7 +26,11 @@ use std::{
 use ahash::AHashMap;
 use dashmap::DashMap;
 use nautilus_common::cache::quote::QuoteCache;
-use nautilus_core::{UUID4, nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    UUID4,
+    nanos::UnixNanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::{
     data::{BarType, Data},
     events::{OrderCancelRejected, OrderModifyRejected, OrderRejected},
@@ -159,6 +163,7 @@ type BatchOrderData = (ClientOrderId, PlaceRequestData);
 type BatchCancelData = (ClientOrderId, CancelRequestData);
 
 pub(super) struct FeedHandler {
+    clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
     client: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -201,6 +206,7 @@ impl FeedHandler {
         bar_types_cache: Arc<DashMap<String, BarType>>,
     ) -> Self {
         Self {
+            clock: get_atomic_clock_realtime(),
             signal,
             client: None,
             cmd_rx,
@@ -432,8 +438,7 @@ impl FeedHandler {
             return;
         };
 
-        let clock = get_atomic_clock_realtime();
-        let ts_init = clock.get_time_ns();
+        let ts_init = self.clock.get_time_ns();
 
         for (idx, (client_order_id, (_, trader_id, strategy_id, instrument_id))) in
             batch_data.into_iter().enumerate()
@@ -472,8 +477,7 @@ impl FeedHandler {
         errors: Vec<BybitBatchOrderError>,
         result: &mut Vec<NautilusWsMessage>,
     ) {
-        let clock = get_atomic_clock_realtime();
-        let ts_init = clock.get_time_ns();
+        let ts_init = self.clock.get_time_ns();
 
         for (idx, (client_order_id, (_, trader_id, strategy_id, instrument_id, venue_order_id))) in
             batch_data.into_iter().enumerate()
@@ -506,7 +510,7 @@ impl FeedHandler {
     }
 
     pub(super) async fn next(&mut self) -> Option<NautilusWsMessage> {
-        let clock = get_atomic_clock_realtime();
+        let clock = self.clock;
 
         loop {
             if let Some(msg) = self.message_queue.pop_front() {
@@ -1223,8 +1227,7 @@ impl FeedHandler {
                         }
                     }
                 } else if let Some(req_id) = &resp.req_id {
-                    let clock = get_atomic_clock_realtime();
-                    let ts_init = clock.get_time_ns();
+                    let ts_init = self.clock.get_time_ns();
 
                     if resp.op.contains("batch") {
                         self.handle_batch_failure(
@@ -1317,8 +1320,7 @@ impl FeedHandler {
                     resp.data.get("orderLinkId").and_then(|v| v.as_str())
                 {
                     // Bybit sometimes omits req_id, search by client_order_id instead
-                    let clock = get_atomic_clock_realtime();
-                    let ts_init = clock.get_time_ns();
+                    let ts_init = self.clock.get_time_ns();
                     let client_order_id = ClientOrderId::from(order_link_id);
 
                     if resp.op.contains("create") {

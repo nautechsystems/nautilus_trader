@@ -26,7 +26,9 @@ use std::{
 use ahash::AHashSet;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use nautilus_core::{datetime::nanos_to_millis, nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    AtomicTime, datetime::nanos_to_millis, nanos::UnixNanos, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AggregationSource, BarAggregation},
@@ -752,6 +754,7 @@ impl DeribitRawHttpClient {
 pub struct DeribitHttpClient {
     pub(crate) inner: Arc<DeribitRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    clock: &'static AtomicTime,
     cache_initialized: AtomicBool,
 }
 
@@ -768,6 +771,7 @@ impl Clone for DeribitHttpClient {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
             cache_initialized,
+            clock: self.clock,
         }
     }
 }
@@ -806,6 +810,7 @@ impl DeribitHttpClient {
             inner: raw_client,
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: AtomicBool::new(false),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -848,6 +853,7 @@ impl DeribitHttpClient {
             inner: raw_client,
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: AtomicBool::new(false),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1276,7 +1282,7 @@ impl DeribitHttpClient {
 
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     /// Caches instruments for later retrieval.

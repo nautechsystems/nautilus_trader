@@ -31,7 +31,7 @@ use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
+    AtomicTime, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -1192,6 +1192,7 @@ impl BybitRawHttpClient {
 pub struct BybitHttpClient {
     pub(crate) inner: Arc<BybitRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
     use_spot_position_reports: Arc<AtomicBool>,
 }
@@ -1203,6 +1204,7 @@ impl Clone for BybitHttpClient {
             instruments_cache: self.instruments_cache.clone(),
             cache_initialized: self.cache_initialized.clone(),
             use_spot_position_reports: self.use_spot_position_reports.clone(),
+            clock: self.clock,
         }
     }
 }
@@ -1251,6 +1253,7 @@ impl BybitHttpClient {
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             use_spot_position_reports: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1286,6 +1289,7 @@ impl BybitHttpClient {
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             use_spot_position_reports: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1410,7 +1414,7 @@ impl BybitHttpClient {
 
     #[must_use]
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     /// Fetches the current server time from Bybit.

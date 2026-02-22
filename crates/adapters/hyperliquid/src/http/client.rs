@@ -31,7 +31,9 @@ use std::{
 use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_core::{
-    UUID4, UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime,
+    UUID4, UnixNanos,
+    consts::NAUTILUS_USER_AGENT,
+    time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
     data::{Bar, BarType},
@@ -733,6 +735,7 @@ impl HyperliquidRawHttpClient {
 )]
 pub struct HyperliquidHttpClient {
     pub(crate) inner: Arc<HyperliquidRawHttpClient>,
+    clock: &'static AtomicTime,
     instruments: Arc<RwLock<AHashMap<Ustr, InstrumentAny>>>,
     instruments_by_coin: Arc<RwLock<AHashMap<(Ustr, HyperliquidProductType), InstrumentAny>>>,
     /// Mapping from symbol to asset index for order submission.
@@ -781,6 +784,7 @@ impl HyperliquidHttpClient {
     fn from_raw(raw_client: HyperliquidRawHttpClient) -> Self {
         Self {
             inner: Arc::new(raw_client),
+            clock: get_atomic_clock_realtime(),
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
@@ -820,6 +824,7 @@ impl HyperliquidHttpClient {
         let raw_client = HyperliquidRawHttpClient::from_env(is_testnet)?;
         Ok(Self {
             inner: Arc::new(raw_client),
+            clock: get_atomic_clock_realtime(),
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
@@ -882,6 +887,7 @@ impl HyperliquidHttpClient {
                 )?;
                 Ok(Self {
                     inner: Arc::new(raw_client),
+                    clock: get_atomic_clock_realtime(),
                     instruments: Arc::new(RwLock::new(AHashMap::new())),
                     instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
                     asset_indices: Arc::new(RwLock::new(AHashMap::new())),
@@ -918,6 +924,7 @@ impl HyperliquidHttpClient {
         )?;
         Ok(Self {
             inner: Arc::new(raw_client),
+            clock: get_atomic_clock_realtime(),
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
@@ -1057,8 +1064,7 @@ impl HyperliquidHttpClient {
         if coin.as_str().starts_with("vntls:") {
             log::info!("Creating synthetic instrument for vault token: {coin}");
 
-            let clock = nautilus_core::time::get_atomic_clock_realtime();
-            let ts_event = clock.get_time_ns();
+            let ts_event = self.clock.get_time_ns();
 
             // Create synthetic vault token instrument
             let symbol_str = format!("{coin}-USDC-SPOT");
@@ -1186,7 +1192,8 @@ impl HyperliquidHttpClient {
             );
         }
 
-        Ok(instruments_from_defs_owned(defs))
+        let ts_init = self.clock.get_time_ns();
+        Ok(instruments_from_defs_owned(defs, ts_init))
     }
 
     /// Get asset index for a symbol from the cached map.
@@ -1424,7 +1431,7 @@ impl HyperliquidHttpClient {
             .map_err(|e| Error::bad_request(format!("Failed to parse orders: {e}")))?;
 
         let mut reports = Vec::new();
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.clock.get_time_ns();
 
         for order_value in orders {
             // Parse the order data
@@ -1493,7 +1500,7 @@ impl HyperliquidHttpClient {
         let fills_response = self.info_user_fills(user).await?;
 
         let mut reports = Vec::new();
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.clock.get_time_ns();
 
         for fill in fills_response {
             // Get instrument from cache or create synthetic for vault tokens
@@ -1550,7 +1557,7 @@ impl HyperliquidHttpClient {
             .clone();
 
         let mut reports = Vec::new();
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.clock.get_time_ns();
 
         for position_value in asset_positions {
             // Extract coin from position data
@@ -1601,7 +1608,7 @@ impl HyperliquidHttpClient {
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let state_response = self.info_clearinghouse_state(user).await?;
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.clock.get_time_ns();
 
         log::trace!("Clearinghouse state response: {state_response}");
 
@@ -1939,7 +1946,7 @@ impl HyperliquidHttpClient {
                 let account_id = self
                     .account_id
                     .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-                let ts_init = get_atomic_clock_realtime().get_time_ns();
+                let ts_init = self.clock.get_time_ns();
 
                 match order_status {
                     HyperliquidExecOrderStatus::Resting { resting } => self
@@ -2030,8 +2037,7 @@ impl HyperliquidHttpClient {
         account_id: AccountId,
         ts_init: UnixNanos,
     ) -> Result<OrderStatusReport> {
-        let clock = get_atomic_clock_realtime();
-        let ts_accepted = clock.get_time_ns();
+        let ts_accepted = self.clock.get_time_ns();
         let ts_last = ts_accepted;
         let report_id = UUID4::new();
 
@@ -2128,7 +2134,7 @@ impl HyperliquidHttpClient {
                 let account_id = self
                     .account_id
                     .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-                let ts_init = get_atomic_clock_realtime().get_time_ns();
+                let ts_init = self.clock.get_time_ns();
 
                 // Validate we have the same number of statuses as orders submitted
                 if order_response.statuses.len() != orders.len() {

@@ -141,9 +141,12 @@ impl BinanceFuturesExecutionClient {
             product_type,
         )?;
 
+        let clock = get_atomic_clock_realtime();
+
         let http_client = BinanceFuturesHttpClient::new(
             product_type,
             config.environment,
+            clock,
             Some(api_key.clone()),
             Some(api_secret.clone()),
             config.base_url_http.clone(),
@@ -162,8 +165,6 @@ impl BinanceFuturesExecutionClient {
             Some(20), // Heartbeat interval
         )
         .context("failed to construct Binance Futures WebSocket client")?;
-
-        let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
             clock,
             core.trader_id,
@@ -952,6 +953,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let command = cmd.clone();
         let emitter = self.emitter.clone();
         let account_id = self.core.account_id;
+        let clock = self.clock;
 
         let symbol = command.instrument_id.symbol.to_string();
         let order_id = command.venue_order_id.map(|id| {
@@ -977,10 +979,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             match result {
                 Ok(order) => {
+                    let ts_init = clock.get_time_ns();
                     let report = order.to_order_status_report(
                         account_id,
                         command.instrument_id,
                         size_precision,
+                        ts_init,
                     )?;
 
                     emitter.send_order_status_report(report);
@@ -1395,6 +1399,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let (_, size_precision) = self.get_instrument_precision(instrument_id);
+        let ts_init = self.clock.get_time_ns();
 
         match self.http_client.query_order(&params).await {
             Ok(order) => {
@@ -1402,6 +1407,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     self.core.account_id,
                     instrument_id,
                     size_precision,
+                    ts_init,
                 )?;
                 Ok(Some(report))
             }
@@ -1417,6 +1423,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             self.core.account_id,
                             instrument_id,
                             size_precision,
+                            ts_init,
                         )?;
                         Ok(Some(report))
                     }
@@ -1434,6 +1441,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let ts_init = self.clock.get_time_ns();
         let mut reports = Vec::new();
 
         if cmd.open_only {
@@ -1456,6 +1464,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         self.core.account_id,
                         instrument_id,
                         size_precision,
+                        ts_init,
                     ) {
                         reports.push(report);
                     }
@@ -1469,6 +1478,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             self.core.account_id,
                             instrument.id(),
                             instrument.size_precision(),
+                            ts_init,
                         )
                     {
                         reports.push(report);
@@ -1483,6 +1493,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         self.core.account_id,
                         instrument_id,
                         size_precision,
+                        ts_init,
                     ) {
                         reports.push(report);
                     }
@@ -1496,6 +1507,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             self.core.account_id,
                             instrument.id(),
                             instrument.size_precision(),
+                            ts_init,
                         )
                     {
                         reports.push(report);
@@ -1525,6 +1537,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     self.core.account_id,
                     instrument_id,
                     size_precision,
+                    ts_init,
                 ) {
                     reports.push(report);
                 }
@@ -1559,6 +1572,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let trades = self.http_client.query_user_trades(&params).await?;
         let (price_precision, size_precision) = self.get_instrument_precision(instrument_id);
+        let ts_init = self.clock.get_time_ns();
 
         let mut reports = Vec::new();
         for trade in trades {
@@ -1567,6 +1581,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 instrument_id,
                 price_precision,
                 size_precision,
+                ts_init,
             ) {
                 reports.push(report);
             }

@@ -39,6 +39,7 @@ use nautilus_binance::{
     },
 };
 use nautilus_common::testing::wait_until_async;
+use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
     data::BarType,
     enums::{AggregationSource, OrderSide, OrderType, TimeInForce},
@@ -1407,6 +1408,7 @@ async fn test_domain_client_request_instruments() {
 
     let client = BinanceSpotHttpClient::new(
         BinanceEnvironment::Mainnet,
+        get_atomic_clock_realtime(),
         None,
         None,
         Some(base_url),
@@ -1591,6 +1593,7 @@ async fn create_domain_client_with_instruments(
 ) -> BinanceSpotHttpClient {
     let client = BinanceSpotHttpClient::new(
         BinanceEnvironment::Mainnet,
+        get_atomic_clock_realtime(),
         api_key,
         api_secret,
         Some(base_url),

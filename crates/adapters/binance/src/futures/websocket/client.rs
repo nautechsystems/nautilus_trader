@@ -35,7 +35,7 @@ use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
 use nautilus_common::live::get_runtime;
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     mode::ConnectionMode,
@@ -72,6 +72,7 @@ pub const MAX_STREAMS_PER_CONNECTION: usize = 200;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
 )]
 pub struct BinanceFuturesWebSocketClient {
+    clock: &'static AtomicTime,
     url: String,
     product_type: BinanceProductType,
     credential: Option<Arc<Credential>>,
@@ -137,6 +138,7 @@ impl BinanceFuturesWebSocketClient {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
 
         Ok(Self {
+            clock: get_atomic_clock_realtime(),
             url,
             product_type,
             credential,
@@ -257,7 +259,7 @@ impl BinanceFuturesWebSocketClient {
         });
 
         let mut handler = BinanceFuturesDataWsFeedHandler::new(
-            get_atomic_clock_realtime(),
+            self.clock,
             self.signal.clone(),
             cmd_rx,
             bytes_rx,

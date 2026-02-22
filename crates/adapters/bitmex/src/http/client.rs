@@ -34,7 +34,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    UUID4, UnixNanos,
+    AtomicTime, UUID4, UnixNanos,
     consts::{NAUTILUS_TRADER, NAUTILUS_USER_AGENT},
     env::get_or_env_var_opt,
     time::get_atomic_clock_realtime,
@@ -763,9 +763,10 @@ impl BitmexRawHttpClient {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
 )]
 pub struct BitmexHttpClient {
-    inner: Arc<BitmexRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     pub(crate) order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
+    clock: &'static AtomicTime,
+    inner: Arc<BitmexRawHttpClient>,
     cache_initialized: AtomicBool,
 }
 
@@ -783,6 +784,7 @@ impl Clone for BitmexHttpClient {
             instruments_cache: self.instruments_cache.clone(),
             order_type_cache: self.order_type_cache.clone(),
             cache_initialized,
+            clock: self.clock,
         }
     }
 }
@@ -874,6 +876,7 @@ impl BitmexHttpClient {
             instruments_cache: Arc::new(DashMap::new()),
             order_type_cache: Arc::new(DashMap::new()),
             cache_initialized: AtomicBool::new(false),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -982,7 +985,7 @@ impl BitmexHttpClient {
 
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     /// Check if the order has a contingency type that requires linking.

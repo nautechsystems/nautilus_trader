@@ -35,9 +35,7 @@ use std::{collections::HashMap, fmt::Debug, num::NonZeroU32, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
-};
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::AtomicTime};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AggregationSource, BarAggregation, OrderSide, OrderType, TimeInForce},
@@ -1237,6 +1235,7 @@ impl BinanceRawSpotHttpClient {
 )]
 pub struct BinanceSpotHttpClient {
     inner: Arc<BinanceRawSpotHttpClient>,
+    clock: &'static AtomicTime,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
 }
 
@@ -1244,6 +1243,7 @@ impl Clone for BinanceSpotHttpClient {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            clock: self.clock,
             instruments_cache: self.instruments_cache.clone(),
         }
     }
@@ -1264,8 +1264,10 @@ impl BinanceSpotHttpClient {
     /// # Errors
     ///
     /// Returns an error if the underlying HTTP client cannot be created.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         environment: BinanceEnvironment,
+        clock: &'static AtomicTime,
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url_override: Option<String>,
@@ -1285,6 +1287,7 @@ impl BinanceSpotHttpClient {
 
         Ok(Self {
             inner: Arc::new(inner),
+            clock,
             instruments_cache: Arc::new(DashMap::new()),
         })
     }
@@ -1309,7 +1312,7 @@ impl BinanceSpotHttpClient {
 
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
-        UnixNanos::from(chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64)
+        self.clock.get_time_ns()
     }
 
     /// Retrieves an instrument from the cache.
@@ -1489,7 +1492,7 @@ impl BinanceSpotHttpClient {
         &self,
         account_id: AccountId,
     ) -> anyhow::Result<AccountState> {
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.clock.get_time_ns();
         let params = AccountInfoParams::default();
         let account_info = self.inner.account(&params).await?;
         Ok(account_info.to_account_state(account_id, ts_init))

@@ -898,6 +898,7 @@ impl KrakenFuturesRawHttpClient {
 pub struct KrakenFuturesHttpClient {
     pub(crate) inner: Arc<KrakenFuturesRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
 }
 
@@ -907,6 +908,7 @@ impl Clone for KrakenFuturesHttpClient {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
             cache_initialized: self.cache_initialized.clone(),
+            clock: self.clock,
         }
     }
 }
@@ -961,6 +963,7 @@ impl KrakenFuturesHttpClient {
             )?),
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -993,6 +996,7 @@ impl KrakenFuturesHttpClient {
             )?),
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1084,7 +1088,7 @@ impl KrakenFuturesHttpClient {
     }
 
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     /// Requests tradable instruments from Kraken Futures.

@@ -143,6 +143,7 @@ impl BinanceFuturesDataClient {
         let http_client = BinanceFuturesHttpClient::new(
             product_type,
             config.environment,
+            clock,
             config.api_key.clone(),
             config.api_secret.clone(),
             config.base_url_http.clone(),

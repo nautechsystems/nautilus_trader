@@ -961,6 +961,7 @@ impl KrakenSpotRawHttpClient {
 pub struct KrakenSpotHttpClient {
     pub(crate) inner: Arc<KrakenSpotRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
     use_spot_position_reports: Arc<AtomicBool>,
     spot_positions_quote_currency: Arc<RwLock<Ustr>>,
@@ -974,6 +975,7 @@ impl Clone for KrakenSpotHttpClient {
             cache_initialized: self.cache_initialized.clone(),
             use_spot_position_reports: self.use_spot_position_reports.clone(),
             spot_positions_quote_currency: self.spot_positions_quote_currency.clone(),
+            clock: self.clock,
         }
     }
 }
@@ -1030,6 +1032,7 @@ impl KrakenSpotHttpClient {
             cache_initialized: Arc::new(AtomicBool::new(false)),
             use_spot_position_reports: Arc::new(AtomicBool::new(false)),
             spot_positions_quote_currency: Arc::new(RwLock::new(Ustr::from("USDT"))),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1064,6 +1067,7 @@ impl KrakenSpotHttpClient {
             cache_initialized: Arc::new(AtomicBool::new(false)),
             use_spot_position_reports: Arc::new(AtomicBool::new(false)),
             spot_positions_quote_currency: Arc::new(RwLock::new(Ustr::from("USDT"))),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1154,7 +1158,7 @@ impl KrakenSpotHttpClient {
     }
 
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     /// Sets whether to generate position reports from wallet balances for SPOT instruments.
