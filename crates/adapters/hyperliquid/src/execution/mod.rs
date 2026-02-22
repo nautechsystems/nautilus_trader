@@ -461,14 +461,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
 
         // Validate order conversion before marking as submitted
-        let hyperliquid_order = match order_to_hyperliquid_request_with_asset(&order, asset) {
-            Ok(req) => req,
-            Err(e) => {
-                self.emitter
-                    .emit_order_denied(&order, &format!("Order conversion failed: {e}"));
-                return Ok(());
-            }
-        };
+        let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
+        let hyperliquid_order =
+            match order_to_hyperliquid_request_with_asset(&order, asset, price_decimals) {
+                Ok(req) => req,
+                Err(e) => {
+                    self.emitter
+                        .emit_order_denied(&order, &format!("Order conversion failed: {e}"));
+                    return Ok(());
+                }
+            };
 
         // Cache cloid mapping before emitting submitted so WS handler
         // can resolve order/fill reports back to this client_order_id
@@ -543,7 +545,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 }
             };
 
-            match order_to_hyperliquid_request_with_asset(order, asset) {
+            let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
+
+            match order_to_hyperliquid_request_with_asset(order, asset, price_decimals) {
                 Ok(req) => {
                     hyperliquid_orders.push(req);
                     valid_orders.push(order.clone());

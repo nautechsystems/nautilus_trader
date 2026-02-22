@@ -328,6 +328,13 @@ Hyperliquid API requirement for all limit prices. Ensure you subscribe to quotes
 instrument you intend to trade with market orders.
 :::
 
+:::note
+`STOP_MARKET` and `MARKET_IF_TOUCHED` orders do not carry a limit price. The adapter derives
+one from the trigger price with 0.5% slippage, rounds to 5 significant figures, and clamps to
+the instrument's price precision (ceiling for buys, floor for sells). This guarantees
+Hyperliquid's `limit_px >= trigger_px` (buys) / `limit_px <= trigger_px` (sells) constraint.
+:::
+
 ### Time in force
 
 | Time in force | Perpetuals | Spot | Notes                        |

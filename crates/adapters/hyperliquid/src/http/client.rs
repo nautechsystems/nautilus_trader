@@ -65,7 +65,10 @@ use crate::{
             HyperliquidBarInterval, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
             HyperliquidProductType,
         },
-        parse::{bar_type_to_interval, order_to_hyperliquid_request_with_asset},
+        parse::{
+            bar_type_to_interval, clamp_price_to_precision, derive_limit_from_trigger,
+            order_to_hyperliquid_request_with_asset, round_to_sig_figs,
+        },
     },
     http::{
         error::{Error, Result},
@@ -1215,6 +1218,21 @@ impl HyperliquidHttpClient {
         asset_indices.get(&Ustr::from(symbol)).copied()
     }
 
+    /// Get the price precision for a cached instrument by symbol.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal read lock cannot be acquired.
+    pub fn get_price_precision(&self, symbol: &str) -> Option<u8> {
+        let instruments = self
+            .instruments
+            .read()
+            .expect("Failed to acquire read lock");
+        instruments
+            .get(&Ustr::from(symbol))
+            .map(|inst| inst.price_precision())
+    }
+
     /// Get mapping from spot fill coin identifiers to instrument symbols.
     ///
     /// Hyperliquid WebSocket fills for spot use `@{pair_index}` format (e.g., `@107`),
@@ -1779,6 +1797,7 @@ impl HyperliquidHttpClient {
         );
         Ok(bars)
     }
+
     /// Submits an order to the exchange.
     ///
     /// # Errors
@@ -1807,19 +1826,27 @@ impl HyperliquidHttpClient {
         })?;
 
         let is_buy = matches!(order_side, OrderSide::Buy);
+        let price_precision = self.get_price_precision(symbol).unwrap_or(2);
 
         let price_decimal = match price {
             Some(px) => px.as_decimal().normalize(),
-            None => {
-                if matches!(
-                    order_type,
-                    OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched
-                ) {
-                    Decimal::ZERO
-                } else {
-                    return Err(Error::bad_request("Limit orders require a price"));
+            None if matches!(order_type, OrderType::Market) => Decimal::ZERO,
+            None if matches!(
+                order_type,
+                OrderType::StopMarket | OrderType::MarketIfTouched
+            ) =>
+            {
+                match trigger_price {
+                    Some(tp) => {
+                        let derived =
+                            derive_limit_from_trigger(tp.as_decimal().normalize(), is_buy);
+                        let sig_rounded = round_to_sig_figs(derived, 5);
+                        clamp_price_to_precision(sig_rounded, price_precision, is_buy).normalize()
+                    }
+                    None => Decimal::ZERO,
                 }
             }
+            None => return Err(Error::bad_request("Limit orders require a price")),
         };
 
         let size_decimal = quantity.as_decimal().normalize();
@@ -2089,7 +2116,8 @@ impl HyperliquidHttpClient {
                     "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
                 ))
             })?;
-            let request = order_to_hyperliquid_request_with_asset(order, asset)
+            let price_decimals = self.get_price_precision(symbol).unwrap_or(2);
+            let request = order_to_hyperliquid_request_with_asset(order, asset, price_decimals)
                 .map_err(|e| Error::bad_request(format!("Failed to convert order: {e}")))?;
             hyperliquid_orders.push(request);
         }

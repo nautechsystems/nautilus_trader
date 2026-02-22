@@ -500,14 +500,23 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 f"No cached quote available for {order.instrument_id} to calculate market order price",
             )
 
+        # Use trigger price as base for trigger orders to ensure limit_px
+        # satisfies Hyperliquid's constraint (SELL: limit_px <= triggerPx,
+        # BUY: limit_px >= triggerPx)
+        if (
+            order.order_type in (OrderType.STOP_MARKET, OrderType.MARKET_IF_TOUCHED)
+            and order.has_trigger_price
+        ):
+            base_price = Decimal(str(order.trigger_price))
+        elif order.side == OrderSide.BUY:
+            base_price = Decimal(str(quote.ask_price))
+        else:
+            base_price = Decimal(str(quote.bid_price))
+
         # Calculate price with slippage
         if order.side == OrderSide.BUY:
-            # For buys, add slippage to the ask price
-            base_price = Decimal(str(quote.ask_price))
             price = base_price * (Decimal(1) + slippage_pct)
         else:
-            # For sells, subtract slippage from the bid price
-            base_price = Decimal(str(quote.bid_price))
             price = base_price * (Decimal(1) - slippage_pct)
 
         # Hyperliquid requires max 5 significant figures AND max decimal places

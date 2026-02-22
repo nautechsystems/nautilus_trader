@@ -351,6 +351,7 @@ pub fn bar_type_to_interval(bar_type: &BarType) -> anyhow::Result<HyperliquidBar
 pub fn order_to_hyperliquid_request_with_asset(
     order: &OrderAny,
     asset: u32,
+    price_decimals: u8,
 ) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
     let is_buy = matches!(order.order_side(), OrderSide::Buy);
     let reduce_only = order.is_reduce_only();
@@ -359,20 +360,29 @@ pub fn order_to_hyperliquid_request_with_asset(
 
     // Normalize decimals to strip trailing zeros, matching the server's
     // canonical form used for EIP-712 signing hash verification.
-    let price_decimal = match order.price() {
-        Some(price) => Decimal::from_str_exact(&price.to_string())
+    let price_decimal = if let Some(price) = order.price() {
+        Decimal::from_str_exact(&price.to_string())
             .with_context(|| format!("Failed to convert price to decimal: {price}"))?
-            .normalize(),
-        None => {
-            if matches!(
-                order_type,
-                OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched
-            ) {
-                Decimal::ZERO
-            } else {
-                anyhow::bail!("Limit orders require a price")
+            .normalize()
+    } else if matches!(order_type, OrderType::Market) {
+        Decimal::ZERO
+    } else if matches!(
+        order_type,
+        OrderType::StopMarket | OrderType::MarketIfTouched
+    ) {
+        match order.trigger_price() {
+            Some(tp) => {
+                let base = Decimal::from_str_exact(&tp.to_string())
+                    .with_context(|| format!("Failed to convert trigger price to decimal: {tp}"))?
+                    .normalize();
+                let derived = derive_limit_from_trigger(base, is_buy);
+                let sig_rounded = round_to_sig_figs(derived, 5);
+                clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize()
             }
+            None => Decimal::ZERO,
         }
+    } else {
+        anyhow::bail!("Limit orders require a price")
     };
 
     let size_decimal = Decimal::from_str_exact(&order.quantity().to_string())
@@ -487,6 +497,36 @@ pub fn order_to_hyperliquid_request_with_asset(
         kind,
         cloid,
     })
+}
+
+/// Derives a limit price from a trigger price with slippage.
+///
+/// Hyperliquid requires that the limit price satisfies:
+/// - SELL stops: `limit_px <= trigger_px`
+/// - BUY stops: `limit_px >= trigger_px`
+///
+/// Applies 0.5% slippage in the appropriate direction.
+pub fn derive_limit_from_trigger(trigger_price: Decimal, is_buy: bool) -> Decimal {
+    let slippage = Decimal::new(5, 3); // 0.5%
+    let price = if is_buy {
+        trigger_price * (Decimal::ONE + slippage)
+    } else {
+        trigger_price * (Decimal::ONE - slippage)
+    };
+
+    // Strip trailing zeros for EIP-712 signing hash verification
+    price.normalize()
+}
+
+/// Clamp a price to the instrument's decimal precision,
+/// rounding in the direction that preserves the slippage buffer.
+pub fn clamp_price_to_precision(price: Decimal, decimals: u8, is_buy: bool) -> Decimal {
+    let scale = Decimal::from(10_u64.pow(decimals as u32));
+    if is_buy {
+        (price * scale).ceil() / scale
+    } else {
+        (price * scale).floor() / scale
+    }
 }
 
 /// Converts a client order ID to a Hyperliquid cancel request using a pre-resolved asset index.
@@ -681,6 +721,12 @@ pub fn parse_account_balances_and_margins(
 mod tests {
     use std::str::FromStr;
 
+    use nautilus_model::{
+        enums::{OrderSide, TimeInForce, TriggerType},
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
+        orders::{OrderAny, StopMarketOrder},
+        types::{Price, Quantity},
+    };
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -1000,5 +1046,170 @@ mod tests {
         // Empty string
         let result = parse_trigger_price("");
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case(dec!(0), true, dec!(0))] // Zero
+    #[case(dec!(0), false, dec!(0))] // Zero
+    #[case(dec!(0.001), true, dec!(0.001005))] // Small price BUY
+    #[case(dec!(0.001), false, dec!(0.000995))] // Small price SELL
+    #[case(dec!(100), true, dec!(100.5))] // Round price BUY
+    #[case(dec!(100), false, dec!(99.5))] // Round price SELL
+    #[case(dec!(2470), true, dec!(2482.35))] // ETH-like BUY
+    #[case(dec!(2470), false, dec!(2457.65))] // ETH-like SELL
+    #[case(dec!(104567.3), true, dec!(105090.1365))] // BTC-like BUY
+    #[case(dec!(104567.3), false, dec!(104044.4635))] // BTC-like SELL
+    fn test_derive_limit_from_trigger(
+        #[case] trigger_price: Decimal,
+        #[case] is_buy: bool,
+        #[case] expected: Decimal,
+    ) {
+        let result = derive_limit_from_trigger(trigger_price, is_buy);
+        assert_eq!(result, expected);
+
+        // Verify invariant: BUY limit >= trigger, SELL limit <= trigger
+        if is_buy {
+            assert!(result >= trigger_price);
+        } else {
+            assert!(result <= trigger_price);
+        }
+    }
+
+    #[rstest]
+    // BUY rounds up (ceil)
+    #[case(dec!(2457.65), 2, true, dec!(2457.65))] // Already at precision
+    #[case(dec!(2457.65), 1, true, dec!(2457.7))] // Ceil to 1dp
+    #[case(dec!(2457.65), 0, true, dec!(2458))] // Ceil to integer
+    // SELL rounds down (floor)
+    #[case(dec!(2457.65), 2, false, dec!(2457.65))] // Already at precision
+    #[case(dec!(2457.65), 1, false, dec!(2457.6))] // Floor to 1dp
+    #[case(dec!(2457.65), 0, false, dec!(2457))] // Floor to integer
+    // High precision (no-op)
+    #[case(dec!(0.4975), 4, true, dec!(0.4975))]
+    #[case(dec!(0.4975), 4, false, dec!(0.4975))]
+    // Precision forces clamping on small values
+    #[case(dec!(0.4975), 2, true, dec!(0.50))]
+    #[case(dec!(0.4975), 2, false, dec!(0.49))]
+    fn test_clamp_price_to_precision(
+        #[case] price: Decimal,
+        #[case] decimals: u8,
+        #[case] is_buy: bool,
+        #[case] expected: Decimal,
+    ) {
+        assert_eq!(clamp_price_to_precision(price, decimals, is_buy), expected);
+    }
+
+    fn stop_market_order(side: OrderSide, trigger_price: &str) -> OrderAny {
+        OrderAny::StopMarket(StopMarketOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"),
+            ClientOrderId::from("O-001"),
+            side,
+            Quantity::from(1),
+            Price::from(trigger_price),
+            TriggerType::LastPrice,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Default::default(),
+            Default::default(),
+        ))
+    }
+
+    #[rstest]
+    // ETH-like (precision=2): clamping is a no-op
+    #[case(OrderSide::Sell, "2470.00", 2)]
+    #[case(OrderSide::Buy, "2470.00", 2)]
+    // BTC-like (precision=1): clamping is a no-op
+    #[case(OrderSide::Sell, "104567.3", 1)]
+    #[case(OrderSide::Buy, "104567.3", 1)]
+    // Low-price token (precision=4): clamping is a no-op
+    #[case(OrderSide::Sell, "0.50", 4)]
+    #[case(OrderSide::Buy, "0.50", 4)]
+    // Clamping materially changes: ETH trigger at precision=1
+    // SELL: 2470 * 0.995 = 2457.65 → sig5 = 2457.6 → floor(1dp) = 2457.6
+    // BUY:  2470 * 1.005 = 2482.35 → sig5 = 2482.4 → ceil(1dp) = 2482.4
+    #[case(OrderSide::Sell, "2470.00", 1)]
+    #[case(OrderSide::Buy, "2470.00", 1)]
+    // Clamping materially changes: precision=0 forces integer
+    // SELL: 2470 * 0.995 = 2457.65 → sig5 = 2457.6 → floor(0dp) = 2457
+    // BUY:  2470 * 1.005 = 2482.35 → sig5 = 2482.4 → ceil(0dp) = 2483
+    #[case(OrderSide::Sell, "2470.00", 0)]
+    #[case(OrderSide::Buy, "2470.00", 0)]
+    fn test_order_to_request_stop_market_derives_limit_from_trigger(
+        #[case] side: OrderSide,
+        #[case] trigger_str: &str,
+        #[case] price_decimals: u8,
+    ) {
+        let order = stop_market_order(side, trigger_str);
+        let request = order_to_hyperliquid_request_with_asset(&order, 0, price_decimals).unwrap();
+        let trigger = Decimal::from_str(trigger_str).unwrap();
+        let is_buy = matches!(side, OrderSide::Buy);
+
+        // Price must satisfy Hyperliquid's directional constraint
+        if is_buy {
+            assert!(
+                request.price >= trigger,
+                "BUY limit {} must be >= trigger {trigger}",
+                request.price,
+            );
+            assert!(request.is_buy);
+        } else {
+            assert!(
+                request.price <= trigger,
+                "SELL limit {} must be <= trigger {trigger}",
+                request.price,
+            );
+            assert!(!request.is_buy);
+        }
+
+        // Price must equal the full pipeline: derive → sig figs → clamp → normalize
+        let derived = derive_limit_from_trigger(trigger, is_buy);
+        let sig_rounded = round_to_sig_figs(derived, 5);
+        let expected = clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize();
+        assert_eq!(request.price, expected);
+
+        // Decimal places must not exceed instrument precision
+        let price_str = request.price.to_string();
+        let actual_decimals = price_str
+            .find('.')
+            .map_or(0, |dot| price_str.len() - dot - 1);
+        assert!(
+            actual_decimals <= price_decimals as usize,
+            "Price {price_str} has {actual_decimals} decimals, max allowed {price_decimals}",
+        );
+
+        // Decimal trailing zeros must be stripped (canonical form)
+        if price_str.contains('.') {
+            assert!(
+                !price_str.ends_with('0'),
+                "Price {price_str} has decimal trailing zeros",
+            );
+        }
+
+        // Trigger kind must be StopMarket with correct trigger_px
+        assert_eq!(
+            request.kind,
+            HyperliquidExecOrderKind::Trigger {
+                trigger: HyperliquidExecTriggerParams {
+                    is_market: true,
+                    trigger_px: trigger,
+                    tpsl: HyperliquidExecTpSl::Sl,
+                },
+            },
+        );
     }
 }

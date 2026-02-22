@@ -13,6 +13,7 @@ Released on TBD (UTC).
 - Bumped all eligible GitHub Actions pinned SHAs to latest versions (2-week release policy)
 
 ### Fixes
+- Fixed Hyperliquid stop/trigger order price derivation
 
 ### Internal Improvements
 - Implemented `BacktestNode` with catalog streaming in Rust

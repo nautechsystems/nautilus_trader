@@ -34,7 +34,7 @@ pub use models::{
     HyperliquidPositionData, HyperliquidTradeKey, parse_position_status_report,
 };
 pub use parse::{
-    deserialize_decimal_from_str, deserialize_optional_decimal_from_str, ensure_min_notional,
-    normalize_order, normalize_price, normalize_quantity, round_down_to_step, round_down_to_tick,
-    serialize_decimal_as_str, serialize_optional_decimal_as_str,
+    clamp_price_to_precision, deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
+    ensure_min_notional, normalize_order, normalize_price, normalize_quantity, round_down_to_step,
+    round_down_to_tick, serialize_decimal_as_str, serialize_optional_decimal_as_str,
 };
