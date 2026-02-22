@@ -821,6 +821,29 @@ venue_config = BacktestVenueConfig(
 - The queue snapshot is based on book state at order acceptance time.
 - Trades with `NO_AGGRESSOR` decrement queue for both sides, which may cause orders to fill sooner than in reality (pessimistic for queue estimation, but prevents stalling).
 
+**L1 quote-based mode:**
+
+When using `BookType.L1_MBP` (top-of-book quotes only), queue position tracking infers
+consumption from changes in the best bid/ask between consecutive quote ticks rather than
+from individual trade ticks or order book deltas.
+
+- **Size decrease at same price**: If the BBO size decreases while the price holds steady,
+  the engine decrements the queue ahead by the decrease amount. This captures fills,
+  cancellations, and other activity consuming the level.
+- **Price moves away**: If the bid drops below a BUY order's price (or ask rises above a
+  SELL order's price), the order's price level has been "crossed" and the queue clears to zero,
+  making the order fill-eligible on the next matching trade.
+- **Price moves toward**: If the bid rises (or ask drops), the level at the order's price was
+  not consumed, so queue positions are preserved.
+- **Price returns to a level**: When the price returns after moving away, the queue ahead is
+  capped at the new displayed size if it was previously larger.
+- **Trade ticks**: In L1 mode, trades do not directly decrement the queue (the quote changes
+  already reflect their impact). Trades still trigger fills once the queue ahead reaches zero.
+
+L1 mode uses the same configuration: set `queue_position=True` with `book_type=BookType.L1_MBP`.
+This provides a lightweight alternative to full L2/L3 data when only top-of-book quotes are
+available.
+
 :::note
 Queue position tracking provides a heuristic simulation of queue dynamics. Real exchange queue
 behavior depends on many factors (order priority rules, hidden orders, etc.) that cannot be

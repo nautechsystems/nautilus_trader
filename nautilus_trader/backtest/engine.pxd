@@ -417,6 +417,10 @@ cdef class OrderMatchingEngine:
     cdef dict[PriceRaw, tuple[QuantityRaw, QuantityRaw]] _bid_consumption
     cdef dict[PriceRaw, tuple[QuantityRaw, QuantityRaw]] _ask_consumption
     cdef QuantityRaw _trade_consumption
+    cdef PriceRaw _prev_bid_price_raw
+    cdef PriceRaw _prev_ask_price_raw
+    cdef QuantityRaw _prev_bid_size_raw
+    cdef QuantityRaw _prev_ask_size_raw
 
     cdef int _position_count
     cdef int _order_count
@@ -515,6 +519,10 @@ cdef class OrderMatchingEngine:
     cdef void _clear_queue_on_delete(self, PriceRaw deleted_price_raw, OrderSide deleted_side)
     cdef void _clear_all_queue_positions(self)
     cdef void _decrement_queue_on_trade(self, PriceRaw price_raw, QuantityRaw trade_size_raw, AggressorSide aggressor_side)
+    cdef void _seed_l1_baseline(self)
+    cdef void _decrement_l1_queue_on_quote(self, PriceRaw bid_price_raw, QuantityRaw bid_size_raw, PriceRaw ask_price_raw, QuantityRaw ask_size_raw)
+    cdef void _apply_l1_queue_decrement(self, PriceRaw price_raw, QuantityRaw decrease_raw, OrderSide order_side)
+    cdef void _adjust_l1_queue_on_price_move(self, PriceRaw new_price_raw, QuantityRaw new_size_raw, OrderSide order_side)
 
     cpdef void apply_fills(
         self,

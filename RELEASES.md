@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added matching engine L1 quote-based queue position tracking for backtests
 - Added Betfair batch submit and cancel order support
 - Added BitMEX dead man's switch (cancelAllAfter) support
 

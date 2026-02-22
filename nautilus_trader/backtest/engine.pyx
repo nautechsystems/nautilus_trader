@@ -3893,6 +3893,10 @@ cdef class OrderMatchingEngine:
         self._bid_consumption = {}
         self._ask_consumption = {}
         self._trade_consumption = 0
+        self._prev_bid_price_raw = 0
+        self._prev_bid_size_raw = 0
+        self._prev_ask_price_raw = 0
+        self._prev_ask_size_raw = 0
 
         self._position_count = 0
         self._order_count = 0
@@ -3927,6 +3931,10 @@ cdef class OrderMatchingEngine:
         self._bid_consumption.clear()
         self._ask_consumption.clear()
         self._trade_consumption = 0
+        self._prev_bid_price_raw = 0
+        self._prev_bid_size_raw = 0
+        self._prev_ask_price_raw = 0
+        self._prev_ask_size_raw = 0
 
         self._position_count = 0
         self._order_count = 0
@@ -4088,9 +4096,10 @@ cdef class OrderMatchingEngine:
             self._ask_consumption.clear()
 
         # Reset queue positions on snapshot/CLEAR (stale depth no longer exists)
-        if self._queue_position and (
+        cdef bint delta_snapshot_or_clear = (
             (delta._mem.flags & 32) or delta._mem.action == BookAction.CLEAR
-        ):
+        )
+        if self._queue_position and delta_snapshot_or_clear:
             self._clear_all_queue_positions()
 
         # Clear consumption tracking on UPDATE or DELETE (level changed or removed)
@@ -4106,6 +4115,9 @@ cdef class OrderMatchingEngine:
             self._clear_queue_on_delete(delta._mem.order.price.raw, delta._mem.order.side)
 
         self._book.apply_delta(delta)
+
+        if self._queue_position and delta_snapshot_or_clear:
+            self._seed_l1_baseline()
 
         self.iterate(delta.ts_init)
 
@@ -4172,6 +4184,9 @@ cdef class OrderMatchingEngine:
 
         self._book.apply_deltas(deltas)
 
+        if self._queue_position and has_snapshot_or_clear:
+            self._seed_l1_baseline()
+
         self.iterate(deltas.ts_init)
 
     cpdef void process_order_book_depth10(self, OrderBookDepth10 depth):
@@ -4231,9 +4246,13 @@ cdef class OrderMatchingEngine:
             self._bid_consumption.clear()
             self._ask_consumption.clear()
 
-        # Reset queue positions on snapshot (stale depth no longer exists)
-        if self._queue_position and (depth._mem.flags & 32):
+        # Depth10 always replaces the full book via apply_depth regardless of flags
+        if self._queue_position:
             self._clear_all_queue_positions()
+            self._prev_bid_price_raw = depth._mem.bids[0].price.raw
+            self._prev_bid_size_raw = depth._mem.bids[0].size.raw
+            self._prev_ask_price_raw = depth._mem.asks[0].price.raw
+            self._prev_ask_size_raw = depth._mem.asks[0].size.raw
 
         self._book.apply_depth(depth)
 
@@ -4282,6 +4301,17 @@ cdef class OrderMatchingEngine:
             )
 
         if self.book_type == BookType.L1_MBP:
+            if self._queue_position:
+                self._decrement_l1_queue_on_quote(
+                    tick._mem.bid_price.raw,
+                    tick._mem.bid_size.raw,
+                    tick._mem.ask_price.raw,
+                    tick._mem.ask_size.raw,
+                )
+                self._prev_bid_price_raw = tick._mem.bid_price.raw
+                self._prev_bid_size_raw = tick._mem.bid_size.raw
+                self._prev_ask_price_raw = tick._mem.ask_price.raw
+                self._prev_ask_size_raw = tick._mem.ask_size.raw
             self._book.update_quote_tick(tick)
 
         self.iterate(tick.ts_init)
@@ -4390,7 +4420,8 @@ cdef class OrderMatchingEngine:
             self._seed_trade_consumption(price_raw, tick._mem.size.raw, tick._mem.ts_event, aggressor_side)
 
         # Buyer trades consume ask-side (SELL orders), seller trades consume bid-side (BUY orders)
-        if self._queue_position:
+        # Skip trade-based decrement for L1: quote tick decreases already capture trade impact
+        if self._queue_position and self.book_type != BookType.L1_MBP:
             self._decrement_queue_on_trade(price_raw, tick._mem.size.raw, aggressor_side)
 
         self.iterate(tick.ts_init, aggressor_side)
@@ -6172,6 +6203,19 @@ cdef class OrderMatchingEngine:
             if at_limit and not self._fill_model.is_limit_filled():
                 return  # Not filled (simulates queue position)
 
+        cdef Quantity queue_allowed = None
+        cdef QuantityRaw tc_before = self._trade_consumption
+        if self._queue_position:
+            queue_allowed = self.determine_trade_fill_qty(order)
+            if queue_allowed is None:
+                self._trade_consumption = tc_before
+                if order.time_in_force == TimeInForce.FOK or order.time_in_force == TimeInForce.IOC:
+                    self.cancel_order(order)
+                return
+
+            # Undo side-effect so determine_limit_fills_with_simulation sees original budget
+            self._trade_consumption = tc_before
+
         cdef PositionId venue_position_id = self._get_position_id(order)
         cdef Position position = None
         if venue_position_id is not None:
@@ -6186,6 +6230,36 @@ cdef class OrderMatchingEngine:
             return  # Order canceled
 
         cdef list[tuple[Price, Quantity]] fills = self.determine_limit_fills_with_simulation(order)
+
+        cdef:
+            QuantityRaw remaining_raw
+            QuantityRaw capped_raw
+            QuantityRaw consumed_raw
+            Price fill_px
+            Quantity fill_qty
+
+        if queue_allowed is not None:
+            capped_fills = []
+            remaining_raw = queue_allowed._mem.raw
+            for fill_px, fill_qty in fills:
+                if remaining_raw == 0:
+                    break
+
+                capped_raw = min(fill_qty._mem.raw, remaining_raw)
+                remaining_raw -= capped_raw
+                capped_fills.append((fill_px, Quantity.from_raw_c(capped_raw, self._size_prec)))
+
+            fills = capped_fills
+            consumed_raw = 0
+
+            for _, fill_qty in fills:
+                consumed_raw += fill_qty._mem.raw
+
+            if order.client_order_id in self._queue_excess:
+                excess = self._queue_excess[order.client_order_id]
+                self._queue_excess[order.client_order_id] = max(0, excess - consumed_raw)
+
+            self._trade_consumption = tc_before + consumed_raw
 
         # Skip apply_fills when consumed-liquidity adjustment produces no fills.
         # This occurs for partially filled orders when an unrelated delta arrives
@@ -6282,7 +6356,7 @@ cdef class OrderMatchingEngine:
             trade_size_raw = self._last_trade_size._mem.raw
 
             # Calculate available quantity from trade (minus any consumption)
-            if self._liquidity_consumption:
+            if self._liquidity_consumption or self._queue_position:
                 available_raw = trade_size_raw - self._trade_consumption
             else:
                 available_raw = trade_size_raw
@@ -6526,6 +6600,97 @@ cdef class OrderMatchingEngine:
 
                     if new_ahead == 0:
                         self._queue_excess[client_order_id] = trade_size_raw - ahead_raw
+
+    cdef void _seed_l1_baseline(self):
+        cdef Price bid_price = self._book.best_bid_price()
+        cdef Price ask_price = self._book.best_ask_price()
+        cdef Quantity bid_size = self._book.best_bid_size()
+        cdef Quantity ask_size = self._book.best_ask_size()
+
+        self._prev_bid_price_raw = bid_price._mem.raw if bid_price is not None else 0
+        self._prev_ask_price_raw = ask_price._mem.raw if ask_price is not None else 0
+        self._prev_bid_size_raw = bid_size._mem.raw if bid_size is not None else 0
+        self._prev_ask_size_raw = ask_size._mem.raw if ask_size is not None else 0
+
+    cdef void _decrement_l1_queue_on_quote(self, PriceRaw bid_price_raw, QuantityRaw bid_size_raw, PriceRaw ask_price_raw, QuantityRaw ask_size_raw):
+        # BID side (BUY limit orders)
+        if self._prev_bid_size_raw > 0:
+            if bid_price_raw == self._prev_bid_price_raw:
+                if bid_size_raw < self._prev_bid_size_raw:
+                    self._apply_l1_queue_decrement(
+                        self._prev_bid_price_raw,
+                        self._prev_bid_size_raw - bid_size_raw,
+                        OrderSide.BUY,
+                    )
+            elif bid_price_raw < self._prev_bid_price_raw:
+                self._adjust_l1_queue_on_price_move(bid_price_raw, bid_size_raw, OrderSide.BUY)
+            # Bid rose: preserve all BUY queues (level not consumed)
+
+        # ASK side (SELL limit orders)
+        if self._prev_ask_size_raw > 0:
+            if ask_price_raw == self._prev_ask_price_raw:
+                if ask_size_raw < self._prev_ask_size_raw:
+                    self._apply_l1_queue_decrement(
+                        self._prev_ask_price_raw,
+                        self._prev_ask_size_raw - ask_size_raw,
+                        OrderSide.SELL,
+                    )
+            elif ask_price_raw > self._prev_ask_price_raw:
+                self._adjust_l1_queue_on_price_move(ask_price_raw, ask_size_raw, OrderSide.SELL)
+            # Ask dropped: preserve all SELL queues (level not consumed)
+
+    cdef void _apply_l1_queue_decrement(self, PriceRaw price_raw, QuantityRaw decrease_raw, OrderSide order_side):
+        cdef:
+            ClientOrderId client_order_id
+            PriceRaw order_price_raw
+            QuantityRaw ahead_raw
+            QuantityRaw new_ahead
+            Order order
+        for client_order_id in list(self._queue_ahead.keys()):
+            order_price_raw, ahead_raw = self._queue_ahead[client_order_id]
+            if order_price_raw != price_raw or ahead_raw == 0:
+                continue
+
+            order = self._core.get_order(client_order_id)
+            if order is None or order.is_closed_c():
+                self._queue_ahead.pop(client_order_id, None)
+                continue
+
+            if order.side != order_side:
+                continue
+
+            new_ahead = ahead_raw - decrease_raw if ahead_raw > decrease_raw else 0
+            self._queue_ahead[client_order_id] = (order_price_raw, new_ahead)
+
+    cdef void _adjust_l1_queue_on_price_move(self, PriceRaw new_price_raw, QuantityRaw new_size_raw, OrderSide order_side):
+        cdef:
+            ClientOrderId client_order_id
+            PriceRaw order_price_raw
+            QuantityRaw ahead_raw
+            bint crossed
+            Order order
+        for client_order_id in list(self._queue_ahead.keys()):
+            order_price_raw, ahead_raw = self._queue_ahead[client_order_id]
+
+            order = self._core.get_order(client_order_id)
+            if order is None or order.is_closed_c():
+                self._queue_ahead.pop(client_order_id, None)
+                continue
+
+            if order.side != order_side:
+                continue
+
+            # BUY orders crossed when bid drops below order price
+            # SELL orders crossed when ask rises above order price
+            if order_side == OrderSide.BUY:
+                crossed = order_price_raw > new_price_raw
+            else:
+                crossed = order_price_raw < new_price_raw
+
+            if crossed:
+                self._queue_ahead[client_order_id] = (order_price_raw, 0)
+            elif order_price_raw == new_price_raw and ahead_raw > new_size_raw:
+                self._queue_ahead[client_order_id] = (order_price_raw, new_size_raw)
 
     cpdef void apply_fills(
         self,
