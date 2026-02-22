@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Example: EMA crossover strategy backtest.
+//! Example: EMA crossover strategy backtest using [`BacktestEngine`] directly.
 //!
 //! Demonstrates a dual-EMA crossover strategy running on synthetic quote data
 //! for the AUD/USD FX pair on a simulated venue.
 //!
-//! Run with: `cargo run -p nautilus-backtest --features examples --example ema-cross`
+//! Run with: `cargo run -p nautilus-backtest --features examples --example engine-ema-cross`
 
 use ahash::AHashMap;
 use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};

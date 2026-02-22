@@ -26,7 +26,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::{
-    data::BarSpecification,
+    data::{BarSpecification, BarType},
     enums::{AccountType, BookType, OmsType},
     identifiers::{ClientId, InstrumentId, TraderId},
     types::Currency,
@@ -35,6 +35,19 @@ use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
 use ustr::Ustr;
+
+/// Represents a type of market data for catalog queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NautilusDataType {
+    QuoteTick,
+    TradeTick,
+    Bar,
+    OrderBookDelta,
+    OrderBookDepth10,
+    MarkPriceUpdate,
+    IndexPriceUpdate,
+    InstrumentClose,
+}
 
 /// Configuration for ``BacktestEngine`` instances.
 #[derive(Debug, Clone)]
@@ -243,7 +256,6 @@ impl Default for BacktestEngineConfig {
 
 /// Represents a venue configuration for one specific backtest engine.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct BacktestVenueConfig {
     /// The name of the venue.
     name: Ustr,
@@ -283,12 +295,18 @@ pub struct BacktestVenueConfig {
     bar_adaptive_high_low_ordering: bool,
     /// If trades should be processed by the matching engine(s) (and move the market).
     trade_execution: bool,
+    /// If `OrderAccepted` events should be generated for market orders.
+    use_market_order_acks: bool,
+    /// If order book liquidity consumption should be tracked per level.
+    liquidity_consumption: bool,
+    /// If negative cash balances are allowed (borrowing).
+    allow_cash_borrowing: bool,
     /// The account base currency for the exchange. Use `None` for multi-currency accounts.
     base_currency: Option<Currency>,
     /// The account default leverage (for margin accounts).
     default_leverage: Option<f64>,
     /// The instrument specific leverage configuration (for margin accounts).
-    leverages: Option<AHashMap<Currency, f64>>,
+    leverages: Option<AHashMap<InstrumentId, f64>>,
     /// Defines an exchange-calculated price boundary to prevent a market order from being
     /// filled at an extremely aggressive price.
     price_protection_points: u32,
@@ -313,10 +331,13 @@ impl BacktestVenueConfig {
         bar_execution: Option<bool>,
         bar_adaptive_high_low_ordering: Option<bool>,
         trade_execution: Option<bool>,
+        use_market_order_acks: Option<bool>,
+        liquidity_consumption: Option<bool>,
+        allow_cash_borrowing: Option<bool>,
         starting_balances: Vec<String>,
         base_currency: Option<Currency>,
         default_leverage: Option<f64>,
-        leverages: Option<AHashMap<Currency, f64>>,
+        leverages: Option<AHashMap<InstrumentId, f64>>,
         price_protection_points: Option<u32>,
     ) -> Self {
         Self {
@@ -335,6 +356,9 @@ impl BacktestVenueConfig {
             bar_execution: bar_execution.unwrap_or(true),
             bar_adaptive_high_low_ordering: bar_adaptive_high_low_ordering.unwrap_or(false),
             trade_execution: trade_execution.unwrap_or(true),
+            use_market_order_acks: use_market_order_acks.unwrap_or(false),
+            liquidity_consumption: liquidity_consumption.unwrap_or(false),
+            allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
             starting_balances,
             base_currency,
             default_leverage,
@@ -342,18 +366,138 @@ impl BacktestVenueConfig {
             price_protection_points: price_protection_points.unwrap_or(0),
         }
     }
+
+    #[must_use]
+    pub fn name(&self) -> Ustr {
+        self.name
+    }
+
+    #[must_use]
+    pub fn oms_type(&self) -> OmsType {
+        self.oms_type
+    }
+
+    #[must_use]
+    pub fn account_type(&self) -> AccountType {
+        self.account_type
+    }
+
+    #[must_use]
+    pub fn book_type(&self) -> BookType {
+        self.book_type
+    }
+
+    #[must_use]
+    pub fn starting_balances(&self) -> &[String] {
+        &self.starting_balances
+    }
+
+    #[must_use]
+    pub fn routing(&self) -> bool {
+        self.routing
+    }
+
+    #[must_use]
+    pub fn frozen_account(&self) -> bool {
+        self.frozen_account
+    }
+
+    #[must_use]
+    pub fn reject_stop_orders(&self) -> bool {
+        self.reject_stop_orders
+    }
+
+    #[must_use]
+    pub fn support_gtd_orders(&self) -> bool {
+        self.support_gtd_orders
+    }
+
+    #[must_use]
+    pub fn support_contingent_orders(&self) -> bool {
+        self.support_contingent_orders
+    }
+
+    #[must_use]
+    pub fn use_position_ids(&self) -> bool {
+        self.use_position_ids
+    }
+
+    #[must_use]
+    pub fn use_random_ids(&self) -> bool {
+        self.use_random_ids
+    }
+
+    #[must_use]
+    pub fn use_reduce_only(&self) -> bool {
+        self.use_reduce_only
+    }
+
+    #[must_use]
+    pub fn bar_execution(&self) -> bool {
+        self.bar_execution
+    }
+
+    #[must_use]
+    pub fn bar_adaptive_high_low_ordering(&self) -> bool {
+        self.bar_adaptive_high_low_ordering
+    }
+
+    #[must_use]
+    pub fn trade_execution(&self) -> bool {
+        self.trade_execution
+    }
+
+    #[must_use]
+    pub fn use_market_order_acks(&self) -> bool {
+        self.use_market_order_acks
+    }
+
+    #[must_use]
+    pub fn liquidity_consumption(&self) -> bool {
+        self.liquidity_consumption
+    }
+
+    #[must_use]
+    pub fn allow_cash_borrowing(&self) -> bool {
+        self.allow_cash_borrowing
+    }
+
+    #[must_use]
+    pub fn base_currency(&self) -> Option<Currency> {
+        self.base_currency
+    }
+
+    #[must_use]
+    pub fn default_leverage(&self) -> Option<f64> {
+        self.default_leverage
+    }
+
+    #[must_use]
+    pub fn leverages(&self) -> Option<&AHashMap<InstrumentId, f64>> {
+        self.leverages.as_ref()
+    }
+
+    #[must_use]
+    pub fn price_protection_points(&self) -> u32 {
+        self.price_protection_points
+    }
 }
 
 /// Represents the data configuration for one specific backtest run.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct BacktestDataConfig {
+    /// The type of data to query from the catalog.
+    data_type: NautilusDataType,
     /// The path to the data catalog.
     catalog_path: String,
     /// The `fsspec` filesystem protocol for the catalog.
     catalog_fs_protocol: Option<String>,
-    /// The instrument ID for the data configuration.
+    /// The filesystem storage options for the catalog (e.g. cloud auth credentials).
+    catalog_fs_storage_options: Option<AHashMap<String, String>>,
+    /// The instrument ID for the data configuration (single).
     instrument_id: Option<InstrumentId>,
+    /// Multiple instrument IDs for the data configuration.
+    instrument_ids: Option<Vec<InstrumentId>>,
     /// The start time for the data configuration.
     start_time: Option<UnixNanos>,
     /// The end time for the data configuration.
@@ -363,44 +507,198 @@ pub struct BacktestDataConfig {
     /// The client ID for the data configuration.
     client_id: Option<ClientId>,
     /// The metadata for the data catalog query.
+    #[allow(dead_code)]
     metadata: Option<AHashMap<String, String>>,
     /// The bar specification for the data catalog query.
     bar_spec: Option<BarSpecification>,
+    /// Explicit bar type strings for the data catalog query (e.g. "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    bar_types: Option<Vec<String>>,
+    /// If directory-based file registration should be used for more efficient loading.
+    optimize_file_loading: bool,
 }
 
 impl BacktestDataConfig {
     #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub const fn new(
+    pub fn new(
+        data_type: NautilusDataType,
         catalog_path: String,
         catalog_fs_protocol: Option<String>,
+        catalog_fs_storage_options: Option<AHashMap<String, String>>,
         instrument_id: Option<InstrumentId>,
+        instrument_ids: Option<Vec<InstrumentId>>,
         start_time: Option<UnixNanos>,
         end_time: Option<UnixNanos>,
         filter_expr: Option<String>,
         client_id: Option<ClientId>,
         metadata: Option<AHashMap<String, String>>,
         bar_spec: Option<BarSpecification>,
+        bar_types: Option<Vec<String>>,
+        optimize_file_loading: Option<bool>,
     ) -> Self {
         Self {
+            data_type,
             catalog_path,
             catalog_fs_protocol,
+            catalog_fs_storage_options,
             instrument_id,
+            instrument_ids,
             start_time,
             end_time,
             filter_expr,
             client_id,
             metadata,
             bar_spec,
+            bar_types,
+            optimize_file_loading: optimize_file_loading.unwrap_or(false),
         }
+    }
+
+    #[must_use]
+    pub const fn data_type(&self) -> NautilusDataType {
+        self.data_type
+    }
+
+    #[must_use]
+    pub fn catalog_path(&self) -> &str {
+        &self.catalog_path
+    }
+
+    #[must_use]
+    pub fn catalog_fs_protocol(&self) -> Option<&str> {
+        self.catalog_fs_protocol.as_deref()
+    }
+
+    #[must_use]
+    pub fn catalog_fs_storage_options(&self) -> Option<&AHashMap<String, String>> {
+        self.catalog_fs_storage_options.as_ref()
+    }
+
+    #[must_use]
+    pub fn instrument_id(&self) -> Option<InstrumentId> {
+        self.instrument_id
+    }
+
+    #[must_use]
+    pub fn instrument_ids(&self) -> Option<&[InstrumentId]> {
+        self.instrument_ids.as_deref()
+    }
+
+    #[must_use]
+    pub fn start_time(&self) -> Option<UnixNanos> {
+        self.start_time
+    }
+
+    #[must_use]
+    pub fn end_time(&self) -> Option<UnixNanos> {
+        self.end_time
+    }
+
+    #[must_use]
+    pub fn filter_expr(&self) -> Option<&str> {
+        self.filter_expr.as_deref()
+    }
+
+    #[must_use]
+    pub fn client_id(&self) -> Option<ClientId> {
+        self.client_id
+    }
+
+    #[must_use]
+    pub fn bar_spec(&self) -> Option<BarSpecification> {
+        self.bar_spec
+    }
+
+    #[must_use]
+    pub fn bar_types(&self) -> Option<&[String]> {
+        self.bar_types.as_deref()
+    }
+
+    #[must_use]
+    pub fn optimize_file_loading(&self) -> bool {
+        self.optimize_file_loading
+    }
+
+    /// Constructs identifier strings for catalog queries.
+    ///
+    /// Follows the same logic as Python's `BacktestDataConfig.query`:
+    /// - For bars: prefer `bar_types`, else construct from instrument(s) + bar_spec + "-EXTERNAL"
+    /// - For other types: use `instrument_id` or `instrument_ids`
+    #[must_use]
+    pub fn query_identifiers(&self) -> Option<Vec<String>> {
+        if self.data_type == NautilusDataType::Bar {
+            if let Some(bar_types) = &self.bar_types
+                && !bar_types.is_empty()
+            {
+                return Some(bar_types.clone());
+            }
+
+            // Construct from instrument_id + bar_spec
+            if let Some(bar_spec) = &self.bar_spec {
+                if let Some(id) = self.instrument_id {
+                    return Some(vec![format!("{id}-{bar_spec}-EXTERNAL")]);
+                }
+                if let Some(ids) = &self.instrument_ids {
+                    let bar_types: Vec<String> = ids
+                        .iter()
+                        .map(|id| format!("{id}-{bar_spec}-EXTERNAL"))
+                        .collect();
+                    if !bar_types.is_empty() {
+                        return Some(bar_types);
+                    }
+                }
+            }
+        }
+
+        // Fallback: instrument_id or instrument_ids
+        if let Some(id) = self.instrument_id {
+            return Some(vec![id.to_string()]);
+        }
+        if let Some(ids) = &self.instrument_ids {
+            let strs: Vec<String> = ids.iter().map(ToString::to_string).collect();
+            if !strs.is_empty() {
+                return Some(strs);
+            }
+        }
+
+        None
+    }
+
+    /// Returns all instrument IDs referenced by this config.
+    ///
+    /// For bar_types, extracts the instrument ID from each bar type string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any bar type string cannot be parsed.
+    pub fn get_instrument_ids(&self) -> anyhow::Result<Vec<InstrumentId>> {
+        if let Some(id) = self.instrument_id {
+            return Ok(vec![id]);
+        }
+        if let Some(ids) = &self.instrument_ids {
+            return Ok(ids.clone());
+        }
+        if let Some(bar_types) = &self.bar_types {
+            let ids = bar_types
+                .iter()
+                .map(|bt| {
+                    bt.parse::<BarType>()
+                        .map(|b| b.instrument_id())
+                        .map_err(|_| anyhow::anyhow!("Invalid bar type string: '{bt}'"))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            return Ok(ids);
+        }
+        Ok(Vec::new())
     }
 }
 
 /// Represents the configuration for one specific backtest run.
 /// This includes a backtest engine with its actors and strategies, with the external inputs of venues and data.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct BacktestRunConfig {
+    /// The unique identifier for this run configuration.
+    id: String,
     /// The venue configurations for the backtest run.
     venues: Vec<BacktestVenueConfig>,
     /// The data configurations for the backtest run.
@@ -423,8 +721,10 @@ pub struct BacktestRunConfig {
 }
 
 impl BacktestRunConfig {
+    #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
+        id: Option<String>,
         venues: Vec<BacktestVenueConfig>,
         data: Vec<BacktestDataConfig>,
         engine: BacktestEngineConfig,
@@ -434,6 +734,7 @@ impl BacktestRunConfig {
         end: Option<UnixNanos>,
     ) -> Self {
         Self {
+            id: id.unwrap_or_else(|| UUID4::new().to_string()),
             venues,
             data,
             engine,
@@ -442,5 +743,45 @@ impl BacktestRunConfig {
             start,
             end,
         }
+    }
+
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    #[must_use]
+    pub fn venues(&self) -> &[BacktestVenueConfig] {
+        &self.venues
+    }
+
+    #[must_use]
+    pub fn data(&self) -> &[BacktestDataConfig] {
+        &self.data
+    }
+
+    #[must_use]
+    pub fn engine(&self) -> &BacktestEngineConfig {
+        &self.engine
+    }
+
+    #[must_use]
+    pub fn chunk_size(&self) -> Option<usize> {
+        self.chunk_size
+    }
+
+    #[must_use]
+    pub fn dispose_on_completion(&self) -> bool {
+        self.dispose_on_completion
+    }
+
+    #[must_use]
+    pub fn start(&self) -> Option<UnixNanos> {
+        self.start
+    }
+
+    #[must_use]
+    pub fn end(&self) -> Option<UnixNanos> {
+        self.end
     }
 }

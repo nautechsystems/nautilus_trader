@@ -15,6 +15,7 @@ Released on TBD (UTC).
 ### Fixes
 
 ### Internal Improvements
+- Implemented `BacktestNode` with catalog streaming in Rust
 - Standardized use of atomic clock across adapters
 
 ### Documentation Updates

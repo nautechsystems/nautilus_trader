@@ -88,9 +88,16 @@ tempfile = { workspace = true }
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
 
-# Run with `cargo run --example ema-cross --package nautilus-backtest --features nautilus-backtest/examples`.
+# Run with `cargo run -p nautilus-backtest --features examples --example engine-ema-cross`
 [[example]]
-name = "ema-cross"
-path = "examples/ema_cross.rs"
+name = "engine-ema-cross"
+path = "examples/engine_ema_cross.rs"
 required-features = ["examples"]
+doc = false
+
+# Run with `cargo run -p nautilus-backtest --features examples,streaming --example node-ema-cross`
+[[example]]
+name = "node-ema-cross"
+path = "examples/node_ema_cross.rs"
+required-features = ["examples", "streaming"]
 doc = false
