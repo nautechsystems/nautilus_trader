@@ -340,7 +340,7 @@ repos:
         files: ^python/uv\.lock$
 
   - repo: https://github.com/kynan/nbstripout
-    rev: 0.9.0
+    rev: 0.9.1
     hooks:
       - id: nbstripout
 

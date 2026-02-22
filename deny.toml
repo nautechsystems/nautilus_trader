@@ -149,6 +149,10 @@ skip = [
   { crate = "derive_more" },
   { crate = "derive_more-impl" },
 
+  # Enum derive macros - strum 0.27 (alloy, hypersync) vs 0.28 (nautilus)
+  { crate = "strum" },
+  { crate = "strum_macros" },
+
   # Case conversion - version fragmentation via derive_more
   { crate = "convert_case" },
 
