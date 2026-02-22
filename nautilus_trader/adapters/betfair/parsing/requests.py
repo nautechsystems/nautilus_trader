@@ -55,9 +55,11 @@ from nautilus_trader.adapters.betfair.parsing.common import min_fill_size
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime import nanos_to_millis
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.enums import AccountType
@@ -334,6 +336,58 @@ def order_cancel_all_to_betfair(instrument: BettingInstrument) -> dict[str, str]
     }
 
 
+def order_list_to_place_order_params(
+    command: SubmitOrderList,
+    instrument: BettingInstrument,
+    market_version: MarketVersion | None = None,
+) -> PlaceOrders:
+    """
+    Convert a SubmitOrderList command into a batch PlaceOrders request.
+    """
+    instructions = []
+    for order in command.order_list.orders:
+        submit = SubmitOrder(
+            trader_id=command.trader_id,
+            strategy_id=command.strategy_id,
+            order=order,
+            command_id=command.id,
+            ts_init=command.ts_init,
+            position_id=command.position_id,
+        )
+        instructions.append(nautilus_order_to_place_instructions(submit, instrument))
+
+    return PlaceOrders.with_params(
+        market_id=instrument.market_id,
+        customer_ref=create_customer_ref(command),
+        customer_strategy_ref=create_customer_strategy_ref(
+            trader_id=command.trader_id.value,
+            strategy_id=command.strategy_id.value,
+        ),
+        instructions=instructions,
+        market_version=market_version,
+    )
+
+
+def batch_cancel_to_cancel_order_params(
+    command: BatchCancelOrders,
+    instrument: BettingInstrument,
+    cancels: list[CancelOrder] | None = None,
+) -> CancelOrders:
+    """
+    Convert a BatchCancelOrders command into a batch CancelOrders request.
+    """
+    if cancels is None:
+        cancels = command.cancels
+    instructions = [
+        CancelInstruction(bet_id=BetId(cancel.venue_order_id.value)) for cancel in cancels
+    ]
+    return CancelOrders.with_params(
+        market_id=instrument.market_id,
+        instructions=instructions,
+        customer_ref=create_customer_ref(command),
+    )
+
+
 def betfair_account_to_account_state(
     account_detail: AccountDetailsResponse,
     account_funds: AccountFundsResponse,
@@ -519,7 +573,9 @@ def determine_order_status(order: CurrentOrderSummary) -> OrderStatus:
     raise ValueError(f"Unknown order status {order.status=}")
 
 
-def create_customer_ref(command: SubmitOrder | ModifyOrder | CancelOrder) -> str:
+def create_customer_ref(
+    command: SubmitOrder | SubmitOrderList | ModifyOrder | CancelOrder | BatchCancelOrders,
+) -> str:
     """
     Create a customer reference for the betfair API from order command.
 
@@ -534,7 +590,7 @@ def create_customer_ref(command: SubmitOrder | ModifyOrder | CancelOrder) -> str
 
     Parameters
     ----------
-    command: SubmitOrder | ModifyOrder | CancelOrder
+    command: SubmitOrder | SubmitOrderList | ModifyOrder | CancelOrder | BatchCancelOrders
         The order command
 
     Returns

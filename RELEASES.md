@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added Betfair batch submit and cancel order support
 - Added BitMEX dead man's switch (cancelAllAfter) support
 
 ### Breaking Changes
