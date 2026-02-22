@@ -201,6 +201,13 @@ pub struct BitmexExecClientConfig {
     pub submitter_proxy_urls: Option<Vec<String>>,
     /// Optional list of proxy URLs for cancel broadcaster pool (path diversity).
     pub canceller_proxy_urls: Option<Vec<String>>,
+    /// Optional dead man's switch timeout in seconds.
+    ///
+    /// When set, a background task periodically calls the BitMEX `cancelAllAfter` endpoint
+    /// to keep a server-side timer alive. If the client loses connectivity the timer expires
+    /// and BitMEX cancels all open orders. Calling with `timeout=0` disarms the switch.
+    /// The refresh interval is derived as `timeout / 4` (minimum 1 second).
+    pub dead_mans_switch_timeout_secs: Option<u64>,
 }
 
 impl Default for BitmexExecClientConfig {
@@ -227,6 +234,7 @@ impl Default for BitmexExecClientConfig {
             canceller_pool_size: None,
             submitter_proxy_urls: None,
             canceller_proxy_urls: None,
+            dead_mans_switch_timeout_secs: None,
         }
     }
 }

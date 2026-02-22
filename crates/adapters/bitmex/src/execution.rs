@@ -15,7 +15,15 @@
 
 //! Live execution client implementation for the BitMEX adapter.
 
-use std::{future::Future, str::FromStr, sync::Mutex};
+use std::{
+    future::Future,
+    str::FromStr,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -73,6 +81,8 @@ pub struct BitmexExecutionClient {
     _canceller: CancelBroadcaster,
     ws_stream_handle: Option<JoinHandle<()>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    dms_task_handle: Option<JoinHandle<()>>,
+    dms_running: Arc<AtomicBool>,
 }
 
 impl BitmexExecutionClient {
@@ -192,6 +202,8 @@ impl BitmexExecutionClient {
             _canceller,
             ws_stream_handle: None,
             pending_tasks: Mutex::new(Vec::new()),
+            dms_task_handle: None,
+            dms_running: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -222,6 +234,53 @@ impl BitmexExecutionClient {
             .expect("pending task lock poisoned");
         for handle in guard.drain(..) {
             handle.abort();
+        }
+    }
+
+    fn start_dead_mans_switch(&mut self) {
+        let Some(timeout_secs) = self.config.dead_mans_switch_timeout_secs else {
+            return;
+        };
+
+        let timeout_ms = timeout_secs * 1000;
+        let interval_secs = (timeout_secs / 4).max(1);
+
+        log::info!(
+            "Starting dead man's switch: timeout={timeout_secs}s, refresh_interval={interval_secs}s",
+        );
+
+        self.dms_running.store(true, Ordering::SeqCst);
+        let running = self.dms_running.clone();
+        let http_client = self.http_client.clone();
+
+        let handle = get_runtime().spawn(async move {
+            while running.load(Ordering::SeqCst) {
+                if let Err(e) = http_client.cancel_all_after(timeout_ms).await {
+                    log::warn!("Dead man's switch heartbeat failed: {e}");
+                }
+                tokio::time::sleep(Duration::from_secs(interval_secs)).await;
+            }
+        });
+
+        self.dms_task_handle = Some(handle);
+    }
+
+    async fn stop_dead_mans_switch(&mut self) {
+        if self.config.dead_mans_switch_timeout_secs.is_none() {
+            return;
+        }
+
+        self.dms_running.store(false, Ordering::SeqCst);
+
+        // Abort and await loop shutdown so disconnect does not block on sleep/HTTP timeout.
+        if let Some(handle) = self.dms_task_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+
+        log::info!("Disarming dead man's switch");
+        if let Err(e) = self.http_client.cancel_all_after(0).await {
+            log::warn!("Failed to disarm dead man's switch: {e}");
         }
     }
 
@@ -487,6 +546,10 @@ impl ExecutionClient for BitmexExecutionClient {
         if let Some(handle) = self.ws_stream_handle.take() {
             handle.abort();
         }
+        if let Some(handle) = self.dms_task_handle.take() {
+            handle.abort();
+        }
+        self.dms_running.store(false, Ordering::SeqCst);
         self.abort_pending_tasks();
         log::info!("BitMEX execution client {} stopped", self.core.client_id);
         Ok(())
@@ -521,6 +584,7 @@ impl ExecutionClient for BitmexExecutionClient {
         self.refresh_account_state().await?;
 
         self.core.set_connected();
+        self.start_dead_mans_switch();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -529,6 +593,9 @@ impl ExecutionClient for BitmexExecutionClient {
         if self.core.is_disconnected() {
             return Ok(());
         }
+
+        // Disarm DMS before cancelling requests (needs working HTTP)
+        self.stop_dead_mans_switch().await;
 
         self.http_client.cancel_all_requests();
         self._submitter.stop().await;

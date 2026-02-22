@@ -70,8 +70,8 @@ use super::{
     query::{
         DeleteAllOrdersParams, DeleteOrderParams, GetExecutionParams, GetExecutionParamsBuilder,
         GetOrderParams, GetPositionParams, GetPositionParamsBuilder, GetTradeBucketedParams,
-        GetTradeBucketedParamsBuilder, GetTradeParams, GetTradeParamsBuilder, PostOrderParams,
-        PostPositionLeverageParams, PutOrderParams,
+        GetTradeBucketedParamsBuilder, GetTradeParams, GetTradeParamsBuilder,
+        PostCancelAllAfterParams, PostOrderParams, PostPositionLeverageParams, PutOrderParams,
     },
 };
 use crate::{
@@ -702,6 +702,36 @@ impl BitmexRawHttpClient {
             .await
     }
 
+    /// Set a dead man's switch (cancel all orders after timeout).
+    ///
+    /// Calling with `timeout=0` disarms the switch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, or the API returns an error.
+    ///
+    /// # References
+    ///
+    /// <https://www.bitmex.com/api/explorer/#!/Order/Order_cancelAllAfter>
+    pub async fn cancel_all_after(
+        &self,
+        params: PostCancelAllAfterParams,
+    ) -> Result<Value, BitmexHttpError> {
+        let body = serde_urlencoded::to_string(&params)
+            .map_err(|e| {
+                BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
+            })?
+            .into_bytes();
+        self.send_request::<_, ()>(
+            Method::POST,
+            "/order/cancelAllAfter",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
+
     /// Get user executions.
     ///
     /// # Errors
@@ -981,6 +1011,21 @@ impl BitmexHttpClient {
     /// Returns an error if the HTTP request fails or if the response cannot be parsed.
     pub async fn get_server_time(&self) -> Result<u64, BitmexHttpError> {
         self.inner.get_server_time().await
+    }
+
+    /// Sets the dead man's switch (cancel all orders after timeout).
+    ///
+    /// Calling with `timeout_ms=0` disarms the switch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails.
+    pub async fn cancel_all_after(&self, timeout_ms: u64) -> anyhow::Result<()> {
+        let params = PostCancelAllAfterParams {
+            timeout: timeout_ms,
+        };
+        self.inner.cancel_all_after(params).await?;
+        Ok(())
     }
 
     /// Generates a timestamp for initialization.

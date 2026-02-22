@@ -29,7 +29,8 @@ use nautilus_bitmex::{
     http::{
         client::{BitmexHttpClient, BitmexRawHttpClient},
         query::{
-            DeleteOrderParams, GetOrderParamsBuilder, GetPositionParamsBuilder, PostOrderParams,
+            DeleteOrderParams, GetOrderParamsBuilder, GetPositionParamsBuilder,
+            PostCancelAllAfterParams, PostOrderParams,
         },
     },
 };
@@ -238,6 +239,30 @@ async fn handle_delete_order(headers: axum::http::HeaderMap, body: String) -> Re
         .into_response()
 }
 
+async fn handle_cancel_all_after(headers: axum::http::HeaderMap, body: String) -> Response {
+    if !headers.contains_key("api-key") || !headers.contains_key("api-signature") {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": { "message": "Invalid API Key.", "name": "HTTPError" }
+            })),
+        )
+            .into_response();
+    }
+
+    let params: HashMap<String, String> = serde_urlencoded::from_str(&body).unwrap_or_default();
+    let timeout = params
+        .get("timeout")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    Json(json!({
+        "now": "2025-01-05T17:50:00.000Z",
+        "cancelTime": if timeout > 0 { "2025-01-05T17:51:00.000Z" } else { "" }
+    }))
+    .into_response()
+}
+
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/instrument/active", get(handle_get_instruments))
@@ -247,6 +272,10 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/order", get(handle_get_orders))
         .route("/order", axum::routing::post(handle_post_order))
         .route("/order", axum::routing::delete(handle_delete_order))
+        .route(
+            "/order/cancelAllAfter",
+            axum::routing::post(handle_cancel_all_after),
+        )
         .with_state(state)
 }
 
@@ -963,4 +992,85 @@ async fn test_submit_order_pegged_rejects_offset_without_type() {
         error_str.contains("peg_price_type"),
         "Expected peg_price_type error, was: {error_str}"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_after() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BitmexRawHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        base_url,
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let params = PostCancelAllAfterParams { timeout: 60_000 };
+    let result = client.cancel_all_after(params).await.unwrap();
+    assert_eq!(result["cancelTime"], "2025-01-05T17:51:00.000Z");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_after_disarm() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BitmexRawHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        base_url,
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let params = PostCancelAllAfterParams { timeout: 0 };
+    let result = client.cancel_all_after(params).await.unwrap();
+    assert_eq!(result["cancelTime"], "");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_after_high_level() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BitmexHttpClient::new(
+        Some(base_url),
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        false,
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    // Should succeed without error
+    client.cancel_all_after(60_000).await.unwrap();
+
+    // Disarm should also succeed
+    client.cancel_all_after(0).await.unwrap();
 }

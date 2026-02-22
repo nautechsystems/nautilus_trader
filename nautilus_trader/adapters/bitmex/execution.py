@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import contextlib
 from typing import Any
 
 from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
@@ -202,7 +203,55 @@ class BitmexExecutionClient(LiveExecutionClient):
             testnet=config.testnet,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
+        self._dms_task: asyncio.Task | None = None
         self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)
+
+    def _start_dead_mans_switch(self) -> None:
+        timeout_secs = self._config.dead_mans_switch_timeout_secs
+        if timeout_secs is None:
+            return
+
+        timeout_ms = timeout_secs * 1000
+        interval_secs = max(timeout_secs // 4, 1)
+
+        self._log.info(
+            f"Starting dead man's switch: timeout={timeout_secs}s, "
+            f"refresh_interval={interval_secs}s",
+            LogColor.BLUE,
+        )
+
+        self._dms_task = self.create_task(
+            self._dms_loop(timeout_ms, interval_secs),
+            log_msg="dead_mans_switch",
+        )
+
+    async def _dms_loop(self, timeout_ms: int, interval_secs: int) -> None:
+        try:
+            while True:
+                try:
+                    await self._http_client.cancel_all_after(timeout_ms)  # type: ignore[attr-defined]
+                except Exception as e:
+                    self._log.warning(f"Dead man's switch heartbeat failed: {e}")
+                await asyncio.sleep(interval_secs)
+        except asyncio.CancelledError:
+            pass
+
+    async def _stop_dead_mans_switch(self) -> None:
+        if self._config.dead_mans_switch_timeout_secs is None:
+            return
+
+        if self._dms_task is not None:
+            self._dms_task.cancel()
+            # Await cancellation so any in-flight heartbeat completes before disarm
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._dms_task
+            self._dms_task = None
+
+        self._log.info("Disarming dead man's switch")
+        try:
+            await self._http_client.cancel_all_after(0)  # type: ignore[attr-defined]
+        except Exception as e:
+            self._log.warning(f"Failed to disarm dead man's switch: {e}")
 
     def _log_runtime_error(self, message: str) -> None:
         self._log.error(message, LogColor.RED)
@@ -273,6 +322,8 @@ class BitmexExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.error(f"Failed to subscribe to authenticated channels: {e}")
 
+        self._start_dead_mans_switch()
+
     async def _update_account_state(self) -> None:
         # Update account ID with actual account number from BitMEX
         account_number = await self._http_client.get_account_number()
@@ -300,6 +351,9 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
 
     async def _disconnect(self) -> None:
+        # Disarm DMS before stopping broadcasters (needs working HTTP)
+        await self._stop_dead_mans_switch()
+
         await self._submitter.stop()
         self._log.info("Stopped submit broadcaster", LogColor.BLUE)
 

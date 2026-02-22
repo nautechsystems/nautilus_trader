@@ -668,6 +668,24 @@ impl BitmexHttpClient {
         })
     }
 
+    #[pyo3(name = "cancel_all_after")]
+    fn py_cancel_all_after<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_ms: u64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .cancel_all_after(timeout_ms)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Ok(Python::attach(|py| py.None()))
+        })
+    }
+
     #[pyo3(name = "get_server_time")]
     fn py_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

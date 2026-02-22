@@ -158,6 +158,9 @@ def mock_http_client():
     )
     mock.request_account_state = AsyncMock(return_value=mock_account_state)
 
+    # Mock dead man's switch
+    mock.cancel_all_after = AsyncMock()
+
     # Mock order submission
     mock.submit_order = AsyncMock()
 
@@ -348,6 +351,61 @@ def exec_client(
     )
 
     # Store the mocked clients for test access
+    client._mock_http_client = mock_http_client
+    client._mock_ws_client = mock_ws_client
+    client._mock_submitter = mock_submitter
+    client._mock_canceller = mock_canceller
+
+    return client
+
+
+@pytest.fixture
+def exec_client_with_dms(
+    event_loop,
+    mock_http_client,
+    mock_ws_client,
+    mock_submitter,
+    mock_canceller,
+    msgbus,
+    cache,
+    live_clock,
+    mock_instrument_provider,
+    monkeypatch,
+):
+    """
+    Create a BitMEX execution client with dead man's switch enabled.
+    """
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.nautilus_pyo3.BitmexWebSocketClient",
+        lambda *args, **kwargs: mock_ws_client,
+    )
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.nautilus_pyo3.SubmitBroadcaster",
+        lambda *args, **kwargs: mock_submitter,
+    )
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.nautilus_pyo3.CancelBroadcaster",
+        lambda *args, **kwargs: mock_canceller,
+    )
+
+    config = BitmexExecClientConfig(
+        api_key="test_api_key",
+        api_secret="test_api_secret",
+        testnet=True,
+        dead_mans_switch_timeout_secs=60,
+    )
+
+    client = BitmexExecutionClient(
+        loop=event_loop,
+        client=mock_http_client,
+        msgbus=msgbus,
+        cache=cache,
+        clock=live_clock,
+        instrument_provider=mock_instrument_provider,
+        config=config,
+        name=None,
+    )
+
     client._mock_http_client = mock_http_client
     client._mock_ws_client = mock_ws_client
     client._mock_submitter = mock_submitter

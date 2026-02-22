@@ -38,11 +38,6 @@ from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-# ============================================================================
-# CLIENT CONNECTION AND LIFECYCLE TESTS
-# ============================================================================
-
-
 @pytest.mark.asyncio
 async def test_connect_success(exec_client):
     # Arrange, Act
@@ -85,11 +80,6 @@ async def test_account_id_updated_on_connect(exec_client):
     # Assert
     assert exec_client.account_id.value == "BITMEX-1234567"
     exec_client._mock_ws_client.set_account_id.assert_called()
-
-
-# ============================================================================
-# ORDER SUBMISSION TESTS
-# ============================================================================
 
 
 @pytest.mark.asyncio
@@ -299,11 +289,6 @@ async def test_submit_order_with_quote_quantity_denied(exec_client, instrument, 
     assert denied_kwargs["reason"] == "UNSUPPORTED_QUOTE_QUANTITY"
 
 
-# ============================================================================
-# ORDER MODIFICATION TESTS
-# ============================================================================
-
-
 @pytest.mark.asyncio
 async def test_modify_order_price(exec_client, instrument, strategy, cache):
     # Arrange
@@ -416,11 +401,6 @@ async def test_modify_order_rejection(exec_client, instrument, strategy, cache):
 
     # Assert - rejection is handled internally
     exec_client._mock_http_client.modify_order.assert_called_once()
-
-
-# ============================================================================
-# ORDER CANCELLATION TESTS
-# ============================================================================
 
 
 @pytest.mark.asyncio
@@ -547,11 +527,6 @@ async def test_cancel_order_rejection(exec_client, instrument, strategy, cache):
 
     # Assert - rejection is handled internally
     exec_client._mock_canceller.broadcast_cancel.assert_called_once()
-
-
-# ============================================================================
-# WEBSOCKET MESSAGE HANDLING TESTS
-# ============================================================================
 
 
 @pytest.mark.asyncio
@@ -686,11 +661,6 @@ async def test_handle_account_state_update(exec_client):
 
     # Assert - handler was called without error
     assert handler is not None
-
-
-# ============================================================================
-# REPORT GENERATION TESTS
-# ============================================================================
 
 
 @pytest.mark.asyncio
@@ -1104,6 +1074,78 @@ async def test_submit_order_without_peg_params_unaffected(exec_client, instrumen
     call_args = exec_client._mock_http_client.submit_order.call_args[1]
     assert call_args["peg_price_type"] is None
     assert call_args["peg_offset_value"] is None
+
+
+@pytest.mark.asyncio
+async def test_connect_starts_dms_when_configured(exec_client_with_dms):
+    # Act
+    await exec_client_with_dms._connect()
+
+    # Assert
+    assert exec_client_with_dms._dms_task is not None
+    assert not exec_client_with_dms._dms_task.done()
+
+
+@pytest.mark.asyncio
+async def test_connect_does_not_start_dms_when_not_configured(exec_client):
+    # Act
+    await exec_client._connect()
+
+    # Assert
+    assert exec_client._dms_task is None
+
+
+@pytest.mark.asyncio
+async def test_disconnect_does_not_disarm_dms_when_not_configured(exec_client):
+    # Arrange
+    await exec_client._connect()
+
+    # Act
+    await exec_client._disconnect()
+
+    # Assert - cancel_all_after should never be called
+    exec_client._mock_http_client.cancel_all_after.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_disarms_dms(exec_client_with_dms):
+    # Arrange
+    await exec_client_with_dms._connect()
+    assert exec_client_with_dms._dms_task is not None
+
+    # Act
+    await exec_client_with_dms._disconnect()
+
+    # Assert - task cancelled and disarm call made with timeout=0
+    assert exec_client_with_dms._dms_task is None
+    disarm_calls = [
+        call
+        for call in exec_client_with_dms._mock_http_client.cancel_all_after.call_args_list
+        if call.args == (0,) or call.kwargs.get("timeout_ms") == 0
+    ]
+    assert len(disarm_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_dms_calls_cancel_all_after_with_correct_timeout(exec_client_with_dms):
+    # Act
+    await exec_client_with_dms._connect()
+
+    # Allow the DMS loop to make at least one heartbeat call
+    import asyncio
+
+    await asyncio.sleep(0.1)
+
+    # Assert - at least one heartbeat call with timeout_ms=60000
+    heartbeat_calls = [
+        call
+        for call in exec_client_with_dms._mock_http_client.cancel_all_after.call_args_list
+        if call.args == (60000,) or call.kwargs.get("timeout_ms") == 60000
+    ]
+    assert len(heartbeat_calls) >= 1
+
+    # Cleanup
+    await exec_client_with_dms._disconnect()
 
 
 @pytest.mark.asyncio

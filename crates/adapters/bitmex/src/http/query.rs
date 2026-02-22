@@ -406,6 +406,19 @@ pub struct PostPositionLeverageParams {
     pub target_account_id: Option<i64>,
 }
 
+/// Parameters for the POST /order/cancelAllAfter endpoint (dead man's switch).
+///
+/// # References
+///
+/// <https://www.bitmex.com/api/explorer/#!/Order/Order_cancelAllAfter>
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+pub struct PostCancelAllAfterParams {
+    /// Timeout in milliseconds. Setting to 0 disarms the dead man's switch.
+    pub timeout: u64,
+}
+
 /// Parameters for the GET /position endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[builder(default)]
@@ -427,4 +440,25 @@ pub struct GetPositionParams {
     /// Number of results to fetch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub count: Option<i32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_cancel_all_after_params_serializes() {
+        let params = PostCancelAllAfterParams { timeout: 60_000 };
+        let encoded = serde_urlencoded::to_string(&params).unwrap();
+        assert_eq!(encoded, "timeout=60000");
+    }
+
+    #[rstest]
+    fn test_cancel_all_after_params_disarm_serializes() {
+        let params = PostCancelAllAfterParams { timeout: 0 };
+        let encoded = serde_urlencoded::to_string(&params).unwrap();
+        assert_eq!(encoded, "timeout=0");
+    }
 }
