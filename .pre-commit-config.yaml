@@ -108,47 +108,47 @@ repos:
       - id: check-hidden-chars
         name: check hidden unicode/control chars
         description: Fail on hidden control or zero-width unicode characters in source
-        entry: .pre-commit-hooks/check_hidden_chars.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_hidden_chars.sh
+        language: system
         types_or: [rust, python, cython, toml, markdown, yaml, json, text]
         files: '\.(rs|py|pyx|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*'
 
       - id: check-non-latin-text
         name: check non-Latin text
         description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to enforce English-only
-        entry: .pre-commit-hooks/check_non_latin_text.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_non_latin_text.sh
+        language: system
         types: [text]
         files: '\.(rs|py|pyx|md|toml|yaml|yml)$'
 
       - id: check-toml-codegen
         name: check toml-codegen
         description: Ensures TOML files don't contain the 'codegen-backend' keyword
-        entry: .pre-commit-hooks/check_toml_codegen.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_toml_codegen.sh
+        language: system
         files: \.toml$
 
       - id: check-todo-exclamation
         name: check todo! markers
         description: Prevents committing TODO! markers that indicate incomplete work
-        entry: .pre-commit-hooks/check_todo_exclamation.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_todo_exclamation.sh
+        language: system
         types: [text]
         pass_filenames: false
 
       - id: check-copyright-year
         name: check copyright year
         description: Ensures copyright headers have current year
-        entry: .pre-commit-hooks/check_copyright_year.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_copyright_year.sh
+        language: system
         types_or: [rust, python]
         pass_filenames: false
 
       - id: check-error-conventions
         name: check error conventions
         description: Enforces error variable naming conventions
-        entry: .pre-commit-hooks/check_error_conventions.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_error_conventions.sh
+        language: system
         types_or: [rust, python, cython]
         pass_filenames: false
 
@@ -160,64 +160,64 @@ repos:
       - id: check-anyhow-usage
         name: check anyhow usage
         description: Enforces anyhow conventions
-        entry: .pre-commit-hooks/check_anyhow_usage.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_anyhow_usage.sh
+        language: system
         files: '\.rs$'
         pass_filenames: false
 
       - id: check-logging-conventions
         name: check logging conventions
         description: Enforces logging conventions
-        entry: .pre-commit-hooks/check_logging_conventions.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_logging_conventions.sh
+        language: system
         files: '\.rs$'
         pass_filenames: false
 
       - id: check-tokio-usage
         name: check tokio usage
         description: Enforces tokio usage conventions
-        entry: .pre-commit-hooks/check_tokio_usage.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_tokio_usage.sh
+        language: system
         files: '\.rs$|Cargo\.toml$'
         pass_filenames: false
 
       - id: check-pyo3-conventions
         name: check pyo3 conventions
         description: Enforces PyO3 naming conventions
-        entry: .pre-commit-hooks/check_pyo3_conventions.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_pyo3_conventions.sh
+        language: system
         files: '\.rs$'
         pass_filenames: false
 
       - id: check-testing-conventions
         name: check testing conventions
         description: Enforces testing standardizations and conventions
-        entry: .pre-commit-hooks/check_testing_conventions.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_testing_conventions.sh
+        language: system
         types_or: [rust]
         pass_filenames: false
 
       - id: check-nautilus-conventions
         name: check nautilus conventions
         description: Enforces Nautilus type usage conventions
-        entry: .pre-commit-hooks/check_nautilus_conventions.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_nautilus_conventions.sh
+        language: system
         files: '\.rs$'
         pass_filenames: false
 
       - id: check-docs-conventions
         name: check docs conventions
         description: Enforces Rust documentation conventions
-        entry: .pre-commit-hooks/check_docs_conventions.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_docs_conventions.sh
+        language: system
         files: '\.rs$'
         pass_filenames: false
 
       - id: check-cargo-conventions
         name: check cargo conventions
         description: Enforces Cargo.toml dependency ordering conventions
-        entry: .pre-commit-hooks/check_cargo_conventions.sh
-        language: script
+        entry: bash .pre-commit-hooks/check_cargo_conventions.sh
+        language: system
         files: 'Cargo\.toml$'
         pass_filenames: false
 

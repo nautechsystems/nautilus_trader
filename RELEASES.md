@@ -17,6 +17,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed matching engine applying order book deltas for L1 books (#3615), thanks @maksym-mikheienko
+- Fixed pre-commit hooks portability for Windows (#3617), thanks for reporting @powerseed
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
 - Fixed Hyperliquid stop/trigger order price derivation (#3611), thanks for reporting @h-tsun3
 - Fixed Hyperliquid price normalization and inner error detection (#3612), thanks for reporting @h-tsun3
