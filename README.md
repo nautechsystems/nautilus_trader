@@ -309,7 +309,7 @@ You can view all available versions of `nautilus_trader` on the [package index](
 To programmatically fetch and list available versions:
 
 ```bash
-curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | sed -n 's/.*<a href="\([^"]*\)".*/\1/p' | awk -F'#' '{print $1}' | sort
 ```
 
 > [!NOTE]
@@ -496,7 +496,7 @@ latency-sensitive applications, we recommend using Cython. Below are some exampl
 
 ## Docker
 
-Docker containers are built using the base image `python:3.12-slim` with the following variant tags:
+Docker containers are built with the following variant tags:
 
 - `nautilus_trader:latest` has the latest release version installed.
 - `nautilus_trader:nightly` has the head of the `nightly` branch installed.
@@ -589,10 +589,14 @@ developer looking to contribute or just want to learn more about the platform, a
 >
 > NautilusTrader does not issue, promote, or endorse any cryptocurrency tokens. Any claims or communications suggesting otherwise are unauthorized and false.
 >
-> All official updates and communications from NautilusTrader will be shared exclusively through <https://nautilustrader.io>, our [Discord server](https://discord.gg/NautilusTrader),
-> or our X (Twitter) account: [@NautilusTrader](https://x.com/NautilusTrader).
+> All official updates and communications from NautilusTrader will be shared exclusively through <https://nautilustrader.io>, our [GitHub](https://github.com/nautechsystems), our [Discord server](https://discord.gg/NautilusTrader), or our verified X (Twitter) account: [@NautilusTrader](https://x.com/NautilusTrader).
 >
 > If you encounter any suspicious activity, please report it to the appropriate platform and contact us at <info@nautechsystems.io>.
+
+## Security
+
+To report a vulnerability, see our [Security Policy](SECURITY.md).
+For full security policies including supply chain security, see <https://nautilustrader.io/security/>.
 
 ## License
 
@@ -604,6 +608,8 @@ Contributions to the project are welcome and require the completion of a standar
 NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
 For more information, visit <https://nautilustrader.io>.
+
+Use of this software is subject to the [Disclaimer](https://nautilustrader.io/legal/disclaimer/).
 
 © 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 
