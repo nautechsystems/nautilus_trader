@@ -102,7 +102,7 @@ impl HyperliquidDataClient {
         // Only fall back to unauthenticated when credentials are absent,
         // not when they're invalid (fail fast on malformed keys)
         let (pk_var, _) = credential_env_vars(config.is_testnet);
-        let has_credentials = config.private_key.is_some() || std::env::var(pk_var).is_ok();
+        let has_credentials = config.has_credentials() || std::env::var(pk_var).is_ok();
 
         let mut http_client = if has_credentials {
             let secrets = Secrets::resolve(config.private_key.as_deref(), None, config.is_testnet)?;

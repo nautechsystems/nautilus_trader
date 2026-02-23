@@ -657,7 +657,7 @@ const TEST_PRIVATE_KEY: &str = "0x1234567890abcdef1234567890abcdef1234567890abcd
 
 fn create_test_exec_config(addr: SocketAddr) -> HyperliquidExecClientConfig {
     HyperliquidExecClientConfig {
-        private_key: TEST_PRIVATE_KEY.to_string(),
+        private_key: Some(TEST_PRIVATE_KEY.to_string()),
         base_url_http: Some(format!("http://{addr}/info")),
         base_url_exchange: Some(format!("http://{addr}/exchange")),
         base_url_ws: Some(format!("ws://{addr}/ws")),

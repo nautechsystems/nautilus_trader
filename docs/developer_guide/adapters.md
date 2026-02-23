@@ -219,6 +219,24 @@ Expose typed config structs in `src/config.rs` so Python callers toggle venue-sp
 (see how OKX wires demo URLs, retries, and channel flags).
 Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
 
+All config structs (data and execution) must implement `Default`. This enables the
+`..Default::default()` pattern in examples and tests, keeping only the fields that differ
+from defaults visible:
+
+```rust
+let exec_config = VenueExecClientConfig {
+    trader_id,
+    account_id,
+    environment: VenueEnvironment::Testnet,
+    ..Default::default()
+};
+```
+
+Default values should use sensible production defaults: credentials as `None` (resolved
+from environment at runtime), mainnet URLs, standard timeouts. For `trader_id` and
+`account_id`, use placeholder values like `TraderId::from("TRADER-001")` and
+`AccountId::from("VENUE-001")`.
+
 ### Error taxonomy (`common/error.rs`)
 
 For adapters with multiple client types, define an adapter-level error enum in `common/error.rs` that

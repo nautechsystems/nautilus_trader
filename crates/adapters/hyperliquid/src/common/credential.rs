@@ -199,7 +199,9 @@ impl Secrets {
         let (pk_env_var, vault_env_var) = credential_env_vars(is_testnet);
 
         let pk_str = get_or_env_var(
-            private_key.filter(|s| !s.is_empty()).map(String::from),
+            private_key
+                .filter(|s| !s.trim().is_empty())
+                .map(String::from),
             pk_env_var,
         )
         .map_err(|_| Error::bad_request(format!("{pk_env_var} environment variable is not set")))?;
