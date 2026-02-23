@@ -15,7 +15,7 @@ slow-timeout = { period = "300s" }
 
 # Tests that download large data files share the same target paths across binaries
 [[profile.default.overrides]]
-filter = 'binary(grid_mm_itch) | binary(orderbook_integration)'
+filter = 'binary(grid_mm_itch) | binary(backtest_node_itch) | binary(orderbook_integration)'
 test-group = 'large-data-tests'
 
 # Websocket tests can be flaky due to timing on low-spec runners, give them extra retries

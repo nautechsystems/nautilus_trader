@@ -4088,6 +4088,11 @@ cdef class OrderMatchingEngine:
                     f"did not match instrument.size_precision={self._size_prec}",
                 )
 
+        # L1 books are driven by top-of-book data only, ignore deltas
+        if self.book_type == BookType.L1_MBP:
+            self.iterate(delta.ts_init)
+            return
+
         # Reset consumption tracking on snapshot (F_SNAPSHOT = 32) or CLEAR action
         if self._liquidity_consumption and (
             (delta._mem.flags & 32) or delta._mem.action == BookAction.CLEAR
@@ -4117,7 +4122,7 @@ cdef class OrderMatchingEngine:
         self._book.apply_delta(delta)
 
         if self._queue_position and delta_snapshot_or_clear:
-            self._seed_l1_baseline()
+            self._seed_tob_baseline()
 
         self.iterate(delta.ts_init)
 
@@ -4144,7 +4149,6 @@ cdef class OrderMatchingEngine:
             self._log.debug(f"Processing {deltas!r}")
 
         # Validate precisions for ADD and UPDATE actions
-        cdef bint has_snapshot_or_clear = False
         cdef OrderBookDelta delta
         for delta in deltas.deltas:
             if delta._mem.action == BookAction.ADD or delta._mem.action == BookAction.UPDATE:
@@ -4158,6 +4162,14 @@ cdef class OrderMatchingEngine:
                         f"invalid delta size precision={delta._mem.order.size.precision} "
                         f"did not match instrument.size_precision={self._size_prec}",
                     )
+
+        # L1 books are driven by top-of-book data only, ignore deltas
+        if self.book_type == BookType.L1_MBP:
+            self.iterate(deltas.ts_init)
+            return
+
+        cdef bint has_snapshot_or_clear = False
+        for delta in deltas.deltas:
             if (delta._mem.flags & 32) or delta._mem.action == BookAction.CLEAR:
                 has_snapshot_or_clear = True
 
@@ -4185,7 +4197,7 @@ cdef class OrderMatchingEngine:
         self._book.apply_deltas(deltas)
 
         if self._queue_position and has_snapshot_or_clear:
-            self._seed_l1_baseline()
+            self._seed_tob_baseline()
 
         self.iterate(deltas.ts_init)
 
@@ -6601,7 +6613,7 @@ cdef class OrderMatchingEngine:
                     if new_ahead == 0:
                         self._queue_excess[client_order_id] = trade_size_raw - ahead_raw
 
-    cdef void _seed_l1_baseline(self):
+    cdef void _seed_tob_baseline(self):
         cdef Price bid_price = self._book.best_bid_price()
         cdef Price ask_price = self._book.best_ask_price()
         cdef Quantity bid_size = self._book.best_bid_size()

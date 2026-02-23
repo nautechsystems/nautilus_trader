@@ -100,11 +100,11 @@ class TestPersistenceStreaming:
             "ComponentStateChanged": 34,
             "OrderAccepted": 192,
             "OrderBookDelta": 1307,
-            "OrderCanceled": 200,  # Doubled due to publishing to both events.order.* and events.cancels.*
-            "OrderFilled": 188,  # Doubled due to publishing to both events.order.* and events.fills.*
+            "OrderCanceled": 134,
+            "OrderFilled": 254,
             "OrderInitialized": 193,
             "OrderSubmitted": 193,
-            "PositionChanged": 90,
+            "PositionChanged": 123,
             "PositionClosed": 3,
             "PositionOpened": 3,
             "TradeTick": 179,
@@ -454,11 +454,11 @@ class TestPersistenceStreaming:
             "ComponentStateChanged": 34,
             "OrderAccepted": 192,
             "OrderBookDelta": 1307,
-            "OrderCanceled": 200,  # Doubled due to publishing to both events.order.* and events.cancels.*
-            "OrderFilled": 188,  # Doubled due to publishing to both events.order.* and events.fills.*
+            "OrderCanceled": 134,
+            "OrderFilled": 254,
             "OrderInitialized": 193,
             "OrderSubmitted": 193,
-            "PositionChanged": 90,
+            "PositionChanged": 123,
             "PositionClosed": 3,
             "PositionOpened": 3,
             "TradeTick": 179,

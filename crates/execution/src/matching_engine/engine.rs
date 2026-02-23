@@ -607,7 +607,7 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn seed_l1_baseline(&mut self) {
+    fn seed_tob_baseline(&mut self) {
         self.prev_bid_price_raw = self.book.best_bid_price().map_or(0, |p| p.raw);
         self.prev_bid_size_raw = self.book.best_bid_size().map_or(0, |q| q.raw);
         self.prev_ask_price_raw = self.book.best_ask_price().map_or(0, |p| p.raw);
@@ -853,9 +853,13 @@ impl OrderMatchingEngine {
             self.check_size_precision(delta.order.size.precision, "delta order size")?;
         }
 
-        if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
-            self.book.apply_delta(delta)?;
+        // L1 books are driven by top-of-book data only, ignore deltas
+        if self.book_type == BookType::L1_MBP {
+            self.iterate(delta.ts_init, AggressorSide::NoAggressor);
+            return Ok(());
         }
+
+        self.book.apply_delta(delta)?;
 
         let delta_snapshot_or_clear = (delta.flags & 32) != 0 || delta.action == BookAction::Clear;
 
@@ -874,15 +878,7 @@ impl OrderMatchingEngine {
         }
 
         if self.config.queue_position && delta_snapshot_or_clear {
-            if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
-                self.seed_l1_baseline();
-            } else {
-                // L1 book not updated via deltas, zero baseline
-                self.prev_bid_price_raw = 0;
-                self.prev_bid_size_raw = 0;
-                self.prev_ask_price_raw = 0;
-                self.prev_ask_size_raw = 0;
-            }
+            self.seed_tob_baseline();
         }
 
         self.iterate(delta.ts_init, AggressorSide::NoAggressor);
@@ -907,9 +903,13 @@ impl OrderMatchingEngine {
             }
         }
 
-        if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
-            self.book.apply_deltas(deltas)?;
+        // L1 books are driven by top-of-book data only, ignore deltas
+        if self.book_type == BookType::L1_MBP {
+            self.iterate(deltas.ts_init, AggressorSide::NoAggressor);
+            return Ok(());
         }
+
+        self.book.apply_deltas(deltas)?;
 
         let mut has_snapshot_or_clear = false;
 
@@ -932,14 +932,7 @@ impl OrderMatchingEngine {
         }
 
         if self.config.queue_position && has_snapshot_or_clear {
-            if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
-                self.seed_l1_baseline();
-            } else {
-                self.prev_bid_price_raw = 0;
-                self.prev_bid_size_raw = 0;
-                self.prev_ask_price_raw = 0;
-                self.prev_ask_size_raw = 0;
-            }
+            self.seed_tob_baseline();
         }
 
         self.iterate(deltas.ts_init, AggressorSide::NoAggressor);

@@ -16,8 +16,9 @@ Released on TBD (UTC).
 - Bumped all eligible GitHub Actions pinned SHAs to latest versions (2-week release policy)
 
 ### Fixes
-- Fixed Hyperliquid stop/trigger order price derivation
+- Fixed matching engine applying order book deltas for L1 books
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
+- Fixed Hyperliquid stop/trigger order price derivation
 
 ### Internal Improvements
 - Implemented `BacktestNode` with catalog streaming in Rust
