@@ -9,12 +9,14 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Removed Coinbase International (`COINBASE_INTX`) adapter, see RFC (#3555)
+- Removed Binance `BINANCE_ED25519_*` env vars for Spot/Margin (use `BINANCE_API_KEY`/`BINANCE_API_SECRET`; Futures deprecated with warning)
 
 ### Security
 - Bumped all eligible GitHub Actions pinned SHAs to latest versions (2-week release policy)
 
 ### Fixes
 - Fixed Hyperliquid stop/trigger order price derivation
+- Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
 
 ### Internal Improvements
 - Implemented `BacktestNode` with catalog streaming in Rust

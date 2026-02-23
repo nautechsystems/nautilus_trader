@@ -520,8 +520,10 @@ it with Binance. See [Generating Ed25519 keys](#generating-ed25519-keys) below f
 :::
 
 :::note
-Ed25519 keys must be provided in base64-encoded ASN.1/DER format (PEM file contents).
+Ed25519 keys must be provided in unencrypted PEM format (base64-encoded ASN.1/DER).
 The implementation automatically extracts the 32-byte seed from the DER structure.
+Encrypted (password-protected) PEM keys are not supported. If your key is encrypted,
+decrypt it first: `openssl pkey -in encrypted.pem -out decrypted.pem`
 :::
 
 #### Generating Ed25519 keys
@@ -574,10 +576,11 @@ execution clients, but Ed25519 offers better performance and will become the onl
 key type in a future version. See [Key types](#key-types) for details.
 :::
 
-:::note
-The `BINANCE_ED25519_*` and `BINANCE_*_ED25519_*` environment variables are deprecated and will
-be removed in a future version. Migrate to using Ed25519 keys in the standard
-`BINANCE_API_KEY`/`BINANCE_API_SECRET` variables.
+:::warning
+The `BINANCE_ED25519_*` and `BINANCE_*_ED25519_*` environment variables have been removed
+for Spot/Margin. For Futures, they are deprecated with a warning and will be removed in a
+future version. Rename them to the standard `BINANCE_API_KEY`/`BINANCE_API_SECRET` variables
+(Ed25519 keys are now auto-detected).
 :::
 
 When starting the trading node, you'll receive immediate confirmation of whether your

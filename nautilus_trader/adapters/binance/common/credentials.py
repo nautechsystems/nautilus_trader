@@ -38,6 +38,16 @@ def is_ed25519_private_key(api_secret: str) -> bool:
 
     """
     try:
+        if "ENCRYPTED" in api_secret:
+            warnings.warn(
+                "API secret appears to be an encrypted PEM key. "
+                "NautilusTrader only supports unencrypted PEM keys. "
+                "Decrypt with: openssl pkey -in encrypted.pem -out decrypted.pem",
+                UserWarning,
+                stacklevel=2,
+            )
+            return False
+
         key_data = "".join(line for line in api_secret.splitlines() if not line.startswith("-----"))
         key_bytes = base64.b64decode(key_data, validate=True)
         return _ED25519_OID in key_bytes
@@ -67,28 +77,28 @@ def get_api_key(account_type: BinanceAccountType, environment: BinanceEnvironmen
     """
     Get Binance API key from environment variables.
 
-    Checks for deprecated `*_ED25519_*` variables first (with deprecation warning), then
-    falls back to standard variables. Demo uses a single shared key across products.
+    Demo uses a single shared key across products.
 
     """
     if environment == BinanceEnvironment.TESTNET:
         if account_type.is_spot_or_margin:
-            return _get_credential_with_ed25519_fallback(
-                ed25519_key="BINANCE_TESTNET_ED25519_API_KEY",
+            return _get_credential(
                 standard_key="BINANCE_TESTNET_API_KEY",
+                deprecated_key="BINANCE_TESTNET_ED25519_API_KEY",
             )
         else:
-            return _get_credential_with_ed25519_fallback(
-                ed25519_key="BINANCE_FUTURES_TESTNET_ED25519_API_KEY",
+            return _get_credential_soft(
                 standard_key="BINANCE_FUTURES_TESTNET_API_KEY",
+                deprecated_key="BINANCE_FUTURES_TESTNET_ED25519_API_KEY",
             )
 
     if environment == BinanceEnvironment.DEMO:
         return get_env_key("BINANCE_DEMO_API_KEY")
 
-    return _get_credential_with_ed25519_fallback(
-        ed25519_key="BINANCE_ED25519_API_KEY",  # gitleaks:allow
+    _resolve = _get_credential if account_type.is_spot_or_margin else _get_credential_soft
+    return _resolve(
         standard_key="BINANCE_API_KEY",
+        deprecated_key="BINANCE_ED25519_API_KEY",  # gitleaks:allow
     )
 
 
@@ -96,45 +106,58 @@ def get_api_secret(account_type: BinanceAccountType, environment: BinanceEnviron
     """
     Get Binance API secret from environment variables.
 
-    Checks for deprecated `*_ED25519_*` variables first (with deprecation warning), then
-    falls back to standard variables. Demo uses a single shared key across products.
+    Demo uses a single shared key across products.
 
     """
     if environment == BinanceEnvironment.TESTNET:
         if account_type.is_spot_or_margin:
-            return _get_credential_with_ed25519_fallback(
-                ed25519_key="BINANCE_TESTNET_ED25519_API_SECRET",
+            return _get_credential(
                 standard_key="BINANCE_TESTNET_API_SECRET",
+                deprecated_key="BINANCE_TESTNET_ED25519_API_SECRET",
             )
         else:
-            return _get_credential_with_ed25519_fallback(
-                ed25519_key="BINANCE_FUTURES_TESTNET_ED25519_API_SECRET",
+            return _get_credential_soft(
                 standard_key="BINANCE_FUTURES_TESTNET_API_SECRET",
+                deprecated_key="BINANCE_FUTURES_TESTNET_ED25519_API_SECRET",
             )
 
     if environment == BinanceEnvironment.DEMO:
         return get_env_key("BINANCE_DEMO_API_SECRET")
 
-    return _get_credential_with_ed25519_fallback(
-        ed25519_key="BINANCE_ED25519_API_SECRET",  # gitleaks:allow
+    _resolve = _get_credential if account_type.is_spot_or_margin else _get_credential_soft
+    return _resolve(
         standard_key="BINANCE_API_SECRET",
+        deprecated_key="BINANCE_ED25519_API_SECRET",  # gitleaks:allow
     )
 
 
-def _get_credential_with_ed25519_fallback(ed25519_key: str, standard_key: str) -> str:
+def _get_credential(standard_key: str, deprecated_key: str) -> str:
     standard_value = os.environ.get(standard_key)
     if standard_value is not None:
         return standard_value
 
-    # Fall back to deprecated env var
-    ed25519_value = os.environ.get(ed25519_key)
-    if ed25519_value is not None:
+    if os.environ.get(deprecated_key) is not None:
+        raise ValueError(
+            f"'{deprecated_key}' has been removed. "
+            f"Rename it to '{standard_key}' (Ed25519 keys are now auto-detected).",
+        )
+
+    raise ValueError(f"'{standard_key}' not found in environment")
+
+
+def _get_credential_soft(standard_key: str, deprecated_key: str) -> str:
+    standard_value = os.environ.get(standard_key)
+    if standard_value is not None:
+        return standard_value
+
+    deprecated_value = os.environ.get(deprecated_key)
+    if deprecated_value is not None:
         warnings.warn(
-            f"'{ed25519_key}' is deprecated and will be removed in a future version. "
-            f"Set your Ed25519 credentials in '{standard_key}' instead.",
+            f"'{deprecated_key}' is deprecated and will be removed in a future version. "
+            f"Rename it to '{standard_key}' (Ed25519 keys are now auto-detected).",
             DeprecationWarning,
             stacklevel=4,
         )
-        return ed25519_value
+        return deprecated_value
 
     raise ValueError(f"'{standard_key}' not found in environment")
