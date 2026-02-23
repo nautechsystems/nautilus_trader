@@ -148,6 +148,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Interactive Brokers parsing options for Stoxx50 (#3562), thanks @davidsblom
 - Fixed Interactive Brokers contract details for FESX futures (#3575), thanks @davidsblom
 - Fixed Interactive Brokers `ibapi` 10.43 protobuf compatibility: `IBContract.strike` default and `ContractDetails.underConId` field typo (#3599), thanks @shzhng
+- Fixed Interactive Brokers `track_option_exercise_from_position_update` not generating FLAT reports for expired options (zero-quantity position updates were silently skipped), thanks @shzhng
 - Fixed Interactive Brokers bar unsubscribe (#3588), thanks for reporting @pandashark
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
 - Fixed Kraken spot XBT to BTC symbol normalization (#3509), thanks for reporting @chester0

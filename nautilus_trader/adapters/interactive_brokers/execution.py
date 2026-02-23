@@ -1983,17 +1983,59 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             contract_id = ib_position.contract.conId
             new_quantity = ib_position.quantity
 
-            # Skip zero positions (IB may send these for closed positions)
-            if new_quantity == 0:
-                # Remove from tracking if position is closed
-                self._known_positions.pop(contract_id, None)
-                return
-
-            # Check if this is an external position change
+            # Check if this is a known position
             known_quantity = self._known_positions.get(contract_id, Decimal(0))
 
             # If quantities match, this is likely from normal trading - skip
             if known_quantity == new_quantity:
+                return
+
+            # Handle position going to zero (option expiration, exercise closure, etc.)
+            if new_quantity == 0:
+                if known_quantity == 0:
+                    # Position was never tracked or already flat - noise, skip
+                    return
+
+                # Position went from non-zero to zero externally (e.g. option expired)
+                self._log.info(
+                    f"External position closure detected (likely option expiration): "
+                    f"Contract {contract_id} ({ib_position.contract.secType}), "
+                    f"quantity change: {known_quantity} -> 0",
+                    LogColor.YELLOW,
+                )
+
+                instrument = await self.instrument_provider.get_instrument(
+                    ib_position.contract,
+                )
+
+                if instrument is None:
+                    self._log.warning(
+                        f"Cannot process position closure: "
+                        f"instrument not found for contract ID {contract_id}",
+                    )
+                    self._known_positions.pop(contract_id, None)
+                    return
+
+                if not self._cache.instrument(instrument.id):
+                    self._msgbus.send(endpoint="DataEngine.process", msg=instrument)
+
+                position_report = PositionStatusReport(
+                    account_id=self.account_id,
+                    instrument_id=instrument.id,
+                    position_side=PositionSide.FLAT,
+                    quantity=Quantity.zero(),
+                    report_id=UUID4(),
+                    ts_last=self._clock.timestamp_ns(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+
+                self._log.info(
+                    f"Position closed externally: {instrument.id} FLAT (was {known_quantity})",
+                    LogColor.CYAN,
+                )
+
+                self._send_position_status_report(position_report)
+                self._known_positions.pop(contract_id, None)
                 return
 
             # This is an external position change (likely option exercise)
