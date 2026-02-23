@@ -348,6 +348,63 @@ pub fn create_instrument(
 Use this pattern when the same venue data structures are parsed in multiple places (HTTP responses,
 WebSocket updates, historical data).
 
+### Connection lifecycle (`connect`)
+
+Both data and execution clients follow a strict initialization order during `connect()` to prevent
+race conditions with reconciliation and strategy startup. The platform waits for all clients to
+signal connected before running reconciliation or starting strategies, so all initialization must
+complete within `connect()`.
+
+#### Data client
+
+1. **Fetch instruments via REST** - call `bootstrap_instruments()` or equivalent.
+2. **Cache locally** - populate the client's internal instrument map and HTTP client cache.
+3. **Emit to data engine** - send each instrument as `DataEvent::Instrument` via `data_sender`.
+   These events are queued during startup and processed before reconciliation runs.
+4. **Cache to WebSocket** - call `ws.cache_instruments()` so the handler can parse messages.
+5. **Connect WebSocket** - establish the streaming connection.
+
+```rust
+async fn connect(&mut self) -> anyhow::Result<()> {
+    let instruments = self.bootstrap_instruments().await?;
+    ws.cache_instruments(instruments);
+    ws.connect().await?;
+    ws.wait_until_active(10.0).await?;
+    // ...
+}
+```
+
+#### Execution client
+
+1. **Initialize instruments** - fetch via REST if not already cached. Cache to HTTP, WebSocket,
+   and broadcaster clients.
+2. **Connect WebSocket** - establish the private streaming connection.
+3. **Subscribe to channels** - orders, executions, positions, wallet/margin.
+4. **Start WebSocket stream handler** - begin processing incoming messages.
+5. **Fetch account state** - request account state via REST and emit via `emitter.send_account_state()`.
+6. **Await account registered** - poll the cache until the account is registered (30s timeout).
+   This ensures the portfolio can process orders during reconciliation.
+7. **Signal connected** - call `self.core.set_connected()`.
+
+```rust
+async fn connect(&mut self) -> anyhow::Result<()> {
+    self.ensure_instruments_initialized_async().await?;
+
+    self.ws_client.connect().await?;
+    self.ws_client.wait_until_active(10.0).await?;
+    // ... subscribe channels, start stream ...
+
+    self.refresh_account_state().await?;
+    self.await_account_registered(30.0).await?;
+
+    self.core.set_connected();
+    Ok(())
+}
+```
+
+The `await_account_registered` method polls `self.core.cache().account(&account_id)` at 10ms
+intervals until the account appears or the timeout expires.
+
 ## HTTP client patterns
 
 Adapters use a standardized two-layer HTTP client architecture to separate low-level API operations from high-level domain logic while enabling efficient cloning for Python bindings.

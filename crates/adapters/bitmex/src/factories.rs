@@ -56,6 +56,21 @@ pub struct BitmexExecFactoryConfig {
     pub config: BitmexExecClientConfig,
 }
 
+impl BitmexExecFactoryConfig {
+    /// Creates a new [`BitmexExecFactoryConfig`].
+    ///
+    /// The `account_id` defaults to `BITMEX-001` and is overridden once the
+    /// real account number is detected from the API.
+    #[must_use]
+    pub fn new(trader_id: TraderId, config: BitmexExecClientConfig) -> Self {
+        Self {
+            trader_id,
+            account_id: AccountId::from("BITMEX-001"),
+            config,
+        }
+    }
+}
+
 impl ClientConfig for BitmexExecFactoryConfig {
     fn as_any(&self) -> &dyn Any {
         self

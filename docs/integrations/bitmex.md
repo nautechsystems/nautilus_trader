@@ -672,7 +672,7 @@ Each heartbeat consumes one REST rate limit token. A 60-second timeout uses appr
 
 ### Configuration
 
-Enable the dead man's switch by setting `dead_mans_switch_timeout_secs` on the execution
+Enable the dead man's switch by setting `deadmans_switch_timeout_secs` on the execution
 client config:
 
 ```python
@@ -681,7 +681,7 @@ from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
 exec_config = BitmexExecClientConfig(
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
-    dead_mans_switch_timeout_secs=60,  # Cancel all orders after 60s of lost connectivity
+    deadmans_switch_timeout_secs=60,  # Cancel all orders after 60s of lost connectivity
 )
 ```
 
@@ -778,7 +778,7 @@ The BitMEX execution client provides the following configuration options:
 | `recv_window_ms`         | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
 | `max_requests_per_second`| `10`     | Burst rate limit enforced by the adapter for REST calls. |
 | `max_requests_per_minute`| `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
-| `dead_mans_switch_timeout_secs` | `None`   | Timeout in seconds for the dead man's switch. `None` disables. See [Dead man's switch](#dead-mans-switch). |
+| `deadmans_switch_timeout_secs` | `None`   | Timeout in seconds for the dead man's switch. `None` disables. See [Dead man's switch](#dead-mans-switch). |
 | `canceller_pool_size`    | `None`   | Number of HTTP clients in the cancel broadcaster pool. `None` resolves to 1. See [Cancel broadcaster](#cancel-broadcaster). |
 | `submitter_pool_size`    | `None`   | Number of HTTP clients in the submit broadcaster pool. `None` resolves to 1. See [Submit broadcaster](#submit-broadcaster). |
 | `http_proxy_url`         | `None`   | Optional HTTP proxy URL. |

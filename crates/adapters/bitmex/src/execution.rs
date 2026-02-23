@@ -22,7 +22,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::Context;
@@ -130,12 +130,13 @@ impl BitmexExecutionClient {
             config.http_proxy_url.clone(),
         )
         .context("failed to construct BitMEX HTTP client")?;
-        let ws_client = BitmexWebSocketClient::new(
+        let ws_client = BitmexWebSocketClient::new_with_env(
             Some(config.ws_url()),
             config.api_key.clone(),
             config.api_secret.clone(),
             Some(account_id),
             config.heartbeat_interval_secs,
+            config.use_testnet,
         )
         .context("failed to construct BitMEX execution websocket client")?;
 
@@ -237,8 +238,8 @@ impl BitmexExecutionClient {
         }
     }
 
-    fn start_dead_mans_switch(&mut self) {
-        let Some(timeout_secs) = self.config.dead_mans_switch_timeout_secs else {
+    fn start_deadmans_switch(&mut self) {
+        let Some(timeout_secs) = self.config.deadmans_switch_timeout_secs else {
             return;
         };
 
@@ -265,8 +266,8 @@ impl BitmexExecutionClient {
         self.dms_task_handle = Some(handle);
     }
 
-    async fn stop_dead_mans_switch(&mut self) {
-        if self.config.dead_mans_switch_timeout_secs.is_none() {
+    async fn stop_deadmans_switch(&mut self) {
+        if self.config.deadmans_switch_timeout_secs.is_none() {
             return;
         }
 
@@ -334,6 +335,34 @@ impl BitmexExecutionClient {
 
         self.emitter.send_account_state(account_state);
         Ok(())
+    }
+
+    async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
+        let account_id = self.core.account_id;
+
+        if self.core.cache().account(&account_id).is_some() {
+            log::info!("Account {account_id} registered");
+            return Ok(());
+        }
+
+        let start = Instant::now();
+        let timeout = Duration::from_secs_f64(timeout_secs);
+        let interval = Duration::from_millis(10);
+
+        loop {
+            tokio::time::sleep(interval).await;
+
+            if self.core.cache().account(&account_id).is_some() {
+                log::info!("Account {account_id} registered");
+                return Ok(());
+            }
+
+            if start.elapsed() >= timeout {
+                anyhow::bail!(
+                    "Timeout waiting for account {account_id} to be registered after {timeout_secs}s"
+                );
+            }
+        }
     }
 
     fn start_ws_stream(&mut self) -> anyhow::Result<()> {
@@ -582,9 +611,10 @@ impl ExecutionClient for BitmexExecutionClient {
 
         self.start_ws_stream()?;
         self.refresh_account_state().await?;
+        self.await_account_registered(30.0).await?;
 
         self.core.set_connected();
-        self.start_dead_mans_switch();
+        self.start_deadmans_switch();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -595,7 +625,7 @@ impl ExecutionClient for BitmexExecutionClient {
         }
 
         // Disarm DMS before cancelling requests (needs working HTTP)
-        self.stop_dead_mans_switch().await;
+        self.stop_deadmans_switch().await;
 
         self.http_client.cancel_all_requests();
         self._submitter.stop().await;

@@ -108,10 +108,18 @@ impl BitmexDataClientConfig {
         Self::default()
     }
 
-    /// Returns `true` if both API key and secret are available.
+    /// Returns `true` if both API key and secret are available
+    /// (either explicitly set or resolvable from environment variables).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        self.api_key.is_some() && self.api_secret.is_some()
+        let (key_var, secret_var) = if self.use_testnet {
+            ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
+        } else {
+            ("BITMEX_API_KEY", "BITMEX_API_SECRET")
+        };
+        let has_key = self.api_key.is_some() || std::env::var(key_var).is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var(secret_var).is_ok();
+        has_key && has_secret
     }
 
     /// Returns the REST base URL, considering overrides and the testnet flag.
@@ -207,7 +215,7 @@ pub struct BitmexExecClientConfig {
     /// to keep a server-side timer alive. If the client loses connectivity the timer expires
     /// and BitMEX cancels all open orders. Calling with `timeout=0` disarms the switch.
     /// The refresh interval is derived as `timeout / 4` (minimum 1 second).
-    pub dead_mans_switch_timeout_secs: Option<u64>,
+    pub deadmans_switch_timeout_secs: Option<u64>,
 }
 
 impl Default for BitmexExecClientConfig {
@@ -234,7 +242,7 @@ impl Default for BitmexExecClientConfig {
             canceller_pool_size: None,
             submitter_proxy_urls: None,
             canceller_proxy_urls: None,
-            dead_mans_switch_timeout_secs: None,
+            deadmans_switch_timeout_secs: None,
         }
     }
 }
@@ -246,10 +254,18 @@ impl BitmexExecClientConfig {
         Self::default()
     }
 
-    /// Returns `true` if both API key and secret are available.
+    /// Returns `true` if both API key and secret are available
+    /// (either explicitly set or resolvable from environment variables).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        self.api_key.is_some() && self.api_secret.is_some()
+        let (key_var, secret_var) = if self.use_testnet {
+            ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
+        } else {
+            ("BITMEX_API_KEY", "BITMEX_API_SECRET")
+        };
+        let has_key = self.api_key.is_some() || std::env::var(key_var).is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var(secret_var).is_ok();
+        has_key && has_secret
     }
 
     /// Returns the REST base URL, considering overrides and the testnet flag.

@@ -1659,8 +1659,7 @@ impl ExecutionManager {
             return None;
         }
 
-        log::info!(
-            color = LogColor::Blue as u8;
+        log::debug!(
             "Reconciling HEDGE position for {}, venue_position_id={}",
             report.instrument_id,
             venue_position_id
@@ -1809,10 +1808,7 @@ impl ExecutionManager {
     ) -> Option<Vec<OrderEventAny>> {
         let instrument_id = report.instrument_id;
 
-        log::info!(
-            color = LogColor::Blue as u8;
-            "Reconciling NET position for {instrument_id}",
-        );
+        log::debug!("Reconciling NET position for {instrument_id}");
 
         let instrument = self.get_instrument(&instrument_id)?;
 
@@ -1851,10 +1847,7 @@ impl ExecutionManager {
 
         let venue_signed_qty = report.signed_decimal_qty;
 
-        log::info!(
-            color = LogColor::Blue as u8;
-            "venue_signed_qty={venue_signed_qty}, cached_signed_qty={cached_signed_qty}",
-        );
+        log::debug!("venue_signed_qty={venue_signed_qty}, cached_signed_qty={cached_signed_qty}");
 
         let tolerance = Decimal::from_str("0.00000001").unwrap_or(Decimal::ZERO);
         if (cached_signed_qty - venue_signed_qty).abs() <= tolerance {

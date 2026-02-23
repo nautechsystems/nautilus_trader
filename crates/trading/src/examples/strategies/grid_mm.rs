@@ -273,7 +273,7 @@ impl DataActor for GridMarketMaker {
             let cache = self.cache();
             let instrument = cache
                 .instrument(&instrument_id)
-                .expect("Instrument should be in cache");
+                .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?;
             (
                 instrument.price_precision(),
                 instrument.size_precision(),

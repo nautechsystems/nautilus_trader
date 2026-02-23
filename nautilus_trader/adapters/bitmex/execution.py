@@ -206,8 +206,8 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._dms_task: asyncio.Task | None = None
         self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)
 
-    def _start_dead_mans_switch(self) -> None:
-        timeout_secs = self._config.dead_mans_switch_timeout_secs
+    def _start_deadmans_switch(self) -> None:
+        timeout_secs = self._config.deadmans_switch_timeout_secs
         if timeout_secs is None:
             return
 
@@ -222,7 +222,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         self._dms_task = self.create_task(
             self._dms_loop(timeout_ms, interval_secs),
-            log_msg="dead_mans_switch",
+            log_msg="deadmans_switch",
         )
 
     async def _dms_loop(self, timeout_ms: int, interval_secs: int) -> None:
@@ -236,8 +236,8 @@ class BitmexExecutionClient(LiveExecutionClient):
         except asyncio.CancelledError:
             pass
 
-    async def _stop_dead_mans_switch(self) -> None:
-        if self._config.dead_mans_switch_timeout_secs is None:
+    async def _stop_deadmans_switch(self) -> None:
+        if self._config.deadmans_switch_timeout_secs is None:
             return
 
         if self._dms_task is not None:
@@ -322,7 +322,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.error(f"Failed to subscribe to authenticated channels: {e}")
 
-        self._start_dead_mans_switch()
+        self._start_deadmans_switch()
 
     async def _update_account_state(self) -> None:
         # Update account ID with actual account number from BitMEX
@@ -352,7 +352,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
     async def _disconnect(self) -> None:
         # Disarm DMS before stopping broadcasters (needs working HTTP)
-        await self._stop_dead_mans_switch()
+        await self._stop_deadmans_switch()
 
         await self._submitter.stop()
         self._log.info("Stopped submit broadcaster", LogColor.BLUE)
