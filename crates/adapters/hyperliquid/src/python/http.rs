@@ -417,4 +417,33 @@ impl HyperliquidHttpClient {
             Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
         })
     }
+
+    /// Queries the user fee schedule and returns the JSON response as a string.
+    #[pyo3(name = "info_user_fees")]
+    fn py_info_user_fees<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let account_address = client.get_account_address().map_err(to_pyvalue_err)?;
+            let json = client
+                .info_user_fees(&account_address)
+                .await
+                .map_err(to_pyvalue_err)?;
+            to_string(&json).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Returns the current builder maker fee in tenths of a basis point.
+    #[pyo3(name = "builder_maker_tenths_bp")]
+    fn py_builder_maker_tenths_bp(&self) -> u32 {
+        self.builder_maker_tenths_bp()
+    }
+
+    /// Updates the builder maker fee tier from the HL effective maker rate.
+    ///
+    /// Returns `(old_tenths, new_tenths)`.
+    #[pyo3(name = "update_builder_maker_fee")]
+    fn py_update_builder_maker_fee(&self, user_add_rate: f64) -> (u32, u32) {
+        self.update_builder_maker_fee(user_add_rate)
+    }
 }

@@ -33,24 +33,34 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 ## Builder fees
 
-This integration is free and open source. NautilusTrader participates in the Hyperliquid
-[Builder Codes](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes) program,
-which routes a small fee on perpetual fills to support ongoing development and maintenance.
-
+NautilusTrader participates in the Hyperliquid
+[Builder Codes](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes) program.
+A small proportional fee on perpetual fills funds ongoing development and maintenance of this integration.
 These fees are charged by Hyperliquid in addition to standard fees:
 
-- **Taker**: 1 bp (0.01%) on perpetual fills
-- **Maker**: 0.5 bp (0.005%) on perpetual fills (post-only orders)
-- **Spot**: no builder fee
+- **Taker**: 1.0 bp (0.01%) on perpetual fills.
+- **Maker**: 0.4 bp (0.004%) base, scales down automatically with your Hyperliquid volume tier.
+- **Spot**: no builder fee.
+
+The maker fee scales down in step with Hyperliquid's own volume-based fee reductions.
+At the highest tier, where Hyperliquid charges 0% maker, the builder maker fee is also 0%:
+
+| 14d Volume | HL Maker Rate | HL Taker Rate | Builder Maker Fee | Builder Taker Fee |
+|------------|---------------|---------------|-------------------|-------------------|
+| Base       | 1.5 bp        | 3.5 bp        | 0.4 bp (4 tenths) | 1.0 bp            |
+| > $5M      | 1.2 bp        | 3.2 bp        | 0.3 bp (3 tenths) | 1.0 bp            |
+| > $25M     | 0.8 bp        | 2.8 bp        | 0.2 bp (2 tenths) | 1.0 bp            |
+| > $100M    | 0.4 bp        | 2.2 bp        | 0.1 bp (1 tenth)  | 1.0 bp            |
+| > $500M    | 0.0 bp        | 1.5 bp        | 0.0 bp (zero)     | 1.0 bp            |
+
+Your tier is detected automatically on connect and refreshed periodically
+(default: 60 minutes, configurable via `builder_fee_refresh_mins`).
+If a refresh fails, the current tier is retained until the next successful query.
 
 :::info
-These builder fees are at the low end of ecosystem norms. Hyperliquid allows builders to charge up to:
-
-- **Perps**: 10 bps (0.1%)
-- **Spot**: 100 bps (1%)
-
-See [Hyperliquid Builder Codes](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes)
-and [Hyperliquid Fees](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees) for details.
+For reference, Hyperliquid allows builders to charge up to 10 bp on perps and 100 bp on spot.
+See [Builder Codes](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes)
+and [Fees](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees) for details.
 :::
 
 ### Checking approval status
@@ -497,19 +507,20 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 
 ### Execution client configuration options
 
-| Option                   | Default | Description                                                                                |
-|--------------------------|---------|--------------------------------------------------------------------------------------------|
-| `private_key`            | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.    |
-| `vault_address`          | `None`  | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted.  |
-| `base_url_ws`            | `None`  | Override for the WebSocket base URL.                                                       |
-| `testnet`                | `False` | Connect to the Hyperliquid testnet when `True`.                                            |
-| `max_retries`            | `None`  | Maximum retry attempts for submit, cancel, or modify order requests.                       |
-| `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries.                                              |
-| `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries.                                              |
-| `http_timeout_secs`      | `10`    | Timeout (seconds) applied to REST calls.                                                   |
-| `normalize_prices`       | `True`  | Normalize order prices to 5 significant figures before submission.                          |
-| `http_proxy_url`         | `None`  | Optional HTTP proxy URL.                                                                   |
-| `ws_proxy_url`           | `None`  | Reserved; WebSocket proxy not yet implemented.                                             |
+| Option                     | Default | Description                                                                               |
+|----------------------------|---------|-------------------------------------------------------------------------------------------|
+| `private_key`              | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.   |
+| `vault_address`            | `None`  | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted. |
+| `base_url_ws`              | `None`  | Override for the WebSocket base URL.                                                      |
+| `testnet`                  | `False` | Connect to the Hyperliquid testnet when `True`.                                           |
+| `max_retries`              | `None`  | Maximum retry attempts for submit, cancel, or modify order requests.                      |
+| `retry_delay_initial_ms`   | `None`  | Initial delay (milliseconds) between retries.                                             |
+| `retry_delay_max_ms`       | `None`  | Maximum delay (milliseconds) between retries.                                             |
+| `http_timeout_secs`        | `10`    | Timeout (seconds) applied to REST calls.                                                  |
+| `normalize_prices`         | `True`  | Normalize order prices to 5 significant figures before submission.                        |
+| `builder_fee_refresh_mins` | `60`    | Interval (minutes) for refreshing builder fee tier from HL. `None` to disable.            |
+| `http_proxy_url`           | `None`  | Optional HTTP proxy URL.                                                                  |
+| `ws_proxy_url`             | `None`  | Reserved; WebSocket proxy not yet implemented.                                            |
 
 ### Configuration example
 

@@ -58,8 +58,8 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        builder_fee::{resolve_builder_fee, resolve_builder_fee_batch},
-        consts::{HYPERLIQUID_VENUE, exchange_url, info_url},
+        builder_fee::{resolve_builder_fee, resolve_builder_fee_batch, resolve_maker_tenths_bp},
+        consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP, exchange_url, info_url},
         credential::{Secrets, VaultAddress},
         enums::{
             HyperliquidBarInterval, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
@@ -365,6 +365,12 @@ impl HyperliquidRawHttpClient {
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
         let request = InfoRequest::clearinghouse_state(user);
+        self.send_info_request(&request).await
+    }
+
+    /// Get user fee schedule and effective rates.
+    pub async fn info_user_fees(&self, user: &str) -> Result<Value> {
+        let request = InfoRequest::user_fees(user);
         self.send_info_request(&request).await
     }
 
@@ -747,6 +753,8 @@ pub struct HyperliquidHttpClient {
     spot_fill_coins: Arc<RwLock<AHashMap<Ustr, Ustr>>>,
     account_id: Option<AccountId>,
     normalize_prices: bool,
+    /// Dynamic builder maker fee in tenths of a basis point (volume-tier adjusted).
+    builder_maker_tenths_bp: Arc<RwLock<u32>>,
 }
 
 impl Default for HyperliquidHttpClient {
@@ -795,7 +803,27 @@ impl HyperliquidHttpClient {
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
             normalize_prices: true,
+            builder_maker_tenths_bp: Arc::new(RwLock::new(NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP)),
         }
+    }
+
+    /// Returns the current builder maker fee in tenths of a basis point.
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn builder_maker_tenths_bp(&self) -> u32 {
+        *self.builder_maker_tenths_bp.read().unwrap()
+    }
+
+    /// Updates the builder maker fee tier from the HL effective maker rate.
+    ///
+    /// Returns `(old_tenths, new_tenths)`.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn update_builder_maker_fee(&self, user_add_rate: f64) -> (u32, u32) {
+        let new = resolve_maker_tenths_bp(user_add_rate);
+        let mut guard = self.builder_maker_tenths_bp.write().unwrap();
+        let old = *guard;
+        *guard = new;
+        (old, new)
     }
 
     /// Overrides the base info URL (for testing with mock servers).
@@ -836,6 +864,7 @@ impl HyperliquidHttpClient {
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
             normalize_prices: true,
+            builder_maker_tenths_bp: Arc::new(RwLock::new(NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP)),
         })
     }
 
@@ -900,6 +929,9 @@ impl HyperliquidHttpClient {
                     spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
                     account_id: None,
                     normalize_prices: true,
+                    builder_maker_tenths_bp: Arc::new(RwLock::new(
+                        NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP,
+                    )),
                 })
             }
             None => {
@@ -938,6 +970,7 @@ impl HyperliquidHttpClient {
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
             normalize_prices: true,
+            builder_maker_tenths_bp: Arc::new(RwLock::new(NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP)),
         })
     }
 
@@ -1331,6 +1364,11 @@ impl HyperliquidHttpClient {
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
         self.inner.info_clearinghouse_state(user).await
+    }
+
+    /// Get user fee schedule and effective rates.
+    pub async fn info_user_fees(&self, user: &str) -> Result<Value> {
+        self.inner.info_user_fees(user).await
     }
 
     /// Get candle/bar data for a coin.
@@ -1956,7 +1994,7 @@ impl HyperliquidHttpClient {
         let action = HyperliquidExecAction::Order {
             orders: vec![hyperliquid_order],
             grouping: HyperliquidExecGrouping::Na,
-            builder: resolve_builder_fee(symbol, post_only),
+            builder: resolve_builder_fee(symbol, post_only, self.builder_maker_tenths_bp()),
         };
 
         let response = self.inner.post_action_exec(&action).await?;
@@ -2156,7 +2194,7 @@ impl HyperliquidHttpClient {
             .collect();
         let batch_refs: Vec<(&str, bool)> =
             order_props.iter().map(|(s, p)| (s.as_str(), *p)).collect();
-        let builder = resolve_builder_fee_batch(&batch_refs);
+        let builder = resolve_builder_fee_batch(&batch_refs, self.builder_maker_tenths_bp());
 
         let action = HyperliquidExecAction::Order {
             orders: hyperliquid_orders,
@@ -2297,7 +2335,10 @@ mod tests {
     use ustr::Ustr;
 
     use super::HyperliquidHttpClient;
-    use crate::{common::enums::HyperliquidProductType, http::query::InfoRequest};
+    use crate::{
+        common::{consts::NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP, enums::HyperliquidProductType},
+        http::query::InfoRequest,
+    };
 
     #[rstest]
     fn stable_json_roundtrips() {
@@ -2423,5 +2464,48 @@ mod tests {
             client.get_or_create_instrument(&Ustr::from("vntls:vCURSOR"), None);
         assert!(retrieved_without_type.is_some());
         assert_eq!(retrieved_without_type.unwrap().id(), instrument.id());
+    }
+
+    #[rstest]
+    fn test_builder_maker_fee_default() {
+        let client = HyperliquidHttpClient::default();
+        assert_eq!(
+            client.builder_maker_tenths_bp(),
+            NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP,
+        );
+    }
+
+    #[rstest]
+    fn test_update_builder_maker_fee_returns_old_and_new() {
+        let client = HyperliquidHttpClient::default();
+        let (old, new) = client.update_builder_maker_fee(0.000_10);
+        assert_eq!(old, NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP);
+        assert_eq!(new, 3);
+        assert_eq!(client.builder_maker_tenths_bp(), 3);
+    }
+
+    #[rstest]
+    fn test_update_builder_maker_fee_successive_updates() {
+        let client = HyperliquidHttpClient::default();
+
+        let (_, new) = client.update_builder_maker_fee(0.000_10);
+        assert_eq!(new, 3);
+
+        let (old, new) = client.update_builder_maker_fee(0.0);
+        assert_eq!(old, 3);
+        assert_eq!(new, 0);
+
+        // Back up
+        let (old, new) = client.update_builder_maker_fee(0.000_15);
+        assert_eq!(old, 0);
+        assert_eq!(new, 4);
+    }
+
+    #[rstest]
+    fn test_update_builder_maker_fee_unchanged() {
+        let client = HyperliquidHttpClient::default();
+        let (old, new) = client.update_builder_maker_fee(0.000_15);
+        assert_eq!(old, new);
+        assert_eq!(new, NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP);
     }
 }

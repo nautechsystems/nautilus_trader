@@ -844,6 +844,8 @@ pub enum HyperliquidInfoRequestType {
     DelegatorRewards,
     /// Get validator stats.
     ValidatorStats,
+    /// Get user fee schedule and effective rates.
+    UserFees,
 }
 
 impl HyperliquidInfoRequestType {
@@ -878,6 +880,7 @@ impl HyperliquidInfoRequestType {
             Self::DelegatorHistory => "delegatorHistory",
             Self::DelegatorRewards => "delegatorRewards",
             Self::ValidatorStats => "validatorStats",
+            Self::UserFees => "userFees",
         }
     }
 }

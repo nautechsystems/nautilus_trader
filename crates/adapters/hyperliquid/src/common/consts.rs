@@ -37,7 +37,10 @@ pub const HYPERLIQUID_TESTNET_EXCHANGE_URL: &str = "https://api.hyperliquid-test
 // Note: Address MUST be lowercase for msgpack serialization to match Python SDK
 pub const NAUTILUS_BUILDER_FEE_ADDRESS: &str = "0x0c8d970c462726e014ad36f6c5a63e99db48a8e7";
 pub const NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP: u32 = 10; // 1 bp = 0.01%
-pub const NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP: u32 = 5; // 0.5 bp = 0.005%
+pub const NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP: u32 = 4; // 0.4 bp = 0.004% (base tier, scales with volume)
+
+/// Default interval in minutes for periodic builder fee tier refresh.
+pub const BUILDER_FEE_REFRESH_DEFAULT_MINS: u64 = 60;
 
 /// Hyperliquid signing chain ID (0x66eee = 421614 decimal).
 pub const HYPERLIQUID_CHAIN_ID: u64 = 421614;

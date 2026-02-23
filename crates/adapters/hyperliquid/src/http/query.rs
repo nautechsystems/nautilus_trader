@@ -257,6 +257,16 @@ impl InfoRequest {
         }
     }
 
+    /// Creates a request to get user fee schedule and effective rates.
+    pub fn user_fees(user: &str) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::UserFees,
+            params: InfoRequestParams::OpenOrders(OpenOrdersParams {
+                user: user.to_string(),
+            }),
+        }
+    }
+
     /// Creates a request to get candle/bar data.
     pub fn candle_snapshot(
         coin: &str,

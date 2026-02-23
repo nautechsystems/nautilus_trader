@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
+    enums::LogColor,
     live::{runner::get_exec_event_sender, runtime::get_runtime},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -53,7 +54,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         builder_fee::{resolve_builder_fee, resolve_builder_fee_batch},
-        consts::HYPERLIQUID_VENUE,
+        consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP},
         credential::Secrets,
         parse::{
             client_order_id_to_cancel_request_with_asset, derive_market_order_price,
@@ -82,6 +83,7 @@ pub struct HyperliquidExecutionClient {
     ws_client: HyperliquidWebSocketClient,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
+    fee_refresh_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl HyperliquidExecutionClient {
@@ -200,6 +202,7 @@ impl HyperliquidExecutionClient {
             ws_client,
             pending_tasks: Mutex::new(Vec::new()),
             ws_stream_handle: Mutex::new(None),
+            fee_refresh_handle: Mutex::new(None),
         })
     }
 
@@ -330,6 +333,69 @@ impl HyperliquidExecutionClient {
             handle.abort();
         }
     }
+
+    async fn fetch_and_update_builder_fee(&self) -> anyhow::Result<(f64, f64, u32, u32)> {
+        let account_address = self.get_account_address()?;
+        fetch_and_update_builder_fee(&self.http_client, &account_address).await
+    }
+}
+
+async fn fetch_and_update_builder_fee(
+    http_client: &HyperliquidHttpClient,
+    account_address: &str,
+) -> anyhow::Result<(f64, f64, u32, u32)> {
+    let json = http_client
+        .info_user_fees(account_address)
+        .await
+        .context("failed to query userFees")?;
+
+    let user_add_rate = json
+        .get("userAddRate")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .ok_or_else(|| anyhow::anyhow!("missing or invalid userAddRate in response"))?;
+
+    let user_cross_rate = json
+        .get("userCrossRate")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .ok_or_else(|| anyhow::anyhow!("missing or invalid userCrossRate in response"))?;
+
+    let (old, new) = http_client.update_builder_maker_fee(user_add_rate);
+    Ok((user_add_rate, user_cross_rate, old, new))
+}
+
+fn fmt_pct(value: f64) -> String {
+    let s = format!("{value:.6}");
+    let s = s.trim_end_matches('0');
+    s.trim_end_matches('.').to_string()
+}
+
+fn fmt_bp(bp: f64) -> String {
+    format!("{bp:.1} bp ({}%)", fmt_pct(bp / 100.0))
+}
+
+fn log_fee_summary(maker_rate: f64, taker_rate: f64, builder_maker_tenths_bp: u32) {
+    let hl_maker_bp = maker_rate * 10_000.0;
+    let hl_taker_bp = taker_rate * 10_000.0;
+    let builder_maker_bp = builder_maker_tenths_bp as f64 / 10.0;
+    let builder_taker_bp = NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP as f64 / 10.0;
+    let total_maker_bp = hl_maker_bp + builder_maker_bp;
+    let total_taker_bp = hl_taker_bp + builder_taker_bp;
+    log::info!(
+        color = LogColor::Blue as u8;
+        "HL maker: {}, builder maker: {}, total maker: {}",
+        fmt_bp(hl_maker_bp),
+        fmt_bp(builder_maker_bp),
+        fmt_bp(total_maker_bp),
+    );
+    log::info!(
+        color = LogColor::Blue as u8;
+        "HL taker: {}, builder taker: {}, total taker: {}",
+        fmt_bp(hl_taker_bp),
+        fmt_bp(builder_taker_bp),
+        fmt_bp(total_taker_bp),
+    );
 }
 
 #[async_trait(?Send)]
@@ -399,12 +465,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         log::info!("Stopping Hyperliquid execution client");
 
-        // Stop WebSocket stream
+        if let Some(handle) = self.fee_refresh_handle.lock().expect(MUTEX_POISONED).take() {
+            handle.abort();
+        }
+
         if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
             handle.abort();
         }
 
-        // Abort any pending tasks
         self.abort_pending_tasks();
 
         // Disconnect WebSocket
@@ -515,7 +583,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         self.emitter.emit_order_submitted(&order);
 
-        let builder = resolve_builder_fee(&symbol, order.is_post_only());
+        let builder = resolve_builder_fee(
+            &symbol,
+            order.is_post_only(),
+            self.http_client.builder_maker_tenths_bp(),
+        );
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -624,7 +696,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .collect();
         let batch_refs: Vec<(&str, bool)> =
             order_props.iter().map(|(s, p)| (s.as_str(), *p)).collect();
-        let builder = resolve_builder_fee_batch(&batch_refs);
+        let builder =
+            resolve_builder_fee_batch(&batch_refs, self.http_client.builder_maker_tenths_bp());
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -1014,6 +1087,62 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.refresh_account_state().await?;
         self.await_account_registered(30.0).await?;
 
+        // Fetch initial builder fee tier from HL
+        match self.fetch_and_update_builder_fee().await {
+            Ok((maker_rate, taker_rate, _old, new)) => {
+                log_fee_summary(maker_rate, taker_rate, new);
+            }
+            Err(e) => {
+                let bp = self.http_client.builder_maker_tenths_bp() as f64 / 10.0;
+                log::warn!(
+                    "Failed to query userFees, \
+                     retaining builder maker fee: {}: {e}",
+                    fmt_bp(bp),
+                );
+            }
+        }
+
+        // Spawn periodic builder fee refresh if configured
+        if let Some(mins) = self.config.builder_fee_refresh_mins {
+            anyhow::ensure!(mins > 0, "builder_fee_refresh_mins must be > 0");
+            let http_client = self.http_client.clone();
+            let account_address = self.get_account_address()?;
+            let interval = Duration::from_mins(mins);
+
+            let handle = get_runtime().spawn(async move {
+                let mut ticker = tokio::time::interval(interval);
+                ticker.tick().await; // Skip immediate first tick
+
+                loop {
+                    ticker.tick().await;
+
+                    let result = fetch_and_update_builder_fee(&http_client, &account_address).await;
+
+                    match result {
+                        Ok((maker_rate, taker_rate, old, new)) => {
+                            if old == new {
+                                let bp = new as f64 / 10.0;
+                                log::trace!("Builder maker fee unchanged: {bp:.1} bp");
+                            } else {
+                                log_fee_summary(maker_rate, taker_rate, new);
+                            }
+                        }
+                        Err(e) => {
+                            let bp = http_client.builder_maker_tenths_bp() as f64 / 10.0;
+                            log::warn!(
+                                "Failed to query userFees, \
+                                 retaining builder maker fee: {}: {e}",
+                                fmt_bp(bp),
+                            );
+                        }
+                    }
+                }
+            });
+
+            *self.fee_refresh_handle.lock().expect(MUTEX_POISONED) = Some(handle);
+            log::info!("Builder fee refresh scheduled every {mins}m");
+        }
+
         self.core.set_connected();
 
         log::info!("Connected: client_id={}", self.core.client_id);
@@ -1026,6 +1155,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         log::info!("Disconnecting Hyperliquid execution client");
+
+        // Abort fee refresh task
+        if let Some(handle) = self.fee_refresh_handle.lock().expect(MUTEX_POISONED).take() {
+            handle.abort();
+        }
 
         // Disconnect WebSocket
         self.ws_client.disconnect().await?;
@@ -1325,5 +1459,38 @@ impl HyperliquidExecutionClient {
         *self.ws_stream_handle.lock().expect(MUTEX_POISONED) = Some(handle);
         log::info!("Hyperliquid WebSocket execution stream started");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(0.015, "0.015")]
+    #[case(0.004, "0.004")]
+    #[case(0.019, "0.019")]
+    #[case(0.01, "0.01")]
+    #[case(0.1, "0.1")]
+    #[case(1.0, "1")]
+    #[case(0.0, "0")]
+    #[case(0.045, "0.045")]
+    #[case(0.055, "0.055")]
+    fn test_fmt_pct(#[case] value: f64, #[case] expected: &str) {
+        assert_eq!(fmt_pct(value), expected);
+    }
+
+    #[rstest]
+    #[case(1.5, "1.5 bp (0.015%)")]
+    #[case(0.4, "0.4 bp (0.004%)")]
+    #[case(1.9, "1.9 bp (0.019%)")]
+    #[case(1.0, "1.0 bp (0.01%)")]
+    #[case(0.0, "0.0 bp (0%)")]
+    #[case(3.5, "3.5 bp (0.035%)")]
+    #[case(4.5, "4.5 bp (0.045%)")]
+    fn test_fmt_bp(#[case] bp: f64, #[case] expected: &str) {
+        assert_eq!(fmt_bp(bp), expected);
     }
 }
