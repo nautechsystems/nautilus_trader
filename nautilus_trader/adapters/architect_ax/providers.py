@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.adapters.architect_ax.constants import AX_VENUE
@@ -34,6 +35,10 @@ class AxInstrumentProvider(InstrumentProvider):
         The AX Exchange HTTP client.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
+    maker_fee : Decimal, optional
+        The maker fee to apply to loaded instruments.
+    taker_fee : Decimal, optional
+        The taker fee to apply to loaded instruments.
 
     """
 
@@ -41,9 +46,13 @@ class AxInstrumentProvider(InstrumentProvider):
         self,
         client: nautilus_pyo3.AxHttpClient,
         config: InstrumentProviderConfig | None = None,
+        maker_fee: Decimal | None = None,
+        taker_fee: Decimal | None = None,
     ) -> None:
         super().__init__(config=config)
         self._client = client
+        self._maker_fee = maker_fee
+        self._taker_fee = taker_fee
         self._log_warnings = config.log_warnings if config else True
         self._instruments_pyo3: list[Any] = []
 
@@ -62,7 +71,10 @@ class AxInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        pyo3_instruments = await self._client.request_instruments()
+        pyo3_instruments = await self._client.request_instruments(
+            maker_fee=self._maker_fee,
+            taker_fee=self._taker_fee,
+        )
         self._instruments_pyo3 = pyo3_instruments
 
         instruments = instruments_from_pyo3(pyo3_instruments)

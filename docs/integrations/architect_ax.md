@@ -52,11 +52,27 @@ contracts never expire, eliminating rollover costs associated with standard futu
 | Energy           | Crude oil, natural gas.             | Energy commodity perpetuals. |
 | Interest rates   | SOFR, treasury yields.              | Rate perpetuals.             |
 
-:::info
-All instruments on AX Exchange are loaded as `PerpetualContract`, an asset-class agnostic
-perpetual swap type. The asset class (FX, commodity, etc.) is inferred automatically from
-the underlying. The adapter uses `MARGIN` account type and `NETTING` order management.
-:::
+### Perpetual contracts
+
+A perpetual contract (perpetual swap) is a derivative that tracks the price of an underlying
+asset without expiring. Unlike standard futures, there is no settlement date, which eliminates
+rollover costs and simplifies position management. A funding rate mechanism keeps the contract
+price aligned with the underlying index price through periodic payments between long and short
+holders. See the [Architect documentation](https://docs.architect.exchange/) for details on
+funding rate mechanics and contract specifications.
+
+Characteristics of AX perpetual contracts:
+
+- **Cash-settled in USD**: No physical delivery. All profit and loss is settled in USD.
+- **Funding rates**: Periodic payments keep the contract price aligned with the underlying.
+- **Multiplier of 1**: Each contract represents one unit of exposure to the underlying.
+- **Whole contracts only**: Fractional quantities are not supported.
+- **Margin**: Initial margin is required to open a position; maintenance margin to keep it open.
+
+In NautilusTrader, all AX instruments are represented as `PerpetualContract`, an asset-class
+agnostic perpetual swap type. The asset class (FX, commodity, equity, etc.) is inferred
+automatically from the underlying. The adapter uses `MARGIN` account type and `NETTING` order
+management.
 
 ## Symbology
 
@@ -92,11 +108,43 @@ AX Exchange provides two trading environments. Configure the appropriate environ
 
 ### Sandbox
 
-The default environment for development and testing with simulated funds.
+The sandbox is the default environment for development and testing with simulated funds.
+All sandbox endpoints are resolved automatically when `environment=AxEnvironment.SANDBOX`.
+
+#### 1. Create a sandbox account
+
+Follow the [Architect documentation](https://docs.architect.exchange/) to create a sandbox
+account. An invite code is required during registration.
+
+#### 2. Create API keys and fund the account
+
+Use the AX sandbox UI to generate API keys and deposit simulated funds into your account.
+Store the `api_key` and `api_secret` securely.
+
+#### 3. Set environment variables
+
+```bash
+export AX_API_KEY="your-sandbox-api-key"
+export AX_API_SECRET="your-sandbox-api-secret"
+```
+
+#### 4. Configure the trading node
 
 ```python
-config = AxExecClientConfig(
-    environment=AxEnvironment.SANDBOX,
+config = TradingNodeConfig(
+    ...,  # Omitted
+    data_clients={
+        AX: AxDataClientConfig(
+            environment=AxEnvironment.SANDBOX,
+            instrument_provider=InstrumentProviderConfig(load_all=True),
+        ),
+    },
+    exec_clients={
+        AX: AxExecClientConfig(
+            environment=AxEnvironment.SANDBOX,
+            instrument_provider=InstrumentProviderConfig(load_all=True),
+        ),
+    },
 )
 ```
 

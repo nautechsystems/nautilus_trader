@@ -16,16 +16,18 @@ Released on TBD (UTC).
 - Bumped all eligible GitHub Actions pinned SHAs to latest versions (2-week release policy)
 
 ### Fixes
-- Fixed matching engine applying order book deltas for L1 books
+- Fixed matching engine applying order book deltas for L1 books (#3615), thanks @maksym-mikheienko
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
 - Fixed Hyperliquid stop/trigger order price derivation (#3611), thanks for reporting @h-tsun3
 - Fixed Hyperliquid price normalization and inner error detection (#3612), thanks for reporting @h-tsun3
 
 ### Internal Improvements
 - Implemented `BacktestNode` with catalog streaming in Rust
+- Improved `OrderBookImbalance` example strategy
 - Standardized use of atomic clock across adapters
 
 ### Documentation Updates
+- Added AX Exchange gold perps backtest tutorial
 
 ---
 

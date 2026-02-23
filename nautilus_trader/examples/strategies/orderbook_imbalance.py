@@ -16,16 +16,11 @@
 import datetime
 from decimal import Decimal
 
-from nautilus_trader.adapters.betfair.constants import BETFAIR_CLIENT_ID
-from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
-from nautilus_trader.adapters.betfair.data_types import BetfairRaceRunnerData
-from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.config import NonNegativeFloat
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.model.book import OrderBook
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
@@ -51,22 +46,21 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     max_trade_size : Decimal
-        The max position size per trade (volume on the level can be less).
+        The maximum order size per trade.
     trigger_min_size : PositiveFloat, default 100.0
         The minimum size on the larger side to trigger an order.
     trigger_imbalance_ratio : PositiveFloat, default 0.20
-        The ratio of bid:ask volume required to trigger an order (smaller
-        value / larger value) ie given a trigger_imbalance_ratio=0.2, and a
-        bid volume of 100, we will send a buy order if the ask volume is <
-        20).
+        The imbalance ratio threshold (smaller / larger). When the ratio
+        falls below this value, a trigger fires. For example, with a ratio
+        of 0.2 and bid size of 100, a buy triggers when ask size < 20.
     min_seconds_between_triggers : NonNegativeFloat, default 1.0
         The minimum time between triggers.
-    book_type : str, default 'L2_MBP'
+    book_type : str or BookType, default 'L2_MBP'
         The order book type for the strategy.
     use_quote_ticks : bool, default False
-        If quotes should be used.
+        If quote ticks should be used (requires L1_MBP book type).
     dry_run : bool, default False
-        If dry run mode is active. If True, then no new orders will be submitted.
+        If dry run mode is active (no orders submitted).
 
     """
 
@@ -75,21 +69,25 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
     trigger_min_size: PositiveFloat = 100.0
     trigger_imbalance_ratio: PositiveFloat = 0.20
     min_seconds_between_triggers: NonNegativeFloat = 1.0
-    book_type: str = "L2_MBP"
+    book_type: str | BookType = "L2_MBP"
     use_quote_ticks: bool = False
     dry_run: bool = False
 
 
 class OrderBookImbalance(Strategy):
     """
-    A simple strategy that sends FOK limit orders when there is a bid/ask imbalance in
-    the order book.
+    A strategy that sends FOK limit orders when there is a bid/ask size imbalance in the
+    order book.
+
+    When bid size significantly exceeds ask size (ratio below threshold),
+    the strategy buys at the ask. When ask size exceeds bid size, it sells
+    at the bid. Orders use fill-or-kill to avoid partial fills.
 
     Cancels all orders and closes all positions on stop.
 
     Parameters
     ----------
-    config : OrderbookImbalanceConfig
+    config : OrderBookImbalanceConfig
         The configuration for the instance.
 
     """
@@ -98,11 +96,10 @@ class OrderBookImbalance(Strategy):
         assert 0 < config.trigger_imbalance_ratio < 1
         super().__init__(config)
 
-        # Initialized in on_start
         self.instrument: Instrument | None = None
-        if self.config.use_quote_ticks:
-            assert self.config.book_type == "L1_MBP"
-        self.book_type: BookType = book_type_from_str(self.config.book_type)
+        self.book_type: BookType | None = None
+        self._book: OrderBook | None = None
+        self._max_qty: Quantity = Quantity.from_str(str(config.max_trade_size))
         self._last_trigger_timestamp: datetime.datetime | None = None
 
     def on_start(self) -> None:
@@ -115,19 +112,18 @@ class OrderBookImbalance(Strategy):
             self.stop()
             return
 
+        book_type = self.config.book_type
+        if isinstance(book_type, str):
+            book_type = book_type_from_str(book_type)
+
         if self.config.use_quote_ticks:
             self.book_type = BookType.L1_MBP
+            self._book = OrderBook(self.instrument.id, self.book_type)
             self.subscribe_quote_ticks(self.instrument.id)
         else:
-            self.book_type = book_type_from_str(self.config.book_type)
+            self.book_type = book_type
             self.subscribe_order_book_deltas(self.instrument.id, self.book_type)
 
-        # Subscribe to Betfair custom data types (for testing)
-        self.subscribe_data(DataType(BetfairTicker), client_id=BETFAIR_CLIENT_ID)
-        self.subscribe_data(DataType(BetfairRaceRunnerData), client_id=BETFAIR_CLIENT_ID)
-        self.subscribe_data(DataType(BetfairRaceProgress), client_id=BETFAIR_CLIENT_ID)
-
-        # Initialize to None to allow immediate first execution
         self._last_trigger_timestamp = None
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
@@ -138,38 +134,13 @@ class OrderBookImbalance(Strategy):
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
-        Actions to be performed when a delta is received.
+        Actions to be performed when a quote tick is received.
         """
+        if self._book is not None:
+            self._book.update_quote_tick(tick)
         self.check_trigger()
 
-    def on_order_book(self, order_book: OrderBook) -> None:
-        """
-        Actions to be performed when an order book update is received.
-        """
-        self.check_trigger()
-
-    def on_data(self, data) -> None:
-        """
-        Actions to be performed when custom data is received.
-        """
-        if isinstance(data, BetfairRaceRunnerData):
-            self.log.info(
-                f"RaceRunner: {data.selection_id} speed={data.speed} m/s, "
-                f"progress={data.progress}m",
-                color=LogColor.CYAN,
-            )
-        elif isinstance(data, BetfairRaceProgress):
-            self.log.info(
-                f"RaceProgress: gate={data.gate_name} order={data.order}",
-                color=LogColor.CYAN,
-            )
-        elif isinstance(data, BetfairTicker):
-            self.log.info(
-                f"Ticker: ltp={data.last_traded_price} tv={data.traded_volume}",
-                color=LogColor.CYAN,
-            )
-
-    def check_trigger(self) -> None:  # noqa: C901 (too complex)
+    def check_trigger(self) -> None:
         """
         Check for trigger conditions.
         """
@@ -177,83 +148,68 @@ class OrderBookImbalance(Strategy):
             self.log.error("No instrument loaded")
             return
 
-        # Fetch book from the cache being maintained by the `DataEngine`
-        book = self.cache.order_book(self.config.instrument_id)
-        if not book:
-            self.log.error("No book being maintained")
-            return
-
-        if not book.spread():
+        book = self._book or self.cache.order_book(self.config.instrument_id)
+        if not book or not book.spread():
             return
 
         bid_size: Quantity | None = book.best_bid_size()
         ask_size: Quantity | None = book.best_ask_size()
-        if (bid_size is None or bid_size <= 0) or (ask_size is None or ask_size <= 0):
-            self.log.warning("No market yet")
+        if not bid_size or bid_size <= 0 or not ask_size or ask_size <= 0:
             return
 
         smaller = min(bid_size, ask_size)
         larger = max(bid_size, ask_size)
         ratio = smaller / larger
         self.log.info(
-            f"Book: {book.best_bid_price()} @ {book.best_ask_price()} ({ratio=:0.2f})",
+            f"Book: [{bid_size}] {book.best_bid_price()} @ {book.best_ask_price()} [{ask_size}] ({ratio=:0.2f})",
         )
 
-        # Check time since last trigger only if there was a previous trigger
-        if self._last_trigger_timestamp is not None:
-            seconds_since_last_trigger = (
-                self.clock.utc_now() - self._last_trigger_timestamp
-            ).total_seconds()
-        else:
-            seconds_since_last_trigger = float("inf")  # Allow first trigger
+        if larger <= self.config.trigger_min_size:
+            return
+        if ratio >= self.config.trigger_imbalance_ratio:
+            return
+        if self._is_cooldown_active():
+            return
+        if self.cache.orders_inflight(strategy_id=self.id):
+            return
 
-        if larger > self.config.trigger_min_size and ratio < self.config.trigger_imbalance_ratio:
-            self.log.info(
-                "Trigger conditions met, checking for existing orders and time since last order",
-            )
-            if len(self.cache.orders_inflight(strategy_id=self.id)) > 0:
-                self.log.info("Already have orders in flight - skipping.")
-            elif seconds_since_last_trigger < self.config.min_seconds_between_triggers:
-                self.log.info("Time since last order < min_seconds_between_triggers - skipping")
-            elif bid_size > ask_size:
-                # Clamp order size to max_trade_size
-                trade_qty = min(ask_size, Quantity.from_str(str(self.config.max_trade_size)))
-                order = self.order_factory.limit(
-                    instrument_id=self.instrument.id,
-                    price=self.instrument.make_price(book.best_ask_price()),
-                    order_side=OrderSide.BUY,
-                    quantity=self.instrument.make_qty(trade_qty),
-                    post_only=False,
-                    time_in_force=TimeInForce.FOK,
-                )
-                self._last_trigger_timestamp = self.clock.utc_now()
-                self.log.info(f"Hitting! {order=}", color=LogColor.BLUE)
-                if self.config.dry_run:
-                    self.log.warning("Dry run mode is active; skipping new order submission")
-                    return
-                self.submit_order(order)
-            else:
-                # Clamp order size to max_trade_size
-                trade_qty = min(bid_size, Quantity.from_str(str(self.config.max_trade_size)))
-                order = self.order_factory.limit(
-                    instrument_id=self.instrument.id,
-                    price=self.instrument.make_price(book.best_bid_price()),
-                    order_side=OrderSide.SELL,
-                    quantity=self.instrument.make_qty(trade_qty),
-                    post_only=False,
-                    time_in_force=TimeInForce.FOK,
-                )
-                self._last_trigger_timestamp = self.clock.utc_now()
-                self.log.info(f"Hitting! {order=}", color=LogColor.BLUE)
-                if self.config.dry_run:
-                    self.log.warning("Dry run mode is active; skipping new order submission")
-                    return
-                self.submit_order(order)
+        if bid_size > ask_size:
+            side = OrderSide.BUY
+            price = book.best_ask_price()
+            level_size = ask_size
+        else:
+            side = OrderSide.SELL
+            price = book.best_bid_price()
+            level_size = bid_size
+
+        self._last_trigger_timestamp = self.clock.utc_now()
+
+        if self.config.dry_run:
+            return
+
+        trade_qty = min(level_size, self._max_qty)
+        order = self.order_factory.limit(
+            instrument_id=self.instrument.id,
+            price=self.instrument.make_price(price),
+            order_side=side,
+            quantity=self.instrument.make_qty(trade_qty),
+            post_only=False,
+            time_in_force=TimeInForce.FOK,
+        )
+        self.log.info(f"Hitting! {order=}", color=LogColor.BLUE)
+        self.submit_order(order)
+
+    def _is_cooldown_active(self) -> bool:
+        if self._last_trigger_timestamp is None:
+            return False
+        seconds_since = (self.clock.utc_now() - self._last_trigger_timestamp).total_seconds()
+        return seconds_since < self.config.min_seconds_between_triggers
 
     def on_reset(self) -> None:
         """
         Actions to be performed when the strategy is reset.
         """
+        self._book = None
         self._last_trigger_timestamp = None
 
     def on_stop(self) -> None:

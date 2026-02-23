@@ -1,4 +1,4 @@
-# Grid Market Making on dYdX v4
+# dYdX - Grid Market Making
 
 This tutorial walks through running a grid market making strategy on dYdX v4 using the
 Rust-native `LiveNode`. By the end, you will have a working grid quoter that places symmetric
@@ -119,8 +119,8 @@ trade-off:
 ### Parameter reference
 
 | Parameter               | Type           | Default    | Description                                                              |
-|-------------------------|----------------|------------|--------------------------------------------------------------------------|
-| `instrument_id`         | `InstrumentId` | *required* | Instrument to trade (e.g., `ETH-USD-PERP.DYDX`).                        |
+| ----------------------- | -------------- | ---------- | ------------------------------------------------------------------------ |
+| `instrument_id`         | `InstrumentId` | *required* | Instrument to trade (e.g., `ETH-USD-PERP.DYDX`).                         |
 | `max_position`          | `Quantity`     | *required* | Maximum net exposure (long or short).                                    |
 | `trade_size`            | `Quantity`     | `None`     | Size per grid level. If `None`, uses instrument's `min_quantity` or 1.0. |
 | `num_levels`            | `usize`        | `3`        | Number of buy and sell levels.                                           |
@@ -528,13 +528,13 @@ fn grid_orders(
 
 ### Key log messages
 
-| Log message                                          | Meaning                                                   |
-|------------------------------------------------------|-----------------------------------------------------------|
-| `Requoting grid: mid=X, last_mid=Y`                 | Mid-price moved beyond threshold, refreshing grid.        |
-| `Submit short-term order N`                          | Order submitted via short-term broadcast path.            |
-| `BatchCancel N short-term orders`                    | Batch cancel executed for expired/stale orders.           |
-| `benign cancel error, treating as success`           | Cancel for already-filled/expired order (normal).         |
-| `Sequence mismatch detected, will resync and retry`  | Cosmos SDK sequence error, auto-recovering.               |
+| Log message                                         | Meaning                                            |
+| --------------------------------------------------- | -------------------------------------------------- |
+| `Requoting grid: mid=X, last_mid=Y`                 | Mid-price moved beyond threshold, refreshing grid. |
+| `Submit short-term order N`                         | Order submitted via short-term broadcast path.     |
+| `BatchCancel N short-term orders`                   | Batch cancel executed for expired/stale orders.    |
+| `benign cancel error, treating as success`          | Cancel for already-filled/expired order (normal).  |
+| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto-recovering.        |
 
 ### Expected behavior patterns
 
@@ -549,7 +549,7 @@ fn grid_orders(
 ### High vs low volatility
 
 | Condition       | Adjustment                                                                |
-|-----------------|---------------------------------------------------------------------------|
+| --------------- | ------------------------------------------------------------------------- |
 | High volatility | Wider `grid_step_bps` (100-200), fewer `num_levels`, lower `skew_factor`. |
 | Low volatility  | Tighter `grid_step_bps` (10-30), more `num_levels`, higher `skew_factor`. |
 | Thin liquidity  | Increase `requote_threshold_bps` to reduce cancel frequency.              |
