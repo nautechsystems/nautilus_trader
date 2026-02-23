@@ -48,6 +48,10 @@ fn audusd_sim_id() -> InstrumentId {
     InstrumentId::from("AUD/USD.SIM")
 }
 
+fn spx_cboe_id() -> InstrumentId {
+    InstrumentId::from("^SPX.CBOE")
+}
+
 fn ethusdt_binance_id() -> InstrumentId {
     InstrumentId::from("ETH/USDT.BINANCE")
 }
@@ -208,6 +212,25 @@ fn create_bar(ts_init: u64) -> Bar {
         Price::new(1.00000, 5),
         Price::new(1.00000, 5),
         Quantity::new(100_000.0, 0),
+        UnixNanos::from(0),
+        UnixNanos::from(ts_init),
+    )
+}
+
+fn create_index_bar(ts_init: u64) -> Bar {
+    let bar_type = BarType::new(
+        spx_cboe_id(),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
+        AggregationSource::External,
+    );
+
+    Bar::new(
+        bar_type,
+        Price::new(1.00001, 5),
+        Price::new(1.1, 1),
+        Price::new(1.00000, 5),
+        Price::new(1.00000, 5),
+        Quantity::new(0.0, 0),
         UnixNanos::from(0),
         UnixNanos::from(ts_init),
     )
@@ -511,6 +534,69 @@ fn test_rust_consolidate_with_deduplication() {
     let result = catalog
         .query_typed_data::<Bar>(
             Some(vec!["AUD/USD.SIM".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0].bar_type, bars_a[0].bar_type);
+}
+
+#[rstest]
+fn test_rust_consolidate_index_with_deduplication() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    // Write bars [1, 2] and [2, 3] as separate files so ts=2 is duplicated
+    let bars_a = vec![create_index_bar(1), create_index_bar(2)];
+    catalog
+        .write_to_parquet(bars_a.clone(), None, None, None)
+        .unwrap();
+
+    let bars_b = vec![create_index_bar(2), create_index_bar(3)];
+    catalog
+        .write_to_parquet(bars_b, None, None, Some(true))
+        .unwrap();
+
+    let bar_type = bars_a[0].bar_type.to_string();
+
+    // Sanity check: two separate files exist
+    let files_before = catalog
+        .query_files("bars", Some(vec!["^SPX.CBOE".to_string()]), None, None)
+        .unwrap();
+    assert_eq!(files_before.len(), 2);
+
+    // Without deduplication the combined data has 4 rows (ts=2 appears twice)
+    let raw = catalog
+        .query_typed_data::<Bar>(
+            Some(vec!["^SPX.CBOE".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+    assert_eq!(raw.len(), 4);
+
+    // Consolidate with deduplication enabled; disable disjoint check since
+    // we intentionally wrote overlapping files to seed the duplicates
+    catalog
+        .consolidate_data("bars", Some(bar_type), None, None, Some(false), Some(true))
+        .unwrap();
+
+    // After consolidation there should be a single file
+    let files_after = catalog
+        .query_files("bars", Some(vec!["^SPX.CBOE".to_string()]), None, None)
+        .unwrap();
+    assert_eq!(files_after.len(), 1);
+
+    // The data should contain exactly 3 unique rows (duplicate ts=2 removed)
+    let result = catalog
+        .query_typed_data::<Bar>(
+            Some(vec!["^SPX.CBOE".to_string()]),
             None,
             None,
             None,
