@@ -79,9 +79,9 @@ endif
 # Can be disabled: make cargo-test-core DEFI=false
 DEFI ?= true
 ifeq ($(DEFI),true)
-BASE_FEATURES := ffi,python,high-precision,defi,examples
+BASE_FEATURES := ffi,python,high-precision,streaming,defi,examples
 else
-BASE_FEATURES := ffi,python,high-precision,examples
+BASE_FEATURES := ffi,python,high-precision,streaming,examples
 endif
 
 # Combine base features with extra features
@@ -514,7 +514,7 @@ cargo-test-core-debug:  #-- Run Rust tests for core crates (debug profile)
 cargo-test-lib: export RUST_BACKTRACE=1
 cargo-test-lib: check-nextest-installed
 cargo-test-lib:  #-- Run Rust library tests only with high precision
-	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,defi,stubs" $(FAIL_FAST_FLAG) --cargo-profile nextest
+	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,streaming,defi,stubs" $(FAIL_FAST_FLAG) --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: export RUST_BACKTRACE=1
@@ -526,7 +526,7 @@ cargo-test-standard-precision:  #-- Run Rust tests with standard precision (debu
 cargo-test-debug: export RUST_BACKTRACE=1
 cargo-test-debug: check-nextest-installed
 cargo-test-debug:  #-- Run Rust tests with high precision (debug profile)
-	cargo nextest run --workspace --features "ffi,python,high-precision,defi" $(FAIL_FAST_FLAG)
+	cargo nextest run --workspace --features "ffi,python,high-precision,streaming,defi" $(FAIL_FAST_FLAG)
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest-installed check-llvm-cov-installed

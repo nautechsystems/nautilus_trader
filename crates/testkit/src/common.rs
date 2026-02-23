@@ -20,7 +20,10 @@ use std::{
 };
 
 use nautilus_core::paths::get_test_data_path;
-use nautilus_model::data::OrderBookDelta;
+use nautilus_model::{
+    data::OrderBookDelta,
+    instruments::{InstrumentAny, stubs::equity_aapl_itch},
+};
 use nautilus_serialization::arrow::DecodeFromRecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
@@ -145,6 +148,13 @@ pub fn get_tardis_bitmex_trades_path() -> PathBuf {
     get_test_data_path()
         .join("tardis")
         .join("bitmex_trades_XBTUSD.csv")
+}
+
+/// Returns an AAPL equity instrument with ITCH-compatible precision
+/// (price_precision=4, price_increment=0.0001).
+#[must_use]
+pub fn itch_aapl_equity() -> InstrumentAny {
+    InstrumentAny::Equity(equity_aapl_itch())
 }
 
 /// Loads ITCH AAPL order book deltas from the parquet test dataset.

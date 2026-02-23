@@ -1569,13 +1569,15 @@ impl OrderMatchingEngine {
     /// Panics if an OTO child order references a missing or non-OTO parent.
     #[allow(clippy::needless_return)]
     pub fn process_order(&mut self, order: &mut OrderAny, account_id: AccountId) {
-        // Enter the scope where you will borrow a cache
-        {
+        // Validate inside a cache borrow scope, collecting any rejection
+        // reason rather than emitting events while the borrow is held.
+        // This avoids RefCell re-entrancy panics from synchronous event
+        // dispatch that calls back into the execution engine.
+        let reject_reason: Option<Ustr> = 'validate: {
             let cache_borrow = self.cache.as_ref().borrow();
 
             if self.core.order_exists(order.client_order_id()) {
-                self.generate_order_rejected(order, "Order already exists".into());
-                return;
+                break 'validate Some("Order already exists".into());
             }
 
             // Index identifiers
@@ -1586,28 +1588,24 @@ impl OrderMatchingEngine {
                 if let Some(activation_ns) = self.instrument.activation_ns()
                     && self.clock.borrow().timestamp_ns() < activation_ns
                 {
-                    self.generate_order_rejected(
-                        order,
+                    break 'validate Some(
                         format!(
                             "Contract {} is not yet active, activation {activation_ns}",
                             self.instrument.id(),
                         )
                         .into(),
                     );
-                    return;
                 }
                 if let Some(expiration_ns) = self.instrument.expiration_ns()
                     && self.clock.borrow().timestamp_ns() >= expiration_ns
                 {
-                    self.generate_order_rejected(
-                        order,
+                    break 'validate Some(
                         format!(
                             "Contract {} has expired, expiration {expiration_ns}",
                             self.instrument.id(),
                         )
                         .into(),
                     );
-                    return;
                 }
             }
 
@@ -1621,14 +1619,10 @@ impl OrderMatchingEngine {
                         panic!("OTO parent not found");
                     }
                     if let Some(parent_order) = parent_order {
-                        let parent_order_status = parent_order.status();
-                        let order_is_open = order.is_open();
                         if parent_order.status() == OrderStatus::Rejected && order.is_open() {
-                            self.generate_order_rejected(
-                                order,
+                            break 'validate Some(
                                 format!("Rejected OTO order from {parent_order_id}").into(),
                             );
-                            return;
                         } else if parent_order.status() == OrderStatus::Accepted
                             && parent_order.status() == OrderStatus::Triggered
                         {
@@ -1651,12 +1645,10 @@ impl OrderMatchingEngine {
                                     && !order.is_closed()
                                     && contingent_order.is_closed() =>
                             {
-                                self.generate_order_rejected(
-                                    order,
+                                break 'validate Some(
                                     format!("Contingent order {client_order_id} already closed")
                                         .into(),
                                 );
-                                return;
                             }
                             None => panic!("Cannot find contingent order for {client_order_id}"),
                             _ => {}
@@ -1667,8 +1659,7 @@ impl OrderMatchingEngine {
 
             // Check for valid order quantity precision
             if order.quantity().precision != self.instrument.size_precision() {
-                self.generate_order_rejected(
-                    order,
+                break 'validate Some(
                     format!(
                         "Invalid order quantity precision for order {}, was {} when {} size precision is {}",
                         order.client_order_id(),
@@ -1676,45 +1667,40 @@ impl OrderMatchingEngine {
                         self.instrument.id(),
                         self.instrument.size_precision()
                     )
-                        .into(),
+                    .into(),
                 );
-                return;
             }
 
             // Check for valid order price precision
             if let Some(price) = order.price()
                 && price.precision != self.instrument.price_precision()
             {
-                self.generate_order_rejected(
-                        order,
-                        format!(
-                            "Invalid order price precision for order {}, was {} when {} price precision is {}",
-                            order.client_order_id(),
-                            price.precision,
-                            self.instrument.id(),
-                            self.instrument.price_precision()
-                        )
-                            .into(),
-                    );
-                return;
+                break 'validate Some(
+                    format!(
+                        "Invalid order price precision for order {}, was {} when {} price precision is {}",
+                        order.client_order_id(),
+                        price.precision,
+                        self.instrument.id(),
+                        self.instrument.price_precision()
+                    )
+                    .into(),
+                );
             }
 
             // Check for valid order trigger price precision
             if let Some(trigger_price) = order.trigger_price()
                 && trigger_price.precision != self.instrument.price_precision()
             {
-                self.generate_order_rejected(
-                        order,
-                        format!(
-                            "Invalid order trigger price precision for order {}, was {} when {} price precision is {}",
-                            order.client_order_id(),
-                            trigger_price.precision,
-                            self.instrument.id(),
-                            self.instrument.price_precision()
-                        )
-                            .into(),
-                    );
-                return;
+                break 'validate Some(
+                    format!(
+                        "Invalid order trigger price precision for order {}, was {} when {} price precision is {}",
+                        order.client_order_id(),
+                        trigger_price.precision,
+                        self.instrument.id(),
+                        self.instrument.price_precision()
+                    )
+                    .into(),
+                );
             }
 
             // Get position if exists
@@ -1739,14 +1725,12 @@ impl OrderMatchingEngine {
                     || !order.would_reduce_only(position.unwrap().side, position.unwrap().quantity))
             {
                 let position_string = position.map_or("None".to_string(), |pos| pos.id.to_string());
-                self.generate_order_rejected(
-                    order,
+                break 'validate Some(
                     format!(
                         "Short selling not permitted on a CASH account with position {position_string} and order {order}",
                     )
-                        .into(),
+                    .into(),
                 );
-                return;
             }
 
             // Check reduce-only instruction
@@ -1759,8 +1743,7 @@ impl OrderMatchingEngine {
                         || (order.is_sell() && pos.is_short())
                 })
             {
-                self.generate_order_rejected(
-                    order,
+                break 'validate Some(
                     format!(
                         "Reduce-only order {} ({}-{}) would have increased position",
                         order.client_order_id(),
@@ -1769,8 +1752,14 @@ impl OrderMatchingEngine {
                     )
                     .into(),
                 );
-                return;
             }
+
+            None
+        };
+
+        if let Some(reason) = reject_reason {
+            self.generate_order_rejected(order, reason);
+            return;
         }
 
         match order.order_type() {

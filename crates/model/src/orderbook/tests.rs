@@ -6515,3 +6515,383 @@ fn test_to_deltas_non_empty_book_has_f_last_on_last_order() {
     assert!(RecordFlag::F_LAST.matches(deltas.deltas[2].flags));
     assert!(RecordFlag::F_SNAPSHOT.matches(deltas.deltas[2].flags));
 }
+
+fn make_delta(
+    instrument_id: InstrumentId,
+    action: BookAction,
+    side: OrderSide,
+    price: &str,
+    size: &str,
+    order_id: u64,
+    ts: u64,
+) -> OrderBookDelta {
+    OrderBookDelta::new(
+        instrument_id,
+        action,
+        BookOrder::new(side, Price::from(price), Quantity::from(size), order_id),
+        0,
+        0,
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+#[rstest]
+#[should_panic(expected = "must not be empty")]
+fn test_deltas_to_quotes_panics_on_empty() {
+    OrderBook::deltas_to_quotes(BookType::L3_MBO, &[]);
+}
+
+#[rstest]
+fn test_deltas_to_quotes_no_quotes_from_single_side() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![make_delta(
+        id,
+        BookAction::Add,
+        OrderSide::Buy,
+        "100.00",
+        "10",
+        1,
+        1000,
+    )];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    assert!(quotes.is_empty());
+}
+
+#[rstest]
+fn test_deltas_to_quotes_emits_on_two_sided_book() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "10", 1, 1000),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "101.00",
+            "10",
+            2,
+            2000,
+        ),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    assert_eq!(quotes.len(), 1);
+    assert_eq!(quotes[0].bid_price, Price::from("99.00"));
+    assert_eq!(quotes[0].ask_price, Price::from("101.00"));
+    assert_eq!(quotes[0].ts_event, UnixNanos::from(2000u64));
+}
+
+#[rstest]
+fn test_deltas_to_quotes_suppresses_duplicate_bbo() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "10", 1, 1000),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "101.00",
+            "10",
+            2,
+            2000,
+        ),
+        // Add deeper bid — BBO unchanged
+        make_delta(id, BookAction::Add, OrderSide::Buy, "98.00", "5", 3, 3000),
+        // Add deeper ask — BBO unchanged
+        make_delta(id, BookAction::Add, OrderSide::Sell, "102.00", "5", 4, 4000),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    assert_eq!(quotes.len(), 1, "Non-BBO changes should not produce quotes");
+}
+
+#[rstest]
+fn test_deltas_to_quotes_emits_on_bid_improve() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "10", 1, 1000),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "101.00",
+            "10",
+            2,
+            2000,
+        ),
+        // Better bid
+        make_delta(id, BookAction::Add, OrderSide::Buy, "100.00", "5", 3, 3000),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    assert_eq!(quotes.len(), 2);
+    assert_eq!(quotes[0].bid_price, Price::from("99.00"));
+    assert_eq!(quotes[1].bid_price, Price::from("100.00"));
+    assert_eq!(quotes[1].ask_price, Price::from("101.00"));
+}
+
+#[rstest]
+fn test_deltas_to_quotes_emits_on_ask_improve() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "10", 1, 1000),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "101.00",
+            "10",
+            2,
+            2000,
+        ),
+        // Better ask
+        make_delta(id, BookAction::Add, OrderSide::Sell, "100.50", "5", 3, 3000),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    assert_eq!(quotes.len(), 2);
+    assert_eq!(quotes[1].ask_price, Price::from("100.50"));
+}
+
+#[rstest]
+fn test_deltas_to_quotes_emits_on_cancel_changes_bbo() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "10", 1, 1000),
+        make_delta(id, BookAction::Add, OrderSide::Buy, "98.00", "10", 2, 1000),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "101.00",
+            "10",
+            3,
+            2000,
+        ),
+        // Cancel best bid — BBO changes to 98.00
+        make_delta(
+            id,
+            BookAction::Delete,
+            OrderSide::Buy,
+            "99.00",
+            "0",
+            1,
+            3000,
+        ),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    assert_eq!(quotes.len(), 2);
+    assert_eq!(quotes[0].bid_price, Price::from("99.00"));
+    assert_eq!(quotes[1].bid_price, Price::from("98.00"));
+    assert_eq!(quotes[1].ask_price, Price::from("101.00"));
+}
+
+#[rstest]
+fn test_deltas_to_quotes_preserves_timestamps() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Buy,
+            "99.00",
+            "10",
+            1,
+            100_000,
+        ),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "101.00",
+            "10",
+            2,
+            200_000,
+        ),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Buy,
+            "100.00",
+            "5",
+            3,
+            300_000,
+        ),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    assert_eq!(quotes[0].ts_event, UnixNanos::from(200_000u64));
+    assert_eq!(quotes[0].ts_init, UnixNanos::from(200_000u64));
+    assert_eq!(quotes[1].ts_event, UnixNanos::from(300_000u64));
+    assert_eq!(quotes[1].ts_init, UnixNanos::from(300_000u64));
+}
+
+#[rstest]
+fn test_deltas_to_quotes_preserves_instrument_id() {
+    let id = InstrumentId::from("AAPL.XNAS");
+    let deltas = vec![
+        make_delta(id, BookAction::Add, OrderSide::Buy, "150.00", "10", 1, 1000),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "151.00",
+            "10",
+            2,
+            2000,
+        ),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    assert_eq!(quotes[0].instrument_id, id);
+}
+
+#[rstest]
+fn test_deltas_to_quotes_works_with_l2_book() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "10", 0, 1000),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "101.00",
+            "10",
+            0,
+            2000,
+        ),
+        make_delta(id, BookAction::Add, OrderSide::Buy, "100.00", "5", 0, 3000),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L2_MBP, &deltas);
+
+    assert_eq!(quotes.len(), 2);
+    assert_eq!(quotes[1].bid_price, Price::from("100.00"));
+}
+
+#[rstest]
+fn test_deltas_to_quotes_multiple_bbo_changes() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![
+        // Initial book
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "10", 1, 1000),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "101.00",
+            "10",
+            2,
+            2000,
+        ),
+        // Bid improves
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.50", "5", 3, 3000),
+        // Ask improves
+        make_delta(id, BookAction::Add, OrderSide::Sell, "100.50", "5", 4, 4000),
+        // Both change via cancels
+        make_delta(
+            id,
+            BookAction::Delete,
+            OrderSide::Buy,
+            "99.50",
+            "0",
+            3,
+            5000,
+        ),
+        make_delta(
+            id,
+            BookAction::Delete,
+            OrderSide::Sell,
+            "100.50",
+            "0",
+            4,
+            6000,
+        ),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    assert_eq!(quotes.len(), 5);
+
+    assert_eq!(quotes[0].bid_price, Price::from("99.00"));
+    assert_eq!(quotes[0].ask_price, Price::from("101.00"));
+
+    assert_eq!(quotes[1].bid_price, Price::from("99.50"));
+    assert_eq!(quotes[1].ask_price, Price::from("101.00"));
+
+    assert_eq!(quotes[2].bid_price, Price::from("99.50"));
+    assert_eq!(quotes[2].ask_price, Price::from("100.50"));
+
+    assert_eq!(quotes[3].bid_price, Price::from("99.00"));
+    assert_eq!(quotes[3].ask_price, Price::from("100.50"));
+
+    assert_eq!(quotes[4].bid_price, Price::from("99.00"));
+    assert_eq!(quotes[4].ask_price, Price::from("101.00"));
+}
+
+#[rstest]
+fn test_deltas_to_quotes_emits_after_clear_with_same_prices() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![
+        // Build two-sided book at 99/101
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "10", 1, 1000),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "101.00",
+            "10",
+            2,
+            2000,
+        ),
+        // Clear wipes the book
+        OrderBookDelta::clear(id, 0, 3000.into(), 3000.into()),
+        // Rebuild at the same prices
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "10", 3, 4000),
+        make_delta(
+            id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "101.00",
+            "10",
+            4,
+            5000,
+        ),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    // Must get two quotes: one before clear, one after rebuild
+    assert_eq!(quotes.len(), 2);
+    assert_eq!(quotes[0].ts_event, UnixNanos::from(2000));
+    assert_eq!(quotes[1].ts_event, UnixNanos::from(5000));
+}
+
+#[rstest]
+fn test_deltas_to_quotes_aggregates_level_sizes_for_l3() {
+    let id = InstrumentId::from("TEST.VENUE");
+    let deltas = vec![
+        // Multiple bid orders at same price (one-sided, no quote yet)
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "10", 1, 1000),
+        make_delta(id, BookAction::Add, OrderSide::Buy, "99.00", "20", 2, 2000),
+        // First ask completes two-sided book, emits quote with
+        // aggregate bid size (30) and single ask size (5)
+        make_delta(id, BookAction::Add, OrderSide::Sell, "101.00", "5", 3, 3000),
+    ];
+
+    let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
+
+    assert_eq!(quotes.len(), 1);
+    assert_eq!(quotes[0].bid_size, Quantity::from("30"));
+    assert_eq!(quotes[0].ask_size, Quantity::from("5"));
+}

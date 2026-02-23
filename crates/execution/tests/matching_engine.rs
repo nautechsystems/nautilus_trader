@@ -21,7 +21,7 @@ use nautilus_common::{
     clock::TestClock,
     messages::execution::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder},
     msgbus::{
-        self, MessagingSwitchboard,
+        self, MessagingSwitchboard, TypedIntoHandler,
         stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
     },
 };
@@ -6254,4 +6254,35 @@ fn test_trade_tick_seeds_consumption_for_seller_side(
         "Expected fill at 999.00 due to consumed bid liquidity at 1000.00, \
          but all fills were at 1000.00. Seller-side trade consumption was not applied."
     );
+}
+
+// Regression: order rejection inside process_order must not panic when the
+// event handler borrows the same cache (RefCell re-entrancy).
+#[rstest]
+fn test_process_order_rejection_no_refcell_reentrant_panic(
+    account_id: AccountId,
+    equity_aapl: Equity,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let instrument = InstrumentAny::Equity(equity_aapl);
+
+    // Register handler that borrows the cache, mimicking ExecutionEngine::process
+    let cache_clone = Rc::clone(&cache);
+    let handler = TypedIntoHandler::from(move |_event: OrderEventAny| {
+        let _guard = cache_clone.borrow_mut();
+    });
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
+
+    let mut engine = get_order_matching_engine(instrument, Some(cache), None, None, None);
+
+    // Sell on a Cash equity account triggers short-sell rejection
+    let mut sell_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(engine.instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1"))
+        .submit(true)
+        .build();
+
+    // Should not panic with "RefCell already borrowed"
+    engine.process_order(&mut sell_order, account_id);
 }

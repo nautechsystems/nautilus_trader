@@ -1010,6 +1010,60 @@ impl OrderBook {
         }
         self.asks.add(order, 0); // Internal replacement, no F_MBP flags
     }
+
+    /// Replays `deltas` through a fresh book of the given type and returns
+    /// a [`QuoteTick`] for every best-bid/ask price change.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `deltas` is empty.
+    pub fn deltas_to_quotes(book_type: BookType, deltas: &[OrderBookDelta]) -> Vec<QuoteTick> {
+        assert!(!deltas.is_empty(), "`deltas` must not be empty");
+
+        let instrument_id = deltas[0].instrument_id;
+        let mut book = Self::new(instrument_id, book_type);
+        let mut quotes = Vec::new();
+        let mut last_bid: Option<Price> = None;
+        let mut last_ask: Option<Price> = None;
+
+        for delta in deltas {
+            book.apply_delta(delta).unwrap();
+            let bid = book.best_bid_price();
+            let ask = book.best_ask_price();
+
+            // Reset cached BBO when one side disappears so that a
+            // recovery to the same prices emits a fresh quote
+            if bid.is_none() || ask.is_none() {
+                last_bid = None;
+                last_ask = None;
+            }
+
+            if let (Some(bid_px), Some(ask_px)) = (bid, ask)
+                && (bid != last_bid || ask != last_ask)
+            {
+                last_bid = bid;
+                last_ask = ask;
+                let bid_level = book.bids.top().unwrap();
+                let ask_level = book.asks.top().unwrap();
+                let precision = bid_level.first().unwrap().size.precision;
+                let bid_sz = Quantity::from_raw(bid_level.size_raw(), precision);
+                let ask_sz = Quantity::from_raw(ask_level.size_raw(), precision);
+                let quote = QuoteTick::new(
+                    instrument_id,
+                    bid_px,
+                    ask_px,
+                    bid_sz,
+                    ask_sz,
+                    delta.ts_event,
+                    delta.ts_init,
+                );
+
+                quotes.push(quote);
+            }
+        }
+
+        quotes
+    }
 }
 
 fn filter_quantities(
