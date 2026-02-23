@@ -82,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_retries: 3,
             retry_delay_initial_ms: 100,
             retry_delay_max_ms: 5000,
+            normalize_prices: true,
         },
     };
 

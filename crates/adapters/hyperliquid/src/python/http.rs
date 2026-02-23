@@ -44,22 +44,25 @@ impl HyperliquidHttpClient {
     /// If no credentials are provided and no environment variables are set,
     /// creates an unauthenticated client for public endpoints only.
     #[new]
-    #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None))]
+    #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None, normalize_prices=true))]
     fn py_new(
         private_key: Option<String>,
         vault_address: Option<String>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
+        normalize_prices: bool,
     ) -> PyResult<Self> {
-        Self::with_credentials(
+        let mut client = Self::with_credentials(
             private_key,
             vault_address,
             is_testnet,
             timeout_secs,
             proxy_url,
         )
-        .map_err(to_pyvalue_err)
+        .map_err(to_pyvalue_err)?;
+        client.set_normalize_prices(normalize_prices);
+        Ok(client)
     }
 
     #[staticmethod]

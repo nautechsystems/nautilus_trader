@@ -67,7 +67,7 @@ use crate::{
         },
         parse::{
             bar_type_to_interval, clamp_price_to_precision, derive_limit_from_trigger,
-            order_to_hyperliquid_request_with_asset, round_to_sig_figs,
+            normalize_price, order_to_hyperliquid_request_with_asset, round_to_sig_figs,
         },
     },
     http::{
@@ -746,6 +746,7 @@ pub struct HyperliquidHttpClient {
     /// Mapping from spot fill coin (`@{pair_index}`) to instrument symbol.
     spot_fill_coins: Arc<RwLock<AHashMap<Ustr, Ustr>>>,
     account_id: Option<AccountId>,
+    normalize_prices: bool,
 }
 
 impl Default for HyperliquidHttpClient {
@@ -793,6 +794,7 @@ impl HyperliquidHttpClient {
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            normalize_prices: true,
         }
     }
 
@@ -833,6 +835,7 @@ impl HyperliquidHttpClient {
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            normalize_prices: true,
         })
     }
 
@@ -896,6 +899,7 @@ impl HyperliquidHttpClient {
                     asset_indices: Arc::new(RwLock::new(AHashMap::new())),
                     spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
                     account_id: None,
+                    normalize_prices: true,
                 })
             }
             None => {
@@ -933,6 +937,7 @@ impl HyperliquidHttpClient {
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            normalize_prices: true,
         })
     }
 
@@ -940,6 +945,17 @@ impl HyperliquidHttpClient {
     #[must_use]
     pub fn is_testnet(&self) -> bool {
         self.inner.is_testnet()
+    }
+
+    /// Returns whether order price normalization is enabled.
+    #[must_use]
+    pub fn normalize_prices(&self) -> bool {
+        self.normalize_prices
+    }
+
+    /// Sets whether to normalize order prices to 5 significant figures.
+    pub fn set_normalize_prices(&mut self, value: bool) {
+        self.normalize_prices = value;
     }
 
     /// Gets the user address derived from the private key (if client has credentials).
@@ -1829,6 +1845,9 @@ impl HyperliquidHttpClient {
         let price_precision = self.get_price_precision(symbol).unwrap_or(2);
 
         let price_decimal = match price {
+            Some(px) if self.normalize_prices => {
+                normalize_price(px.as_decimal(), price_precision).normalize()
+            }
             Some(px) => px.as_decimal().normalize(),
             None if matches!(order_type, OrderType::Market) => Decimal::ZERO,
             None if matches!(
@@ -1884,7 +1903,11 @@ impl HyperliquidHttpClient {
             | OrderType::MarketIfTouched
             | OrderType::LimitIfTouched => {
                 if let Some(trig_px) = trigger_price {
-                    let trigger_price_decimal = trig_px.as_decimal().normalize();
+                    let trigger_price_decimal = if self.normalize_prices {
+                        normalize_price(trig_px.as_decimal(), price_precision).normalize()
+                    } else {
+                        trig_px.as_decimal().normalize()
+                    };
 
                     // Determine TP/SL type based on order type
                     // StopMarket/StopLimit are always Sl (protective stops)
@@ -2117,8 +2140,13 @@ impl HyperliquidHttpClient {
                 ))
             })?;
             let price_decimals = self.get_price_precision(symbol).unwrap_or(2);
-            let request = order_to_hyperliquid_request_with_asset(order, asset, price_decimals)
-                .map_err(|e| Error::bad_request(format!("Failed to convert order: {e}")))?;
+            let request = order_to_hyperliquid_request_with_asset(
+                order,
+                asset,
+                price_decimals,
+                self.normalize_prices,
+            )
+            .map_err(|e| Error::bad_request(format!("Failed to convert order: {e}")))?;
             hyperliquid_orders.push(request);
         }
 

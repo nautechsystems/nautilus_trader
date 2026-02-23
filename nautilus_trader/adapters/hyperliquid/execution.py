@@ -128,6 +128,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # Log configuration details
         self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
+        self._log.info(f"config.normalize_prices={config.normalize_prices}", LogColor.BLUE)
         self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
         self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
@@ -530,11 +531,14 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         else:
             price = price.quantize(quantizer, rounding=ROUND_FLOOR)
 
+        # Strip trailing zeros to avoid exceeding 5 significant figures
+        price = price.normalize()
+
         self._log.debug(
             f"Calculated market order price: {price} (base: {base_price}, slippage: {slippage_pct})",
         )
 
-        return nautilus_pyo3.Price.from_str(str(price))
+        return nautilus_pyo3.Price.from_decimal(price)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -558,9 +562,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
             pyo3_time_in_force = time_in_force_to_pyo3(order.time_in_force)
 
-            # For market orders, calculate a slippage price from the cached quote
             if order.has_price:
-                pyo3_price = nautilus_pyo3.Price.from_str(str(order.price))
+                if self._config.normalize_prices:
+                    rounded = self._round_to_significant_figures(order.price.as_decimal())
+                    pyo3_price = nautilus_pyo3.Price.from_decimal(rounded)
+                else:
+                    pyo3_price = nautilus_pyo3.Price.from_str(str(order.price))
             elif order.order_type in (
                 OrderType.MARKET,
                 OrderType.STOP_MARKET,
@@ -570,11 +577,14 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             else:
                 pyo3_price = None
 
-            pyo3_trigger_price = (
-                nautilus_pyo3.Price.from_str(str(order.trigger_price))
-                if order.has_trigger_price
-                else None
-            )
+            if order.has_trigger_price:
+                if self._config.normalize_prices:
+                    rounded = self._round_to_significant_figures(order.trigger_price.as_decimal())
+                    pyo3_trigger_price = nautilus_pyo3.Price.from_decimal(rounded)
+                else:
+                    pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
+            else:
+                pyo3_trigger_price = None
 
             # TODO: Refactor to use WebSocket trading API
             # Cache cloid mapping for WebSocket order/fill resolution

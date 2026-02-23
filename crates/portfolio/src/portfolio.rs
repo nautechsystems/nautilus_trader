@@ -874,7 +874,7 @@ impl Portfolio {
                     .unrealized_pnls
                     .insert(instrument_id, calculated_unrealized_pnl);
             } else {
-                log::warn!(
+                log::debug!(
                     "Failed to calculate unrealized PnL for {instrument_id}, marking as pending"
                 );
                 self.inner.borrow_mut().pending_calcs.insert(instrument_id);
@@ -1900,7 +1900,7 @@ fn update_position(
             .unrealized_pnls
             .insert(event.instrument_id(), calculated_unrealized_pnl);
     } else {
-        log::warn!(
+        log::debug!(
             "Failed to calculate unrealized PnL for {}, marking as pending",
             event.instrument_id()
         );

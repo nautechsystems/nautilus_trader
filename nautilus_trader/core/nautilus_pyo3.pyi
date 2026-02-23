@@ -8460,6 +8460,7 @@ class HyperliquidHttpClient:
         is_testnet: bool = False,
         timeout_secs: int | None = None,
         proxy_url: str | None = None,
+        normalize_prices: bool = True,
     ) -> None: ...
     @staticmethod
     def from_env() -> HyperliquidHttpClient: ...

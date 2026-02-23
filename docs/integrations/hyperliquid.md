@@ -335,6 +335,35 @@ the instrument's price precision (ceiling for buys, floor for sells). This guara
 Hyperliquid's `limit_px >= trigger_px` (buys) / `limit_px <= trigger_px` (sells) constraint.
 :::
 
+:::warning
+**Price normalization is enabled by default.** Hyperliquid enforces a maximum of 5 significant
+figures on all order prices. This is a dynamic constraint that depends on the price magnitude
+and cannot be fully encoded in the static instrument price precision. For example, if ETH is
+trading at $2,600 (4 integer digits), only 1 decimal place is allowed despite the instrument
+having `price_precision=2`.
+
+By default, the adapter normalizes all outgoing limit and trigger prices to 5 significant
+figures to prevent order rejections. This means your submitted prices may shift slightly.
+To disable this and take full control of price formatting, set `normalize_prices=False`
+in your `HyperliquidExecClientConfig`.
+
+If you disable normalization, you can apply the same rounding in your strategy:
+
+```python
+from decimal import Decimal, ROUND_DOWN
+
+def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
+    if price == 0:
+        return Decimal(0)
+    shift = sig_figs - int(price.adjusted()) - 1
+    if shift <= 0:
+        factor = Decimal(10) ** (-shift)
+        return (price / factor).to_integral_value() * factor
+    return round(price, shift)
+```
+
+:::
+
 ### Time in force
 
 | Time in force | Perpetuals | Spot | Notes                        |
@@ -478,6 +507,7 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 | `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries.                                              |
 | `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries.                                              |
 | `http_timeout_secs`      | `10`    | Timeout (seconds) applied to REST calls.                                                   |
+| `normalize_prices`       | `True`  | Normalize order prices to 5 significant figures before submission.                          |
 | `http_proxy_url`         | `None`  | Optional HTTP proxy URL.                                                                   |
 | `ws_proxy_url`           | `None`  | Reserved; WebSocket proxy not yet implemented.                                             |
 
@@ -503,6 +533,7 @@ config = TradingNodeConfig(
             vault_address=None,  # Optional: loads from HYPERLIQUID_TESTNET_VAULT
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=True,  # Use testnet
+            normalize_prices=True,  # Rounds prices to 5 significant figures
         ),
     },
 )

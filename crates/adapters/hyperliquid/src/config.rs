@@ -119,6 +119,9 @@ pub struct HyperliquidExecClientConfig {
     pub retry_delay_initial_ms: u64,
     /// Maximum retry delay in milliseconds.
     pub retry_delay_max_ms: u64,
+    /// When true, normalize order prices to 5 significant figures
+    /// before submission (Hyperliquid requirement).
+    pub normalize_prices: bool,
 }
 
 impl Default for HyperliquidExecClientConfig {
@@ -136,6 +139,7 @@ impl Default for HyperliquidExecClientConfig {
             max_retries: 3,
             retry_delay_initial_ms: 100,
             retry_delay_max_ms: 5000,
+            normalize_prices: true,
         }
     }
 }
