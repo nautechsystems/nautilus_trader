@@ -1036,7 +1036,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         Return the requested historical data bars.
         """
         if request := self._requests.get(req_id=req_id):
-            bar_type = request.name[0]
+            bar_type = BarType.from_str(request.name[0])
             bar = await self._ib_bar_to_nautilus_bar(
                 bar_type=bar_type,
                 bar=bar,
