@@ -611,7 +611,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         end_date_time_str = (
             end_date_time.strftime("%Y%m%d %H:%M:%S %Z") if contract.secType != "CONTFUT" else ""
         )
-        name = (bar_type, end_date_time_str)
+        name = (str(bar_type), end_date_time_str)
 
         if not (request := self._requests.get(name=name)):
             req_id = self._next_req_id()
