@@ -17,7 +17,17 @@
 
 use core::fmt::Debug;
 
+use nautilus_core::{
+    env::resolve_env_var_pair,
+    string::{REDACTED, mask_api_key},
+};
 use zeroize::ZeroizeOnDrop;
+
+/// Returns the environment variable names for API credentials.
+#[must_use]
+pub fn credential_env_vars() -> (&'static str, &'static str) {
+    ("AX_API_KEY", "AX_API_SECRET")
+}
 
 /// API credentials required for Ax bearer token authentication.
 ///
@@ -33,7 +43,7 @@ impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
             .field("api_key", &self.masked_api_key())
-            .field("api_secret", &"<redacted>")
+            .field("api_secret", &REDACTED)
             .finish()
     }
 }
@@ -46,6 +56,17 @@ impl Credential {
             api_key: api_key.into().into_boxed_str(),
             api_secret: api_secret.into().into_boxed_str(),
         }
+    }
+
+    /// Resolves credentials from provided values or environment variables.
+    ///
+    /// If both `api_key` and `api_secret` are provided, uses those.
+    /// Otherwise falls back to environment variables.
+    #[must_use]
+    pub fn resolve(api_key: Option<String>, api_secret: Option<String>) -> Option<Self> {
+        let (key_var, secret_var) = credential_env_vars();
+        let (k, s) = resolve_env_var_pair(api_key, api_secret, key_var, secret_var)?;
+        Some(Self::new(k, s))
     }
 
     /// Returns the API key associated with this credential.
@@ -65,19 +86,9 @@ impl Credential {
     }
 
     /// Returns a masked version of the API key for logging purposes.
-    ///
-    /// Shows first 4 and last 4 characters with ellipsis in between.
-    /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn masked_api_key(&self) -> String {
-        let key = self.api_key.as_ref();
-        let len = key.len();
-
-        if len <= 8 {
-            "*".repeat(len)
-        } else {
-            format!("{}...{}", &key[..4], &key[len - 4..])
-        }
+        mask_api_key(&self.api_key)
     }
 }
 
@@ -121,7 +132,27 @@ mod tests {
         let debug_string = format!("{credential:?}");
 
         assert!(!debug_string.contains(API_SECRET));
-        assert!(debug_string.contains("<redacted>"));
+        assert!(debug_string.contains(REDACTED));
         assert!(debug_string.contains("test..."));
+    }
+
+    #[rstest]
+    fn test_resolve_with_both_args() {
+        let result = Credential::resolve(Some("my_key".to_string()), Some("my_secret".to_string()));
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().api_key(), "my_key");
+    }
+
+    #[rstest]
+    fn test_resolve_with_no_args_no_env() {
+        let (key_var, secret_var) = credential_env_vars();
+        if std::env::var(key_var).is_ok() || std::env::var(secret_var).is_ok() {
+            return;
+        }
+
+        let result = Credential::resolve(None, None);
+
+        assert!(result.is_none());
     }
 }

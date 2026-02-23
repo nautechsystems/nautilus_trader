@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Implemented `BacktestNode` with catalog streaming in Rust
 - Improved `OrderBookImbalance` example strategy
 - Standardized use of atomic clock across adapters
+- Standardized adapter credentials handling and testing
 
 ### Documentation Updates
 - Added AX Exchange gold perps backtest tutorial

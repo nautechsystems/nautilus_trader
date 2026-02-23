@@ -82,7 +82,7 @@ use super::{
 };
 use crate::common::{
     consts::{BYBIT_BASE_COIN, BYBIT_NAUTILUS_BROKER_ID, BYBIT_QUOTE_COIN},
-    credential::Credential,
+    credential::{Credential, credential_env_vars},
     enums::{
         BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOpenOnly, BybitOrderFilter,
         BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType, BybitTimeInForce,
@@ -290,16 +290,16 @@ impl BybitRawHttpClient {
         recv_window_ms: Option<u64>,
         proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
-        let (api_key_env, api_secret_env) = if demo {
-            ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET")
+        let environment = if demo {
+            BybitEnvironment::Demo
         } else if testnet {
-            ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET")
+            BybitEnvironment::Testnet
         } else {
-            ("BYBIT_API_KEY", "BYBIT_API_SECRET")
+            BybitEnvironment::Mainnet
         };
-
-        let key = get_or_env_var_opt(api_key, api_key_env);
-        let secret = get_or_env_var_opt(api_secret, api_secret_env);
+        let (key_var, secret_var) = credential_env_vars(environment);
+        let key = get_or_env_var_opt(api_key, key_var);
+        let secret = get_or_env_var_opt(api_secret, secret_var);
 
         if let (Some(k), Some(s)) = (key, secret) {
             Self::with_credentials(
@@ -1319,16 +1319,16 @@ impl BybitHttpClient {
         recv_window_ms: Option<u64>,
         proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
-        let (api_key_env, api_secret_env) = if demo {
-            ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET")
+        let environment = if demo {
+            BybitEnvironment::Demo
         } else if testnet {
-            ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET")
+            BybitEnvironment::Testnet
         } else {
-            ("BYBIT_API_KEY", "BYBIT_API_SECRET")
+            BybitEnvironment::Mainnet
         };
-
-        let key = get_or_env_var_opt(api_key, api_key_env);
-        let secret = get_or_env_var_opt(api_secret, api_secret_env);
+        let (key_var, secret_var) = credential_env_vars(environment);
+        let key = get_or_env_var_opt(api_key, key_var);
+        let secret = get_or_env_var_opt(api_secret, secret_var);
 
         match (key, secret) {
             (Some(k), Some(s)) => Self::with_credentials(

@@ -30,7 +30,7 @@ use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
-use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt};
+use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT};
 use nautilus_model::{
     data::BarType,
     enums::{AggregationSource, BarAggregation, OrderSide, OrderType, PriceType, TimeInForce},
@@ -83,32 +83,6 @@ const BATCH_PROCESSING_LIMIT: usize = 20;
 
 /// Type alias for the funding rate cache.
 type FundingCache = Arc<tokio::sync::RwLock<AHashMap<Ustr, (Option<String>, Option<String>)>>>;
-
-/// Resolves credentials from provided values or environment variables.
-///
-/// Priority for environment variables based on environment:
-/// - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
-/// - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
-/// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
-fn resolve_credential(
-    environment: BybitEnvironment,
-    api_key: Option<String>,
-    api_secret: Option<String>,
-) -> Option<Credential> {
-    let (api_key_env, api_secret_env) = match environment {
-        BybitEnvironment::Demo => ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET"),
-        BybitEnvironment::Testnet => ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET"),
-        BybitEnvironment::Mainnet => ("BYBIT_API_KEY", "BYBIT_API_SECRET"),
-    };
-
-    let key = get_or_env_var_opt(api_key, api_key_env);
-    let secret = get_or_env_var_opt(api_secret, api_secret_env);
-
-    match (key, secret) {
-        (Some(k), Some(s)) => Some(Credential::new(k, s)),
-        _ => None,
-    }
-}
 
 /// Public/market data WebSocket client for Bybit.
 #[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
@@ -242,7 +216,7 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
-        let credential = resolve_credential(environment, api_key, api_secret);
+        let credential = Credential::resolve(api_key, api_secret, environment);
 
         // We don't have a handler yet; this placeholder keeps cache_instrument() working.
         // connect() swaps in the real channel and replays any queued instruments so the
@@ -291,7 +265,7 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
-        let credential = resolve_credential(environment, api_key, api_secret);
+        let credential = Credential::resolve(api_key, api_secret, environment);
 
         // We don't have a handler yet; this placeholder keeps cache_instrument() working.
         // connect() swaps in the real channel and replays any queued instruments so the

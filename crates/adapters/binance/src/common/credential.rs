@@ -29,7 +29,7 @@ use std::fmt::{Debug, Display};
 
 use aws_lc_rs::hmac;
 use ed25519_dalek::{Signature, Signer, SigningKey};
-use ustr::Ustr;
+use nautilus_core::string::REDACTED;
 use zeroize::ZeroizeOnDrop;
 
 use super::enums::{BinanceEnvironment, BinanceProductType};
@@ -140,8 +140,7 @@ fn resolve_deprecated_var(
 /// Uses HMAC SHA256 with hexadecimal encoding, as required by Binance REST API signing.
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct Credential {
-    #[zeroize(skip)]
-    pub api_key: Ustr,
+    api_key: Box<str>,
     api_secret: Box<[u8]>,
 }
 
@@ -151,8 +150,7 @@ pub struct Credential {
 /// This is the only key type supported for execution clients.
 #[derive(ZeroizeOnDrop)]
 pub struct Ed25519Credential {
-    #[zeroize(skip)]
-    pub api_key: Ustr,
+    api_key: Box<str>,
     signing_key: SigningKey,
 }
 
@@ -160,7 +158,7 @@ impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
-            .field("api_secret", &"<redacted>")
+            .field("api_secret", &REDACTED)
             .finish()
     }
 }
@@ -170,7 +168,7 @@ impl Credential {
     #[must_use]
     pub fn new(api_key: String, api_secret: String) -> Self {
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.into_boxed_str(),
             api_secret: api_secret.into_bytes().into_boxed_slice(),
         }
     }
@@ -178,7 +176,7 @@ impl Credential {
     /// Returns the API key.
     #[must_use]
     pub fn api_key(&self) -> &str {
-        self.api_key.as_str()
+        &self.api_key
     }
 
     /// Signs a message with HMAC SHA256 and returns a lowercase hex digest.
@@ -194,7 +192,7 @@ impl Debug for Ed25519Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Ed25519Credential))
             .field("api_key", &self.api_key)
-            .field("signing_key", &"<redacted>")
+            .field("signing_key", &REDACTED)
             .finish()
     }
 }
@@ -236,7 +234,7 @@ impl Ed25519Credential {
         let signing_key = SigningKey::from_bytes(&key_bytes);
 
         Ok(Self {
-            api_key: api_key.into(),
+            api_key: api_key.into_boxed_str(),
             signing_key,
         })
     }
@@ -244,7 +242,7 @@ impl Ed25519Credential {
     /// Returns the API key.
     #[must_use]
     pub fn api_key(&self) -> &str {
-        self.api_key.as_str()
+        &self.api_key
     }
 
     /// Signs a message with Ed25519 and returns a base64-encoded signature.
@@ -305,5 +303,25 @@ mod tests {
         let expected = "c8db56825ae71d6d79447849e617115f4a920fa2acdcab2b053c4b2838bd6b71";
 
         assert_eq!(cred.sign(message), expected);
+    }
+
+    #[rstest]
+    fn test_debug_redacts_secret() {
+        let cred = Credential::new("test_key".to_string(), BINANCE_TEST_SECRET.to_string());
+        let dbg_out = format!("{cred:?}");
+
+        assert!(dbg_out.contains(REDACTED));
+        assert!(!dbg_out.contains("NhqPtmdSJYdKjVHjA7PZj4"));
+    }
+
+    #[rstest]
+    fn test_ed25519_debug_redacts_secret() {
+        // 32-byte seed encoded as base64
+        let seed = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0xABu8; 32]);
+        let cred = Ed25519Credential::new("test_key".to_string(), &seed).unwrap();
+        let dbg_out = format!("{cred:?}");
+
+        assert!(dbg_out.contains(REDACTED));
+        assert!(!dbg_out.contains(&seed));
     }
 }

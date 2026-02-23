@@ -27,7 +27,7 @@ use nautilus_model::{
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
 use crate::{
-    common::enums::BitmexPegPriceType,
+    common::{credential::credential_env_vars, enums::BitmexPegPriceType},
     http::{client::BitmexHttpClient, error::BitmexHttpError},
 };
 
@@ -55,11 +55,7 @@ impl BitmexHttpClient {
         // If credentials not provided, try to load from environment
         let (final_api_key, final_api_secret) = if api_key.is_none() && api_secret.is_none() {
             // Choose environment variables based on testnet flag
-            let (key_var, secret_var) = if testnet {
-                ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
-            } else {
-                ("BITMEX_API_KEY", "BITMEX_API_SECRET")
-            };
+            let (key_var, secret_var) = credential_env_vars(testnet);
 
             let env_key = std::env::var(key_var).ok();
             let env_secret = std::env::var(secret_var).ok();

@@ -48,7 +48,7 @@ use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var,
+    AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var, string::REDACTED,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -192,7 +192,7 @@ impl Default for OKXRawHttpClient {
 
 impl Debug for OKXRawHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let credential = self.credential.as_ref().map(|_| "<redacted>");
+        let credential = self.credential.as_ref().map(|_| REDACTED);
         f.debug_struct(stringify!(OKXRawHttpClient))
             .field("base_url", &self.base_url)
             .field("credential", &credential)
@@ -400,8 +400,8 @@ impl OKXRawHttpClient {
             None => return Err(OKXHttpError::MissingCredentials),
         };
 
-        let api_key = credential.api_key.to_string();
-        let api_passphrase = credential.api_passphrase.clone();
+        let api_key = credential.api_key().to_string();
+        let api_passphrase = credential.api_passphrase().to_string();
 
         // OKX requires milliseconds in the timestamp (ISO 8601 with milliseconds)
         let now = Utc::now();
@@ -1170,7 +1170,7 @@ impl OKXHttpClient {
 
     /// Returns the public API key being used by the client.
     pub fn api_key(&self) -> Option<&str> {
-        self.inner.credential.as_ref().map(|c| c.api_key.as_str())
+        self.inner.credential.as_ref().map(|c| c.api_key())
     }
 
     /// Returns a masked version of the API key for logging purposes.

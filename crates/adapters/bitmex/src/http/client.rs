@@ -77,7 +77,7 @@ use super::{
 use crate::{
     common::{
         consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
-        credential::Credential,
+        credential::{Credential, credential_env_vars},
         enums::{
             BitmexContingencyType, BitmexExecInstruction, BitmexOrderStatus, BitmexOrderType,
             BitmexPegPriceType, BitmexSide, BitmexTimeInForce,
@@ -369,7 +369,7 @@ impl BitmexRawHttpClient {
 
         let mut headers = HashMap::new();
         headers.insert("api-expires".to_string(), expires.to_string());
-        headers.insert("api-key".to_string(), credential.api_key.to_string());
+        headers.insert("api-key".to_string(), credential.api_key().to_string());
         headers.insert("api-signature".to_string(), signature);
 
         // Add Content-Type header for form-encoded body
@@ -869,13 +869,9 @@ impl BitmexHttpClient {
             }
         });
 
-        let (key_var, secret_var) = if testnet {
-            ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
-        } else {
-            ("BITMEX_API_KEY", "BITMEX_API_SECRET")
-        };
-        let api_key = api_key.or_else(|| get_or_env_var_opt(None, key_var));
-        let api_secret = api_secret.or_else(|| get_or_env_var_opt(None, secret_var));
+        let (key_var, secret_var) = credential_env_vars(testnet);
+        let api_key = get_or_env_var_opt(api_key, key_var);
+        let api_secret = get_or_env_var_opt(api_secret, secret_var);
 
         let inner = match (api_key, api_secret) {
             (Some(key), Some(secret)) => BitmexRawHttpClient::with_credentials(
@@ -957,12 +953,7 @@ impl BitmexHttpClient {
         // Determine testnet from URL first to select correct environment variables
         let testnet = base_url.as_ref().is_some_and(|url| url.contains("testnet"));
 
-        // Choose environment variables based on testnet flag
-        let (key_var, secret_var) = if testnet {
-            ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
-        } else {
-            ("BITMEX_API_KEY", "BITMEX_API_SECRET")
-        };
+        let (key_var, secret_var) = credential_env_vars(testnet);
 
         let api_key = get_or_env_var_opt(api_key, key_var);
         let api_secret = get_or_env_var_opt(api_secret, secret_var);
@@ -1001,7 +992,7 @@ impl BitmexHttpClient {
     /// Returns the public API key being used by the client.
     #[must_use]
     pub fn api_key(&self) -> Option<&str> {
-        self.inner.credential.as_ref().map(|c| c.api_key.as_str())
+        self.inner.credential.as_ref().map(|c| c.api_key())
     }
 
     /// Returns a masked version of the API key for logging purposes.

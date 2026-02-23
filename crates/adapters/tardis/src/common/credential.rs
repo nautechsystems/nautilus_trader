@@ -17,6 +17,7 @@
 
 use std::fmt::Debug;
 
+use nautilus_core::string::REDACTED;
 use zeroize::ZeroizeOnDrop;
 
 /// API credentials required for Tardis API requests.
@@ -28,7 +29,7 @@ pub struct Credential {
 impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
-            .field("api_key", &"<redacted>")
+            .field("api_key", &REDACTED)
             .finish()
     }
 }
@@ -88,7 +89,7 @@ mod tests {
     fn test_debug_redaction() {
         let credential = Credential::new("test_api_key");
         let debug_str = format!("{credential:?}");
-        assert!(debug_str.contains("<redacted>"));
+        assert!(debug_str.contains(REDACTED));
         assert!(!debug_str.contains("test_api_key"));
     }
 }

@@ -201,7 +201,7 @@ impl BybitHttpClient {
     #[pyo3(name = "api_key")]
     #[must_use]
     pub fn py_api_key(&self) -> Option<&str> {
-        self.credential().map(|c| c.api_key()).map(|u| u.as_str())
+        self.credential().map(|c| c.api_key())
     }
 
     #[getter]

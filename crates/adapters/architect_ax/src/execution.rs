@@ -52,7 +52,9 @@ use nautilus_model::{
 use tokio::task::JoinHandle;
 
 use crate::{
-    common::{consts::AX_VENUE, enums::AxOrderSide, parse::quantity_to_contracts},
+    common::{
+        consts::AX_VENUE, credential::Credential, enums::AxOrderSide, parse::quantity_to_contracts,
+    },
     config::AxExecClientConfig,
     http::{client::AxHttpClient, models::PreviewAggressiveLimitOrderRequest},
     websocket::{AxOrdersWsMessage, NautilusExecWsMessage, orders::AxOrdersWebSocketClient},
@@ -115,22 +117,12 @@ impl AxExecutionClient {
     }
 
     async fn authenticate(&self) -> anyhow::Result<String> {
-        let api_key = self
-            .config
-            .api_key
-            .clone()
-            .or_else(|| std::env::var("AX_API_KEY").ok())
-            .context("AX_API_KEY not configured")?;
-
-        let api_secret = self
-            .config
-            .api_secret
-            .clone()
-            .or_else(|| std::env::var("AX_API_SECRET").ok())
-            .context("AX_API_SECRET not configured")?;
+        let credential =
+            Credential::resolve(self.config.api_key.clone(), self.config.api_secret.clone())
+                .context("API credentials not configured")?;
 
         self.http_client
-            .authenticate(&api_key, &api_secret, 3600)
+            .authenticate(credential.api_key(), credential.api_secret(), 3600)
             .await
             .map_err(|e| anyhow::anyhow!("Authentication failed: {e}"))
     }

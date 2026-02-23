@@ -103,7 +103,7 @@ pub fn send_auth_request(
 
     let auth_params = DeribitAuthParams {
         grant_type: "client_signature".to_string(),
-        client_id: credential.api_key.to_string(),
+        client_id: credential.api_key().to_string(),
         timestamp,
         signature,
         nonce,

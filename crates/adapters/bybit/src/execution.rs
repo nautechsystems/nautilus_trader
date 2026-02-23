@@ -56,6 +56,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::BYBIT_VENUE,
+        credential::credential_env_vars,
         enums::{
             BybitAccountType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
             BybitTimeInForce,
@@ -95,8 +96,9 @@ impl BybitExecutionClient {
     ///
     /// Returns an error if the client fails to initialize.
     pub fn new(core: ExecutionClientCore, config: BybitExecClientConfig) -> anyhow::Result<Self> {
-        let api_key = get_or_env_var(config.api_key.clone(), "BYBIT_API_KEY")?;
-        let api_secret = get_or_env_var(config.api_secret.clone(), "BYBIT_API_SECRET")?;
+        let (key_var, secret_var) = credential_env_vars(config.environment);
+        let api_key = get_or_env_var(config.api_key.clone(), key_var)?;
+        let api_secret = get_or_env_var(config.api_secret.clone(), secret_var)?;
 
         let http_client = BybitHttpClient::with_credentials(
             api_key.clone(),

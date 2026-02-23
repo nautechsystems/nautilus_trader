@@ -15,11 +15,14 @@
 
 use std::{env, str::FromStr};
 
-use nautilus_hyperliquid::http::{
-    client::HyperliquidHttpClient,
-    models::{
-        Cloid, HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
-        HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+use nautilus_hyperliquid::{
+    common::credential::Secrets,
+    http::{
+        client::HyperliquidHttpClient,
+        models::{
+            Cloid, HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
+            HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+        },
     },
 };
 use nautilus_model::identifiers::ClientOrderId;
@@ -45,11 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(e) => {
             log::error!("Failed to create client: {e}");
-            let pk_var = if is_testnet {
-                "HYPERLIQUID_TESTNET_PK"
-            } else {
-                "HYPERLIQUID_PK"
-            };
+            let (pk_var, _) = Secrets::env_vars(is_testnet);
             log::error!("Make sure {pk_var} environment variable is set");
             return Err(e.into());
         }

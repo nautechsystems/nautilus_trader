@@ -596,9 +596,8 @@ impl AxRawHttpClient {
             return Some((cred.api_key().to_string(), cred.api_secret().to_string()));
         }
 
-        let api_key = std::env::var("AX_API_KEY").ok()?;
-        let api_secret = std::env::var("AX_API_SECRET").ok()?;
-        Some((api_key, api_secret))
+        let cred = Credential::resolve(None, None)?;
+        Some((cred.api_key().to_string(), cred.api_secret().to_string()))
     }
 
     /// Places a new order.

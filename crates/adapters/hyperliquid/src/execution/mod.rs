@@ -154,16 +154,13 @@ impl HyperliquidExecutionClient {
         core: ExecutionClientCore,
         config: HyperliquidExecClientConfig,
     ) -> anyhow::Result<Self> {
-        if !config.has_credentials() {
-            anyhow::bail!("Hyperliquid execution client requires private key");
-        }
-
-        let secrets = Secrets::from_private_key(
-            &config.private_key,
-            config.vault_address.as_deref(),
-            config.is_testnet,
-        )
-        .context("failed to create secrets from private key")?;
+        let pk = if config.private_key.is_empty() {
+            None
+        } else {
+            Some(config.private_key.as_str())
+        };
+        let secrets = Secrets::resolve(pk, config.vault_address.as_deref(), config.is_testnet)
+            .context("Hyperliquid execution client requires private key")?;
 
         let mut http_client = HyperliquidHttpClient::with_secrets(
             &secrets,

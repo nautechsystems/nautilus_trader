@@ -17,8 +17,9 @@
 
 use nautilus_model::identifiers::AccountId;
 
-use crate::common::consts::{
-    BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL, BITMEX_WS_TESTNET_URL, BITMEX_WS_URL,
+use crate::common::{
+    consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL, BITMEX_WS_TESTNET_URL, BITMEX_WS_URL},
+    credential::credential_env_vars,
 };
 
 /// Configuration for the BitMEX live data client.
@@ -112,11 +113,7 @@ impl BitmexDataClientConfig {
     /// (either explicitly set or resolvable from environment variables).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        let (key_var, secret_var) = if self.use_testnet {
-            ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
-        } else {
-            ("BITMEX_API_KEY", "BITMEX_API_SECRET")
-        };
+        let (key_var, secret_var) = credential_env_vars(self.use_testnet);
         let has_key = self.api_key.is_some() || std::env::var(key_var).is_ok();
         let has_secret = self.api_secret.is_some() || std::env::var(secret_var).is_ok();
         has_key && has_secret
@@ -258,11 +255,7 @@ impl BitmexExecClientConfig {
     /// (either explicitly set or resolvable from environment variables).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        let (key_var, secret_var) = if self.use_testnet {
-            ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
-        } else {
-            ("BITMEX_API_KEY", "BITMEX_API_SECRET")
-        };
+        let (key_var, secret_var) = credential_env_vars(self.use_testnet);
         let has_key = self.api_key.is_some() || std::env::var(key_var).is_ok();
         let has_secret = self.api_secret.is_some() || std::env::var(secret_var).is_ok();
         has_key && has_secret

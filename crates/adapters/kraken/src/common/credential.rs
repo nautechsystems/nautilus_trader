@@ -24,11 +24,36 @@ use std::{
 
 use aws_lc_rs::{digest, hmac};
 use base64::{Engine, engine::general_purpose::STANDARD};
+use nautilus_core::{env::resolve_env_var_pair, string::REDACTED};
 use serde_urlencoded;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+use crate::common::enums::{KrakenEnvironment, KrakenProductType};
+
 /// Global atomic counter for nonce uniqueness within the same microsecond.
 static NONCE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Returns the environment variable names for API credentials,
+/// based on the product type and environment.
+#[must_use]
+pub fn credential_env_vars(
+    product_type: KrakenProductType,
+    environment: KrakenEnvironment,
+) -> (&'static str, &'static str) {
+    match product_type {
+        KrakenProductType::Spot => ("KRAKEN_SPOT_API_KEY", "KRAKEN_SPOT_API_SECRET"),
+        KrakenProductType::Futures => {
+            if matches!(environment, KrakenEnvironment::Demo) {
+                (
+                    "KRAKEN_FUTURES_DEMO_API_KEY",
+                    "KRAKEN_FUTURES_DEMO_API_SECRET",
+                )
+            } else {
+                ("KRAKEN_FUTURES_API_KEY", "KRAKEN_FUTURES_API_SECRET")
+            }
+        }
+    }
+}
 
 /// API credentials for Kraken authentication.
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
@@ -41,7 +66,7 @@ impl Debug for KrakenCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(KrakenCredential))
             .field("api_key", &self.api_key)
-            .field("api_secret", &"<redacted>")
+            .field("api_secret", &REDACTED)
             .finish()
     }
 }
@@ -64,10 +89,10 @@ impl KrakenCredential {
     /// Returns `None` if either key or secret is not set.
     #[must_use]
     pub fn from_env_spot() -> Option<Self> {
-        let key = std::env::var("KRAKEN_SPOT_API_KEY").ok()?;
-        let secret = std::env::var("KRAKEN_SPOT_API_SECRET").ok()?;
-
-        Some(Self::new(key, secret))
+        let (key_var, secret_var) =
+            credential_env_vars(KrakenProductType::Spot, KrakenEnvironment::Mainnet);
+        let (k, s) = resolve_env_var_pair(None, None, key_var, secret_var)?;
+        Some(Self::new(k, s))
     }
 
     /// Load credentials from environment variables for Kraken Futures.
@@ -78,19 +103,14 @@ impl KrakenCredential {
     /// Returns `None` if either key or secret is not set.
     #[must_use]
     pub fn from_env_futures(demo: bool) -> Option<Self> {
-        let (key_var, secret_var) = if demo {
-            (
-                "KRAKEN_FUTURES_DEMO_API_KEY",
-                "KRAKEN_FUTURES_DEMO_API_SECRET",
-            )
+        let environment = if demo {
+            KrakenEnvironment::Demo
         } else {
-            ("KRAKEN_FUTURES_API_KEY", "KRAKEN_FUTURES_API_SECRET")
+            KrakenEnvironment::Mainnet
         };
-
-        let key = std::env::var(key_var).ok()?;
-        let secret = std::env::var(secret_var).ok()?;
-
-        Some(Self::new(key, secret))
+        let (key_var, secret_var) = credential_env_vars(KrakenProductType::Futures, environment);
+        let (k, s) = resolve_env_var_pair(None, None, key_var, secret_var)?;
+        Some(Self::new(k, s))
     }
 
     /// Resolves credentials from provided values or environment for Spot.
@@ -99,10 +119,10 @@ impl KrakenCredential {
     /// Otherwise falls back to loading from environment variables.
     #[must_use]
     pub fn resolve_spot(api_key: Option<String>, api_secret: Option<String>) -> Option<Self> {
-        match (api_key, api_secret) {
-            (Some(k), Some(s)) => Some(Self::new(k, s)),
-            _ => Self::from_env_spot(),
-        }
+        let (key_var, secret_var) =
+            credential_env_vars(KrakenProductType::Spot, KrakenEnvironment::Mainnet);
+        let (k, s) = resolve_env_var_pair(api_key, api_secret, key_var, secret_var)?;
+        Some(Self::new(k, s))
     }
 
     /// Resolves credentials from provided values or environment for Futures.
@@ -115,10 +135,14 @@ impl KrakenCredential {
         api_secret: Option<String>,
         demo: bool,
     ) -> Option<Self> {
-        match (api_key, api_secret) {
-            (Some(k), Some(s)) => Some(Self::new(k, s)),
-            _ => Self::from_env_futures(demo),
-        }
+        let environment = if demo {
+            KrakenEnvironment::Demo
+        } else {
+            KrakenEnvironment::Mainnet
+        };
+        let (key_var, secret_var) = credential_env_vars(KrakenProductType::Futures, environment);
+        let (k, s) = resolve_env_var_pair(api_key, api_secret, key_var, secret_var)?;
+        Some(Self::new(k, s))
     }
 
     /// Returns the API key.
@@ -357,14 +381,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_resolve_spot_with_partial_args_falls_back_to_env() {
-        // With partial args, should fall back to from_env_spot behavior
-        // (either returns env creds or None if env not set)
-        let result = KrakenCredential::resolve_spot(Some("key".to_string()), None);
+    fn test_resolve_spot_with_partial_args() {
+        let (_, secret_var) =
+            credential_env_vars(KrakenProductType::Spot, KrakenEnvironment::Mainnet);
 
-        // If env vars are set, result should NOT use the partial key
-        if let Some(cred) = result {
-            assert_ne!(cred.api_key(), "key");
+        // Each field resolves independently: provided key + env secret
+        if std::env::var(secret_var).is_ok() {
+            let result = KrakenCredential::resolve_spot(Some("key".to_string()), None);
+            assert!(result.is_some());
+            assert_eq!(result.unwrap().api_key(), "key");
+        } else {
+            let result = KrakenCredential::resolve_spot(Some("key".to_string()), None);
+            assert!(result.is_none());
         }
     }
 
@@ -381,13 +409,27 @@ mod tests {
     }
 
     #[rstest]
-    fn test_resolve_futures_with_partial_args_falls_back_to_env() {
-        // With partial args, should fall back to from_env_futures behavior
-        let result = KrakenCredential::resolve_futures(Some("key".to_string()), None, false);
+    fn test_resolve_futures_with_partial_args() {
+        let (_, secret_var) =
+            credential_env_vars(KrakenProductType::Futures, KrakenEnvironment::Mainnet);
 
-        // If env vars are set, result should NOT use the partial key
-        if let Some(cred) = result {
-            assert_ne!(cred.api_key(), "key");
+        // Each field resolves independently: provided key + env secret
+        if std::env::var(secret_var).is_ok() {
+            let result = KrakenCredential::resolve_futures(Some("key".to_string()), None, false);
+            assert!(result.is_some());
+            assert_eq!(result.unwrap().api_key(), "key");
+        } else {
+            let result = KrakenCredential::resolve_futures(Some("key".to_string()), None, false);
+            assert!(result.is_none());
         }
+    }
+
+    #[rstest]
+    fn test_debug_redacts_secret() {
+        let cred = KrakenCredential::new("test_key", "test_secret");
+        let dbg_out = format!("{cred:?}");
+
+        assert!(dbg_out.contains(REDACTED));
+        assert!(!dbg_out.contains("test_secret"));
     }
 }

@@ -35,7 +35,10 @@ use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
 use nautilus_common::live::get_runtime;
-use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
+use nautilus_core::{
+    string::REDACTED,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     mode::ConnectionMode,
@@ -93,10 +96,7 @@ impl Debug for BinanceFuturesWebSocketClient {
         f.debug_struct(stringify!(BinanceFuturesWebSocketClient))
             .field("url", &self.url)
             .field("product_type", &self.product_type)
-            .field(
-                "credential",
-                &self.credential.as_ref().map(|_| "<redacted>"),
-            )
+            .field("credential", &self.credential.as_ref().map(|_| REDACTED))
             .field("heartbeat", &self.heartbeat)
             .finish_non_exhaustive()
     }

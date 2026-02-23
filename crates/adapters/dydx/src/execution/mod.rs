@@ -81,7 +81,9 @@ use tokio::task::JoinHandle;
 
 use crate::{
     common::{
-        consts::DYDX_VENUE, credential::DydxCredential, instrument_cache::InstrumentCache,
+        consts::DYDX_VENUE,
+        credential::{DydxCredential, credential_env_vars},
+        instrument_cache::InstrumentCache,
         parse::nanos_to_secs_i64,
     },
     config::DydxAdapterConfig,
@@ -271,11 +273,7 @@ impl DydxExecutionClient {
     }
 
     fn resolve_private_key(config: &DydxAdapterConfig) -> anyhow::Result<String> {
-        let private_key_env = if config.is_testnet {
-            "DYDX_TESTNET_PRIVATE_KEY"
-        } else {
-            "DYDX_PRIVATE_KEY"
-        };
+        let (private_key_env, _) = credential_env_vars(config.is_testnet);
 
         // 1. Try private key from config
         if let Some(ref pk) = config.private_key

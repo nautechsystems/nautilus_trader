@@ -40,6 +40,7 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
+    string::REDACTED,
 };
 use nautilus_model::{
     data::BarType,
@@ -175,10 +176,7 @@ impl Debug for OKXWebSocketClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(OKXWebSocketClient))
             .field("url", &self.url)
-            .field(
-                "credential",
-                &self.credential.as_ref().map(|_| "<redacted>"),
-            )
+            .field("credential", &self.credential.as_ref().map(|_| REDACTED))
             .field("heartbeat", &self.heartbeat)
             .finish_non_exhaustive()
     }
@@ -318,7 +316,7 @@ impl OKXWebSocketClient {
 
     /// Returns the public API key being used by the client.
     pub fn api_key(&self) -> Option<&str> {
-        self.credential.clone().map(|c| c.api_key.as_str())
+        self.credential.as_ref().map(|c| c.api_key())
     }
 
     /// Returns a masked version of the API key for logging purposes.
@@ -638,8 +636,8 @@ impl OKXWebSocketClient {
                                 let auth_message = super::messages::OKXAuthentication {
                                     op: "login",
                                     args: vec![super::messages::OKXAuthenticationArg {
-                                        api_key: cred.api_key.to_string(),
-                                        passphrase: cred.api_passphrase.clone(),
+                                        api_key: cred.api_key().to_string(),
+                                        passphrase: cred.api_passphrase().to_string(),
                                         timestamp,
                                         sign: signature,
                                     }],
@@ -743,8 +741,8 @@ impl OKXWebSocketClient {
         let auth_message = OKXAuthentication {
             op: "login",
             args: vec![OKXAuthenticationArg {
-                api_key: credential.api_key.to_string(),
-                passphrase: credential.api_passphrase.clone(),
+                api_key: credential.api_key().to_string(),
+                passphrase: credential.api_passphrase().to_string(),
                 timestamp,
                 sign: signature,
             }],

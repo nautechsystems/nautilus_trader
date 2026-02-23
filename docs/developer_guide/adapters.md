@@ -518,6 +518,45 @@ Keep signing logic in a `Credential` struct under `common/credential.rs`:
 
 For WebSocket authentication, the handler constructs login messages using the same `Credential::sign()` method with a WebSocket-specific timestamp format.
 
+### Credential module structure
+
+Each adapter's `common/credential.rs` must provide two things:
+
+1. **`credential_env_vars()` free function** — returns environment variable names as a tuple.
+2. **`Credential::resolve()` method** — resolves credentials from config values or environment
+   variables using `resolve_env_var_pair` from `nautilus_core::env`.
+
+Config structs are DTOs and must not contain credential resolution logic. All resolution
+belongs in `credential.rs`.
+
+**Standard layout:**
+
+```rust
+use nautilus_core::env::resolve_env_var_pair;
+
+/// Returns the environment variable names for API credentials.
+pub fn credential_env_vars(is_testnet: bool) -> (&'static str, &'static str) {
+    if is_testnet {
+        ("{VENUE}_TESTNET_API_KEY", "{VENUE}_TESTNET_API_SECRET")
+    } else {
+        ("{VENUE}_API_KEY", "{VENUE}_API_SECRET")
+    }
+}
+
+impl Credential {
+    /// Resolves credentials from provided values or environment variables.
+    pub fn resolve(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        is_testnet: bool,
+    ) -> Option<Self> {
+        let (key_var, secret_var) = credential_env_vars(is_testnet);
+        let (k, s) = resolve_env_var_pair(api_key, api_secret, key_var, secret_var)?;
+        Some(Self::new(k, s))
+    }
+}
+```
+
 ### Environment variable conventions
 
 Adapters support loading API credentials from environment variables when not provided directly. This enables secure credential management without hardcoding secrets.
@@ -534,58 +573,15 @@ Some venues require additional credentials:
 
 - OKX: `OKX_API_PASSPHRASE`
 
-**Implementation pattern:**
-
-Use `nautilus_core::env::get_or_env_var_opt` for optional credential resolution (returns `None` if missing) or `get_or_env_var` when credentials are required (returns error if missing):
-
-```rust
-use nautilus_core::env::get_or_env_var_opt;
-
-let (api_key_env, api_secret_env) = if testnet {
-    ("{VENUE}_TESTNET_API_KEY", "{VENUE}_TESTNET_API_SECRET")
-} else {
-    ("{VENUE}_API_KEY", "{VENUE}_API_SECRET")
-};
-
-let key = get_or_env_var_opt(api_key, api_key_env);
-let secret = get_or_env_var_opt(api_secret, api_secret_env);
-```
-
 **Key principles:**
 
+- Environment variable names must be centralized in `credential_env_vars()`, never
+  duplicated as string literals across files.
 - Environment variable resolution should happen in core Rust code, not Python bindings.
-- Use `get_or_env_var_opt` for optional credentials (public-only clients).
+- Use `get_or_env_var_opt` for optional credentials (returns `None` if missing).
 - Use `get_or_env_var` when credentials are required (returns error if missing).
-- Document supported environment variables in adapter README files.
-
-**Credential resolver helper:**
-
-Encapsulate environment-based credential resolution in a helper function when the logic involves
-multiple environments or fallback behavior:
-
-```rust
-use nautilus_core::env::get_or_env_var_opt;
-
-fn resolve_credential(
-    api_key: Option<&str>,
-    api_secret: Option<&str>,
-    is_testnet: bool,
-) -> Option<Credential> {
-    let (key_env, secret_env) = if is_testnet {
-        ("{VENUE}_TESTNET_API_KEY", "{VENUE}_TESTNET_API_SECRET")
-    } else {
-        ("{VENUE}_API_KEY", "{VENUE}_API_SECRET")
-    };
-
-    let key = get_or_env_var_opt(api_key, key_env)?;
-    let secret = get_or_env_var_opt(api_secret, secret_env)?;
-
-    Some(Credential::new(key, secret))
-}
-```
-
-This pattern returns `None` when credentials are unavailable, suitable for optional authentication.
-For clients that require credentials, use `get_or_env_var` which returns an error if missing.
+- Invalid credentials (e.g. malformed keys) must fail fast with an error, never silently
+  degrade to unauthenticated mode.
 
 ### Error handling and retry logic
 

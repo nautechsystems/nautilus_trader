@@ -21,7 +21,7 @@
 //! Usage:
 //! ```bash
 //! # Test against testnet (default)
-//! DYDX_PRIVATE_KEY="your hex private key" cargo run --bin dydx-http-private -p nautilus-dydx
+//! DYDX_TESTNET_PRIVATE_KEY="your hex private key" cargo run --bin dydx-http-private -p nautilus-dydx
 //!
 //! # Test against mainnet
 //! DYDX_PRIVATE_KEY="your hex private key" \
@@ -37,7 +37,12 @@
 use std::env;
 
 use nautilus_dydx::{
-    common::consts::DYDX_TESTNET_HTTP_URL, execution::wallet::Wallet, http::client::DydxHttpClient,
+    common::{
+        consts::DYDX_TESTNET_HTTP_URL,
+        credential::{credential_env_vars, resolve_wallet_address},
+    },
+    execution::wallet::Wallet,
+    http::client::DydxHttpClient,
 };
 
 const DEFAULT_SUBACCOUNT: u32 = 0;
@@ -61,11 +66,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str());
 
+    let is_testnet = !is_mainnet;
+    let (pk_var, _) = credential_env_vars(is_testnet);
     let private_key =
-        env::var("DYDX_PRIVATE_KEY").expect("DYDX_PRIVATE_KEY environment variable not set");
+        env::var(pk_var).map_err(|_| format!("{pk_var} environment variable not set"))?;
 
     // Allow overriding wallet address (for permissioned key setups)
-    let wallet_address_override = env::var("DYDX_WALLET_ADDRESS").ok();
+    let wallet_address_override = resolve_wallet_address(None, is_testnet);
 
     let http_url = if is_mainnet {
         env::var("DYDX_HTTP_URL").unwrap_or_else(|_| "https://indexer.dydx.trade".to_string())

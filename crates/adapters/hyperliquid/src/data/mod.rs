@@ -53,7 +53,11 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
-    common::{consts::HYPERLIQUID_VENUE, parse::bar_type_to_interval},
+    common::{
+        consts::HYPERLIQUID_VENUE,
+        credential::{Secrets, credential_env_vars},
+        parse::bar_type_to_interval,
+    },
     config::HyperliquidDataClientConfig,
     http::{client::HyperliquidHttpClient, models::HyperliquidCandle},
     websocket::{
@@ -95,14 +99,13 @@ impl HyperliquidDataClient {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
 
-        let mut http_client = if let Some(private_key_str) = &config.private_key {
-            let secrets = crate::common::credential::Secrets {
-                private_key: crate::common::credential::EvmPrivateKey::new(
-                    private_key_str.clone(),
-                )?,
-                is_testnet: config.is_testnet,
-                vault_address: None,
-            };
+        // Only fall back to unauthenticated when credentials are absent,
+        // not when they're invalid (fail fast on malformed keys)
+        let (pk_var, _) = credential_env_vars(config.is_testnet);
+        let has_credentials = config.private_key.is_some() || std::env::var(pk_var).is_ok();
+
+        let mut http_client = if has_credentials {
+            let secrets = Secrets::resolve(config.private_key.as_deref(), None, config.is_testnet)?;
             HyperliquidHttpClient::with_secrets(
                 &secrets,
                 config.http_timeout_secs,

@@ -21,14 +21,26 @@ use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
 use hex;
-use ustr::Ustr;
+use nautilus_core::{env::resolve_env_var_pair, string::REDACTED};
 use zeroize::ZeroizeOnDrop;
+
+use crate::common::enums::BybitEnvironment;
+
+/// Returns the environment variable names for API credentials,
+/// based on the trading environment.
+#[must_use]
+pub fn credential_env_vars(environment: BybitEnvironment) -> (&'static str, &'static str) {
+    match environment {
+        BybitEnvironment::Demo => ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET"),
+        BybitEnvironment::Testnet => ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET"),
+        BybitEnvironment::Mainnet => ("BYBIT_API_KEY", "BYBIT_API_SECRET"),
+    }
+}
 
 /// API credentials required for signing Bybit REST requests.
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct Credential {
-    #[zeroize(skip)]
-    api_key: Ustr,
+    api_key: Box<str>,
     api_secret: Box<[u8]>,
 }
 
@@ -36,29 +48,39 @@ impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
-            .field("api_secret", &"<redacted>")
+            .field("api_secret", &REDACTED)
             .finish()
     }
 }
 
 impl Credential {
+    /// Resolves credentials from provided values or environment variables.
+    ///
+    /// If both `api_key` and `api_secret` are provided, uses those.
+    /// Otherwise falls back to environment variables based on the environment.
+    #[must_use]
+    pub fn resolve(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        environment: BybitEnvironment,
+    ) -> Option<Self> {
+        let (key_var, secret_var) = credential_env_vars(environment);
+        let (k, s) = resolve_env_var_pair(api_key, api_secret, key_var, secret_var)?;
+        Some(Self::new(k, s))
+    }
+
     /// Creates a new [`Credential`] instance from the API key and secret.
     #[must_use]
     pub fn new(api_key: impl Into<String>, api_secret: impl Into<String>) -> Self {
-        let api_key = api_key.into();
-        let api_secret_bytes = api_secret.into().into_bytes();
-
-        let api_key = Ustr::from(&api_key);
-
         Self {
-            api_key,
-            api_secret: api_secret_bytes.into_boxed_slice(),
+            api_key: api_key.into().into_boxed_str(),
+            api_secret: api_secret.into().into_bytes().into_boxed_slice(),
         }
     }
 
     /// Returns the API key associated with this credential.
     #[must_use]
-    pub fn api_key(&self) -> &Ustr {
+    pub fn api_key(&self) -> &str {
         &self.api_key
     }
 
@@ -68,7 +90,7 @@ impl Credential {
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn api_key_masked(&self) -> String {
-        nautilus_core::string::mask_api_key(self.api_key.as_str())
+        nautilus_core::string::mask_api_key(&self.api_key)
     }
 
     /// Produces the Bybit WebSocket authentication signature for the provided expiry timestamp.
@@ -101,7 +123,7 @@ impl Credential {
         );
 
         message.push_str(timestamp);
-        message.push_str(self.api_key.as_str());
+        message.push_str(&self.api_key);
         message.push_str(&recv_window);
         if let Some(payload) = payload {
             message.push_str(payload);
@@ -171,5 +193,38 @@ mod tests {
             signature,
             "bacffe7500499eb829bb58c45d36d1b3e5ac67c14eaeba91df5e99ccee013925"
         );
+    }
+
+    #[rstest]
+    fn test_debug_redacts_secret() {
+        let credential = Credential::new(API_KEY, API_SECRET);
+        let dbg_out = format!("{credential:?}");
+
+        assert!(dbg_out.contains(REDACTED));
+        assert!(!dbg_out.contains(API_SECRET));
+    }
+
+    #[rstest]
+    fn test_resolve_with_both_args() {
+        let result = Credential::resolve(
+            Some("my_key".to_string()),
+            Some("my_secret".to_string()),
+            BybitEnvironment::Mainnet,
+        );
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().api_key(), "my_key");
+    }
+
+    #[rstest]
+    fn test_resolve_with_no_args_no_env() {
+        let (key_var, secret_var) = credential_env_vars(BybitEnvironment::Mainnet);
+        if std::env::var(key_var).is_ok() || std::env::var(secret_var).is_ok() {
+            return;
+        }
+
+        let result = Credential::resolve(None, None, BybitEnvironment::Mainnet);
+
+        assert!(result.is_none());
     }
 }
