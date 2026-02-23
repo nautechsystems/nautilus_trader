@@ -600,7 +600,7 @@ version = "0.10.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.chrono]]
-version = "0.4.43"
+version = "0.4.44"
 criteria = "safe-to-deploy"
 
 [[exemptions.chrono-tz]]
@@ -1509,7 +1509,7 @@ version = "0.10.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-analysis]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-architect-ax]]
@@ -1517,43 +1517,43 @@ version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-backtest]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-bitmex]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-blockchain]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-bybit]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-cli]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-common]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-core]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-cryptography]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-data]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-databento]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-deribit]]
@@ -1561,7 +1561,7 @@ version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-execution]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-hyperliquid]]
@@ -1569,43 +1569,43 @@ version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-indicators]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-infrastructure]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-kraken]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-live]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-model]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-network]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-okx]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-persistence]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-portfolio]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-risk]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-sandbox]]
@@ -1613,23 +1613,23 @@ version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-serialization]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-system]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-tardis]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-testkit]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-trading]]
-version = "0.52.0"
+version = "0.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ndarray]]

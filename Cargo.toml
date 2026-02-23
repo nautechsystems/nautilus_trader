@@ -123,7 +123,7 @@ aws-lc-rs = { version = "1.16.0", default-features = false, features = [
 base64 = "0.22.1"
 bytes = { version = "1.11.1", features = ["serde"] }
 capnp = "0.25.0"
-chrono = { version = "0.4.43", default-features = false, features = [
+chrono = { version = "0.4.44", default-features = false, features = [
   "serde",
   "std",
   "clock",

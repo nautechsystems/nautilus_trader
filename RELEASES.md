@@ -21,6 +21,8 @@ Released on TBD (UTC).
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
 - Fixed Hyperliquid stop/trigger order price derivation (#3611), thanks for reporting @h-tsun3
 - Fixed Hyperliquid price normalization and inner error detection (#3612), thanks for reporting @h-tsun3
+- Fix Interactive Brokers BarType/str comparison in get_historical_bars (#3616), thank you @powerseed
+- Fix Interactive Brokers historical bar processing crash (#3619), thank you @shzhng
 
 ### Internal Improvements
 - Implemented `BacktestNode` with catalog streaming in Rust
