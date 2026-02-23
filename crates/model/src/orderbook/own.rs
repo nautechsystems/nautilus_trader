@@ -445,10 +445,6 @@ impl OwnOrderBook {
     ///
     /// Returns [`BinaryMarketBookViewError::BookAndOwnSyntheticBookMustBeDifferentInstrumentId`]
     /// if `self` and `opposite` have the same instrument ID.
-    ///
-    /// # Panics
-    ///
-    /// Panics if parity transformed prices cannot be represented as [`Price`].
     pub fn combined_with_opposite(
         &self,
         opposite: &Self,
@@ -527,7 +523,11 @@ fn log_audit_error(client_order_id: &ClientOrderId) {
         "Audit error - {client_order_id} cached order already closed, deleting from own book"
     );
 }
-
+/// Transforms an order using parity price for binary markets
+///
+/// # Panics
+///
+/// Panics if  [`Price::from_decimal`] panics.
 fn transform_opposite_order(order: OwnBookOrder, side: OrderSideSpecified) -> OwnBookOrder {
     let parity_price = Price::from_decimal(Decimal::ONE - order.price.as_decimal())
         .expect("Invalid parity transformed price for OwnOrderBook::combined_with_opposite");
