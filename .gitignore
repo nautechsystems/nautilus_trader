@@ -30,6 +30,8 @@ logs/
 *.zip
 
 # Data
+*.dbn
+*.dbn.zst
 *.parquet
 
 # IntelliJ and VSCode project
