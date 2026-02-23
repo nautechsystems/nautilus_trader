@@ -1670,16 +1670,9 @@ fn test_book_filtered_with_synthetic_orders() {
     synthetic_book.add(synthetic_ask_order);
     synthetic_book.add(synthetic_bid_order);
 
-    let filtered = book.filtered_view(
-        Some(&own_book),
-        Some(10),
-        None,
-        None,
-        None,
-        Some(&synthetic_book),
-    );
-    let bids_filtered = filtered.bids_as_map(None);
-    let asks_filtered = filtered.asks_as_map(None);
+    let combined_own = own_book.combined_with_opposite(&synthetic_book).unwrap();
+    let bids_filtered = book.bids_filtered_as_map(Some(10), Some(&combined_own), None, None, None);
+    let asks_filtered = book.asks_filtered_as_map(Some(10), Some(&combined_own), None, None, None);
 
     assert_eq!(bids_filtered.get(&dec!(0.40)), Some(&dec!(70))); // 100 - 30
     assert_eq!(asks_filtered.get(&dec!(0.60)), Some(&dec!(80))); // 100 - 20
@@ -1772,16 +1765,9 @@ fn test_book_filtered_with_own_and_synthetic_orders() {
     synthetic_book.add(synthetic_ask_order);
     synthetic_book.add(synthetic_bid_order);
 
-    let filtered = book.filtered_view(
-        Some(&own_book),
-        Some(10),
-        None,
-        None,
-        None,
-        Some(&synthetic_book),
-    );
-    let bids_filtered = filtered.bids_as_map(None);
-    let asks_filtered = filtered.asks_as_map(None);
+    let combined_own = own_book.combined_with_opposite(&synthetic_book).unwrap();
+    let bids_filtered = book.bids_filtered_as_map(Some(10), Some(&combined_own), None, None, None);
+    let asks_filtered = book.asks_filtered_as_map(Some(10), Some(&combined_own), None, None, None);
 
     assert_eq!(bids_filtered.get(&dec!(0.40)), Some(&dec!(60))); // 100 - 10 - 30
     assert_eq!(asks_filtered.get(&dec!(0.60)), Some(&dec!(75))); // 100 - 5 - 20
@@ -1870,8 +1856,8 @@ fn test_order_book_filtered_view_with_combined_own_orders() {
         4.into(),
     ));
 
-    let filtered =
-        public_book.filtered_view(Some(&own_yes), Some(10), None, None, None, Some(&own_no));
+    let combined_own = own_yes.combined_with_opposite(&own_no).unwrap();
+    let filtered = public_book.filtered_view(Some(&combined_own), Some(10), None, None, None);
     let bids = filtered.bids_as_map(None);
     let asks = filtered.asks_as_map(None);
 
@@ -1886,7 +1872,7 @@ fn test_order_book_filtered_view_book_and_own_book_instrument_mismatch() {
     let book = OrderBook::new(instrument_yes_id, BookType::L2_MBP);
     let own_book = OwnOrderBook::new(instrument_no_id);
 
-    let result = book.filtered_view_checked(Some(&own_book), Some(10), None, None, None, None);
+    let result = book.filtered_view_checked(Some(&own_book), Some(10), None, None, None);
 
     assert!(result.is_err());
 
@@ -1902,27 +1888,19 @@ fn test_order_book_filtered_view_book_and_own_book_instrument_mismatch() {
 #[rstest]
 fn test_own_order_book_combined_with_opposite_instrument_must_differ() {
     let instrument_yes_id = InstrumentId::from("YES.XNAS");
-    let book = OrderBook::new(instrument_yes_id, BookType::L2_MBP);
     let own_book = OwnOrderBook::new(instrument_yes_id);
     let synthetic_book = OwnOrderBook::new(instrument_yes_id);
 
-    let result = book.filtered_view_checked(
-        Some(&own_book),
-        Some(10),
-        None,
-        None,
-        None,
-        Some(&synthetic_book),
-    );
+    let result = own_book.combined_with_opposite(&synthetic_book);
 
     assert!(result.is_err());
 
     match result.unwrap_err() {
         BinaryMarketBookViewError::BookAndOwnSyntheticBookMustBeDifferentInstrumentId(
-            book_id,
+            own_book_id,
             own_synthetic_book_id,
         ) => {
-            assert_eq!(book_id.to_string(), "YES.XNAS");
+            assert_eq!(own_book_id.to_string(), "YES.XNAS");
             assert_eq!(own_synthetic_book_id.to_string(), "YES.XNAS");
         }
         other => panic!(
@@ -1943,7 +1921,7 @@ fn test_order_book_filtered_view_optional_books() {
     book.add(ask_order, 0, 2, 2.into());
 
     let filtered = book
-        .filtered_view_checked(None, None, None, None, None, None)
+        .filtered_view_checked(None, None, None, None, None)
         .unwrap();
 
     assert_eq!(filtered.best_bid_size(), Some(Quantity::from(100)));

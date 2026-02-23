@@ -58,10 +58,8 @@ def test_binary_market_book_view_creation() -> None:
         ts_init=1,
     )
     own_synthetic_book.add(synthetic_bid)
-    filtered = book.filtered_view(
-        own_book=own_book,
-        own_synthetic_book=own_synthetic_book,
-    )
+    combined_own = own_book.combined_with_opposite(own_synthetic_book)
+    filtered = book.filtered_view(combined_own)
 
     assert filtered.best_bid_size() == 80
 
@@ -77,7 +75,6 @@ def test_order_book_filtered_view_book_and_own_book_instrument_mismatch() -> Non
 
     book = nautilus_pyo3.OrderBook(instrument_yes_id, book_type)
     own_book = nautilus_pyo3.OwnOrderBook(instrument_no_id)
-    own_book = nautilus_pyo3.OwnOrderBook(instrument_no_id)
 
     with pytest.raises(
         ValueError,
@@ -87,10 +84,8 @@ def test_order_book_filtered_view_book_and_own_book_instrument_mismatch() -> Non
 
 
 def test_own_order_book_combined_with_opposite_instrument_must_differ() -> None:
-    book_type = nautilus_pyo3.BookType.L2_MBP
     instrument_yes_id = nautilus_pyo3.InstrumentId.from_str("YES.XNAS")
 
-    book = nautilus_pyo3.OrderBook(instrument_yes_id, book_type)
     own_book = nautilus_pyo3.OwnOrderBook(instrument_yes_id)
     own_synthetic_book = nautilus_pyo3.OwnOrderBook(instrument_yes_id)
 
@@ -98,7 +93,7 @@ def test_own_order_book_combined_with_opposite_instrument_must_differ() -> None:
         ValueError,
         match=r"The instrument IDs of `book` and `own_synthetic_book` must differ: book=YES.XNAS, own_synthetic_book=YES.XNAS",
     ):
-        book.filtered_view(own_book=own_book, own_synthetic_book=own_synthetic_book)
+        own_book.combined_with_opposite(own_synthetic_book)
 
 
 def test_order_book_filtered_view_optional_books() -> None:

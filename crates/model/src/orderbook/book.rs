@@ -660,7 +660,6 @@ impl OrderBook {
     /// # Panics
     ///
     /// Panics if `self` and `own_book` have different instrument IDs.
-    /// Panics if `self` and `own_synthetic_book` have the same instrument IDs.
     /// Panics if `Price::from_decimal` or `Quantity::from_decimal` fails when reconstructing filtered levels.
     ///
     /// [`Self::filtered_view_checked`] for fallible construction.
@@ -672,17 +671,9 @@ impl OrderBook {
         status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
-        own_synthetic_book: Option<&OwnOrderBook>,
     ) -> Self {
-        self.filtered_view_checked(
-            own_book,
-            depth,
-            status,
-            accepted_buffer_ns,
-            now,
-            own_synthetic_book,
-        )
-        .expect(FAILED)
+        self.filtered_view_checked(own_book, depth, status, accepted_buffer_ns, now)
+            .expect(FAILED)
     }
 
     /// Fallible constructor for a filtered [`OrderBook`] view.
@@ -691,8 +682,6 @@ impl OrderBook {
     ///
     /// Returns [`BinaryMarketBookViewError::BookAndOwnBookMustBeSameInstrumentId`] if
     /// `self` and `own_book` have different instrument IDs.
-    /// Returns [`BinaryMarketBookViewError::BookAndOwnSyntheticBookMustBeDifferentInstrumentId`] if
-    /// `self` and `own_synthetic_book` have the same instrument IDs.
     ///
     /// # Panics
     ///
@@ -705,7 +694,6 @@ impl OrderBook {
         status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
-        own_synthetic_book: Option<&OwnOrderBook>,
     ) -> Result<Self, BinaryMarketBookViewError> {
         if let Some(own_book) = own_book
             && self.instrument_id != own_book.instrument_id
@@ -718,40 +706,9 @@ impl OrderBook {
             );
         }
 
-        if let Some(own_synthetic_book) = own_synthetic_book
-            && self.instrument_id == own_synthetic_book.instrument_id
-        {
-            return Err(
-                BinaryMarketBookViewError::BookAndOwnSyntheticBookMustBeDifferentInstrumentId(
-                    self.instrument_id,
-                    own_synthetic_book.instrument_id,
-                ),
-            );
-        }
-
-        let mut bids_map =
+        let bids_map =
             self.bids_filtered_as_map(depth, own_book, status.clone(), accepted_buffer_ns, now);
-
-        if let Some(own_synthetic_book) = own_synthetic_book {
-            let synthetic_as_bids = own_synthetic_book
-                .ask_quantity(status.clone(), None, None, accepted_buffer_ns, now)
-                .into_iter()
-                .map(|(price, quantity)| (Decimal::ONE - price, quantity))
-                .collect::<IndexMap<Decimal, Decimal>>();
-            filter_quantities(&mut bids_map, synthetic_as_bids);
-        }
-
-        let mut asks_map =
-            self.asks_filtered_as_map(depth, own_book, status.clone(), accepted_buffer_ns, now);
-
-        if let Some(own_synthetic_book) = own_synthetic_book {
-            let synthetic_as_asks = own_synthetic_book
-                .bid_quantity(status, None, None, accepted_buffer_ns, now)
-                .into_iter()
-                .map(|(price, quantity)| (Decimal::ONE - price, quantity))
-                .collect::<IndexMap<Decimal, Decimal>>();
-            filter_quantities(&mut asks_map, synthetic_as_asks);
-        }
+        let asks_map = self.asks_filtered_as_map(depth, own_book, status, accepted_buffer_ns, now);
 
         let mut filtered_book = Self::new(self.instrument_id, self.book_type);
         let sequence = self.sequence;

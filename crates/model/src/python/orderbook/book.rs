@@ -280,7 +280,7 @@ impl OrderBook {
     }
 
     #[pyo3(name = "filtered_view")]
-    #[pyo3(signature = (own_book=None, depth=None, status=None, accepted_buffer_ns=None, ts_now=None, own_synthetic_book=None))]
+    #[pyo3(signature = (own_book=None, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_filtered_view(
         &self,
         own_book: Option<&OwnOrderBook>,
@@ -288,7 +288,6 @@ impl OrderBook {
         status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
-        own_synthetic_book: Option<&OwnOrderBook>,
     ) -> PyResult<Self> {
         self.filtered_view_checked(
             own_book,
@@ -296,7 +295,6 @@ impl OrderBook {
             status.map(|s| s.into_iter().collect()),
             accepted_buffer_ns,
             ts_now,
-            own_synthetic_book,
         )
         .map_err(to_pyvalue_err)
     }
