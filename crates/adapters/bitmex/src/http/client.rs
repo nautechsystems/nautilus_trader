@@ -869,6 +869,14 @@ impl BitmexHttpClient {
             }
         });
 
+        let (key_var, secret_var) = if testnet {
+            ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
+        } else {
+            ("BITMEX_API_KEY", "BITMEX_API_SECRET")
+        };
+        let api_key = api_key.or_else(|| get_or_env_var_opt(None, key_var));
+        let api_secret = api_secret.or_else(|| get_or_env_var_opt(None, secret_var));
+
         let inner = match (api_key, api_secret) {
             (Some(key), Some(secret)) => BitmexRawHttpClient::with_credentials(
                 key,

@@ -13,26 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Example demonstrating live execution testing with the BitMEX adapter.
+//! Example demonstrating the GridMarketMaker strategy on BitMEX with deadman's switch.
+//!
+//! The deadman's switch periodically calls the BitMEX `cancelAllAfter` endpoint. If the
+//! client loses connectivity the server-side timer expires and all open orders are cancelled.
 //!
 //! Credentials are resolved from environment variables automatically when not passed
 //! explicitly in the config (`api_key` / `api_secret` fields):
 //! - Testnet: `BITMEX_TESTNET_API_KEY` / `BITMEX_TESTNET_API_SECRET`
 //! - Mainnet: `BITMEX_API_KEY` / `BITMEX_API_SECRET`
 //!
-//! Run with: `cargo run --example bitmex-exec-tester --package nautilus-bitmex`
+//! Run with: `cargo run --example bitmex-grid-mm --package nautilus-bitmex`
 
+use log::LevelFilter;
 use nautilus_bitmex::{
     config::{BitmexDataClientConfig, BitmexExecClientConfig},
     factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
 };
-use nautilus_common::enums::Environment;
+use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{ClientId, InstrumentId, StrategyId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     types::Quantity,
 };
-use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use nautilus_trading::examples::strategies::{GridMarketMaker, GridMarketMakerConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -53,6 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         BitmexExecClientConfig {
             use_testnet,
+            deadmans_switch_timeout_secs: Some(60),
             ..Default::default()
         },
     );
@@ -60,7 +65,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_factory = BitmexDataClientFactory::new();
     let exec_factory = BitmexExecutionClientFactory::new();
 
+    let log_config = LoggerConfig {
+        stdout_level: LevelFilter::Info,
+        ..Default::default()
+    };
+
     let mut node = LiveNode::builder(trader_id, environment)?
+        .with_logging(log_config)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
@@ -68,25 +79,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let mut tester_config = ExecTesterConfig::new(
-        StrategyId::from("EXEC-TESTER-001"),
-        instrument_id,
-        ClientId::new("BITMEX"),
-        Quantity::from("100"),
-    )
-    .with_subscribe_trades(true)
-    .with_subscribe_quotes(true)
-    .with_use_post_only(true)
-    .with_log_data(false)
-    .with_cancel_orders_on_stop(true)
-    .with_close_positions_on_stop(true);
+    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("300"))
+        .with_num_levels(3)
+        .with_grid_step_bps(100)
+        .with_skew_factor(0.5)
+        .with_requote_threshold_bps(10);
+    let strategy = GridMarketMaker::new(config);
 
-    tester_config.base.external_order_claims = Some(vec![instrument_id]);
-    tester_config.base.use_uuid_client_order_ids = true;
-
-    let tester = ExecTester::new(tester_config);
-
-    node.add_strategy(tester)?;
+    node.add_strategy(strategy)?;
     node.run().await?;
 
     Ok(())

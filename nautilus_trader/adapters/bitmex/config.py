@@ -151,7 +151,7 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
         Optional list of proxy URLs for submit broadcaster path diversity.
     canceller_proxy_urls : list[str], optional
         Optional list of proxy URLs for cancel broadcaster path diversity.
-    dead_mans_switch_timeout_secs : PositiveInt, optional
+    deadmans_switch_timeout_secs : PositiveInt, optional
         Dead man's switch timeout in seconds. When set, a background task periodically
         calls the BitMEX ``cancelAllAfter`` endpoint to keep a server-side timer alive.
         If the client loses connectivity the timer expires and BitMEX cancels all open
@@ -177,4 +177,4 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     canceller_pool_size: PositiveInt | None = None
     submitter_proxy_urls: list[str] | None = None
     canceller_proxy_urls: list[str] | None = None
-    dead_mans_switch_timeout_secs: PositiveInt | None = None
+    deadmans_switch_timeout_secs: PositiveInt | None = None

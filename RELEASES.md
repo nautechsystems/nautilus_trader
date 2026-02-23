@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added matching engine L1 quote-based queue position tracking for backtests
 - Added Betfair batch submit and cancel order support
 - Added BitMEX dead man's switch (cancelAllAfter) support
+- Added BitMEX grid market maker example in Rust
 
 ### Breaking Changes
 - Removed Coinbase International (`COINBASE_INTX`) adapter, see RFC (#3555)

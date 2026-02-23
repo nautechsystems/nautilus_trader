@@ -392,7 +392,7 @@ def exec_client_with_dms(
         api_key="test_api_key",
         api_secret="test_api_secret",
         testnet=True,
-        dead_mans_switch_timeout_secs=60,
+        deadmans_switch_timeout_secs=60,
     )
 
     client = BitmexExecutionClient(

@@ -771,7 +771,7 @@ impl ExecutionEngine {
     fn reconcile_position_report_hedging(&self, report: &PositionStatusReport, cache: &Cache) {
         let venue_position_id = report.venue_position_id.as_ref().unwrap();
 
-        log::info!(
+        log::debug!(
             "Reconciling HEDGE position for {}, venue_position_id={}",
             report.instrument_id,
             venue_position_id
@@ -806,7 +806,7 @@ impl ExecutionEngine {
         cache: &Cache,
         size_precision: Option<u8>,
     ) {
-        log::info!("Reconciling NET position for {}", report.instrument_id);
+        log::debug!("Reconciling NET position for {}", report.instrument_id);
 
         let positions_open =
             cache.positions_open(None, Some(&report.instrument_id), None, None, None);
@@ -821,7 +821,7 @@ impl ExecutionEngine {
             })
             .sum();
 
-        log::info!(
+        log::debug!(
             "Position report: venue_signed_qty={}, cached_signed_qty={}",
             report.signed_decimal_qty,
             cached_signed_qty
