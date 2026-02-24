@@ -310,6 +310,7 @@ cdef class MatchingCore:
             if self.is_limit_matched(order.side, order.price):
                 order.liquidity_side = LiquiditySide.MAKER
                 self._fill_limit_order(order)
+
             return
 
         cdef LiquiditySide liquidity_side
@@ -339,6 +340,7 @@ cdef class MatchingCore:
             if self.is_limit_matched(order.side, order.price):
                 order.liquidity_side = LiquiditySide.MAKER
                 self._fill_limit_order(order)
+
             return
 
         cdef LiquiditySide liquidity_side
@@ -382,10 +384,12 @@ cdef class MatchingCore:
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
+
             return self.ask_raw >= trigger_price._mem.raw
         elif side == OrderSide.SELL:
             if not self.is_bid_initialized:
                 return False  # No market
+
             return self.bid_raw <= trigger_price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
@@ -396,10 +400,12 @@ cdef class MatchingCore:
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
+
             return self.ask_raw <= trigger_price._mem.raw
         elif side == OrderSide.SELL:
             if not self.is_bid_initialized:
                 return False  # No market
+
             return self.bid_raw >= trigger_price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
