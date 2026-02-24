@@ -487,7 +487,7 @@ mod tests {
         Python::initialize();
         Python::attach(|py| {
             let dict_string = bar.py_to_dict(py).unwrap().to_string();
-            let expected_string = r"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-LAST-INTERNAL', 'open': '1.00010', 'high': '1.00020', 'low': '1.00000', 'close': '1.00010', 'volume': '100000', 'ts_event': 0, 'ts_init': 0}";
+            let expected_string = "{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-LAST-INTERNAL', 'open': '1.00010', 'high': '1.00020', 'low': '1.00000', 'close': '1.00010', 'volume': '100000', 'ts_event': 0, 'ts_init': 0}";
             assert_eq!(dict_string, expected_string);
         });
     }

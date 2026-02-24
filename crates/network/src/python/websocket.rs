@@ -482,7 +482,7 @@ mod tests {
     }
 
     fn create_test_handler() -> (Py<PyAny>, Py<PyAny>) {
-        let code_raw = r"
+        let code_raw = "
 class Counter:
     def __init__(self):
         self.count = 0

@@ -234,7 +234,7 @@ impl Default for SubmitBroadcasterConfig {
             max_requests_per_minute: Some(120),
             health_check_interval_secs: 30,
             health_check_timeout_secs: 5,
-            expected_reject_patterns: vec![r"Duplicate clOrdID".to_string()],
+            expected_reject_patterns: vec!["Duplicate clOrdID".to_string()],
             proxy_urls: vec![],
         }
     }

@@ -75,7 +75,7 @@ impl BlockchainCacheDatabase {
     /// Returns an error if the database operation fails.
     pub async fn seed_chain(&self, chain: &Chain) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             INSERT INTO chain (
                 chain_id, name
             ) VALUES ($1,$2)
@@ -145,7 +145,7 @@ impl BlockchainCacheDatabase {
         log::info!("Fetching block consistency status");
 
         let result: (i64, i64) = sqlx::query_as(
-            r"
+            "
             SELECT
                 COALESCE((SELECT number FROM block WHERE chain_id = $1 ORDER BY number DESC LIMIT 1), 0) as max_block,
                 get_last_continuous_block($1) as last_continuous_block
@@ -175,7 +175,7 @@ impl BlockchainCacheDatabase {
     /// Returns an error if the database operation fails.
     pub async fn add_block(&self, chain_id: u32, block: &Block) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             INSERT INTO block (
                 chain_id, number, hash, parent_hash, miner, gas_limit, gas_used, timestamp,
                 base_fee_per_gas, blob_gas_used, excess_blob_gas,
@@ -264,7 +264,7 @@ impl BlockchainCacheDatabase {
 
         // Execute batch insert with UNNEST
         sqlx::query(
-            r"
+            "
             INSERT INTO block (
                 chain_id, number, hash, parent_hash, miner, gas_limit, gas_used, timestamp,
                 base_fee_per_gas, blob_gas_used, excess_blob_gas,
@@ -398,7 +398,7 @@ impl BlockchainCacheDatabase {
         from_block: u64,
     ) -> anyhow::Result<Vec<BlockTimestampRow>> {
         sqlx::query_as::<_, BlockTimestampRow>(
-            r"
+            "
             SELECT
                 number,
                 timestamp
@@ -421,7 +421,7 @@ impl BlockchainCacheDatabase {
     /// Returns an error if the database operation fails.
     pub async fn add_dex(&self, dex: SharedDex) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             INSERT INTO dex (
                 chain_id, name, factory_address, creation_block
             ) VALUES ($1, $2, $3, $4)
@@ -449,7 +449,7 @@ impl BlockchainCacheDatabase {
     /// Returns an error if the database operation fails.
     pub async fn add_pool(&self, pool: &Pool) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             INSERT INTO pool (
                 chain_id, address, pool_identifier, dex_name, creation_block,
                 token0_chain, token0_address,
@@ -540,7 +540,7 @@ impl BlockchainCacheDatabase {
 
         // Execute batch insert with UNNEST
         sqlx::query(
-            r"
+            "
             INSERT INTO pool (
                 chain_id, address, pool_identifier, dex_name, creation_block,
                 token0_chain, token0_address,
@@ -647,7 +647,7 @@ impl BlockchainCacheDatabase {
 
         // Execute batch insert with UNNEST
         sqlx::query(
-            r"
+            "
             INSERT INTO pool_swap_event (
                 chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
                 log_index, sender, recipient, sqrt_price_x96, liquidity, tick, amount0, amount1,
@@ -745,7 +745,7 @@ impl BlockchainCacheDatabase {
 
         // Execute batch insert with UNNEST
         sqlx::query(
-            r"
+            "
             INSERT INTO pool_liquidity_event (
                 chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
                 log_index, event_type, sender, owner, position_liquidity,
@@ -793,7 +793,7 @@ impl BlockchainCacheDatabase {
     /// Returns an error if the database operation fails.
     pub async fn add_token(&self, token: &Token) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             INSERT INTO token (
                 chain_id, address, name, symbol, decimals
             ) VALUES ($1, $2, $3, $4, $5)
@@ -828,7 +828,7 @@ impl BlockchainCacheDatabase {
         error_string: &str,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             INSERT INTO token (
                 chain_id, address, error
             ) VALUES ($1, $2, $3)
@@ -866,7 +866,7 @@ impl BlockchainCacheDatabase {
             };
 
         sqlx::query(
-            r"
+            "
             INSERT INTO pool_swap_event (
                 chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
                 log_index, sender, recipient, sqrt_price_x96, liquidity, tick, amount0, amount1,
@@ -912,7 +912,7 @@ impl BlockchainCacheDatabase {
         liquidity_update: &PoolLiquidityUpdate,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             INSERT INTO pool_liquidity_event (
                 chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index, log_index,
                 event_type, sender, owner, position_liquidity, amount0, amount1, tick_lower, tick_upper
@@ -1003,7 +1003,7 @@ impl BlockchainCacheDatabase {
         dex_id: &str,
     ) -> anyhow::Result<Vec<PoolRow>> {
         sqlx::query_as::<_, PoolRow>(
-            r"
+            "
             SELECT
                 address,
                 pool_identifier,
@@ -1091,7 +1091,7 @@ impl BlockchainCacheDatabase {
         block_number: u64,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             UPDATE dex
             SET last_full_sync_pools_block_number = $3
             WHERE chain_id = $1 AND name = $2
@@ -1119,7 +1119,7 @@ impl BlockchainCacheDatabase {
         block_number: u64,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             UPDATE pool
             SET last_full_sync_block_number = $4
             WHERE chain_id = $1
@@ -1148,7 +1148,7 @@ impl BlockchainCacheDatabase {
         dex: &DexType,
     ) -> anyhow::Result<Option<u64>> {
         let result = sqlx::query_as::<_, (Option<i64>,)>(
-            r"
+            "
             SELECT
                 last_full_sync_pools_block_number
             FROM dex
@@ -1177,7 +1177,7 @@ impl BlockchainCacheDatabase {
         pool_identifier: &PoolIdentifier,
     ) -> anyhow::Result<Option<u64>> {
         let result = sqlx::query_as::<_, (Option<i64>,)>(
-            r"
+            "
             SELECT
                 last_full_sync_block_number
             FROM pool
@@ -1268,7 +1268,7 @@ impl BlockchainCacheDatabase {
 
         // Execute batch insert with UNNEST
         sqlx::query(
-            r"
+            "
             INSERT INTO pool_collect_event (
                 chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
                 log_index, owner, amount0, amount1, tick_lower, tick_upper
@@ -1351,7 +1351,7 @@ impl BlockchainCacheDatabase {
 
         // Execute batch insert with UNNEST
         sqlx::query(
-            r"
+            "
             INSERT INTO pool_flash_event (
                 chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
                 log_index, sender, recipient, amount0, amount1, paid0, paid1
@@ -1399,7 +1399,7 @@ impl BlockchainCacheDatabase {
         snapshot: &PoolSnapshot,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             INSERT INTO pool_snapshot (
                 chain_id, dex_name, pool_identifier, block, transaction_index, log_index, transaction_hash,
                 current_tick, price_sqrt_ratio_x96, liquidity,
@@ -1502,7 +1502,7 @@ impl BlockchainCacheDatabase {
 
         // Execute batch insert with UNNEST
         sqlx::query(
-            r"
+            "
             INSERT INTO pool_position (
                 chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index,
                 owner, tick_lower, tick_upper,
@@ -1596,7 +1596,7 @@ impl BlockchainCacheDatabase {
 
         // Execute batch insert with UNNEST
         sqlx::query(
-            r"
+            "
             INSERT INTO pool_tick (
                 chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index,
                 tick_value, liquidity_gross, liquidity_net,
@@ -1644,7 +1644,7 @@ impl BlockchainCacheDatabase {
         initialize_event: &InitializeEvent,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             UPDATE pool
             SET
                 initial_tick = $4,
@@ -1678,7 +1678,7 @@ impl BlockchainCacheDatabase {
         pool_identifier: &PoolIdentifier,
     ) -> anyhow::Result<Option<PoolSnapshot>> {
         let result = sqlx::query(
-            r"
+            "
             SELECT
                 block, transaction_index, log_index, transaction_hash,
                 current_tick, price_sqrt_ratio_x96::TEXT, liquidity::TEXT,
@@ -1802,7 +1802,7 @@ impl BlockchainCacheDatabase {
         log_index: u32,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            r"
+            "
             UPDATE pool_snapshot
             SET is_valid = TRUE
             WHERE chain_id = $1
@@ -1837,7 +1837,7 @@ impl BlockchainCacheDatabase {
         snapshot_log_index: u32,
     ) -> anyhow::Result<Vec<PoolPosition>> {
         let rows = sqlx::query(
-            r"
+            "
             SELECT
                 owner, tick_lower, tick_upper,
                 liquidity::TEXT, fee_growth_inside_0_last::TEXT, fee_growth_inside_1_last::TEXT,
@@ -1909,7 +1909,7 @@ impl BlockchainCacheDatabase {
         snapshot_log_index: u32,
     ) -> anyhow::Result<Vec<PoolTick>> {
         let rows = sqlx::query(
-            r"
+            "
             SELECT
                 tick_value, liquidity_gross::TEXT, liquidity_net::TEXT,
                 fee_growth_outside_0::TEXT, fee_growth_outside_1::TEXT, initialized,
@@ -1968,7 +1968,7 @@ impl BlockchainCacheDatabase {
         from_position: Option<BlockPosition>,
     ) -> Pin<Box<dyn Stream<Item = Result<DexPoolData, anyhow::Error>> + Send + 'a>> {
         // Query without position filter (streams all events)
-        const QUERY_ALL: &str = r"
+        const QUERY_ALL: &str = "
             (SELECT
                 'swap' as event_type,
                 chain_id,
@@ -2087,7 +2087,7 @@ impl BlockchainCacheDatabase {
             ORDER BY block, transaction_index, log_index";
 
         // Query with position filter (resumes from specific block position)
-        const QUERY_FROM_POSITION: &str = r"
+        const QUERY_FROM_POSITION: &str = "
             (SELECT
                 'swap' as event_type,
                 chain_id,

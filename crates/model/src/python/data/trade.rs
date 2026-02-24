@@ -392,7 +392,7 @@ mod tests {
         Python::initialize();
         Python::attach(|py| {
             let dict_string = trade.py_to_dict(py).unwrap().to_string();
-            let expected_string = r"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}";
+            let expected_string = "{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
     }

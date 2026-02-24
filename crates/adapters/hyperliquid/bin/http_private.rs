@@ -199,7 +199,7 @@ async fn test_conditional_orders(
     log::info!("");
     log::info!("Example code:");
     log::info!(
-        r"
+        "
     let action = HyperliquidExecAction::Order {{
         orders: vec![stop_market_buy],
         grouping: HyperliquidExecGrouping::Na,

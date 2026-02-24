@@ -434,7 +434,7 @@ mod tests {
         Python::initialize();
         Python::attach(|py| {
             let dict_string = quote.py_to_dict(py).unwrap().to_string();
-            let expected_string = r"{'type': 'QuoteTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 0, 'ts_init': 1}";
+            let expected_string = "{'type': 'QuoteTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
     }

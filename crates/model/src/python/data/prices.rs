@@ -491,7 +491,7 @@ mod tests {
         Python::initialize();
         Python::attach(|py| {
             let dict_string = mark_price.py_to_dict(py).unwrap().to_string();
-            let expected_string = r"{'type': 'MarkPriceUpdate', 'instrument_id': 'BTC-USDT.OKX', 'value': '100000.00', 'ts_event': 1, 'ts_init': 2}";
+            let expected_string = "{'type': 'MarkPriceUpdate', 'instrument_id': 'BTC-USDT.OKX', 'value': '100000.00', 'ts_event': 1, 'ts_init': 2}";
             assert_eq!(dict_string, expected_string);
         });
     }
@@ -521,7 +521,7 @@ mod tests {
         Python::initialize();
         Python::attach(|py| {
             let dict_string = index_price.py_to_dict(py).unwrap().to_string();
-            let expected_string = r"{'type': 'IndexPriceUpdate', 'instrument_id': 'BTC-USDT.OKX', 'value': '100000.00', 'ts_event': 1, 'ts_init': 2}";
+            let expected_string = "{'type': 'IndexPriceUpdate', 'instrument_id': 'BTC-USDT.OKX', 'value': '100000.00', 'ts_event': 1, 'ts_init': 2}";
             assert_eq!(dict_string, expected_string);
         });
     }

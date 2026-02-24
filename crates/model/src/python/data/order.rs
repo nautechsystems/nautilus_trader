@@ -170,7 +170,7 @@ mod tests {
         Python::attach(|py| {
             let dict_string = book_order.py_to_dict(py).unwrap().to_string();
             let expected_string =
-                r"{'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}";
+                "{'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}";
             assert_eq!(dict_string, expected_string);
         });
     }

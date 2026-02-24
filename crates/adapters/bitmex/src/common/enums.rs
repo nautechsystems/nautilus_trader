@@ -1128,8 +1128,8 @@ mod tests {
     #[rstest]
     fn test_error_cases() {
         assert!(serde_json::from_str::<BitmexProductType>(r#""invalid_type""#).is_err());
-        assert!(serde_json::from_str::<BitmexProductType>(r"123").is_err());
-        assert!(serde_json::from_str::<BitmexProductType>(r"{}").is_err());
+        assert!(serde_json::from_str::<BitmexProductType>("123").is_err());
+        assert!(serde_json::from_str::<BitmexProductType>("{}").is_err());
     }
 
     #[rstest]

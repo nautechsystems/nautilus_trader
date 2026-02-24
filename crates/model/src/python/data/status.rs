@@ -264,7 +264,7 @@ mod tests {
         Python::initialize();
         Python::attach(|py| {
             let dict_string = stub_instrument_status.py_to_dict(py).unwrap().to_string();
-            let expected_string = r"{'type': 'InstrumentStatus', 'instrument_id': 'MSFT.XNAS', 'action': 'TRADING', 'ts_event': 1, 'ts_init': 2, 'reason': None, 'trading_event': None, 'is_trading': None, 'is_quoting': None, 'is_short_sell_restricted': None}";
+            let expected_string = "{'type': 'InstrumentStatus', 'instrument_id': 'MSFT.XNAS', 'action': 'TRADING', 'ts_event': 1, 'ts_init': 2, 'reason': None, 'trading_event': None, 'is_trading': None, 'is_quoting': None, 'is_short_sell_restricted': None}";
             assert_eq!(dict_string, expected_string);
         });
     }
