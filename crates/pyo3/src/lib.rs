@@ -260,6 +260,13 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
 
+    let n = "polymarket";
+    let submodule = pyo3::wrap_pymodule!(nautilus_polymarket::python::polymarket);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
     let n = "sandbox";
     let submodule = pyo3::wrap_pymodule!(nautilus_sandbox::python::sandbox);
     m.add_wrapped(submodule)?;

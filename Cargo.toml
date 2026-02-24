@@ -12,6 +12,7 @@ members = [
   "crates/adapters/dydx",
   "crates/adapters/hyperliquid",
   "crates/adapters/kraken",
+  "crates/adapters/polymarket",
   "crates/adapters/okx",
   "crates/adapters/sandbox",
   "crates/adapters/tardis",
@@ -97,6 +98,7 @@ nautilus-dydx = { path = "crates/adapters/dydx", version = "0.54.0", default-fea
 nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.54.0", default-features = false }
 nautilus-kraken = { path = "crates/adapters/kraken", version = "0.54.0", default-features = false }
 nautilus-okx = { path = "crates/adapters/okx", version = "0.54.0", default-features = false }
+nautilus-polymarket = { path = "crates/adapters/polymarket", version = "0.54.0", default-features = false }
 nautilus-sandbox = { path = "crates/adapters/sandbox", version = "0.54.0", default-features = false }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.54.0", default-features = false }
 

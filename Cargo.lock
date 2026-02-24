@@ -5705,6 +5705,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-polymarket"
+version = "0.54.0"
+dependencies = [
+ "ahash 0.8.12",
+ "alloy-primitives",
+ "alloy-signer",
+ "alloy-signer-local",
+ "alloy-sol-types",
+ "anyhow",
+ "arc-swap",
+ "async-trait",
+ "aws-lc-rs",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "dashmap",
+ "derive_builder",
+ "futures-util",
+ "hex",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-system",
+ "nautilus-testkit",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "url",
+ "ustr",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "nautilus-portfolio"
 version = "0.54.0"
 dependencies = [
@@ -5747,6 +5794,7 @@ dependencies = [
  "nautilus-network",
  "nautilus-okx",
  "nautilus-persistence",
+ "nautilus-polymarket",
  "nautilus-sandbox",
  "nautilus-serialization",
  "nautilus-tardis",
