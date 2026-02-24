@@ -279,6 +279,26 @@ impl OrderBook {
         )
     }
 
+    #[pyo3(name = "filtered_view")]
+    #[pyo3(signature = (own_book=None, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    fn py_filtered_view(
+        &self,
+        own_book: Option<&OwnOrderBook>,
+        depth: Option<usize>,
+        status: Option<std::collections::HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> PyResult<Self> {
+        self.filtered_view_checked(
+            own_book,
+            depth,
+            status.map(|s| s.into_iter().collect()),
+            accepted_buffer_ns,
+            ts_now,
+        )
+        .map_err(to_pyvalue_err)
+    }
+
     #[pyo3(name = "best_bid_price")]
     fn py_best_bid_price(&self) -> Option<Price> {
         self.best_bid_price()

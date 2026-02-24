@@ -30,7 +30,7 @@ mod tests;
 // Re-exports
 pub use crate::orderbook::{
     book::OrderBook,
-    error::{BookIntegrityError, InvalidBookOperation},
+    error::{BinaryMarketBookViewError, BookIntegrityError, InvalidBookOperation},
     ladder::BookPrice,
     level::BookLevel,
     own::OwnBookOrder,

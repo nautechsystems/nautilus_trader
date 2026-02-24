@@ -19,12 +19,12 @@ use std::fmt::Display;
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 
 use super::{
-    aggregation::pre_process_order, analysis, display::pprint_book, level::BookLevel,
-    own::OwnOrderBook,
+    BinaryMarketBookViewError, aggregation::pre_process_order, analysis, display::pprint_book,
+    level::BookLevel, own::OwnOrderBook,
 };
 use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
@@ -650,6 +650,104 @@ impl OrderBook {
         }
 
         public_map
+    }
+
+    /// Returns a filtered [`OrderBook`] view with own sizes subtracted from public levels.
+    ///
+    /// The resulting book preserves this books instrument ID and book type, and uses this books
+    /// latest sequence/timestamp when reconstructing levels.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self` and `own_book` have different instrument IDs.
+    /// Panics if `Price::from_decimal` or `Quantity::from_decimal` fails when reconstructing filtered levels.
+    ///
+    /// [`Self::filtered_view_checked`] for fallible construction.
+    #[must_use]
+    pub fn filtered_view(
+        &self,
+        own_book: Option<&OwnOrderBook>,
+        depth: Option<usize>,
+        status: Option<AHashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        now: Option<u64>,
+    ) -> Self {
+        self.filtered_view_checked(own_book, depth, status, accepted_buffer_ns, now)
+            .expect(FAILED)
+    }
+
+    /// Fallible constructor for a filtered [`OrderBook`] view.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BinaryMarketBookViewError::BookAndOwnBookMustBeSameInstrumentId`] if
+    /// `self` and `own_book` have different instrument IDs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `Price::from_decimal` or `Quantity::from_decimal` fails when reconstructing
+    /// filtered levels.
+    pub fn filtered_view_checked(
+        &self,
+        own_book: Option<&OwnOrderBook>,
+        depth: Option<usize>,
+        status: Option<AHashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        now: Option<u64>,
+    ) -> Result<Self, BinaryMarketBookViewError> {
+        if let Some(own_book) = own_book
+            && self.instrument_id != own_book.instrument_id
+        {
+            return Err(
+                BinaryMarketBookViewError::BookAndOwnBookMustBeSameInstrumentId(
+                    self.instrument_id,
+                    own_book.instrument_id,
+                ),
+            );
+        }
+
+        let bids_map =
+            self.bids_filtered_as_map(depth, own_book, status.clone(), accepted_buffer_ns, now);
+        let asks_map = self.asks_filtered_as_map(depth, own_book, status, accepted_buffer_ns, now);
+
+        let mut filtered_book = Self::new(self.instrument_id, self.book_type);
+        let sequence = self.sequence;
+        let ts_event = self.ts_last;
+
+        let mut order_id = 1_u64;
+        for (price, quantity) in bids_map {
+            if quantity <= Decimal::ZERO {
+                continue;
+            }
+
+            let order = BookOrder::new(
+                OrderSide::Buy,
+                Price::from_decimal(price).expect("Invalid bid price for OrderBook::filtered_view"),
+                Quantity::from_decimal(quantity)
+                    .expect("Invalid bid quantity for OrderBook::filtered_view"),
+                order_id,
+            );
+            order_id += 1;
+            filtered_book.add(order, 0, sequence, ts_event);
+        }
+
+        for (price, quantity) in asks_map {
+            if quantity <= Decimal::ZERO {
+                continue;
+            }
+
+            let order = BookOrder::new(
+                OrderSide::Sell,
+                Price::from_decimal(price).expect("Invalid ask price for OrderBook::filtered_view"),
+                Quantity::from_decimal(quantity)
+                    .expect("Invalid ask quantity for OrderBook::filtered_view"),
+                order_id,
+            );
+            order_id += 1;
+            filtered_book.add(order, 0, sequence, ts_event);
+        }
+
+        Ok(filtered_book)
     }
 
     /// Groups bid quantities into price buckets, truncating to a maximum depth, excluding own orders.

@@ -50,3 +50,14 @@ pub enum BookIntegrityError {
     #[error("Integrity error: instrument ID mismatch: book={0}, delta={1}")]
     InstrumentMismatch(InstrumentId, InstrumentId),
 }
+
+#[derive(thiserror::Error, Debug, PartialEq)]
+pub enum BinaryMarketBookViewError {
+    #[error("The instrument IDs of `book` and `own_book` must match: book={0}, own_book={1}")]
+    BookAndOwnBookMustBeSameInstrumentId(InstrumentId, InstrumentId),
+
+    #[error(
+        "The instrument IDs of `book` and `own_synthetic_book` must differ: book={0}, own_synthetic_book={1}"
+    )]
+    BookAndOwnSyntheticBookMustBeDifferentInstrumentId(InstrumentId, InstrumentId),
+}
