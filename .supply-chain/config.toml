@@ -1381,7 +1381,7 @@ version = "0.1.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.js-sys]]
-version = "0.3.88"
+version = "0.3.90"
 criteria = "safe-to-deploy"
 
 [[exemptions.json-writer]]
@@ -1961,7 +1961,7 @@ version = "0.5.18"
 criteria = "safe-to-deploy"
 
 [[exemptions.redox_syscall]]
-version = "0.7.1"
+version = "0.7.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.ref-cast]]
@@ -1981,7 +1981,7 @@ version = "0.4.14"
 criteria = "safe-to-deploy"
 
 [[exemptions.regex-syntax]]
-version = "0.8.9"
+version = "0.8.10"
 criteria = "safe-to-deploy"
 
 [[exemptions.rend]]
@@ -2073,7 +2073,7 @@ version = "1.1.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls]]
-version = "0.23.36"
+version = "0.23.37"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls-native-certs]]
@@ -2637,23 +2637,23 @@ version = "0.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen]]
-version = "0.2.111"
+version = "0.2.113"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-futures]]
-version = "0.4.61"
+version = "0.4.63"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro]]
-version = "0.2.111"
+version = "0.2.113"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro-support]]
-version = "0.2.111"
+version = "0.2.113"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-shared]]
-version = "0.2.111"
+version = "0.2.113"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-streams]]
@@ -2669,7 +2669,7 @@ version = "0.4.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.web-sys]]
-version = "0.3.88"
+version = "0.3.90"
 criteria = "safe-to-deploy"
 
 [[exemptions.web-time]]

@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added matching engine L1 quote-based queue position tracking for backtests
+- Added synthetic book support for binary markets (#3495), thanks @Javdu10
 - Added Betfair batch submit and cancel order support
 - Added BitMEX dead man's switch (cancelAllAfter) support
 - Added BitMEX grid market maker example in Rust
@@ -25,8 +26,10 @@ Released on TBD (UTC).
 - Fix Interactive Brokers historical bar processing crash (#3619), thank you @shzhng
 
 ### Internal Improvements
+- Added catalog deduplication functionality (#3613), thanks @ms32035
 - Implemented `BacktestNode` with catalog streaming in Rust
 - Improved `OrderBookImbalance` example strategy
+- Improved `BestPriceFillModel` to fill inside bid ask spread (#3428), thanks @faysou
 - Standardized use of atomic clock across adapters
 - Standardized adapter credentials handling and testing
 
