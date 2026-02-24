@@ -503,9 +503,7 @@ fn exhaust_data_iter_to_pycapsule(
                 data.push(item1);
                 data.push(item2);
             }
-            Ok((None, None)) => {
-                continue;
-            }
+            Ok((None, None)) => {}
             Err(e) => return Err(e),
         }
     }

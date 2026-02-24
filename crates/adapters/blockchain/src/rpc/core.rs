@@ -351,9 +351,7 @@ impl CoreBlockchainRpcClient {
                         }
                     }
                 }
-                Message::Pong(_) => {
-                    continue;
-                }
+                Message::Pong(_) => {}
                 _ => {
                     return Err(BlockchainRpcClientError::UnsupportedRpcResponseType(
                         msg.to_string(),

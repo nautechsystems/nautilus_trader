@@ -361,7 +361,6 @@ impl KrakenSpotWebSocketClient {
                             log::error!("Failed to send message (receiver dropped)");
                             break;
                         }
-                        continue;
                     }
                     Some(msg) => {
                         if out_tx.send(msg).is_err() {

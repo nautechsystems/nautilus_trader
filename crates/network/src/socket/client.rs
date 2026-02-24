@@ -569,7 +569,6 @@ impl SocketClientInner {
                                 break;
                             }
                         }
-                        continue;
                     }
                 }
             }
@@ -695,7 +694,6 @@ impl SocketClientInner {
                                     );
                                     reconnect_buffer.push_back(data);
                                 }
-                                continue;
                             }
                             WriterCommand::Send(msg) => {
                                 if let Err(e) = active_writer.write_all(&msg).await {
@@ -713,7 +711,6 @@ impl SocketClientInner {
                                     reconnect_buffer.push_back(msg);
                                     connection_state
                                         .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
-                                    continue;
                                 }
                             }
                         }
@@ -725,7 +722,6 @@ impl SocketClientInner {
                     }
                     Err(_) => {
                         // Timeout - just continue the loop
-                        continue;
                     }
                 }
             }
@@ -767,7 +763,7 @@ impl SocketClientInner {
                             }
                         }
                     }
-                    ConnectionMode::Reconnect => continue,
+                    ConnectionMode::Reconnect => {}
                     ConnectionMode::Disconnect | ConnectionMode::Closed => break,
                 }
             }

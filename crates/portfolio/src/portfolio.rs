@@ -395,9 +395,8 @@ impl Portfolio {
             }
 
             // Calculate PnL
-            match self.calculate_unrealized_pnl(&instrument_id) {
-                Some(pnl) => *unrealized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64(),
-                None => continue,
+            if let Some(pnl) = self.calculate_unrealized_pnl(&instrument_id) {
+                *unrealized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
             }
         }
 
@@ -436,9 +435,8 @@ impl Portfolio {
             }
 
             // Calculate PnL
-            match self.calculate_realized_pnl(&instrument_id) {
-                Some(pnl) => *realized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64(),
-                None => continue,
+            if let Some(pnl) = self.calculate_realized_pnl(&instrument_id) {
+                *realized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
             }
         }
 

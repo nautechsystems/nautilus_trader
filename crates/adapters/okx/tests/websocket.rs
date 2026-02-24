@@ -353,32 +353,30 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                         continue;
                     }
 
-                    if payload.get("op") == Some(&json!("unsubscribe")) {
-                        if let Some(args) = payload.get("args").and_then(|value| value.as_array())
-                            && let Some(first) = args.first()
+                    if payload.get("op") == Some(&json!("unsubscribe"))
+                        && let Some(args) = payload.get("args").and_then(|value| value.as_array())
+                        && let Some(first) = args.first()
+                    {
                         {
-                            {
-                                let mut unsubscriptions = state.unsubscriptions.lock().await;
-                                unsubscriptions.push(first.clone());
-                            }
-                            let ack = json!({
-                                "event": "unsubscribe",
-                                "arg": first,
-                                "connId": "test-conn",
-                            });
-                            if socket
-                                .send(Message::Text(ack.to_string().into()))
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                            if state.drop_next_connection.swap(false, Ordering::Relaxed) {
-                                let _ = socket.send(Message::Close(None)).await;
-                                break;
-                            }
+                            let mut unsubscriptions = state.unsubscriptions.lock().await;
+                            unsubscriptions.push(first.clone());
                         }
-                        continue;
+                        let ack = json!({
+                            "event": "unsubscribe",
+                            "arg": first,
+                            "connId": "test-conn",
+                        });
+                        if socket
+                            .send(Message::Text(ack.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                        if state.drop_next_connection.swap(false, Ordering::Relaxed) {
+                            let _ = socket.send(Message::Close(None)).await;
+                            break;
+                        }
                     }
                 }
             }

@@ -88,7 +88,7 @@ where
 
         match op() {
             Ok(v) => return Ok(v),
-            Err(e) if attempt < config.max_retries && should_retry(&e) => continue,
+            Err(e) if attempt < config.max_retries && should_retry(&e) => {}
             Err(e) => return Err(e),
         }
     }

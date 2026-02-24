@@ -1009,7 +1009,7 @@ fn wait_for_confirmation(prompt: &str) -> bool {
                 println!();
                 return true;
             }
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 println!();
                 println!("Aborted.");

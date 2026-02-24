@@ -220,7 +220,7 @@ async fn test_handler_parses_candle_to_bar() {
                 found_bar = true;
                 break;
             }
-            Ok(Some(_)) => continue,
+            Ok(Some(_)) => {}
             Ok(None) | Err(_) => break,
         }
     }
@@ -309,7 +309,7 @@ async fn test_data_client_emits_quote_tick_via_channel() {
                 assert!(quote.ask_price.as_f64() > 0.0);
                 break;
             }
-            Ok(Some(DataEvent::Instrument(_))) => continue,
+            Ok(Some(DataEvent::Instrument(_))) => {}
             Ok(Some(other)) => panic!("Expected Quote data event, was {other:?}"),
             Ok(None) => panic!("Channel closed unexpectedly"),
             Err(_) => panic!("Timeout waiting for quote event"),
@@ -367,7 +367,7 @@ async fn test_data_client_emits_trade_tick_via_channel() {
                 found_trade = true;
                 break;
             }
-            Ok(Some(_)) => continue,
+            Ok(Some(_)) => {}
             Ok(None) | Err(_) => break,
         }
     }

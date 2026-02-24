@@ -440,7 +440,6 @@ impl KrakenFuturesWebSocketClient {
                             log::debug!("Output channel closed: {e}");
                             break;
                         }
-                        continue;
                     }
                     Some(msg) => {
                         if let Err(e) = out_tx.send(msg) {

@@ -268,7 +268,6 @@ impl FeedHandler {
                             // No longer needed - raw_symbol now contains the proper format
                         }
                     }
-                    continue;
                 }
 
                 Some(raw_msg) = self.raw_rx.recv() => {

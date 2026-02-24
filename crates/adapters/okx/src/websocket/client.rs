@@ -662,8 +662,6 @@ impl OKXWebSocketClient {
                             // TODO: Implement proper Reconnected event forwarding to consumers.
                             // Currently intercepted for internal housekeeping only. Will add new
                             // message type from WebSocketClient to notify consumers of reconnections.
-
-                            continue;
                         }
                         Some(NautilusWsMessage::Authenticated) => {
                             if has_reconnected {
@@ -674,7 +672,6 @@ impl OKXWebSocketClient {
                             // reconnection flow coordination. Downstream consumers have access to
                             // authentication state via AuthTracker if needed. The execution client's
                             // Authenticated handler only logs at debug level (no critical logic).
-                            continue;
                         }
                         Some(msg) => {
                             if handler.send(msg).is_err() {

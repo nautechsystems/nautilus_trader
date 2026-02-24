@@ -434,13 +434,10 @@ impl BitmexWebSocketClient {
                             log::error!("Failed to forward reconnect event (receiver dropped)");
                             break;
                         }
-
-                        continue;
                     }
                     Some(NautilusWsMessage::Authenticated) => {
                         log::debug!("Authenticated after reconnection, resubscribing");
                         resubscribe_all();
-                        continue;
                     }
                     Some(msg) => {
                         if handler.send(msg).is_err() {

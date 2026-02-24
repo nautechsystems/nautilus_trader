@@ -231,8 +231,6 @@ impl FeedHandler {
                             self.instruments_cache.insert(inst.symbol().inner(), inst);
                         }
                     }
-                    // Continue processing following command
-                    continue;
                 }
 
                 () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
@@ -240,7 +238,6 @@ impl FeedHandler {
                         log::debug!("Stop signal received during idle period");
                         return None;
                     }
-                    continue;
                 }
 
                 msg = self.raw_rx.recv() => {
@@ -294,7 +291,6 @@ impl FeedHandler {
                     ) {
                         return Some(msg);
                     }
-                    continue;
                 }
                 BitmexWsMessage::Table(table_msg) => {
                     let ts_init = clock.get_time_ns();
@@ -371,9 +367,8 @@ impl FeedHandler {
                     if let Some(msg) = msg {
                         return Some(msg);
                     }
-                    continue;
                 }
-                BitmexWsMessage::Welcome { .. } | BitmexWsMessage::Error { .. } => continue,
+                BitmexWsMessage::Welcome { .. } | BitmexWsMessage::Error { .. } => {}
             }
                 }
 
@@ -705,7 +700,6 @@ impl FeedHandler {
                                 order_msg.time_in_force,
                             );
                             // TODO: Add metric counter for parse failures
-                            continue;
                         }
                     }
                 }

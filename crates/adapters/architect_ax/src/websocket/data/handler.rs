@@ -268,7 +268,6 @@ impl FeedHandler {
                         log::debug!("Stop signal received during idle period");
                         return None;
                     }
-                    continue;
                 }
 
                 msg = self.raw_rx.recv() => {

@@ -492,8 +492,6 @@ impl OKXWsFeedHandler {
                             }
                         }
                     }
-                    // Continue processing following command
-                    continue;
                 }
 
                 () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
@@ -501,7 +499,6 @@ impl OKXWsFeedHandler {
                         log::debug!("Stop signal received during idle period");
                         return None;
                     }
-                    continue;
                 }
 
                 msg = self.raw_rx.recv() => {
@@ -523,7 +520,6 @@ impl OKXWsFeedHandler {
                     if let Err(e) = self.send_pong().await {
                         log::warn!("Failed to send pong response: error={e}");
                     }
-                    continue;
                 }
                 OKXWsMessage::Login {
                     code, msg, conn_id, ..
@@ -548,13 +544,11 @@ impl OKXWsFeedHandler {
                     };
                     self.pending_messages
                         .push_back(NautilusWsMessage::Error(error));
-                    continue;
                 }
                 OKXWsMessage::BookData { arg, action, data } => {
                     if let Some(msg) = self.handle_book_data(arg, action, data, ts_init) {
                         return Some(msg);
                     }
-                    continue;
                 }
                 OKXWsMessage::OrderResponse {
                     id,
@@ -566,7 +560,6 @@ impl OKXWsFeedHandler {
                     if let Some(msg) = self.handle_order_response(id, op, code, msg, data, ts_init) {
                         return Some(msg);
                     }
-                    continue;
                 }
                 OKXWsMessage::Data { arg, data } => {
                     let OKXWebSocketArg {
@@ -578,23 +571,19 @@ impl OKXWsFeedHandler {
                             if let Some(msg) = self.handle_account_data(data, ts_init) {
                                 return Some(msg);
                             }
-                            continue;
                         }
                         OKXWsChannel::Positions => {
                             self.handle_positions_data(data, ts_init);
-                            continue;
                         }
                         OKXWsChannel::Orders => {
                             if let Some(msg) = self.handle_orders_data(data, ts_init) {
                                 return Some(msg);
                             }
-                            continue;
                         }
                         OKXWsChannel::OrdersAlgo => {
                             if let Some(msg) = self.handle_algo_orders_data(data, ts_init) {
                                 return Some(msg);
                             }
-                            continue;
                         }
                         _ => {
                             if let Some(msg) =
@@ -602,7 +591,6 @@ impl OKXWsFeedHandler {
                             {
                                 return Some(msg);
                             }
-                            continue;
                         }
                     }
                 }
@@ -649,10 +637,8 @@ impl OKXWsFeedHandler {
                             }
                         }
                     }
-
-                    continue;
                 }
-                OKXWsMessage::ChannelConnCount { .. } => continue,
+                OKXWsMessage::ChannelConnCount { .. } => {}
             }
                 }
 

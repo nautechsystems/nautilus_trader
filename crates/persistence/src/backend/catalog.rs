@@ -363,7 +363,7 @@ impl ParquetDataCatalog {
 
         for d in data.iter().cloned() {
             match d {
-                Data::Deltas(_) => continue,
+                Data::Deltas(_) => {}
                 Data::Delta(d) => {
                     deltas.push(d);
                 }

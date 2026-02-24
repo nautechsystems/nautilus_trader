@@ -518,7 +518,7 @@ async fn test_http_get_instruments_handles_rate_limit_error() {
     let mut last_error = None;
     for _ in 0..5 {
         match client.get_instruments(params.clone()).await {
-            Ok(_) => continue,
+            Ok(_) => {}
             Err(e) => {
                 last_error = Some(e);
                 break;

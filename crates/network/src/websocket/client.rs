@@ -591,7 +591,6 @@ impl WebSocketClientInner {
                                 break;
                             }
                         }
-                        continue;
                     }
                 }
             }
@@ -754,7 +753,6 @@ impl WebSocketClientInner {
                     }
                     Err(_) => {
                         // Timeout - just continue the loop
-                        continue;
                     }
                 }
             }
@@ -799,7 +797,7 @@ impl WebSocketClientInner {
                             }
                         }
                     }
-                    ConnectionMode::Reconnect => continue,
+                    ConnectionMode::Reconnect => {}
                     ConnectionMode::Disconnect | ConnectionMode::Closed => break,
                 }
             }

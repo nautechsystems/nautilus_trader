@@ -586,12 +586,10 @@ impl BybitWebSocketClient {
                             log::debug!("Receiver dropped, stopping");
                             break;
                         }
-                        continue;
                     }
                     Some(NautilusWsMessage::Authenticated) => {
                         log::debug!("Authenticated, resubscribing");
                         resubscribe_all().await;
-                        continue;
                     }
                     Some(msg) => {
                         if out_tx.send(msg).is_err() {

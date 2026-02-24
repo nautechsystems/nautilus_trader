@@ -178,12 +178,8 @@ mod tests {
             else if val < 0.3 {
                 pattern.push('?');
             }
-            // 20% chance of skipping
-            else if val < 0.5 {
-                continue;
-            }
             // 50% chance of keeping the character
-            else {
+            else if val >= 0.5 {
                 pattern.push(c);
             };
         }

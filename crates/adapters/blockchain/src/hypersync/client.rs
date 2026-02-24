@@ -190,7 +190,6 @@ impl HyperSyncClient {
                                             log::error!(
                                                 "Failed to parse swap with error '{e:?}' for event: {log:?}",
                                             );
-                                            continue;
                                         }
                                     }
                                 } else if event_signature == mint_event_encoded_signature {
@@ -206,7 +205,6 @@ impl HyperSyncClient {
                                             log::error!(
                                                 "Failed to parse mint with error '{e:?}' for event: {log:?}",
                                             );
-                                            continue;
                                         }
                                     }
                                 } else if event_signature == burn_event_encoded_signature {
@@ -222,12 +220,10 @@ impl HyperSyncClient {
                                             log::error!(
                                                 "Failed to parse burn with error '{e:?}' for event: {log:?}",
                                             );
-                                            continue;
                                         }
                                     }
                                 } else {
                                     log::error!("Unknown event signature: {event_signature}");
-                                    continue;
                                 }
                             }
                         }

@@ -948,9 +948,7 @@ mod tests {
                 pattern.push('*');
             } else if val < 0.3 {
                 pattern.push('?');
-            } else if val < 0.5 {
-                continue;
-            } else {
+            } else if val >= 0.5 {
                 pattern.push(c);
             };
         }

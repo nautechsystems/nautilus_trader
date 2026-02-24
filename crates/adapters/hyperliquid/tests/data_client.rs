@@ -542,7 +542,7 @@ async fn test_data_client_subscribe_trades() {
             let found = loop {
                 match rx.try_recv() {
                     Ok(DataEvent::Data(Data::Trade(_))) => break true,
-                    Ok(_) => continue,
+                    Ok(_) => {}
                     Err(_) => break false,
                 }
             };

@@ -177,7 +177,6 @@ impl DatabentoFeedHandler {
                         reconnect_start = None;
                         attempt = 0;
                         self.backoff.reset();
-                        continue;
                     } else {
                         log::info!("Session ended normally");
                         break Ok(());

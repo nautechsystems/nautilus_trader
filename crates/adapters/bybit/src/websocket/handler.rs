@@ -673,8 +673,6 @@ impl FeedHandler {
                             }
                         }
                     }
-
-                    continue;
                 }
 
                 () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
@@ -682,7 +680,6 @@ impl FeedHandler {
                         log::debug!("Stop signal received during idle period");
                         return None;
                     }
-                    continue;
                 }
 
                 msg = self.raw_rx.recv() => {

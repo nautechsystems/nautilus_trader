@@ -1768,7 +1768,7 @@ async fn test_spot_raw_rate_limit_error() {
     let mut last_error = None;
     for _ in 0..10 {
         match client.get_open_orders(None, None).await {
-            Ok(_) => continue,
+            Ok(_) => {}
             Err(e) => {
                 last_error = Some(e);
                 break;

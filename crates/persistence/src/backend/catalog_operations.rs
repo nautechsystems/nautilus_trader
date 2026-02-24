@@ -495,7 +495,6 @@ impl ParquetDataCatalog {
                     _ => {
                         // Skip unknown data types
                         log::warn!("Unknown data type for consolidation: {data_cls_name}");
-                        continue;
                     }
                 }
             }

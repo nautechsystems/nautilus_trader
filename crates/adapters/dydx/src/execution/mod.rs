@@ -2390,7 +2390,6 @@ impl ExecutionClient for DydxExecutionClient {
                 }
                 Err(e) => {
                     log::warn!("Failed to parse order status report: {e}");
-                    continue;
                 }
             }
         }
