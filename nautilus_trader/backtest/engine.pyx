@@ -5113,7 +5113,7 @@ cdef class OrderMatchingEngine:
             )
             return
 
-        if order.is_post_only and self._core.is_limit_matched(order.side, order.price):
+        if order.is_post_only and self._core.is_limit_marketable(order.side, order.price):
             self._generate_order_rejected(
                 order,
                 f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
@@ -5127,8 +5127,8 @@ cdef class OrderMatchingEngine:
         # Order is valid and accepted
         self.accept_order(order)
 
-        # Check for immediate fill
-        if self._core.is_limit_matched(order.side, order.price):
+        # Check for immediate fill (only when order crosses the spread; inside-spread filled in iterate)
+        if self._core.is_limit_marketable(order.side, order.price):
             # Filling as liquidity taker
             if order.liquidity_side == LiquiditySide.NO_LIQUIDITY_SIDE:
                 order.liquidity_side = LiquiditySide.TAKER
@@ -5170,8 +5170,8 @@ cdef class OrderMatchingEngine:
             self.accept_order(order)
             self._generate_order_triggered(order)
 
-            # Check if immediately marketable
-            if self._core.is_limit_matched(order.side, order.price):
+            # Check if immediately marketable (crosses spread only; inside-spread filled in iterate)
+            if self._core.is_limit_marketable(order.side, order.price):
                 order.liquidity_side = LiquiditySide.TAKER
                 self.fill_limit_order(order)
 
@@ -5213,8 +5213,8 @@ cdef class OrderMatchingEngine:
             self.accept_order(order)
             self._generate_order_triggered(order)
 
-            # Check if immediately marketable
-            if self._core.is_limit_matched(order.side, order.price):
+            # Check if immediately marketable (crosses spread only; inside-spread filled in iterate)
+            if self._core.is_limit_marketable(order.side, order.price):
                 order.liquidity_side = LiquiditySide.TAKER
                 self.fill_limit_order(order)
 
@@ -5278,8 +5278,8 @@ cdef class OrderMatchingEngine:
     ):
         cdef Price new_price = price if price is not None else order.price
 
-        if self._core.is_limit_matched(order.side, price):
-            if order.is_post_only:
+        if self._core.is_limit_fillable(order.side, price):
+            if order.is_post_only and self._core.is_limit_marketable(order.side, price):
                 self._generate_order_modify_rejected(
                     trader_id=order.trader_id,
                     strategy_id=order.strategy_id,
@@ -5357,8 +5357,8 @@ cdef class OrderMatchingEngine:
                 return  # Cannot update order
         else:
             # Updating limit price
-            if self._core.is_limit_matched(order.side, price):
-                if order.is_post_only:
+            if self._core.is_limit_fillable(order.side, price):
+                if order.is_post_only and self._core.is_limit_marketable(order.side, price):
                     self._generate_order_modify_rejected(
                         trader_id=order.trader_id,
                         strategy_id=order.strategy_id,
@@ -5428,8 +5428,8 @@ cdef class OrderMatchingEngine:
                 return  # Cannot update order
         else:
             # Updating limit price
-            if self._core.is_limit_matched(order.side, price):
-                if order.is_post_only:
+            if self._core.is_limit_fillable(order.side, price):
+                if order.is_post_only and self._core.is_limit_marketable(order.side, price):
                     self._generate_order_modify_rejected(
                         trader_id=order.trader_id,
                         strategy_id=order.strategy_id,
@@ -6456,8 +6456,9 @@ cdef class OrderMatchingEngine:
 
             if (
                 not fills_at_trade_price
-                and self._core.is_limit_matched(order.side, order.price)
+                and self._core.is_limit_marketable(order.side, order.price)
             ):
+                # Only fill from trade when order crosses the spread (would take).
                 # Fill model check for MAKER at limit is already handled in fill_limit_order,
                 # don't re-check here to avoid calling is_limit_filled() twice (p² probability).
                 fill_qty = self.determine_trade_fill_qty(order)
@@ -7659,21 +7660,21 @@ cdef class OrderMatchingEngine:
             self.fill_limit_order(order)
             return
 
-        if self._core.is_limit_matched(order.side, price):
-            if order.is_post_only:
-                # Would be liquidity taker
-                self._core.delete_order(order)
-                self._cached_filled_qty.pop(order.client_order_id, None)
-                self._generate_order_rejected(
-                    order,
-                    f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
-                    f"limit px of {order.price} would have been a TAKER: "
-                    f"bid={self._core.bid}, "
-                    f"ask={self._core.ask}",
-                    True,  # due_post_only
-                )
-                return
+        if self._core.is_limit_marketable(order.side, price) and order.is_post_only:
+            # Would be liquidity taker
+            self._core.delete_order(order)
+            self._cached_filled_qty.pop(order.client_order_id, None)
+            self._generate_order_rejected(
+                order,
+                f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
+                f"limit px of {order.price} would have been a TAKER: "
+                f"bid={self._core.bid}, "
+                f"ask={self._core.ask}",
+                True,  # due_post_only
+            )
+            return
 
+        if self._core.is_limit_fillable(order.side, price):
             order.liquidity_side = LiquiditySide.TAKER
             self.fill_limit_order(order)
 
