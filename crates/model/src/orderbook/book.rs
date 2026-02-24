@@ -23,7 +23,7 @@ use nautilus_core::{UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 
 use super::{
-    BinaryMarketBookViewError, aggregation::pre_process_order, analysis, display::pprint_book,
+    BookViewError, aggregation::pre_process_order, analysis, display::pprint_book,
     level::BookLevel, own::OwnOrderBook,
 };
 use crate::{
@@ -654,13 +654,9 @@ impl OrderBook {
 
     /// Returns a filtered [`OrderBook`] view with own sizes subtracted from public levels.
     ///
-    /// The resulting book preserves this books instrument ID and book type, and uses this books
-    /// latest sequence/timestamp when reconstructing levels.
-    ///
     /// # Panics
     ///
     /// Panics if `self` and `own_book` have different instrument IDs.
-    /// Panics if `Price::from_decimal` or `Quantity::from_decimal` fails when reconstructing filtered levels.
     ///
     /// [`Self::filtered_view_checked`] for fallible construction.
     #[must_use]
@@ -676,17 +672,17 @@ impl OrderBook {
             .expect(FAILED)
     }
 
-    /// Fallible constructor for a filtered [`OrderBook`] view.
+    /// Fallible version of [`Self::filtered_view`].
     ///
     /// # Errors
     ///
-    /// Returns [`BinaryMarketBookViewError::BookAndOwnBookMustBeSameInstrumentId`] if
-    /// `self` and `own_book` have different instrument IDs.
+    /// Returns [`BookViewError::InstrumentMismatch`] if `self` and `own_book` have different
+    /// instrument IDs.
     ///
     /// # Panics
     ///
-    /// Panics if `Price::from_decimal` or `Quantity::from_decimal` fails when reconstructing
-    /// filtered levels.
+    /// Panics if `Price::from_decimal` or `Quantity::from_decimal` fails when
+    /// reconstructing filtered levels.
     pub fn filtered_view_checked(
         &self,
         own_book: Option<&OwnOrderBook>,
@@ -694,16 +690,14 @@ impl OrderBook {
         status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
-    ) -> Result<Self, BinaryMarketBookViewError> {
+    ) -> Result<Self, BookViewError> {
         if let Some(own_book) = own_book
             && self.instrument_id != own_book.instrument_id
         {
-            return Err(
-                BinaryMarketBookViewError::BookAndOwnBookMustBeSameInstrumentId(
-                    self.instrument_id,
-                    own_book.instrument_id,
-                ),
-            );
+            return Err(BookViewError::InstrumentMismatch(
+                self.instrument_id,
+                own_book.instrument_id,
+            ));
         }
 
         let bids_map =
@@ -711,6 +705,9 @@ impl OrderBook {
         let asks_map = self.asks_filtered_as_map(depth, own_book, status, accepted_buffer_ns, now);
 
         let mut filtered_book = Self::new(self.instrument_id, self.book_type);
+        filtered_book.sequence = self.sequence;
+        filtered_book.ts_last = self.ts_last;
+
         let sequence = self.sequence;
         let ts_event = self.ts_last;
 

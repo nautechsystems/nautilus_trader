@@ -29,7 +29,7 @@ use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, time::nanos_since_unix_epoch};
 use rust_decimal::Decimal;
 
-use super::{BinaryMarketBookViewError, display::pprint_own_book};
+use super::{BookViewError, display::pprint_own_book};
 use crate::{
     enums::{OrderSideSpecified, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, TraderId, VenueOrderId},
@@ -443,19 +443,14 @@ impl OwnOrderBook {
     ///
     /// # Errors
     ///
-    /// Returns [`BinaryMarketBookViewError::BookAndOwnSyntheticBookMustBeDifferentInstrumentId`]
-    /// if `self` and `opposite` have the same instrument ID.
-    pub fn combined_with_opposite(
-        &self,
-        opposite: &Self,
-    ) -> Result<Self, BinaryMarketBookViewError> {
+    /// Returns [`BookViewError::OppositeInstrumentMatch`] if `self` and `opposite` have the
+    /// same instrument ID.
+    pub fn combined_with_opposite(&self, opposite: &Self) -> Result<Self, BookViewError> {
         if self.instrument_id == opposite.instrument_id {
-            return Err(
-                BinaryMarketBookViewError::BookAndOwnSyntheticBookMustBeDifferentInstrumentId(
-                    self.instrument_id,
-                    opposite.instrument_id,
-                ),
-            );
+            return Err(BookViewError::OppositeInstrumentMatch(
+                self.instrument_id,
+                opposite.instrument_id,
+            ));
         }
 
         let mut combined = self.clone();
@@ -523,11 +518,7 @@ fn log_audit_error(client_order_id: &ClientOrderId) {
         "Audit error - {client_order_id} cached order already closed, deleting from own book"
     );
 }
-/// Transforms an order using parity price for binary markets
-///
-/// # Panics
-///
-/// Panics if  [`Price::from_decimal`] panics.
+
 fn transform_opposite_order(order: OwnBookOrder, side: OrderSideSpecified) -> OwnBookOrder {
     let parity_price = Price::from_decimal(Decimal::ONE - order.price.as_decimal())
         .expect("Invalid parity transformed price for OwnOrderBook::combined_with_opposite");

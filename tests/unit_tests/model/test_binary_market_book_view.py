@@ -78,7 +78,7 @@ def test_order_book_filtered_view_book_and_own_book_instrument_mismatch() -> Non
 
     with pytest.raises(
         ValueError,
-        match=r"The instrument IDs of `book` and `own_book` must match: book=YES.XNAS, own_book=NO.XNAS",
+        match=r"Instrument ID mismatch: book=YES.XNAS, own_book=NO.XNAS",
     ):
         book.filtered_view(own_book)
 
@@ -91,7 +91,7 @@ def test_own_order_book_combined_with_opposite_instrument_must_differ() -> None:
 
     with pytest.raises(
         ValueError,
-        match=r"The instrument IDs of `book` and `own_synthetic_book` must differ: book=YES.XNAS, own_synthetic_book=YES.XNAS",
+        match=r"Opposite own book must have different instrument ID: book=YES.XNAS, opposite=YES.XNAS",
     ):
         own_book.combined_with_opposite(own_synthetic_book)
 

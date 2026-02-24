@@ -37,6 +37,11 @@ the platform, including their arithmetic behavior, precision handling, and type-
 The NautilusTrader platform defines a range of built-in data types crafted specifically to represent
 a trading domain. The **Data** guide covers working with both built-in and custom data.
 
+## [Order Book](order_book.md)
+
+The **Order Book** guide covers the high-performance order book, own order tracking, filtered views
+for net liquidity, and binary market support.
+
 ## [Execution](execution.md)
 
 NautilusTrader can handle trade execution and order management for multiple strategies and venues
