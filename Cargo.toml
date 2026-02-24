@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates",
   "crates/adapters/architect_ax",
+  "crates/adapters/betfair",
   "crates/adapters/binance",
   "crates/adapters/bitmex",
   "crates/adapters/blockchain",

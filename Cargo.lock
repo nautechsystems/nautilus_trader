@@ -4914,6 +4914,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-betfair"
+version = "0.54.0"
+dependencies = [
+ "ahash 0.8.12",
+ "anyhow",
+ "chrono",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "nautilus-testkit",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
+ "ustr",
+]
+
+[[package]]
 name = "nautilus-binance"
 version = "0.54.0"
 dependencies = [
