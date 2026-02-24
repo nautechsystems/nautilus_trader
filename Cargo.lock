@@ -5694,6 +5694,7 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "arrow",
+ "arrow-row",
  "chrono",
  "chrono-tz",
  "criterion",

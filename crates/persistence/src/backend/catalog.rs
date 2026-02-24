@@ -725,17 +725,12 @@ impl ParquetDataCatalog {
                     // Extract instrument_id from directory path (last component)
                     let path_parts: Vec<&str> = dir_path.split('/').collect();
                     if let Some(instrument_id_dir) = path_parts.last() {
-                        // Decode percent-encoded dir name from object store
-                        // (e.g. "%5ESPX.CBOE" → "^SPX.CBOE")
-                        let decoded_dir = urlencoding::decode(instrument_id_dir)
-                            .unwrap_or(Cow::Borrowed(instrument_id_dir));
-
                         // Apply filter if provided
                         if let Some(ref ids) = instrument_ids
                             && !ids
                                 .iter()
                                 .map(|id| urisafe_instrument_id(id))
-                                .any(|x| x.as_str() == decoded_dir.as_ref())
+                                .any(|x| x.as_str() == urisafe_instrument_id(instrument_id_dir))
                         {
                             continue;
                         }
@@ -747,8 +742,6 @@ impl ParquetDataCatalog {
 
         // Read each instrument file (written as Parquet). Use the builder's schema for
         // metadata (Arrow restores it from ARROW:schema); batch.schema() has metadata stripped.
-        // Use to_object_path_parsed so paths from list() (already percent-encoded) are not
-        // double-encoded by Path::from (e.g. ^SPX.CBOE stored as %5ESPX.CBOE).
         for dir_path in instrument_dirs {
             let file_path = format!("{dir_path}/instrument.parquet");
             let object_path = self.to_object_path_parsed(&file_path)?;
@@ -3384,10 +3377,11 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
     Ok(iso8601_to_unix_nanos(iso_timestamp.to_string())?.into())
 }
 
-/// Converts an instrument ID to a URI-safe format by removing forward slashes.
+/// Converts an instrument ID to a URI-safe format by removing forward slashes
+/// and replacing carets with underscores.
 ///
 /// Some instrument IDs contain forward slashes (e.g., "BTC/USD") which are not
-/// suitable for use in file paths. This function removes these characters to
+/// suitable for use in file paths. This function transforms these characters to
 /// create a safe directory name.
 ///
 /// # Parameters
@@ -3396,7 +3390,7 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
 ///
 /// # Returns
 ///
-/// A URI-safe version of the instrument ID with forward slashes removed.
+/// A URI-safe version of the instrument ID with forward slashes removed and carets replaced.
 ///
 /// # Examples
 ///
@@ -3404,9 +3398,10 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
 /// # use nautilus_persistence::backend::catalog::urisafe_instrument_id;
 /// assert_eq!(urisafe_instrument_id("BTC/USD"), "BTCUSD");
 /// assert_eq!(urisafe_instrument_id("EUR-USD"), "EUR-USD");
+/// assert_eq!(urisafe_instrument_id("^SPX.CBOE"), "_SPX.CBOE");
 /// ```
-pub(crate) fn urisafe_instrument_id(instrument_id: &str) -> String {
-    instrument_id.replace('/', "")
+pub fn urisafe_instrument_id(instrument_id: &str) -> String {
+    instrument_id.replace('/', "").replace('^', "_")
 }
 
 // Extract the instrument ID portion from a bar type directory name.
