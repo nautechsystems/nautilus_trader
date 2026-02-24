@@ -359,6 +359,66 @@ engine uses the same `book_type` configuration.
 
 In the main backtesting loop, new market data is processed for order execution before being dispatched to actors/strategies via the data engine.
 
+#### Main loop flow
+
+For each data point the engine runs three phases:
+
+- **Exchange processes data.** The simulated exchange updates its order book from
+  the incoming market data and iterates the matching engine. This fills any existing
+  orders that now match against the new market state.
+- **Strategy receives data.** The data engine dispatches the data point to actors
+  and strategies via their callbacks (e.g. `on_quote_tick`, `on_bar`). Strategies
+  may submit, cancel, or modify orders during these callbacks.
+- **Settle venues.** The engine drains all queued venue commands and then iterates
+  matching engines to fill newly submitted orders. This loop repeats until no
+  pending commands remain, so cascading orders (e.g. a hedge submitted from
+  `on_order_filled`) settle within the same timestamp.
+
+```mermaid
+sequenceDiagram
+    participant Loop as Backtest Loop
+    participant Exch as SimulatedExchange
+    participant ME as MatchingEngine
+    participant DE as DataEngine
+    participant Stgy as Strategy
+    participant Settle as Settle Venues
+
+    Loop->>Loop: next data point (ts=T)
+
+    rect rgb(240, 248, 255)
+    note right of Loop: Phase 1 — Exchange processes data
+    Loop->>Exch: process_quote_tick / process_bar / ...
+    Exch->>ME: update book + iterate()
+    note right of ME: Matches existing orders<br/>against new market state
+    end
+
+    rect rgb(245, 255, 245)
+    note right of Loop: Phase 2 — Strategy receives data
+    Loop->>DE: process(data)
+    DE->>Stgy: on_quote_tick() / on_bar() / ...
+    Stgy-->>Exch: submit_order (queued or immediate)
+    end
+
+    rect rgb(255, 248, 240)
+    note right of Loop: Phase 3 — Settle venues
+    Loop->>Settle: _process_and_settle_venues(T)
+
+    loop until no pending commands
+        Settle->>Exch: _drain_commands(T)
+        note right of Exch: Processes queued commands,<br/>adds orders to matching core
+        Settle->>ME: _core.iterate(T)
+        note right of ME: Matches newly added orders<br/>against current market state
+        note right of ME: Fills may trigger strategy<br/>callbacks that enqueue<br/>further commands
+    end
+
+    Settle->>Exch: run simulation modules
+    Settle->>Exch: check instrument expirations
+    end
+```
+
+Timer events use the same settle mechanism but batch by timestamp: all callbacks at
+timestamp T execute first, then venues are settled for T before advancing to T+1.
+
 #### Command settling
 
 When an order fill triggers a strategy callback that submits additional orders (e.g., a stop-loss submitted

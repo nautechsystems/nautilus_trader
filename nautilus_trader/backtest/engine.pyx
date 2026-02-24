@@ -1690,7 +1690,9 @@ cdef class BacktestEngine:
                 False,
             )
 
-        # Process events < ts_now, re-checking for newly scheduled timers after each callback
+        # Process events < ts_now, re-checking for newly scheduled timers after each callback.
+        # Settle venues for the previous timestamp batch before processing a new timestamp,
+        # and once for the last batch after the loop ends.
         while ts_now > 0:
             if FORCE_STOP:
                 break
@@ -1704,6 +1706,12 @@ cdef class BacktestEngine:
                 break
 
             ts_event = handler.event.ts_event
+
+            # Settle previous timestamp batch before advancing
+            if ts_event != ts_last and ts_last != 0:
+                self._process_and_settle_venues(ts_last)
+
+            ts_last = ts_event
             set_logging_clock_static_time(ts_event)
 
             if LOGGING_PYO3:
@@ -1718,10 +1726,6 @@ cdef class BacktestEngine:
             callback(event)
             time_event_handler_drop(handler)
 
-            if ts_event != ts_last:
-                ts_last = ts_event
-                self._process_and_settle_venues(ts_event)
-
             # Re-advance to capture timers scheduled by callback
             for clock in clocks:
                 time_event_accumulator_advance_clock(
@@ -1730,6 +1734,10 @@ cdef class BacktestEngine:
                     ts_now,
                     False,
                 )
+
+        # Settle the last timestamp batch
+        if ts_last != 0:
+            self._process_and_settle_venues(ts_last)
 
         set_logging_clock_static_time(ts_now)
 
@@ -1786,14 +1794,33 @@ cdef class BacktestEngine:
     cdef void _process_and_settle_venues(self, uint64_t ts_now):
         cdef SimulatedExchange exchange
         cdef SimulationModule module
+        cdef OrderMatchingEngine matching_engine
 
-        # Settle all cascading commands (without running modules)
+        # Advance venue clocks so modules and event generators see the
+        # correct timestamp even when no commands are pending
+        for exchange in self._venues.values():
+            exchange._clock.set_time(ts_now)
+
+        # Drain commands then iterate matching engines to fill newly added
+        # orders. Fills may enqueue further commands (e.g. hedge orders
+        # submitted from on_order_filled), so loop until quiescent.
+        # Only process and iterate venues that had pending commands each
+        # pass, to avoid extra fill-model rolls on untouched venues.
         while True:
-            for exchange in self._venues.values():
+            active_venues = [
+                exchange for exchange in self._venues.values()
+                if exchange.has_pending_commands(ts_now)
+            ]
+            if not active_venues:
+                break
+
+            for exchange in active_venues:
                 exchange._drain_commands(ts_now)
 
-            if not any(ex.has_pending_commands(ts_now) for ex in self._venues.values()):
-                break
+            # Iterate matching engines so newly submitted orders can match
+            for exchange in active_venues:
+                for matching_engine in exchange._matching_engines.values():
+                    matching_engine.iterate(ts_now)
 
         # Run modules and expirations once after all commands are settled
         for exchange in self._venues.values():
@@ -1821,6 +1848,8 @@ cdef class BacktestEngine:
                 False,
             )
 
+        # Process events <= ts_now, settling venues when the timestamp changes
+        # (for the previous batch) and after the loop ends (for the last batch).
         while True:
             if FORCE_STOP:
                 break
@@ -1834,6 +1863,12 @@ cdef class BacktestEngine:
                 break
 
             ts_event = handler.event.ts_event
+
+            # Settle previous timestamp batch before advancing
+            if ts_event != ts_last and ts_last != 0:
+                self._process_and_settle_venues(ts_last)
+
+            ts_last = ts_event
             set_logging_clock_static_time(ts_event)
 
             if LOGGING_PYO3:
@@ -1848,10 +1883,6 @@ cdef class BacktestEngine:
             callback(event)
             time_event_handler_drop(handler)
 
-            if ts_event != ts_last:
-                ts_last = ts_event
-                self._process_and_settle_venues(ts_event)
-
             # Re-advance clocks to capture chained alerts scheduled by callback
             for clock in clocks:
                 time_event_accumulator_advance_clock(
@@ -1860,6 +1891,10 @@ cdef class BacktestEngine:
                     ts_now,
                     False,
                 )
+
+        # Settle the last timestamp batch
+        if ts_last != 0:
+            self._process_and_settle_venues(ts_last)
 
     cdef void _process_raw_time_event_handlers(
         self,
@@ -1881,6 +1916,8 @@ cdef class BacktestEngine:
         if not only_now:
             return
 
+        # Process events <= ts_now, settling venues when the timestamp changes
+        # (for the previous batch) and after the loop ends (for the last batch).
         while True:
             if FORCE_STOP:
                 break
@@ -1898,6 +1935,11 @@ cdef class BacktestEngine:
             if as_of_now and ts_event > ts_now:
                 break
 
+            # Settle previous timestamp batch before advancing
+            if ts_event != ts_last and ts_last != 0:
+                self._process_and_settle_venues(ts_last)
+
+            ts_last = ts_event
             set_logging_clock_static_time(ts_event)
 
             if LOGGING_PYO3:
@@ -1912,10 +1954,6 @@ cdef class BacktestEngine:
             callback(event)
             time_event_handler_drop(handler)
 
-            if ts_event != ts_last:
-                ts_last = ts_event
-                self._process_and_settle_venues(ts_event)
-
             # Re-advance to capture timers scheduled by callback
             for clock in clocks:
                 time_event_accumulator_advance_clock(
@@ -1924,6 +1962,10 @@ cdef class BacktestEngine:
                     ts_now,
                     False,
                 )
+
+        # Settle the last timestamp batch
+        if ts_last != 0:
+            self._process_and_settle_venues(ts_last)
 
     def _get_log_color_code(self):
         return "\033[36m" if logging_is_colored() else ""
@@ -2803,7 +2845,7 @@ cdef class SimulatedExchange:
         self._inflight_counter: dict[uint64_t, uint64_t] = {}
 
         # For direct communication from SpreadQuoteAggregator
-        spread_quote_endpoint = f"SimulatedExchange.spread_quote.{venue}"
+        spread_quote_endpoint = f"SimulatedExchange.process_new_quote.{venue}"
         if spread_quote_endpoint not in self.msgbus._endpoints:
             self.msgbus.register(endpoint=spread_quote_endpoint, handler=self.process_quote_tick)
 

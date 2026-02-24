@@ -17,11 +17,15 @@ use std::{
     cell::Cell,
     fmt::Debug,
     ops::{Deref, DerefMut},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use ahash::AHashMap;
 use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
-use nautilus_common::actor::{DataActor, DataActorCore};
+use nautilus_common::{
+    actor::{DataActor, DataActorCore},
+    timer::TimeEvent,
+};
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
@@ -937,6 +941,125 @@ fn test_cascading_stop_loss_on_fill_settled_same_tick(crypto_perpetual_ethusdt: 
     assert_eq!(
         bt_result.total_orders, 2,
         "Expected 2 orders (entry + cascading stop-loss), was {}",
+        bt_result.total_orders
+    );
+}
+
+// Strategy that sets two timers at the same timestamp, each submitting
+// a market order. Tests that all same-timestamp timer commands are settled.
+struct DualTimerStrategy {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    timer_ts: u64,
+    timer_count: AtomicU32,
+}
+
+impl DualTimerStrategy {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity, timer_ts: u64) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("DUAL-TIMER-001")),
+            order_id_tag: Some("002".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            timer_ts,
+            timer_count: AtomicU32::new(0),
+        }
+    }
+}
+
+impl Deref for DualTimerStrategy {
+    type Target = DataActorCore;
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl DerefMut for DualTimerStrategy {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
+}
+
+impl Debug for DualTimerStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(DualTimerStrategy)).finish()
+    }
+}
+
+impl DataActor for DualTimerStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        let timer_ns = self.timer_ts.into();
+        self.clock()
+            .set_time_alert_ns("timer_a", timer_ns, None, None)?;
+        self.clock()
+            .set_time_alert_ns("timer_b", timer_ns, None, None)?;
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
+        let count = self.timer_count.fetch_add(1, Ordering::Relaxed);
+        let side = if count == 0 {
+            OrderSide::Buy
+        } else {
+            OrderSide::Sell
+        };
+        let order = self.core.order_factory().market(
+            self.instrument_id,
+            side,
+            self.trade_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None)?;
+        Ok(())
+    }
+}
+
+impl Strategy for DualTimerStrategy {
+    fn core(&self) -> &StrategyCore {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut StrategyCore {
+        &mut self.core
+    }
+}
+
+#[rstest]
+fn test_all_same_timestamp_timer_commands_settled(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(instrument).unwrap();
+
+    // Timer fires at 30s, between data points at 0s and 60s
+    let timer_ts: u64 = 30_000_000_000;
+    let strategy = DualTimerStrategy::new(instrument_id, Quantity::from("1.000"), timer_ts);
+    engine.add_strategy(strategy).unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 0),
+        quote(instrument_id, "1000.50", "1001.50", 60_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true);
+
+    engine.run(None, None, None, false).unwrap();
+
+    let bt_result = engine.get_result();
+    assert_eq!(
+        bt_result.total_orders, 2,
+        "Expected 2 orders from dual timer callbacks, was {}",
         bt_result.total_orders
     );
 }

@@ -830,21 +830,20 @@ impl BacktestEngine {
         while let Some(handler) = self.accumulator.pop_next_at_or_before(ts_before) {
             let ts_event = handler.event.ts_event;
 
-            // When timestamp changes, run modules for the previous timestamp
-            // after all its handlers have finished
+            // Settle previous timestamp batch before advancing
             if let Some(ts) = ts_last
                 && ts != ts_event
             {
+                self.settle_venues(ts);
                 self.run_venue_modules(ts);
             }
 
+            ts_last = Some(ts_event);
             Self::set_all_clocks_time(clocks, ts_event);
             logging_clock_set_static_time(ts_event.as_u64());
 
             handler.run();
             self.drain_command_queues();
-            self.settle_venues(ts_event);
-            ts_last = Some(ts_event);
 
             // Re-advance clocks to capture chained timers
             for clock in clocks {
@@ -852,8 +851,9 @@ impl BacktestEngine {
             }
         }
 
-        // Run modules for the final timestamp
+        // Settle the last timestamp batch
         if let Some(ts) = ts_last {
+            self.settle_venues(ts);
             self.run_venue_modules(ts);
         }
 
@@ -871,21 +871,20 @@ impl BacktestEngine {
         while let Some(handler) = self.accumulator.pop_next_at_or_before(ts_now) {
             let ts_event = handler.event.ts_event;
 
-            // When timestamp changes, run modules for the previous timestamp
-            // after all its handlers have finished
+            // Settle previous timestamp batch before advancing
             if let Some(ts) = ts_last
                 && ts != ts_event
             {
+                self.settle_venues(ts);
                 self.run_venue_modules(ts);
             }
 
+            ts_last = Some(ts_event);
             Self::set_all_clocks_time(clocks, ts_event);
             logging_clock_set_static_time(ts_event.as_u64());
 
             handler.run();
             self.drain_command_queues();
-            self.settle_venues(ts_event);
-            ts_last = Some(ts_event);
 
             // Re-advance clocks to capture chained timers
             for clock in clocks {
@@ -893,8 +892,9 @@ impl BacktestEngine {
             }
         }
 
-        // Run modules for the final timestamp
+        // Settle the last timestamp batch
         if let Some(ts) = ts_last {
+            self.settle_venues(ts);
             self.run_venue_modules(ts);
         }
     }
@@ -937,19 +937,43 @@ impl BacktestEngine {
     }
 
     fn settle_venues(&self, ts_now: UnixNanos) {
+        // Advance venue clocks so modules and event generators see the
+        // correct timestamp even when no commands are pending
+        for exchange in self.venues.values() {
+            exchange.borrow().set_clock_time(ts_now);
+        }
+
+        // Drain commands then iterate matching engines to fill newly added
+        // orders. Fills may enqueue further commands (e.g. hedge orders
+        // submitted from on_order_filled), so loop until quiescent.
+        // Only process and iterate venues that had pending commands each
+        // pass, to avoid extra fill-model rolls on untouched venues.
         loop {
-            for exchange in self.venues.values() {
-                exchange.borrow_mut().process(ts_now);
+            let active_venues: Vec<Venue> = self
+                .venues
+                .iter()
+                .filter(|(_, ex)| ex.borrow().has_pending_commands(ts_now))
+                .map(|(id, _)| *id)
+                .collect();
+
+            if active_venues.is_empty() {
+                break;
+            }
+
+            for venue_id in &active_venues {
+                self.venues[venue_id].borrow_mut().process(ts_now);
             }
             self.drain_command_queues();
 
-            let has_pending = self
-                .venues
-                .values()
-                .any(|exchange| exchange.borrow().has_pending_commands(ts_now));
-            if !has_pending {
-                break;
+            for venue_id in &active_venues {
+                self.venues[venue_id]
+                    .borrow_mut()
+                    .iterate_matching_engines(ts_now);
             }
+
+            // Drain again so fill-triggered commands (e.g. hedge orders
+            // from on_order_filled) are visible to has_pending_commands
+            self.drain_command_queues();
         }
     }
 
