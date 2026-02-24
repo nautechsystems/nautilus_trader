@@ -81,6 +81,25 @@ def test_order_book(book: nautilus_pyo3.OrderBook) -> None:
     assert book.asks_to_dict() == {Decimal(101): Decimal(100), Decimal(102): Decimal(200)}
     assert book.get_avg_px_for_quantity(stub_qty, nautilus_pyo3.OrderSide.BUY) == 101.33333333333333
     assert book.get_avg_px_for_quantity(stub_qty, nautilus_pyo3.OrderSide.SELL) == 99.66666666666667
+    assert book.get_target_px_for_quantity(
+        stub_qty,
+        nautilus_pyo3.OrderSide.BUY,
+    ) == nautilus_pyo3.Price(102.0, 2)
+    assert book.get_target_px_for_quantity(
+        stub_qty,
+        nautilus_pyo3.OrderSide.SELL,
+    ) == nautilus_pyo3.Price(100.0, 2)
+
+
+def test_order_book_target_price_no_liquidity_returns_none() -> None:
+    book_type = nautilus_pyo3.BookType.L2_MBP
+    instrument_id = nautilus_pyo3.InstrumentId.from_str("AAPL.XNAS")
+    book = nautilus_pyo3.OrderBook(instrument_id, book_type)
+
+    stub_qty = nautilus_pyo3.Quantity.from_int(150)
+
+    assert book.get_target_px_for_quantity(stub_qty, nautilus_pyo3.OrderSide.BUY) is None
+    assert book.get_target_px_for_quantity(stub_qty, nautilus_pyo3.OrderSide.SELL) is None
 
 
 def test_group_bids_asks_empty(book: nautilus_pyo3.OrderBook) -> None:

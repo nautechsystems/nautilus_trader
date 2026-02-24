@@ -25,6 +25,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport ERROR_PRICE
 from nautilus_trader.core.rust.model cimport PRICE_RAW_MAX
 from nautilus_trader.core.rust.model cimport PRICE_RAW_MIN
 from nautilus_trader.core.rust.model cimport BookAction
@@ -66,6 +67,7 @@ from nautilus_trader.core.rust.model cimport orderbook_get_all_crossed_levels
 from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
 from nautilus_trader.core.rust.model cimport orderbook_get_quantity_at_level
 from nautilus_trader.core.rust.model cimport orderbook_get_quantity_for_price
+from nautilus_trader.core.rust.model cimport orderbook_get_target_px_for_quantity
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
 from nautilus_trader.core.rust.model cimport orderbook_instrument_id
@@ -582,6 +584,41 @@ cdef class OrderBook(Data):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
 
         return orderbook_get_avg_px_for_quantity(&self._mem, quantity._mem, order_side)
+
+    cpdef get_target_px_for_quantity(self, Quantity quantity, OrderSide order_side):
+        """
+        Return the highest encountered price required to fill the given `quantity`
+        based on the current state of the order book.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The quantity for the calculation.
+        order_side : OrderSide
+            The order side for the calculation.
+
+        Returns
+        -------
+        Price or ``None``
+
+        Raises
+        ------
+        ValueError
+            If `order_side` is equal to ``NO_ORDER_SIDE``
+
+        Warnings
+        --------
+        If no target price can be calculated then returns ``None``.
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
+
+        cdef Price_t result = orderbook_get_target_px_for_quantity(&self._mem, quantity._mem, order_side)
+        if result.raw == ERROR_PRICE.raw and result.precision == ERROR_PRICE.precision:
+            return None
+
+        return Price.from_mem_c(result)
 
     cpdef double get_quantity_for_price(self, Price price, OrderSide order_side):
         """
