@@ -46,6 +46,7 @@ from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.instruments import CryptoOption
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
@@ -97,6 +98,8 @@ def transform_instrument_to_pyo3(instrument: Instrument):
         return nautilus_pyo3.CryptoFuture.from_dict(CryptoFuture.to_dict(instrument))
     elif isinstance(instrument, CryptoPerpetual):
         return nautilus_pyo3.CryptoPerpetual.from_dict(CryptoPerpetual.to_dict(instrument))
+    elif isinstance(instrument, CryptoOption):
+        return nautilus_pyo3.CryptoOption.from_dict(CryptoOption.to_dict(instrument))
     elif isinstance(instrument, CurrencyPair):
         currency_pair_dict = CurrencyPair.to_dict(instrument)
         return nautilus_pyo3.CurrencyPair.from_dict(currency_pair_dict)
