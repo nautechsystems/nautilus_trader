@@ -126,6 +126,8 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noq
         return CryptoFuture.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoPerpetual):
         return CryptoPerpetual.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, instrument_pyo3.CryptoOption):
+        return CryptoOption.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.CurrencyPair):
         return CurrencyPair.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.Equity):
