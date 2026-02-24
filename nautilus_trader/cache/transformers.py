@@ -89,7 +89,7 @@ def transform_currency_to_pyo3(currency: Currency) -> nautilus_pyo3.Currency:
 ################################################################################
 # Instruments
 ################################################################################
-def transform_instrument_to_pyo3(instrument: Instrument):
+def transform_instrument_to_pyo3(instrument: Instrument):  # noqa: C901
     if isinstance(instrument, BettingInstrument):
         return nautilus_pyo3.BettingInstrument.from_dict(BettingInstrument.to_dict(instrument))
     elif isinstance(instrument, BinaryOption):
