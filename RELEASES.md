@@ -19,11 +19,12 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed matching engine applying order book deltas for L1 books (#3615), thanks @maksym-mikheienko
 - Fixed pre-commit hooks portability for Windows (#3617), thanks for reporting @powerseed
+- Fixed `CryptoOption` instrument pyo3 transform for (#3626), thanks @davidsblom
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
 - Fixed Hyperliquid stop/trigger order price derivation (#3611), thanks for reporting @h-tsun3
 - Fixed Hyperliquid price normalization and inner error detection (#3612), thanks for reporting @h-tsun3
-- Fix Interactive Brokers BarType/str comparison in get_historical_bars (#3616), thank you @powerseed
-- Fix Interactive Brokers historical bar processing crash (#3619), thank you @shzhng
+- Fixed Interactive Brokers BarType/str comparison in get_historical_bars (#3616), thank you @powerseed
+- Fixed Interactive Brokers historical bar processing crash (#3619), thank you @shzhng
 
 ### Internal Improvements
 - Added catalog deduplication functionality (#3613), thanks @ms32035
