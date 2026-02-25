@@ -870,11 +870,7 @@ impl OrderBook {
 
     /// Calculates the worst (last-touched) price to fill the specified quantity.
     #[must_use]
-    pub fn get_worst_px_for_quantity(
-        &self,
-        qty: Quantity,
-        order_side: OrderSide,
-    ) -> Option<Price> {
+    pub fn get_worst_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> Option<Price> {
         let levels = match order_side.as_specified() {
             OrderSideSpecified::Buy => &self.asks.levels,
             OrderSideSpecified::Sell => &self.bids.levels,
