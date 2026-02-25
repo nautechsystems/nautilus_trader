@@ -162,3 +162,197 @@ pub enum UserWsMessage {
     #[serde(rename = "trade")]
     Trade(PolymarketUserTrade),
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::common::enums::{
+        PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOrderStatus,
+        PolymarketOrderType, PolymarketOutcome, PolymarketTradeStatus,
+    };
+
+    fn load<T: serde::de::DeserializeOwned>(filename: &str) -> T {
+        let path = format!("test_data/{filename}");
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
+    #[rstest]
+    fn test_book_snapshot() {
+        let snap: PolymarketBookSnapshot = load("ws_book_snapshot.json");
+
+        assert_eq!(
+            snap.asset_id.as_str(),
+            "71321045679252212594626385532706912750332728571942532289631379312455583992563"
+        );
+        assert_eq!(snap.bids.len(), 3);
+        assert_eq!(snap.asks.len(), 3);
+        assert_eq!(snap.bids[0].price, "0.50");
+        assert_eq!(snap.bids[0].size, "200.0");
+        assert_eq!(snap.asks[0].price, "0.51");
+        assert_eq!(snap.timestamp, "1703875200000");
+    }
+
+    #[rstest]
+    fn test_book_snapshot_roundtrip() {
+        let snap: PolymarketBookSnapshot = load("ws_book_snapshot.json");
+        let json = serde_json::to_string(&snap).unwrap();
+        let snap2: PolymarketBookSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(snap, snap2);
+    }
+
+    #[rstest]
+    fn test_quotes() {
+        let quotes: PolymarketQuotes = load("ws_quotes.json");
+
+        assert_eq!(quotes.price_changes.len(), 2);
+        assert_eq!(quotes.price_changes[0].side, PolymarketOrderSide::Buy);
+        assert_eq!(quotes.price_changes[0].price, "0.51");
+        assert_eq!(quotes.price_changes[0].best_bid, "0.51");
+        assert_eq!(quotes.price_changes[0].best_ask, "0.52");
+        assert_eq!(quotes.price_changes[1].side, PolymarketOrderSide::Sell);
+        assert_eq!(quotes.timestamp, "1703875201000");
+    }
+
+    #[rstest]
+    fn test_last_trade() {
+        let trade: PolymarketTrade = load("ws_last_trade.json");
+
+        assert_eq!(trade.price, "0.51");
+        assert_eq!(trade.size, "25.0");
+        assert_eq!(trade.side, PolymarketOrderSide::Buy);
+        assert_eq!(trade.fee_rate_bps, "0");
+        assert_eq!(trade.timestamp, "1703875202000");
+    }
+
+    #[rstest]
+    fn test_tick_size_change() {
+        let msg: PolymarketTickSizeChange = load("ws_tick_size_change.json");
+
+        assert_eq!(msg.new_tick_size, "0.01");
+        assert_eq!(msg.old_tick_size, "0.1");
+        assert_eq!(msg.timestamp, "1703875210000");
+    }
+
+    #[rstest]
+    fn test_user_order_placement() {
+        let order: PolymarketUserOrder = load("ws_user_order_placement.json");
+
+        assert_eq!(order.event_type, PolymarketEventType::Placement);
+        assert_eq!(order.status, PolymarketOrderStatus::Live);
+        assert_eq!(order.side, PolymarketOrderSide::Buy);
+        assert_eq!(order.order_type, PolymarketOrderType::GTC);
+        assert_eq!(order.outcome, PolymarketOutcome::Yes);
+        assert_eq!(order.original_size, "100.0");
+        assert_eq!(order.size_matched, "0.0");
+        assert!(order.associate_trades.is_none());
+        assert!(order.expiration.is_none());
+    }
+
+    #[rstest]
+    fn test_user_order_update() {
+        let order: PolymarketUserOrder = load("ws_user_order_update.json");
+
+        assert_eq!(order.event_type, PolymarketEventType::Update);
+        assert_eq!(order.size_matched, "25.0");
+        assert_eq!(
+            order.associate_trades.as_deref(),
+            Some(&["trade-0xabcdef1234".to_string()][..])
+        );
+    }
+
+    #[rstest]
+    fn test_user_order_cancellation() {
+        let order: PolymarketUserOrder = load("ws_user_order_cancellation.json");
+
+        assert_eq!(order.event_type, PolymarketEventType::Cancellation);
+        assert_eq!(order.status, PolymarketOrderStatus::Canceled);
+        assert_eq!(order.size_matched, "0.0");
+    }
+
+    #[rstest]
+    fn test_user_trade() {
+        let trade: PolymarketUserTrade = load("ws_user_trade.json");
+
+        assert_eq!(trade.event_type, PolymarketEventType::Trade);
+        assert_eq!(trade.status, PolymarketTradeStatus::Confirmed);
+        assert_eq!(trade.side, PolymarketOrderSide::Buy);
+        assert_eq!(trade.trader_side, PolymarketLiquiditySide::Taker);
+        assert_eq!(trade.price, "0.5");
+        assert_eq!(trade.size, "25.0");
+        assert_eq!(trade.fee_rate_bps, "0");
+        assert_eq!(trade.bucket_index, 1);
+        assert_eq!(trade.maker_orders.len(), 1);
+        assert_eq!(
+            trade.taker_order_id,
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12"
+        );
+    }
+
+    #[rstest]
+    fn test_market_ws_message_book() {
+        let msg: MarketWsMessage = load("ws_market_book_msg.json");
+
+        assert!(matches!(msg, MarketWsMessage::Book(_)));
+        if let MarketWsMessage::Book(snap) = msg {
+            assert_eq!(snap.bids.len(), 2);
+            assert_eq!(snap.asks.len(), 2);
+            assert_eq!(snap.timestamp, "1703875200000");
+        }
+    }
+
+    #[rstest]
+    fn test_market_ws_message_price_change() {
+        let msg: MarketWsMessage = load("ws_market_price_change_msg.json");
+
+        assert!(matches!(msg, MarketWsMessage::PriceChange(_)));
+        if let MarketWsMessage::PriceChange(quotes) = msg {
+            assert_eq!(quotes.price_changes.len(), 1);
+        }
+    }
+
+    #[rstest]
+    fn test_market_ws_message_last_trade_price() {
+        let msg: MarketWsMessage = load("ws_market_last_trade_msg.json");
+
+        assert!(matches!(msg, MarketWsMessage::LastTradePrice(_)));
+        if let MarketWsMessage::LastTradePrice(trade) = msg {
+            assert_eq!(trade.price, "0.51");
+        }
+    }
+
+    #[rstest]
+    fn test_market_ws_message_tick_size_change() {
+        let msg: MarketWsMessage = load("ws_market_tick_size_msg.json");
+
+        assert!(matches!(msg, MarketWsMessage::TickSizeChange(_)));
+        if let MarketWsMessage::TickSizeChange(change) = msg {
+            assert_eq!(change.new_tick_size, "0.01");
+            assert_eq!(change.old_tick_size, "0.1");
+        }
+    }
+
+    #[rstest]
+    fn test_user_ws_message_order() {
+        let msg: UserWsMessage = load("ws_user_order_msg.json");
+
+        assert!(matches!(msg, UserWsMessage::Order(_)));
+        if let UserWsMessage::Order(order) = msg {
+            assert_eq!(order.event_type, PolymarketEventType::Placement);
+            assert_eq!(order.side, PolymarketOrderSide::Buy);
+        }
+    }
+
+    #[rstest]
+    fn test_user_ws_message_trade() {
+        let msg: UserWsMessage = load("ws_user_trade_msg.json");
+
+        assert!(matches!(msg, UserWsMessage::Trade(_)));
+        if let UserWsMessage::Trade(trade) = msg {
+            assert_eq!(trade.event_type, PolymarketEventType::Trade);
+            assert_eq!(trade.status, PolymarketTradeStatus::Confirmed);
+        }
+    }
+}

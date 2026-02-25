@@ -1,0 +1,20 @@
+{
+  "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+  "associate_trades": null,
+  "created_at": "1703875200000",
+  "expiration": null,
+  "id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+  "maker_address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+  "order_owner": "00000000-0000-0000-0000-000000000001",
+  "order_type": "GTC",
+  "original_size": "100.0",
+  "outcome": "Yes",
+  "owner": "00000000-0000-0000-0000-000000000001",
+  "price": "0.5",
+  "side": "BUY",
+  "size_matched": "0.0",
+  "status": "CANCELED",
+  "timestamp": "1703875205000",
+  "type": "CANCELLATION"
+}

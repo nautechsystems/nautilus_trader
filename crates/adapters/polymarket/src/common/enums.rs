@@ -15,6 +15,7 @@
 
 //! Venue-specific enums for the Polymarket CLOB API.
 
+use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus, TimeInForce};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::{Display, EnumString};
@@ -118,6 +119,74 @@ impl PolymarketTradeStatus {
     }
 }
 
+impl From<PolymarketOrderSide> for OrderSide {
+    fn from(value: PolymarketOrderSide) -> Self {
+        match value {
+            PolymarketOrderSide::Buy => Self::Buy,
+            PolymarketOrderSide::Sell => Self::Sell,
+        }
+    }
+}
+
+impl From<OrderSide> for PolymarketOrderSide {
+    fn from(value: OrderSide) -> Self {
+        match value {
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
+            _ => panic!("Invalid `OrderSide` for Polymarket: {value:?}"),
+        }
+    }
+}
+
+impl From<PolymarketOrderSide> for AggressorSide {
+    fn from(value: PolymarketOrderSide) -> Self {
+        match value {
+            PolymarketOrderSide::Buy => Self::Buyer,
+            PolymarketOrderSide::Sell => Self::Seller,
+        }
+    }
+}
+
+impl From<PolymarketOrderType> for TimeInForce {
+    fn from(value: PolymarketOrderType) -> Self {
+        match value {
+            PolymarketOrderType::GTC => Self::Gtc,
+            PolymarketOrderType::GTD => Self::Gtd,
+            PolymarketOrderType::FOK => Self::Fok,
+            // Fill-And-Kill is equivalent to Immediate-Or-Cancel
+            PolymarketOrderType::FAK => Self::Ioc,
+        }
+    }
+}
+
+impl From<TimeInForce> for PolymarketOrderType {
+    fn from(value: TimeInForce) -> Self {
+        match value {
+            TimeInForce::Gtc => Self::GTC,
+            TimeInForce::Gtd => Self::GTD,
+            TimeInForce::Fok => Self::FOK,
+            TimeInForce::Ioc => Self::FAK,
+            _ => panic!("Unsupported `TimeInForce` for Polymarket: {value:?}"),
+        }
+    }
+}
+
+impl From<PolymarketOrderStatus> for OrderStatus {
+    fn from(value: PolymarketOrderStatus) -> Self {
+        match value {
+            PolymarketOrderStatus::Invalid => Self::Rejected,
+            PolymarketOrderStatus::Live => Self::Accepted,
+            PolymarketOrderStatus::Delayed => Self::Accepted,
+            PolymarketOrderStatus::Matched => Self::Filled,
+            // Placement failure (never became live) — treat as rejected
+            PolymarketOrderStatus::Unmatched => Self::Rejected,
+            PolymarketOrderStatus::Canceled => Self::Canceled,
+            // Market resolved = order expired due to market settlement
+            PolymarketOrderStatus::CanceledMarketResolved => Self::Expired,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -199,5 +268,80 @@ mod tests {
             serde_json::from_str::<PolymarketTradeStatus>("\"RETRYING\"").unwrap(),
             PolymarketTradeStatus::Retrying
         );
+    }
+
+    #[rstest]
+    #[case(PolymarketOrderSide::Buy, OrderSide::Buy)]
+    #[case(PolymarketOrderSide::Sell, OrderSide::Sell)]
+    fn test_order_side_to_nautilus(#[case] poly: PolymarketOrderSide, #[case] expected: OrderSide) {
+        assert_eq!(OrderSide::from(poly), expected);
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, PolymarketOrderSide::Buy)]
+    #[case(OrderSide::Sell, PolymarketOrderSide::Sell)]
+    fn test_nautilus_order_side_to_poly(
+        #[case] nautilus: OrderSide,
+        #[case] expected: PolymarketOrderSide,
+    ) {
+        assert_eq!(PolymarketOrderSide::from(nautilus), expected);
+    }
+
+    #[rstest]
+    #[case(PolymarketOrderSide::Buy, AggressorSide::Buyer)]
+    #[case(PolymarketOrderSide::Sell, AggressorSide::Seller)]
+    fn test_order_side_to_aggressor(
+        #[case] poly: PolymarketOrderSide,
+        #[case] expected: AggressorSide,
+    ) {
+        assert_eq!(AggressorSide::from(poly), expected);
+    }
+
+    #[rstest]
+    #[case(PolymarketOrderType::GTC, TimeInForce::Gtc)]
+    #[case(PolymarketOrderType::GTD, TimeInForce::Gtd)]
+    #[case(PolymarketOrderType::FOK, TimeInForce::Fok)]
+    #[case(PolymarketOrderType::FAK, TimeInForce::Ioc)]
+    fn test_order_type_to_time_in_force(
+        #[case] poly: PolymarketOrderType,
+        #[case] expected: TimeInForce,
+    ) {
+        assert_eq!(TimeInForce::from(poly), expected);
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Gtc, PolymarketOrderType::GTC)]
+    #[case(TimeInForce::Gtd, PolymarketOrderType::GTD)]
+    #[case(TimeInForce::Fok, PolymarketOrderType::FOK)]
+    #[case(TimeInForce::Ioc, PolymarketOrderType::FAK)]
+    fn test_time_in_force_to_order_type(
+        #[case] tif: TimeInForce,
+        #[case] expected: PolymarketOrderType,
+    ) {
+        assert_eq!(PolymarketOrderType::from(tif), expected);
+    }
+
+    #[rstest]
+    #[case(PolymarketOrderStatus::Invalid, OrderStatus::Rejected)]
+    #[case(PolymarketOrderStatus::Live, OrderStatus::Accepted)]
+    #[case(PolymarketOrderStatus::Delayed, OrderStatus::Accepted)]
+    #[case(PolymarketOrderStatus::Matched, OrderStatus::Filled)]
+    #[case(PolymarketOrderStatus::Unmatched, OrderStatus::Rejected)]
+    #[case(PolymarketOrderStatus::Canceled, OrderStatus::Canceled)]
+    #[case(PolymarketOrderStatus::CanceledMarketResolved, OrderStatus::Expired)]
+    fn test_order_status_to_nautilus(
+        #[case] poly: PolymarketOrderStatus,
+        #[case] expected: OrderStatus,
+    ) {
+        assert_eq!(OrderStatus::from(poly), expected);
+    }
+
+    #[rstest]
+    fn test_trade_status_is_finalized() {
+        assert!(PolymarketTradeStatus::Mined.is_finalized());
+        assert!(PolymarketTradeStatus::Confirmed.is_finalized());
+        assert!(!PolymarketTradeStatus::Matched.is_finalized());
+        assert!(!PolymarketTradeStatus::Retrying.is_finalized());
+        assert!(!PolymarketTradeStatus::Failed.is_finalized());
     }
 }

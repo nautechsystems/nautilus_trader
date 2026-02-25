@@ -99,10 +99,21 @@ impl Error {
     pub fn from_http_status(status: StatusCode, body: &[u8]) -> Self {
         let message = String::from_utf8_lossy(body).to_string();
         match status.as_u16() {
-            401 | 403 => Self::auth(format!("HTTP {}: {}", status.as_u16(), message)),
-            400 => Self::bad_request(format!("HTTP {}: {}", status.as_u16(), message)),
+            401 | 403 => Self::auth(format!("HTTP {}: {message}", status.as_u16())),
+            400 => Self::bad_request(format!("HTTP {}: {message}", status.as_u16())),
             429 => Self::rate_limit("unknown", 0, None),
             _ => Self::http(status.as_u16(), message),
+        }
+    }
+
+    /// Classifies a raw status code (as `u16`) and body into the appropriate error variant.
+    pub fn from_status_code(status: u16, body: &[u8]) -> Self {
+        let message = String::from_utf8_lossy(body).to_string();
+        match status {
+            401 | 403 => Self::auth(format!("HTTP {status}: {message}")),
+            400 => Self::bad_request(format!("HTTP {status}: {message}")),
+            429 => Self::rate_limit("unknown", 0, None),
+            _ => Self::http(status, message),
         }
     }
 

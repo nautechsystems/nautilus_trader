@@ -15,8 +15,12 @@
 
 //! Credential management for the Polymarket adapter.
 
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
+use alloy_signer_local::PrivateKeySigner;
 use aws_lc_rs::hmac;
 use base64::{Engine, engine::general_purpose::URL_SAFE};
 use nautilus_core::env::{get_or_env_var, get_or_env_var_opt};
@@ -206,11 +210,14 @@ impl Debug for Credential {
 }
 
 /// Complete secrets configuration for Polymarket.
+///
+/// Ethereum address derived from the private key (lowercased with `0x` prefix).
 #[derive(Clone)]
 pub struct Secrets {
     pub private_key: EvmPrivateKey,
     pub credential: Credential,
     pub funder: Option<String>,
+    pub address: String,
 }
 
 impl Debug for Secrets {
@@ -218,6 +225,7 @@ impl Debug for Secrets {
         f.debug_struct(stringify!(Secrets))
             .field("private_key", &self.private_key)
             .field("credential", &self.credential)
+            .field("address", &self.address)
             .field(
                 "funder",
                 &self.funder.as_deref().map(|s| {
@@ -257,10 +265,19 @@ impl Secrets {
         let funder = get_or_env_var_opt(funder.filter(|s| !s.trim().is_empty()), FUNDER_VAR)
             .filter(|s| !s.trim().is_empty());
 
+        let key_hex = private_key
+            .as_hex()
+            .strip_prefix("0x")
+            .unwrap_or(private_key.as_hex());
+        let signer = PrivateKeySigner::from_str(key_hex)
+            .map_err(|e| Error::bad_request(format!("Failed to derive address: {e}")))?;
+        let address = format!("{:#x}", signer.address());
+
         Ok(Self {
             private_key,
             credential,
             funder,
+            address,
         })
     }
 
