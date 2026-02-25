@@ -26,10 +26,11 @@ use datafusion::arrow::{
     datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
 };
 use nautilus_common::{
+    cache::fifo::FifoCache,
     clock::Clock,
     msgbus::{mstr::MStr, subscribe_any, typed_handler::ShareableMessageHandler, unsubscribe_any},
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
@@ -171,6 +172,8 @@ pub struct FeatherWriter {
     flush_interval_ms: u64,
     /// Last flush timestamp in nanoseconds.
     last_flush_ns: UnixNanos,
+    /// Bounded cache of recently seen event IDs for deduplication.
+    seen_event_ids: Box<FifoCache<UUID4, 10_000>>,
 }
 
 impl FeatherWriter {
@@ -201,6 +204,7 @@ impl FeatherWriter {
             runtime,
             flush_interval_ms,
             last_flush_ns,
+            seen_event_ids: Box::new(FifoCache::new()),
         }
     }
 
@@ -463,6 +467,18 @@ impl FeatherWriter {
             let path = T::path_prefix();
             included.contains(path)
         })
+    }
+
+    /// Returns whether the given event ID has already been seen,
+    /// adding it to the cache if new.
+    pub fn is_duplicate_event_id(&mut self, event_id: &UUID4) -> bool {
+        if self.seen_event_ids.contains(event_id) {
+            return true;
+        }
+
+        self.seen_event_ids.add(*event_id);
+
+        false
     }
 
     fn regen_writer_path(

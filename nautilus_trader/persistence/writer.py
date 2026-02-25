@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime as dt
+from collections import OrderedDict
 from enum import Enum
 from io import TextIOWrapper
 from typing import Any
@@ -30,6 +31,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import FundingRateUpdate
@@ -152,6 +154,8 @@ class StreamingFeatherWriter:
         self.flush_interval_ms = flush_interval_ms or 1000
         self._last_flush = self.clock.utc_now()
         self.missing_writers: set[type] = set()
+        self._seen_event_ids: OrderedDict = OrderedDict()
+        self._seen_event_ids_maxlen = 10_000
 
     def _create_writers(self) -> None:
         for cls in self._schemas:
@@ -184,6 +188,15 @@ class StreamingFeatherWriter:
         # Check if an include types filter has been specified
         if self.include_types is not None and cls not in self.include_types:
             return
+
+        # Deduplicate events published on multiple message bus topics
+        event_id = getattr(obj, "event_id", None)
+        if isinstance(event_id, UUID4) and event_id in self._seen_event_ids:
+            return
+        if isinstance(event_id, UUID4):
+            self._seen_event_ids[event_id] = None
+            if len(self._seen_event_ids) > self._seen_event_ids_maxlen:
+                self._seen_event_ids.popitem(last=False)
 
         table = class_to_filename(cls)
 
