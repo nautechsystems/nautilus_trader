@@ -23,6 +23,7 @@ use std::sync::{
 use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
+use dashmap::DashSet;
 use futures_util::StreamExt;
 use nautilus_common::{
     clients::DataClient,
@@ -31,15 +32,16 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            BarsResponse, BookResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
-            RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
-            SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentStatus,
-            SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+            BarsResponse, BookResponse, CustomDataResponse, InstrumentResponse,
+            InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestCustomData,
+            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
+            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
             TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
             UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -49,7 +51,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API},
+    data::{Data, OrderBookDeltas_API, option_chain::OptionForwardPrice},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -88,6 +90,9 @@ pub struct DeribitDataClient {
     tasks: Vec<JoinHandle<()>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    option_greeks_subs: Arc<DashSet<InstrumentId>>,
+    mark_price_subs: Arc<DashSet<InstrumentId>>,
+    index_price_subs: Arc<DashSet<InstrumentId>>,
     clock: &'static AtomicTime,
 }
 
@@ -143,6 +148,9 @@ impl DeribitDataClient {
             tasks: Vec::new(),
             data_sender,
             instruments: Arc::new(RwLock::new(AHashMap::new())),
+            option_greeks_subs: Arc::new(DashSet::new()),
+            mark_price_subs: Arc::new(DashSet::new()),
+            index_price_subs: Arc::new(DashSet::new()),
             clock,
         })
     }
@@ -239,6 +247,11 @@ impl DeribitDataClient {
                     }
                 } else {
                     log::error!("Instrument cache lock poisoned, skipping instrument update");
+                }
+            }
+            NautilusWsMessage::OptionGreeks(greeks) => {
+                if let Err(e) = sender.send(DataEvent::OptionGreeks(greeks)) {
+                    log::error!("Failed to send option greeks: {e}");
                 }
             }
             NautilusWsMessage::Error(e) => {
@@ -438,9 +451,15 @@ impl DataClient for DeribitDataClient {
             }
         }
 
-        // Cache instruments in WebSocket client before connecting
+        // Cache instruments and set subscription filters in WebSocket client before connecting
+        let option_greeks_subs = self.option_greeks_subs.clone();
+        let mark_price_subs = self.mark_price_subs.clone();
+        let index_price_subs = self.index_price_subs.clone();
         let ws = self.ws_client_mut()?;
         ws.cache_instruments(all_instruments);
+        ws.set_option_greeks_subs(option_greeks_subs);
+        ws.set_mark_price_subs(mark_price_subs);
+        ws.set_index_price_subs(index_price_subs);
 
         // Connect WebSocket and wait until active
         ws.connect().await.context("failed to connect WebSocket")?;
@@ -722,6 +741,9 @@ impl DataClient for DeribitDataClient {
         let instrument_id = cmd.instrument_id;
         let interval = self.get_interval(&cmd.params);
 
+        // Track subscription so handler gates MarkPriceUpdate emission
+        self.mark_price_subs.insert(instrument_id);
+
         log::info!(
             "Subscribing to mark prices for {} (via ticker channel, interval: {})",
             instrument_id,
@@ -745,6 +767,9 @@ impl DataClient for DeribitDataClient {
             .clone();
         let instrument_id = cmd.instrument_id;
         let interval = self.get_interval(&cmd.params);
+
+        // Track subscription so handler gates IndexPriceUpdate emission
+        self.index_price_subs.insert(instrument_id);
 
         log::info!(
             "Subscribing to index prices for {} (via ticker channel, interval: {})",
@@ -840,6 +865,33 @@ impl DataClient for DeribitDataClient {
         get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_instrument_status(&kind, &currency).await {
                 log::error!("Failed to subscribe to instrument status for {instrument_id}: {e}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+        let interval = self.get_interval(&cmd.params);
+
+        // Track subscription so handler gates OptionGreeks emission
+        self.option_greeks_subs.insert(instrument_id);
+
+        log::info!(
+            "Subscribing to option greeks for {} (via ticker channel, interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_ticker(instrument_id, interval).await {
+                log::error!("Failed to subscribe to option greeks for {instrument_id}: {e}");
             }
         });
 
@@ -1068,6 +1120,9 @@ impl DataClient for DeribitDataClient {
         let instrument_id = cmd.instrument_id;
         let interval = self.get_interval(&cmd.params);
 
+        // Remove subscription tracking so handler stops emitting MarkPriceUpdate
+        self.mark_price_subs.remove(&instrument_id);
+
         log::info!(
             "Unsubscribing from mark prices for {} (via ticker channel, interval: {})",
             instrument_id,
@@ -1091,6 +1146,9 @@ impl DataClient for DeribitDataClient {
             .clone();
         let instrument_id = cmd.instrument_id;
         let interval = self.get_interval(&cmd.params);
+
+        // Remove subscription tracking so handler stops emitting IndexPriceUpdate
+        self.index_price_subs.remove(&instrument_id);
 
         log::info!(
             "Unsubscribing from index prices for {} (via ticker channel, interval: {})",
@@ -1162,6 +1220,33 @@ impl DataClient for DeribitDataClient {
                 .await
             {
                 log::error!("Failed to unsubscribe from funding rates for {instrument_id}: {e}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+        let interval = self.get_interval(&cmd.params);
+
+        // Remove subscription tracking so handler stops emitting OptionGreeks
+        self.option_greeks_subs.remove(&instrument_id);
+
+        log::info!(
+            "Unsubscribing from option greeks for {} (via ticker channel, interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_ticker(instrument_id, interval).await {
+                log::error!("Failed to unsubscribe from option greeks for {instrument_id}: {e}");
             }
         });
 
@@ -1479,6 +1564,75 @@ impl DataClient for DeribitDataClient {
                 }
                 Err(e) => {
                     log::error!("Book snapshot request failed for {instrument_id}: {e:?}");
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
+        if request.data_type.type_name() != "OptionForwardPrices" {
+            log::warn!(
+                "Deribit data client does not handle custom data type: {}",
+                request.data_type.type_name(),
+            );
+            return Ok(());
+        }
+
+        let currency = request
+            .data_type
+            .metadata()
+            .and_then(|m| m.get("currency").cloned())
+            .unwrap_or_else(|| "BTC".to_string());
+
+        let http_client = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id;
+        let data_type = request.data_type.clone();
+        let params = request.params;
+        let clock = self.clock;
+        let venue = *DERIBIT_VENUE;
+
+        log::info!("Requesting option forward prices for currency={currency}");
+
+        get_runtime().spawn(async move {
+            match http_client.request_book_summaries(&currency).await {
+                Ok(summaries) => {
+                    let forward_prices: Vec<OptionForwardPrice> = summaries
+                        .into_iter()
+                        .filter_map(|s| {
+                            s.underlying_price.map(|up| OptionForwardPrice {
+                                instrument_name: s.instrument_name,
+                                underlying_price: up.try_into().unwrap_or(0.0),
+                                underlying_index: s.underlying_index,
+                            })
+                        })
+                        .collect();
+
+                    log::info!(
+                        "Fetched {} option forward prices for {currency}",
+                        forward_prices.len(),
+                    );
+
+                    let response = DataResponse::Data(CustomDataResponse::new(
+                        request_id,
+                        client_id,
+                        Some(venue),
+                        data_type,
+                        forward_prices,
+                        None,
+                        None,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send forward prices response: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Forward prices request failed for {currency}: {e:?}");
                 }
             }
         });

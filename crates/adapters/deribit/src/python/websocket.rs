@@ -267,6 +267,9 @@ impl DeribitWebSocketClient {
                                 }
                             }
                         }),
+                        NautilusWsMessage::OptionGreeks(_greeks) => {
+                            log::debug!("Received OptionGreeks in Python bridge, skipping");
+                        }
                         // Execution events - route to Python callback
                         NautilusWsMessage::OrderStatusReports(reports) => Python::attach(|py| {
                             for report in reports {

@@ -725,6 +725,20 @@ impl DeribitRawHttpClient {
             .await
     }
 
+    /// Gets book summaries for all instruments of a given currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_book_summary_by_currency(
+        &self,
+        params: super::query::GetBookSummaryByCurrencyParams,
+    ) -> Result<DeribitJsonRpcResponse<Vec<super::models::DeribitBookSummary>>, DeribitHttpError>
+    {
+        self.send_request("public/get_book_summary_by_currency", params, false)
+            .await
+    }
+
     /// Gets positions for a specific currency.
     ///
     /// # Errors
@@ -1622,6 +1636,37 @@ impl DeribitHttpClient {
 
         log::debug!("Generated {} fill reports", reports.len());
         Ok(reports)
+    }
+
+    /// Requests book summaries for options of a given currency.
+    ///
+    /// Returns raw `DeribitBookSummary` items which include `underlying_price`
+    /// (the forward price) for each option instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_book_summaries(
+        &self,
+        currency: &str,
+    ) -> anyhow::Result<Vec<super::models::DeribitBookSummary>> {
+        let params = super::query::GetBookSummaryByCurrencyParams::options(currency);
+        let full_response = self
+            .inner
+            .get_book_summary_by_currency(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let summaries = full_response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result in book summary response"))?;
+
+        log::info!(
+            "Fetched {} book summaries for {} options",
+            summaries.len(),
+            currency,
+        );
+
+        Ok(summaries)
     }
 
     /// Requests position status reports for reconciliation.
