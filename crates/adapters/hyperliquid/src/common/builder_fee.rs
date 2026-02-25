@@ -60,7 +60,7 @@ const BUILDER_CODES_APPROVAL_FEE_RATE: &str = "0.01%";
 /// Resolves the builder maker fee tier from the Hyperliquid effective maker rate.
 ///
 /// Maps `userAddRate` (effective maker rate including all discounts) to a
-/// builder maker fee tier in tenths of a basis point. See [`FEE_TIERS`] for
+/// builder maker fee tier in tenths of a basis point. See `FEE_TIERS` for
 /// the full volume-to-fee mapping.
 #[must_use]
 #[allow(clippy::bool_to_int_with_if)]
