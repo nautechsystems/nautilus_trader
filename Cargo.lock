@@ -5795,6 +5795,7 @@ version = "0.54.0"
 dependencies = [
  "nautilus-analysis",
  "nautilus-architect-ax",
+ "nautilus-backtest",
  "nautilus-binance",
  "nautilus-bitmex",
  "nautilus-blockchain",

@@ -36,26 +36,29 @@ Export ``NAUTILUS_LOG=debug`` for verbose Rust logging (defaults to INFO).
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import os
 
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core import nautilus_pyo3
 
 
-async def run() -> None:
-    config_filepath: Path = (
-        PACKAGE_ROOT  # project root
-        / "crates"
-        / "adapters"
-        / "tardis"
-        / "bin"
-        / "example_config.json"
-    ).resolve()
-
-    if not config_filepath.is_file():
+def _resolve_config_filepath() -> str:
+    config_filepath = os.path.join(
+        str(PACKAGE_ROOT),
+        "crates",
+        "adapters",
+        "tardis",
+        "bin",
+        "example_config.json",
+    )
+    if not os.path.isfile(config_filepath):
         raise FileNotFoundError(f"Unable to locate example_config.json at {config_filepath}")
+    return config_filepath
 
-    await nautilus_pyo3.run_tardis_machine_replay(str(config_filepath))
+
+async def run() -> None:
+    config_filepath = _resolve_config_filepath()
+    await nautilus_pyo3.run_tardis_machine_replay(config_filepath)
 
 
 if __name__ == "__main__":

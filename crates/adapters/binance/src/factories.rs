@@ -40,7 +40,11 @@ use crate::{
 };
 
 /// Factory for creating Binance data clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+)]
 pub struct BinanceDataClientFactory;
 
 impl BinanceDataClientFactory {
@@ -54,6 +58,20 @@ impl BinanceDataClientFactory {
 impl Default for BinanceDataClientFactory {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BinanceDataClientFactory {
+    #[new]
+    fn py_new() -> Self {
+        Self
+    }
+
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> &str {
+        BINANCE
     }
 }
 
@@ -109,7 +127,11 @@ impl DataClientFactory for BinanceDataClientFactory {
 }
 
 /// Factory for creating Binance Spot execution clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+)]
 pub struct BinanceExecutionClientFactory;
 
 impl BinanceExecutionClientFactory {
@@ -123,6 +145,20 @@ impl BinanceExecutionClientFactory {
 impl Default for BinanceExecutionClientFactory {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BinanceExecutionClientFactory {
+    #[new]
+    fn py_new() -> Self {
+        Self
+    }
+
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> &str {
+        BINANCE
     }
 }
 

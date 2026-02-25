@@ -15,7 +15,7 @@
 
 //! Configuration types for the backtest engine, venues, data, and run parameters.
 
-use std::time::Duration;
+use std::{collections::HashMap, fmt::Display, str::FromStr, time::Duration};
 
 use ahash::AHashMap;
 use nautilus_common::{
@@ -49,8 +49,36 @@ pub enum NautilusDataType {
     InstrumentClose,
 }
 
+impl Display for NautilusDataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+
+impl FromStr for NautilusDataType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        match s {
+            stringify!(QuoteTick) => Ok(Self::QuoteTick),
+            stringify!(TradeTick) => Ok(Self::TradeTick),
+            stringify!(Bar) => Ok(Self::Bar),
+            stringify!(OrderBookDelta) => Ok(Self::OrderBookDelta),
+            stringify!(OrderBookDepth10) => Ok(Self::OrderBookDepth10),
+            stringify!(MarkPriceUpdate) => Ok(Self::MarkPriceUpdate),
+            stringify!(IndexPriceUpdate) => Ok(Self::IndexPriceUpdate),
+            stringify!(InstrumentClose) => Ok(Self::InstrumentClose),
+            _ => anyhow::bail!("Invalid `NautilusDataType`: '{s}'"),
+        }
+    }
+}
+
 /// Configuration for ``BacktestEngine`` instances.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+)]
 pub struct BacktestEngineConfig {
     /// The kernel environment context.
     pub environment: Environment,
@@ -254,8 +282,107 @@ impl Default for BacktestEngineConfig {
     }
 }
 
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BacktestEngineConfig {
+    #[new]
+    #[pyo3(signature = (
+        trader_id = None,
+        load_state = None,
+        save_state = None,
+        bypass_logging = None,
+        run_analysis = None,
+        timeout_connection = None,
+        timeout_reconciliation = None,
+        timeout_portfolio = None,
+        timeout_disconnection = None,
+        delay_post_stop = None,
+        timeout_shutdown = None,
+        logging = None,
+        instance_id = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_new(
+        trader_id: Option<TraderId>,
+        load_state: Option<bool>,
+        save_state: Option<bool>,
+        bypass_logging: Option<bool>,
+        run_analysis: Option<bool>,
+        timeout_connection: Option<u64>,
+        timeout_reconciliation: Option<u64>,
+        timeout_portfolio: Option<u64>,
+        timeout_disconnection: Option<u64>,
+        delay_post_stop: Option<u64>,
+        timeout_shutdown: Option<u64>,
+        logging: Option<LoggerConfig>,
+        instance_id: Option<UUID4>,
+    ) -> Self {
+        Self::new(
+            Environment::Backtest,
+            trader_id.unwrap_or_default(),
+            load_state,
+            save_state,
+            bypass_logging,
+            run_analysis,
+            timeout_connection,
+            timeout_reconciliation,
+            timeout_portfolio,
+            timeout_disconnection,
+            delay_post_stop,
+            timeout_shutdown,
+            logging,
+            instance_id,
+            None, // cache
+            None, // msgbus
+            None, // data_engine
+            None, // risk_engine
+            None, // exec_engine
+            None, // portfolio
+            None, // streaming
+        )
+    }
+
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    #[pyo3(name = "load_state")]
+    const fn py_load_state(&self) -> bool {
+        self.load_state
+    }
+
+    #[getter]
+    #[pyo3(name = "save_state")]
+    const fn py_save_state(&self) -> bool {
+        self.save_state
+    }
+
+    #[getter]
+    #[pyo3(name = "bypass_logging")]
+    const fn py_bypass_logging(&self) -> bool {
+        self.bypass_logging
+    }
+
+    #[getter]
+    #[pyo3(name = "run_analysis")]
+    const fn py_run_analysis(&self) -> bool {
+        self.run_analysis
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
 /// Represents a venue configuration for one specific backtest engine.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+)]
 pub struct BacktestVenueConfig {
     /// The name of the venue.
     name: Ustr,
@@ -483,8 +610,142 @@ impl BacktestVenueConfig {
     }
 }
 
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BacktestVenueConfig {
+    #[new]
+    #[pyo3(signature = (
+        name,
+        oms_type,
+        account_type,
+        book_type,
+        starting_balances,
+        routing = None,
+        frozen_account = None,
+        reject_stop_orders = None,
+        support_gtd_orders = None,
+        support_contingent_orders = None,
+        use_position_ids = None,
+        use_random_ids = None,
+        use_reduce_only = None,
+        bar_execution = None,
+        bar_adaptive_high_low_ordering = None,
+        trade_execution = None,
+        use_market_order_acks = None,
+        liquidity_consumption = None,
+        allow_cash_borrowing = None,
+        base_currency = None,
+        default_leverage = None,
+        leverages = None,
+        price_protection_points = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_new(
+        name: &str,
+        oms_type: OmsType,
+        account_type: AccountType,
+        book_type: BookType,
+        starting_balances: Vec<String>,
+        routing: Option<bool>,
+        frozen_account: Option<bool>,
+        reject_stop_orders: Option<bool>,
+        support_gtd_orders: Option<bool>,
+        support_contingent_orders: Option<bool>,
+        use_position_ids: Option<bool>,
+        use_random_ids: Option<bool>,
+        use_reduce_only: Option<bool>,
+        bar_execution: Option<bool>,
+        bar_adaptive_high_low_ordering: Option<bool>,
+        trade_execution: Option<bool>,
+        use_market_order_acks: Option<bool>,
+        liquidity_consumption: Option<bool>,
+        allow_cash_borrowing: Option<bool>,
+        base_currency: Option<Currency>,
+        default_leverage: Option<f64>,
+        leverages: Option<HashMap<InstrumentId, f64>>,
+        price_protection_points: Option<u32>,
+    ) -> Self {
+        let leverages = leverages.map(|m| m.into_iter().collect());
+        Self::new(
+            Ustr::from(name),
+            oms_type,
+            account_type,
+            book_type,
+            routing,
+            frozen_account,
+            reject_stop_orders,
+            support_gtd_orders,
+            support_contingent_orders,
+            use_position_ids,
+            use_random_ids,
+            use_reduce_only,
+            bar_execution,
+            bar_adaptive_high_low_ordering,
+            trade_execution,
+            use_market_order_acks,
+            liquidity_consumption,
+            allow_cash_borrowing,
+            starting_balances,
+            base_currency,
+            default_leverage,
+            leverages,
+            price_protection_points,
+        )
+    }
+
+    #[getter]
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    #[getter]
+    #[pyo3(name = "oms_type")]
+    const fn py_oms_type(&self) -> OmsType {
+        self.oms_type
+    }
+
+    #[getter]
+    #[pyo3(name = "account_type")]
+    const fn py_account_type(&self) -> AccountType {
+        self.account_type
+    }
+
+    #[getter]
+    #[pyo3(name = "book_type")]
+    const fn py_book_type(&self) -> BookType {
+        self.book_type
+    }
+
+    #[getter]
+    #[pyo3(name = "starting_balances")]
+    fn py_starting_balances(&self) -> Vec<String> {
+        self.starting_balances.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "bar_execution")]
+    const fn py_bar_execution(&self) -> bool {
+        self.bar_execution
+    }
+
+    #[getter]
+    #[pyo3(name = "trade_execution")]
+    const fn py_trade_execution(&self) -> bool {
+        self.trade_execution
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
 /// Represents the data configuration for one specific backtest run.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+)]
 pub struct BacktestDataConfig {
     /// The type of data to query from the catalog.
     data_type: NautilusDataType,
@@ -693,9 +954,97 @@ impl BacktestDataConfig {
     }
 }
 
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BacktestDataConfig {
+    #[new]
+    #[pyo3(signature = (
+        data_type,
+        catalog_path,
+        catalog_fs_protocol = None,
+        catalog_fs_storage_options = None,
+        instrument_id = None,
+        instrument_ids = None,
+        start_time = None,
+        end_time = None,
+        filter_expr = None,
+        client_id = None,
+        metadata = None,
+        bar_spec = None,
+        bar_types = None,
+        optimize_file_loading = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_new(
+        data_type: &str,
+        catalog_path: String,
+        catalog_fs_protocol: Option<String>,
+        catalog_fs_storage_options: Option<HashMap<String, String>>,
+        instrument_id: Option<InstrumentId>,
+        instrument_ids: Option<Vec<InstrumentId>>,
+        start_time: Option<u64>,
+        end_time: Option<u64>,
+        filter_expr: Option<String>,
+        client_id: Option<ClientId>,
+        metadata: Option<HashMap<String, String>>,
+        bar_spec: Option<BarSpecification>,
+        bar_types: Option<Vec<String>>,
+        optimize_file_loading: Option<bool>,
+    ) -> pyo3::PyResult<Self> {
+        let data_type = data_type
+            .parse::<NautilusDataType>()
+            .map_err(nautilus_core::python::to_pyvalue_err)?;
+        let catalog_fs_storage_options =
+            catalog_fs_storage_options.map(|m| m.into_iter().collect());
+        let metadata = metadata.map(|m| m.into_iter().collect());
+        Ok(Self::new(
+            data_type,
+            catalog_path,
+            catalog_fs_protocol,
+            catalog_fs_storage_options,
+            instrument_id,
+            instrument_ids,
+            start_time.map(UnixNanos::from),
+            end_time.map(UnixNanos::from),
+            filter_expr,
+            client_id,
+            metadata,
+            bar_spec,
+            bar_types,
+            optimize_file_loading,
+        ))
+    }
+
+    #[getter]
+    #[pyo3(name = "data_type")]
+    fn py_data_type(&self) -> String {
+        self.data_type.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "catalog_path")]
+    fn py_catalog_path(&self) -> &str {
+        &self.catalog_path
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> Option<InstrumentId> {
+        self.instrument_id
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
 /// Represents the configuration for one specific backtest run.
 /// This includes a backtest engine with its actors and strategies, with the external inputs of venues and data.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+)]
 pub struct BacktestRunConfig {
     /// The unique identifier for this run configuration.
     id: String,
@@ -783,5 +1132,53 @@ impl BacktestRunConfig {
     #[must_use]
     pub fn end(&self) -> Option<UnixNanos> {
         self.end
+    }
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BacktestRunConfig {
+    #[new]
+    #[pyo3(signature = (
+        venues,
+        data,
+        engine = None,
+        id = None,
+        chunk_size = None,
+        dispose_on_completion = None,
+        start = None,
+        end = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_new(
+        venues: Vec<BacktestVenueConfig>,
+        data: Vec<BacktestDataConfig>,
+        engine: Option<BacktestEngineConfig>,
+        id: Option<String>,
+        chunk_size: Option<usize>,
+        dispose_on_completion: Option<bool>,
+        start: Option<u64>,
+        end: Option<u64>,
+    ) -> Self {
+        Self::new(
+            id,
+            venues,
+            data,
+            engine.unwrap_or_default(),
+            chunk_size,
+            dispose_on_completion,
+            start.map(UnixNanos::from),
+            end.map(UnixNanos::from),
+        )
+    }
+
+    #[getter]
+    #[pyo3(name = "id")]
+    fn py_id(&self) -> &str {
+        &self.id
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
     }
 }

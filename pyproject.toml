@@ -236,8 +236,9 @@ ignore = [
   "PLW0108", # unnecessary-lambda (lambdas needed for deferred evaluation in tests)
   "FURB110", # if-exp-instead-of-or-operator (ternary is often clearer than or)
   "FURB171", # single-item-membership-test (intentional for clarity)
+  "PD901", # df variable name (acceptable in data processing)
+  "UP038", # isinstance union syntax (tuple form is clearer for multiple types)
   "UP042", # Class inherits from both str and Enum (StrEnum pattern used intentionally)
-  "ASYNC240", # async-pathlib (pathlib in async ok for simple checks, refactor later)
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided

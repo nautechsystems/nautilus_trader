@@ -654,6 +654,18 @@ pytest:  #-- Run Python tests with pytest in parallel with immediate failure rep
 test-performance:  #-- Run performance tests with codspeed benchmarking
 	uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
 
+#== v2 (python/)
+
+.PHONY: build-debug-v2
+build-debug-v2:  #-- Build the v2 Python package in debug mode (fast incremental builds)
+	$(info $(M) Building v2 extension in debug mode...)
+	$Q cd python && uv run maturin develop
+
+.PHONY: pytest-v2
+pytest-v2:  #-- Run v2 Python tests
+	$(info $(M) Running v2 Python tests...)
+	$Q cd python && uv run --no-sync pytest tests/ -v
+
 #== CLI Tools
 
 .PHONY: install-cli
