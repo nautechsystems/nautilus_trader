@@ -742,6 +742,7 @@ impl ParquetDataCatalog {
 
         // Read each instrument file (written as Parquet). Use the builder's schema for
         // metadata (Arrow restores it from ARROW:schema); batch.schema() has metadata stripped.
+        // Use to_object_path_parsed so paths from list() are not re-encoded by Path::from.
         for dir_path in instrument_dirs {
             let file_path = format!("{dir_path}/instrument.parquet");
             let object_path = self.to_object_path_parsed(&file_path)?;

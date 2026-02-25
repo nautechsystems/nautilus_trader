@@ -384,9 +384,9 @@ cdef class MatchingCore:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cdef bint _is_inside_spread(self, OrderSide side, Price price):
-        # Check if a limit order is priced inside the bid-ask spread.
-        # Called only after is_limit_fillable would be False for crosses (i.e. BUY price < ask,
-        # or SELL price > bid), so we only need the opposite-side check.
+        # Check if a limit order is priced inside the bid-ask spread
+        if price is None:
+            return False
         if side == OrderSide.BUY:
             return self.is_bid_initialized and price._mem.raw >= self.bid_raw
         elif side == OrderSide.SELL:
