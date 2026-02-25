@@ -31,11 +31,12 @@ use nautilus_common::{
         RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
         SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData,
         SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+        UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
 #[cfg(feature = "defi")]
@@ -69,6 +70,7 @@ pub struct DataClientAdapter {
     pub subscriptions_mark_prices: AHashSet<InstrumentId>,
     pub subscriptions_index_prices: AHashSet<InstrumentId>,
     pub subscriptions_funding_rates: AHashSet<InstrumentId>,
+    pub subscriptions_option_greeks: AHashSet<InstrumentId>,
     #[cfg(feature = "defi")]
     pub subscriptions_blocks: AHashSet<Blockchain>,
     #[cfg(feature = "defi")]
@@ -145,6 +147,7 @@ impl DataClientAdapter {
             subscriptions_mark_prices: AHashSet::new(),
             subscriptions_index_prices: AHashSet::new(),
             subscriptions_funding_rates: AHashSet::new(),
+            subscriptions_option_greeks: AHashSet::new(),
             subscriptions_bars: AHashSet::new(),
             subscriptions_instrument_status: AHashSet::new(),
             subscriptions_instrument_close: AHashSet::new(),
@@ -206,6 +209,8 @@ impl DataClientAdapter {
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
             SubscribeCommand::InstrumentStatus(cmd) => self.subscribe_instrument_status(cmd),
             SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
+            SubscribeCommand::OptionGreeks(cmd) => self.subscribe_option_greeks(cmd),
+            SubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
         } {
             log_command_error(&cmd, &e);
         }
@@ -228,6 +233,8 @@ impl DataClientAdapter {
             UnsubscribeCommand::FundingRates(cmd) => self.unsubscribe_funding_rates(cmd),
             UnsubscribeCommand::InstrumentStatus(cmd) => self.unsubscribe_instrument_status(cmd),
             UnsubscribeCommand::InstrumentClose(cmd) => self.unsubscribe_instrument_close(cmd),
+            UnsubscribeCommand::OptionGreeks(cmd) => self.unsubscribe_option_greeks(cmd),
+            UnsubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
         } {
             log_command_error(&cmd, &e);
         }
@@ -608,6 +615,38 @@ impl DataClientAdapter {
             self.subscriptions_instrument_close
                 .remove(&cmd.instrument_id);
             self.client.unsubscribe_instrument_close(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Subscribes to option greeks for an instrument, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+        if !self
+            .subscriptions_option_greeks
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_option_greeks.insert(cmd.instrument_id);
+            self.client.subscribe_option_greeks(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Unsubscribes from option greeks for an instrument, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
+        if self
+            .subscriptions_option_greeks
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_option_greeks.remove(&cmd.instrument_id);
+            self.client.unsubscribe_option_greeks(cmd)?;
         }
         Ok(())
     }
