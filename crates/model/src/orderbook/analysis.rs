@@ -111,18 +111,18 @@ pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, BookL
     }
 }
 
-/// Calculates the highest encountered price while filling a specified quantity
+/// Calculates the worst (last-touched) price while filling a specified quantity
 /// from order book levels.
 ///
-/// If there is insufficient liquidity, returns the highest encountered price
-/// across all matched levels. Returns `None` when no quantity can be matched.
+/// For buy-side traversal this is the highest ask touched; for sell-side traversal
+/// this is the lowest bid touched. Returns `None` when no quantity can be matched.
 #[must_use]
-pub fn get_target_px_for_quantity(
+pub fn get_worst_px_for_quantity(
     qty: Quantity,
     levels: &BTreeMap<BookPrice, BookLevel>,
 ) -> Option<Price> {
     let mut cumulative_size_raw: QuantityRaw = 0;
-    let mut target_price: Option<Price> = None;
+    let mut worst_price: Option<Price> = None;
 
     for (book_price, level) in levels {
         let size_this_level = level.size_raw().min(qty.raw - cumulative_size_raw);
@@ -132,10 +132,7 @@ pub fn get_target_px_for_quantity(
         }
 
         cumulative_size_raw += size_this_level;
-        let level_price = book_price.value;
-        if target_price.is_none_or(|price| level_price > price) {
-            target_price = Some(level_price);
-        }
+        worst_price = Some(book_price.value);
 
         if cumulative_size_raw >= qty.raw {
             break;
@@ -145,7 +142,7 @@ pub fn get_target_px_for_quantity(
     if cumulative_size_raw == 0 {
         None
     } else {
-        target_price
+        worst_price
     }
 }
 

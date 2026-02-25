@@ -1552,7 +1552,7 @@ fn test_book_filtered_with_own_orders_larger_size() {
 }
 
 #[rstest]
-fn test_book_get_target_price_for_quantity() {
+fn test_book_get_worst_price_for_quantity() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
@@ -1588,24 +1588,24 @@ fn test_book_get_target_price_for_quantity() {
     let qty = Quantity::from("1.5");
 
     assert_eq!(
-        book.get_target_px_for_quantity(qty, OrderSide::Buy),
+        book.get_worst_px_for_quantity(qty, OrderSide::Buy),
         Some(Price::from("2.010"))
     );
     assert_eq!(
-        book.get_target_px_for_quantity(qty, OrderSide::Sell),
-        Some(Price::from("1.000"))
+        book.get_worst_px_for_quantity(qty, OrderSide::Sell),
+        Some(Price::from("0.990"))
     );
 }
 
 #[rstest]
-fn test_book_get_target_price_for_quantity_no_market() {
+fn test_book_get_worst_price_for_quantity_no_market() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
     let qty = Quantity::from(1);
 
-    assert_eq!(book.get_target_px_for_quantity(qty, OrderSide::Buy), None);
-    assert_eq!(book.get_target_px_for_quantity(qty, OrderSide::Sell), None);
+    assert_eq!(book.get_worst_px_for_quantity(qty, OrderSide::Buy), None);
+    assert_eq!(book.get_worst_px_for_quantity(qty, OrderSide::Sell), None);
 }
 
 #[rstest]

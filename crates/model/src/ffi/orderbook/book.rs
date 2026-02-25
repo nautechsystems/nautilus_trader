@@ -308,12 +308,12 @@ pub extern "C" fn orderbook_get_avg_px_for_quantity(
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn orderbook_get_target_px_for_quantity(
+pub extern "C" fn orderbook_get_worst_px_for_quantity(
     book: &mut OrderBook_API,
     qty: Quantity,
     order_side: OrderSide,
 ) -> Price {
-    book.get_target_px_for_quantity(qty, order_side)
+    book.get_worst_px_for_quantity(qty, order_side)
         .unwrap_or(ERROR_PRICE)
 }
 

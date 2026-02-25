@@ -334,9 +334,9 @@ impl OrderBook {
         self.get_avg_px_for_quantity(qty, order_side)
     }
 
-    #[pyo3(name = "get_target_px_for_quantity")]
-    fn py_get_target_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> Option<Price> {
-        self.get_target_px_for_quantity(qty, order_side)
+    #[pyo3(name = "get_worst_px_for_quantity")]
+    fn py_get_worst_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> Option<Price> {
+        self.get_worst_px_for_quantity(qty, order_side)
     }
 
     #[pyo3(name = "get_avg_px_qty_for_exposure")]

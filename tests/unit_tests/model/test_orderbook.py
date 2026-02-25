@@ -204,7 +204,7 @@ class TestOrderBook:
             OrderSide.SELL,
         ],
     )
-    def test_get_target_px_for_quantity_when_no_market(self, order_side: OrderSide) -> None:
+    def test_get_worst_px_for_quantity_when_no_market(self, order_side: OrderSide) -> None:
         # Arrange
         book = OrderBook(
             instrument_id=self.instrument.id,
@@ -214,7 +214,7 @@ class TestOrderBook:
         quantity = Quantity.from_str("1.0")
 
         # Act, Assert
-        result = book.get_target_px_for_quantity(quantity, order_side)
+        result = book.get_worst_px_for_quantity(quantity, order_side)
         assert result is None
 
     @pytest.mark.parametrize(
@@ -260,7 +260,7 @@ class TestOrderBook:
         # Assert
         assert result == expected
 
-    def test_get_target_px_for_quantity(self) -> None:
+    def test_get_worst_px_for_quantity(self) -> None:
         # Arrange
         book = OrderBook(
             instrument_id=self.instrument.id,
@@ -311,13 +311,13 @@ class TestOrderBook:
         quantity = Quantity.from_str("150")
 
         # Act, Assert
-        buy_result = book.get_target_px_for_quantity(quantity, OrderSide.BUY)
-        sell_result = book.get_target_px_for_quantity(quantity, OrderSide.SELL)
+        buy_result = book.get_worst_px_for_quantity(quantity, OrderSide.BUY)
+        sell_result = book.get_worst_px_for_quantity(quantity, OrderSide.SELL)
 
         assert isinstance(buy_result, Price)
         assert isinstance(sell_result, Price)
         assert buy_result == Price(12.0, 1)
-        assert sell_result == Price(10.0, 1)
+        assert sell_result == Price(9.0, 1)
 
     def test_add_orders_to_book(self):
         # Arrange

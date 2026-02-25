@@ -67,7 +67,7 @@ from nautilus_trader.core.rust.model cimport orderbook_get_all_crossed_levels
 from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
 from nautilus_trader.core.rust.model cimport orderbook_get_quantity_at_level
 from nautilus_trader.core.rust.model cimport orderbook_get_quantity_for_price
-from nautilus_trader.core.rust.model cimport orderbook_get_target_px_for_quantity
+from nautilus_trader.core.rust.model cimport orderbook_get_worst_px_for_quantity
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
 from nautilus_trader.core.rust.model cimport orderbook_instrument_id
@@ -585,9 +585,9 @@ cdef class OrderBook(Data):
 
         return orderbook_get_avg_px_for_quantity(&self._mem, quantity._mem, order_side)
 
-    cpdef get_target_px_for_quantity(self, Quantity quantity, OrderSide order_side):
+    cpdef get_worst_px_for_quantity(self, Quantity quantity, OrderSide order_side):
         """
-        Return the highest encountered price required to fill the given `quantity`
+        Return the worst (last-touched) price required to fill the given `quantity`
         based on the current state of the order book.
 
         Parameters
@@ -608,13 +608,13 @@ cdef class OrderBook(Data):
 
         Warnings
         --------
-        If no target price can be calculated then returns ``None``.
+        If no worst price can be calculated then returns ``None``.
 
         """
         Condition.not_none(quantity, "quantity")
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
 
-        cdef Price_t result = orderbook_get_target_px_for_quantity(&self._mem, quantity._mem, order_side)
+        cdef Price_t result = orderbook_get_worst_px_for_quantity(&self._mem, quantity._mem, order_side)
         if result.raw == ERROR_PRICE.raw and result.precision == ERROR_PRICE.precision:
             return None
 
