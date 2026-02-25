@@ -34,6 +34,7 @@ use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
         OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PositionEvent},
     orderbook::OrderBook,
@@ -46,8 +47,9 @@ use ustr::Ustr;
 use super::{
     ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, DELTAS_HANDLERS,
     DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
-    INDEX_PRICE_HANDLERS, MARK_PRICE_HANDLERS, MESSAGE_BUS, ORDER_EVENT_HANDLERS,
-    POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
+    INDEX_PRICE_HANDLERS, MARK_PRICE_HANDLERS, MESSAGE_BUS, OPTION_CHAIN_HANDLERS,
+    OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, POSITION_EVENT_HANDLERS, QUOTE_HANDLERS,
+    TRADE_HANDLERS,
     core::{MessageBus, Subscription},
     get_message_bus,
     matching::is_matching_backtracking,
@@ -379,6 +381,30 @@ pub fn subscribe_greeks(
         .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
+/// Subscribes a handler to option greeks updates matching a pattern.
+pub fn subscribe_option_greeks(
+    pattern: MStr<Pattern>,
+    handler: TypedHandler<OptionGreeks>,
+    priority: Option<u8>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .router_option_greeks
+        .subscribe(pattern, handler, priority.unwrap_or(0));
+}
+
+/// Subscribes a handler to option chain slice updates matching a pattern.
+pub fn subscribe_option_chain(
+    pattern: MStr<Pattern>,
+    handler: TypedHandler<OptionChainSlice>,
+    priority: Option<u8>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .router_option_chain
+        .subscribe(pattern, handler, priority.unwrap_or(0));
+}
+
 /// Subscribes a handler to order events matching a pattern.
 pub fn subscribe_order_events(
     pattern: MStr<Pattern>,
@@ -659,6 +685,22 @@ pub fn unsubscribe_greeks(pattern: MStr<Pattern>, handler: &TypedHandler<GreeksD
         .unsubscribe(pattern, handler);
 }
 
+/// Unsubscribes a handler from option greeks updates.
+pub fn unsubscribe_option_greeks(pattern: MStr<Pattern>, handler: &TypedHandler<OptionGreeks>) {
+    get_message_bus()
+        .borrow_mut()
+        .router_option_greeks
+        .unsubscribe(pattern, handler);
+}
+
+/// Unsubscribes a handler from option chain slice updates.
+pub fn unsubscribe_option_chain(pattern: MStr<Pattern>, handler: &TypedHandler<OptionChainSlice>) {
+    get_message_bus()
+        .borrow_mut()
+        .router_option_chain
+        .unsubscribe(pattern, handler);
+}
+
 /// Unsubscribes a handler from DeFi blocks.
 #[cfg(feature = "defi")]
 pub fn unsubscribe_defi_blocks(pattern: MStr<Pattern>, handler: &TypedHandler<Block>) {
@@ -891,6 +933,24 @@ pub fn publish_greeks(topic: MStr<Topic>, greeks: &GreeksData) {
         &GREEKS_HANDLERS,
         |bus, h| bus.router_greeks.fill_matching_handlers(topic, h),
         greeks,
+    );
+}
+
+/// Publishes option greeks to subscribers on a topic.
+pub fn publish_option_greeks(topic: MStr<Topic>, option_greeks: &OptionGreeks) {
+    publish_typed(
+        &OPTION_GREEKS_HANDLERS,
+        |bus, h| bus.router_option_greeks.fill_matching_handlers(topic, h),
+        option_greeks,
+    );
+}
+
+/// Publishes an option chain slice to subscribers on a topic.
+pub fn publish_option_chain(topic: MStr<Topic>, slice: &OptionChainSlice) {
+    publish_typed(
+        &OPTION_CHAIN_HANDLERS,
+        |bus, h| bus.router_option_chain.fill_matching_handlers(topic, h),
+        slice,
     );
 }
 

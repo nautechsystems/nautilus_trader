@@ -24,11 +24,11 @@ use crate::messages::data::{
     RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
     SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates,
     SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-    SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-    UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
-    UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
-    UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes,
-    UnsubscribeTrades,
+    SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
+    SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+    UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+    UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+    UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
 };
 #[cfg(feature = "defi")]
 use crate::messages::defi::{
@@ -243,6 +243,16 @@ pub trait DataClient {
         Ok(())
     }
 
+    /// Subscribes to exchange-provided option greeks for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription operation fails.
+    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
     #[cfg(feature = "defi")]
     /// Subscribes to blocks for a specified blockchain.
     ///
@@ -450,6 +460,16 @@ pub trait DataClient {
         &mut self,
         cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    /// Unsubscribes from exchange-provided option greeks for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe operation fails.
+    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }

@@ -485,6 +485,42 @@ impl UnsubscribeInstrumentStatus {
 }
 
 #[derive(Clone, Debug)]
+pub struct UnsubscribeOptionGreeks {
+    pub instrument_id: InstrumentId,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
+    pub params: Option<Params>,
+}
+
+impl UnsubscribeOptionGreeks {
+    /// Creates a new [`UnsubscribeOptionGreeks`] instance.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
+        params: Option<Params>,
+    ) -> Self {
+        check_client_id_or_venue(&client_id, &venue);
+        Self {
+            instrument_id,
+            client_id,
+            venue,
+            command_id,
+            ts_init,
+            correlation_id,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct UnsubscribeInstrumentClose {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
