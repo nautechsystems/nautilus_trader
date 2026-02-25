@@ -25,6 +25,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
+use dashmap::DashSet;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
@@ -32,13 +33,14 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
-            InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestFundingRates,
-            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
-            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
+            RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeMarkPrices,
+            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -48,7 +50,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API},
+    data::{Data, OrderBookDeltas_API, option_chain::OptionForwardPrice},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -83,6 +85,7 @@ pub struct BybitDataClient {
     book_depths: Arc<RwLock<AHashMap<InstrumentId, u32>>>,
     quote_depths: Arc<RwLock<AHashMap<InstrumentId, u32>>>,
     ticker_subs: Arc<RwLock<AHashMap<InstrumentId, AHashSet<&'static str>>>>,
+    option_greeks_subs: Arc<DashSet<InstrumentId>>,
     clock: &'static AtomicTime,
 }
 
@@ -154,6 +157,7 @@ impl BybitDataClient {
             book_depths: Arc::new(RwLock::new(AHashMap::new())),
             quote_depths: Arc::new(RwLock::new(AHashMap::new())),
             ticker_subs: Arc::new(RwLock::new(AHashMap::new())),
+            option_greeks_subs: Arc::new(DashSet::new()),
             clock,
         })
     }
@@ -267,6 +271,11 @@ impl BybitDataClient {
                     }
                 }
             }
+            NautilusWsMessage::OptionGreeks(greeks) => {
+                if let Err(e) = data_sender.send(DataEvent::OptionGreeks(greeks)) {
+                    log::error!("Failed to send option greeks: {e}");
+                }
+            }
             NautilusWsMessage::OrderStatusReports(_)
             | NautilusWsMessage::FillReports(_)
             | NautilusWsMessage::PositionStatusReport(_)
@@ -338,6 +347,7 @@ impl DataClient for BybitDataClient {
         self.book_depths.write().expect(MUTEX_POISONED).clear();
         self.quote_depths.write().expect(MUTEX_POISONED).clear();
         self.ticker_subs.write().expect(MUTEX_POISONED).clear();
+        self.option_greeks_subs.clear();
         Ok(())
     }
 
@@ -385,6 +395,9 @@ impl DataClient for BybitDataClient {
         }
 
         for ws_client in &mut self.ws_clients {
+            // Share option greeks subscription set with each WS client
+            ws_client.set_option_greeks_subs(self.option_greeks_subs.clone());
+
             // Cache instruments before connecting so parser has price/size precision
             let instruments: Vec<_> = self
                 .instruments
@@ -462,6 +475,7 @@ impl DataClient for BybitDataClient {
         self.book_depths.write().expect(MUTEX_POISONED).clear();
         self.quote_depths.write().expect(MUTEX_POISONED).clear();
         self.ticker_subs.write().expect(MUTEX_POISONED).clear();
+        self.option_greeks_subs.clear();
         self.is_connected.store(false, Ordering::Release);
         log::info!("Disconnected: client_id={}", self.client_id);
         Ok(())
@@ -990,6 +1004,81 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
+    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        self.option_greeks_subs.insert(instrument_id);
+
+        let should_subscribe = {
+            let mut subs = self.ticker_subs.write().expect(MUTEX_POISONED);
+            let entry = subs.entry(instrument_id).or_default();
+            let first = entry.is_empty();
+            entry.insert("option_greeks");
+            first
+        };
+
+        if should_subscribe {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Option);
+
+            let ws = self
+                .get_ws_client_for_product(product_type)
+                .context("no WebSocket client for product type")?
+                .clone();
+
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_ticker(instrument_id)
+                        .await
+                        .context("ticker subscription for option greeks")
+                },
+                "option greeks subscription",
+            );
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        self.option_greeks_subs.remove(&instrument_id);
+
+        let should_unsubscribe = {
+            let mut subs = self.ticker_subs.write().expect(MUTEX_POISONED);
+            if let Some(entry) = subs.get_mut(&instrument_id) {
+                entry.remove("option_greeks");
+                if entry.is_empty() {
+                    subs.remove(&instrument_id);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+
+        if should_unsubscribe {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Option);
+
+            let ws = self
+                .get_ws_client_for_product(product_type)
+                .context("no WebSocket client for product type")?
+                .clone();
+
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_ticker(instrument_id)
+                        .await
+                        .context("ticker unsubscribe for option greeks")
+                },
+                "option greeks unsubscribe",
+            );
+        }
+        Ok(())
+    }
+
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
@@ -1284,6 +1373,79 @@ impl DataClient for BybitDataClient {
                     }
                 }
                 Err(e) => log::error!("Funding rates request failed for {instrument_id}: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
+        if request.data_type.type_name() != "OptionForwardPrices" {
+            log::warn!(
+                "Bybit data client does not handle custom data type: {}",
+                request.data_type.type_name(),
+            );
+            return Ok(());
+        }
+
+        let base_coin = request
+            .data_type
+            .metadata()
+            .and_then(|m| m.get("currency").cloned())
+            .unwrap_or_else(|| "BTC".to_string());
+
+        let http_client = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id;
+        let data_type = request.data_type.clone();
+        let params = request.params;
+        let clock = self.clock;
+        let venue = *BYBIT_VENUE;
+
+        log::info!("Requesting option forward prices for base_coin={base_coin}");
+
+        get_runtime().spawn(async move {
+            match http_client.request_option_tickers_raw(&base_coin).await {
+                Ok(tickers) => {
+                    let forward_prices: Vec<OptionForwardPrice> = tickers
+                        .into_iter()
+                        .filter_map(|t| {
+                            let up: f64 = t.underlying_price.parse().ok()?;
+                            if up == 0.0 {
+                                return None;
+                            }
+                            Some(OptionForwardPrice {
+                                instrument_name: t.symbol.to_string(),
+                                underlying_price: up,
+                                underlying_index: None,
+                            })
+                        })
+                        .collect();
+
+                    log::info!(
+                        "Fetched {} option forward prices for {base_coin}",
+                        forward_prices.len(),
+                    );
+
+                    let response = DataResponse::Data(CustomDataResponse::new(
+                        request_id,
+                        client_id,
+                        Some(venue),
+                        data_type,
+                        forward_prices,
+                        None,
+                        None,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send forward prices response: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Forward prices request failed for {base_coin}: {e:?}");
+                }
             }
         });
 

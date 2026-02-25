@@ -122,3 +122,17 @@ name = "bybit-exec-tester"
 path = "examples/node_exec_tester.rs"
 required-features = []
 doc = false
+
+# Run with `cargo run --example bybit-greeks-tester --package nautilus-bybit`.
+[[example]]
+name = "bybit-greeks-tester"
+path = "examples/node_greeks.rs"
+required-features = []
+doc = false
+
+# Run with `cargo run --example bybit-option-chain --package nautilus-bybit`.
+[[example]]
+name = "bybit-option-chain"
+path = "examples/node_option_chain.rs"
+required-features = []
+doc = false

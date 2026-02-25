@@ -15,7 +15,10 @@
 //! WebSocket message types for Bybit public and private channels.
 
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas},
+    data::{
+        Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
+        option_chain::OptionGreeks,
+    },
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
@@ -122,6 +125,8 @@ pub enum NautilusWsMessage {
     OrderCancelRejected(OrderCancelRejected),
     /// Order modify rejected event (from failed amend operation).
     OrderModifyRejected(OrderModifyRejected),
+    /// Exchange-provided option Greeks from ticker data.
+    OptionGreeks(OptionGreeks),
     /// Error from venue or client.
     Error(BybitWebSocketError),
     /// WebSocket reconnected notification.

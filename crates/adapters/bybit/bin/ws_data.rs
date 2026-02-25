@@ -106,6 +106,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             );
                         }
                     }
+                    NautilusWsMessage::OptionGreeks(greeks) => {
+                        log::info!(
+                            "option greeks: instrument={}, delta={:.4}, gamma={:.6}, vega={:.4}, theta={:.4}",
+                            greeks.instrument_id, greeks.delta, greeks.gamma, greeks.vega, greeks.theta
+                        );
+                    }
                     NautilusWsMessage::OrderStatusReports(reports) => {
                         log::info!("order status reports: count={}", reports.len());
                         for report in reports {

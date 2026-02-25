@@ -2838,6 +2838,37 @@ impl BybitHttpClient {
         }
     }
 
+    /// Requests raw option tickers for a given base coin.
+    ///
+    /// Returns `Vec<BybitTickerOption>` with the raw fields including `underlying_price`.
+    /// Used for fetching forward prices for option chain bootstrap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_option_tickers_raw(
+        &self,
+        base_coin: &str,
+    ) -> anyhow::Result<Vec<super::models::BybitTickerOption>> {
+        use super::models::BybitTickersOptionResponse;
+
+        let params = super::query::BybitTickersParams {
+            category: BybitProductType::Option,
+            symbol: None,
+            base_coin: Some(base_coin.to_string()),
+            exp_date: None,
+        };
+        let response: BybitTickersOptionResponse = self.inner.get_tickers(&params).await?;
+
+        log::info!(
+            "Fetched {} raw option tickers for {}",
+            response.result.list.len(),
+            base_coin,
+        );
+
+        Ok(response.result.list)
+    }
+
     /// Request recent trade tick history for a given symbol.
     ///
     /// Returns the most recent public trades from Bybit's `/v5/market/recent-trade` endpoint.

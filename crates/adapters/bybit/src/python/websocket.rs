@@ -282,6 +282,9 @@ impl BybitWebSocketClient {
                                 err.into_py_any(py).map(|obj| obj.into_bound(py))
                             });
                         }
+                        NautilusWsMessage::OptionGreeks(_greeks) => {
+                            log::debug!("Received option greeks (not dispatched to Python)");
+                        }
                         NautilusWsMessage::Reconnected => {
                             log::info!("WebSocket reconnected");
                         }

@@ -28,7 +28,7 @@ use std::{
 
 use ahash::AHashMap;
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use nautilus_common::live::get_runtime;
 use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT};
 use nautilus_model::{
@@ -107,6 +107,7 @@ pub struct BybitWebSocketClient {
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     bar_types_cache: Arc<DashMap<String, BarType>>,
     funding_cache: FundingCache,
+    option_greeks_subs: Arc<DashSet<InstrumentId>>,
     cancellation_token: CancellationToken,
 }
 
@@ -145,6 +146,7 @@ impl Clone for BybitWebSocketClient {
             instruments_cache: Arc::clone(&self.instruments_cache),
             bar_types_cache: Arc::clone(&self.bar_types_cache),
             funding_cache: Arc::clone(&self.funding_cache),
+            option_greeks_subs: Arc::clone(&self.option_greeks_subs),
             cancellation_token: self.cancellation_token.clone(),
         }
     }
@@ -198,6 +200,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             bars_timestamp_on_close: true,
             funding_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
+            option_greeks_subs: Arc::new(DashSet::new()),
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -247,6 +250,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             bars_timestamp_on_close: true,
             funding_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
+            option_greeks_subs: Arc::new(DashSet::new()),
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -296,8 +300,14 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             bars_timestamp_on_close: true,
             funding_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
+            option_greeks_subs: Arc::new(DashSet::new()),
             cancellation_token: CancellationToken::new(),
         }
+    }
+
+    /// Sets the shared option greeks subscription set.
+    pub fn set_option_greeks_subs(&mut self, subs: Arc<DashSet<InstrumentId>>) {
+        self.option_greeks_subs = subs;
     }
 
     /// Establishes the WebSocket connection.
@@ -450,6 +460,7 @@ impl BybitWebSocketClient {
         let cmd_tx_for_reconnect = cmd_tx.clone();
         let auth_tracker = self.auth_tracker.clone();
         let auth_tracker_for_handler = auth_tracker.clone();
+        let option_greeks_subs = Arc::clone(&self.option_greeks_subs);
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
@@ -465,6 +476,7 @@ impl BybitWebSocketClient {
                 subscriptions.clone(),
                 funding_cache.clone(),
                 bar_types_cache.clone(),
+                option_greeks_subs,
             );
 
             // Helper closure to resubscribe all tracked subscriptions after reconnection
