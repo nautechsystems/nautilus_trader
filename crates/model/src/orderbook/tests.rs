@@ -1552,6 +1552,63 @@ fn test_book_filtered_with_own_orders_larger_size() {
 }
 
 #[rstest]
+fn test_book_get_worst_price_for_quantity() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.010"),
+        Quantity::from("2.0"),
+        1,
+    );
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("1.0"),
+        2,
+    );
+    let bid1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("1.000"),
+        Quantity::from("1.0"),
+        3,
+    );
+    let bid2 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("0.990"),
+        Quantity::from("2.0"),
+        4,
+    );
+    book.add(bid1, 0, 1, 2.into());
+    book.add(bid2, 0, 1, 2.into());
+    book.add(ask1, 0, 1, 2.into());
+    book.add(ask2, 0, 1, 2.into());
+
+    let qty = Quantity::from("1.5");
+
+    assert_eq!(
+        book.get_worst_px_for_quantity(qty, OrderSide::Buy),
+        Some(Price::from("2.010"))
+    );
+    assert_eq!(
+        book.get_worst_px_for_quantity(qty, OrderSide::Sell),
+        Some(Price::from("0.990"))
+    );
+}
+
+#[rstest]
+fn test_book_get_worst_price_for_quantity_no_market() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let qty = Quantity::from(1);
+
+    assert_eq!(book.get_worst_px_for_quantity(qty, OrderSide::Buy), None);
+    assert_eq!(book.get_worst_px_for_quantity(qty, OrderSide::Sell), None);
+}
+
+#[rstest]
 fn test_book_filtered_with_own_orders_different_level() {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);

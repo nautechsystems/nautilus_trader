@@ -28,7 +28,7 @@ use crate::{
     enums::{BookType, OrderSide},
     identifiers::InstrumentId,
     orderbook::{OrderBook, analysis::book_check_integrity},
-    types::{Price, Quantity},
+    types::{ERROR_PRICE, Price, Quantity},
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
@@ -304,6 +304,17 @@ pub extern "C" fn orderbook_get_avg_px_for_quantity(
     order_side: OrderSide,
 ) -> f64 {
     book.get_avg_px_for_quantity(qty, order_side)
+}
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_get_worst_px_for_quantity(
+    book: &mut OrderBook_API,
+    qty: Quantity,
+    order_side: OrderSide,
+) -> Price {
+    book.get_worst_px_for_quantity(qty, order_side)
+        .unwrap_or(ERROR_PRICE)
 }
 
 #[unsafe(no_mangle)]

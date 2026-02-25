@@ -2141,6 +2141,10 @@ cdef extern from "../includes/model.h":
                                              Quantity_t qty,
                                              OrderSide order_side);
 
+    Price_t orderbook_get_worst_px_for_quantity(OrderBook_API *book,
+                                                Quantity_t qty,
+                                                OrderSide order_side);
+
     double orderbook_get_quantity_for_price(OrderBook_API *book,
                                             Price_t price,
                                             OrderSide order_side);

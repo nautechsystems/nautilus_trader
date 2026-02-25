@@ -3171,6 +3171,10 @@ double orderbook_get_avg_px_for_quantity(struct OrderBook_API *book,
                                          struct Quantity_t qty,
                                          enum OrderSide order_side);
 
+struct Price_t orderbook_get_worst_px_for_quantity(struct OrderBook_API *book,
+                                                   struct Quantity_t qty,
+                                                   enum OrderSide order_side);
+
 double orderbook_get_quantity_for_price(struct OrderBook_API *book,
                                         struct Price_t price,
                                         enum OrderSide order_side);

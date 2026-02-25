@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added Betfair batch submit and cancel order support
 - Added BitMEX dead man's switch (cancelAllAfter) support
 - Added BitMEX grid market maker example in Rust
+- Added orderbook helper function to get highest fill price for a quantity
 
 ### Breaking Changes
 - Removed Coinbase International (`COINBASE_INTX`) adapter, see RFC (#3555)

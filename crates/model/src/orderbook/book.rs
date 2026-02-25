@@ -868,6 +868,17 @@ impl OrderBook {
         analysis::get_avg_px_for_quantity(qty, levels)
     }
 
+    /// Calculates the worst (last-touched) price to fill the specified quantity.
+    #[must_use]
+    pub fn get_worst_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> Option<Price> {
+        let levels = match order_side.as_specified() {
+            OrderSideSpecified::Buy => &self.asks.levels,
+            OrderSideSpecified::Sell => &self.bids.levels,
+        };
+
+        analysis::get_worst_px_for_quantity(qty, levels)
+    }
+
     /// Calculates average price and quantity for target exposure. Returns (price, quantity, executed_exposure).
     #[must_use]
     pub fn get_avg_px_qty_for_exposure(
