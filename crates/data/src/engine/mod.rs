@@ -1893,10 +1893,8 @@ impl DataEngine {
         let mut best_price: Option<f64> = None;
 
         for fp in forward_prices {
-            // Check if any cached instrument with this name belongs to our series
-            let symbol = Ustr::from(&fp.instrument_name);
-            if let Some(instrument) =
-                cache.instrument(&InstrumentId::new(symbol.into(), series_id.venue))
+            // Check if any cached instrument with this id belongs to our series
+            if let Some(instrument) = cache.instrument(&fp.instrument_id)
                 && let Some(expiration) = instrument.expiration_ns()
                 && expiration == series_id.expiration_ns
                 && instrument.settlement_currency().code == series_id.settlement_currency

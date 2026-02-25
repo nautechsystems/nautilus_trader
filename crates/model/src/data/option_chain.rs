@@ -35,11 +35,11 @@ use crate::{
 /// The DataEngine extracts it via `downcast_ref::<Vec<OptionForwardPrice>>()`.
 #[derive(Clone, Debug)]
 pub struct OptionForwardPrice {
-    /// Exchange instrument name (e.g. "BTC-28MAR25-90000-C").
-    pub instrument_name: String,
+    /// Nautilus instrument ID (e.g. `BTC-28MAR25-90000-C.DERIBIT`).
+    pub instrument_id: InstrumentId,
     /// The forward/underlying price used for ATM determination.
     pub underlying_price: f64,
-    /// The underlying index name (e.g. "BTC-28MAR25" or "SYN.BTC-28MAR25").
+    /// The underlying index name (e.g. "SYN.BTC-28MAR25"). Exchange-specific metadata.
     pub underlying_index: Option<String>,
 }
 

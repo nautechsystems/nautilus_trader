@@ -53,7 +53,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API, option_chain::OptionForwardPrice},
     enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
 };
 use tokio::task::JoinHandle;
@@ -1604,7 +1604,10 @@ impl DataClient for DeribitDataClient {
                         .into_iter()
                         .filter_map(|s| {
                             s.underlying_price.map(|up| OptionForwardPrice {
-                                instrument_name: s.instrument_name,
+                                instrument_id: InstrumentId::new(
+                                    Symbol::new(&s.instrument_name),
+                                    *DERIBIT_VENUE,
+                                ),
                                 underlying_price: up.try_into().unwrap_or(0.0),
                                 underlying_index: s.underlying_index,
                             })

@@ -64,6 +64,7 @@ use crate::{
         consts::{BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_VENUE},
         enums::BybitProductType,
         parse::extract_raw_symbol,
+        symbol::BybitSymbol,
     },
     config::BybitDataClientConfig,
     http::client::BybitHttpClient,
@@ -1416,7 +1417,9 @@ impl DataClient for BybitDataClient {
                                 return None;
                             }
                             Some(OptionForwardPrice {
-                                instrument_name: t.symbol.to_string(),
+                                instrument_id: BybitSymbol::new(format!("{}-OPTION", t.symbol))
+                                    .map(|s| s.to_instrument_id())
+                                    .ok()?,
                                 underlying_price: up,
                                 underlying_index: None,
                             })
