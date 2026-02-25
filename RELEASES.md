@@ -37,7 +37,8 @@ Released on TBD (UTC).
 - Standardized adapter credentials handling and testing
 
 ### Documentation Updates
-- Added AX Exchange gold perps backtest tutorial
+- Added AX Exchange gold perps book imbalance tutorial
+- Added AX Exchange spot FX bars mean reversion tutorial
 
 ---
 

@@ -114,9 +114,7 @@ trade-off:
 - **Higher threshold** (e.g., 50 bps): Fewer transactions, but orders may sit further from
   the current price.
 
-## Configuration walkthrough
-
-### Parameter reference
+## Configuration
 
 | Parameter               | Type           | Default    | Description                                                              |
 | ----------------------- | -------------- | ---------- | ------------------------------------------------------------------------ |

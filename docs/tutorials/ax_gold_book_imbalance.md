@@ -1,4 +1,4 @@
-# AX Exchange - Gold Perpetuals with Order Book Imbalance
+# AX Exchange - Gold Perps Book Imbalance
 
 This tutorial walks through backtesting an **order book imbalance** strategy on
 **XAU-PERP** (gold perpetual) using [AX Exchange](https://architect.exchange) instrument
