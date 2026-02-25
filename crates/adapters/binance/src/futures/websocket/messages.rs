@@ -888,7 +888,7 @@ pub struct BinanceFuturesAlgoUpdateMsg {
     #[serde(rename = "T")]
     pub transaction_time: i64,
     /// Algo order data.
-    #[serde(rename = "ao")]
+    #[serde(rename = "o", alias = "ao")]
     pub algo_order: AlgoOrderUpdateData,
 }
 

@@ -1143,7 +1143,7 @@ pub struct BinanceFuturesAlgoOrder {
     /// Algo type (currently only `Conditional` is supported).
     pub algo_type: BinanceAlgoType,
     /// Order type (STOP_MARKET, STOP, TAKE_PROFIT, TAKE_PROFIT_MARKET, TRAILING_STOP_MARKET).
-    #[serde(rename = "type")]
+    #[serde(rename = "orderType", alias = "type")]
     pub order_type: BinanceFuturesOrderType,
     /// Trading symbol.
     pub symbol: Ustr,
