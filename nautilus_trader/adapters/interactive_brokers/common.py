@@ -308,7 +308,9 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
         the constructor sees it — hence this is a classmethod rather than __post_init__.
 
         """
-        contract_details.contract = IBContract(**contract_details.contract.__dict__)
+        if not isinstance(contract_details.contract, IBContract):
+            contract_details.contract = IBContract(**contract_details.contract.__dict__)
+
         d = contract_details.__dict__.copy()
         if "underConid" in d:
             if not d.get("underConId"):
