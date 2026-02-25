@@ -948,6 +948,43 @@ class TestOrderEmulatorWithSingleOrders:
         assert order not in self.cache.orders_emulated()
 
     @pytest.mark.parametrize(
+        ("order_side", "expected_trigger_price"),
+        [
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_075)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_055)],
+        ],
+    )
+    def test_submit_trailing_stop_market_order_last_price_trigger_activates_from_trade_tick(
+        self,
+        order_side: OrderSide,
+        expected_trigger_price: Price,
+    ) -> None:
+        # Arrange: Provide only trade tick (no quotes)
+        tick = TestDataStubs.trade_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            price=5_065.0,
+        )
+        self.data_engine.process(tick)
+
+        # Act: Submit trailing stop with LAST_PRICE trigger
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            trigger_type=TriggerType.LAST_PRICE,
+            trailing_offset=Decimal(10),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            emulation_trigger=TriggerType.LAST_PRICE,
+        )
+        self.strategy.submit_order(order)
+
+        # Assert: Order activated using last price, trigger price set
+        order = self.cache.order(order.client_order_id)
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET
+        assert order.is_emulated
+        assert order.trigger_price == expected_trigger_price
+
+    @pytest.mark.parametrize(
         ("order_side", "price", "expected_trigger_price"),
         [
             [
