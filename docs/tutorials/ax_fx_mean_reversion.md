@@ -1,4 +1,4 @@
-# AX Exchange - Spot FX Mean Reversion
+# AX Exchange - FX Perpetual Mean Reversion
 
 This tutorial walks through backtesting a **Bollinger Band mean reversion** strategy on
 **EURUSD-PERP** (EUR/USD perpetual) using [AX Exchange](https://architect.exchange) instrument
@@ -259,11 +259,21 @@ in the examples directory.
   AX sandbox environment for paper trading. See the
   [AX Exchange integration guide](../integrations/architect_ax.md) for setup instructions.
 
+## Running live
+
+The same strategy used in this backtest can be run live with no code changes - only a
+launch script is needed. NautilusTrader's architecture means your strategy is
+venue-agnostic: switching from backtest to live is a configuration change, not a rewrite.
+
+See the complete live example:
+[`ax_mean_reversion.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_mean_reversion.py)
+
+For connection setup and API key configuration, refer to the
+[AX Exchange integration guide](../integrations/architect_ax.md).
+
 ## Further reading
 
-- [AX Exchange integration guide](../integrations/architect_ax.md)
-- [Backtest example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/architect_ax_mean_reversion.py)
-- [Live example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_mean_reversion.py)
-- [BBMeanReversion strategy source](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/examples/strategies/bb_mean_reversion.py)
-- [AX gold backtest tutorial](ax_gold_backtest.md)
+- [AX Exchange mean reversion backtest example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/architect_ax_mean_reversion.py)
+- [`BBMeanReversion` strategy source](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/examples/strategies/bb_mean_reversion.py)
+- [AX Exchange gold book imbalance tutorial](ax_gold_book_imbalance.md)
 - [Architect Exchange documentation](https://docs.architect.exchange/)

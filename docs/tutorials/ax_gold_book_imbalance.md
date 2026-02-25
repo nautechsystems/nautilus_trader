@@ -1,4 +1,4 @@
-# AX Exchange - Gold Perps Book Imbalance
+# AX Exchange - Gold Perpetual Book Imbalance
 
 This tutorial walks through backtesting an **order book imbalance** strategy on
 **XAU-PERP** (gold perpetual) using [AX Exchange](https://architect.exchange) instrument
@@ -286,11 +286,21 @@ in the examples directory.
   metals (XAG-PERP), and more. Adapt this tutorial by downloading the corresponding CME
   futures data from Databento.
 
+## Running live
+
+The same strategy used in this backtest can be run live with no code changes - only a
+launch script is needed. NautilusTrader's architecture means your strategy is
+venue-agnostic: switching from backtest to live is a configuration change, not a rewrite.
+
+See the complete live example:
+[`ax_book_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_book_imbalance.py)
+
+For connection setup and API key configuration, refer to the
+[AX Exchange integration guide](../integrations/architect_ax.md).
+
 ## Further reading
 
-- [AX Exchange integration guide](../integrations/architect_ax.md)
-- [Backtest example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/architect_ax_book_imbalance.py)
-- [Live example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_book_imbalance.py)
-- [OrderBookImbalance strategy source](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/examples/strategies/orderbook_imbalance.py)
-- [Databento: HFT signals with sklearn](https://databento.com/blog/hft-sklearn-python)
+- [AX Exchange book imbalance backtest example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/architect_ax_book_imbalance.py)
+- [`OrderBookImbalance` strategy source](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/examples/strategies/orderbook_imbalance.py)
 - [Architect Exchange documentation](https://docs.architect.exchange/)
+- [Databento: HFT signals with sklearn](https://databento.com/blog/hft-sklearn-python)

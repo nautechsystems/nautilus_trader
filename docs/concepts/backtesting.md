@@ -376,43 +376,38 @@ For each data point the engine runs three phases:
 
 ```mermaid
 sequenceDiagram
-    participant Loop as Backtest Loop
+    participant BL as Backtest Loop
     participant Exch as SimulatedExchange
     participant ME as MatchingEngine
     participant DE as DataEngine
     participant Stgy as Strategy
-    participant Settle as Settle Venues
 
-    Loop->>Loop: next data point (ts=T)
+    BL->>BL: next data point (ts=T)
 
     rect rgb(240, 248, 255)
-    note right of Loop: Phase 1 — Exchange processes data
-    Loop->>Exch: process_quote_tick / process_bar / ...
+    note right of BL: Phase 1 - Exchange processes data
+    BL->>Exch: process_quote_tick / process_bar
     Exch->>ME: update book + iterate()
     note right of ME: Matches existing orders<br/>against new market state
     end
 
     rect rgb(245, 255, 245)
-    note right of Loop: Phase 2 — Strategy receives data
-    Loop->>DE: process(data)
-    DE->>Stgy: on_quote_tick() / on_bar() / ...
+    note right of BL: Phase 2 - Strategy receives data
+    BL->>DE: process(data)
+    DE->>Stgy: on_quote_tick() / on_bar()
     Stgy-->>Exch: submit_order (queued or immediate)
     end
 
     rect rgb(255, 248, 240)
-    note right of Loop: Phase 3 — Settle venues
-    Loop->>Settle: _process_and_settle_venues(T)
-
-    loop until no pending commands
-        Settle->>Exch: _drain_commands(T)
-        note right of Exch: Processes queued commands,<br/>adds orders to matching core
-        Settle->>ME: _core.iterate(T)
-        note right of ME: Matches newly added orders<br/>against current market state
-        note right of ME: Fills may trigger strategy<br/>callbacks that enqueue<br/>further commands
-    end
-
-    Settle->>Exch: run simulation modules
-    Settle->>Exch: check instrument expirations
+    note right of BL: Phase 3 - Settle venues
+    BL->>BL: _process_and_settle_venues(T)
+    BL->>Exch: _drain_commands(T)
+    note right of Exch: Processes queued commands,<br/>adds orders to matching core
+    BL->>ME: _core.iterate(T)
+    note right of ME: Matches newly added orders<br/>against current market state
+    note right of ME: Fills may trigger strategy callbacks<br/>that enqueue further commands,<br/>repeats until no pending commands
+    BL->>Exch: run simulation modules
+    BL->>Exch: check instrument expirations
     end
 ```
 
