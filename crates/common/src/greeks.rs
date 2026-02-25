@@ -20,7 +20,9 @@ use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 use derive_builder::Builder;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::greeks::{GreeksData, PortfolioGreeks, black_scholes_greeks, imply_vol_and_greeks},
+    data::greeks::{
+        GreeksData, OptionGreekValues, PortfolioGreeks, black_scholes_greeks, imply_vol_and_greeks,
+    },
     enums::{InstrumentClass, OptionKind, PositionSide, PriceType},
     identifiers::{InstrumentId, StrategyId, Venue},
     instruments::Instrument,
@@ -490,10 +492,13 @@ impl GreeksCalculator {
                 greeks.vol,
                 0.0,
                 greeks.price,
-                delta,
-                gamma,
-                vega,
-                greeks.theta,
+                OptionGreekValues {
+                    delta,
+                    gamma,
+                    vega,
+                    theta: greeks.theta,
+                    rho: 0.0,
+                },
                 greeks.itm_prob,
             ));
 
@@ -565,10 +570,13 @@ impl GreeksCalculator {
                 shocked_vol,
                 0.0,
                 greeks.price,
-                delta,
-                gamma,
-                vega,
-                greeks.theta,
+                OptionGreekValues {
+                    delta,
+                    gamma,
+                    vega,
+                    theta: greeks.theta,
+                    rho: 0.0,
+                },
                 greeks.itm_prob,
             );
         }
