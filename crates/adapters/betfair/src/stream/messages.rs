@@ -645,63 +645,105 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-
-    fn fixture_path(name: &str) -> std::path::PathBuf {
-        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .nth(3)
-            .expect("workspace root");
-        workspace
-            .join("tests/integration_tests/adapters/betfair/resources/streaming")
-            .join(name)
-    }
+    use crate::common::testing::load_test_json;
 
     #[rstest]
-    #[case("streaming_ocm_NEW_FULL_IMAGE.json")]
-    #[case("streaming_ocm_FILLED.json")]
-    #[case("streaming_ocm_FULL_IMAGE.json")]
-    #[case("streaming_ocm_FULL_IMAGE_STRATEGY.json")]
-    #[case("streaming_ocm_CANCEL.json")]
-    #[case("streaming_ocm_UPDATE.json")]
-    #[case("streaming_ocm_SUB_IMAGE.json")]
-    #[case("streaming_ocm_MIXED.json")]
-    #[case("streaming_ocm_EMPTY_IMAGE.json")]
+    #[case("stream/ocm_NEW_FULL_IMAGE.json")]
+    #[case("stream/ocm_FILLED.json")]
+    #[case("stream/ocm_FULL_IMAGE.json")]
+    #[case("stream/ocm_FULL_IMAGE_STRATEGY.json")]
+    #[case("stream/ocm_CANCEL.json")]
+    #[case("stream/ocm_UPDATE.json")]
+    #[case("stream/ocm_SUB_IMAGE.json")]
+    #[case("stream/ocm_MIXED.json")]
+    #[case("stream/ocm_EMPTY_IMAGE.json")]
+    #[case("stream/ocm_error_fill.json")]
+    #[case("stream/ocm_filled_different_price.json")]
+    #[case("stream/ocm_order_update.json")]
     fn test_stream_decode_ocm_fixtures(#[case] fixture: &str) {
-        let path = fixture_path(fixture);
-        let data = std::fs::read(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
-        let msg = stream_decode(&data).unwrap_or_else(|e| panic!("{fixture}: {e}"));
+        let data = load_test_json(fixture);
+        let msg = stream_decode(data.as_bytes()).unwrap_or_else(|e| panic!("{fixture}: {e}"));
         assert!(matches!(msg, StreamMessage::OrderChange(_)), "{fixture}");
     }
 
     #[rstest]
-    #[case("streaming_mcm_SUB_IMAGE.json")]
-    #[case("streaming_mcm_SUB_IMAGE_no_market_def.json")]
-    #[case("streaming_mcm_UPDATE.json")]
-    #[case("streaming_mcm_UPDATE_md.json")]
-    #[case("streaming_mcm_UPDATE_tv.json")]
-    #[case("streaming_mcm_HEARTBEAT.json")]
-    #[case("streaming_mcm_RESUB_DELTA.json")]
-    #[case("streaming_mcm_live_IMAGE.json")]
-    #[case("streaming_mcm_live_UPDATE.json")]
-    #[case("streaming_mcm_latency.json")]
+    #[case("stream/mcm_SUB_IMAGE.json")]
+    #[case("stream/mcm_SUB_IMAGE_no_market_def.json")]
+    #[case("stream/mcm_UPDATE.json")]
+    #[case("stream/mcm_UPDATE_md.json")]
+    #[case("stream/mcm_UPDATE_tv.json")]
+    #[case("stream/mcm_HEARTBEAT.json")]
+    #[case("stream/mcm_RESUB_DELTA.json")]
+    #[case("stream/mcm_live_IMAGE.json")]
+    #[case("stream/mcm_live_UPDATE.json")]
+    #[case("stream/mcm_latency.json")]
+    #[case("stream/market_definition_racing.json")]
+    #[case("stream/market_definition_runner_removed.json")]
     fn test_stream_decode_mcm_fixtures(#[case] fixture: &str) {
-        let path = fixture_path(fixture);
-        let data = std::fs::read(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
-        let msg = stream_decode(&data).unwrap_or_else(|e| panic!("{fixture}: {e}"));
+        let data = load_test_json(fixture);
+        let msg = stream_decode(data.as_bytes()).unwrap_or_else(|e| panic!("{fixture}: {e}"));
         assert!(matches!(msg, StreamMessage::MarketChange(_)), "{fixture}");
     }
 
     /// Fixtures containing a JSON array of multiple MCM messages.
     #[rstest]
-    #[case("streaming_mcm_BSP.json")]
+    #[case("stream/mcm_BSP.json")]
+    #[case("stream/market_updates.json")]
     fn test_stream_decode_mcm_multi_fixtures(#[case] fixture: &str) {
-        let path = fixture_path(fixture);
-        let data = std::fs::read(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+        let data = load_test_json(fixture);
         let msgs: Vec<StreamMessage> =
-            serde_json::from_slice(&data).unwrap_or_else(|e| panic!("{fixture}: {e}"));
+            serde_json::from_str(&data).unwrap_or_else(|e| panic!("{fixture}: {e}"));
         assert!(!msgs.is_empty(), "{fixture}: empty array");
         for msg in &msgs {
             assert!(matches!(msg, StreamMessage::MarketChange(_)), "{fixture}");
         }
+    }
+
+    /// Fixtures containing a JSON array of multiple OCM messages.
+    #[rstest]
+    #[case("stream/ocm_multiple_fills.json")]
+    #[case("stream/ocm_DUPLICATE_EXECUTION.json")]
+    fn test_stream_decode_ocm_multi_fixtures(#[case] fixture: &str) {
+        let data = load_test_json(fixture);
+        let msgs: Vec<StreamMessage> =
+            serde_json::from_str(&data).unwrap_or_else(|e| panic!("{fixture}: {e}"));
+        assert!(!msgs.is_empty(), "{fixture}: empty array");
+        for msg in &msgs {
+            assert!(matches!(msg, StreamMessage::OrderChange(_)), "{fixture}");
+        }
+    }
+
+    #[rstest]
+    fn test_stream_decode_connection() {
+        let data = load_test_json("stream/connection.json");
+        let msg = stream_decode(data.as_bytes()).unwrap();
+        match msg {
+            StreamMessage::Connection(conn) => {
+                assert_eq!(conn.connection_id, "002-051134157842-432409");
+            }
+            other => panic!("Expected Connection, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_stream_decode_status() {
+        let data = load_test_json("stream/status.json");
+        let msg = stream_decode(data.as_bytes()).unwrap();
+        assert!(matches!(msg, StreamMessage::Status(_)));
+    }
+
+    #[rstest]
+    fn test_market_definition_standalone() {
+        let data = load_test_json("stream/market_definition.json");
+        let _def: MarketDefinition = serde_json::from_str(&data).unwrap();
+    }
+
+    #[rstest]
+    #[case("rest/market_definition_open.json")]
+    #[case("rest/market_definition_closed.json")]
+    #[case("rest/market_definition_runner_removed.json")]
+    fn test_market_definition_response_fixtures(#[case] fixture: &str) {
+        let data = load_test_json(fixture);
+        let _def: MarketDefinition = serde_json::from_str(&data).unwrap();
     }
 }

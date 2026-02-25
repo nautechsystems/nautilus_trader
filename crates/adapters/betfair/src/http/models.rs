@@ -730,38 +730,12 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-
-    fn fixture_path(name: &str) -> std::path::PathBuf {
-        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .nth(3)
-            .expect("workspace root");
-        workspace
-            .join("tests/integration_tests/adapters/betfair/resources/responses")
-            .join(name)
-    }
-
-    fn read_fixture(name: &str) -> Vec<u8> {
-        let path = fixture_path(name);
-        std::fs::read(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"))
-    }
-
-    // Many Betfair REST fixtures are wrapped in a JSON-RPC envelope
-    #[derive(Deserialize)]
-    struct JsonRpcResponse<T> {
-        result: T,
-    }
-
-    fn parse_jsonrpc<T: serde::de::DeserializeOwned>(data: &[u8], fixture: &str) -> T {
-        let wrapper: JsonRpcResponse<T> =
-            serde_json::from_slice(data).unwrap_or_else(|e| panic!("{fixture}: {e}"));
-        wrapper.result
-    }
+    use crate::common::testing::{load_test_json, parse_jsonrpc};
 
     #[rstest]
     fn test_cert_login_response() {
-        let data = read_fixture("cert_login.json");
-        let resp: CertLoginResponse = serde_json::from_slice(&data).unwrap();
+        let data = load_test_json("rest/cert_login.json");
+        let resp: CertLoginResponse = serde_json::from_str(&data).unwrap();
         assert_eq!(resp.login_status, "SUCCESS");
         assert!(resp.session_token.is_some());
     }
@@ -769,33 +743,31 @@ mod tests {
     #[rstest]
     fn test_cert_login_error_response() {
         let json = r#"{"loginStatus":"CERT_AUTH_REQUIRED"}"#;
-        let resp: CertLoginResponse = serde_json::from_slice(json.as_bytes()).unwrap();
+        let resp: CertLoginResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.login_status, "CERT_AUTH_REQUIRED");
         assert!(resp.session_token.is_none());
     }
 
     #[rstest]
     fn test_interactive_login_response() {
-        let data = read_fixture("login_success.json");
-        let resp: LoginResponse = serde_json::from_slice(&data).unwrap();
+        let data = load_test_json("rest/login_success.json");
+        let resp: LoginResponse = serde_json::from_str(&data).unwrap();
         assert_eq!(resp.status, LoginStatus::Success);
     }
 
     #[rstest]
     fn test_interactive_login_failure() {
-        let data = read_fixture("login_failure.json");
-        let resp: LoginResponse = serde_json::from_slice(&data).unwrap();
+        let data = load_test_json("rest/login_failure.json");
+        let resp: LoginResponse = serde_json::from_str(&data).unwrap();
         assert_eq!(resp.status, LoginStatus::Fail);
     }
 
     #[rstest]
     fn test_list_market_catalogue_with_runner_metadata() {
-        let data = read_fixture("list_market_catalogue.json");
-        let catalogue: MarketCatalogue = serde_json::from_slice(&data).unwrap();
+        let data = load_test_json("rest/list_market_catalogue.json");
+        let catalogue: MarketCatalogue = serde_json::from_str(&data).unwrap();
         let runners = catalogue.runners.expect("runners present");
         let meta = runners[0].metadata.as_ref().expect("metadata present");
-
-        // Numeric fields should deserialize without error
         assert!(meta.contains_key("AGE"));
         assert!(meta.contains_key("CLOTH_NUMBER"));
         assert!(meta.contains_key("STALL_DRAW"));
@@ -803,8 +775,8 @@ mod tests {
 
     #[rstest]
     fn test_navigation_with_empty_number_of_winners() {
-        let data = read_fixture("navigation_list_navigation.json");
-        let nav: Navigation = serde_json::from_slice(&data).unwrap();
+        let data = load_test_json("rest/navigation_list_navigation.json");
+        let nav: Navigation = serde_json::from_str(&data).unwrap();
         assert!(nav.children.is_some());
     }
 
@@ -847,8 +819,8 @@ mod tests {
 
     #[rstest]
     fn test_navigation_race_has_children() {
-        let data = read_fixture("navigation_list_navigation.json");
-        let nav: Navigation = serde_json::from_slice(&data).unwrap();
+        let data = load_test_json("rest/navigation_list_navigation.json");
+        let nav: Navigation = serde_json::from_str(&data).unwrap();
         let children = nav.children.as_ref().unwrap();
         assert!(
             find_race_with_children(children),
@@ -858,74 +830,68 @@ mod tests {
 
     #[rstest]
     fn test_account_details() {
-        let data = read_fixture("account_details.json");
-        let _resp: AccountDetailsResponse = serde_json::from_slice(&data).unwrap();
+        let data = load_test_json("rest/account_details.json");
+        let _resp: AccountDetailsResponse = serde_json::from_str(&data).unwrap();
     }
 
     #[rstest]
-    fn test_account_funds() {
-        for fixture in [
-            "account_funds_no_exposure.json",
-            "account_funds_with_exposure.json",
-        ] {
-            let data = read_fixture(fixture);
-            let _resp: AccountFundsResponse =
-                serde_json::from_slice(&data).unwrap_or_else(|e| panic!("{fixture}: {e}"));
-        }
+    #[case("rest/account_funds_no_exposure.json")]
+    #[case("rest/account_funds_with_exposure.json")]
+    fn test_account_funds(#[case] fixture: &str) {
+        let data = load_test_json(fixture);
+        let _resp: AccountFundsResponse =
+            serde_json::from_str(&data).unwrap_or_else(|e| panic!("{fixture}: {e}"));
     }
 
     #[rstest]
-    fn test_place_order_responses() {
-        for fixture in [
-            "betting_place_order_success.json",
-            "betting_place_order_error.json",
-            "betting_place_order_batch_success.json",
-            "betting_place_order_batch_partial_failure.json",
-        ] {
-            let data = read_fixture(fixture);
-            let _resp: PlaceExecutionReport = parse_jsonrpc(&data, fixture);
-        }
+    #[case("rest/betting_place_order_success.json")]
+    #[case("rest/betting_place_order_error.json")]
+    #[case("rest/betting_place_order_batch_success.json")]
+    #[case("rest/betting_place_order_batch_partial_failure.json")]
+    fn test_place_order_responses(#[case] fixture: &str) {
+        let data = load_test_json(fixture);
+        let _resp: PlaceExecutionReport = parse_jsonrpc(&data);
     }
 
     #[rstest]
-    fn test_cancel_order_responses() {
-        for fixture in [
-            "betting_cancel_orders_success.json",
-            "betting_cancel_orders_error.json",
-            "betting_cancel_orders_batch_success.json",
-            "betting_cancel_orders_batch_partial_failure.json",
-        ] {
-            let data = read_fixture(fixture);
-            let _resp: CancelExecutionReport = parse_jsonrpc(&data, fixture);
-        }
+    #[case("rest/betting_cancel_orders_success.json")]
+    #[case("rest/betting_cancel_orders_error.json")]
+    #[case("rest/betting_cancel_orders_batch_success.json")]
+    #[case("rest/betting_cancel_orders_batch_partial_failure.json")]
+    fn test_cancel_order_responses(#[case] fixture: &str) {
+        let data = load_test_json(fixture);
+        let _resp: CancelExecutionReport = parse_jsonrpc(&data);
     }
 
     #[rstest]
     fn test_replace_order_responses() {
         // betting_replace_orders_success_multi.json contains a streaming OCM,
         // not a REST ReplaceExecutionReport, so it is excluded
-        let data = read_fixture("betting_replace_orders_success.json");
-        let _resp: ReplaceExecutionReport =
-            parse_jsonrpc(&data, "betting_replace_orders_success.json");
+        let data = load_test_json("rest/betting_replace_orders_success.json");
+        let _resp: ReplaceExecutionReport = parse_jsonrpc(&data);
     }
 
     #[rstest]
-    fn test_current_orders() {
-        for fixture in [
-            "list_current_orders_empty.json",
-            "list_current_orders_single.json",
-            "list_current_orders_executable.json",
-            "list_current_orders_execution_complete.json",
-            "list_current_orders_on_close_execution_complete.json",
-        ] {
-            let data = read_fixture(fixture);
-            let _resp: CurrentOrderSummaryReport = parse_jsonrpc(&data, fixture);
-        }
+    #[case("rest/list_current_orders_empty.json")]
+    #[case("rest/list_current_orders_single.json")]
+    #[case("rest/list_current_orders_executable.json")]
+    #[case("rest/list_current_orders_execution_complete.json")]
+    #[case("rest/list_current_orders_on_close_execution_complete.json")]
+    fn test_current_orders(#[case] fixture: &str) {
+        let data = load_test_json(fixture);
+        let _resp: CurrentOrderSummaryReport = parse_jsonrpc(&data);
     }
 
     #[rstest]
     fn test_cleared_orders() {
-        let data = read_fixture("list_cleared_orders.json");
-        let _resp: ClearedOrderSummaryReport = parse_jsonrpc(&data, "list_cleared_orders.json");
+        let data = load_test_json("rest/list_cleared_orders.json");
+        let _resp: ClearedOrderSummaryReport = parse_jsonrpc(&data);
+    }
+
+    #[rstest]
+    fn test_betting_market_catalogue() {
+        let data = load_test_json("rest/betting_list_market_catalogue.json");
+        let catalogues: Vec<MarketCatalogue> = serde_json::from_str(&data).unwrap();
+        assert!(!catalogues.is_empty());
     }
 }

@@ -4920,9 +4920,11 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "chrono",
+ "log",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
+ "nautilus-network",
  "nautilus-testkit",
  "rstest",
  "rust_decimal",
@@ -4930,7 +4932,11 @@ dependencies = [
  "serde_json",
  "strum 0.28.0",
  "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "urlencoding",
  "ustr",
+ "zeroize",
 ]
 
 [[package]]

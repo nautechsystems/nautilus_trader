@@ -18,4 +18,5 @@
 //! Covers both request messages (authentication, subscriptions) and response
 //! messages (MCM, OCM, connection, status).
 
+pub mod error;
 pub mod messages;

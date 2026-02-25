@@ -54,6 +54,16 @@ pub const BETFAIR_RACE_STREAM_HOST: &str = "sports-data-stream-api.betfair.com";
 /// Stream TLS port.
 pub const BETFAIR_STREAM_PORT: u16 = 443;
 
+// Interactive login URL (non-cert)
+pub const BETFAIR_IDENTITY_LOGIN_URL: &str = "https://identitysso.betfair.com/api/login";
+
+// Keep-alive URL (must match login host: interactive SSO, not cert)
+pub const BETFAIR_KEEP_ALIVE_URL: &str = "https://identitysso.betfair.com/api/keepAlive";
+
+// Rate limiter keys
+pub const BETFAIR_RATE_LIMIT_DEFAULT: &str = "default";
+pub const BETFAIR_RATE_LIMIT_ORDERS: &str = "orders";
+
 /// Betfair tiered price tiers: (min, max, increment).
 pub const BETFAIR_PRICE_TIERS: [(f64, f64, f64); 10] = [
     (1.01, 2.0, 0.01),

@@ -15,6 +15,9 @@
 
 //! Common enumerations for the Betfair adapter.
 
+use nautilus_model::enums::{
+    MarketStatus as NautilusMarketStatus, OrderSide, OrderStatus, OrderType, TimeInForce,
+};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
@@ -942,4 +945,317 @@ pub enum MarketDataFilterField {
     ExMarketDef,
     SpTraded,
     SpProjected,
+}
+
+// Betfair side mapping is INVERTED from financial convention:
+// Back (betting on selection to win) = SELL
+// Lay (betting against selection) = BUY
+
+impl From<BetfairSide> for OrderSide {
+    fn from(value: BetfairSide) -> Self {
+        match value {
+            BetfairSide::Back => Self::Sell,
+            BetfairSide::Lay => Self::Buy,
+        }
+    }
+}
+
+impl From<OrderSide> for BetfairSide {
+    fn from(value: OrderSide) -> Self {
+        match value {
+            OrderSide::Buy => Self::Lay,
+            OrderSide::Sell => Self::Back,
+            _ => panic!("Invalid `OrderSide` for Betfair: {value}"),
+        }
+    }
+}
+
+impl From<StreamingSide> for OrderSide {
+    fn from(value: StreamingSide) -> Self {
+        match value {
+            StreamingSide::Back => Self::Sell,
+            StreamingSide::Lay => Self::Buy,
+        }
+    }
+}
+
+impl From<BetfairOrderType> for OrderType {
+    fn from(value: BetfairOrderType) -> Self {
+        match value {
+            BetfairOrderType::Limit => Self::Limit,
+            BetfairOrderType::LimitOnClose => Self::Limit,
+            BetfairOrderType::MarketOnClose => Self::Market,
+            BetfairOrderType::MarketAtTheClose => Self::Market,
+        }
+    }
+}
+
+impl From<StreamingOrderType> for OrderType {
+    fn from(value: StreamingOrderType) -> Self {
+        match value {
+            StreamingOrderType::Limit => Self::Limit,
+            StreamingOrderType::LimitOnClose => Self::Limit,
+            StreamingOrderType::MarketOnClose => Self::Market,
+        }
+    }
+}
+
+/// Resolves the Nautilus `OrderStatus` for a Betfair order.
+///
+/// `ExecutionComplete` is a terminal state covering fills, cancels, and
+/// lapses — the correct status depends on matched vs canceled quantities.
+#[must_use]
+pub fn resolve_order_status(
+    status: BetfairOrderStatus,
+    size_matched: f64,
+    size_cancelled: f64,
+) -> OrderStatus {
+    match status {
+        BetfairOrderStatus::Pending => OrderStatus::Submitted,
+        BetfairOrderStatus::Executable if size_matched > 0.0 => OrderStatus::PartiallyFilled,
+        BetfairOrderStatus::Executable => OrderStatus::Accepted,
+        BetfairOrderStatus::Expired => OrderStatus::Expired,
+        BetfairOrderStatus::ExecutionComplete => {
+            resolve_terminal_status(size_matched, size_cancelled)
+        }
+    }
+}
+
+/// Resolves the Nautilus `OrderStatus` for a streaming order update.
+///
+/// Same logic as [`resolve_order_status`] for the streaming enum.
+#[must_use]
+pub fn resolve_streaming_order_status(
+    status: StreamingOrderStatus,
+    size_matched: f64,
+    size_cancelled: f64,
+) -> OrderStatus {
+    match status {
+        StreamingOrderStatus::Executable if size_matched > 0.0 => OrderStatus::PartiallyFilled,
+        StreamingOrderStatus::Executable => OrderStatus::Accepted,
+        StreamingOrderStatus::ExecutionComplete => {
+            resolve_terminal_status(size_matched, size_cancelled)
+        }
+    }
+}
+
+fn resolve_terminal_status(size_matched: f64, size_cancelled: f64) -> OrderStatus {
+    if size_matched > 0.0 && size_cancelled <= 0.0 {
+        OrderStatus::Filled
+    } else {
+        // Any terminal order with cancelled quantity is closed, even if
+        // partially matched. PartiallyFilled is an open status in Nautilus
+        // and must not be used for ExecutionComplete orders.
+        OrderStatus::Canceled
+    }
+}
+
+impl From<MarketStatus> for NautilusMarketStatus {
+    fn from(value: MarketStatus) -> Self {
+        match value {
+            MarketStatus::Open => Self::Open,
+            MarketStatus::Closed => Self::Closed,
+            MarketStatus::Suspended => Self::Suspended,
+            MarketStatus::Inactive => Self::NotAvailable,
+        }
+    }
+}
+
+impl From<BetfairTimeInForce> for TimeInForce {
+    fn from(value: BetfairTimeInForce) -> Self {
+        match value {
+            BetfairTimeInForce::FillOrKill => Self::Fok,
+        }
+    }
+}
+
+impl From<PersistenceType> for TimeInForce {
+    fn from(value: PersistenceType) -> Self {
+        match value {
+            PersistenceType::Lapse => Self::Day,
+            PersistenceType::Persist => Self::Gtc,
+            PersistenceType::MarketOnClose => Self::AtTheClose,
+        }
+    }
+}
+
+impl From<StreamingPersistenceType> for TimeInForce {
+    fn from(value: StreamingPersistenceType) -> Self {
+        match value {
+            StreamingPersistenceType::Lapse => Self::Day,
+            StreamingPersistenceType::Persist => Self::Gtc,
+            StreamingPersistenceType::MarketOnClose => Self::AtTheClose,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(BetfairSide::Back, OrderSide::Sell)]
+    #[case(BetfairSide::Lay, OrderSide::Buy)]
+    fn test_betfair_side_to_order_side(#[case] input: BetfairSide, #[case] expected: OrderSide) {
+        assert_eq!(OrderSide::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, BetfairSide::Lay)]
+    #[case(OrderSide::Sell, BetfairSide::Back)]
+    fn test_order_side_to_betfair_side(#[case] input: OrderSide, #[case] expected: BetfairSide) {
+        assert_eq!(BetfairSide::from(input), expected);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Invalid `OrderSide`")]
+    fn test_order_side_no_order_side_panics() {
+        let _ = BetfairSide::from(OrderSide::NoOrderSide);
+    }
+
+    #[rstest]
+    #[case(StreamingSide::Back, OrderSide::Sell)]
+    #[case(StreamingSide::Lay, OrderSide::Buy)]
+    fn test_streaming_side_to_order_side(
+        #[case] input: StreamingSide,
+        #[case] expected: OrderSide,
+    ) {
+        assert_eq!(OrderSide::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(BetfairOrderType::Limit, OrderType::Limit)]
+    #[case(BetfairOrderType::LimitOnClose, OrderType::Limit)]
+    #[case(BetfairOrderType::MarketOnClose, OrderType::Market)]
+    #[case(BetfairOrderType::MarketAtTheClose, OrderType::Market)]
+    fn test_betfair_order_type(#[case] input: BetfairOrderType, #[case] expected: OrderType) {
+        assert_eq!(OrderType::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(StreamingOrderType::Limit, OrderType::Limit)]
+    #[case(StreamingOrderType::LimitOnClose, OrderType::Limit)]
+    #[case(StreamingOrderType::MarketOnClose, OrderType::Market)]
+    fn test_streaming_order_type(#[case] input: StreamingOrderType, #[case] expected: OrderType) {
+        assert_eq!(OrderType::from(input), expected);
+    }
+
+    #[rstest]
+    fn test_resolve_order_status_non_terminal() {
+        assert_eq!(
+            resolve_order_status(BetfairOrderStatus::Pending, 0.0, 0.0),
+            OrderStatus::Submitted,
+        );
+        assert_eq!(
+            resolve_order_status(BetfairOrderStatus::Executable, 0.0, 0.0),
+            OrderStatus::Accepted,
+        );
+        assert_eq!(
+            resolve_order_status(BetfairOrderStatus::Expired, 0.0, 0.0),
+            OrderStatus::Expired,
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_order_status_executable_partially_matched() {
+        assert_eq!(
+            resolve_order_status(BetfairOrderStatus::Executable, 5.0, 0.0),
+            OrderStatus::PartiallyFilled,
+        );
+    }
+
+    #[rstest]
+    #[case(10.0, 0.0, OrderStatus::Filled)]
+    #[case(5.0, 5.0, OrderStatus::Canceled)]
+    #[case(0.0, 10.0, OrderStatus::Canceled)]
+    fn test_resolve_order_status_execution_complete(
+        #[case] size_matched: f64,
+        #[case] size_cancelled: f64,
+        #[case] expected: OrderStatus,
+    ) {
+        assert_eq!(
+            resolve_order_status(
+                BetfairOrderStatus::ExecutionComplete,
+                size_matched,
+                size_cancelled,
+            ),
+            expected,
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_streaming_order_status_executable() {
+        assert_eq!(
+            resolve_streaming_order_status(StreamingOrderStatus::Executable, 0.0, 0.0),
+            OrderStatus::Accepted,
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_streaming_order_status_executable_partially_matched() {
+        assert_eq!(
+            resolve_streaming_order_status(StreamingOrderStatus::Executable, 5.0, 0.0),
+            OrderStatus::PartiallyFilled,
+        );
+    }
+
+    #[rstest]
+    #[case(10.0, 0.0, OrderStatus::Filled)]
+    #[case(5.0, 5.0, OrderStatus::Canceled)]
+    #[case(0.0, 10.0, OrderStatus::Canceled)]
+    fn test_resolve_streaming_order_status_execution_complete(
+        #[case] size_matched: f64,
+        #[case] size_cancelled: f64,
+        #[case] expected: OrderStatus,
+    ) {
+        assert_eq!(
+            resolve_streaming_order_status(
+                StreamingOrderStatus::ExecutionComplete,
+                size_matched,
+                size_cancelled,
+            ),
+            expected,
+        );
+    }
+
+    #[rstest]
+    #[case(MarketStatus::Open, NautilusMarketStatus::Open)]
+    #[case(MarketStatus::Closed, NautilusMarketStatus::Closed)]
+    #[case(MarketStatus::Suspended, NautilusMarketStatus::Suspended)]
+    #[case(MarketStatus::Inactive, NautilusMarketStatus::NotAvailable)]
+    fn test_market_status(#[case] input: MarketStatus, #[case] expected: NautilusMarketStatus) {
+        assert_eq!(NautilusMarketStatus::from(input), expected);
+    }
+
+    #[rstest]
+    fn test_betfair_time_in_force() {
+        assert_eq!(
+            TimeInForce::from(BetfairTimeInForce::FillOrKill),
+            TimeInForce::Fok
+        );
+    }
+
+    #[rstest]
+    #[case(PersistenceType::Lapse, TimeInForce::Day)]
+    #[case(PersistenceType::Persist, TimeInForce::Gtc)]
+    #[case(PersistenceType::MarketOnClose, TimeInForce::AtTheClose)]
+    fn test_persistence_type_to_time_in_force(
+        #[case] input: PersistenceType,
+        #[case] expected: TimeInForce,
+    ) {
+        assert_eq!(TimeInForce::from(input), expected);
+    }
+
+    #[rstest]
+    #[case(StreamingPersistenceType::Lapse, TimeInForce::Day)]
+    #[case(StreamingPersistenceType::Persist, TimeInForce::Gtc)]
+    #[case(StreamingPersistenceType::MarketOnClose, TimeInForce::AtTheClose)]
+    fn test_streaming_persistence_type_to_time_in_force(
+        #[case] input: StreamingPersistenceType,
+        #[case] expected: TimeInForce,
+    ) {
+        assert_eq!(TimeInForce::from(input), expected);
+    }
 }
