@@ -35,10 +35,31 @@ class BinanceSymbol(str):
         PyCondition.valid_string(symbol, "symbol")
 
         # Format the string on construction to be Binance compatible
-        return super().__new__(
-            cls,
-            symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", ""),
-        )
+        formatted = symbol.upper().replace(" ", "").replace("/", "")
+
+        # Convert Nautilus format back to Binance format for perpetual symbols.
+        # COIN-M (inverse): BTCUSD-PERP → BTCUSD_PERP (Binance uses underscore)
+        # USDT-M (linear):  BTCUSDT-PERP → BTCUSDT (Binance has no suffix)
+        if formatted.endswith("-PERP"):
+            base = formatted[:-5]
+            # Detect Linear (stablecoin-quoted) symbols.
+            # Must avoid false positives where COIN-M {BASE}USD overlaps with
+            # stablecoin names: e.g. BNBUSD matches "BUSD", DOTUSD matches "TUSD".
+            # Fix: after removing the stablecoin suffix, require ≥3 chars remaining
+            # (all Binance crypto tickers are ≥3 chars). This ensures BNBUSD is
+            # treated as BNB+USD (COIN-M) not BN+BUSD (Linear).
+            _LINEAR_QUOTES = ("USDT", "BUSD", "TUSD", "FDUSD", "USDC", "DAI")
+            is_linear = False
+            for quote in _LINEAR_QUOTES:
+                if base.endswith(quote) and len(base) > len(quote) + 2:
+                    is_linear = True
+                    break
+            if is_linear:
+                formatted = base
+            else:
+                formatted = base + "_PERP"
+
+        return super().__new__(cls, formatted)
 
     def parse_as_nautilus(self, account_type: BinanceAccountType) -> str:
         if account_type.is_spot_or_margin:

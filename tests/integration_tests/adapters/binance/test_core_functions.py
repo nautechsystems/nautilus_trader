@@ -31,6 +31,45 @@ class TestBinanceCoreFunctions:
         # Assert
         assert result == "ETHUSDT"
 
+    @pytest.mark.parametrize(
+        ("symbol", "expected"),
+        [
+            # Linear (USDT-M) perpetuals: strip -PERP suffix
+            ("BTCUSDT-PERP", "BTCUSDT"),
+            ("ETHUSDT-PERP", "ETHUSDT"),
+            ("BNBUSDT-PERP", "BNBUSDT"),
+            ("BTCBUSD-PERP", "BTCBUSD"),
+            # COIN-M (inverse) perpetuals: replace -PERP with _PERP
+            ("BTCUSD-PERP", "BTCUSD_PERP"),
+            ("ETHUSD-PERP", "ETHUSD_PERP"),
+            ("BNBUSD-PERP", "BNBUSD_PERP"),
+            ("LINKUSD-PERP", "LINKUSD_PERP"),
+            ("DOTUSD-PERP", "DOTUSD_PERP"),
+            # Spot / no -PERP suffix: pass through
+            ("BTCUSDT", "BTCUSDT"),
+            ("ETHUSDT", "ETHUSDT"),
+        ],
+    )
+    def test_format_symbol_perp_variants(self, symbol, expected):
+        assert BinanceSymbol(symbol) == expected
+
+    @pytest.mark.parametrize(
+        ("symbol", "account_type", "expected"),
+        [
+            # COIN-M perpetuals round-trip
+            ("BTCUSD_PERP", BinanceAccountType.COIN_FUTURES, "BTCUSD-PERP"),
+            ("BNBUSD_PERP", BinanceAccountType.COIN_FUTURES, "BNBUSD-PERP"),
+            # Linear perpetuals round-trip
+            ("BTCUSDT", BinanceAccountType.USDT_FUTURES, "BTCUSDT-PERP"),
+            ("ETHUSDT", BinanceAccountType.USDT_FUTURES, "ETHUSDT-PERP"),
+            # Spot: no suffix added
+            ("BTCUSDT", BinanceAccountType.SPOT, "BTCUSDT"),
+        ],
+    )
+    def test_parse_as_nautilus(self, symbol, account_type, expected):
+        result = BinanceSymbol(symbol).parse_as_nautilus(account_type)
+        assert result == expected
+
     def test_convert_symbols_list_to_json_array(self):
         # Arrange
         symbols = ["BTCUSDT", "ETHUSDT-PERP", " XRDUSDT"]
