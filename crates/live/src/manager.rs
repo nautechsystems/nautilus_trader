@@ -1085,10 +1085,16 @@ impl ExecutionManager {
             }
         }
 
-        // Check for discrepancies
+        // Check for discrepancies (one check per instrument per cycle to avoid
+        // burning multiple retries for hedging positions on the same instrument)
         let mut events = Vec::new();
+        let mut checked_instruments = AHashSet::new();
 
         for position in &open_positions {
+            if !checked_instruments.insert(position.instrument_id) {
+                continue;
+            }
+
             // Skip if not in filter
             if !self.config.reconciliation_instrument_ids.is_empty()
                 && !self
