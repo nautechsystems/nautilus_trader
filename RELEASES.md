@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added matching engine L1 quote-based queue position tracking for backtests
 - Added synthetic book support for binary markets (#3495), thanks @Javdu10
+- Added `get_target_px_for_quantity` method on `OrderBook` (#3627), thanks @Javdu10
 - Added Betfair batch submit and cancel order support
 - Added BitMEX dead man's switch (cancelAllAfter) support
 - Added BitMEX grid market maker example in Rust
@@ -26,8 +27,9 @@ Released on TBD (UTC).
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
 - Fixed Hyperliquid stop/trigger order price derivation (#3611), thanks for reporting @h-tsun3
 - Fixed Hyperliquid price normalization and inner error detection (#3612), thanks for reporting @h-tsun3
-- Fixed Interactive Brokers BarType/str comparison in get_historical_bars (#3616), thank you @powerseed
-- Fixed Interactive Brokers historical bar processing crash (#3619), thank you @shzhng
+- Fixed Interactive Brokers BarType/str comparison in get_historical_bars (#3616), thanks @powerseed
+- Fixed Interactive Brokers historical bar processing crash (#3619), thanks @shzhng
+- Fixed Interactive Brokers contract details parsing (#3638), thanks @davidsblom
 
 ### Internal Improvements
 - Added catalog deduplication functionality (#3613), thanks @ms32035
@@ -36,6 +38,8 @@ Released on TBD (UTC).
 - Improved `BestPriceFillModel` to fill inside bid ask spread (#3428), thanks @faysou
 - Standardized use of atomic clock across adapters
 - Standardized adapter credentials handling and testing
+- Refined build script for Windows (#3636), thanks @faysou
+- Upgraded `databento` crate to v0.42.0
 
 ### Documentation Updates
 - Added AX Exchange gold perps book imbalance tutorial

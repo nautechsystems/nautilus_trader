@@ -301,20 +301,20 @@ alloy-sol-types = "1.5.7"
 arc-swap = "1.8.2"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
-databento = { version = "0.41.0", default-features = false, features = [
+databento = { version = "0.42.0", default-features = false, features = [
   "historical",
   "live",
 ] }
 dydx-proto = "0.4.0"
 fallible-streaming-iterator = "0.1.9"
 flate2 = "1.1.9"
-hypersync-client = { version = "1.0.0" }
+hypersync-client = { version = "1.0.1" }
 hypersync-schema = { version = "0.4.0" }
 itoa = "1.0.17"
 prost = { version = "0.13.5", default-features = false, features = ["std"] }
 ryu = "1.0.23"
 serde_repr = "0.1.20"
-serde_with = "3.16.1"
+serde_with = "3.17.0"
 time = { version = "0.3.47", default-features = false, features = [
   "macros",
   "parsing",

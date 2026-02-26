@@ -428,7 +428,7 @@ version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.async-compression]]
-version = "0.4.40"
+version = "0.4.41"
 criteria = "safe-to-deploy"
 
 [[exemptions.async-stream]]
@@ -668,7 +668,7 @@ version = "2.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.const-hex]]
-version = "1.17.0"
+version = "1.18.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.const-oid]]
@@ -824,7 +824,7 @@ version = "2.10.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.databento]]
-version = "0.41.0"
+version = "0.42.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.datafusion]]
@@ -952,11 +952,11 @@ version = "52.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.dbn]]
-version = "0.49.0"
+version = "0.50.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.dbn-macros]]
-version = "0.49.0"
+version = "0.50.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.deranged]]
@@ -1277,7 +1277,7 @@ version = "0.1.20"
 criteria = "safe-to-deploy"
 
 [[exemptions.hypersync-client]]
-version = "1.0.0"
+version = "1.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.hypersync-format]]
@@ -2225,11 +2225,11 @@ version = "0.7.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.serde_with]]
-version = "3.16.1"
+version = "3.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.serde_with_macros]]
-version = "3.16.1"
+version = "3.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.serde_yaml]]

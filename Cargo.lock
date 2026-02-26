@@ -1166,9 +1166,9 @@ dependencies = [
 
 [[package]]
 name = "async-compression"
-version = "0.4.40"
+version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d67d43201f4d20c78bcda740c142ca52482d81da80681533d33bf3f0596c8e2"
+checksum = "d0f9ee0f6e02ffd7ad5816e9464499fba7b3effd01123b515c41d1697c43dad1"
 dependencies = [
  "compression-codecs",
  "compression-core",
@@ -1936,9 +1936,9 @@ dependencies = [
 
 [[package]]
 name = "const-hex"
-version = "1.17.0"
+version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bb320cac8a0750d7f25280aa97b09c26edfe161164238ecbbb31092b079e735"
+checksum = "af9a108e542ddf1de36743a6126e94d6659dccda38fc8a77e80b915102ac784a"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
@@ -2393,15 +2393,15 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "databento"
-version = "0.41.0"
+version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ce2f5cbd5a47dd054bc59f7d6af9b02e39cd9dcf06f01d22b23feb48d748cdf"
+checksum = "a2821d8a71dd110cc34bbbc92e4062e45eba5ae541bfb046dcdb5380c0500386"
 dependencies = [
  "async-compression",
  "dbn",
  "futures",
  "hex",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3049,9 +3049,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.49.0"
+version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64f12ca68ccaa1484035ecce1d5e975b4e2c0f8ba3648d7176de95d9792cc48c"
+checksum = "c3e3b00124837e38a7326429742164b78254ac75077a7591d26b6e6640fdbcbb"
 dependencies = [
  "async-compression",
  "csv",
@@ -3070,9 +3070,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.49.0"
+version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "253aaaa89ba9be4ccd0a5430c7c5827466d503e360419331f42408cacd36a256"
+checksum = "3ab1fe79718b811f2e1289b1cccdebc8bfa350566656d7f4f809bf5be405f134"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -4089,9 +4089,9 @@ dependencies = [
 
 [[package]]
 name = "hypersync-client"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b75ffebf30369016cd3b6e67656e9a8ab876da929ee7a9461352fff1080bdb27"
+checksum = "f52c47c45e397ffb205c5ec9310201ab732356e9419d2140e3462435de8aebcf"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-json-abi",
@@ -8140,9 +8140,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.16.1"
+version = "3.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fa237f2807440d238e0364a218270b98f767a00d3dada77b1c53ae88940e2e7"
+checksum = "381b283ce7bc6b476d903296fb59d0d36633652b633b27f64db4fb46dcbfc3b9"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -8159,9 +8159,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.16.1"
+version = "3.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52a8e3ca0ca629121f70ab50f95249e5a6f925cc0f6ffe8256c45b728875706c"
+checksum = "a6d4e30573c8cb306ed6ab1dca8423eec9a463ea0e155f45399455e0368b27e0"
 dependencies = [
  "darling 0.21.3",
  "proc-macro2",
