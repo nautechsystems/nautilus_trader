@@ -39,6 +39,8 @@ class TestBinanceCoreFunctions:
             ("ETHUSDT-PERP", "ETHUSDT"),
             ("BNBUSDT-PERP", "BNBUSDT"),
             ("BTCBUSD-PERP", "BTCBUSD"),
+            # Short-base linear perpetuals
+            ("AIUSDT-PERP", "AIUSDT"),
             # COIN-M (inverse) perpetuals: replace -PERP with _PERP
             ("BTCUSD-PERP", "BTCUSD_PERP"),
             ("ETHUSD-PERP", "ETHUSD_PERP"),

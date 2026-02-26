@@ -25,6 +25,9 @@ from nautilus_trader.core.correctness import PyCondition
 # HTTP responses
 ################################################################################
 
+# Stablecoin quote assets used to identify linear (USDT-M) perpetuals
+_LINEAR_QUOTES = ("USDT", "BUSD", "TUSD", "FDUSD", "USDC", "DAI")
+
 
 class BinanceSymbol(str):
     """
@@ -37,27 +40,17 @@ class BinanceSymbol(str):
         # Format the string on construction to be Binance compatible
         formatted = symbol.upper().replace(" ", "").replace("/", "")
 
-        # Convert Nautilus format back to Binance format for perpetual symbols.
-        # COIN-M (inverse): BTCUSD-PERP → BTCUSD_PERP (Binance uses underscore)
-        # USDT-M (linear):  BTCUSDT-PERP → BTCUSDT (Binance has no suffix)
+        # COIN-M: BTCUSD-PERP → BTCUSD_PERP, Linear: BTCUSDT-PERP → BTCUSDT
         if formatted.endswith("-PERP"):
             base = formatted[:-5]
-            # Detect Linear (stablecoin-quoted) symbols.
-            # Must avoid false positives where COIN-M {BASE}USD overlaps with
-            # stablecoin names: e.g. BNBUSD matches "BUSD", DOTUSD matches "TUSD".
-            # Fix: after removing the stablecoin suffix, require ≥3 chars remaining
-            # (all Binance crypto tickers are ≥3 chars). This ensures BNBUSD is
-            # treated as BNB+USD (COIN-M) not BN+BUSD (Linear).
-            _LINEAR_QUOTES = ("USDT", "BUSD", "TUSD", "FDUSD", "USDC", "DAI")
-            is_linear = False
-            for quote in _LINEAR_QUOTES:
-                if base.endswith(quote) and len(base) > len(quote) + 2:
-                    is_linear = True
-                    break
-            if is_linear:
-                formatted = base
-            else:
-                formatted = base + "_PERP"
+
+            # Length guard only for USD-ending quotes where COIN-M {BASE}USD
+            # can overlap (e.g. BNBUSD/BUSD, DOTUSD/TUSD)
+            is_linear = any(
+                base.endswith(q) and (not q.endswith("USD") or len(base) > len(q) + 2)
+                for q in _LINEAR_QUOTES
+            )
+            formatted = base if is_linear else base + "_PERP"
 
         return super().__new__(cls, formatted)
 
