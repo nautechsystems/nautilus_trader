@@ -41,6 +41,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.objects import Price
@@ -50,6 +51,8 @@ from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
@@ -100,8 +103,8 @@ class TestPersistenceStreaming:
             "ComponentStateChanged": 34,
             "OrderAccepted": 192,
             "OrderBookDelta": 1307,
-            "OrderCanceled": 134,
-            "OrderFilled": 254,
+            "OrderCanceled": 67,
+            "OrderFilled": 127,
             "OrderInitialized": 193,
             "OrderSubmitted": 193,
             "PositionChanged": 123,
@@ -454,8 +457,8 @@ class TestPersistenceStreaming:
             "ComponentStateChanged": 34,
             "OrderAccepted": 192,
             "OrderBookDelta": 1307,
-            "OrderCanceled": 134,
-            "OrderFilled": 254,
+            "OrderCanceled": 67,
+            "OrderFilled": 127,
             "OrderInitialized": 193,
             "OrderSubmitted": 193,
             "PositionChanged": 123,
@@ -819,3 +822,70 @@ class TestPersistenceStreaming:
             transformed_feather_table.schema,
             check_metadata=True,
         )
+
+    def test_feather_writer_dedup_same_event(self, tmp_path) -> None:
+        # Arrange
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        cache.add_instrument(instrument)
+
+        writer = StreamingFeatherWriter(
+            path=str(tmp_path / "stream"),
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[OrderFilled],
+        )
+
+        order = TestExecStubs.market_order(instrument=instrument)
+        fill = TestEventStubs.order_filled(order=order, instrument=instrument)
+
+        # Act - write the same event twice (simulates duplicate
+        # publishing on multiple message bus topics)
+        writer.write(fill)
+        writer.write(fill)
+        writer.close()
+
+        # Assert
+        feather_files = list(tmp_path.glob("stream/order_filled*.feather"))
+        assert len(feather_files) == 1
+
+        with open(feather_files[0], "rb") as f:
+            table = pa.ipc.open_stream(f).read_all()
+
+        assert len(table) == 1
+
+    def test_feather_writer_writes_distinct_events(self, tmp_path) -> None:
+        # Arrange
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        cache.add_instrument(instrument)
+
+        writer = StreamingFeatherWriter(
+            path=str(tmp_path / "stream"),
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[OrderFilled],
+        )
+
+        order1 = TestExecStubs.market_order(instrument=instrument)
+        order2 = TestExecStubs.market_order(instrument=instrument)
+        fill1 = TestEventStubs.order_filled(order=order1, instrument=instrument)
+        fill2 = TestEventStubs.order_filled(order=order2, instrument=instrument)
+
+        # Act
+        writer.write(fill1)
+        writer.write(fill2)
+        writer.close()
+
+        # Assert
+        feather_files = list(tmp_path.glob("stream/order_filled*.feather"))
+        assert len(feather_files) == 1
+
+        with open(feather_files[0], "rb") as f:
+            table = pa.ipc.open_stream(f).read_all()
+
+        assert len(table) == 2

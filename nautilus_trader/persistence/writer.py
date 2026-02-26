@@ -190,7 +190,7 @@ class StreamingFeatherWriter:
             return
 
         # Deduplicate events published on multiple message bus topics
-        event_id = getattr(obj, "event_id", None)
+        event_id = getattr(obj, "id", None)
         if isinstance(event_id, UUID4) and event_id in self._seen_event_ids:
             return
         if isinstance(event_id, UUID4):
