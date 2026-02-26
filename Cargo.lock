@@ -4920,6 +4920,7 @@ version = "0.54.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
+ "bytes",
  "chrono",
  "log",
  "nautilus-common",
@@ -4934,6 +4935,7 @@ dependencies = [
  "strum 0.28.0",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-tungstenite",
  "tokio-util",
  "urlencoding",
  "ustr",

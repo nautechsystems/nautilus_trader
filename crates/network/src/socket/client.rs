@@ -45,9 +45,7 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::{Error, client::IntoClientRequest, stream::Mode};
 
-use super::{
-    SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand, fix::process_fix_buffer,
-};
+use super::{SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand};
 use crate::{
     backoff::ExponentialBackoff,
     error::SendError,
@@ -527,27 +525,16 @@ impl SocketClientInner {
                         log::trace!("Received <binary> {bytes} bytes");
                         last_data_time = tokio::time::Instant::now();
 
-                        // Check if buffer contains FIX protocol messages (starts with "8=FIX")
-                        let is_fix = buf.len() >= 5 && buf.starts_with(b"8=FIX");
+                        while let Some((i, _)) = &buf
+                            .windows(suffix.len())
+                            .enumerate()
+                            .find(|(_, pair)| pair.eq(&suffix))
+                        {
+                            let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
+                            data.truncate(data.len() - suffix.len());
 
-                        if is_fix && handler.is_some() {
-                            // FIX protocol processing
                             if let Some(ref handler) = handler {
-                                process_fix_buffer(&mut buf, handler);
-                            }
-                        } else {
-                            // Regular suffix-based message processing
-                            while let Some((i, _)) = &buf
-                                .windows(suffix.len())
-                                .enumerate()
-                                .find(|(_, pair)| pair.eq(&suffix))
-                            {
-                                let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
-                                data.truncate(data.len() - suffix.len());
-
-                                if let Some(ref handler) = handler {
-                                    handler(&data);
-                                }
+                                handler(&data);
                             }
                         }
 

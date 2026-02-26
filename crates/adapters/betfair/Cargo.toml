@@ -36,6 +36,7 @@ nautilus-network = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
@@ -44,6 +45,7 @@ serde_json = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 urlencoding = { workspace = true }
 ustr = { workspace = true }
