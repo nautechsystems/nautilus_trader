@@ -285,6 +285,7 @@ impl DydxWebSocketClient {
                                 // but DON'T send order reports yet — fills must be sent first
                                 // to prevent reconciliation from inferring fills at the limit price.
                                 let mut pending_order_reports = Vec::new();
+
                                 if let Some(ref orders) = data.contents.orders {
                                     for ws_order in orders {
                                         // Build order_id → (client_id, client_metadata) for fill correlation

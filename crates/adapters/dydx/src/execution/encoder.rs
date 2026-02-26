@@ -279,11 +279,13 @@ impl ClientOrderIdEncoder {
                 "Trader tag {trader} exceeds max {TRADER_MASK}"
             )));
         }
+
         if strategy > STRATEGY_MASK {
             return Err(EncoderError::ValueOverflow(format!(
                 "Strategy tag {strategy} exceeds max {STRATEGY_MASK}"
             )));
         }
+
         if count > COUNT_MASK {
             return Err(EncoderError::ValueOverflow(format!(
                 "Count {count} exceeds max {COUNT_MASK}"
@@ -344,6 +346,7 @@ impl ClientOrderIdEncoder {
                 while self.known_client_ids.contains(&counter) {
                     counter = self.next_id.fetch_add(1, Ordering::Relaxed);
                 }
+
                 if counter >= MAX_SAFE_CLIENT_ID {
                     return Err(EncoderError::CounterOverflow(counter));
                 }

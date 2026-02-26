@@ -201,6 +201,7 @@ impl SimulatedExchange {
         if starting_balances.is_empty() {
             anyhow::bail!("Starting balances must be provided")
         }
+
         if base_currency.is_some() && starting_balances.len() > 1 {
             anyhow::bail!("single-currency account has multiple starting currencies")
         }

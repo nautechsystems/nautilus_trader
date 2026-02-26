@@ -227,6 +227,7 @@ impl DeribitDataClient {
             }
             NautilusWsMessage::Instrument(instrument) => {
                 let instrument_any = *instrument;
+
                 if let Ok(mut guard) = instruments.write() {
                     let instrument_id = instrument_any.id();
                     guard.insert(instrument_id, instrument_any.clone());
@@ -360,6 +361,7 @@ impl DataClient for DeribitDataClient {
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
+
         if let Ok(mut instruments) = self.instruments.write() {
             instruments.clear();
         }
@@ -532,6 +534,7 @@ impl DataClient for DeribitDataClient {
             .instruments
             .read()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
+
         if !guard.contains_key(&instrument_id) {
             log::warn!(
                 "Instrument {instrument_id} not in cache - it may have been created after connect()"
@@ -1114,6 +1117,7 @@ impl DataClient for DeribitDataClient {
                 request.venue
             );
         }
+
         if request.end.is_some() {
             log::warn!(
                 "Requesting instruments for {:?} with specified `end` which has no effect",
@@ -1206,6 +1210,7 @@ impl DataClient for DeribitDataClient {
                 request.instrument_id
             );
         }
+
         if request.end.is_some() {
             log::warn!(
                 "Requesting instrument {} with specified `end` which has no effect",
@@ -1327,6 +1332,7 @@ impl DataClient for DeribitDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
@@ -1369,6 +1375,7 @@ impl DataClient for DeribitDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send bars response: {e}");
                     }
@@ -1407,6 +1414,7 @@ impl DataClient for DeribitDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send book snapshot response: {e}");
                     }

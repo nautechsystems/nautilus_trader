@@ -125,6 +125,7 @@ impl Credential {
         message.push_str(timestamp);
         message.push_str(&self.api_key);
         message.push_str(&recv_window);
+
         if let Some(payload) = payload {
             message.push_str(payload);
         }

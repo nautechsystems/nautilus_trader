@@ -127,6 +127,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>, is_us
                 if is_user {
                     if payload.get("type").and_then(Value::as_str) == Some("user") {
                         *state.received_user_auth.lock().await = payload.get("auth").cloned();
+
                         if socket
                             .send(Message::Text(user_order_msg.clone().into()))
                             .await
@@ -161,6 +162,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>, is_us
             }
             Message::Ping(data) => {
                 state.ping_count.fetch_add(1, Ordering::Relaxed);
+
                 if socket.send(Message::Pong(data)).await.is_err() {
                     break;
                 }

@@ -1972,6 +1972,7 @@ impl OKXHttpClient {
         {
             return Ok(Vec::new());
         }
+
         if let Some(e) = end
             && e > now
         {
@@ -2014,6 +2015,7 @@ impl OKXHttpClient {
         // Floor start and ceiling end to bar boundaries for cleaner API requests
         let start_ms = start.map(|s| {
             let ms = s.timestamp_millis();
+
             if slot_ms > 0 {
                 (ms / slot_ms) * slot_ms // Floor to nearest bar boundary
             } else {
@@ -2022,6 +2024,7 @@ impl OKXHttpClient {
         });
         let end_ms = end.map(|e| {
             let ms = e.timestamp_millis();
+
             if slot_ms > 0 {
                 ((ms + slot_ms - 1) / slot_ms) * slot_ms // Ceiling to nearest bar boundary
             } else {
@@ -2079,6 +2082,7 @@ impl OKXHttpClient {
             {
                 break;
             }
+
             if pages >= MAX_PAGES_SOFT {
                 break;
             }
@@ -2132,6 +2136,7 @@ impl OKXHttpClient {
                     if let Some(a) = after_ms {
                         p.after_ms(a);
                     }
+
                     if let Some(b) = before_ms {
                         p.before_ms(b);
                         req_used_before = true;
@@ -2172,6 +2177,7 @@ impl OKXHttpClient {
                         .get_history_candles(params2)
                         .await
                         .map_err(anyhow::Error::new)?;
+
                     if raw2.is_empty() {
                         // Step back one page interval and retry loop
                         let jump = (page_cap as i64).saturating_mul(slot_ms.max(1));
@@ -2207,6 +2213,7 @@ impl OKXHttpClient {
                         self.inner.get_candles(params2).await
                     }
                     .map_err(anyhow::Error::new)?;
+
                     if raw2.is_empty() {
                         break;
                     } else {
@@ -2419,12 +2426,14 @@ impl OKXHttpClient {
             {
                 break;
             }
+
             if let Some(ens) = end_ns
                 && let Some(last) = out.last()
                 && last.ts_event.as_i64() >= ens
             {
                 break;
             }
+
             if let Some(sns) = start_ns
                 && let Some(first) = out.first()
                 && (matches!(mode, Mode::Backward) || forward_prepend_mode)
@@ -2469,6 +2478,7 @@ impl OKXHttpClient {
                 self.inner.get_candles(params).await
             }
             .map_err(anyhow::Error::new)?;
+
             if !raw.is_empty() {
                 let ts_init = self.generate_ts_init();
                 let mut page: Vec<Bar> = Vec::with_capacity(raw.len());
@@ -2661,6 +2671,7 @@ impl OKXHttpClient {
             {
                 continue;
             }
+
             if let Some(end_ns) = end_ns
                 && report.ts_last > end_ns
             {
@@ -2736,6 +2747,7 @@ impl OKXHttpClient {
             if detail.fill_sz.is_empty() {
                 continue;
             }
+
             if let Ok(qty) = detail.fill_sz.parse::<f64>() {
                 if qty <= 0.0 {
                     continue;
@@ -3160,18 +3172,23 @@ impl OKXHttpClient {
 
         let mut params_builder = GetAlgoOrdersParamsBuilder::default();
         params_builder.inst_type(inst_type);
+
         if let Some(inst_id) = instrument_id {
             params_builder.inst_id(inst_id.symbol.inner().to_string());
         }
+
         if let Some(algo_id) = algo_id.as_ref() {
             params_builder.algo_id(algo_id.clone());
         }
+
         if let Some(client_order_id) = algo_client_order_id.as_ref() {
             params_builder.algo_cl_ord_id(client_order_id.as_str().to_string());
         }
+
         if let Some(state) = state {
             params_builder.state(state);
         }
+
         if let Some(limit) = limit {
             params_builder.limit(limit);
         }

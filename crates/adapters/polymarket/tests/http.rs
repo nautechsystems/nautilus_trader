@@ -166,6 +166,7 @@ async fn handle_post_order(
         return r;
     }
     *state.last_headers.lock().await = extract_headers(&headers);
+
     if let Ok(v) = serde_json::from_slice::<Value>(&body) {
         *state.last_body.lock().await = Some(v);
     }
@@ -181,6 +182,7 @@ async fn handle_delete_order(
         return r;
     }
     *state.last_headers.lock().await = extract_headers(&headers);
+
     if let Ok(v) = serde_json::from_slice::<Value>(&body) {
         *state.last_body.lock().await = Some(v);
     }
@@ -196,6 +198,7 @@ async fn handle_delete_orders(
         return r;
     }
     *state.last_headers.lock().await = extract_headers(&headers);
+
     if let Ok(v) = serde_json::from_slice::<Value>(&body) {
         *state.last_body.lock().await = Some(v);
     }
@@ -220,6 +223,7 @@ async fn handle_cancel_market(
         return r;
     }
     *state.last_headers.lock().await = extract_headers(&headers);
+
     if let Ok(v) = serde_json::from_slice::<Value>(&body) {
         *state.last_body.lock().await = Some(v);
     }

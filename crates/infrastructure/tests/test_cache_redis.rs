@@ -403,6 +403,7 @@ mod serial_tests {
                     for index_key in &index_keys {
                         let exists: bool =
                             conn.sismember(index_key, &position_id_str).await.unwrap();
+
                         if !exists {
                             return false;
                         }
@@ -436,6 +437,7 @@ mod serial_tests {
                     for index_key in &index_keys {
                         let exists: bool =
                             conn.sismember(index_key, &position_id_str).await.unwrap();
+
                         if exists {
                             return false;
                         }

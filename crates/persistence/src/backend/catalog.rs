@@ -490,6 +490,7 @@ impl ParquetDataCatalog {
 
         let file_exists =
             self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
+
         if file_exists {
             log::info!("File {path:?} already exists, skipping write");
             return Ok(path);
@@ -629,6 +630,7 @@ impl ParquetDataCatalog {
 
             let file_exists = self
                 .execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
+
             if file_exists {
                 log::info!("Instrument file {path:?} already exists, skipping write");
                 paths.push(path);
@@ -2048,6 +2050,7 @@ impl ParquetDataCatalog {
         // For bars, fall back to partial matching when the exact directory
         // doesn't exist (callers may pass an instrument_id like "EUR/USD.SIM"
         // but bars are stored under bar_type dirs like "EURUSD.SIM-1-MINUTE-...")
+
         if !intervals.is_empty() || data_cls != "bars" || identifier.is_none() {
             return Ok(intervals);
         }
@@ -2413,6 +2416,7 @@ impl ParquetDataCatalog {
 
             // List all entries in the directory
             let mut directories = Vec::new();
+
             if let Ok(entries) = std::fs::read_dir(&directory) {
                 for entry in entries.flatten() {
                     if let Ok(file_type) = entry.file_type()
@@ -2732,6 +2736,7 @@ impl ParquetDataCatalog {
             }
 
             let mut directories = Vec::new();
+
             if let Ok(entries) = std::fs::read_dir(&directory) {
                 for entry in entries.flatten() {
                     if let Ok(file_type) = entry.file_type()
@@ -3121,6 +3126,7 @@ impl ParquetDataCatalog {
                 "quotes" => {
                     let mut data: Vec<QuoteTick> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3129,6 +3135,7 @@ impl ParquetDataCatalog {
                 "trades" => {
                     let mut data: Vec<TradeTick> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3137,6 +3144,7 @@ impl ParquetDataCatalog {
                 "order_book_deltas" => {
                     let mut data: Vec<OrderBookDelta> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3145,6 +3153,7 @@ impl ParquetDataCatalog {
                 "order_book_depths" => {
                     let mut data: Vec<OrderBookDepth10> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3157,6 +3166,7 @@ impl ParquetDataCatalog {
                             use_ts_event_for_ts_init,
                             convert_bar_type,
                         )?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3165,6 +3175,7 @@ impl ParquetDataCatalog {
                 "index_prices" => {
                     let mut data: Vec<IndexPriceUpdate> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3173,6 +3184,7 @@ impl ParquetDataCatalog {
                 "mark_prices" => {
                     let mut data: Vec<MarkPriceUpdate> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3181,6 +3193,7 @@ impl ParquetDataCatalog {
                 "instrument_closes" => {
                     let mut data: Vec<InstrumentClose> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3530,6 +3543,7 @@ pub fn make_object_store_path(base_path: &str, components: &[&str]) -> String {
             .replace('\\', "/")
             .trim_end_matches('/')
             .to_string();
+
         if !normalized_base.is_empty() {
             parts.push(normalized_base);
         }
@@ -3541,6 +3555,7 @@ pub fn make_object_store_path(base_path: &str, components: &[&str]) -> String {
             .trim_start_matches('/')
             .trim_end_matches('/')
             .to_string();
+
         if !normalized_component.is_empty() {
             parts.push(normalized_component);
         }
@@ -3570,6 +3585,7 @@ pub fn make_object_store_path_owned(base_path: &str, components: Vec<String>) ->
             .replace('\\', "/")
             .trim_end_matches('/')
             .to_string();
+
         if !normalized_base.is_empty() {
             parts.push(normalized_base);
         }
@@ -3581,6 +3597,7 @@ pub fn make_object_store_path_owned(base_path: &str, components: Vec<String>) ->
             .trim_start_matches('/')
             .trim_end_matches('/')
             .to_string();
+
         if !normalized_component.is_empty() {
             parts.push(normalized_component);
         }

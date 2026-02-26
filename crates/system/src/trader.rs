@@ -617,6 +617,7 @@ impl Trader {
                 .strategy_stop_fns
                 .get_mut(&strategy_id)
                 .is_none_or(|stop_fn| stop_fn());
+
             if should_proceed {
                 stop_component(&strategy_id.inner())?;
             }

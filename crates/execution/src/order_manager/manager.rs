@@ -227,6 +227,7 @@ impl OrderManager {
             .borrow()
             .order(&rejected.client_order_id)
             .cloned();
+
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
                 self.handle_contingencies(order);
@@ -246,6 +247,7 @@ impl OrderManager {
             .borrow()
             .order(&canceled.client_order_id)
             .cloned();
+
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
                 self.handle_contingencies(order);
@@ -401,6 +403,7 @@ impl OrderManager {
                     {
                         continue;
                     }
+
                     if contingent_order.client_order_id() != order.client_order_id() {
                         self.cancel_order(&contingent_order);
                     }

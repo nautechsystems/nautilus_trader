@@ -127,6 +127,7 @@ impl Swings {
         if self.high_inputs.len() == self.period {
             self.high_inputs.pop_front();
         }
+
         if self.low_inputs.len() == self.period {
             self.low_inputs.pop_front();
         }
@@ -150,6 +151,7 @@ impl Swings {
             if self.direction == -1 {
                 self.changed = true;
             }
+
             if high > self.high_price {
                 self.high_price = high;
                 self.high_datetime = timestamp;
@@ -161,10 +163,12 @@ impl Swings {
             if self.direction == 1 {
                 self.changed = true;
             }
+
             if self.high_price == 0.0 {
                 self.high_price = max_high;
                 self.high_datetime = timestamp;
             }
+
             if low < self.low_price || self.low_price == 0.0 {
                 self.low_price = low;
                 self.low_datetime = timestamp;
@@ -182,6 +186,7 @@ impl Swings {
         if self.high_price != 0.0 && self.low_price != 0.0 {
             self.initialized = true;
             self.length = ((self.high_price - self.low_price).abs().round()) as usize;
+
             if self.direction == 1 {
                 self.duration = self.since_low;
             } else if self.direction == -1 {

@@ -194,6 +194,7 @@ impl FeedHandler {
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Handler received disconnect command");
+
                             if let Some(ref client) = self.client {
                                 client.disconnect().await;
                             }
@@ -377,8 +378,10 @@ impl FeedHandler {
                                 fill.px
                             );
                         }
+
                         if let Some(account_id) = account_id {
                             log::debug!("Processing fills with account_id={account_id}");
+
                             if let Some(msg) = Self::handle_user_fills(
                                 &fills,
                                 instruments,
@@ -641,6 +644,7 @@ impl FeedHandler {
         let key = format!("candle:{}:{}", data.s, data.i);
 
         let mut closed_bar = None;
+
         if let Some(cached) = bar_cache.get(&key) {
             // Emit cached bar when close_time changes, indicating the previous period closed
             if cached.close_time != data.close_time {
@@ -719,6 +723,7 @@ impl FeedHandler {
                             mark_price_cache.insert(*coin, mark_px.clone());
                             result.push(NautilusWsMessage::MarkPrice(mark_price));
                         }
+
                         if index_changed
                             && subscribed_types
                                 .is_some_and(|s| s.contains(&AssetContextDataType::IndexPrice))
@@ -726,10 +731,12 @@ impl FeedHandler {
                             if let Some(px) = oracle_px {
                                 index_price_cache.insert(*coin, px.clone());
                             }
+
                             if let Some(index) = index_price {
                                 result.push(NautilusWsMessage::IndexPrice(index));
                             }
                         }
+
                         if funding_changed
                             && subscribed_types
                                 .is_some_and(|s| s.contains(&AssetContextDataType::FundingRate))
@@ -737,6 +744,7 @@ impl FeedHandler {
                             if let Some(rate) = funding {
                                 funding_rate_cache.insert(*coin, rate.clone());
                             }
+
                             if let Some(funding) = funding_rate {
                                 result.push(NautilusWsMessage::FundingRate(funding));
                             }

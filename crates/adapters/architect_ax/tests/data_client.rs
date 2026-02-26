@@ -140,6 +140,7 @@ async fn test_handler_parses_trade_tick() {
             Ok(Some(_)) => continue,
             Ok(None) | Err(_) => break,
         }
+
         if found_trade {
             break;
         }

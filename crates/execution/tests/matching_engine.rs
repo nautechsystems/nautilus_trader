@@ -227,6 +227,7 @@ fn order_event_handler_with_cache(
         TypedIntoHandler::from(move |event: OrderEventAny| {
             // Apply event to cached order (simulates exec engine)
             let client_order_id = event.client_order_id();
+
             if let Ok(mut cache_ref) = cache.try_borrow_mut()
                 && let Some(order) = cache_ref.mut_order(&client_order_id)
             {

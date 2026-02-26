@@ -756,6 +756,7 @@ impl DeribitWsFeedHandler {
             }
             HandlerCommand::Disconnect => {
                 log::debug!("Disconnecting WebSocket");
+
                 if let Some(client) = self.inner.take() {
                     client.disconnect().await;
                 }
@@ -1006,6 +1007,7 @@ impl DeribitWsFeedHandler {
                                     channels,
                                     request_id
                                 );
+
                                 if let Ok(mut errors) = self.subscribe_errors.lock() {
                                     errors.push(format!(
                                         "Subscribe rejected: code={}, message={}",
@@ -1044,6 +1046,7 @@ impl DeribitWsFeedHandler {
                                     .filter(|ch| self.pending_book_resync.contains(ch))
                                     .cloned()
                                     .collect();
+
                                 if !resync.is_empty() {
                                     let _ = self.handle_subscribe(resync).await;
                                 }
@@ -1201,6 +1204,7 @@ impl DeribitWsFeedHandler {
                                             let instrument_name_ustr = Ustr::from(
                                                 order_response.order.instrument_name.as_str(),
                                             );
+
                                             if let Some(instrument) =
                                                 self.instruments_cache.get(&instrument_name_ustr)
                                             {
@@ -1315,6 +1319,7 @@ impl DeribitWsFeedHandler {
                                         let instrument_name_ustr = Ustr::from(
                                             order_response.order.instrument_name.as_str(),
                                         );
+
                                         if let Some(instrument) =
                                             self.instruments_cache.get(&instrument_name_ustr)
                                         {
@@ -1409,6 +1414,7 @@ impl DeribitWsFeedHandler {
 
                                         // Convert to OrderStatusReport
                                         let instrument_name_ustr = order_msg.instrument_name;
+
                                         if let Some(instrument) =
                                             self.instruments_cache.get(&instrument_name_ustr)
                                         {
@@ -1508,6 +1514,7 @@ impl DeribitWsFeedHandler {
                                     log::debug!("Received {} trades", trades.len());
                                     let data_vec =
                                         parse_trades_data(trades, &self.instruments_cache, ts_init);
+
                                     if data_vec.is_empty() {
                                         log::debug!(
                                             "No trades parsed - instrument cache size: {}",
@@ -1668,6 +1675,7 @@ impl DeribitWsFeedHandler {
                                     let parts: Vec<&str> = channel.split('.').collect();
                                     if parts.len() >= 2 {
                                         let instrument_name = Ustr::from(parts[1]);
+
                                         if let Some(instrument) =
                                             self.instruments_cache.get(&instrument_name)
                                         {
@@ -1770,6 +1778,7 @@ impl DeribitWsFeedHandler {
                                                     Ok(new_bar) => {
                                                         // Check if we have a pending bar for this channel
                                                         let channel_key = channel.clone();
+
                                                         if let Some(pending_bar) =
                                                             self.pending_bars.get(&channel_key)
                                                         {
@@ -2068,6 +2077,7 @@ impl DeribitWsFeedHandler {
                                     let mut reports = Vec::with_capacity(trades.len());
                                     for trade in &trades {
                                         let instrument_name = trade.instrument_name;
+
                                         if let Some(instrument) =
                                             self.instruments_cache.get(&instrument_name)
                                         {
@@ -2131,6 +2141,7 @@ impl DeribitWsFeedHandler {
                                         Ok(account_state) => {
                                             // Check for duplicate per currency
                                             let currency_key = portfolio.currency.clone();
+
                                             if let Some(last) =
                                                 self.last_account_states.get(&currency_key)
                                                 && account_state.has_same_balances_and_margins(last)
@@ -2178,6 +2189,7 @@ impl DeribitWsFeedHandler {
                         log::trace!(
                             "Received heartbeat test_request - responding with public/test"
                         );
+
                         if let Err(e) = self.handle_heartbeat_test_request().await {
                             log::error!("Failed to respond to heartbeat test_request: {e}");
 
@@ -2247,6 +2259,7 @@ impl DeribitWsFeedHandler {
                                     NautilusWsMessage::FundingRates(rates) => {
                                         let msg_to_send =
                                             NautilusWsMessage::FundingRates(rates.clone());
+
                                         if let Err(e) = self.out_tx.send(msg_to_send) {
                                             log::error!("Failed to send funding rates: {e}");
                                         }

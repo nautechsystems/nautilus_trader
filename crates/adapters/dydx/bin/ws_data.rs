@@ -136,6 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             log::info!("");
 
             log::info!("- Subscribing to trades");
+
             if let Err(e) = ws_client.subscribe_trades(instrument_id).await {
                 log::error!("Failed to subscribe to trades: {e}");
             } else {
@@ -145,6 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(Duration::from_millis(100)).await;
 
             log::info!("- Subscribing to orderbook");
+
             if let Err(e) = ws_client.subscribe_orderbook(instrument_id).await {
                 log::error!("Failed to subscribe to orderbook: {e}");
             } else {
@@ -165,6 +167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ws_client.send_command(HandlerCommand::RegisterBarType { topic, bar_type })?;
 
             log::info!("- Subscribing to 1-minute candles");
+
             if let Err(e) = ws_client.subscribe_candles(instrument_id, "1MIN").await {
                 log::error!("Failed to subscribe to candles: {e}");
             } else {

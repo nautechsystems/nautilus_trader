@@ -523,6 +523,7 @@ impl DataActor for DataTester {
             // Request historical trades (default to last 1 hour)
             if self.config.request_trades {
                 let start = self.clock().utc_now() - ChronoDuration::hours(1);
+
                 if let Err(e) = self.request_trades(
                     instrument_id,
                     Some(start),
@@ -538,6 +539,7 @@ impl DataActor for DataTester {
             // Request historical funding rates (default to last 7 days)
             if self.config.request_funding_rates {
                 let start = self.clock().utc_now() - ChronoDuration::days(7);
+
                 if let Err(e) = self.request_funding_rates(
                     instrument_id,
                     Some(start),
@@ -561,6 +563,7 @@ impl DataActor for DataTester {
                 // Request historical bars (default to last 1 hour)
                 if self.config.request_bars {
                     let start = self.clock().utc_now() - ChronoDuration::hours(1);
+
                     if let Err(e) = self.request_bars(
                         bar_type,
                         Some(start),
@@ -778,6 +781,7 @@ impl DataActor for DataTester {
             for trade in trades.iter().take(5) {
                 log_info!("  {trade:?}", color = LogColor::Cyan);
             }
+
             if trades.len() > 5 {
                 log_info!(
                     "  ... and {} more trades",
@@ -802,6 +806,7 @@ impl DataActor for DataTester {
             for rate in funding_rates.iter().take(5) {
                 log_info!("  {rate:?}", color = LogColor::Cyan);
             }
+
             if funding_rates.len() > 5 {
                 log_info!(
                     "  ... and {} more funding rates",
@@ -823,6 +828,7 @@ impl DataActor for DataTester {
             for bar in bars.iter().take(5) {
                 log_info!("  {bar:?}", color = LogColor::Cyan);
             }
+
             if bars.len() > 5 {
                 log_info!(
                     "  ... and {} more bars",

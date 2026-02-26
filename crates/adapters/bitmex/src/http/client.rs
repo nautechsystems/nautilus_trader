@@ -962,6 +962,7 @@ impl BitmexHttpClient {
         if api_key.is_some() && api_secret.is_none() {
             anyhow::bail!("{secret_var} is required when {key_var} is provided");
         }
+
         if api_key.is_none() && api_secret.is_some() {
             anyhow::bail!("{key_var} is required when {secret_var} is provided");
         }
@@ -1611,6 +1612,7 @@ impl BitmexHttpClient {
         if peg_price_type.is_none() && peg_offset_value.is_some() {
             anyhow::bail!("`peg_offset_value` requires `peg_price_type`");
         }
+
         if let Some(peg_type) = peg_price_type {
             if order_type != OrderType::Limit {
                 anyhow::bail!(
@@ -1619,6 +1621,7 @@ impl BitmexHttpClient {
             }
             params.ord_type(BitmexOrderType::Pegged);
             params.peg_price_type(peg_type);
+
             if let Some(offset) = peg_offset_value {
                 params.peg_offset_value(offset);
             }
@@ -2208,6 +2211,7 @@ impl BitmexHttpClient {
             bar_type.spec().price_type == PriceType::Last,
             "Only LAST price type bars are supported"
         );
+
         if let (Some(start), Some(end)) = (start, end) {
             anyhow::ensure!(
                 start < end,
@@ -2235,15 +2239,19 @@ impl BitmexHttpClient {
         let mut params = GetTradeBucketedParamsBuilder::default();
         params.symbol(instrument_id.symbol.as_str());
         params.bin_size(bin_size);
+
         if partial {
             params.partial(true);
         }
+
         if let Some(start) = start {
             params.start_time(start);
         }
+
         if let Some(end) = end {
             params.end_time(end);
         }
+
         if let Some(limit) = limit {
             let clamped_limit = limit.min(1000);
             if limit > 1000 {
@@ -2266,11 +2274,13 @@ impl BitmexHttpClient {
             {
                 continue;
             }
+
             if let Some(end) = end
                 && bin.timestamp > end
             {
                 continue;
             }
+
             if bin.symbol != instrument_id.symbol.inner() {
                 log::warn!(
                     "Skipping trade bin for unexpected symbol: symbol={}, expected={}",
@@ -2309,15 +2319,19 @@ impl BitmexHttpClient {
         }
 
         let mut params = GetExecutionParamsBuilder::default();
+
         if let Some(instrument_id) = instrument_id {
             params.symbol(instrument_id.symbol.as_str());
         }
+
         if let Some(start) = start {
             params.start_time(start);
         }
+
         if let Some(end) = end {
             params.end_time(end);
         }
+
         if let Some(limit) = limit {
             params.count(limit as i32);
         } else {

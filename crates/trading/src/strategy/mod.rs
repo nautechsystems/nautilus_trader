@@ -127,6 +127,7 @@ pub trait Strategy: DataActor {
         let is_market_exit_order = order
             .tags()
             .is_some_and(|tags| tags.contains(&market_exit_tag));
+
         if core.is_exiting && !order.is_reduce_only() && !is_market_exit_order {
             self.deny_order(&order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
             return Ok(());
@@ -225,6 +226,7 @@ pub trait Strategy: DataActor {
                         order.client_order_id()
                     );
                 }
+
                 if cache.order_exists(&order.client_order_id()) {
                     anyhow::bail!(
                         "Order in list denied: duplicate {}",
@@ -337,6 +339,7 @@ pub trait Strategy: DataActor {
                         order.client_order_id()
                     );
                 }
+
                 if cache.order_exists(&order.client_order_id()) {
                     anyhow::bail!(
                         "Order in list denied: duplicate {}",
@@ -953,6 +956,7 @@ pub trait Strategy: DataActor {
                     | OrderEventAny::CancelRejected(_)
                     | OrderEventAny::ModifyRejected(_)
             );
+
             if is_warning {
                 log::warn!("{id} {RECV}{EVT} {event}");
             } else if core.config.log_events {
@@ -1250,6 +1254,7 @@ pub trait Strategy: DataActor {
             if let Err(e) = self.cancel_all_orders(instrument_id, None, None) {
                 log::error!("Error canceling orders for {instrument_id}: {e}");
             }
+
             if let Err(e) = self.close_all_positions(
                 instrument_id,
                 None,
@@ -1411,6 +1416,7 @@ pub trait Strategy: DataActor {
 
         if should_stop {
             log::info!("{strategy_id} Market exit complete, stopping strategy");
+
             if let Err(e) = Component::stop(self) {
                 log::error!("{strategy_id} Failed to stop: {e}");
             }

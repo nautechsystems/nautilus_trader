@@ -177,6 +177,7 @@ impl HyperSyncClient {
                                     }
                                     None => continue,
                                 };
+
                                 if event_signature == swap_event_encoded_signature {
                                     match dex_extended.parse_swap_event_hypersync(log.clone()) {
                                         Ok(swap_event) => {
@@ -497,6 +498,7 @@ impl HyperSyncClient {
             if let Some(token) = self.blocks_cancellation_token.take() {
                 token.cancel();
             }
+
             if let Err(e) = task.await {
                 log::error!("Error awaiting blocks task during unsubscribe: {e}");
             }

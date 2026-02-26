@@ -403,6 +403,7 @@ pub fn decode_sqrt_price_x96_to_price_tokens_adjusted(
     if price_raw > PRICE_RAW_MAX {
         anyhow::bail!("Price {price_raw} exceeds maximum valid price {PRICE_RAW_MAX}");
     }
+
     if price_raw < PRICE_RAW_MIN {
         anyhow::bail!("Price {price_raw} is below minimum valid price {PRICE_RAW_MIN}");
     }

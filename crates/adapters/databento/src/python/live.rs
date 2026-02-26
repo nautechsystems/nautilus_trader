@@ -246,6 +246,7 @@ impl DatabentoLiveClient {
         if self.is_closed {
             return Err(to_pyruntime_err("Client already closed"));
         }
+
         if self.is_running {
             return Err(to_pyruntime_err("Client already running"));
         }
@@ -303,6 +304,7 @@ impl DatabentoLiveClient {
         if !self.is_running {
             return Err(to_pyruntime_err("Client never started"));
         }
+
         if self.is_closed {
             return Err(to_pyruntime_err("Client already closed"));
         }

@@ -379,6 +379,7 @@ pub fn validate_and_prepare_timer(
                 start_time_ns.to_rfc3339(),
             );
         }
+
         if !allow_past && stop_time <= ts_now {
             anyhow::bail!(
                 "Timer '{name}' stop time {} is in the past (current time is {ts_now})",

@@ -119,6 +119,7 @@ impl BacktestDataIterator {
                 self.single_priority = None;
             }
         }
+
         if complete_remove {
             // Placeholder for future generator cleanup
         }

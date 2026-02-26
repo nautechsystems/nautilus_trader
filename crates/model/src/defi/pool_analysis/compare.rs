@@ -102,6 +102,7 @@ pub fn compare_pool_profiler(profiler: &PoolProfiler, snapshot: &PoolSnapshot) -
     for tick in &snapshot.ticks {
         if let Some(profiler_tick) = profiler.get_tick(tick.value) {
             let mut all_tick_fields_matching = true;
+
             if profiler_tick.liquidity_net != tick.liquidity_net {
                 log::error!(
                     "Tick {} mismatch on net liquidity: profiler={}, compared={}",
@@ -111,6 +112,7 @@ pub fn compare_pool_profiler(profiler: &PoolProfiler, snapshot: &PoolSnapshot) -
                 );
                 all_tick_fields_matching = false;
             }
+
             if profiler_tick.liquidity_gross != tick.liquidity_gross {
                 log::error!(
                     "Tick {} mismatch on gross liquidity: profiler={}, compared={}",
@@ -150,6 +152,7 @@ pub fn compare_pool_profiler(profiler: &PoolProfiler, snapshot: &PoolSnapshot) -
                 position.tick_lower,
                 position.tick_upper,
             );
+
             if position.liquidity != profiler_position.liquidity {
                 log::error!(
                     "Position '{}' mismatch on liquidity: profiler={}, compared={}",

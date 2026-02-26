@@ -693,6 +693,7 @@ impl ExecutionClient for OKXExecutionClient {
 
         self.core.set_stopped();
         self.core.set_disconnected();
+
         if let Some(handle) = self.ws_stream_handle.take() {
             handle.abort();
         }
@@ -1014,6 +1015,7 @@ impl ExecutionClient for OKXExecutionClient {
         if let Some(start) = cmd.start {
             reports.retain(|r| r.ts_last >= start);
         }
+
         if let Some(end) = cmd.end {
             reports.retain(|r| r.ts_last <= end);
         }

@@ -246,6 +246,7 @@ impl FeedHandler {
 
                     if let Message::Ping(data) = &msg {
                         log::trace!("Received ping frame with {} bytes", data.len());
+
                         if let Some(client) = &self.client
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
@@ -276,6 +277,7 @@ impl FeedHandler {
             HandlerCommand::Disconnect => {
                 log::debug!("Disconnect command received");
                 self.auth_tracker.fail("Disconnected");
+
                 if let Some(client) = self.client.take() {
                     client.disconnect().await;
                 }
@@ -304,6 +306,7 @@ impl FeedHandler {
                     log::error!("Failed to send place order message: {e}");
                     self.pending_orders.remove(&request_id);
                     self.orders_metadata.remove(&order_info.client_order_id);
+
                     if let Some(cid) = order.cid {
                         self.cid_to_client_order_id.remove(&cid);
                     }

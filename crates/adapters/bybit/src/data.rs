@@ -247,6 +247,7 @@ impl BybitDataClient {
                     {
                         continue;
                     }
+
                     if let Err(e) = data_sender.send(DataEvent::FundingRate(update)) {
                         log::error!("Failed to emit funding rate event: {e}");
                     }
@@ -490,6 +491,7 @@ impl DataClient for BybitDataClient {
         let depth = cmd
             .depth
             .map_or(BYBIT_DEFAULT_ORDERBOOK_DEPTH, |d| d.get() as u32);
+
         if !matches!(depth, 1 | 50 | 200 | 500) {
             anyhow::bail!("invalid depth {depth}; valid values are 1, 50, 200, or 500");
         }
@@ -1163,6 +1165,7 @@ impl DataClient for BybitDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
@@ -1221,6 +1224,7 @@ impl DataClient for BybitDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send bars response: {e}");
                     }

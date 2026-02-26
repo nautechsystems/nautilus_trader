@@ -400,6 +400,7 @@ impl FuzzyCandlesticks {
             mean_length + self.threshold2 * sd_lengths, // Large
             mean_length + self.threshold3 * sd_lengths, // VeryLarge
         ];
+
         if length <= thresholds[0] {
             CandleSize::VerySmall
         } else if length <= thresholds[1] {

@@ -117,6 +117,7 @@ impl KeltnerPosition {
         // Initialization logic
         if !self.initialized {
             self.has_inputs = true;
+
             if self.kc.initialized() {
                 self.initialized = true;
             }

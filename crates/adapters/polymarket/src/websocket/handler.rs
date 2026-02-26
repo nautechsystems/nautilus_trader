@@ -277,6 +277,7 @@ impl FeedHandler {
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Handler received disconnect command");
+
                             if let Some(ref client) = self.client {
                                 client.disconnect().await;
                             }

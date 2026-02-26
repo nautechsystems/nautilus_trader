@@ -337,6 +337,7 @@ impl SocketClientInner {
         match tcp_result {
             Ok(stream) => {
                 log::debug!("TCP connection established to {socket_addr}, proceeding with TLS");
+
                 if let Err(e) = stream.set_nodelay(true) {
                     log::warn!("Failed to enable TCP_NODELAY for socket client: {e:?}");
                 }
@@ -691,6 +692,7 @@ impl SocketClientInner {
                                         .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
                                     continue;
                                 }
+
                                 if let Err(e) = active_writer.write_all(&suffix).await {
                                     log::error!("Failed to send suffix: {e}");
                                     log::warn!("Writer triggering reconnect");
@@ -919,6 +921,7 @@ impl SocketClient {
             log_task_stopped("controller");
         } else {
             log::error!("Timeout waiting for controller task to finish");
+
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
                 log_task_aborted("controller");
@@ -950,6 +953,7 @@ impl SocketClient {
                     if self.is_active() {
                         return Ok(());
                     }
+
                     if matches!(
                         self.connection_mode(),
                         ConnectionMode::Disconnect | ConnectionMode::Closed
@@ -1076,6 +1080,7 @@ impl SocketClient {
                                 "Reconnect attempt {} failed: {e}",
                                 inner.reconnect_attempt_count
                             );
+
                             if !duration.is_zero() {
                                 log::warn!("Backing off for {}s...", duration.as_secs_f64());
                             }
@@ -1793,6 +1798,7 @@ mod rust_tests {
                     if n == 0 {
                         break;
                     }
+
                     if sock.write_all(&buf[..n]).await.is_err() {
                         break;
                     }
@@ -1980,6 +1986,7 @@ mod rust_tests {
             let (mut sock, _) = listener.accept().await.unwrap();
             for _ in 0..10 {
                 sleep(Duration::from_millis(200)).await;
+
                 if sock.write_all(b"ping\r\n").await.is_err() {
                     break;
                 }

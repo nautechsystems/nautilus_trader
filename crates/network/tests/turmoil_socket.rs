@@ -154,6 +154,7 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
                         if buffer.starts_with(b"close\r\n") {
                             break;
                         }
+
                         if stream.write_all(&buffer[..n]).await.is_err() {
                             break;
                         }

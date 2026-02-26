@@ -89,6 +89,7 @@ where
             let Some(mut batch) = iter.next() else {
                 break None;
             };
+
             if let Some(item) = batch.next() {
                 break Some(Self { item, batch, iter });
             }
@@ -155,6 +156,7 @@ where
                             } = PeekMut::pop(heap_elem);
                             break Some(item);
                         };
+
                         if let Some(mut item) = batch.next() {
                             heap_elem.batch = batch;
                             std::mem::swap(&mut item, &mut heap_elem.item);

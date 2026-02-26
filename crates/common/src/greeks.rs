@@ -630,6 +630,7 @@ impl GreeksCalculator {
             );
 
             let mut beta = 1.0;
+
             if let Some(weights) = beta_weights
                 && let Some(&weight) = weights.get(&underlying_instrument_id)
             {

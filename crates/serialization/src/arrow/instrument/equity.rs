@@ -65,6 +65,7 @@ impl ArrowSchemaProvider for Equity {
 
         let mut final_metadata = HashMap::new();
         final_metadata.insert("class".to_string(), "Equity".to_string());
+
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
         }

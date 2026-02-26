@@ -473,6 +473,7 @@ impl Account for MarginAccount {
 
         // For premium-based instruments, realize the notional value as a cash flow on every fill
         let instrument_class = instrument.instrument_class();
+
         if matches!(
             instrument_class,
             InstrumentClass::Option

@@ -129,6 +129,7 @@ impl UUID4 {
         if uuid.get_version() != Some(uuid::Version::Random) {
             return Err("UUID is not version 4".to_string());
         }
+
         if uuid.get_variant() != uuid::Variant::RFC4122 {
             return Err("UUID is not RFC 4122 variant".to_string());
         }

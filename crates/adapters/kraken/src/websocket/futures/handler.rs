@@ -258,6 +258,7 @@ impl FuturesFeedHandler {
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Disconnect command received");
+
                             if let Some(client) = self.client.take() {
                                 client.disconnect().await;
                             }
@@ -309,6 +310,7 @@ impl FuturesFeedHandler {
                                     strategy_id,
                                 },
                             );
+
                             if let Some(venue_id) = venue_order_id {
                                 self.venue_order_cache.insert(venue_id, client_order_id);
                             }
@@ -335,6 +337,7 @@ impl FuturesFeedHandler {
                         Message::Ping(data) => {
                             let len = data.len();
                             log::trace!("Received ping frame with {len} bytes");
+
                             if let Some(client) = &self.client
                                 && let Err(e) = client.send_pong(data.to_vec()).await
                             {
@@ -392,6 +395,7 @@ impl FuturesFeedHandler {
             let msg = format!(
                 r#"{{"event":"subscribe","feed":"{feed_str}","product_ids":["{symbol}"]}}"#
             );
+
             if let Err(e) = client.send_text(msg, None).await {
                 log::error!("Failed to send {feed:?} subscribe: {e}");
             }
@@ -405,6 +409,7 @@ impl FuturesFeedHandler {
             let msg = format!(
                 r#"{{"event":"unsubscribe","feed":"{feed_str}","product_ids":["{symbol}"]}}"#
             );
+
             if let Err(e) = client.send_text(msg, None).await {
                 log::error!("Failed to send {feed:?} unsubscribe: {e}");
             }

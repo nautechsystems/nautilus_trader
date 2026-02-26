@@ -492,6 +492,7 @@ impl OKXWebSocketClient {
                 .iter()
                 .map(|entry| entry.value().clone())
                 .collect();
+
             if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(cached_instruments)) {
                 log::error!("Failed to replay instruments to handler: {e}");
             }
@@ -540,6 +541,7 @@ impl OKXWebSocketClient {
                                 inst_family: None,
                                 inst_id: Some(*inst_id),
                             };
+
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
                                 log::error!("Failed to send resubscribe command: error={e}");
                             }
@@ -554,6 +556,7 @@ impl OKXWebSocketClient {
                             inst_family: None,
                             inst_id: None,
                         };
+
                         if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
                             log::error!("Failed to send resubscribe command: error={e}");
                         }
@@ -568,6 +571,7 @@ impl OKXWebSocketClient {
                                 inst_family: None,
                                 inst_id: None,
                             };
+
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
                                 log::error!("Failed to send resubscribe command: error={e}");
                             }
@@ -583,6 +587,7 @@ impl OKXWebSocketClient {
                                 inst_family: Some(*inst_family),
                                 inst_id: None,
                             };
+
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
                                 log::error!("Failed to send resubscribe command: error={e}");
                             }
@@ -2437,6 +2442,7 @@ impl OKXWebSocketClient {
         }
 
         let mut builder = WsPostAlgoOrderParamsBuilder::default();
+
         if !matches!(order_side, OrderSide::Buy | OrderSide::Sell) {
             return Err(OKXWsError::ClientError(
                 "Invalid order side for OKX".to_string(),

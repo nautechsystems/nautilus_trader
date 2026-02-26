@@ -122,6 +122,7 @@ impl DirectionalMovement {
 
         if !self.initialized {
             self.has_inputs = true;
+
             if self.neg_ma.initialized() {
                 self.initialized = true;
             }

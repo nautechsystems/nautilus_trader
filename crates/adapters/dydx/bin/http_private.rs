@@ -86,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if is_mainnet { "MAINNET" } else { "TESTNET" }
     );
     log::info!("Subaccount: {subaccount_number}");
+
     if let Some(market) = market_filter {
         log::info!("Market filter: {market}");
     }
@@ -130,6 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "   Free collateral: {}",
         subaccount.subaccount.free_collateral
     );
+
     if subaccount.subaccount.open_perpetual_positions.is_empty() {
         log::info!("   Open positions: 0");
     } else {
@@ -167,6 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         orders.len(),
         elapsed.as_secs_f64()
     );
+
     if !orders.is_empty() {
         log::info!("   Sample orders:");
         for order in orders.iter().take(5) {
@@ -179,6 +182,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 order.status
             );
         }
+
         if orders.len() > 5 {
             log::info!("   ... and {} more", orders.len() - 5);
         }
@@ -198,6 +202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         fills.fills.len(),
         elapsed.as_secs_f64()
     );
+
     if !fills.fills.is_empty() {
         log::info!("   Recent fills:");
         for fill in fills.fills.iter().take(5) {
@@ -210,6 +215,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 fill.fee
             );
         }
+
         if fills.fills.len() > 5 {
             log::info!("   ... and {} more", fills.fills.len() - 5);
         }

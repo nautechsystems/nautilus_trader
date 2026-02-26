@@ -129,6 +129,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                         let pong_response = json!({
                             "type": "pong"
                         });
+
                         if socket
                             .send(Message::Text(pong_response.to_string().into()))
                             .await
@@ -143,6 +144,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             }
             Message::Ping(data) => {
                 state.ping_count.fetch_add(1, Ordering::Relaxed);
+
                 if socket.send(Message::Pong(data)).await.is_err() {
                     break;
                 }

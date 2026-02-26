@@ -468,6 +468,7 @@ impl DydxExecutionClient {
                         // but DON'T send order reports yet — fills must be sent first
                         // to prevent reconciliation from inferring fills at the limit price.
                         let mut pending_order_reports = Vec::new();
+
                         if let Some(ref orders) = data.contents.orders {
                             log::debug!(
                                 "Processing {} orders from SubaccountsChannelData",
@@ -530,6 +531,7 @@ impl DydxExecutionClient {
                         // Phase 2: Send fills FIRST so reconciliation sees them before
                         // the terminal order status (prevents inferred fills at limit price)
                         let mut filled_in_msg: AHashSet<VenueOrderId> = AHashSet::new();
+
                         if let Some(ref fills) = data.contents.fills {
                             for ws_fill in fills {
                                 match parse_ws_fill_report(
@@ -1313,6 +1315,7 @@ impl ExecutionClient for DydxExecutionClient {
                 // Broadcast: short-term orders use cached sequence (no increment),
                 // stateful orders use broadcast_with_retry (proper sequence management)
                 let operation = format!("Submit {order_type_str} order {client_order_id}");
+
                 if order_flags == types::ORDER_FLAG_SHORT_TERM {
                     broadcaster
                         .broadcast_short_term(&tx_manager, vec![msg], &operation)
@@ -1410,6 +1413,7 @@ impl ExecutionClient for DydxExecutionClient {
                     UUID4::new(),
                     cmd.ts_init,
                 );
+
                 if let Err(e) = self.submit_order(&submit_cmd) {
                     log::error!(
                         "Failed to submit order {} from order list: {e}",
@@ -1560,6 +1564,7 @@ impl ExecutionClient for DydxExecutionClient {
 
                         // Broadcast with cached sequence (short-term orders don't consume sequences)
                         let operation = format!("Submit short-term order {client_order_id}");
+
                         if let Err(e) = broadcaster
                             .broadcast_short_term(&tx_manager, vec![msg], &operation)
                             .await
@@ -1629,6 +1634,7 @@ impl ExecutionClient for DydxExecutionClient {
 
                 // Broadcast batch with retry
                 let operation = format!("Submit batch of {} limit orders", msgs.len());
+
                 if let Err(e) = broadcaster
                     .broadcast_with_retry(&tx_manager, msgs, &operation)
                     .await
@@ -2403,6 +2409,7 @@ impl ExecutionClient for DydxExecutionClient {
         if let Some(start) = cmd.start {
             reports.retain(|r| r.ts_last >= start);
         }
+
         if let Some(end) = cmd.end {
             reports.retain(|r| r.ts_last <= end);
         }

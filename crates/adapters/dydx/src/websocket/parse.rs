@@ -810,6 +810,7 @@ pub fn parse_candle_bar(
         ))
     })?;
     let mut ts_event = UnixNanos::from(started_at_nanos as u64);
+
     if timestamp_on_close {
         let interval_ns = bar_type
             .spec()
@@ -1819,6 +1820,7 @@ mod tests {
         // 2024-01-01T00:00:00.000Z = 1_704_067_200_000_000_000 ns
         let started_at_ns = 1_704_067_200_000_000_000u64;
         let one_min_ns = 60_000_000_000u64;
+
         if timestamp_on_close {
             assert_eq!(bar.ts_event.as_u64(), started_at_ns + one_min_ns);
         } else {

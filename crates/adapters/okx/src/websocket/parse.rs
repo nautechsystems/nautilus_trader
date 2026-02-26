@@ -342,6 +342,7 @@ fn is_order_updated_excluding_venue_id_for_live(
     // Price change only applies to limit orders
     if !is_market_price(&msg.px) {
         let current_price = parse_price(&msg.px, instrument.price_precision())?;
+
         if let Some(prev_price) = previous.price
             && prev_price != current_price
         {
@@ -374,6 +375,7 @@ fn is_order_updated(
     // Price change only applies to limit orders
     if !is_market_price(&msg.px) {
         let current_price = parse_price(&msg.px, instrument.price_precision())?;
+
         if let Some(prev_price) = previous.price
             && prev_price != current_price
         {
@@ -972,6 +974,7 @@ fn has_acc_fill_sz_increased(
         if acc_str.is_empty() || acc_str == "0" {
             return false;
         }
+
         if let Ok(current_filled) = parse_quantity(acc_str, size_precision) {
             if let Some(prev_qty) = previous_filled_qty {
                 return current_filled > prev_qty;

@@ -386,6 +386,7 @@ impl ExecutionEngine {
     /// Returns mutable access to all registered execution clients.
     pub fn get_clients_mut(&mut self) -> Vec<&mut ExecutionClientAdapter> {
         let mut adapters: Vec<_> = self.clients.values_mut().collect();
+
         if let Some(default) = &mut self.default_client {
             adapters.push(default);
         }
@@ -1347,6 +1348,7 @@ impl ExecutionEngine {
 
         // Generate new position ID
         let position_id = self.pos_id_generator.generate(fill.strategy_id, false);
+
         if self.config.debug {
             log::debug!("Generated {} for {}", position_id, fill.client_order_id());
         }
@@ -1398,6 +1400,7 @@ impl ExecutionEngine {
                 _ => {
                     // Protection against invalid IDs and other invariants
                     log::error!("Error applying event: {e}, did not apply {event}");
+
                     if should_handle_own_book_order(order) {
                         self.cache.borrow_mut().update_own_order_book(order);
                     }
@@ -1703,6 +1706,7 @@ impl ExecutionEngine {
         };
 
         let mut fill_split1: Option<OrderFilled> = None;
+
         if position.is_open() {
             fill_split1 = Some(OrderFilled::new(
                 fill.trader_id,

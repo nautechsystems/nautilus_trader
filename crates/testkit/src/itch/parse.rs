@@ -128,6 +128,7 @@ impl ItchParser {
             let Some(locate) = self.target_locate else {
                 continue;
             };
+
             if msg.stock_locate != locate {
                 continue;
             }

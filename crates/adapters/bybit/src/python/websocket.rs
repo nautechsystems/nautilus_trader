@@ -45,6 +45,7 @@ fn validate_bar_type(bar_type: &BarType) -> anyhow::Result<()> {
             spec.price_type
         );
     }
+
     if bar_type.aggregation_source() != AggregationSource::External {
         anyhow::bail!(
             "Invalid bar type: Bybit bars only support EXTERNAL aggregation source, received {}",

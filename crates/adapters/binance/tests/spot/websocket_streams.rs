@@ -136,6 +136,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "result": null,
                             "id": id
                         });
+
                         if socket
                             .send(Message::Text(response.to_string().into()))
                             .await
@@ -164,6 +165,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "result": null,
                             "id": id
                         });
+
                         if socket
                             .send(Message::Text(response.to_string().into()))
                             .await
@@ -178,6 +180,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "result": streams,
                             "id": id
                         });
+
                         if socket
                             .send(Message::Text(response.to_string().into()))
                             .await
@@ -191,6 +194,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             }
             Message::Ping(_) => {
                 state.ping_count.fetch_add(1, Ordering::Relaxed);
+
                 if socket.send(Message::Pong(vec![].into())).await.is_err() {
                     break;
                 }

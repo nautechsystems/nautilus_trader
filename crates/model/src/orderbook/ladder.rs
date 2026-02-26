@@ -196,6 +196,7 @@ impl BookLadder {
         let is_batch = RecordFlag::F_MBP.matches(flags) || RecordFlag::F_SNAPSHOT.matches(flags);
         if self.book_type == BookType::L1_MBP && is_batch {
             self.retain_best_only();
+
             if RecordFlag::F_LAST.matches(flags) {
                 self.batch_state = L1BatchState::None;
             }

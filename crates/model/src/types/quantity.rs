@@ -217,6 +217,7 @@ impl Quantity {
             raw == QUANTITY_UNDEF || raw <= QUANTITY_RAW_MAX,
             "`raw` value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX} for Quantity"
         );
+
         if raw == QUANTITY_UNDEF {
             assert!(
                 precision == 0,

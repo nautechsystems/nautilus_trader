@@ -207,42 +207,52 @@ pub fn parse_perp_instrument(
     let margin_maint = definition.maintenance_margin_pct;
 
     let mut info = Params::new();
+
     if let Some(ref desc) = definition.description {
         info.insert("description".to_string(), json!(desc));
     }
+
     if let Some(ref s) = definition.contract_size {
         info.insert("contract_size".to_string(), json!(s));
     }
+
     if let Some(ref s) = definition.contract_mark_price {
         info.insert("contract_mark_price".to_string(), json!(s));
     }
+
     if let Some(ref s) = definition.price_quotation {
         info.insert("price_quotation".to_string(), json!(s));
     }
+
     if let Some(ref s) = definition.underlying_benchmark_price {
         info.insert("underlying_benchmark_price".to_string(), json!(s));
     }
+
     if let Some(ref s) = definition.price_bands {
         info.insert("price_bands".to_string(), json!(s));
     }
+
     if let Some(v) = definition.funding_rate_cap_upper_pct {
         info.insert(
             "funding_rate_cap_upper_pct".to_string(),
             json!(v.to_string()),
         );
     }
+
     if let Some(v) = definition.funding_rate_cap_lower_pct {
         info.insert(
             "funding_rate_cap_lower_pct".to_string(),
             json!(v.to_string()),
         );
     }
+
     if let Some(v) = definition.price_band_upper_deviation_pct {
         info.insert(
             "price_band_upper_deviation_pct".to_string(),
             json!(v.to_string()),
         );
     }
+
     if let Some(v) = definition.price_band_lower_deviation_pct {
         info.insert(
             "price_band_lower_deviation_pct".to_string(),

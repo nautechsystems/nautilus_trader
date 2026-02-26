@@ -75,6 +75,7 @@ impl ArrowSchemaProvider for CryptoFuture {
 
         let mut final_metadata = HashMap::new();
         final_metadata.insert("class".to_string(), "CryptoFuture".to_string());
+
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
         }

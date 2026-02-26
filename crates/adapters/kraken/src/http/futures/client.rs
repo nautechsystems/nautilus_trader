@@ -445,6 +445,7 @@ impl KrakenFuturesRawHttpClient {
         let status = response.status.as_u16();
         if status >= 400 {
             let body = String::from_utf8_lossy(&response.body).to_string();
+
             if status == 401 || status == 403 {
                 return Err(KrakenHttpError::AuthenticationError(format!(
                     "HTTP error {status}: {body}"
@@ -595,9 +596,11 @@ impl KrakenFuturesRawHttpClient {
         let mut url = format!("{}{endpoint}", self.base_url);
 
         let mut query_params = Vec::new();
+
         if let Some(from_ts) = from {
             query_params.push(format!("from={from_ts}"));
         }
+
         if let Some(to_ts) = to {
             query_params.push(format!("to={to_ts}"));
         }
@@ -624,15 +627,19 @@ impl KrakenFuturesRawHttpClient {
         let mut url = format!("{}{endpoint}", self.base_url);
 
         let mut query_params = Vec::new();
+
         if let Some(since_ts) = since {
             query_params.push(format!("since={since_ts}"));
         }
+
         if let Some(before_ts) = before {
             query_params.push(format!("before={before_ts}"));
         }
+
         if let Some(sort_order) = sort {
             query_params.push(format!("sort={sort_order}"));
         }
+
         if let Some(token) = continuation_token {
             query_params.push(format!("continuationToken={token}"));
         }
@@ -680,9 +687,11 @@ impl KrakenFuturesRawHttpClient {
         if let Some(before_ts) = before {
             query_params.push(format!("before={before_ts}"));
         }
+
         if let Some(since_ts) = since {
             query_params.push(format!("since={since_ts}"));
         }
+
         if let Some(token) = continuation_token {
             query_params.push(format!("continuation_token={token}"));
         }
@@ -799,9 +808,11 @@ impl KrakenFuturesRawHttpClient {
         }
 
         let mut params = HashMap::new();
+
         if let Some(id) = order_id {
             params.insert("order_id".to_string(), id);
         }
+
         if let Some(id) = cli_ord_id {
             params.insert("cliOrdId".to_string(), id);
         }
@@ -877,6 +888,7 @@ impl KrakenFuturesRawHttpClient {
         }
 
         let mut params = HashMap::new();
+
         if let Some(sym) = symbol {
             params.insert("symbol".to_string(), sym);
         }
@@ -1463,6 +1475,7 @@ impl KrakenFuturesHttpClient {
             .get_open_orders()
             .await
             .map_err(|e| anyhow::anyhow!("get_open_orders failed: {e}"))?;
+
         if response.result != KrakenApiResult::Success {
             let error_msg = response
                 .error
@@ -1503,6 +1516,7 @@ impl KrakenFuturesHttpClient {
 
             for event_wrapper in response.order_events {
                 let event = &event_wrapper.order;
+
                 if let Some(ref target_id) = instrument_id {
                     let instrument = self.get_cached_instrument(&target_id.symbol.inner());
                     if let Some(inst) = instrument
@@ -1562,6 +1576,7 @@ impl KrakenFuturesHttpClient {
                     continue;
                 }
             }
+
             if let Some(end_threshold) = end_ms
                 && let Ok(fill_ts) = DateTime::parse_from_rfc3339(&fill.fill_time)
             {
@@ -1725,6 +1740,7 @@ impl KrakenFuturesHttpClient {
                 if let Some(trigger) = trigger_price {
                     builder.stop_price(trigger.to_string());
                 }
+
                 if let Some(limit) = price {
                     builder.limit_price(limit.to_string());
                 }
@@ -1734,6 +1750,7 @@ impl KrakenFuturesHttpClient {
                 if let Some(trigger) = trigger_price {
                     builder.stop_price(trigger.to_string());
                 }
+
                 if let Some(limit) = price {
                     builder.limit_price(limit.to_string());
                 }
@@ -1912,15 +1929,19 @@ impl KrakenFuturesHttpClient {
         if let Some(ref id) = order_id {
             builder.order_id(id.clone());
         }
+
         if let Some(ref id) = cli_ord_id {
             builder.cli_ord_id(id.clone());
         }
+
         if let Some(qty) = quantity {
             builder.size(qty.to_string());
         }
+
         if let Some(p) = price {
             builder.limit_price(p.to_string());
         }
+
         if let Some(tp) = trigger_price {
             builder.stop_price(tp.to_string());
         }

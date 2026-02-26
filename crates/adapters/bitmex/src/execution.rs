@@ -280,6 +280,7 @@ impl BitmexExecutionClient {
         }
 
         log::info!("Disarming dead man's switch");
+
         if let Err(e) = self.http_client.cancel_all_after(0).await {
             log::warn!("Failed to disarm dead man's switch: {e}");
         }
@@ -572,9 +573,11 @@ impl ExecutionClient for BitmexExecutionClient {
 
         self.core.set_stopped();
         self.core.set_disconnected();
+
         if let Some(handle) = self.ws_stream_handle.take() {
             handle.abort();
         }
+
         if let Some(handle) = self.dms_task_handle.take() {
             handle.abort();
         }

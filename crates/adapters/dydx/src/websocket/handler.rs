@@ -263,6 +263,7 @@ impl FeedHandler {
             Message::Text(txt) => {
                 if txt == RECONNECTED {
                     self.clear_state();
+
                     if let Err(e) = self.replay_subscriptions().await {
                         log::error!("Failed to replay subscriptions after reconnect: {e}");
                     }
@@ -293,6 +294,7 @@ impl FeedHandler {
                                     .map(DydxWsMessage::Connected)
                             } else if meta.is_subscribed() {
                                 log::debug!("Processing subscribed message via fallback path");
+
                                 if let Ok(sub_msg) =
                                     serde_json::from_value::<DydxWsSubscriptionMsg>(val.clone())
                                 {
@@ -449,6 +451,7 @@ impl FeedHandler {
             DydxWsOrderbookMessage::Unsubscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Orderbook, &data.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
+
                 if let Some(id) = &data.id {
                     self.book_sequence.remove(id);
                 }
@@ -804,6 +807,7 @@ impl FeedHandler {
             DydxWsMessage::Error(err) => Ok(vec![NautilusWsMessage::Error(err)]),
             DydxWsMessage::Reconnected => {
                 self.clear_state();
+
                 if let Err(e) = self.replay_subscriptions().await {
                     log::error!("Failed to replay subscriptions after reconnect message: {e}");
                 }

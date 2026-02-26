@@ -141,6 +141,7 @@ impl HyperliquidWebSocketClient {
                                             py,
                                             Data::Deltas(OrderBookDeltas_API::new(deltas)),
                                         );
+
                                         if let Err(e) = callback.bind(py).call1((py_obj,)) {
                                             log::error!("Error calling Python callback: {e}");
                                         }
@@ -160,6 +161,7 @@ impl HyperliquidWebSocketClient {
                                             py,
                                             Data::MarkPriceUpdate(mark_price),
                                         );
+
                                         if let Err(e) = callback.bind(py).call1((py_obj,)) {
                                             log::error!("Error calling Python callback: {e}");
                                         }
@@ -171,6 +173,7 @@ impl HyperliquidWebSocketClient {
                                             py,
                                             Data::IndexPriceUpdate(index_price),
                                         );
+
                                         if let Err(e) = callback.bind(py).call1((py_obj,)) {
                                             log::error!("Error calling Python callback: {e}");
                                         }

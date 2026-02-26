@@ -3908,6 +3908,7 @@ fn check_timestamps(
     if let Some(start) = start {
         check_predicate_true(start <= now, "start was > now")?;
     }
+
     if let Some(end) = end {
         check_predicate_true(end <= now, "end was > now")?;
     }

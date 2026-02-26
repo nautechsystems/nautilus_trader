@@ -222,6 +222,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
     /// 2. Which token is base vs quote (from priority determination)
     pub fn order_side(&self) -> OrderSide {
         let zero_for_one = self.zero_for_one();
+
         if self.is_inverted {
             // When inverted: token0=quote, token1=base
             // - zero_for_one (sell token0/quote, buy token1/base) -> BUY base

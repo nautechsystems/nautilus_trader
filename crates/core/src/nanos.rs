@@ -209,6 +209,7 @@ impl UnixNanos {
             let nanos = datetime
                 .timestamp_nanos_opt()
                 .ok_or_else(|| "Timestamp out of range".to_string())?;
+
             if nanos < 0 {
                 return Err("Unix timestamp cannot be negative".into());
             }
@@ -537,6 +538,7 @@ impl<'de> Deserialize<'de> for UnixNanos {
                         "Unix timestamp must be finite, was {value}"
                     )));
                 }
+
                 if value < 0.0 {
                     return Err(E::custom("Unix timestamp cannot be negative"));
                 }

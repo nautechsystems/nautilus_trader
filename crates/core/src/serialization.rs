@@ -88,6 +88,7 @@ impl Visitor<'_> for DecimalVisitor {
         if v.is_nan() {
             return Err(E::invalid_value(Unexpected::Float(v), &self));
         }
+
         if v.is_infinite() {
             return Err(E::invalid_value(Unexpected::Float(v), &self));
         }

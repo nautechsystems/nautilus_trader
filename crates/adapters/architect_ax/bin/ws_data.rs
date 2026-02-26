@@ -80,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "Connectivity OK - got {} instruments",
                 response.instruments.len()
             );
+
             if let Some(first) = response.instruments.first() {
                 log::debug!("First instrument: {:?}", first.symbol);
             }

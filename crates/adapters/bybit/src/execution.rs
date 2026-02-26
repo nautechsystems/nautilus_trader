@@ -506,9 +506,11 @@ impl ExecutionClient for BybitExecutionClient {
 
         self.core.set_stopped();
         self.core.set_disconnected();
+
         if let Some(handle) = self.ws_private_stream_handle.take() {
             handle.abort();
         }
+
         if let Some(handle) = self.ws_trade_stream_handle.take() {
             handle.abort();
         }
@@ -537,6 +539,7 @@ impl ExecutionClient for BybitExecutionClient {
             self.emitter.emit_order_denied(&order, &e.to_string());
             return Ok(());
         }
+
         if let Err(e) = Self::map_order_type(order.order_type()) {
             self.emitter.emit_order_denied(&order, &e.to_string());
             return Ok(());
@@ -1057,6 +1060,7 @@ impl ExecutionClient for BybitExecutionClient {
         if let Some(start) = cmd.start {
             reports.retain(|r| r.ts_last >= start);
         }
+
         if let Some(end) = cmd.end {
             reports.retain(|r| r.ts_last <= end);
         }

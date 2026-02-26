@@ -899,11 +899,13 @@ impl BacktestDataConfig {
                 if let Some(id) = self.instrument_id {
                     return Some(vec![format!("{id}-{bar_spec}-EXTERNAL")]);
                 }
+
                 if let Some(ids) = &self.instrument_ids {
                     let bar_types: Vec<String> = ids
                         .iter()
                         .map(|id| format!("{id}-{bar_spec}-EXTERNAL"))
                         .collect();
+
                     if !bar_types.is_empty() {
                         return Some(bar_types);
                     }
@@ -915,6 +917,7 @@ impl BacktestDataConfig {
         if let Some(id) = self.instrument_id {
             return Some(vec![id.to_string()]);
         }
+
         if let Some(ids) = &self.instrument_ids {
             let strs: Vec<String> = ids.iter().map(ToString::to_string).collect();
             if !strs.is_empty() {
@@ -936,9 +939,11 @@ impl BacktestDataConfig {
         if let Some(id) = self.instrument_id {
             return Ok(vec![id]);
         }
+
         if let Some(ids) = &self.instrument_ids {
             return Ok(ids.clone());
         }
+
         if let Some(bar_types) = &self.bar_types {
             let ids = bar_types
                 .iter()

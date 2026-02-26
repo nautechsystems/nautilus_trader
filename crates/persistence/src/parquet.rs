@@ -131,6 +131,7 @@ pub async fn write_batches_to_object_store(
     let mut props_builder = WriterProperties::builder()
         .set_compression(compression.unwrap_or(parquet::basic::Compression::SNAPPY))
         .set_max_row_group_size(max_row_group_size.unwrap_or(5000));
+
     if let Some(kv) = key_value_metadata {
         props_builder = props_builder.set_key_value_metadata(Some(kv));
     }

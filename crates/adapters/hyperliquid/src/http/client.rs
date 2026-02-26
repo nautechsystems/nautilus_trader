@@ -1117,6 +1117,7 @@ impl HyperliquidHttpClient {
             {
                 return Some(instrument.clone());
             }
+
             if let Some(instrument) =
                 instruments_by_coin.get(&(*coin, HyperliquidProductType::Spot))
             {
@@ -1130,6 +1131,7 @@ impl HyperliquidHttpClient {
                 .spot_fill_coins
                 .read()
                 .expect("Failed to acquire read lock");
+
             if let Some(symbol) = spot_fill_coins.get(coin) {
                 // Look up by full symbol in instruments map (not instruments_by_coin
                 // which uses raw_symbol)
@@ -1137,6 +1139,7 @@ impl HyperliquidHttpClient {
                     .instruments
                     .read()
                     .expect("Failed to acquire read lock");
+
                 if let Some(instrument) = instruments.get(symbol) {
                     return Some(instrument.clone());
                 }

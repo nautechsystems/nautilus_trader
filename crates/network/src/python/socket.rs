@@ -199,6 +199,7 @@ impl SocketClient {
                             if current.is_active() {
                                 return Ok(());
                             }
+
                             if current.is_closed() || current.is_disconnect() {
                                 return Err("Connection closed during reconnect");
                             }

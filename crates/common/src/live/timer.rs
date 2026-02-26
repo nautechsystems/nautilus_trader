@@ -262,6 +262,7 @@ impl LiveTimer {
     /// The timer will not generate a final event.
     pub fn cancel(&mut self) {
         log::debug!("Cancel timer '{}'", self.name);
+
         if let Some(ref handle) = self.task_handle {
             handle.abort();
         }

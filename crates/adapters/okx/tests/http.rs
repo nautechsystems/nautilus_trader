@@ -1099,6 +1099,7 @@ async fn test_request_bars_range_mode_pagination() {
                         let mut bars = Vec::new();
                         for i in 0..10 {
                             let ts = a - ((i + 1) * 60_000);
+
                             if let Some(b) = before
                                 && ts <= b
                             {
@@ -1141,6 +1142,7 @@ async fn test_request_bars_range_mode_pagination() {
                         let mut bars = Vec::new();
                         for i in 0..50 {
                             let ts = a - ((i + 1) * 60_000);
+
                             if let Some(b) = before
                                 && ts <= b
                             {

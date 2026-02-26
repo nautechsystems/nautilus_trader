@@ -68,6 +68,7 @@ pub fn calculate_commission(
     } else {
         panic!("Invalid liquidity side {liquidity_side}")
     };
+
     if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
         Money::new(commission, instrument.base_currency().unwrap())
     } else {

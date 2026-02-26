@@ -524,6 +524,7 @@ impl BybitRawHttpClient {
     fn build_path<S: Serialize>(base: &str, params: &S) -> Result<String, BybitHttpError> {
         let query = serde_urlencoded::to_string(params)
             .map_err(|e| BybitHttpError::JsonError(e.to_string()))?;
+
         if query.is_empty() {
             Ok(base.to_owned())
         } else {
@@ -751,27 +752,35 @@ impl BybitRawHttpClient {
         if let Some(s) = symbol {
             builder.symbol(s);
         }
+
         if let Some(bc) = base_coin {
             builder.base_coin(bc);
         }
+
         if let Some(sc) = settle_coin {
             builder.settle_coin(sc);
         }
+
         if let Some(oi) = order_id {
             builder.order_id(oi);
         }
+
         if let Some(ol) = order_link_id {
             builder.order_link_id(ol);
         }
+
         if let Some(oo) = open_only {
             builder.open_only(oo);
         }
+
         if let Some(of) = order_filter {
             builder.order_filter(of);
         }
+
         if let Some(l) = limit {
             builder.limit(l);
         }
+
         if let Some(c) = cursor {
             builder.cursor(c);
         }
@@ -970,6 +979,7 @@ impl BybitRawHttpClient {
         if let Some(s) = symbol {
             builder.symbol(s);
         }
+
         if let Some(c) = coin {
             builder.coin(c);
         }
@@ -2765,6 +2775,7 @@ impl BybitHttpClient {
                             .get(&definition.symbol)
                             .cloned()
                             .unwrap_or_else(|| default_fee_rate(definition.symbol));
+
                         if let Ok(instrument) =
                             parse_spot_instrument(&definition, &fee_rate, ts_init, ts_init)
                         {
@@ -2822,6 +2833,7 @@ impl BybitHttpClient {
                             .get(&definition.symbol)
                             .cloned()
                             .unwrap_or_else(|| default_fee_rate(definition.symbol));
+
                         if let Ok(instrument) =
                             parse_linear_instrument(&definition, &fee_rate, ts_init, ts_init)
                         {
@@ -2879,6 +2891,7 @@ impl BybitHttpClient {
                             .get(&definition.symbol)
                             .cloned()
                             .unwrap_or_else(|| default_fee_rate(definition.symbol));
+
                         if let Ok(instrument) =
                             parse_inverse_instrument(&definition, &fee_rate, ts_init, ts_init)
                         {
@@ -2998,6 +3011,7 @@ impl BybitHttpClient {
         let mut params_builder = BybitTradesParamsBuilder::default();
         params_builder.category(product_type);
         params_builder.symbol(bybit_symbol.raw_symbol().to_string());
+
         if let Some(limit_val) = limit {
             params_builder.limit(limit_val);
         }
@@ -3055,6 +3069,7 @@ impl BybitHttpClient {
             if let Some(start_val) = start_ms {
                 params_builder.start_time(start_val);
             }
+
             if let Some(end_val) = current_end {
                 params_builder.end_time(end_val);
             }
@@ -3082,6 +3097,7 @@ impl BybitHttpClient {
             let has_new = funding_rates_with_ts
                 .iter()
                 .any(|(ts, _)| !seen_timestamps.contains(ts));
+
             if !has_new {
                 break;
             }
@@ -3119,6 +3135,7 @@ impl BybitHttpClient {
             let Some(earliest_funding_time) = earliest_ts else {
                 break;
             };
+
             if let Some(start_val) = start_ms
                 && earliest_funding_time <= start_val
             {
@@ -3259,6 +3276,7 @@ impl BybitHttpClient {
             if let Some(start_val) = start_ms {
                 params_builder.start(start_val);
             }
+
             if let Some(end_val) = current_end {
                 params_builder.end(end_val);
             }
@@ -3283,6 +3301,7 @@ impl BybitHttpClient {
             let has_new = klines_with_ts
                 .iter()
                 .any(|(ts, _)| !seen_timestamps.contains(ts));
+
             if !has_new {
                 break;
             }
@@ -3328,6 +3347,7 @@ impl BybitHttpClient {
             let Some(earliest_bar_time) = earliest_ts else {
                 break;
             };
+
             if let Some(start_val) = start_ms
                 && earliest_bar_time <= start_val
             {
@@ -3501,13 +3521,16 @@ impl BybitHttpClient {
 
                     let mut p = BybitOpenOrdersParamsBuilder::default();
                     p.category(product_type);
+
                     if let Some(symbol) = symbol_param.clone() {
                         p.symbol(symbol);
                     }
+
                     if let Some(coin) = settle_coin.clone() {
                         p.settle_coin(coin);
                     }
                     p.limit(page_limit as u32);
+
                     if let Some(c) = cursor {
                         p.cursor(c);
                     }
@@ -3551,13 +3574,16 @@ impl BybitHttpClient {
 
                     let mut open_params = BybitOpenOrdersParamsBuilder::default();
                     open_params.category(product_type);
+
                     if let Some(symbol) = symbol_param.clone() {
                         open_params.symbol(symbol);
                     }
+
                     if let Some(coin) = settle_coin.clone() {
                         open_params.settle_coin(coin);
                     }
                     open_params.limit(page_limit as u32);
+
                     if let Some(c) = cursor {
                         open_params.cursor(c);
                     }
@@ -3607,19 +3633,24 @@ impl BybitHttpClient {
 
                     let mut history_params = BybitOrderHistoryParamsBuilder::default();
                     history_params.category(product_type);
+
                     if let Some(symbol) = symbol_param.clone() {
                         history_params.symbol(symbol);
                     }
+
                     if let Some(coin) = settle_coin.clone() {
                         history_params.settle_coin(coin);
                     }
+
                     if let Some(start) = start {
                         history_params.start_time(start.timestamp_millis());
                     }
+
                     if let Some(end) = end {
                         history_params.end_time(end.timestamp_millis());
                     }
                     history_params.limit(page_limit as u32);
+
                     if let Some(c) = cursor {
                         history_params.cursor(c);
                     }
@@ -3662,6 +3693,7 @@ impl BybitHttpClient {
         for order in all_collected_orders {
             if let Some(ref instrument_id) = instrument_id {
                 let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+
                 if let Ok(report) =
                     parse_order_status_report(&order, &instrument, account_id, ts_init)
                 {

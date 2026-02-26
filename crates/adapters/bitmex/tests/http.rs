@@ -566,6 +566,7 @@ async fn test_rate_limiting() {
     let params = GetOrderParamsBuilder::default().build().unwrap();
     for i in 0..6 {
         let result = client.get_orders(params.clone()).await;
+
         if i < 5 {
             assert!(result.is_ok(), "Request {} should succeed", i + 1);
         } else {

@@ -290,6 +290,7 @@ impl PyLogger {
         if pyo3::PyErr::occurred(py) {
             let err = PyErr::fetch(py);
             let err_str = err.to_string();
+
             if full_msg.is_empty() {
                 full_msg = err_str;
             } else {

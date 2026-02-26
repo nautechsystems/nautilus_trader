@@ -118,6 +118,7 @@ impl BetfairStreamClient {
                             if mcm.clk.is_some() {
                                 let _ = market_clk_tx_h.send(mcm.clk.clone());
                             }
+
                             if mcm.initial_clk.is_some() {
                                 let _ = market_initial_clk_tx_h.send(mcm.initial_clk.clone());
                             }
@@ -129,6 +130,7 @@ impl BetfairStreamClient {
                             if ocm.clk.is_some() {
                                 let _ = order_clk_tx_h.send(ocm.clk.clone());
                             }
+
                             if ocm.initial_clk.is_some() {
                                 let _ = order_initial_clk_tx_h.send(ocm.initial_clk.clone());
                             }
@@ -457,6 +459,7 @@ mod tests {
                             if mcm.clk.is_some() {
                                 let _ = market_clk_tx.send(mcm.clk.clone());
                             }
+
                             if mcm.initial_clk.is_some() {
                                 let _ = market_initial_clk_tx.send(mcm.initial_clk.clone());
                             }
@@ -468,6 +471,7 @@ mod tests {
                             if ocm.clk.is_some() {
                                 let _ = order_clk_tx.send(ocm.clk.clone());
                             }
+
                             if ocm.initial_clk.is_some() {
                                 let _ = order_initial_clk_tx.send(ocm.initial_clk.clone());
                             }

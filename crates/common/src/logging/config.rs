@@ -193,6 +193,7 @@ impl LoggerConfig {
                 }
                 _ => {
                     let lvl = parse_level(v)?;
+
                     if k.contains("::") {
                         config.module_level.insert(Ustr::from(k), lvl);
                     } else {

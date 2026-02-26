@@ -292,6 +292,7 @@ impl BitmexWebSocketClient {
                 .iter()
                 .map(|entry| entry.value().clone())
                 .collect();
+
             if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(cached_instruments)) {
                 log::error!("Failed to replay instruments to handler: {e}");
             }
@@ -344,6 +345,7 @@ impl BitmexWebSocketClient {
                         op: BitmexWsOperation::Subscribe,
                         args: vec![Ustr::from(topic.as_ref())],
                     };
+
                     if let Ok(payload) = serde_json::to_string(&message) {
                         payloads.push(payload);
                     }
@@ -754,6 +756,7 @@ impl BitmexWebSocketClient {
                 op: BitmexWsOperation::Unsubscribe,
                 args: vec![Ustr::from(topic.as_ref())],
             };
+
             if let Ok(payload) = serde_json::to_string(&message) {
                 payloads.push(payload);
             }

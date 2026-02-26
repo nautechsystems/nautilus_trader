@@ -177,6 +177,7 @@ impl IndexInstrument {
         dict.set_item("size_increment", self.size_increment.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
+
         if let Some(ref info_map) = self.info {
             let info_dict = PyDict::new(py);
             for (key, value) in info_map {

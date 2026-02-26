@@ -183,6 +183,7 @@ impl SpotFeedHandler {
                         }
                         SpotHandlerCommand::Disconnect => {
                             log::debug!("Disconnect command received");
+
                             if let Some(client) = self.client.take() {
                                 client.disconnect().await;
                             }
@@ -242,6 +243,7 @@ impl SpotFeedHandler {
 
                     if let Message::Ping(data) = &msg {
                         log::trace!("Received ping frame with {} bytes", data.len());
+
                         if let Some(client) = &self.client
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
@@ -306,6 +308,7 @@ impl SpotFeedHandler {
                 log::trace!("Received heartbeat");
                 return None;
             }
+
             if text.contains("status") {
                 log::debug!("Received status message");
                 return None;

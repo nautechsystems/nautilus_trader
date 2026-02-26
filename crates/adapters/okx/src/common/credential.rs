@@ -116,6 +116,7 @@ impl Credential {
         message.extend_from_slice(timestamp.as_bytes());
         message.extend_from_slice(method.as_bytes());
         message.extend_from_slice(endpoint.as_bytes());
+
         if let Some(b) = body {
             message.extend_from_slice(b);
         }

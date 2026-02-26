@@ -514,6 +514,7 @@ impl DataActor for ExecTester {
             if self.config.subscribe_quotes {
                 self.subscribe_quotes(instrument_id, client_id, None);
             }
+
             if self.config.subscribe_trades {
                 self.subscribe_trades(instrument_id, client_id, None);
             }
@@ -544,6 +545,7 @@ impl DataActor for ExecTester {
 
         if self.config.cancel_orders_on_stop {
             let strategy_id = StrategyId::from(self.core.actor_id.inner().as_str());
+
             if self.config.use_individual_cancels_on_stop {
                 let cache = self.cache();
                 let open_orders: Vec<OrderAny> = cache
@@ -580,6 +582,7 @@ impl DataActor for ExecTester {
                 .config
                 .close_positions_time_in_force
                 .or(Some(TimeInForce::Gtc));
+
             if let Err(e) = self.close_all_positions(
                 instrument_id,
                 None,
@@ -883,6 +886,7 @@ impl ExecTester {
             } else {
                 self.submit_limit_order(OrderSide::Buy, price)
             };
+
             if let Err(e) = result {
                 log::error!("Failed to submit buy order: {e}");
             }
@@ -902,6 +906,7 @@ impl ExecTester {
             } else if self.config.cancel_replace_orders_to_maintain_tob_offset {
                 let order_clone = order.clone();
                 let _ = self.cancel_order(order_clone, client_id);
+
                 if let Err(e) = self.submit_limit_order(OrderSide::Buy, price) {
                     log::error!("Failed to submit replacement buy order: {e}");
                 }
@@ -936,6 +941,7 @@ impl ExecTester {
             } else {
                 self.submit_limit_order(OrderSide::Sell, price)
             };
+
             if let Err(e) = result {
                 log::error!("Failed to submit sell order: {e}");
             }
@@ -955,6 +961,7 @@ impl ExecTester {
             } else if self.config.cancel_replace_orders_to_maintain_tob_offset {
                 let order_clone = order.clone();
                 let _ = self.cancel_order(order_clone, client_id);
+
                 if let Err(e) = self.submit_limit_order(OrderSide::Sell, price) {
                     log::error!("Failed to submit replacement sell order: {e}");
                 }
@@ -990,6 +997,7 @@ impl ExecTester {
         ) {
             if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
                 let limit_offset = price_increment * limit_offset_ticks as f64;
+
                 if self.config.stop_order_type == OrderType::LimitIfTouched {
                     Some(instrument.make_price(trigger_price.as_f64() - limit_offset))
                 } else {
@@ -1027,6 +1035,7 @@ impl ExecTester {
                 } else if self.config.cancel_replace_stop_orders_to_maintain_offset {
                     let order_clone = order.clone();
                     let _ = self.cancel_order(order_clone, self.config.client_id);
+
                     if let Err(e) =
                         self.submit_stop_order(OrderSide::Buy, trigger_price, limit_price)
                     {
@@ -1065,6 +1074,7 @@ impl ExecTester {
         ) {
             if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
                 let limit_offset = price_increment * limit_offset_ticks as f64;
+
                 if self.config.stop_order_type == OrderType::LimitIfTouched {
                     Some(instrument.make_price(trigger_price.as_f64() + limit_offset))
                 } else {
@@ -1102,6 +1112,7 @@ impl ExecTester {
                 } else if self.config.cancel_replace_stop_orders_to_maintain_offset {
                     let order_clone = order.clone();
                     let _ = self.cancel_order(order_clone, self.config.client_id);
+
                     if let Err(e) =
                         self.submit_stop_order(OrderSide::Sell, trigger_price, limit_price)
                     {

@@ -323,6 +323,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                             .lock()
                                             .await
                                             .push((topic.to_string(), false));
+
                                         if socket
                                             .send(Message::Text(
                                                 serde_json::to_string(&response).unwrap().into(),
@@ -538,6 +539,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     // Handle ping
                     else if data.get("op") == Some(&json!("ping")) {
                         let pong = json!({"op": "pong"});
+
                         if socket
                             .send(Message::Text(serde_json::to_string(&pong).unwrap().into()))
                             .await

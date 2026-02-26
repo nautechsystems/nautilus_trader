@@ -521,6 +521,7 @@ impl KrakenSpotRawHttpClient {
         if let Some(interval) = interval {
             endpoint.push_str(&format!("&interval={interval}"));
         }
+
         if let Some(since) = since {
             endpoint.push_str(&format!("&since={since}"));
         }
@@ -606,9 +607,11 @@ impl KrakenSpotRawHttpClient {
         }
 
         let mut params = vec![];
+
         if let Some(trades_flag) = trades {
             params.push(format!("trades={trades_flag}"));
         }
+
         if let Some(userref_val) = userref {
             params.push(format!("userref={userref_val}"));
         }
@@ -647,21 +650,27 @@ impl KrakenSpotRawHttpClient {
         }
 
         let mut params = vec![];
+
         if let Some(trades_flag) = trades {
             params.push(format!("trades={trades_flag}"));
         }
+
         if let Some(userref_val) = userref {
             params.push(format!("userref={userref_val}"));
         }
+
         if let Some(start_val) = start {
             params.push(format!("start={start_val}"));
         }
+
         if let Some(end_val) = end {
             params.push(format!("end={end_val}"));
         }
+
         if let Some(ofs_val) = ofs {
             params.push(format!("ofs={ofs_val}"));
         }
+
         if let Some(closetime_val) = closetime {
             params.push(format!("closetime={closetime_val}"));
         }
@@ -699,18 +708,23 @@ impl KrakenSpotRawHttpClient {
         }
 
         let mut params = vec![];
+
         if let Some(type_val) = trade_type {
             params.push(format!("type={type_val}"));
         }
+
         if let Some(trades_flag) = trades {
             params.push(format!("trades={trades_flag}"));
         }
+
         if let Some(start_val) = start {
             params.push(format!("start={start_val}"));
         }
+
         if let Some(end_val) = end {
             params.push(format!("end={end_val}"));
         }
+
         if let Some(ofs_val) = ofs {
             params.push(format!("ofs={ofs_val}"));
         }
@@ -835,6 +849,7 @@ impl KrakenSpotRawHttpClient {
         if response.status.as_u16() >= 400 {
             let status = response.status.as_u16();
             let body = String::from_utf8_lossy(&response.body).to_string();
+
             if status == 401 || status == 403 {
                 return Err(KrakenHttpError::AuthenticationError(format!(
                     "HTTP error {status}: {body}"
@@ -1758,6 +1773,7 @@ impl KrakenSpotHttpClient {
             if let Some(trigger) = trigger_price {
                 builder.price(trigger.to_string());
             }
+
             if let Some(limit) = price {
                 builder.price2(limit.to_string());
             }
@@ -1834,9 +1850,11 @@ impl KrakenSpotHttpClient {
         if let Some(qty) = quantity {
             builder.order_qty(qty.to_string());
         }
+
         if let Some(p) = price {
             builder.limit_price(p.to_string());
         }
+
         if let Some(tp) = trigger_price {
             builder.trigger_price(tp.to_string());
         }
@@ -1884,6 +1902,7 @@ impl KrakenSpotHttpClient {
         // Prefer txid (venue identifier) since Kraken always knows it.
         // cl_ord_id may not be known to Kraken for reconciled orders.
         let mut builder = KrakenSpotCancelOrderParamsBuilder::default();
+
         if let Some(ref id) = txid {
             builder.txid(id.clone());
         } else if let Some(ref id) = cl_ord_id {

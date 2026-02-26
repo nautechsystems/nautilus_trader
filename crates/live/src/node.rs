@@ -645,6 +645,7 @@ impl LiveNode {
             tokio::select! {
                 Some(handler) = time_evt_rx.recv() => {
                     AsyncRunner::handle_time_event(handler);
+
                     if is_shutting_down {
                         log::debug!("Residual time event");
                         residual_events += 1;
@@ -688,6 +689,7 @@ impl LiveNode {
                 () = async {
                     loop {
                         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
                         if stop_handle.should_stop() {
                             log::info!("Received stop signal from handle");
                             return;

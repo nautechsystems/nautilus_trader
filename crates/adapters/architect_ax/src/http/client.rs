@@ -1427,6 +1427,7 @@ impl AxHttpClient {
                     if start.is_some_and(|s| tick.ts_event < s) {
                         continue;
                     }
+
                     if end.is_some_and(|e| tick.ts_event > e) {
                         continue;
                     }

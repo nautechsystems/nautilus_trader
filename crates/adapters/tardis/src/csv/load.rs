@@ -64,6 +64,7 @@ fn update_deltas_precision(
         if price_precision.is_none() {
             delta.order.price.precision = current_price_precision;
         }
+
         if size_precision.is_none() {
             delta.order.size.precision = current_size_precision;
         }
@@ -82,6 +83,7 @@ fn update_quotes_precision(
             quote.bid_price.precision = current_price_precision;
             quote.ask_price.precision = current_price_precision;
         }
+
         if size_precision.is_none() {
             quote.bid_size.precision = current_size_precision;
             quote.ask_size.precision = current_size_precision;
@@ -100,6 +102,7 @@ fn update_trades_precision(
         if price_precision.is_none() {
             trade.price.precision = current_price_precision;
         }
+
         if size_precision.is_none() {
             trade.size.precision = current_size_precision;
         }
@@ -274,6 +277,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
                         depth.bids[i].price.precision = current_price_precision;
                         depth.asks[i].price.precision = current_price_precision;
                     }
+
                     if size_precision.is_none() {
                         depth.bids[i].size.precision = current_size_precision;
                         depth.asks[i].size.precision = current_size_precision;
@@ -431,6 +435,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
                         depth.bids[i].price.precision = current_price_precision;
                         depth.asks[i].price.precision = current_price_precision;
                     }
+
                     if size_precision.is_none() {
                         depth.bids[i].size.precision = current_size_precision;
                         depth.asks[i].size.precision = current_size_precision;

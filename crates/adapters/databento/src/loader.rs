@@ -310,6 +310,7 @@ impl DatabentoDataLoader {
                 dbn_stream
                     .advance()
                     .map_err(|e| anyhow::anyhow!("Stream advance error: {e}"))?;
+
                 if let Some(rec) = dbn_stream.get() {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = if let Some(id) = &instrument_id {

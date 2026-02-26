@@ -335,6 +335,7 @@ impl DydxExecClientConfig {
         if !self.grpc_urls.is_empty() {
             return self.grpc_urls.clone();
         }
+
         if let Some(ref endpoint) = self.grpc_endpoint {
             return vec![endpoint.clone()];
         }

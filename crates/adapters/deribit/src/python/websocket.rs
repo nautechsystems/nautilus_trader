@@ -99,6 +99,7 @@ impl DeribitWebSocketClient {
     #[pyo3(name = "with_credentials", signature = (is_testnet, account_id = None))]
     fn py_with_credentials(is_testnet: bool, account_id: Option<AccountId>) -> PyResult<Self> {
         let mut client = Self::with_credentials(is_testnet).map_err(to_pyvalue_err)?;
+
         if let Some(id) = account_id {
             client.set_account_id(id);
         }

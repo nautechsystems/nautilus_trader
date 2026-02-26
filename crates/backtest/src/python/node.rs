@@ -412,6 +412,7 @@ fn create_config_instance<'py>(
                             (json_str,),
                             None,
                         )?;
+
                         if let Err(setattr_err) = instance.setattr(key, py_value) {
                             log::warn!("Failed to set attribute {key}: {setattr_err}");
                         }

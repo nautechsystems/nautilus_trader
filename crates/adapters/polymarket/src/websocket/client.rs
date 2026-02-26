@@ -226,9 +226,11 @@ impl PolymarketWebSocketClient {
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
         log::info!("Disconnecting Polymarket WebSocket");
         self.signal.store(true, Ordering::Relaxed);
+
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
             log::debug!("Failed to send disconnect (handler may already be shut down): {e}");
         }
+
         if let Some(handle) = self.task_handle.take() {
             let abort_handle = handle.abort_handle();
             tokio::select! {

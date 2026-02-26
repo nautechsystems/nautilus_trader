@@ -452,6 +452,7 @@ impl ExecutionManager {
                         &order_fills,
                         instrument.as_ref(),
                     );
+
                     if !order_events.is_empty() {
                         orders_reconciled += 1;
                         fills_applied += order_events
@@ -703,6 +704,7 @@ impl ExecutionManager {
         }
 
         let mut positions_created = 0usize;
+
         if !self.config.filter_position_reports {
             // Collect instruments with fills that lack venue_position_id (can't attribute to
             // specific hedge position, so must skip all hedge reports for that instrument)
@@ -827,6 +829,7 @@ impl ExecutionManager {
             }
 
             let instrument = self.get_instrument(&order.instrument_id());
+
             if let Some(event) =
                 self.reconcile_order_report(&order, &order_report, instrument.as_ref())
             {
@@ -876,6 +879,7 @@ impl ExecutionManager {
                 if check.retry_count >= self.config.inflight_max_retries {
                     // Generate rejection after max retries
                     let ts_now = self.clock.borrow().timestamp_ns();
+
                     if let Some(order) = self.get_order(&client_order_id)
                         && let Some(event) =
                             create_reconciliation_rejected(&order, Some("INFLIGHT_TIMEOUT"), ts_now)
@@ -1163,6 +1167,7 @@ impl ExecutionManager {
     pub fn clear_recon_tracking(&mut self, client_order_id: &ClientOrderId, drop_last_query: bool) {
         self.inflight_checks.remove(client_order_id);
         self.recon_check_retries.remove(client_order_id);
+
         if drop_last_query {
             self.ts_last_query.remove(client_order_id);
         }
@@ -1327,6 +1332,7 @@ impl ExecutionManager {
             );
 
             let ts_now = self.clock.borrow().timestamp_ns();
+
             if let Some(rejected) =
                 create_reconciliation_rejected(&order, Some("NOT_FOUND_AT_VENUE"), ts_now)
             {
@@ -1363,6 +1369,7 @@ impl ExecutionManager {
 
         // Check activity threshold
         let ts_now = self.clock.borrow().timestamp_ns();
+
         if let Some(&last_activity) = self.position_local_activity_ns.get(&position.instrument_id)
             && (ts_now - last_activity) < self.config.position_check_threshold_ns
         {
@@ -1377,6 +1384,7 @@ impl ExecutionManager {
             .position_recon_retries
             .get(&position.instrument_id)
             .unwrap_or(&0);
+
         if retries >= self.config.position_check_retries {
             return None;
         }
@@ -2093,6 +2101,7 @@ impl ExecutionManager {
                         }
                     }
                 }
+
                 if let Some(event) = self.reconcile_order_report(order, report, instrument) {
                     events.push(event);
                 }
@@ -2111,6 +2120,7 @@ impl ExecutionManager {
                         }
                     }
                 }
+
                 if let Some(event) = self.reconcile_order_report(order, report, instrument) {
                     events.push(event);
                 }
@@ -2119,6 +2129,7 @@ impl ExecutionManager {
                 if let Some(event) = self.reconcile_order_report(order, report, instrument) {
                     events.push(event);
                 }
+
                 if let Some(inst) = instrument {
                     for fill in &sorted_fills {
                         if let Some(event) = self.create_order_fill(order, fill, inst) {
@@ -2264,6 +2275,7 @@ impl ExecutionManager {
                             order_events.push(fill_event);
                         }
                     }
+
                     if let Some(event) = terminal_event {
                         order_events.push(event);
                     }
@@ -2290,6 +2302,7 @@ impl ExecutionManager {
                     let report_filled = report.filled_qty.as_decimal();
                     if real_fill_total < report_filled {
                         let diff_decimal = report_filled - real_fill_total;
+
                         if let Ok(diff) =
                             Quantity::from_decimal_dp(diff_decimal, instrument.size_precision())
                             && let Some(inferred_fill) = create_inferred_fill_for_qty(
@@ -2349,6 +2362,7 @@ impl ExecutionManager {
             let is_hedge_mode = position_reports
                 .iter()
                 .any(|r| r.venue_position_id.is_some());
+
             if is_hedge_mode {
                 log::debug!(
                     "Skipping fill adjustment for {instrument_id}: hedge mode (has venue_position_id)"
@@ -2437,6 +2451,7 @@ impl ExecutionManager {
         if a.filled_qty > b.filled_qty {
             return true;
         }
+
         if a.filled_qty < b.filled_qty {
             return false;
         }

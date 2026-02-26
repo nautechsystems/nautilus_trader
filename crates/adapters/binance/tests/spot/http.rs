@@ -803,6 +803,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                     if !has_auth_headers(&headers) {
                         return unauthorized_response().into_response();
                     }
+
                     if state.increment_and_check() {
                         return rate_limit_response().into_response();
                     }
@@ -823,6 +824,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -857,6 +859,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -899,6 +902,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -942,6 +946,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -973,6 +978,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -1006,6 +1012,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -1044,6 +1051,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }

@@ -213,6 +213,7 @@ impl AsyncRunner {
             Self::handle_data_event(evt);
             count += 1;
         }
+
         if count > 0 {
             log::debug!("Drained {count} pending data events");
         }

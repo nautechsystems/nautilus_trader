@@ -342,6 +342,7 @@ impl BinanceFuturesExecutionClient {
                 strategy_id: order.strategy_id(),
                 instrument_id: order.instrument_id(),
             };
+
             if let Err(e) = cmd_tx.send(cmd) {
                 log::error!("Failed to register order with handler: {e}");
             }
@@ -365,6 +366,7 @@ impl BinanceFuturesExecutionClient {
                 instrument_id,
                 venue_order_id,
             };
+
             if let Err(e) = cmd_tx.send(cmd) {
                 log::error!("Failed to register cancel with handler: {e}");
             }
@@ -790,6 +792,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 .iter()
                 .map(|r| r.value().clone())
                 .collect();
+
             if let Err(e) = cmd_tx.send(ExecHandlerCommand::InitializeInstruments(
                 instruments_for_handler,
             )) {
@@ -857,6 +860,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                                 let guard = listen_key_ref.read().expect(MUTEX_POISONED);
                                 guard.clone()
                             };
+
                             if let Some(ref key) = key {
                                 match http_client.keepalive_listen_key(key).await {
                                     Ok(()) => {
@@ -967,9 +971,11 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         self.spawn_task("query_order", async move {
             let mut builder = BinanceOrderQueryParamsBuilder::default();
             builder.symbol(symbol.clone());
+
             if let Some(oid) = order_id {
                 builder.order_id(oid);
             }
+
             if let Some(coid) = orig_client_order_id {
                 builder.orig_client_order_id(coid);
             }
@@ -1390,9 +1396,11 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let mut builder = BinanceOrderQueryParamsBuilder::default();
         builder.symbol(symbol);
+
         if let Some(oid) = order_id {
             builder.order_id(oid);
         }
+
         if let Some(ref coid) = orig_client_order_id {
             builder.orig_client_order_id(coid.clone());
         }
@@ -1447,6 +1455,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         if cmd.open_only {
             let symbol = cmd.instrument_id.map(|id| id.symbol.to_string());
             let mut builder = BinanceOpenOrdersParamsBuilder::default();
+
             if let Some(s) = symbol {
                 builder.symbol(s);
             }
@@ -1460,6 +1469,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             for order in orders {
                 if let Some(instrument_id) = cmd.instrument_id {
                     let (_, size_precision) = self.get_instrument_precision(instrument_id);
+
                     if let Ok(report) = order.to_order_status_report(
                         self.core.account_id,
                         instrument_id,
@@ -1489,6 +1499,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             for algo_order in algo_orders {
                 if let Some(instrument_id) = cmd.instrument_id {
                     let (_, size_precision) = self.get_instrument_precision(instrument_id);
+
                     if let Ok(report) = algo_order.to_order_status_report(
                         self.core.account_id,
                         instrument_id,
@@ -1521,9 +1532,11 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             let mut builder = BinanceAllOrdersParamsBuilder::default();
             builder.symbol(symbol);
+
             if let Some(st) = start_time {
                 builder.start_time(st);
             }
+
             if let Some(et) = end_time {
                 builder.end_time(et);
             }
@@ -1562,9 +1575,11 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let mut builder = BinanceUserTradesParamsBuilder::default();
         builder.symbol(symbol);
+
         if let Some(st) = start_time {
             builder.start_time(st);
         }
+
         if let Some(et) = end_time {
             builder.end_time(et);
         }
@@ -1597,6 +1612,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let symbol = cmd.instrument_id.map(|id| id.symbol.to_string());
 
         let mut builder = BinancePositionRiskParamsBuilder::default();
+
         if let Some(s) = symbol {
             builder.symbol(s);
         }

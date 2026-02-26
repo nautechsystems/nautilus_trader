@@ -388,6 +388,7 @@ impl NautilusKernel {
         }
 
         log::info!("Starting clients...");
+
         if let Err(e) = self.start_clients() {
             log::error!("Error starting clients: {e:?}");
         }

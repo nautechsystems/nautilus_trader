@@ -100,6 +100,7 @@ pub fn check_valid_string_ascii<T: AsRef<str>>(s: T, param: &str) -> anyhow::Res
         if !c.is_whitespace() {
             has_non_whitespace = true;
         }
+
         if !c.is_ascii() {
             anyhow::bail!("invalid string for '{param}' contained a non-ASCII char, was '{s}'");
         }
@@ -283,6 +284,7 @@ pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
     if value.is_nan() || value.is_infinite() {
         anyhow::bail!("invalid f64 for '{param}', was {value}")
     }
+
     if value < 0.0 {
         anyhow::bail!("invalid f64 for '{param}' negative, was {value}")
     }
@@ -345,6 +347,7 @@ pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> 
     if value.is_nan() || value.is_infinite() {
         anyhow::bail!("invalid f64 for '{param}', was {value}")
     }
+
     if value < l - EPSILON || value > r + EPSILON {
         anyhow::bail!("invalid f64 for '{param}' not in range [{l}, {r}], was {value}")
     }

@@ -245,6 +245,7 @@ impl LiveNode {
                                             .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
                                         let py_value = PyModule::import(py, "json")?
                                             .call_method("loads", (json_str,), None)?;
+
                                         if let Err(setattr_err) = instance.setattr(key, py_value) {
                                             log::warn!("Failed to set attribute {key}: {setattr_err}");
                                         }

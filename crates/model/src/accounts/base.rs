@@ -360,6 +360,7 @@ impl BaseAccount {
         } else {
             anyhow::bail!("Invalid `LiquiditySide`: {liquidity_side}");
         };
+
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
             Ok(Money::new(commission, instrument.base_currency().unwrap()))
         } else {

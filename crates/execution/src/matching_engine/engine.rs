@@ -407,6 +407,7 @@ impl OrderMatchingEngine {
                 OrderSide::Sell => self.book.best_ask_price().is_some_and(|ask| price > ask),
                 _ => false,
             };
+
             if behind_bbo {
                 self.queue_pending.insert(client_order_id, price.raw);
                 return;
@@ -537,6 +538,7 @@ impl OrderMatchingEngine {
                         OrderSide::Sell => trade_price.raw > order_price.raw,
                         _ => false,
                     });
+
             if !crossed {
                 return None;
             }
@@ -1108,6 +1110,7 @@ impl OrderMatchingEngine {
                 if bid_price_raw < self.prev_bid_price_raw {
                     self.adjust_l1_queue_on_price_move(bid_price_raw, bid_size_raw, OrderSide::Buy);
                 }
+
                 if ask_price_raw > self.prev_ask_price_raw {
                     self.adjust_l1_queue_on_price_move(
                         ask_price_raw,
@@ -1227,6 +1230,7 @@ impl OrderMatchingEngine {
                 self.execution_bar_deltas
                     .insert(bar_type, bar_type_timedelta.unwrap());
             }
+
             if self.execution_bar_deltas.get(&execution_bar_type).unwrap()
                 >= &bar_type_timedelta.unwrap()
             {
@@ -1308,6 +1312,7 @@ impl OrderMatchingEngine {
             self.fill_at_market = false;
             trade_tick.price = bar.close;
             trade_tick.size = close_size;
+
             if bar.close > self.core.last.unwrap() {
                 trade_tick.aggressor_side = AggressorSide::Buyer;
             } else {
@@ -1452,6 +1457,7 @@ impl OrderMatchingEngine {
                 if let Some(bid) = self.book.best_bid_price() {
                     self.core.set_bid_raw(bid);
                 }
+
                 if let Some(ask) = self.book.best_ask_price() {
                     self.core.set_ask_raw(ask);
                 }
@@ -1466,6 +1472,7 @@ impl OrderMatchingEngine {
                 if self.core.ask.is_none() || price_raw > self.core.ask.map_or(0, |p| p.raw) {
                     self.core.set_ask_raw(trade.price);
                 }
+
                 if self.core.bid.is_none()
                     || price_raw < self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
                 {
@@ -1478,6 +1485,7 @@ impl OrderMatchingEngine {
                 {
                     self.core.set_bid_raw(trade.price);
                 }
+
                 if self.core.ask.is_none() || price_raw > self.core.ask.map_or(0, |p| p.raw) {
                     self.core.set_ask_raw(trade.price);
                 }
@@ -1488,6 +1496,7 @@ impl OrderMatchingEngine {
                 {
                     self.core.set_bid_raw(trade.price);
                 }
+
                 if self.core.ask.is_none() || price_raw >= self.core.ask.map_or(0, |p| p.raw) {
                     self.core.set_ask_raw(trade.price);
                 }
@@ -1610,6 +1619,7 @@ impl OrderMatchingEngine {
                 let cache = self.cache.borrow();
                 cache.order(&order_info.client_order_id).cloned()
             };
+
             if let Some(order) = order {
                 self.cancel_order(&order, None);
             }
@@ -1727,6 +1737,7 @@ impl OrderMatchingEngine {
                         .into(),
                     );
                 }
+
                 if let Some(expiration_ns) = self.instrument.expiration_ns()
                     && self.clock.borrow().timestamp_ns() >= expiration_ns
                 {
@@ -1749,6 +1760,7 @@ impl OrderMatchingEngine {
                     {
                         panic!("OTO parent not found");
                     }
+
                     if let Some(parent_order) = parent_order {
                         if parent_order.status() == OrderStatus::Rejected && order.is_open() {
                             break 'validate Some(
@@ -2009,6 +2021,7 @@ impl OrderMatchingEngine {
             {
                 continue;
             }
+
             if order.is_inflight() || order.is_open() {
                 self.cancel_order(&order, None);
             }
@@ -2130,6 +2143,7 @@ impl OrderMatchingEngine {
                 .cache
                 .borrow_mut()
                 .add_order(order.clone(), None, None, false);
+
             if let Err(e) = add_result {
                 log::debug!("Failed to add order to cache: {e}");
 
@@ -2195,6 +2209,7 @@ impl OrderMatchingEngine {
         let stop_px = order
             .trigger_price()
             .expect("Stop order must have a trigger price");
+
         if self
             .core
             .is_stop_matched(order.order_side_specified(), stop_px)
@@ -2217,6 +2232,7 @@ impl OrderMatchingEngine {
                 );
                 return;
             }
+
             if let Err(e) = self
                 .cache
                 .borrow_mut()
@@ -2233,6 +2249,7 @@ impl OrderMatchingEngine {
 
         // Add passive order to cache for later modify/cancel operations
         order.set_liquidity_side(LiquiditySide::Maker);
+
         if let Err(e) = self
             .cache
             .borrow_mut()
@@ -2246,6 +2263,7 @@ impl OrderMatchingEngine {
         let stop_px = order
             .trigger_price()
             .expect("Stop order must have a trigger price");
+
         if self
             .core
             .is_stop_matched(order.order_side_specified(), stop_px)
@@ -2274,11 +2292,13 @@ impl OrderMatchingEngine {
 
             // Check for immediate fill
             let limit_px = order.price().expect("Stop limit order must have a price");
+
             if self
                 .core
                 .is_limit_matched(order.order_side_specified(), limit_px)
             {
                 order.set_liquidity_side(LiquiditySide::Taker);
+
                 if let Err(e) = self
                     .cache
                     .borrow_mut()
@@ -2297,6 +2317,7 @@ impl OrderMatchingEngine {
 
         // Add passive order to cache for later modify/cancel operations
         order.set_liquidity_side(LiquiditySide::Maker);
+
         if let Err(e) = self
             .cache
             .borrow_mut()
@@ -2329,6 +2350,7 @@ impl OrderMatchingEngine {
                 );
                 return;
             }
+
             if let Err(e) = self
                 .cache
                 .borrow_mut()
@@ -2345,6 +2367,7 @@ impl OrderMatchingEngine {
 
         // Add passive order to cache for later modify/cancel operations
         order.set_liquidity_side(LiquiditySide::Maker);
+
         if let Err(e) = self
             .cache
             .borrow_mut()
@@ -2386,6 +2409,7 @@ impl OrderMatchingEngine {
                 .is_limit_matched(order.order_side_specified(), order.price().unwrap())
             {
                 order.set_liquidity_side(LiquiditySide::Taker);
+
                 if let Err(e) = self
                     .cache
                     .borrow_mut()
@@ -2403,6 +2427,7 @@ impl OrderMatchingEngine {
 
         // Add passive order to cache for later modify/cancel operations
         order.set_liquidity_side(LiquiditySide::Maker);
+
         if let Err(e) = self
             .cache
             .borrow_mut()
@@ -2441,6 +2466,7 @@ impl OrderMatchingEngine {
 
         // Add passive order to cache for later modify/cancel operations
         order.set_liquidity_side(LiquiditySide::Maker);
+
         if let Err(e) = self
             .cache
             .borrow_mut()
@@ -2465,6 +2491,7 @@ impl OrderMatchingEngine {
             if let Some(bid) = self.book.best_bid_price() {
                 self.core.set_bid_raw(bid);
             }
+
             if let Some(ask) = self.book.best_ask_price() {
                 self.core.set_ask_raw(ask);
             }
@@ -2545,9 +2572,11 @@ impl OrderMatchingEngine {
                         ask,
                         last,
                     );
+
                     if let Some(p) = px {
                         inner.activation_price = Some(p);
                         inner.set_activated();
+
                         if let Err(e) = self.cache.borrow_mut().update_order(order) {
                             log::error!("Failed to update order: {e}");
                         }
@@ -2562,8 +2591,10 @@ impl OrderMatchingEngine {
                     OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
                     _ => false,
                 };
+
                 if hit {
                     inner.set_activated();
+
                     if let Err(e) = self.cache.borrow_mut().update_order(order) {
                         log::error!("Failed to update order: {e}");
                     }
@@ -2583,9 +2614,11 @@ impl OrderMatchingEngine {
                         ask,
                         last,
                     );
+
                     if let Some(p) = px {
                         inner.activation_price = Some(p);
                         inner.set_activated();
+
                         if let Err(e) = self.cache.borrow_mut().update_order(order) {
                             log::error!("Failed to update order: {e}");
                         }
@@ -2600,8 +2633,10 @@ impl OrderMatchingEngine {
                     OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
                     _ => false,
                 };
+
                 if hit {
                     inner.set_activated();
+
                     if let Err(e) = self.cache.borrow_mut().update_order(order) {
                         log::error!("Failed to update order: {e}");
                     }
@@ -2684,14 +2719,17 @@ impl OrderMatchingEngine {
                 self.core.bid = Some(target_bid);
                 self.target_bid = None;
             }
+
             if let Some(target_bid) = self.target_bid.take() {
                 self.core.bid = Some(target_bid);
                 self.target_bid = None;
             }
+
             if let Some(target_ask) = self.target_ask.take() {
                 self.core.ask = Some(target_ask);
                 self.target_ask = None;
             }
+
             if let Some(target_last) = self.target_last.take() {
                 self.core.last = Some(target_last);
                 self.target_last = None;
@@ -3195,6 +3233,7 @@ impl OrderMatchingEngine {
 
                     // Consume excess and reconcile trade budget after capping
                     let consumed: QuantityRaw = fills.iter().map(|(_, qty)| qty.raw).sum();
+
                     if let Some(excess) = self.queue_excess.get_mut(&order.client_order_id()) {
                         *excess = excess.saturating_sub(consumed);
                     }
@@ -3668,6 +3707,7 @@ impl OrderMatchingEngine {
                 }
                 self.generate_order_updated(order, quantity, Some(price), None, None);
                 order.set_liquidity_side(LiquiditySide::Taker);
+
                 if let Err(e) = self
                     .cache
                     .borrow_mut()
@@ -3852,6 +3892,7 @@ impl OrderMatchingEngine {
             // Temporary guard to prevent invalid processing
             return;
         }
+
         if order.status() != OrderStatus::Accepted {
             let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
             self.generate_order_accepted(order, venue_order_id);
@@ -3894,6 +3935,7 @@ impl OrderMatchingEngine {
 
     fn cancel_order(&mut self, order: &OrderAny, cancel_contingencies: Option<bool>) {
         let cancel_contingencies = cancel_contingencies.unwrap_or(true);
+
         if order.is_active_local() {
             log::error!(
                 "Cannot cancel an order with {} from the matching engine",
@@ -3934,6 +3976,7 @@ impl OrderMatchingEngine {
         let price_prec = self.instrument.price_precision();
         let size_prec = self.instrument.size_precision();
         let instrument_id = self.instrument.id();
+
         if quantity.precision != size_prec {
             self.generate_order_modify_rejected(
                 order.trader_id(),
@@ -3949,6 +3992,7 @@ impl OrderMatchingEngine {
             );
             return false;
         }
+
         if let Some(px) = price
             && px.precision != price_prec
         {
@@ -3966,6 +4010,7 @@ impl OrderMatchingEngine {
             );
             return false;
         }
+
         if let Some(tp) = trigger_price
             && tp.precision != price_prec
         {
@@ -4158,10 +4203,12 @@ impl OrderMatchingEngine {
                     Some(order) => order.clone(),
                     None => panic!("Cannot find contingent order for {client_order_id}"),
                 };
+
                 if contingent_order.is_active_local() {
                     // order is not on the exchange yet
                     continue;
                 }
+
                 if !contingent_order.is_closed() {
                     self.cancel_order(&contingent_order, Some(false));
                 }

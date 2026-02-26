@@ -668,6 +668,7 @@ impl OrderMessageBuilder {
 
         // Apply time-in-force for limit orders
         let effective_tif = time_in_force.unwrap_or(TimeInForce::Gtc);
+
         if matches!(
             order_type,
             ConditionalOrderType::StopLimit | ConditionalOrderType::TakeProfitLimit

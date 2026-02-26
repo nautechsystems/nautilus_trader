@@ -178,6 +178,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
                             "op": "pong"
                         });
+
                         if socket
                             .send(Message::Text(pong_response.to_string().into()))
                             .await
@@ -212,6 +213,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
                             "op": "subscribe"
                         });
+
                         if socket
                             .send(Message::Text(sub_response.to_string().into()))
                             .await
@@ -225,6 +227,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                         {
                             if first_topic.contains("publicTrade") {
                                 let trade_msg = load_test_data("ws_public_trade.json");
+
                                 if socket
                                     .send(Message::Text(trade_msg.to_string().into()))
                                     .await
@@ -234,6 +237,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 }
                             } else if first_topic.contains("orderbook") {
                                 let orderbook_msg = load_test_data("ws_orderbook_snapshot.json");
+
                                 if socket
                                     .send(Message::Text(orderbook_msg.to_string().into()))
                                     .await
@@ -243,6 +247,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 }
                             } else if first_topic.contains("tickers") {
                                 let ticker_msg = load_test_data("ws_ticker_linear.json");
+
                                 if socket
                                     .send(Message::Text(ticker_msg.to_string().into()))
                                     .await
@@ -252,6 +257,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 }
                             } else if first_topic.contains("kline") {
                                 let kline_msg = load_test_data("ws_kline.json");
+
                                 if socket
                                     .send(Message::Text(kline_msg.to_string().into()))
                                     .await
@@ -284,6 +290,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
                             "op": "unsubscribe"
                         });
+
                         if socket
                             .send(Message::Text(unsub_response.to_string().into()))
                             .await
@@ -297,6 +304,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             }
             Message::Ping(_) => {
                 state.ping_count.fetch_add(1, Ordering::Relaxed);
+
                 if socket.send(Message::Pong(vec![].into())).await.is_err() {
                     break;
                 }

@@ -81,6 +81,7 @@ impl MessageHeader {
                 actual: self.schema_id,
             });
         }
+
         if self.version != SBE_SCHEMA_VERSION {
             return Err(SbeDecodeError::VersionMismatch {
                 expected: SBE_SCHEMA_VERSION,

@@ -510,6 +510,7 @@ impl Order for TrailingStopLimitOrder {
         if let Some(price) = event.price {
             self.price = price;
         }
+
         if let Some(trigger_price) = event.trigger_price {
             self.trigger_price = trigger_price;
         }

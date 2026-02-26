@@ -176,6 +176,7 @@ impl HyperliquidExecutionClient {
         if let Some(url) = &config.base_url_http {
             http_client.set_base_info_url(url.clone());
         }
+
         if let Some(url) = &config.base_url_exchange {
             http_client.set_base_exchange_url(url.clone());
         }
@@ -739,6 +740,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                         );
                                         emitter.emit_order_rejected(order, error_msg, ts, false);
                                     }
+
                                     if let Some(cloid_hex) = cloid_hexes.get(i) {
                                         ws_client.remove_cloid_mapping(cloid_hex);
                                     }
@@ -812,6 +814,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
             let normalized_price = price.map(|p| {
                 let raw: Decimal = (*p).into();
+
                 if should_normalize {
                     let decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
                     normalize_price(raw, decimals).normalize()
@@ -955,6 +958,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let action = HyperliquidExecAction::CancelByCloid {
                 cancels: cancel_requests,
             };
+
             if let Err(e) = http_client.post_action_exec(&action).await {
                 log::warn!("Failed to send cancel all orders request: {e}");
             }
@@ -1011,6 +1015,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let action = HyperliquidExecAction::CancelByCloid {
                 cancels: cancel_requests,
             };
+
             if let Err(e) = http_client.post_action_exec(&action).await {
                 log::warn!("Failed to send batch cancel orders request: {e}");
             }

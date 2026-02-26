@@ -423,6 +423,7 @@ impl ExecutionClient for AxExecutionClient {
             None => true,
             Some(handle) => handle.is_finished(),
         };
+
         if should_spawn {
             let stream = self.ws_orders.stream();
             let emitter = self.emitter.clone();
@@ -558,6 +559,7 @@ impl ExecutionClient for AxExecutionClient {
 
         self.core.set_stopped();
         self.core.set_disconnected();
+
         if let Some(handle) = self.ws_stream_handle.take() {
             handle.abort();
         }
@@ -737,6 +739,7 @@ impl ExecutionClient for AxExecutionClient {
         if let Some(start) = cmd.start {
             reports.retain(|r| r.ts_last >= start);
         }
+
         if let Some(end) = cmd.end {
             reports.retain(|r| r.ts_last <= end);
         }

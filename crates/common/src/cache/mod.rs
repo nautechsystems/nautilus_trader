@@ -586,30 +586,35 @@ impl Cache {
                 );
                 error_count += 1;
             }
+
             if !self.index.orders.contains(client_order_id) {
                 log::error!(
                     "{failure} in orders: {client_order_id} not found in `self.index.orders`",
                 );
                 error_count += 1;
             }
+
             if order.is_inflight() && !self.index.orders_inflight.contains(client_order_id) {
                 log::error!(
                     "{failure} in orders: {client_order_id} not found in `self.index.orders_inflight`",
                 );
                 error_count += 1;
             }
+
             if order.is_open() && !self.index.orders_open.contains(client_order_id) {
                 log::error!(
                     "{failure} in orders: {client_order_id} not found in `self.index.orders_open`",
                 );
                 error_count += 1;
             }
+
             if order.is_closed() && !self.index.orders_closed.contains(client_order_id) {
                 log::error!(
                     "{failure} in orders: {client_order_id} not found in `self.index.orders_closed`",
                 );
                 error_count += 1;
             }
+
             if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
                 if !self
                     .index
@@ -621,6 +626,7 @@ impl Cache {
                     );
                     error_count += 1;
                 }
+
                 if order.exec_spawn_id().is_none()
                     && !self.index.exec_spawn_orders.contains_key(client_order_id)
                 {
@@ -639,24 +645,28 @@ impl Cache {
                 );
                 error_count += 1;
             }
+
             if !self.index.position_orders.contains_key(position_id) {
                 log::error!(
                     "{failure} in positions: {position_id} not found in `self.index.position_orders`",
                 );
                 error_count += 1;
             }
+
             if !self.index.positions.contains(position_id) {
                 log::error!(
                     "{failure} in positions: {position_id} not found in `self.index.positions`",
                 );
                 error_count += 1;
             }
+
             if position.is_open() && !self.index.positions_open.contains(position_id) {
                 log::error!(
                     "{failure} in positions: {position_id} not found in `self.index.positions_open`",
                 );
                 error_count += 1;
             }
+
             if position.is_closed() && !self.index.positions_closed.contains(position_id) {
                 log::error!(
                     "{failure} in positions: {position_id} not found in `self.index.positions_closed`",
@@ -959,6 +969,7 @@ impl Cache {
                     .client_order_ids
                     .iter()
                     .all(|id| !self.orders.contains_key(id));
+
                 if all_purged {
                     self.order_lists.remove(&order_list_id);
                     log::info!("Purged {order_list_id}");
@@ -2414,6 +2425,7 @@ impl Cache {
                 .orders
                 .get(client_order_id)
                 .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
+
             if side == OrderSide::NoOrderSide || side == order.order_side() {
                 orders.push(order);
             }
@@ -2440,6 +2452,7 @@ impl Cache {
                 .positions
                 .get(position_id)
                 .unwrap_or_else(|| panic!("Position {position_id} not found"));
+
             if side == PositionSide::NoPositionSide || side == position.side {
                 positions.push(position);
             }

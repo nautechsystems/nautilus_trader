@@ -711,6 +711,7 @@ impl DataClient for DydxDataClient {
                 request.instrument_id
             );
         }
+
         if request.end.is_some() {
             log::warn!(
                 "Requesting instrument {} with specified `end` which has no effect",
@@ -873,6 +874,7 @@ impl DataClient for DydxDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
@@ -915,6 +917,7 @@ impl DataClient for DydxDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send bars response: {e}");
                     }
@@ -1109,6 +1112,7 @@ impl DydxDataClient {
                     // Re-register bar type with handler
                     let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
                     let topic = format!("{ticker}/{resolution}");
+
                     if let Err(e) = ctx
                         .ws_client
                         .send_command(HandlerCommand::RegisterBarType { topic, bar_type })
@@ -1211,6 +1215,7 @@ impl DydxDataClient {
         if bar.ts_event <= current_time_ns {
             // Bar is complete - emit it and remove from incomplete cache
             incomplete_bars.remove(&bar_type);
+
             if let Err(e) = data_sender.send(DataEvent::Data(NautilusData::Bar(bar))) {
                 log::error!("Failed to emit completed bar: {e}");
             }

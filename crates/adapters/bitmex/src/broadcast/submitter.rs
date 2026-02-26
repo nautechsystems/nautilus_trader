@@ -1699,6 +1699,7 @@ mod tests {
                 // (with concurrent execution, first success aborts others)
                 Box::pin(async move {
                     barrier.wait().await;
+
                     if should_succeed {
                         Ok(create_test_report("ORDER-1"))
                     } else {

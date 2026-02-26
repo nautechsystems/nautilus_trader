@@ -548,12 +548,15 @@ impl OKXHttpClient {
                 if let Some(algo_cl_ord_id) = resp.algo_cl_ord_id {
                     dict.set_item("algo_cl_ord_id", algo_cl_ord_id)?;
                 }
+
                 if let Some(s_code) = resp.s_code {
                     dict.set_item("s_code", s_code)?;
                 }
+
                 if let Some(s_msg) = resp.s_msg {
                     dict.set_item("s_msg", s_msg)?;
                 }
+
                 if let Some(req_id) = resp.req_id {
                     dict.set_item("req_id", req_id)?;
                 }
@@ -583,6 +586,7 @@ impl OKXHttpClient {
                 if let Some(s_code) = resp.s_code {
                     dict.set_item("s_code", s_code)?;
                 }
+
                 if let Some(s_msg) = resp.s_msg {
                     dict.set_item("s_msg", s_msg)?;
                 }
@@ -630,6 +634,7 @@ impl OKXHttpClient {
                         if let Some(s_code) = resp.s_code {
                             dict.set_item("s_code", s_code).expect("set s_code");
                         }
+
                         if let Some(s_msg) = resp.s_msg {
                             dict.set_item("s_msg", s_msg).expect("set s_msg");
                         }

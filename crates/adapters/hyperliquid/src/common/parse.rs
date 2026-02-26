@@ -364,6 +364,7 @@ pub fn order_to_hyperliquid_request_with_asset(
     // canonical form used for EIP-712 signing hash verification.
     let price_decimal = if let Some(price) = order.price() {
         let raw = price.as_decimal();
+
         if should_normalize_prices {
             normalize_price(raw, price_decimals).normalize()
         } else {
@@ -537,6 +538,7 @@ pub fn derive_limit_from_trigger(trigger_price: Decimal, is_buy: bool) -> Decima
 /// rounding in the direction that preserves the slippage buffer.
 pub fn clamp_price_to_precision(price: Decimal, decimals: u8, is_buy: bool) -> Decimal {
     let scale = Decimal::from(10_u64.pow(decimals as u32));
+
     if is_buy {
         (price * scale).ceil() / scale
     } else {

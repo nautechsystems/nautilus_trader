@@ -267,9 +267,11 @@ impl Portfolio {
         msgbus::register_account_state_endpoint(endpoint, update_account_handler.clone());
 
         msgbus::subscribe_quotes("data.quotes.*".into(), update_quote_handler, Some(10));
+
         if config.bar_updates {
             msgbus::subscribe_bars("data.bars.*EXTERNAL".into(), update_bar_handler, Some(10));
         }
+
         if config.use_mark_prices {
             msgbus::subscribe_mark_prices(
                 "data.mark_prices.*".into(),
@@ -1202,8 +1204,10 @@ impl Portfolio {
                     }
 
                     let mut inner = self.inner.borrow_mut();
+
                     if let Some(sum) = sum_pnl {
                         inner.snapshot_sum_per_position.insert(*position_id, sum);
+
                         if let Some(last) = last_pnl {
                             inner.snapshot_last_per_position.insert(*position_id, last);
                         }
@@ -1307,8 +1311,10 @@ impl Portfolio {
                     }
 
                     let mut inner = self.inner.borrow_mut();
+
                     if let Some(sum) = sum_pnl {
                         inner.snapshot_sum_per_position.insert(*position_id, sum);
+
                         if let Some(last) = last_pnl {
                             inner.snapshot_last_per_position.insert(*position_id, last);
                         }
@@ -1378,6 +1384,7 @@ impl Portfolio {
                         .snapshot_last_per_position
                         .get(position_id)
                         .copied();
+
                     if let Some(last_pnl) = last_pnl {
                         let mut pnl = last_pnl.as_f64();
 
@@ -1412,6 +1419,7 @@ impl Portfolio {
                         .snapshot_sum_per_position
                         .get(position_id)
                         .copied();
+
                     if let Some(sum_pnl) = sum_pnl {
                         let mut pnl = sum_pnl.as_f64();
 
@@ -1484,6 +1492,7 @@ impl Portfolio {
                     .snapshot_sum_per_position
                     .get(position_id)
                     .copied();
+
                 if let Some(sum_pnl) = sum_pnl {
                     let mut pnl = sum_pnl.as_f64();
 
@@ -1947,6 +1956,7 @@ fn update_position(
             clock.borrow().timestamp_ns(),
         );
         let mut cache_ref = cache.borrow_mut();
+
         if let Some((margin_account, _)) = result {
             cache_ref
                 .update_account(AccountAny::Margin(margin_account))

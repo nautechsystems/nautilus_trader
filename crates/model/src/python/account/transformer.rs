@@ -42,6 +42,7 @@ pub fn cash_account_from_account_events(
         .map(|obj| AccountState::py_from_dict(&obj))
         .collect::<PyResult<Vec<AccountState>>>()
         .unwrap();
+
     if account_events.is_empty() {
         return Err(to_pyvalue_err("No account events"));
     }
@@ -74,6 +75,7 @@ pub fn margin_account_from_account_events(
         .map(|obj| AccountState::py_from_dict(&obj))
         .collect::<PyResult<Vec<AccountState>>>()
         .unwrap();
+
     if account_events.is_empty() {
         return Err(to_pyvalue_err("No account events"));
     }

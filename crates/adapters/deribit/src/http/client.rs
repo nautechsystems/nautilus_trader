@@ -1141,6 +1141,7 @@ impl DeribitHttpClient {
         let supported_resolutions = [
             "1", "3", "5", "10", "15", "30", "60", "120", "180", "360", "720", "1D",
         ];
+
         if !supported_resolutions.contains(&resolution.as_str()) {
             anyhow::bail!(
                 "Deribit does not support resolution '{resolution}'. Supported: {supported_resolutions:?}"
@@ -1383,6 +1384,7 @@ impl DeribitHttpClient {
                 instrument_name: instrument_name.clone(),
                 r#type: None,
             };
+
             if let Some(orders) = self
                 .inner
                 .get_open_orders_by_instrument(open_params)
@@ -1557,6 +1559,7 @@ impl DeribitHttpClient {
                 let Some(last_trade) = data.trades.last() else {
                     break;
                 };
+
                 if !data.has_more {
                     break;
                 }
@@ -1601,6 +1604,7 @@ impl DeribitHttpClient {
                     let Some(last_trade) = data.trades.last() else {
                         break;
                     };
+
                     if !data.has_more {
                         break;
                     }
@@ -1644,6 +1648,7 @@ impl DeribitHttpClient {
             currency: DeribitCurrency::ANY,
             kind: None,
         };
+
         if let Some(positions) = self.inner.get_positions(params).await?.result {
             for position in &positions {
                 // Skip flat positions (size == 0)

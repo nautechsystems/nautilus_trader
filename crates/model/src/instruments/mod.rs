@@ -133,6 +133,7 @@ pub fn validate_instrument_common(
             "price_precision",
         )?;
     }
+
     if let Some(min_price) = min_price {
         check_positive_price(min_price, "min_price")?;
         check_equal_u8(

@@ -260,11 +260,13 @@ where
             Some(ThrottlerProcess::<T, F>::new(self.actor_id).get_timer_callback())
         } else {
             log::debug!("Dropping");
+
             if let Some(drop) = &self.output_drop {
                 drop(msg);
             }
             Some(throttler_resume::<T, F>(self.actor_id))
         };
+
         if !self.is_limiting {
             log::debug!("Limiting");
             self.set_timer(callback);

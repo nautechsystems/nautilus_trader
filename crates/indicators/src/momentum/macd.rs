@@ -139,6 +139,7 @@ impl MovingAverage for MovingAverageConvergenceDivergence {
         // Initialization logic
         if !self.initialized {
             self.has_inputs = true;
+
             if self.fast_ma.initialized() && self.slow_ma.initialized() {
                 self.initialized = true;
             }

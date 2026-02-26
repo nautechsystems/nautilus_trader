@@ -138,6 +138,7 @@ pub fn parse_book_l2_deltas(
         processed += 1;
 
         let mut flags = RecordFlag::F_MBP as u8;
+
         if processed == total_levels {
             flags |= RecordFlag::F_LAST as u8;
         }
@@ -162,6 +163,7 @@ pub fn parse_book_l2_deltas(
         processed += 1;
 
         let mut flags = RecordFlag::F_MBP as u8;
+
         if processed == total_levels {
             flags |= RecordFlag::F_LAST as u8;
         }
@@ -245,6 +247,7 @@ pub fn parse_book_l3_deltas(
             processed += 1;
 
             let mut flags = 0_u8;
+
             if processed == total_orders {
                 flags |= RecordFlag::F_LAST as u8;
             }
@@ -275,6 +278,7 @@ pub fn parse_book_l3_deltas(
             processed += 1;
 
             let mut flags = 0_u8;
+
             if processed == total_orders {
                 flags |= RecordFlag::F_LAST as u8;
             }

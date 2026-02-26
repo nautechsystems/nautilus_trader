@@ -201,6 +201,7 @@ impl OrderBook {
 
         // Collect prices to remove for asks (prices <= best_bid)
         let mut ask_prices_to_remove = Vec::new();
+
         if clear_asks {
             for bp in self.asks.levels.keys() {
                 if bp.value <= best_bid {
@@ -213,6 +214,7 @@ impl OrderBook {
 
         // Collect prices to remove for bids (prices >= best_ask)
         let mut bid_prices_to_remove = Vec::new();
+
         if clear_bids {
             for bp in self.bids.levels.keys() {
                 if bp.value >= best_ask {
@@ -397,6 +399,7 @@ impl OrderBook {
 
         // Set F_LAST on clear when book is empty so buffered consumers flush
         let mut clear = OrderBookDelta::clear(self.instrument_id, self.sequence, ts_event, ts_init);
+
         if total_orders == 0 {
             clear.flags |= RecordFlag::F_LAST as u8;
         }
@@ -983,6 +986,7 @@ impl OrderBook {
                 self.instrument_id
             );
         }
+
         if ts_event < self.ts_last {
             log::warn!(
                 "Out-of-order update: ts_event {} < {} (instrument_id={})",

@@ -226,6 +226,7 @@ pub fn determine_instrument_info(
         }
         WsMessage::Disconnect(_) => return None,
     };
+
     if let Some(inst) = instrument_map.get(&key) {
         Some(inst.clone())
     } else {

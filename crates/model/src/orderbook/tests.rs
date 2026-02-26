@@ -6142,9 +6142,11 @@ fn test_sanitize_operations_l1_id_normalization() {
     if let OrderBookOperation::Add(order, _, _) = &sanitized[0] {
         assert_eq!(order.order_id, 1, "L1 Buy Add should use order_id 1");
     }
+
     if let OrderBookOperation::Update(order, _, _) = &sanitized[1] {
         assert_eq!(order.order_id, 1, "L1 Buy Update should use order_id 1");
     }
+
     if let OrderBookOperation::Delete(order, _, _) = &sanitized[2] {
         assert_eq!(order.order_id, 1, "L1 Buy Delete should use order_id 1");
     }

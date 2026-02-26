@@ -552,12 +552,14 @@ pub fn http_download(
     }
 
     let mut client_builder = Client::builder();
+
     if let Some(timeout) = timeout_secs {
         client_builder = client_builder.timeout(Duration::from_secs(timeout));
     }
     let client = client_builder.build().map_err(to_pyvalue_err)?;
 
     let mut request_builder = client.get(&full_url);
+
     if let Some(headers_map) = headers {
         for (key, value) in headers_map {
             request_builder = request_builder.header(key, value);

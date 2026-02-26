@@ -281,6 +281,7 @@ impl DatabentoFeedHandler {
 
         // Process any commands buffered during reconnection backoff
         let mut start_buffered = false;
+
         if !self.buffered_commands.is_empty() {
             log::info!(
                 "Processing {} buffered commands",
@@ -366,6 +367,7 @@ impl DatabentoFeedHandler {
                         }
                         LiveCommand::Close => {
                             self.msg_tx.send(LiveMessage::Close).await?;
+
                             if running {
                                 client.close().await?;
                                 log::debug!("Closed inner client");

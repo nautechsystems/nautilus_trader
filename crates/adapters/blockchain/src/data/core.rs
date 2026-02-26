@@ -487,9 +487,11 @@ impl BlockchainDataClientCore {
             burn_event_signature,
             collect_event_signature,
         ];
+
         if let Some(event) = dex_extended.initialize_event.as_ref() {
             event_signatures.push(event);
         }
+
         if let Some(event) = dex_extended.flash_created_event.as_ref() {
             event_signatures.push(event);
         }
@@ -672,6 +674,7 @@ impl BlockchainDataClientCore {
                 .await?;
             swap_batch.clear();
         }
+
         if (force_flush_all || liquidity_batch.len() >= event_batch_size)
             && !liquidity_batch.is_empty()
         {
@@ -680,6 +683,7 @@ impl BlockchainDataClientCore {
                 .await?;
             liquidity_batch.clear();
         }
+
         if (force_flush_all || collect_batch.len() >= event_batch_size) && !collect_batch.is_empty()
         {
             self.cache
@@ -687,6 +691,7 @@ impl BlockchainDataClientCore {
                 .await?;
             collect_batch.clear();
         }
+
         if (force_flush_all || flash_batch.len() >= event_batch_size) && !flash_batch.is_empty() {
             self.cache.add_pool_flash_batch(flash_batch).await?;
             flash_batch.clear();

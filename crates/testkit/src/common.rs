@@ -181,6 +181,7 @@ fn load_deltas_from_parquet(filepath: &Path, limit: Option<usize>) -> Vec<OrderB
     let file = File::open(filepath).unwrap();
     let mut builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
     let metadata = builder.schema().metadata().clone();
+
     if let Some(limit) = limit {
         builder = builder.with_limit(limit);
     }

@@ -145,15 +145,18 @@ fn decode_quote_tick_sbe(bytes: &[u8]) -> Result<QuoteTick, SbeDecodeError> {
             actual: block_length,
         });
     }
+
     if template_id != QUOTE_TICK_TEMPLATE_ID {
         return Err(SbeDecodeError::UnknownTemplateId(template_id));
     }
+
     if schema_id != QUOTE_TICK_SCHEMA_ID {
         return Err(SbeDecodeError::SchemaMismatch {
             expected: QUOTE_TICK_SCHEMA_ID,
             actual: schema_id,
         });
     }
+
     if version != QUOTE_TICK_SCHEMA_VERSION {
         return Err(SbeDecodeError::VersionMismatch {
             expected: QUOTE_TICK_SCHEMA_VERSION,

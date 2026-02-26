@@ -323,6 +323,7 @@ impl KrakenFuturesWebSocketClient {
                                 if let Some(ref cred) = credential_for_reconnect {
                                     // Request fresh challenge for the new connection
                                     let (tx, rx) = tokio::sync::oneshot::channel();
+
                                     if let Err(e) = cmd_tx_for_reconnect.send(
                                         HandlerCommand::RequestChallenge {
                                             api_key: cred.api_key().to_string(),

@@ -318,6 +318,7 @@ impl HyperliquidDataClient {
                                     quote_tick.bid_price,
                                     quote_tick.ask_price
                                 );
+
                                 if let Err(e) =
                                     data_sender.send(DataEvent::Data(Data::Quote(quote_tick)))
                                 {
@@ -643,6 +644,7 @@ impl DataClient for HyperliquidDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send bars response: {e}");
                     }

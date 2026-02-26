@@ -726,6 +726,7 @@ async fn test_external_order_filled_uses_real_fills() {
         assert_eq!(filled1.last_qty, Quantity::from("1.0"));
         assert_eq!(filled1.last_px, Price::from("2999.00"));
     }
+
     if let OrderEventAny::Filled(filled2) = &result.events[2] {
         assert_eq!(filled2.trade_id, TradeId::from("T-FILL-002"));
         assert_eq!(filled2.last_qty, Quantity::from("1.0"));
@@ -910,6 +911,7 @@ async fn test_synthetic_orders_bypass_filter_unclaimed_external() {
             .iter()
             .any(|e| matches!(e, OrderEventAny::Filled(_)))
     );
+
     if let OrderEventAny::Accepted(accepted) = &result.events[0] {
         let order = ctx
             .get_order(&accepted.client_order_id)
@@ -6065,6 +6067,7 @@ async fn test_check_open_orders_proceeds_after_threshold_exceeded() {
         1,
         "Reconciliation should proceed when threshold exceeded"
     );
+
     if let OrderEventAny::Filled(filled) = &events[0] {
         assert_eq!(filled.last_qty, Quantity::from("5.0"));
     } else {
@@ -6121,6 +6124,7 @@ async fn test_check_open_orders_proceeds_without_local_activity() {
         1,
         "Reconciliation should proceed without local activity"
     );
+
     if let OrderEventAny::Filled(filled) = &events[0] {
         assert_eq!(filled.last_qty, Quantity::from("5.0"));
     } else {

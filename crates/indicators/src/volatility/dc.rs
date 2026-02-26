@@ -105,6 +105,7 @@ impl DonchianChannel {
 
         if !self.initialized {
             self.has_inputs = true;
+
             if self.upper_prices.len() >= self.period && self.lower_prices.len() >= self.period {
                 self.initialized = true;
             }

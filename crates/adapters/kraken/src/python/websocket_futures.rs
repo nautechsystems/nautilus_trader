@@ -191,6 +191,7 @@ impl KrakenFuturesWebSocketClient {
                                     py,
                                     Data::Deltas(OrderBookDeltas_API::new(deltas)),
                                 );
+
                                 if let Err(e) = callback.call1(py, (py_obj,)) {
                                     log::error!("Error calling Python callback: {e}");
                                 }

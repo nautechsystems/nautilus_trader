@@ -408,6 +408,7 @@ impl OrderEmulator {
                     .borrow()
                     .synthetic(&trigger_instrument_id)
                     .cloned();
+
                 if let Some(synthetic) = synthetic {
                     (synthetic.id, synthetic.price_increment)
                 } else {
@@ -423,6 +424,7 @@ impl OrderEmulator {
                     .borrow()
                     .instrument(&trigger_instrument_id)
                     .cloned();
+
                 if let Some(instrument) = instrument {
                     (instrument.id(), instrument.price_increment())
                 } else {
@@ -715,6 +717,7 @@ impl OrderEmulator {
             log::error!("Cannot apply order event: {e:?}");
             return;
         }
+
         if let Err(e) = self.cache.borrow_mut().update_order(order) {
             log::error!("Cannot update order: {e:?}");
             return;
@@ -778,6 +781,7 @@ impl OrderEmulator {
         let instrument_id = &trade.instrument_id;
         if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
             matching_core.set_last_raw(trade.price);
+
             if !self.subscribed_quotes.contains(instrument_id) {
                 matching_core.set_bid_raw(trade.price);
                 matching_core.set_ask_raw(trade.price);
@@ -1271,6 +1275,7 @@ impl OrderEmulator {
                 bid.get_or_insert(q.bid_price);
                 ask.get_or_insert(q.ask_price);
             }
+
             if let Some(t) = self.cache.borrow().trade(&matching_core.instrument_id) {
                 last.get_or_insert(t.price);
             }
@@ -1318,6 +1323,7 @@ impl OrderEmulator {
             log::error!("Failed to apply order event: {e}");
             return;
         }
+
         if let Err(e) = self.cache.borrow_mut().update_order(order) {
             log::error!("Failed to update order in cache: {e}");
             return;

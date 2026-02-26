@@ -490,6 +490,7 @@ impl FeatherWriter {
         let timestamp = self.clock.borrow().timestamp_ns();
         // Note: Path removes prefixing slashes
         let mut path = Path::from(self.base_path.clone());
+
         if let Some(ref instrument_id) = instrument_id {
             let safe_id = urisafe_instrument_id(instrument_id);
             path = path.child(type_str.clone());
@@ -537,6 +538,7 @@ impl FeatherWriter {
 
         let timestamp = self.clock.borrow().timestamp_ns();
         let mut path = Path::from(self.base_path.clone());
+
         if let Some(ref instrument_id) = instrument_id {
             let safe_id = urisafe_instrument_id(instrument_id);
             path = path.child(type_str);

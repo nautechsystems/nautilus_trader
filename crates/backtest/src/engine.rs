@@ -459,6 +459,7 @@ impl BacktestEngine {
         let count = data.len();
 
         let mut to_add = data;
+
         if sort {
             to_add.sort_by_key(HasTsInit::ts_init);
         }
@@ -483,6 +484,7 @@ impl BacktestEngine {
                 self.ts_first = Some(ts);
             }
         }
+
         if let Some(last) = to_add.last() {
             let ts = last.ts_init();
             if self.ts_last_data.is_none_or(|t| ts > t) {
@@ -1273,6 +1275,7 @@ impl BacktestEngine {
     /// Registers a market data client for the given `venue` if one does not already exist.
     pub fn add_market_data_client_if_not_exists(&mut self, venue: Venue) {
         let client_id = ClientId::from(venue.as_str());
+
         if !self
             .kernel
             .data_engine

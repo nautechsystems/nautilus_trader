@@ -342,6 +342,7 @@ impl DataClient for AxDataClient {
 
         for instrument in &instruments {
             self.ws_client.cache_instrument(instrument.clone());
+
             if let Err(e) = self
                 .data_sender
                 .send(DataEvent::Instrument(instrument.clone()))
@@ -534,6 +535,7 @@ impl DataClient for AxDataClient {
                                         let update = *update;
                                         cache.lock().unwrap()
                                             .insert(instrument_id, update);
+
                                         if let Err(e) = sender.send(
                                             DataEvent::FundingRate(update),
                                         ) {

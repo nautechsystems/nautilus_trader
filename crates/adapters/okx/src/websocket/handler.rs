@@ -799,6 +799,7 @@ impl OKXWsFeedHandler {
                 if final_id.is_none() {
                     final_id = fill_report.client_order_id;
                 }
+
                 if final_id.is_none()
                     && let Some(child) = raw_child.as_ref()
                     && let Some(mapped) = self.client_id_aliases.get(child)
@@ -857,6 +858,7 @@ impl OKXWsFeedHandler {
                         self.active_client_orders.remove(&client_order_id);
                         self.client_id_aliases.remove(&client_order_id);
                     }
+
                     if let Some(linked) = &status_report.linked_order_ids {
                         for child in linked {
                             self.client_id_aliases.remove(child);
@@ -1720,6 +1722,7 @@ impl OKXWsFeedHandler {
                     log::trace!("Received pong from OKX");
                     return None;
                 }
+
                 if text == TEXT_PING {
                     log::trace!("Received ping from OKX (text)");
                     return Some(OKXWsMessage::Ping);

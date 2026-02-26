@@ -199,6 +199,7 @@ impl PolymarketRawHttpClient {
             .request_with_params(Method::GET, url, params, headers, None, None, None)
             .await
             .map_err(Error::from_http_client)?;
+
         if response.status.is_success() {
             serde_json::from_slice(&response.body).map_err(Error::Serde)
         } else {
@@ -227,6 +228,7 @@ impl PolymarketRawHttpClient {
             )
             .await
             .map_err(Error::from_http_client)?;
+
         if response.status.is_success() {
             serde_json::from_slice(&response.body).map_err(Error::Serde)
         } else {
@@ -254,6 +256,7 @@ impl PolymarketRawHttpClient {
             .request(Method::DELETE, url, None, headers, body_bytes, None, None)
             .await
             .map_err(Error::from_http_client)?;
+
         if response.status.is_success() {
             serde_json::from_slice(&response.body).map_err(Error::Serde)
         } else {

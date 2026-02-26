@@ -502,11 +502,13 @@ impl Position {
             self.signed_qty = 0.0; // Normalize
         } else if self.signed_qty > 0.0 {
             self.side = PositionSide::Long;
+
             if self.entry == OrderSide::NoOrderSide {
                 self.entry = OrderSide::Buy;
             }
         } else {
             self.side = PositionSide::Short;
+
             if self.entry == OrderSide::NoOrderSide {
                 self.entry = OrderSide::Sell;
             }
@@ -632,6 +634,7 @@ impl Position {
                 "Cannot calculate inverse points: open price is zero or too small ({avg_px_open})"
             );
         }
+
         if avg_px_close.abs() < EPSILON {
             anyhow::bail!(
                 "Cannot calculate inverse points: close price is zero or too small ({avg_px_close})"

@@ -533,6 +533,7 @@ impl FeedHandler {
                         }
                         HandlerCommand::Authenticate { payload } => {
                             log::debug!("Authenticate command received");
+
                             if let Err(e) = self.send_with_retry(payload).await {
                                 log::error!("Failed to send authentication after retries: {e}");
                             }
@@ -876,6 +877,7 @@ impl FeedHandler {
                         Err(e) => log::error!("Error parsing kline to bar: {e}"),
                     }
                 }
+
                 if !data_vec.is_empty() {
                     result.push(NautilusWsMessage::Data(data_vec));
                 }
@@ -1125,6 +1127,7 @@ impl FeedHandler {
                             );
                         }
                     }
+
                     if !reports.is_empty() {
                         result.push(NautilusWsMessage::OrderStatusReports(reports));
                     }
@@ -1148,6 +1151,7 @@ impl FeedHandler {
                             );
                         }
                     }
+
                     if !reports.is_empty() {
                         result.push(NautilusWsMessage::FillReports(reports));
                     }
@@ -1213,6 +1217,7 @@ impl FeedHandler {
                     {
                         // Bybit sometimes omits req_id, search by client_order_id instead
                         let client_order_id = ClientOrderId::from(order_link_id);
+
                         if resp.op.contains("create") {
                             self.find_and_remove_place_request_by_client_order_id(&client_order_id);
                         } else if resp.op.contains("cancel") {
@@ -1445,6 +1450,7 @@ impl FeedHandler {
                     }
                     BybitWsOperation::Unsubscribe => {
                         let pending_unsub = self.subscriptions.pending_unsubscribe_topics();
+
                         if sub_msg.success {
                             for topic in pending_unsub {
                                 self.subscriptions.confirm_unsubscribe(&topic);

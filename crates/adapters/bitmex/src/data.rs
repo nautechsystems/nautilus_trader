@@ -222,6 +222,7 @@ impl BitmexDataClient {
                         update.instrument_id,
                         update.rate,
                     );
+
                     if let Err(e) = sender.send(DataEvent::FundingRate(update)) {
                         log::error!("Failed to emit funding rate event: {e}");
                     }
@@ -266,6 +267,7 @@ impl BitmexDataClient {
 
         for instrument in &instruments {
             self.http_client.cache_instrument(instrument.clone());
+
             if let Err(e) = self
                 .data_sender
                 .send(DataEvent::Instrument(instrument.clone()))
@@ -420,6 +422,7 @@ impl DataClient for BitmexDataClient {
         }
 
         let instruments = self.bootstrap_instruments().await?;
+
         if let Some(ws) = self.ws_client.as_mut() {
             ws.cache_instruments(instruments);
         }
@@ -877,6 +880,7 @@ impl DataClient for BitmexDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send instruments response: {e}");
                     }
@@ -906,6 +910,7 @@ impl DataClient for BitmexDataClient {
                 self.clock.get_time_ns(),
                 request.params,
             )));
+
             if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send instrument response: {e}");
             }
@@ -948,6 +953,7 @@ impl DataClient for BitmexDataClient {
                         clock.get_time_ns(),
                         params,
                     )));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send instrument response: {e}");
                     }
@@ -991,6 +997,7 @@ impl DataClient for BitmexDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
@@ -1033,6 +1040,7 @@ impl DataClient for BitmexDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send bars response: {e}");
                     }

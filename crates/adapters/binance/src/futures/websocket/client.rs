@@ -252,6 +252,7 @@ impl BinanceFuturesWebSocketClient {
                     Message::Close(_) => break,
                     Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => continue,
                 };
+
                 if bytes_tx.send(data).is_err() {
                     break;
                 }

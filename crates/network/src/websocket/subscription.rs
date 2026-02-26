@@ -132,6 +132,7 @@ impl SubscriptionState {
         {
             return true;
         }
+
         if let Some(symbols) = self.pending_subscribe.get(channel)
             && symbols.contains(symbol)
         {

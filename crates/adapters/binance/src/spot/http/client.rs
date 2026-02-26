@@ -241,6 +241,7 @@ impl BinanceRawSpotHttpClient {
             .unwrap_or_default();
 
         let mut headers = HashMap::new();
+
         if signed {
             let cred = self
                 .credential
@@ -294,6 +295,7 @@ impl BinanceRawSpotHttpClient {
         };
 
         let mut url = format!("{}{}{}", self.base_url, SPOT_API_PATH, normalized_path);
+
         if !query.is_empty() {
             url.push('?');
             url.push_str(query);
@@ -374,6 +376,7 @@ impl BinanceRawSpotHttpClient {
         headers.insert("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string());
         headers.insert("Accept".to_string(), "application/sbe".to_string());
         headers.insert("X-MBX-SBE".to_string(), SBE_SCHEMA_HEADER.to_string());
+
         if let Some(cred) = credential {
             headers.insert("X-MBX-APIKEY".to_string(), cred.api_key().to_string());
         }
@@ -710,6 +713,7 @@ impl BinanceRawSpotHttpClient {
         };
 
         let mut url = format!("{}/sapi/v1{}", self.base_url, normalized_path);
+
         if !query.is_empty() {
             url.push('?');
             url.push_str(&query);
@@ -1683,6 +1687,7 @@ impl BinanceSpotHttpClient {
                 | BinanceSpotOrderType::TakeProfitLimit
                 | BinanceSpotOrderType::LimitMaker
         );
+
         if requires_price && price.is_none() {
             anyhow::bail!("{binance_order_type:?} orders require a price");
         }

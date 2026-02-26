@@ -489,6 +489,7 @@ impl BybitWebSocketClient {
                         op: BybitWsOperation::Subscribe,
                         args: vec![topic.clone()],
                     };
+
                     if let Ok(payload) = serde_json::to_string(&message) {
                         payloads.push(payload);
                     }
@@ -791,6 +792,7 @@ impl BybitWebSocketClient {
                 op: BybitWsOperation::Unsubscribe,
                 args: vec![topic.clone()],
             };
+
             if let Ok(payload) = serde_json::to_string(&message) {
                 payloads.push(payload);
             }
@@ -1019,6 +1021,7 @@ impl BybitWebSocketClient {
                 spec.price_type
             )));
         }
+
         if bar_type.aggregation_source() != AggregationSource::External {
             return Err(BybitWsError::ClientError(format!(
                 "Bybit bars only support EXTERNAL aggregation source, received {}",

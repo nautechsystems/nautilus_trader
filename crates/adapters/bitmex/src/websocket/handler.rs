@@ -196,12 +196,14 @@ impl FeedHandler {
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Disconnect command received");
+
                             if let Some(client) = self.client.take() {
                                 client.disconnect().await;
                             }
                         }
                         HandlerCommand::Authenticate { payload } => {
                             log::debug!("Authenticate command received");
+
                             if let Err(e) = self.send_with_retry(payload).await {
                                 log::error!("Failed to send authentication after retries: {e}");
                             }
@@ -252,6 +254,7 @@ impl FeedHandler {
                     // Handle ping frames directly for minimal latency
                     if let Message::Ping(data) = &msg {
                         log::trace!("Received ping frame with {} bytes", data.len());
+
                         if let Some(client) = &self.client
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {

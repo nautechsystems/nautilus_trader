@@ -175,6 +175,7 @@ impl KrakenCredential {
 
         let nonce_str = nonce.to_string();
         let mut post_data = format!("nonce={nonce_str}");
+
         if !params.is_empty() {
             let encoded = serde_urlencoded::to_string(params)
                 .map_err(|e| anyhow::anyhow!("Failed to encode params: {e}"))?;

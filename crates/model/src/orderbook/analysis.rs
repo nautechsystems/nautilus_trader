@@ -211,6 +211,7 @@ pub fn book_check_integrity(book: &OrderBook) -> Result<(), BookIntegrityError> 
                     book.bids.len(),
                 ));
             }
+
             if book.asks.len() > 1 {
                 return Err(BookIntegrityError::TooManyLevels(
                     OrderSide::Sell,

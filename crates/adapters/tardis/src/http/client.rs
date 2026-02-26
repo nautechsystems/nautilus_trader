@@ -145,9 +145,11 @@ impl TardisHttpClient {
         filter: Option<&InstrumentFilter>,
     ) -> Result<Vec<TardisInstrumentInfo>> {
         let mut url = format!("{}/instruments/{exchange}", &self.base_url);
+
         if let Some(symbol) = symbol {
             url.push_str(&format!("/{symbol}"));
         }
+
         if let Some(filter) = filter
             && let Ok(filter_json) = serde_json::to_string(filter)
         {

@@ -647,12 +647,14 @@ impl AccountsManager {
                     log::error!("Cannot update cash account balance: {e}");
                     return;
                 }
+
                 if let Some(comm) = commission {
                     cash.update_commissions(comm);
                 }
             }
             AccountAny::Margin(mut margin) => {
                 margin.update_balances(&balances);
+
                 if let Some(comm) = commission {
                     margin.update_commissions(comm);
                 }
@@ -697,6 +699,7 @@ impl AccountsManager {
                     );
                     return;
                 }
+
                 if new_free < 0.0 {
                     log::error!(
                         "AccountMarginExceeded: balance = {}, margin = {}, currency = {}",
@@ -760,12 +763,14 @@ impl AccountsManager {
                     log::error!("Cannot update cash account balance: {e}");
                     return;
                 }
+
                 if let Some(commission) = commission {
                     cash.update_commissions(commission);
                 }
             }
             AccountAny::Margin(mut margin) => {
                 margin.update_balances(&new_balances);
+
                 if let Some(commission) = commission {
                     margin.update_commissions(commission);
                 }

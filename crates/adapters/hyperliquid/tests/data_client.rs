@@ -382,6 +382,7 @@ async fn handle_ws_socket(mut socket: WebSocket) {
                     match method {
                         Some("ping") => {
                             let pong = json!({"channel": "pong"});
+
                             if socket
                                 .send(Message::Text(pong.to_string().into()))
                                 .await
