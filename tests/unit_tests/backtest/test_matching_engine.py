@@ -10742,8 +10742,8 @@ class TestTradeConsumptionSeeding:
         A buyer trade at 98 crosses through a BUY pending at 99 even though the
         aggressor side is "wrong".
 
-        The resolve moves to queue_ahead(0) and the Cython matching core immediately
-        fills (inside-spread check).
+        The resolve moves to queue_ahead(0); a follow-up seller trade at the order level
+        fills immediately.
 
         """
         # Arrange
@@ -10787,9 +10787,9 @@ class TestTradeConsumptionSeeding:
         messages.clear()
 
         # Buyer trade at 98 crosses through 99 (opposite aggressor side).
-        # Resolves pending -> queue_ahead(0) then fills immediately because
-        # the order is inside the spread (bid=98, price=99).
-        trade = TestDataStubs.trade_tick(
+        # This resolves pending -> queue_ahead with 0 ahead, but does NOT
+        # fill because the ask is still at 101.
+        trade1 = TestDataStubs.trade_tick(
             instrument=self.instrument,
             price=98.00,
             size=5.0,
@@ -10797,7 +10797,21 @@ class TestTradeConsumptionSeeding:
             ts_event=1,
             ts_init=1,
         )
-        engine.process_trade_tick(trade)
+        engine.process_trade_tick(trade1)
+
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) == 0
+
+        # Seller trade at 99 now fills because queue was already resolved
+        trade2 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=99.00,
+            size=5.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=2,
+            ts_init=2,
+        )
+        engine.process_trade_tick(trade2)
 
         # Assert
         fills = [m for m in messages if isinstance(m, OrderFilled)]

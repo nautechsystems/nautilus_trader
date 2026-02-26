@@ -79,7 +79,6 @@ cdef class MatchingCore:
     cpdef void match_trailing_stop_limit_order(self, Order order, bint initial)
     cpdef bint is_limit_marketable(self, OrderSide side, Price price)
     cpdef bint is_limit_fillable(self, OrderSide side, Price price)
-    cdef bint _is_inside_spread(self, OrderSide side, Price price)
     cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price)
     cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price)
     cdef LiquiditySide _determine_order_liquidity(self, bint initial, OrderSide side, Price price, Price trigger_price)

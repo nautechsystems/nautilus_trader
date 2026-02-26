@@ -365,8 +365,7 @@ cdef class MatchingCore:
             self.match_stop_market_order(order)
 
     cpdef bint is_limit_fillable(self, OrderSide side, Price price):
-        # True when order can be filled: crosses the spread or is inside the spread.
-        return self.is_limit_marketable(side, price) or self._is_inside_spread(side, price)
+        return self.is_limit_marketable(side, price)
 
     cpdef bint is_limit_marketable(self, OrderSide side, Price price):
         # True when order would take liquidity (crosses the spread). Used for post-only rejection.
@@ -383,16 +382,6 @@ cdef class MatchingCore:
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
-    cdef bint _is_inside_spread(self, OrderSide side, Price price):
-        # Check if a limit order is priced inside the bid-ask spread
-        if price is None:
-            return False
-        if side == OrderSide.BUY:
-            return self.is_bid_initialized and price._mem.raw >= self.bid_raw
-        elif side == OrderSide.SELL:
-            return self.is_ask_initialized and price._mem.raw <= self.ask_raw
-
-        return False
 
     cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price):
         Condition.not_none(trigger_price, "trigger_price")
