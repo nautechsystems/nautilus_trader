@@ -6543,6 +6543,299 @@ class TestOrderMatchingEngineLiquidityConsumption:
         filled_events = [m for m in messages if isinstance(m, OrderFilled)]
         assert len(filled_events) == 0
 
+    def test_queue_position_blocks_fill_with_deltas_between_trades(self):
+        """
+        Regression: when a limit order is placed at the best bid level, trades
+        at that price should first consume existing market depth before our order
+        fills. Delta updates between trades must not reset the queue position.
+
+        Scenario (from user report):
+        - Book bid=100.00 size=600, ask=101.00
+        - Place BUY LIMIT at 100.00 (queue_ahead=600)
+        - SELLER trade 37 at 100.00 -> ahead=563, no fill
+        - Delta UPDATE bid 100.00 to 563 (reflects trade impact)
+        - SELLER trade 200 at 100.00 -> ahead=363, no fill
+        - Delta UPDATE bid 100.00 to 363
+        - SELLER trade 363 at 100.00 -> ahead=0, no excess, no fill
+        """
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            trade_execution=True,
+            queue_position=True,
+        )
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Set up order book with 600 units at bid 100.00
+        bid_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("100.00"),
+                size=Quantity.from_str("600.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(bid_delta)
+
+        ask_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.SELL,
+                price=Price.from_str("101.00"),
+                size=Quantity.from_str("100.000"),
+                order_id=2,
+            ),
+            flags=0,
+            sequence=1,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(ask_delta)
+        messages.clear()
+
+        # Place BUY LIMIT at 100.00 (600 qty ahead)
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("100.00"),
+            quantity=self.instrument.make_qty(10000.0),
+        )
+        matching_engine.process_order(order, self.account_id)
+        messages.clear()
+
+        # Trade 1: 37 units at 100.00 (SELLER aggressor)
+        trade1 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=100.00,
+            size=37.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=1,
+            ts_init=1,
+        )
+        matching_engine.process_trade_tick(trade1)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0, "Should not fill after first trade (563 ahead)"
+
+        # Delta: bid level updated to reflect trade impact
+        update_delta1 = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("100.00"),
+                size=Quantity.from_str("563.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=2,
+            ts_event=2,
+            ts_init=2,
+        )
+        matching_engine.process_order_book_delta(update_delta1)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0, "Should not fill after delta update"
+
+        # Trade 2: 200 units at 100.00 (SELLER aggressor)
+        trade2 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=100.00,
+            size=200.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=3,
+            ts_init=3,
+        )
+        matching_engine.process_trade_tick(trade2)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0, "Should not fill after second trade (363 ahead)"
+
+        # Delta: bid level updated to reflect trade impact
+        update_delta2 = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("100.00"),
+                size=Quantity.from_str("363.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=3,
+            ts_event=4,
+            ts_init=4,
+        )
+        matching_engine.process_order_book_delta(update_delta2)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0, "Should not fill after second delta update"
+
+        # Trade 3: 363 units at 100.00 (depletes remaining queue)
+        trade3 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=100.00,
+            size=363.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=5,
+            ts_init=5,
+        )
+        matching_engine.process_trade_tick(trade3)
+
+        # Queue is now fully depleted but trade exactly consumed queue,
+        # no excess volume for our order
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0, "Should not fill when trade exactly depletes queue"
+
+        # Trade 4: next trade should now fill our order
+        trade4 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=100.00,
+            size=50.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=7,
+            ts_init=7,
+        )
+        matching_engine.process_trade_tick(trade4)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 1, "Should fill after queue fully exhausted"
+
+    def test_queue_position_blocks_fill_with_lc_and_deltas_between_trades(self):
+        """
+        Same scenario as above but with liquidity_consumption=True to test the
+        interaction between queue_position and liquidity_consumption.
+        """
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            trade_execution=True,
+            queue_position=True,
+            liquidity_consumption=True,
+        )
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Set up order book with 600 units at bid 100.00
+        bid_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("100.00"),
+                size=Quantity.from_str("600.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(bid_delta)
+
+        ask_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.SELL,
+                price=Price.from_str("101.00"),
+                size=Quantity.from_str("100.000"),
+                order_id=2,
+            ),
+            flags=0,
+            sequence=1,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(ask_delta)
+        messages.clear()
+
+        # Place BUY LIMIT at 100.00 (600 qty ahead)
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("100.00"),
+            quantity=self.instrument.make_qty(10000.0),
+        )
+        matching_engine.process_order(order, self.account_id)
+        messages.clear()
+
+        # Trade 1: 37 units (SELLER)
+        trade1 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=100.00,
+            size=37.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=1,
+            ts_init=1,
+        )
+        matching_engine.process_trade_tick(trade1)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0, "Should not fill after first trade (563 ahead)"
+
+        # Delta: bid updated to 563
+        update_delta1 = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("100.00"),
+                size=Quantity.from_str("563.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=2,
+            ts_event=2,
+            ts_init=2,
+        )
+        matching_engine.process_order_book_delta(update_delta1)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0, "Should not fill after delta update"
+
+        # Trade 2: 200 units (SELLER)
+        trade2 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=100.00,
+            size=200.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=3,
+            ts_init=3,
+        )
+        matching_engine.process_trade_tick(trade2)
+
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0, "Should not fill after second trade (363 ahead)"
+
     def test_queue_position_fills_after_queue_exhausted(self):
         """
         Test that the limit order fills after sufficient trades exhaust the queue.
@@ -8678,8 +8971,9 @@ class TestTradeConsumptionSeeding:
     def test_l1_queue_position_full_example(self):
         """
         Test the full L1 queue position example:
-        Quote size decreases exhaust the initial ahead qty,
-        then trades trigger fills. Size increases are ignored.
+        Trades at the order's price level consume queue ahead.
+        Quote size changes do not affect queue (optimistic model).
+        Fill only occurs when a trade exhausts the remaining queue.
         """
         # Arrange
         engine = OrderMatchingEngine(
@@ -8721,6 +9015,7 @@ class TestTradeConsumptionSeeding:
         messages.clear()
 
         # Act
+        # Trade 3 at 100 (SELLER) -> ahead: 10->7, no fill
         trade1 = TestDataStubs.trade_tick(
             instrument=self.instrument,
             price=100.00,
@@ -8732,7 +9027,7 @@ class TestTradeConsumptionSeeding:
         engine.process_trade_tick(trade1)
         assert len([m for m in messages if isinstance(m, OrderFilled)]) == 0
 
-        # Quote: bid=100, qty=8 (decrease of 2, ahead: 10->8)
+        # Quote size decrease does not affect queue (trade-driven model)
         quote1 = TestDataStubs.quote_tick(
             instrument=self.instrument,
             bid_price=100.00,
@@ -8744,7 +9039,7 @@ class TestTradeConsumptionSeeding:
         )
         engine.process_quote_tick(quote1)
 
-        # Trade at 100 (SELLER) - no match
+        # Trade 4 at 100 (SELLER) -> ahead: 7->3, no fill
         trade2 = TestDataStubs.trade_tick(
             instrument=self.instrument,
             price=100.00,
@@ -8756,98 +9051,52 @@ class TestTradeConsumptionSeeding:
         engine.process_trade_tick(trade2)
         assert len([m for m in messages if isinstance(m, OrderFilled)]) == 0
 
-        # Quote: bid=100, qty=4 (decrease of 4, ahead: 8->4)
+        # Quote size increase does not affect queue
         quote2 = TestDataStubs.quote_tick(
             instrument=self.instrument,
             bid_price=100.00,
             ask_price=101.00,
-            bid_size=4.0,
+            bid_size=15.0,
             ask_size=10.0,
             ts_event=4,
             ts_init=4,
         )
         engine.process_quote_tick(quote2)
 
-        # Quote: bid=100, qty=2 (decrease of 2, ahead: 4->2)
-        quote3 = TestDataStubs.quote_tick(
-            instrument=self.instrument,
-            bid_price=100.00,
-            ask_price=101.00,
-            bid_size=2.0,
-            ask_size=10.0,
-            ts_event=5,
-            ts_init=5,
-        )
-        engine.process_quote_tick(quote3)
-
-        # Quote: bid=100, qty=15 (increase, ignored, ahead stays 2)
-        quote4 = TestDataStubs.quote_tick(
-            instrument=self.instrument,
-            bid_price=100.00,
-            ask_price=101.00,
-            bid_size=15.0,
-            ask_size=10.0,
-            ts_event=6,
-            ts_init=6,
-        )
-        engine.process_quote_tick(quote4)
-
-        # Trade at 100 (SELLER) - no match (ahead=2)
+        # Trade 2 at 100 (SELLER) -> ahead: 3->1, no fill
         trade3 = TestDataStubs.trade_tick(
             instrument=self.instrument,
             price=100.00,
-            size=1.0,
+            size=2.0,
             aggressor_side=AggressorSide.SELLER,
-            ts_event=7,
-            ts_init=7,
+            ts_event=5,
+            ts_init=5,
         )
         engine.process_trade_tick(trade3)
         assert len([m for m in messages if isinstance(m, OrderFilled)]) == 0
 
-        # Quote: bid=100, qty=14 (decrease of 1 from 15, ahead: 2->1)
-        quote5 = TestDataStubs.quote_tick(
-            instrument=self.instrument,
-            bid_price=100.00,
-            ask_price=101.00,
-            bid_size=14.0,
-            ask_size=10.0,
-            ts_event=8,
-            ts_init=8,
-        )
-        engine.process_quote_tick(quote5)
-
-        # Quote: bid=100, qty=12 (decrease of 2, ahead: 1->0, exhausted)
-        quote6 = TestDataStubs.quote_tick(
-            instrument=self.instrument,
-            bid_price=100.00,
-            ask_price=101.00,
-            bid_size=12.0,
-            ask_size=10.0,
-            ts_event=9,
-            ts_init=9,
-        )
-        engine.process_quote_tick(quote6)
-
+        # Trade 3 at 100 (SELLER) -> ahead: 1->0, excess=2, fill=min(2,2)=2
         trade4 = TestDataStubs.trade_tick(
             instrument=self.instrument,
             price=100.00,
-            size=1.0,
+            size=3.0,
             aggressor_side=AggressorSide.SELLER,
-            ts_event=10,
-            ts_init=10,
+            ts_event=6,
+            ts_init=6,
         )
         engine.process_trade_tick(trade4)
 
         # Assert
         fills = [m for m in messages if isinstance(m, OrderFilled)]
         assert len(fills) == 1
-        assert fills[0].last_qty == self.instrument.make_qty(1.0)
+        assert fills[0].last_qty == self.instrument.make_qty(2.0)
 
-    def test_l1_queue_position_trade_alone_does_not_decrement(self):
+    def test_l1_queue_position_trade_partial_does_not_fill(self):
         """
-        Test that trades alone cannot decrement the queue position in L1 mode.
+        Test that a trade smaller than the queue does not trigger a fill.
 
-        Only quote tick size decreases drive queue consumption.
+        Trades at the order's price consume queue ahead. A trade that only partially
+        consumes the queue should block fills.
 
         """
         # Arrange
@@ -8889,11 +9138,11 @@ class TestTradeConsumptionSeeding:
         engine.process_order(order, self.account_id)
         messages.clear()
 
-        # Act
+        # Act: trade of 5 partially consumes queue (10->5)
         trade = TestDataStubs.trade_tick(
             instrument=self.instrument,
             price=100.00,
-            size=20.0,
+            size=5.0,
             aggressor_side=AggressorSide.SELLER,
             ts_event=1,
             ts_init=1,
@@ -10154,6 +10403,401 @@ class TestTradeConsumptionSeeding:
             ts_init=5,
         )
         engine.process_trade_tick(trade2)
+
+        # Assert
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) == 1
+
+    def test_l1_queue_position_deep_order_deferred_snapshot(self):
+        """
+        Regression (paulbir): exact replay of deep-order scenario from updates_matching-
+        test_deep.xlsx (rows 10-20, prices scaled to 2dp).
+
+        BUY LIMIT placed 2 ticks below BBO. Old code gave queue_ahead=0 (L1 has no depth
+        at non-BBO levels) so the order filled instantly when the BBO dropped to the
+        order's level. The fix defers the snapshot until the BBO reaches the order's
+        price, then sets queue from the displayed size.
+
+        """
+        # Arrange
+        engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            trade_execution=True,
+            queue_position=True,
+        )
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # xlsx row 10: BBO bid=0.05459@600 (scaled to 54.59@600)
+        quote0 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=54.59,
+            ask_price=54.62,
+            bid_size=600.0,
+            ask_size=3617.0,
+        )
+        engine.process_quote_tick(quote0)
+
+        # xlsx row 11-12: BUY LIMIT at 0.05457 (scaled 54.57), 2 ticks below BBO
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("54.57"),
+            quantity=self.instrument.make_qty(1000.0),
+        )
+        engine.process_order(order, self.account_id)
+        messages.clear()
+
+        # xlsx row 13: Trade at BBO, not at order level
+        trade1 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=54.59,
+            size=37.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=1,
+            ts_init=1,
+        )
+        engine.process_trade_tick(trade1)
+
+        # xlsx row 14: quote confirms consumed liquidity
+        quote1 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=54.59,
+            ask_price=54.62,
+            bid_size=563.0,
+            ask_size=3617.0,
+            ts_event=2,
+            ts_init=2,
+        )
+        engine.process_quote_tick(quote1)
+
+        # xlsx rows 15-16: more trades at BBO
+        trade2 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=54.59,
+            size=200.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=3,
+            ts_init=3,
+        )
+        engine.process_trade_tick(trade2)
+
+        trade3 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=54.59,
+            size=363.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=4,
+            ts_init=4,
+        )
+        engine.process_trade_tick(trade3)
+
+        # xlsx row 17: BBO drops to the order's level with size=1895
+        # Old code: queue=0 → fills immediately here (wrong)
+        # New code: pending resolved to 1895 → blocks fill
+        quote2 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=54.57,
+            ask_price=54.59,
+            bid_size=1895.0,
+            ask_size=200.0,
+            ts_event=5,
+            ts_init=5,
+        )
+        engine.process_quote_tick(quote2)
+        assert len([m for m in messages if isinstance(m, OrderFilled)]) == 0
+
+        # xlsx row 19: trade at the order's level
+        # Queue 1895→1695, order must NOT fill yet
+        trade4 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=54.57,
+            size=200.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=6,
+            ts_init=6,
+        )
+        engine.process_trade_tick(trade4)
+
+        # Assert: no fills, queue still has 1695 ahead
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) == 0
+
+    def test_l1_queue_position_at_bbo_trades_decrement_queue(self):
+        """
+        Regression (paulbir): replay of at-the-top scenario structure from
+        updates_matching-test_top.xlsx (rows 10-16, sizes match exactly).
+
+        BUY LIMIT at BBO with queue=600. Three trades (37+200+363=600)
+        between quotes at the order's level. Old code skipped trade-based
+        queue decrement for L1, so the queue was never consumed by trades.
+        The fix enables trade decrement for L1: once the full 600 is
+        consumed, the next trade through the queue triggers a fill.
+
+        """
+        # Arrange
+        engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            trade_execution=True,
+            queue_position=True,
+        )
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # xlsx row 10: BBO bid=0.05459@600 (scaled to 54.59@600)
+        quote0 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=54.59,
+            ask_price=54.62,
+            bid_size=600.0,
+            ask_size=3617.0,
+        )
+        engine.process_quote_tick(quote0)
+
+        # xlsx row 11-12: BUY LIMIT at BBO (0.05459, scaled 54.59)
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("54.59"),
+            quantity=self.instrument.make_qty(100.0),
+        )
+        engine.process_order(order, self.account_id)
+        messages.clear()
+
+        # xlsx row 13: trade 37 @ BBO → queue 600→563
+        trade1 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=54.59,
+            size=37.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=1,
+            ts_init=1,
+        )
+        engine.process_trade_tick(trade1)
+        assert len([m for m in messages if isinstance(m, OrderFilled)]) == 0
+
+        # xlsx row 14: quote confirms consumed liquidity at BBO
+        quote1 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=54.59,
+            ask_price=54.62,
+            bid_size=563.0,
+            ask_size=3617.0,
+            ts_event=2,
+            ts_init=2,
+        )
+        engine.process_quote_tick(quote1)
+
+        # xlsx row 15: trade 200 @ BBO → queue 563→363
+        trade2 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=54.59,
+            size=200.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=3,
+            ts_init=3,
+        )
+        engine.process_trade_tick(trade2)
+        assert len([m for m in messages if isinstance(m, OrderFilled)]) == 0
+
+        # xlsx row 16: trade 363 @ BBO → queue 363→0, excess=0 (exact match)
+        trade3 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=54.59,
+            size=363.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=4,
+            ts_init=4,
+        )
+        engine.process_trade_tick(trade3)
+        assert len([m for m in messages if isinstance(m, OrderFilled)]) == 0
+
+        # Queue is now exhausted. Next trade through fills the order.
+        # Old code: queue still 563, trade skipped → would NOT fill here
+        trade4 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=54.59,
+            size=100.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=5,
+            ts_init=5,
+        )
+        engine.process_trade_tick(trade4)
+
+        # Assert
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) == 1
+        assert fills[0].last_qty == self.instrument.make_qty(100.0)
+
+    def test_l1_queue_position_pending_not_stuck_after_zero_size_quote(self):
+        """
+        Regression: venue emits zero-size L1 quote before a price drop that
+        passes through the order's level. The pending state must still be
+        cleared so the order is not blocked indefinitely.
+        """
+        # Arrange
+        engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            trade_execution=True,
+            queue_position=True,
+        )
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # BBO at 100
+        quote0 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=100.00,
+            ask_price=101.00,
+            bid_size=500.0,
+            ask_size=500.0,
+        )
+        engine.process_quote_tick(quote0)
+
+        # BUY LIMIT at 99.00, behind BBO -> pending
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("99.00"),
+            quantity=self.instrument.make_qty(5.0),
+        )
+        engine.process_order(order, self.account_id)
+        messages.clear()
+
+        # Zero-size bid update (venue clears the level)
+        quote1 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=100.00,
+            ask_price=101.00,
+            bid_size=0.0,
+            ask_size=500.0,
+            ts_event=1,
+            ts_init=1,
+        )
+        engine.process_quote_tick(quote1)
+
+        # Bid drops past the order's level (100->98, skipping 99)
+        quote2 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=98.00,
+            ask_price=99.00,
+            bid_size=300.0,
+            ask_size=200.0,
+            ts_event=2,
+            ts_init=2,
+        )
+        engine.process_quote_tick(quote2)
+
+        # Trade at the order level should fill (queue was cleared by price
+        # drop through the order's level)
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=99.00,
+            size=5.0,
+            aggressor_side=AggressorSide.SELLER,
+            ts_event=3,
+            ts_init=3,
+        )
+        engine.process_trade_tick(trade)
+
+        # Assert
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) == 1
+
+    def test_l1_queue_position_pending_resolved_by_any_side_trade(self):
+        """
+        A buyer trade at 98 crosses through a BUY pending at 99 even though the
+        aggressor side is "wrong".
+
+        The resolve moves to queue_ahead(0) and the Cython matching core immediately
+        fills (inside-spread check).
+
+        """
+        # Arrange
+        engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            trade_execution=True,
+            queue_position=True,
+        )
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # BBO at 100/101
+        quote0 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=100.00,
+            ask_price=101.00,
+            bid_size=500.0,
+            ask_size=500.0,
+        )
+        engine.process_quote_tick(quote0)
+
+        # BUY LIMIT at 99.00, behind BBO -> pending
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("99.00"),
+            quantity=self.instrument.make_qty(5.0),
+        )
+        engine.process_order(order, self.account_id)
+        messages.clear()
+
+        # Buyer trade at 98 crosses through 99 (opposite aggressor side).
+        # Resolves pending -> queue_ahead(0) then fills immediately because
+        # the order is inside the spread (bid=98, price=99).
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=98.00,
+            size=5.0,
+            aggressor_side=AggressorSide.BUYER,
+            ts_event=1,
+            ts_init=1,
+        )
+        engine.process_trade_tick(trade)
 
         # Assert
         fills = [m for m in messages if isinstance(m, OrderFilled)]

@@ -116,10 +116,12 @@ pub struct OrderMatchingEngine {
     trade_consumption: QuantityRaw,
     queue_ahead: AHashMap<ClientOrderId, (PriceRaw, QuantityRaw)>,
     queue_excess: AHashMap<ClientOrderId, QuantityRaw>,
+    queue_pending: AHashMap<ClientOrderId, PriceRaw>,
     prev_bid_price_raw: PriceRaw,
     prev_bid_size_raw: QuantityRaw,
     prev_ask_price_raw: PriceRaw,
     prev_ask_size_raw: QuantityRaw,
+    tob_initialized: bool,
     instrument_close: Option<InstrumentClose>,
     settlement_price: Option<Price>,
     expiration_processed: bool,
@@ -192,10 +194,12 @@ impl OrderMatchingEngine {
             trade_consumption: 0,
             queue_ahead: AHashMap::new(),
             queue_excess: AHashMap::new(),
+            queue_pending: AHashMap::new(),
             prev_bid_price_raw: 0,
             prev_bid_size_raw: 0,
             prev_ask_price_raw: 0,
             prev_ask_size_raw: 0,
+            tob_initialized: false,
             instrument_close: None,
             settlement_price: None,
             expiration_processed: false,
@@ -223,10 +227,12 @@ impl OrderMatchingEngine {
         self.trade_consumption = 0;
         self.queue_ahead.clear();
         self.queue_excess.clear();
+        self.queue_pending.clear();
         self.prev_bid_price_raw = 0;
         self.prev_bid_size_raw = 0;
         self.prev_ask_price_raw = 0;
         self.prev_ask_size_raw = 0;
+        self.tob_initialized = false;
         self.instrument_close = None;
         self.settlement_price = None;
         self.expiration_processed = false;
@@ -384,8 +390,31 @@ impl OrderMatchingEngine {
             OrderCore::opposite_side(order.order_side()),
             size_prec,
         );
+
+        let client_order_id = order.client_order_id();
+
+        // Clear stale entries from both maps (e.g. order modified to new price)
+        self.queue_pending.remove(&client_order_id);
+        self.queue_ahead.remove(&client_order_id);
+
+        // For L1 books, levels behind the BBO have no visible depth. Track
+        // these orders separately so fills are blocked until the BBO reaches
+        // this price. Only truly behind-BBO prices are pending (BUY below
+        // best bid / SELL above best ask); inside-spread and no-book keep 0.
+        if self.book_type == BookType::L1_MBP && qty_ahead.raw == 0 {
+            let behind_bbo = match order.order_side() {
+                OrderSide::Buy => self.book.best_bid_price().is_some_and(|bid| price < bid),
+                OrderSide::Sell => self.book.best_ask_price().is_some_and(|ask| price > ask),
+                _ => false,
+            };
+            if behind_bbo {
+                self.queue_pending.insert(client_order_id, price.raw);
+                return;
+            }
+        }
+
         self.queue_ahead
-            .insert(order.client_order_id(), (price.raw, qty_ahead.raw));
+            .insert(client_order_id, (price.raw, qty_ahead.raw));
     }
 
     fn decrement_queue_on_trade(
@@ -487,6 +516,11 @@ impl OrderMatchingEngine {
         }
 
         let client_order_id = order.client_order_id();
+
+        // Block fills for L1 orders pending a deferred snapshot
+        if self.queue_pending.contains_key(&client_order_id) {
+            return None;
+        }
 
         if let Some(&(tracked_price_raw, ahead_raw)) = self.queue_ahead.get(&client_order_id)
             && let Some(order_price) = order.price()
@@ -608,10 +642,13 @@ impl OrderMatchingEngine {
     }
 
     fn seed_tob_baseline(&mut self) {
-        self.prev_bid_price_raw = self.book.best_bid_price().map_or(0, |p| p.raw);
+        let bid = self.book.best_bid_price();
+        let ask = self.book.best_ask_price();
+        self.prev_bid_price_raw = bid.map_or(0, |p| p.raw);
         self.prev_bid_size_raw = self.book.best_bid_size().map_or(0, |q| q.raw);
-        self.prev_ask_price_raw = self.book.best_ask_price().map_or(0, |p| p.raw);
+        self.prev_ask_price_raw = ask.map_or(0, |p| p.raw);
         self.prev_ask_size_raw = self.book.best_ask_size().map_or(0, |q| q.raw);
+        self.tob_initialized = bid.is_some() || ask.is_some();
     }
 
     fn decrement_l1_queue_on_quote(
@@ -625,86 +662,21 @@ impl OrderMatchingEngine {
             return;
         }
 
-        // BID side (BUY limit orders)
-        if self.prev_bid_size_raw > 0 {
-            if bid_price_raw == self.prev_bid_price_raw {
-                if bid_size_raw < self.prev_bid_size_raw {
-                    self.apply_l1_queue_decrement(
-                        self.prev_bid_price_raw,
-                        self.prev_bid_size_raw - bid_size_raw,
-                        OrderSide::Buy,
-                    );
-                }
-            } else if bid_price_raw < self.prev_bid_price_raw {
+        // Price-move detection requires a valid prior TOB snapshot
+        if self.tob_initialized {
+            // BID side (BUY limit orders): handle price drops (crossed/snapshot)
+            if bid_price_raw < self.prev_bid_price_raw {
                 self.adjust_l1_queue_on_price_move(bid_price_raw, bid_size_raw, OrderSide::Buy);
             }
-            // Bid rose: preserve all BUY queues (level not consumed)
-        }
 
-        // ASK side (SELL limit orders)
-        if self.prev_ask_size_raw > 0 {
-            if ask_price_raw == self.prev_ask_price_raw {
-                if ask_size_raw < self.prev_ask_size_raw {
-                    self.apply_l1_queue_decrement(
-                        self.prev_ask_price_raw,
-                        self.prev_ask_size_raw - ask_size_raw,
-                        OrderSide::Sell,
-                    );
-                }
-            } else if ask_price_raw > self.prev_ask_price_raw {
+            // ASK side (SELL limit orders): handle price rises (crossed/snapshot)
+            if ask_price_raw > self.prev_ask_price_raw {
                 self.adjust_l1_queue_on_price_move(ask_price_raw, ask_size_raw, OrderSide::Sell);
             }
-            // Ask dropped: preserve all SELL queues (level not consumed)
-        }
-    }
-
-    fn apply_l1_queue_decrement(
-        &mut self,
-        price_raw: PriceRaw,
-        decrease_raw: QuantityRaw,
-        order_side: OrderSide,
-    ) {
-        let keys: Vec<ClientOrderId> = self.queue_ahead.keys().copied().collect();
-        let mut stale: Vec<ClientOrderId> = Vec::new();
-
-        for client_order_id in keys {
-            let (order_price_raw, ahead_raw) = match self.queue_ahead.get(&client_order_id).copied()
-            {
-                Some(v) => v,
-                None => continue,
-            };
-
-            if order_price_raw != price_raw || ahead_raw == 0 {
-                continue;
-            }
-
-            let cache = self.cache.borrow();
-            let order_info = cache.order(&client_order_id).and_then(|order| {
-                if order.is_closed() {
-                    None
-                } else {
-                    Some(order.order_side())
-                }
-            });
-            drop(cache);
-
-            let Some(side) = order_info else {
-                stale.push(client_order_id);
-                continue;
-            };
-
-            if side != order_side {
-                continue;
-            }
-
-            let new_ahead = ahead_raw.saturating_sub(decrease_raw);
-            self.queue_ahead
-                .insert(client_order_id, (order_price_raw, new_ahead));
         }
 
-        for id in stale {
-            self.queue_ahead.remove(&id);
-        }
+        // Resolve pending snapshots when BBO reaches a tracked order's price
+        self.resolve_pending_l1_snapshots(bid_price_raw, bid_size_raw, ask_price_raw, ask_size_raw);
     }
 
     fn adjust_l1_queue_on_price_move(
@@ -758,6 +730,146 @@ impl OrderMatchingEngine {
 
         for id in stale {
             self.queue_ahead.remove(&id);
+        }
+
+        // Also resolve pending L1 orders affected by this price move
+        let pending_keys: Vec<ClientOrderId> = self.queue_pending.keys().copied().collect();
+        let mut pending_stale: Vec<ClientOrderId> = Vec::new();
+
+        for client_order_id in pending_keys {
+            let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
+                continue;
+            };
+
+            let cache = self.cache.borrow();
+            let order_info = cache.order(&client_order_id).and_then(|order| {
+                if order.is_closed() {
+                    None
+                } else {
+                    Some(order.order_side())
+                }
+            });
+            drop(cache);
+
+            let Some(side) = order_info else {
+                pending_stale.push(client_order_id);
+                continue;
+            };
+
+            if side != order_side {
+                continue;
+            }
+
+            let crossed = match order_side {
+                OrderSide::Buy => order_price_raw > new_price_raw,
+                _ => order_price_raw < new_price_raw,
+            };
+
+            if crossed {
+                self.queue_pending.remove(&client_order_id);
+                self.queue_ahead
+                    .insert(client_order_id, (order_price_raw, 0));
+            } else if order_price_raw == new_price_raw {
+                self.queue_pending.remove(&client_order_id);
+                self.queue_ahead
+                    .insert(client_order_id, (order_price_raw, new_size_raw));
+            }
+        }
+
+        for id in pending_stale {
+            self.queue_pending.remove(&id);
+        }
+    }
+
+    fn resolve_pending_l1_snapshots(
+        &mut self,
+        bid_price_raw: PriceRaw,
+        bid_size_raw: QuantityRaw,
+        ask_price_raw: PriceRaw,
+        ask_size_raw: QuantityRaw,
+    ) {
+        let keys: Vec<ClientOrderId> = self.queue_pending.keys().copied().collect();
+        let mut stale: Vec<ClientOrderId> = Vec::new();
+
+        for client_order_id in keys {
+            let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
+                continue;
+            };
+
+            let cache = self.cache.borrow();
+            let order_info = cache.order(&client_order_id).and_then(|order| {
+                if order.is_closed() {
+                    None
+                } else {
+                    Some(order.order_side())
+                }
+            });
+            drop(cache);
+
+            let Some(side) = order_info else {
+                stale.push(client_order_id);
+                continue;
+            };
+
+            // Initialize snapshot when BBO reaches the order's price level
+            let matched_size = match side {
+                OrderSide::Buy if order_price_raw == bid_price_raw => Some(bid_size_raw),
+                OrderSide::Sell if order_price_raw == ask_price_raw => Some(ask_size_raw),
+                _ => None,
+            };
+
+            if let Some(size) = matched_size {
+                self.queue_pending.remove(&client_order_id);
+                self.queue_ahead
+                    .insert(client_order_id, (order_price_raw, size));
+            }
+        }
+
+        for id in stale {
+            self.queue_pending.remove(&id);
+        }
+    }
+
+    fn resolve_pending_on_trade(&mut self, trade_price_raw: PriceRaw) {
+        let keys: Vec<ClientOrderId> = self.queue_pending.keys().copied().collect();
+        let mut stale: Vec<ClientOrderId> = Vec::new();
+
+        for client_order_id in keys {
+            let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
+                continue;
+            };
+
+            let cache = self.cache.borrow();
+            let order_side = cache.order(&client_order_id).and_then(|order| {
+                if order.is_closed() {
+                    None
+                } else {
+                    Some(order.order_side())
+                }
+            });
+            drop(cache);
+
+            let Some(side) = order_side else {
+                stale.push(client_order_id);
+                continue;
+            };
+
+            // Trade through a pending level proves the queue was crossed
+            let crossed = match side {
+                OrderSide::Buy => trade_price_raw < order_price_raw,
+                OrderSide::Sell => trade_price_raw > order_price_raw,
+                _ => false,
+            };
+
+            if crossed {
+                self.queue_pending.remove(&client_order_id);
+                self.queue_ahead
+                    .insert(client_order_id, (order_price_raw, 0));
+            }
+        }
+
+        for id in stale {
+            self.queue_pending.remove(&id);
         }
     }
 
@@ -986,10 +1098,37 @@ impl OrderMatchingEngine {
         // Depth10 always replaces the full book via apply_depth regardless of flags
         if self.config.queue_position {
             self.clear_all_queue_positions();
-            self.prev_bid_price_raw = depth.bids[0].price.raw;
-            self.prev_bid_size_raw = depth.bids[0].size.raw;
-            self.prev_ask_price_raw = depth.asks[0].price.raw;
-            self.prev_ask_size_raw = depth.asks[0].size.raw;
+            let bid_price_raw = depth.bids[0].price.raw;
+            let bid_size_raw = depth.bids[0].size.raw;
+            let ask_price_raw = depth.asks[0].price.raw;
+            let ask_size_raw = depth.asks[0].size.raw;
+
+            // Handle crossed/matched pending orders (same as quote path)
+            if self.tob_initialized {
+                if bid_price_raw < self.prev_bid_price_raw {
+                    self.adjust_l1_queue_on_price_move(bid_price_raw, bid_size_raw, OrderSide::Buy);
+                }
+                if ask_price_raw > self.prev_ask_price_raw {
+                    self.adjust_l1_queue_on_price_move(
+                        ask_price_raw,
+                        ask_size_raw,
+                        OrderSide::Sell,
+                    );
+                }
+            }
+
+            self.resolve_pending_l1_snapshots(
+                bid_price_raw,
+                bid_size_raw,
+                ask_price_raw,
+                ask_size_raw,
+            );
+
+            self.prev_bid_price_raw = bid_price_raw;
+            self.prev_bid_size_raw = bid_size_raw;
+            self.prev_ask_price_raw = ask_price_raw;
+            self.prev_ask_size_raw = ask_size_raw;
+            self.tob_initialized = true;
         }
 
         self.iterate(depth.ts_init, AggressorSide::NoAggressor);
@@ -1027,6 +1166,7 @@ impl OrderMatchingEngine {
                 self.prev_bid_size_raw = quote.bid_size.raw;
                 self.prev_ask_price_raw = quote.ask_price.raw;
                 self.prev_ask_size_raw = quote.ask_size.raw;
+                self.tob_initialized = true;
             }
             self.book.update_quote_tick(quote).unwrap();
         }
@@ -1382,10 +1522,8 @@ impl OrderMatchingEngine {
             self.seed_trade_consumption(price_raw, trade.size.raw, trade.ts_event, aggressor_side);
         }
 
-        // Skip trade-based decrement for L1: quote tick decreases already capture trade impact
-        if self.book_type != BookType::L1_MBP {
-            self.decrement_queue_on_trade(price_raw, trade.size.raw, aggressor_side);
-        }
+        self.resolve_pending_on_trade(price_raw);
+        self.decrement_queue_on_trade(price_raw, trade.size.raw, aggressor_side);
 
         self.iterate(trade.ts_init, aggressor_side);
 

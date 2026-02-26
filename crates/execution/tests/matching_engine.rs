@@ -6286,3 +6286,682 @@ fn test_process_order_rejection_no_refcell_reentrant_panic(
     // Should not panic with "RefCell already borrowed"
     engine.process_order(&mut sell_order, account_id);
 }
+
+fn get_l1_queue_position_engine(
+    instrument: InstrumentAny,
+) -> (
+    OrderMatchingEngine,
+    Rc<RefCell<Cache>>,
+    TypedIntoMessageSavingHandler<OrderEventAny>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        queue_position: true,
+        ..Default::default()
+    };
+
+    let engine = OrderMatchingEngine::new(
+        instrument,
+        1,
+        FillModelAny::default(),
+        FeeModelAny::default(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        clock,
+        Rc::clone(&cache),
+        config,
+    );
+
+    (engine, cache, handler)
+}
+
+#[rstest]
+fn test_l1_queue_position_deep_order_deferred_snapshot(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Regression (paulbir): exact replay of deep-order scenario.
+    // BUY LIMIT placed 2 ticks below BBO. Old code gave queue_ahead=0
+    // so the order filled instantly when BBO dropped to its level.
+    let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+
+    // BBO bid=54.59@600
+    let quote0 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Price::from("54.62"),
+        Quantity::from("600.000"),
+        Quantity::from("3617.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote0);
+
+    // BUY LIMIT at 54.57, 2 ticks below BBO
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("54.57"))
+        .quantity(Quantity::from("1000.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // Trade at BBO, not at order level
+    let trade1 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Quantity::from("37.000"),
+        AggressorSide::Seller,
+        TradeId::new("1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_trade_tick(&trade1);
+
+    // Quote confirms consumed liquidity
+    let quote1 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Price::from("54.62"),
+        Quantity::from("563.000"),
+        Quantity::from("3617.000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_quote_tick(&quote1);
+
+    // More trades at BBO
+    let trade2 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Quantity::from("200.000"),
+        AggressorSide::Seller,
+        TradeId::new("2"),
+        UnixNanos::from(3),
+        UnixNanos::from(3),
+    );
+    engine.process_trade_tick(&trade2);
+
+    let trade3 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Quantity::from("363.000"),
+        AggressorSide::Seller,
+        TradeId::new("3"),
+        UnixNanos::from(4),
+        UnixNanos::from(4),
+    );
+    engine.process_trade_tick(&trade3);
+
+    // BBO drops to the order's level with size=1895
+    // Old code: queue=0 -> fills immediately here (wrong)
+    // New code: pending resolved to 1895 -> blocks fill
+    let quote2 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.57"),
+        Price::from("54.59"),
+        Quantity::from("1895.000"),
+        Quantity::from("200.000"),
+        UnixNanos::from(5),
+        UnixNanos::from(5),
+    );
+    engine.process_quote_tick(&quote2);
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        0,
+        "Should not fill when BBO first reaches order level"
+    );
+
+    // Trade at the order's level: queue 1895->1695, must NOT fill yet
+    let trade4 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.57"),
+        Quantity::from("200.000"),
+        AggressorSide::Seller,
+        TradeId::new("4"),
+        UnixNanos::from(6),
+        UnixNanos::from(6),
+    );
+    engine.process_trade_tick(&trade4);
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        0,
+        "Should not fill, queue still has 1695 ahead"
+    );
+}
+
+#[rstest]
+fn test_l1_queue_position_at_bbo_trades_decrement_queue(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Regression (paulbir): replay of at-the-top scenario.
+    // BUY LIMIT at BBO with queue=600. Three trades (37+200+363=600)
+    // between quotes. Old code skipped trade decrements for L1.
+    let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+
+    // BBO bid=54.59@600
+    let quote0 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Price::from("54.62"),
+        Quantity::from("600.000"),
+        Quantity::from("3617.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote0);
+
+    // BUY LIMIT at BBO
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("54.59"))
+        .quantity(Quantity::from("100.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // Trade 37 @ BBO -> queue 600->563
+    let trade1 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Quantity::from("37.000"),
+        AggressorSide::Seller,
+        TradeId::new("1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_trade_tick(&trade1);
+    assert!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_))),
+        "Should not fill after first trade"
+    );
+
+    // Quote confirms consumed liquidity
+    let quote1 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Price::from("54.62"),
+        Quantity::from("563.000"),
+        Quantity::from("3617.000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_quote_tick(&quote1);
+
+    // Trade 200 @ BBO -> queue 563->363
+    let trade2 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Quantity::from("200.000"),
+        AggressorSide::Seller,
+        TradeId::new("2"),
+        UnixNanos::from(3),
+        UnixNanos::from(3),
+    );
+    engine.process_trade_tick(&trade2);
+    assert!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_))),
+        "Should not fill after second trade"
+    );
+
+    // Trade 363 @ BBO -> queue 363->0, excess=0 (exact match)
+    let trade3 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Quantity::from("363.000"),
+        AggressorSide::Seller,
+        TradeId::new("3"),
+        UnixNanos::from(4),
+        UnixNanos::from(4),
+    );
+    engine.process_trade_tick(&trade3);
+    assert!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_))),
+        "Should not fill when trade exactly depletes queue (zero excess)"
+    );
+
+    // Queue exhausted. Next trade through fills the order.
+    let trade4 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("54.59"),
+        Quantity::from("100.000"),
+        AggressorSide::Seller,
+        TradeId::new("4"),
+        UnixNanos::from(5),
+        UnixNanos::from(5),
+    );
+    engine.process_trade_tick(&trade4);
+
+    let fills: Vec<_> = get_order_event_handler_messages(&handler)
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(*f),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fills.len(), 1, "Should fill after queue fully exhausted");
+    assert_eq!(fills[0].last_qty, Quantity::from("100.000"));
+}
+
+#[rstest]
+fn test_l1_queue_position_trade_partial_does_not_fill(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // A trade smaller than the queue does not trigger a fill.
+    let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+
+    let quote0 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote0);
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("5.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // Trade of 5 partially consumes queue (10->5)
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Quantity::from("5.000"),
+        AggressorSide::Seller,
+        TradeId::new("1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_trade_tick(&trade);
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        0,
+        "Should not fill when queue only partially consumed"
+    );
+}
+
+#[rstest]
+fn test_l1_queue_position_full_example(account_id: AccountId, instrument_eth_usdt: InstrumentAny) {
+    // Trades at the order's price consume queue ahead. Quote size
+    // changes do not affect queue. Fill only when a trade exhausts queue.
+    let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+
+    let quote0 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote0);
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // Trade 3 at 100 -> ahead: 10->7
+    let trade1 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Quantity::from("3.000"),
+        AggressorSide::Seller,
+        TradeId::new("1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_trade_tick(&trade1);
+    assert!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_)))
+    );
+
+    // Quote size decrease does not affect queue (trade-driven model)
+    let quote1 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("8.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_quote_tick(&quote1);
+
+    // Trade 4 at 100 -> ahead: 7->3
+    let trade2 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Quantity::from("4.000"),
+        AggressorSide::Seller,
+        TradeId::new("2"),
+        UnixNanos::from(3),
+        UnixNanos::from(3),
+    );
+    engine.process_trade_tick(&trade2);
+    assert!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_)))
+    );
+
+    // Quote size increase does not affect queue
+    let quote2 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("15.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(4),
+        UnixNanos::from(4),
+    );
+    engine.process_quote_tick(&quote2);
+
+    // Trade 2 at 100 -> ahead: 3->1
+    let trade3 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Quantity::from("2.000"),
+        AggressorSide::Seller,
+        TradeId::new("3"),
+        UnixNanos::from(5),
+        UnixNanos::from(5),
+    );
+    engine.process_trade_tick(&trade3);
+    assert!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_)))
+    );
+
+    // Trade 3 at 100 -> ahead: 1->0, excess=2, fill=min(2,2)=2
+    let trade4 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Quantity::from("3.000"),
+        AggressorSide::Seller,
+        TradeId::new("4"),
+        UnixNanos::from(6),
+        UnixNanos::from(6),
+    );
+    engine.process_trade_tick(&trade4);
+
+    let fills: Vec<_> = get_order_event_handler_messages(&handler)
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(*f),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].last_qty, Quantity::from("2.000"));
+}
+
+#[rstest]
+fn test_l1_queue_position_bid_price_drop_clears_queue(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // When bid drops below order price, queue is cleared and next trade fills.
+    let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+
+    let quote0 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote0);
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("2.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // Bid drops below order price -> queue cleared
+    let quote1 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("99.00"),
+        Price::from("101.00"),
+        Quantity::from("5.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_quote_tick(&quote1);
+
+    // Trade at order level should fill (queue was cleared)
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Quantity::from("2.000"),
+        AggressorSide::Seller,
+        TradeId::new("1"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_trade_tick(&trade);
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        1,
+    );
+}
+
+#[rstest]
+fn test_l1_queue_position_pending_not_stuck_after_zero_size_quote(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Zero-size L1 quote before a price drop must not stall the pending order.
+    let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+
+    // BBO at 100/101
+    let quote0 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("500.000"),
+        Quantity::from("500.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote0);
+
+    // BUY LIMIT at 99.00, behind BBO -> pending
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("99.00"))
+        .quantity(Quantity::from("5.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // Zero-size bid update (venue clears the level)
+    let quote1 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("0.000"),
+        Quantity::from("500.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_quote_tick(&quote1);
+
+    // Bid drops past order level (100 -> 98, skipping 99)
+    let quote2 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("98.00"),
+        Price::from("99.00"),
+        Quantity::from("300.000"),
+        Quantity::from("200.000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_quote_tick(&quote2);
+
+    // Trade at order level should fill (queue cleared by price drop)
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("99.00"),
+        Quantity::from("5.000"),
+        AggressorSide::Seller,
+        TradeId::new("1"),
+        UnixNanos::from(3),
+        UnixNanos::from(3),
+    );
+    engine.process_trade_tick(&trade);
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        1,
+    );
+}
+
+#[rstest]
+fn test_l1_queue_position_pending_resolved_by_any_side_trade(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // A trade through a pending level resolves it regardless of aggressor
+    // side. A buyer trade at 98 still proves the market reached 98, so a
+    // BUY pending at 99 is crossed even though the trade is buyer-initiated.
+    // The resolve moves it to queue_ahead(0); a follow-up seller trade at
+    // the order level then fills it immediately.
+    let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+
+    let quote0 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("500.000"),
+        Quantity::from("500.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote0);
+
+    // BUY LIMIT at 99.00, behind BBO -> pending
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("99.00"))
+        .quantity(Quantity::from("5.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // Buyer trade at 98 crosses through 99 (opposite aggressor side).
+    // This resolves the pending → queue_ahead with 0 ahead, but does NOT
+    // fill because the ask is still at 101.
+    let trade1 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("98.00"),
+        Quantity::from("5.000"),
+        AggressorSide::Buyer,
+        TradeId::new("1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_trade_tick(&trade1);
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        0,
+    );
+
+    // Seller trade at 99 now fills because queue was already resolved
+    let trade2 = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("99.00"),
+        Quantity::from("5.000"),
+        AggressorSide::Seller,
+        TradeId::new("2"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_trade_tick(&trade2);
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        1,
+    );
+}
