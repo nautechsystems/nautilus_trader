@@ -38,16 +38,11 @@ runs:
       run: |
         echo "=== Disk usage before cleanup ==="
         df -h /
-        # Remove iOS/watchOS/tvOS/visionOS/xrOS simulators (~10+ GB)
-        sudo rm -rf /Library/Developer/CoreSimulator
-        # Remove Android SDK (~5-10 GB)
-        rm -rf ~/Library/Android
-        # Remove .NET SDK (~2 GB)
-        rm -rf /usr/local/share/dotnet
-        # Remove PowerShell (~1.5 GB)
-        rm -rf /usr/local/share/powershell
-        # Remove Haskell/GHC (~1 GB)
-        rm -rf /usr/local/.ghcup
+        sudo rm -rf /Library/Developer/CoreSimulator || true
+        sudo rm -rf ~/Library/Android || true
+        sudo rm -rf /usr/local/share/dotnet || true
+        sudo rm -rf /usr/local/share/powershell || true
+        sudo rm -rf /usr/local/.ghcup || true
         echo "=== Disk usage after cleanup ==="
         df -h /
 
