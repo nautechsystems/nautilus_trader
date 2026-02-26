@@ -163,6 +163,59 @@ pub enum UserWsMessage {
     Trade(PolymarketUserTrade),
 }
 
+/// Output message type from the Polymarket WebSocket handler.
+#[derive(Debug)]
+pub enum PolymarketWsMessage {
+    Market(MarketWsMessage),
+    User(UserWsMessage),
+    /// Emitted when the underlying WebSocket reconnects.
+    Reconnected,
+}
+
+/// L2 auth payload embedded in user-channel subscribe messages.
+#[derive(Debug, Serialize)]
+pub struct PolymarketWsAuth {
+    #[serde(rename = "apiKey")]
+    pub api_key: String,
+    /// Base64-encoded HMAC-SHA256 signature.
+    pub secret: String,
+    pub passphrase: String,
+    pub timestamp: String,
+    /// Always empty string per the Polymarket WS protocol.
+    pub nonce: String,
+}
+
+/// Market-channel subscribe request sent on connect.
+///
+/// Wire format: `{"assets_ids": [...], "type": "market"}`
+#[derive(Debug, Serialize)]
+pub struct MarketSubscribeRequest {
+    pub assets_ids: Vec<String>,
+    #[serde(rename = "type")]
+    pub msg_type: &'static str,
+}
+
+/// Market-channel dynamic unsubscribe request sent during an active session.
+///
+/// Wire format: `{"assets_ids": [...], "operation": "unsubscribe"}`
+#[derive(Debug, Serialize)]
+pub struct MarketUnsubscribeRequest {
+    pub assets_ids: Vec<String>,
+    pub operation: &'static str,
+}
+
+/// User-channel subscribe request sent on connect.
+///
+/// Wire format: `{"auth": {...}, "markets": [], "assets_ids": [], "type": "user"}`
+#[derive(Debug, Serialize)]
+pub struct UserSubscribeRequest {
+    pub auth: PolymarketWsAuth,
+    pub markets: Vec<String>,
+    pub assets_ids: Vec<String>,
+    #[serde(rename = "type")]
+    pub msg_type: &'static str,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
