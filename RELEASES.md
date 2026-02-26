@@ -21,6 +21,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed matching engine applying order book deltas for L1 books (#3615), thanks @maksym-mikheienko
 - Fixed pre-commit hooks portability for Windows (#3617), thanks for reporting @powerseed
+- Fixed `LiveExecEngine` position reconciliation infinite loop when venue reports flat (#3622), thanks for reporting @mrbaron3
 - Fixed `CryptoOption` instrument pyo3 transform for (#3626), thanks @davidsblom
 - Fixed `StreamingFeatherWriter` duplicate events from multiple message bus topics (#3625), thanks for reporting @fomotoshi
 - Fixed Binance Futures algo order serde field renames for WS and HTTP parsing (#3624), thanks for reporting @qu1zzyboy

@@ -274,6 +274,10 @@ This ensures the trading node maintains a consistent execution state even under 
 | `single_order_query_delay_ms`        | 100&nbsp;ms    | Delay (milliseconds) between single-order queries to prevent rate limit exhaustion. |
 | `reconciliation_startup_delay_secs`  | 10.0&nbsp;s    | Additional delay (seconds) applied *after* startup reconciliation completes before starting continuous reconciliation loop. Provides time for additional system stabilization. |
 | `own_books_audit_interval_secs`      | None           | Sets the interval (in seconds) between audits of own order books against public ones. Verifies synchronization and logs errors for inconsistencies. |
+| `position_check_interval_secs`       | None           | Interval (seconds) between checks for position discrepancies between cache and venue. When a discrepancy is detected, the system queries for missing fills. Set to None to disable. Recommended: 30-60 seconds. |
+| `position_check_lookback_mins`       | 60&nbsp;min    | Lookback window (minutes) for querying fill reports when a position discrepancy is detected. Only fills within this window are requested from the venue. |
+| `position_check_threshold_ms`        | 5,000&nbsp;ms  | Minimum elapsed time (milliseconds) since the position's last local activity before acting on discrepancies. Prevents race conditions with in-flight fills. |
+| `position_check_retries`             | 3&nbsp;retries | Maximum reconciliation attempts for a position discrepancy before the engine stops retrying. Once exceeded, an error is logged and the instrument is no longer actively reconciled until the discrepancy resolves. |
 
 :::warning
 **Important configuration guidelines:**

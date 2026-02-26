@@ -6166,3 +6166,144 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
         panic!("Expected OrderRejected event, was {:?}", events[0]);
     }
 }
+
+#[tokio::test]
+async fn test_position_check_retries_stops_after_max() {
+    // When instrument is not in cache, check_position_discrepancy returns None
+    // (can't generate fills), so retries should increment until exhausted
+    let config = ExecutionManagerConfig {
+        position_check_retries: 2,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let position_id = PositionId::from("P-001");
+
+    let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
+
+    // Add position to cache but NOT the instrument — forces reconciliation to
+    // return None on the cache.instrument() lookup
+    ctx.add_position(position);
+
+    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
+    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+
+    // First attempt: detects discrepancy, can't reconcile, retry count -> 1
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    assert!(events.is_empty());
+
+    // Second attempt: retry count -> 2 (= max), logs error
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    assert!(events.is_empty());
+
+    // Third attempt: retries exhausted, silently skipped
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    assert!(events.is_empty());
+}
+
+#[tokio::test]
+async fn test_position_check_retries_clears_when_discrepancy_resolves() {
+    // When reconciliation succeeds (generates events), the retry counter resets
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let position_id = PositionId::from("P-001");
+
+    let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
+
+    // First: add position without instrument to force a failed retry
+    ctx.add_position(position);
+    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
+    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    assert!(events.is_empty()); // Failed, retry count = 1
+
+    // Now add instrument — reconciliation can succeed and generate events
+    ctx.add_instrument(instrument.clone());
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    assert!(
+        !events.is_empty(),
+        "Expected reconciliation events when instrument is available"
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_stale_retries_pruned_when_position_closed() {
+    // When a position is closed and no longer reported by venue, the maxed
+    // retry counter should be pruned so future discrepancies aren't suppressed
+    let config = ExecutionManagerConfig {
+        position_check_retries: 1,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-001");
+
+    ctx.add_instrument(instrument.clone());
+    let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
+    ctx.add_position(position.clone());
+
+    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
+    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+
+    // First call: reconciliation succeeds (generates events to match venue=flat)
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    assert!(!events.is_empty());
+
+    // Simulate that reconciliation didn't actually fix it (position still open)
+    // by not applying the events. Instead, directly max out the retry counter
+    // by calling again — the position is still discrepant
+    ctx.manager.check_positions_consistency(&clients).await;
+
+    // Now close the position so it disappears from open positions
+    let close_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("5.0"))
+        .build();
+    let close_fill = TestOrderEventStubs::filled(
+        &close_order,
+        &instrument,
+        Some(TradeId::new("T-CLOSE-001")),
+        Some(position_id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("5.0")),
+        None,
+        None,
+        None,
+        Some(test_account_id()),
+    );
+    let close_filled: OrderFilled = close_fill.into();
+    let mut pos = position;
+    pos.apply(&close_filled);
+    ctx.cache.borrow_mut().update_position(&pos).unwrap();
+
+    // Run consistency check with no open positions — should prune stale counter
+    ctx.manager.check_positions_consistency(&clients).await;
+
+    // Create a new position for the same instrument
+    let position2 = create_test_position(
+        &instrument,
+        PositionId::from("P-002"),
+        OrderSide::Buy,
+        "3.0",
+        "3100.00",
+    );
+    ctx.add_position(position2);
+
+    // Should produce events (counter was pruned, not suppressed)
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    assert!(
+        !events.is_empty(),
+        "Expected events: stale retry counter should have been pruned"
+    );
+}

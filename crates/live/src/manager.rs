@@ -134,6 +134,8 @@ pub struct ExecutionManagerConfig {
     pub position_check_lookback_mins: u64,
     /// Threshold in nanoseconds before acting on venue discrepancies for positions.
     pub position_check_threshold_ns: u64,
+    /// Maximum retries before stopping position discrepancy reconciliation.
+    pub position_check_retries: u32,
     /// The time buffer (minutes) before closed orders can be purged.
     pub purge_closed_orders_buffer_mins: Option<u32>,
     /// The time buffer (minutes) before closed positions can be purged.
@@ -169,6 +171,7 @@ impl Default for ExecutionManagerConfig {
             position_check_interval_secs: None,
             position_check_lookback_mins: 60,
             position_check_threshold_ns: 60_000_000_000,
+            position_check_retries: 3,
             purge_closed_orders_buffer_mins: None,
             purge_closed_positions_buffer_mins: None,
             purge_account_events_lookback_mins: None,
@@ -223,6 +226,7 @@ impl From<&LiveExecEngineConfig> for ExecutionManagerConfig {
             position_check_interval_secs: config.position_check_interval_secs,
             position_check_lookback_mins: config.position_check_lookback_mins as u64,
             position_check_threshold_ns,
+            position_check_retries: config.position_check_retries,
             purge_closed_orders_buffer_mins: config.purge_closed_orders_buffer_mins,
             purge_closed_positions_buffer_mins: config.purge_closed_positions_buffer_mins,
             purge_account_events_lookback_mins: config.purge_account_events_lookback_mins,
@@ -296,6 +300,7 @@ pub struct ExecutionManager {
     ts_last_query: AHashMap<ClientOrderId, UnixNanos>,
     order_local_activity_ns: AHashMap<ClientOrderId, UnixNanos>,
     position_local_activity_ns: AHashMap<InstrumentId, UnixNanos>,
+    position_recon_retries: AHashMap<InstrumentId, u32>,
     recent_fills_cache: AHashMap<TradeId, UnixNanos>,
 }
 
@@ -329,6 +334,7 @@ impl ExecutionManager {
             ts_last_query: AHashMap::new(),
             order_local_activity_ns: AHashMap::new(),
             position_local_activity_ns: AHashMap::new(),
+            position_recon_retries: AHashMap::new(),
             recent_fills_cache: AHashMap::new(),
         }
     }
@@ -1102,6 +1108,21 @@ impl ExecutionManager {
             }
         }
 
+        // Prune retry counters for instruments no longer actively tracked,
+        // excluding flat venue reports which shouldn't protect stale counters
+        let active_instruments: AHashSet<InstrumentId> = open_positions
+            .iter()
+            .map(|p| p.instrument_id)
+            .chain(
+                venue_positions
+                    .iter()
+                    .filter(|(_, r)| r.signed_decimal_qty != Decimal::ZERO)
+                    .map(|(id, _)| *id),
+            )
+            .collect();
+        self.position_recon_retries
+            .retain(|iid, _| active_instruments.contains(iid));
+
         events
     }
 
@@ -1330,6 +1351,7 @@ impl ExecutionManager {
 
         let tolerance = Decimal::from_str("0.00000001").unwrap();
         if (cached_signed_qty - venue_signed_qty).abs() <= tolerance {
+            self.position_recon_retries.remove(&position.instrument_id);
             return None; // No discrepancy
         }
 
@@ -1345,6 +1367,14 @@ impl ExecutionManager {
             return None;
         }
 
+        let retries = *self
+            .position_recon_retries
+            .get(&position.instrument_id)
+            .unwrap_or(&0);
+        if retries >= self.config.position_check_retries {
+            return None;
+        }
+
         log::warn!(
             "Position discrepancy detected for {}: cached_signed_qty={}, venue_signed_qty={}",
             position.instrument_id,
@@ -1352,14 +1382,24 @@ impl ExecutionManager {
             venue_signed_qty
         );
 
-        let instrument = self
-            .cache
-            .borrow()
-            .instrument(&position.instrument_id)?
-            .clone();
-
         let account_id = position.account_id;
         let instrument_id = position.instrument_id;
+
+        let Some(instrument) = self.cache.borrow().instrument(&instrument_id).cloned() else {
+            log::debug!("Cannot reconcile position for {instrument_id}: instrument not in cache");
+            let new_retries = retries + 1;
+            self.position_recon_retries
+                .insert(instrument_id, new_retries);
+            if new_retries >= self.config.position_check_retries {
+                log::error!(
+                    "Position discrepancy for {instrument_id} unresolved after {} attempts \
+                     (cached_qty={cached_signed_qty}, venue_qty={venue_signed_qty}); \
+                     no further reconciliation attempts will be made",
+                    self.config.position_check_retries,
+                );
+            }
+            return None;
+        };
 
         let cached_avg_px = if position.avg_px_open > 0.0 {
             Decimal::from_str(&position.avg_px_open.to_string()).ok()
@@ -1372,9 +1412,9 @@ impl ExecutionManager {
         let crosses_zero = (cached_signed_qty > Decimal::ZERO && venue_signed_qty < Decimal::ZERO)
             || (cached_signed_qty < Decimal::ZERO && venue_signed_qty > Decimal::ZERO);
 
-        if crosses_zero {
+        let result = if crosses_zero {
             // Split into two fills: close existing position, then open new position
-            return self.reconcile_cross_zero_position(
+            self.reconcile_cross_zero_position(
                 &instrument,
                 account_id,
                 instrument_id,
@@ -1383,57 +1423,91 @@ impl ExecutionManager {
                 venue_signed_qty,
                 venue_avg_px,
                 ts_now,
-            );
-        }
-
-        let qty_diff = venue_signed_qty - cached_signed_qty;
-        let order_side = if qty_diff > Decimal::ZERO {
-            OrderSide::Buy
+            )
         } else {
-            OrderSide::Sell
+            let qty_diff = venue_signed_qty - cached_signed_qty;
+            let order_side = if qty_diff > Decimal::ZERO {
+                OrderSide::Buy
+            } else {
+                OrderSide::Sell
+            };
+
+            let reconciliation_px = calculate_reconciliation_price(
+                cached_signed_qty,
+                cached_avg_px,
+                venue_signed_qty,
+                venue_avg_px,
+            );
+
+            match reconciliation_px.or(venue_avg_px).or(cached_avg_px) {
+                Some(fill_px) => {
+                    let fill_qty = qty_diff.abs();
+                    let ts_event = ts_now.as_u64();
+                    let venue_order_id = create_synthetic_venue_order_id(ts_event);
+
+                    Quantity::from_decimal_dp(fill_qty, instrument.size_precision())
+                        .ok()
+                        .and_then(|order_qty| {
+                            OrderStatusReport::new(
+                                account_id,
+                                instrument_id,
+                                None,
+                                venue_order_id,
+                                order_side,
+                                OrderType::Market,
+                                TimeInForce::Gtc,
+                                OrderStatus::Filled,
+                                order_qty,
+                                order_qty,
+                                ts_now,
+                                ts_now,
+                                ts_now,
+                                None,
+                            )
+                            .with_avg_px(fill_px.to_f64().unwrap_or(0.0))
+                            .ok()
+                        })
+                        .map(|order_report| {
+                            log::info!(
+                                color = LogColor::Blue as u8;
+                                "Generating synthetic fill for position reconciliation {instrument_id}: side={order_side:?}, qty={}, px={fill_px}", qty_diff.abs(),
+                            );
+
+                            let (events, _) = self.handle_external_order(
+                                &order_report,
+                                &account_id,
+                                &instrument,
+                                &[],
+                                true,
+                            );
+                            events
+                        })
+                }
+                None => None,
+            }
         };
 
-        let reconciliation_px = calculate_reconciliation_price(
-            cached_signed_qty,
-            cached_avg_px,
-            venue_signed_qty,
-            venue_avg_px,
-        );
+        // Track retries when reconciliation didn't produce events
+        if result.is_none() || result.as_ref().is_some_and(|e| e.is_empty()) {
+            let new_retries = retries + 1;
+            self.position_recon_retries
+                .insert(instrument_id, new_retries);
+            if new_retries >= self.config.position_check_retries {
+                log::error!(
+                    "Position discrepancy for {} unresolved after {} attempts \
+                     (cached_qty={}, venue_qty={}); \
+                     no further reconciliation attempts will be made",
+                    instrument_id,
+                    self.config.position_check_retries,
+                    cached_signed_qty,
+                    venue_signed_qty,
+                );
+            }
+        } else {
+            self.position_recon_retries.remove(&instrument_id);
+        }
 
-        let fill_px = reconciliation_px.or(venue_avg_px).or(cached_avg_px)?;
-        let fill_qty = qty_diff.abs();
-
-        let ts_event = ts_now.as_u64();
-        let venue_order_id = create_synthetic_venue_order_id(ts_event);
-        let order_qty = Quantity::from_decimal_dp(fill_qty, instrument.size_precision()).ok()?;
-
-        let order_report = OrderStatusReport::new(
-            account_id,
-            instrument_id,
-            None,
-            venue_order_id,
-            order_side,
-            OrderType::Market,
-            TimeInForce::Gtc,
-            OrderStatus::Filled,
-            order_qty,
-            order_qty,
-            ts_now,
-            ts_now,
-            ts_now,
-            None,
-        )
-        .with_avg_px(fill_px.to_f64().unwrap_or(0.0))
-        .ok()?;
-
-        log::info!(
-            color = LogColor::Blue as u8;
-            "Generating synthetic fill for position reconciliation {instrument_id}: side={order_side:?}, qty={fill_qty}, px={fill_px}",
-        );
-
-        let (events, _) =
-            self.handle_external_order(&order_report, &account_id, &instrument, &[], true);
-        Some(events)
+        result
     }
 
     /// Handles position reconciliation when position flips sign, splitting into two
