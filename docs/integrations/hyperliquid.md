@@ -38,20 +38,21 @@ NautilusTrader participates in the Hyperliquid
 A small proportional fee on perpetual fills funds ongoing development and maintenance of this integration.
 These fees are charged by Hyperliquid in addition to standard fees:
 
-- **Taker**: 1.0 bp (0.01%) on perpetual fills.
+- **Taker**: 1.0 bp (0.01%) base, scales down automatically with your Hyperliquid volume tier.
 - **Maker**: 0.4 bp (0.004%) base, scales down automatically with your Hyperliquid volume tier.
 - **Spot**: no builder fee.
 
-The maker fee scales down in step with Hyperliquid's own volume-based fee reductions.
-At the highest tier, where Hyperliquid charges 0% maker, the builder maker fee is also 0%:
+Both maker and taker fees scale down in step with Hyperliquid's own volume-based fee reductions:
 
-| 14d Volume | HL Maker Rate | HL Taker Rate | Builder Maker Fee | Builder Taker Fee |
-|------------|---------------|---------------|-------------------|-------------------|
-| Base       | 1.5 bp        | 3.5 bp        | 0.4 bp (4 tenths) | 1.0 bp            |
-| > $5M      | 1.2 bp        | 3.2 bp        | 0.3 bp (3 tenths) | 1.0 bp            |
-| > $25M     | 0.8 bp        | 2.8 bp        | 0.2 bp (2 tenths) | 1.0 bp            |
-| > $100M    | 0.4 bp        | 2.2 bp        | 0.1 bp (1 tenth)  | 1.0 bp            |
-| > $500M    | 0.0 bp        | 1.5 bp        | 0.0 bp (zero)     | 1.0 bp            |
+| 14d Volume | HL Maker Rate | HL Taker Rate | Builder Maker Fee  | Builder Taker Fee  |
+|------------|---------------|---------------|--------------------|--------------------|
+| Base       | 1.5 bp        | 3.5 bp        | 0.4 bp (4 tenths)  | 1.0 bp (10 tenths) |
+| > $5M      | 1.2 bp        | 3.2 bp        | 0.3 bp (3 tenths)  | 0.8 bp (8 tenths)  |
+| > $25M     | 0.8 bp        | 2.8 bp        | 0.2 bp (2 tenths)  | 0.6 bp (6 tenths)  |
+| > $100M    | 0.4 bp        | 2.2 bp        | 0.1 bp (1 tenth)   | 0.4 bp (4 tenths)  |
+| > $500M    | 0.0 bp        | 1.5 bp        | 0.0 bp (zero)      | 0.2 bp (2 tenths)  |
+
+*Hyperliquid fee tiers last verified: 2026-02-26*
 
 Your tier is detected automatically on connect and refreshed periodically
 (default: 60 minutes, configurable via `builder_fee_refresh_mins`).

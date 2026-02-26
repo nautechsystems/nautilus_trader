@@ -78,16 +78,37 @@ pub fn resolve_maker_tenths_bp(user_add_rate: f64) -> u32 {
     }
 }
 
+/// Resolves the builder taker fee tier from the Hyperliquid effective taker rate.
+///
+/// Maps `userCrossRate` (effective taker rate including all discounts) to a
+/// builder taker fee tier in tenths of a basis point. See `FEE_TIERS` for
+/// the full volume-to-fee mapping.
+#[must_use]
+pub fn resolve_taker_tenths_bp(user_cross_rate: f64) -> u32 {
+    if user_cross_rate > 0.000_32 {
+        10
+    } else if user_cross_rate > 0.000_28 {
+        8
+    } else if user_cross_rate > 0.000_22 {
+        6
+    } else if user_cross_rate > 0.000_15 {
+        4
+    } else {
+        2
+    }
+}
+
 /// Resolves the builder fee for an order based on symbol and post-only flag.
 ///
 /// Returns `None` for spot orders or when the resolved fee is zero.
-/// For perps, uses the dynamic `maker_tenths_bp` when `post_only` is true,
-/// otherwise the fixed taker rate.
+/// For perps, uses `maker_tenths_bp` when `post_only` is true,
+/// otherwise `taker_tenths_bp`.
 #[must_use]
 pub fn resolve_builder_fee(
     symbol: &str,
     post_only: bool,
     maker_tenths_bp: u32,
+    taker_tenths_bp: u32,
 ) -> Option<HyperliquidExecBuilderFee> {
     if symbol.ends_with("-SPOT") {
         return None;
@@ -96,7 +117,7 @@ pub fn resolve_builder_fee(
     let fee_tenths_bp = if post_only {
         maker_tenths_bp
     } else {
-        NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP
+        taker_tenths_bp
     };
 
     if fee_tenths_bp == 0 {
@@ -111,8 +132,8 @@ pub fn resolve_builder_fee(
 
 /// Resolves the builder fee for a batch of orders, using the lowest fee.
 ///
-/// Returns `None` if any order is spot or resolves to zero fee. Uses the
-/// dynamic `maker_tenths_bp` for post-only orders, otherwise the taker rate.
+/// Returns `None` if any order is spot or resolves to zero fee. Uses
+/// `maker_tenths_bp` for post-only orders, otherwise `taker_tenths_bp`.
 ///
 /// Hyperliquid applies a single builder fee per action (not per order), so
 /// mixed post-only/taker batches use the minimum to avoid overcharging.
@@ -122,11 +143,12 @@ pub fn resolve_builder_fee(
 pub fn resolve_builder_fee_batch(
     orders: &[(&str, bool)],
     maker_tenths_bp: u32,
+    taker_tenths_bp: u32,
 ) -> Option<HyperliquidExecBuilderFee> {
     let mut min: Option<HyperliquidExecBuilderFee> = None;
 
     for &(symbol, post_only) in orders {
-        let fee = resolve_builder_fee(symbol, post_only, maker_tenths_bp)?;
+        let fee = resolve_builder_fee(symbol, post_only, maker_tenths_bp, taker_tenths_bp)?;
         min = Some(match min {
             Some(current) if current.fee_tenths_bp <= fee.fee_tenths_bp => current,
             _ => fee,
@@ -179,7 +201,7 @@ impl BuilderFeeInfo {
         println!();
         println!("Fee rates (perpetuals only, no fee on spot):");
         println!(
-            "  - Taker: {} bp ({:.4}%) [fixed]",
+            "  - Taker: {} bp ({:.4}%) [base, scales down with volume]",
             self.perp_taker_tenths_bp as f64 / 10.0,
             self.perp_taker_tenths_bp as f64 / 1000.0,
         );
@@ -213,16 +235,16 @@ struct FeeTierRow {
 
 #[rustfmt::skip]
 const FEE_TIERS: [FeeTierRow; 5] = [
-    FeeTierRow { volume: "Base",    hl_maker: "1.5 bp", hl_taker: "3.5 bp", builder_maker: "0.4 bp (4 tenths)", builder_taker: "1.0 bp" },
-    FeeTierRow { volume: "> $5M",   hl_maker: "1.2 bp", hl_taker: "3.2 bp", builder_maker: "0.3 bp (3 tenths)", builder_taker: "1.0 bp" },
-    FeeTierRow { volume: "> $25M",  hl_maker: "0.8 bp", hl_taker: "2.8 bp", builder_maker: "0.2 bp (2 tenths)", builder_taker: "1.0 bp" },
-    FeeTierRow { volume: "> $100M", hl_maker: "0.4 bp", hl_taker: "2.2 bp", builder_maker: "0.1 bp (1 tenth)",  builder_taker: "1.0 bp" },
-    FeeTierRow { volume: "> $500M", hl_maker: "0.0 bp", hl_taker: "1.5 bp", builder_maker: "0.0 bp (zero)",     builder_taker: "1.0 bp" },
+    FeeTierRow { volume: "Base",    hl_maker: "1.5 bp", hl_taker: "3.5 bp", builder_maker: "0.4 bp (4 tenths)",  builder_taker: "1.0 bp (10 tenths)" },
+    FeeTierRow { volume: "> $5M",   hl_maker: "1.2 bp", hl_taker: "3.2 bp", builder_maker: "0.3 bp (3 tenths)",  builder_taker: "0.8 bp (8 tenths)" },
+    FeeTierRow { volume: "> $25M",  hl_maker: "0.8 bp", hl_taker: "2.8 bp", builder_maker: "0.2 bp (2 tenths)",  builder_taker: "0.6 bp (6 tenths)" },
+    FeeTierRow { volume: "> $100M", hl_maker: "0.4 bp", hl_taker: "2.2 bp", builder_maker: "0.1 bp (1 tenth)",   builder_taker: "0.4 bp (4 tenths)" },
+    FeeTierRow { volume: "> $500M", hl_maker: "0.0 bp", hl_taker: "1.5 bp", builder_maker: "0.0 bp (zero)",      builder_taker: "0.2 bp (2 tenths)" },
 ];
 
 fn print_fee_tier_table() {
-    println!("The maker fee scales down with your Hyperliquid volume tier.");
-    println!("At the highest tier, the builder maker fee is zero:");
+    println!("Both maker and taker fees scale down with your Hyperliquid volume tier.");
+    println!("At the highest tier, the builder maker fee is zero and taker is 0.2 bp:");
     println!();
 
     let table = Table::new(&FEE_TIERS).with(Style::rounded()).to_string();
@@ -232,7 +254,7 @@ fn print_fee_tier_table() {
 
     println!();
     println!("These fees are charged in addition to Hyperliquid's standard fees.");
-    println!("Maker fee tier is detected automatically from your HL volume tier.");
+    println!("Fee tiers are detected automatically from your HL volume tier.");
     println!();
     println!("Hyperliquid fees: https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees");
     println!(
@@ -424,7 +446,7 @@ pub async fn approve_from_env(non_interactive: bool) -> bool {
         "Approval rate: 1.0 bp ({}) ceiling, covers perpetual taker and maker fills",
         info.approval_rate
     );
-    println!("  - Taker: 1.0 bp (0.01%) on perpetual fills [fixed]");
+    println!("  - Taker: 1.0 bp (0.01%) base, scales down with volume");
     println!("  - Maker: 0.4 bp (0.004%) base, scales down with volume");
     println!("  - Spot: no builder fee");
     println!();
@@ -845,7 +867,7 @@ pub async fn verify_from_env_or_address(wallet_address: Option<String>) -> bool 
                 println!("Status: APPROVED");
                 println!();
                 println!("NautilusTrader builder fee rates (perpetuals only, no fee on spot):");
-                println!("  - Taker: 1.0 bp (0.01%) on perpetual fills [fixed]");
+                println!("  - Taker: 1.0 bp (0.01%) base, scales down with volume");
                 println!("  - Maker: 0.4 bp (0.004%) base, scales down with volume");
             } else {
                 println!("Status: NOT APPROVED");
@@ -1052,8 +1074,26 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0.00040, 10)] // Well above base
+    #[case(0.00035, 10)] // At HL base rate
+    #[case(0.00033, 10)] // Just above threshold
+    #[case(0.00032, 8)] // At threshold (not above)
+    #[case(0.00030, 8)] // Between thresholds
+    #[case(0.00028, 6)] // At second threshold
+    #[case(0.00025, 6)] // Between thresholds
+    #[case(0.00022, 4)] // At third threshold
+    #[case(0.00018, 4)] // Between thresholds
+    #[case(0.00015, 2)] // At fourth threshold
+    #[case(0.00010, 2)] // Below all thresholds
+    #[case(0.0, 2)] // Zero rate
+    #[case(-0.001, 2)] // Negative rate
+    fn test_resolve_taker_tenths_bp(#[case] rate: f64, #[case] expected: u32) {
+        assert_eq!(resolve_taker_tenths_bp(rate), expected);
+    }
+
+    #[rstest]
     fn test_resolve_builder_fee_perp_taker() {
-        let fee = resolve_builder_fee("BTC-PERP", false, 4).unwrap();
+        let fee = resolve_builder_fee("BTC-PERP", false, 4, 10).unwrap();
         assert_eq!(fee.fee_tenths_bp, 10);
         assert_eq!(fee.address, NAUTILUS_BUILDER_FEE_ADDRESS);
     }
@@ -1068,54 +1108,85 @@ mod tests {
         #[case] maker_tenths: u32,
         #[case] expected_fee: Option<u32>,
     ) {
-        let result = resolve_builder_fee("BTC-PERP", true, maker_tenths);
+        let result = resolve_builder_fee("BTC-PERP", true, maker_tenths, 10);
         assert_eq!(result.map(|f| f.fee_tenths_bp), expected_fee);
     }
 
     #[rstest]
     fn test_resolve_builder_fee_spot_returns_none() {
-        assert!(resolve_builder_fee("BTC-SPOT", false, 4).is_none());
-        assert!(resolve_builder_fee("BTC-SPOT", true, 4).is_none());
+        assert!(resolve_builder_fee("BTC-SPOT", false, 4, 10).is_none());
+        assert!(resolve_builder_fee("BTC-SPOT", true, 4, 10).is_none());
     }
 
     #[rstest]
     fn test_resolve_builder_fee_batch_all_taker() {
         let orders = vec![("BTC-PERP", false), ("BTC-PERP", false)];
-        let fee = resolve_builder_fee_batch(&orders, 4).unwrap();
+        let fee = resolve_builder_fee_batch(&orders, 4, 10).unwrap();
         assert_eq!(fee.fee_tenths_bp, 10);
     }
 
     #[rstest]
     fn test_resolve_builder_fee_batch_mixed_uses_minimum() {
         let orders = vec![("BTC-PERP", false), ("BTC-PERP", true)];
-        let fee = resolve_builder_fee_batch(&orders, 3).unwrap();
+        let fee = resolve_builder_fee_batch(&orders, 3, 10).unwrap();
         assert_eq!(fee.fee_tenths_bp, 3);
     }
 
     #[rstest]
     fn test_resolve_builder_fee_batch_post_only_zero_returns_none() {
         let orders = vec![("BTC-PERP", true), ("BTC-PERP", true)];
-        assert!(resolve_builder_fee_batch(&orders, 0).is_none());
+        assert!(resolve_builder_fee_batch(&orders, 0, 10).is_none());
     }
 
     #[rstest]
     fn test_resolve_builder_fee_batch_empty_returns_none() {
-        assert!(resolve_builder_fee_batch(&[], 4).is_none());
+        assert!(resolve_builder_fee_batch(&[], 4, 10).is_none());
     }
 
     #[rstest]
-    fn test_resolve_builder_fee_perp_taker_ignores_maker_tier() {
-        // Taker fee should be fixed regardless of maker tier
-        let fee_at_base = resolve_builder_fee("BTC-PERP", false, 4).unwrap();
-        let fee_at_zero = resolve_builder_fee("BTC-PERP", false, 0).unwrap();
-        assert_eq!(
-            fee_at_base.fee_tenths_bp,
-            NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP
-        );
-        assert_eq!(
-            fee_at_zero.fee_tenths_bp,
-            NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP
-        );
+    fn test_resolve_builder_fee_perp_taker_uses_taker_tier() {
+        let fee_at_base = resolve_builder_fee("BTC-PERP", false, 4, 10).unwrap();
+        let fee_at_low = resolve_builder_fee("BTC-PERP", false, 4, 4).unwrap();
+        assert_eq!(fee_at_base.fee_tenths_bp, 10);
+        assert_eq!(fee_at_low.fee_tenths_bp, 4);
+    }
+
+    #[rstest]
+    fn test_resolve_builder_fee_perp_taker_at_minimum_tier() {
+        // Lowest taker tier (2 tenths) should return Some, not None
+        let fee = resolve_builder_fee("BTC-PERP", false, 4, 2).unwrap();
+        assert_eq!(fee.fee_tenths_bp, 2);
+    }
+
+    #[rstest]
+    fn test_resolve_builder_fee_post_only_ignores_taker_tier() {
+        // Post-only should use maker_tenths_bp regardless of taker value
+        let fee_high_taker = resolve_builder_fee("BTC-PERP", true, 3, 10).unwrap();
+        let fee_low_taker = resolve_builder_fee("BTC-PERP", true, 3, 2).unwrap();
+        assert_eq!(fee_high_taker.fee_tenths_bp, 3);
+        assert_eq!(fee_low_taker.fee_tenths_bp, 3);
+    }
+
+    #[rstest]
+    fn test_resolve_builder_fee_batch_mixed_taker_lower_than_maker() {
+        // High volume: taker=2 < maker=4, batch should pick taker (minimum)
+        let orders = vec![("BTC-PERP", false), ("BTC-PERP", true)];
+        let fee = resolve_builder_fee_batch(&orders, 4, 2).unwrap();
+        assert_eq!(fee.fee_tenths_bp, 2);
+    }
+
+    #[rstest]
+    fn test_resolve_builder_fee_batch_all_post_only_ignores_taker() {
+        let orders = vec![("BTC-PERP", true), ("BTC-PERP", true)];
+        let fee = resolve_builder_fee_batch(&orders, 3, 10).unwrap();
+        assert_eq!(fee.fee_tenths_bp, 3);
+    }
+
+    #[rstest]
+    fn test_resolve_builder_fee_batch_all_taker_uses_taker_tier() {
+        let orders = vec![("BTC-PERP", false), ("BTC-PERP", false)];
+        let fee = resolve_builder_fee_batch(&orders, 4, 6).unwrap();
+        assert_eq!(fee.fee_tenths_bp, 6);
     }
 
     #[rstest]

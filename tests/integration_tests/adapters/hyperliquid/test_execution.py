@@ -77,7 +77,8 @@ def exec_client_builder(
         )
         mock_http_client.get_spot_fill_coin_mapping = MagicMock(return_value={})
         mock_http_client.builder_maker_tenths_bp = MagicMock(return_value=4)
-        mock_http_client.update_builder_maker_fee = MagicMock(return_value=(4, 4))
+        mock_http_client.builder_taker_tenths_bp = MagicMock(return_value=10)
+        mock_http_client.update_builder_fees = MagicMock(return_value=((4, 4), (10, 10)))
         mock_http_client.info_user_fees = AsyncMock(
             return_value='{"userAddRate": "0.00015", "userCrossRate": "0.00035"}',
         )

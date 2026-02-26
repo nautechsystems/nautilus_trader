@@ -24,7 +24,6 @@ from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
-from nautilus_trader.adapters.hyperliquid.constants import BUILDER_FEE_TAKER_BP
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_BUILDER_FEE_NOT_APPROVED
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_POST_ONLY_WOULD_MATCH
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
@@ -288,13 +287,14 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         maker_rate: str,
         taker_rate: str,
         builder_maker_tenths_bp: int,
+        builder_taker_tenths_bp: int,
     ) -> None:
         maker_d = Decimal(maker_rate)
         taker_d = Decimal(taker_rate)
         hl_maker_bp = maker_d * 10_000
         hl_taker_bp = taker_d * 10_000
         builder_maker_bp = Decimal(builder_maker_tenths_bp) / 10
-        builder_taker_bp = BUILDER_FEE_TAKER_BP
+        builder_taker_bp = Decimal(builder_taker_tenths_bp) / 10
         self._log.info(
             f"HL maker: {self._fmt_bp(hl_maker_bp)}, "
             f"builder maker: {self._fmt_bp(builder_maker_bp)}, "
@@ -320,14 +320,20 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 raise ValueError("missing userCrossRate in response")
 
             user_add_rate = float(raw_add_rate)
-            old, new = self._client.update_builder_maker_fee(user_add_rate)
+            user_cross_rate = float(raw_cross_rate)
+            (maker_old, maker_new), (taker_old, taker_new) = self._client.update_builder_fees(
+                user_add_rate,
+                user_cross_rate,
+            )
 
-            if log_always or old != new:
-                self._log_fee_summary(raw_add_rate, raw_cross_rate, new)
+            if log_always or maker_old != maker_new or taker_old != taker_new:
+                self._log_fee_summary(raw_add_rate, raw_cross_rate, maker_new, taker_new)
         except Exception as e:
-            bp = Decimal(self._client.builder_maker_tenths_bp()) / 10
+            maker_bp = Decimal(self._client.builder_maker_tenths_bp()) / 10
+            taker_bp = Decimal(self._client.builder_taker_tenths_bp()) / 10
             self._log.warning(
-                f"Failed to query userFees, retaining builder maker fee: {self._fmt_bp(bp)}: {e}",
+                f"Failed to query userFees, retaining builder fees: "
+                f"maker {self._fmt_bp(maker_bp)}, taker {self._fmt_bp(taker_bp)}: {e}",
             )
 
     async def _builder_fee_refresh_loop(self, interval_secs: int) -> None:

@@ -439,11 +439,21 @@ impl HyperliquidHttpClient {
         self.builder_maker_tenths_bp()
     }
 
-    /// Updates the builder maker fee tier from the HL effective maker rate.
+    /// Returns the current builder taker fee in tenths of a basis point.
+    #[pyo3(name = "builder_taker_tenths_bp")]
+    fn py_builder_taker_tenths_bp(&self) -> u32 {
+        self.builder_taker_tenths_bp()
+    }
+
+    /// Updates builder fee tiers from the HL effective rates.
     ///
-    /// Returns `(old_tenths, new_tenths)`.
-    #[pyo3(name = "update_builder_maker_fee")]
-    fn py_update_builder_maker_fee(&self, user_add_rate: f64) -> (u32, u32) {
-        self.update_builder_maker_fee(user_add_rate)
+    /// Returns `((maker_old, maker_new), (taker_old, taker_new))`.
+    #[pyo3(name = "update_builder_fees")]
+    fn py_update_builder_fees(
+        &self,
+        user_add_rate: f64,
+        user_cross_rate: f64,
+    ) -> ((u32, u32), (u32, u32)) {
+        self.update_builder_fees(user_add_rate, user_cross_rate)
     }
 }

@@ -54,7 +54,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         builder_fee::{resolve_builder_fee, resolve_builder_fee_batch},
-        consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP},
+        consts::HYPERLIQUID_VENUE,
         credential::Secrets,
         parse::{
             client_order_id_to_cancel_request_with_asset, derive_market_order_price,
@@ -334,16 +334,18 @@ impl HyperliquidExecutionClient {
         }
     }
 
-    async fn fetch_and_update_builder_fee(&self) -> anyhow::Result<(f64, f64, u32, u32)> {
+    async fn fetch_and_update_builder_fees(
+        &self,
+    ) -> anyhow::Result<(f64, f64, (u32, u32), (u32, u32))> {
         let account_address = self.get_account_address()?;
-        fetch_and_update_builder_fee(&self.http_client, &account_address).await
+        fetch_and_update_builder_fees(&self.http_client, &account_address).await
     }
 }
 
-async fn fetch_and_update_builder_fee(
+async fn fetch_and_update_builder_fees(
     http_client: &HyperliquidHttpClient,
     account_address: &str,
-) -> anyhow::Result<(f64, f64, u32, u32)> {
+) -> anyhow::Result<(f64, f64, (u32, u32), (u32, u32))> {
     let json = http_client
         .info_user_fees(account_address)
         .await
@@ -361,8 +363,8 @@ async fn fetch_and_update_builder_fee(
         .and_then(|s| s.parse::<f64>().ok())
         .ok_or_else(|| anyhow::anyhow!("missing or invalid userCrossRate in response"))?;
 
-    let (old, new) = http_client.update_builder_maker_fee(user_add_rate);
-    Ok((user_add_rate, user_cross_rate, old, new))
+    let (maker, taker) = http_client.update_builder_fees(user_add_rate, user_cross_rate);
+    Ok((user_add_rate, user_cross_rate, maker, taker))
 }
 
 fn fmt_pct(value: f64) -> String {
@@ -375,11 +377,16 @@ fn fmt_bp(bp: f64) -> String {
     format!("{bp:.1} bp ({}%)", fmt_pct(bp / 100.0))
 }
 
-fn log_fee_summary(maker_rate: f64, taker_rate: f64, builder_maker_tenths_bp: u32) {
+fn log_fee_summary(
+    maker_rate: f64,
+    taker_rate: f64,
+    builder_maker_tenths_bp: u32,
+    builder_taker_tenths_bp: u32,
+) {
     let hl_maker_bp = maker_rate * 10_000.0;
     let hl_taker_bp = taker_rate * 10_000.0;
     let builder_maker_bp = builder_maker_tenths_bp as f64 / 10.0;
-    let builder_taker_bp = NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP as f64 / 10.0;
+    let builder_taker_bp = builder_taker_tenths_bp as f64 / 10.0;
     let total_maker_bp = hl_maker_bp + builder_maker_bp;
     let total_taker_bp = hl_taker_bp + builder_taker_bp;
     log::info!(
@@ -587,6 +594,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             &symbol,
             order.is_post_only(),
             self.http_client.builder_maker_tenths_bp(),
+            self.http_client.builder_taker_tenths_bp(),
         );
 
         let emitter = self.emitter.clone();
@@ -696,8 +704,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .collect();
         let batch_refs: Vec<(&str, bool)> =
             order_props.iter().map(|(s, p)| (s.as_str(), *p)).collect();
-        let builder =
-            resolve_builder_fee_batch(&batch_refs, self.http_client.builder_maker_tenths_bp());
+        let builder = resolve_builder_fee_batch(
+            &batch_refs,
+            self.http_client.builder_maker_tenths_bp(),
+            self.http_client.builder_taker_tenths_bp(),
+        );
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -1087,17 +1098,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.refresh_account_state().await?;
         self.await_account_registered(30.0).await?;
 
-        // Fetch initial builder fee tier from HL
-        match self.fetch_and_update_builder_fee().await {
-            Ok((maker_rate, taker_rate, _old, new)) => {
-                log_fee_summary(maker_rate, taker_rate, new);
+        // Fetch initial builder fee tiers from HL
+        match self.fetch_and_update_builder_fees().await {
+            Ok((maker_rate, taker_rate, (_maker_old, maker_new), (_taker_old, taker_new))) => {
+                log_fee_summary(maker_rate, taker_rate, maker_new, taker_new);
             }
             Err(e) => {
-                let bp = self.http_client.builder_maker_tenths_bp() as f64 / 10.0;
+                let maker_bp = self.http_client.builder_maker_tenths_bp() as f64 / 10.0;
+                let taker_bp = self.http_client.builder_taker_tenths_bp() as f64 / 10.0;
                 log::warn!(
                     "Failed to query userFees, \
-                     retaining builder maker fee: {}: {e}",
-                    fmt_bp(bp),
+                     retaining builder fees: maker {}, taker {}: {e}",
+                    fmt_bp(maker_bp),
+                    fmt_bp(taker_bp),
                 );
             }
         }
@@ -1116,23 +1129,34 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 loop {
                     ticker.tick().await;
 
-                    let result = fetch_and_update_builder_fee(&http_client, &account_address).await;
+                    let result =
+                        fetch_and_update_builder_fees(&http_client, &account_address).await;
 
                     match result {
-                        Ok((maker_rate, taker_rate, old, new)) => {
-                            if old == new {
-                                let bp = new as f64 / 10.0;
-                                log::trace!("Builder maker fee unchanged: {bp:.1} bp");
+                        Ok((
+                            maker_rate,
+                            taker_rate,
+                            (maker_old, maker_new),
+                            (taker_old, taker_new),
+                        )) => {
+                            if maker_old == maker_new && taker_old == taker_new {
+                                log::trace!(
+                                    "Builder fees unchanged: maker {:.1} bp, taker {:.1} bp",
+                                    maker_new as f64 / 10.0,
+                                    taker_new as f64 / 10.0,
+                                );
                             } else {
-                                log_fee_summary(maker_rate, taker_rate, new);
+                                log_fee_summary(maker_rate, taker_rate, maker_new, taker_new);
                             }
                         }
                         Err(e) => {
-                            let bp = http_client.builder_maker_tenths_bp() as f64 / 10.0;
+                            let maker_bp = http_client.builder_maker_tenths_bp() as f64 / 10.0;
+                            let taker_bp = http_client.builder_taker_tenths_bp() as f64 / 10.0;
                             log::warn!(
                                 "Failed to query userFees, \
-                                 retaining builder maker fee: {}: {e}",
-                                fmt_bp(bp),
+                                 retaining builder fees: maker {}, taker {}: {e}",
+                                fmt_bp(maker_bp),
+                                fmt_bp(taker_bp),
                             );
                         }
                     }
