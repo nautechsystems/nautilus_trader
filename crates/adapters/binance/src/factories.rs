@@ -61,20 +61,6 @@ impl Default for BinanceDataClientFactory {
     }
 }
 
-#[cfg(feature = "python")]
-#[pyo3::pymethods]
-impl BinanceDataClientFactory {
-    #[new]
-    fn py_new() -> Self {
-        Self
-    }
-
-    #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
-        BINANCE
-    }
-}
-
 impl DataClientFactory for BinanceDataClientFactory {
     fn create(
         &self,
@@ -145,20 +131,6 @@ impl BinanceExecutionClientFactory {
 impl Default for BinanceExecutionClientFactory {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(feature = "python")]
-#[pyo3::pymethods]
-impl BinanceExecutionClientFactory {
-    #[new]
-    fn py_new() -> Self {
-        Self
-    }
-
-    #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
-        BINANCE
     }
 }
 

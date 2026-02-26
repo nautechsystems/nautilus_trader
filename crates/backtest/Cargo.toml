@@ -30,6 +30,7 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
+  "nautilus-trading/extension-module",
   "python",
   "pyo3/extension-module",
   "streaming",
@@ -46,6 +47,7 @@ python = [
   "nautilus-core/python",
   "nautilus-execution/python",
   "nautilus-model/python",
+  "nautilus-trading/python",
   "pyo3",
   "streaming",
 ]
@@ -75,6 +77,7 @@ rust_decimal = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 nautilus-indicators = { workspace = true }

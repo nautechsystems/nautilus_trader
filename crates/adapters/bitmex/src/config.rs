@@ -24,6 +24,10 @@ use crate::common::{
 
 /// Configuration for the BitMEX live data client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
+)]
 pub struct BitmexDataClientConfig {
     /// Optional API key used for authenticated REST/WebSocket requests.
     pub api_key: Option<String>,
@@ -146,6 +150,10 @@ impl BitmexDataClientConfig {
 
 /// Configuration for the BitMEX live execution client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
+)]
 pub struct BitmexExecClientConfig {
     /// API key used for authenticated requests.
     pub api_key: Option<String>,

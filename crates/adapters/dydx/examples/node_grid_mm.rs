@@ -25,7 +25,7 @@ use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_dydx::{
     common::enums::DydxNetwork,
-    config::{DYDXExecClientConfig, DydxDataClientConfig},
+    config::{DydxDataClientConfig, DydxExecClientConfig},
     factories::{DydxDataClientFactory, DydxExecutionClientFactory},
 };
 use nautilus_live::node::LiveNode;
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = DYDXExecClientConfig {
+    let exec_config = DydxExecClientConfig {
         trader_id,
         account_id,
         network,

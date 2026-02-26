@@ -17,7 +17,9 @@
 
 #![allow(clippy::missing_errors_doc)]
 
+pub mod config;
 pub mod encoder;
+pub mod factories;
 pub mod grpc;
 pub mod http;
 pub mod submitter;
@@ -26,7 +28,59 @@ pub mod urls;
 pub mod wallet;
 pub mod websocket;
 
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_system::{
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    get_global_pyo3_registry,
+};
 use pyo3::prelude::*;
+
+use crate::{
+    config::{DydxDataClientConfig, DydxExecClientConfig},
+    factories::{DydxDataClientFactory, DydxExecutionClientFactory},
+};
+
+fn extract_dydx_data_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn DataClientFactory>> {
+    match factory.extract::<DydxDataClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract DydxDataClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_dydx_exec_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn ExecutionClientFactory>> {
+    match factory.extract::<DydxExecutionClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract DydxExecutionClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_dydx_data_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<DydxDataClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract DydxDataClientConfig: {e}"
+        ))),
+    }
+}
+
+fn extract_dydx_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<DydxExecClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract DydxExecClientConfig: {e}"
+        ))),
+    }
+}
 
 #[pymodule]
 pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -40,9 +94,48 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<grpc::PyDydxGrpcClient>()?;
     m.add_class::<submitter::PyDydxOrderSubmitter>()?;
     m.add_class::<encoder::PyDydxClientOrderIdEncoder>()?;
+    m.add_class::<DydxDataClientConfig>()?;
+    m.add_class::<DydxExecClientConfig>()?;
+    m.add_class::<DydxDataClientFactory>()?;
+    m.add_class::<DydxExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_grpc_urls, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_grpc_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_http_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_ws_url, m)?)?;
+
+    let registry = get_global_pyo3_registry();
+
+    if let Err(e) =
+        registry.register_factory_extractor("DYDX".to_string(), extract_dydx_data_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register dYdX data factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) =
+        registry.register_exec_factory_extractor("DYDX".to_string(), extract_dydx_exec_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register dYdX exec factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry
+        .register_config_extractor("DydxDataClientConfig".to_string(), extract_dydx_data_config)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register dYdX data config extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry
+        .register_config_extractor("DydxExecClientConfig".to_string(), extract_dydx_exec_config)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register dYdX exec config extractor: {e}"
+        )));
+    }
+
     Ok(())
 }

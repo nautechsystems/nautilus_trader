@@ -15,18 +15,29 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod config;
 pub mod enums;
+pub mod factories;
 pub mod http;
 pub mod urls;
 pub mod websocket;
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::identifiers::ClientOrderId;
+use nautilus_system::{
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    get_global_pyo3_registry,
+};
 use pyo3::prelude::*;
 
 use crate::{
     common::builder_fee::{
         BuilderFeeInfo, approve_from_env, revoke_from_env, verify_from_env_or_address,
+    },
+    config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
+    factories::{
+        HyperliquidDataClientFactory, HyperliquidExecFactoryConfig,
+        HyperliquidExecutionClientFactory,
     },
     http::models::Cloid,
 };
@@ -164,6 +175,54 @@ fn py_verify_hyperliquid_builder_fee(wallet_address: Option<String>) -> PyResult
     .map_err(|_| to_pyruntime_err("Thread panicked"))?
 }
 
+fn extract_hyperliquid_data_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn DataClientFactory>> {
+    match factory.extract::<HyperliquidDataClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract HyperliquidDataClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_hyperliquid_exec_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn ExecutionClientFactory>> {
+    match factory.extract::<HyperliquidExecutionClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract HyperliquidExecutionClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_hyperliquid_data_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<HyperliquidDataClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract HyperliquidDataClientConfig: {e}"
+        ))),
+    }
+}
+
+fn extract_hyperliquid_exec_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<HyperliquidExecFactoryConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract HyperliquidExecFactoryConfig: {e}"
+        ))),
+    }
+}
+
 /// Loaded as `nautilus_pyo3.hyperliquid`.
 #[pymodule]
 pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -196,6 +255,48 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_approve_hyperliquid_builder_fee, m)?)?;
     m.add_function(wrap_pyfunction!(py_revoke_hyperliquid_builder_fee, m)?)?;
     m.add_function(wrap_pyfunction!(py_verify_hyperliquid_builder_fee, m)?)?;
+    m.add_class::<HyperliquidDataClientConfig>()?;
+    m.add_class::<HyperliquidExecClientConfig>()?;
+    m.add_class::<HyperliquidExecFactoryConfig>()?;
+    m.add_class::<HyperliquidDataClientFactory>()?;
+    m.add_class::<HyperliquidExecutionClientFactory>()?;
+
+    let registry = get_global_pyo3_registry();
+
+    if let Err(e) = registry
+        .register_factory_extractor("HYPERLIQUID".to_string(), extract_hyperliquid_data_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Hyperliquid data factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_exec_factory_extractor(
+        "HYPERLIQUID".to_string(),
+        extract_hyperliquid_exec_factory,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Hyperliquid exec factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "HyperliquidDataClientConfig".to_string(),
+        extract_hyperliquid_data_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Hyperliquid data config extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "HyperliquidExecFactoryConfig".to_string(),
+        extract_hyperliquid_exec_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Hyperliquid exec config extractor: {e}"
+        )));
+    }
 
     Ok(())
 }

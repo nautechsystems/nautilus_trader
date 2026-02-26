@@ -225,12 +225,13 @@ impl Trader {
         self.exec_algorithm_ids.clone()
     }
 
-    /// Creates a clock for a component.
+    /// Creates a clock for a component and registers it for time advancement.
     ///
     /// Creates a test clock in backtest environment, otherwise returns a reference
-    /// to the system clock.
-    fn create_component_clock(&self) -> Rc<RefCell<dyn Clock>> {
-        match self.environment {
+    /// to the system clock. The clock is stored in the per-component clock map so
+    /// the backtest engine can advance all component clocks together.
+    pub fn create_component_clock(&mut self, component_id: ComponentId) -> Rc<RefCell<dyn Clock>> {
+        let clock = match self.environment {
             Environment::Backtest => {
                 // Create individual test clock for component in backtest
                 Rc::new(RefCell::new(TestClock::new()))
@@ -239,7 +240,9 @@ impl Trader {
                 // Share system clock in live environments
                 self.clock.clone()
             }
-        }
+        };
+        self.clocks.insert(component_id, clock.clone());
+        clock
     }
 
     /// Adds an actor to the trader.
@@ -262,9 +265,8 @@ impl Trader {
             anyhow::bail!("Actor {actor_id} is already registered");
         }
 
-        let clock = self.create_component_clock();
         let component_id = ComponentId::new(actor_id.inner().as_str());
-        self.clocks.insert(component_id, clock.clone());
+        let clock = self.create_component_clock(component_id);
 
         let mut actor_mut = actor;
         actor_mut.register(self.trader_id, clock, self.cache.clone())?;
@@ -341,6 +343,78 @@ impl Trader {
         Ok(())
     }
 
+    /// Adds an externally-registered strategy to the trader for lifecycle management
+    /// and installs its order/position event subscriptions and stop hook.
+    ///
+    /// The strategy must already be registered in the global component and actor
+    /// registries. The generic parameter `T` must match the concrete type stored
+    /// in those registries so that the typed event handlers can retrieve it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy ID is already tracked by this trader.
+    pub fn add_strategy_id_with_subscriptions<T>(
+        &mut self,
+        strategy_id: StrategyId,
+    ) -> anyhow::Result<()>
+    where
+        T: Strategy + Component + Debug + 'static,
+    {
+        if self.strategy_ids.contains(&strategy_id) {
+            anyhow::bail!("Strategy '{strategy_id}' is already tracked by trader");
+        }
+
+        let actor_id = Ustr::from(strategy_id.inner().as_str());
+
+        // Subscribe to order events for this strategy
+        let order_topic = get_event_orders_topic(strategy_id);
+        let order_actor_id = actor_id;
+        let order_handler = TypedHandler::from(move |event: &OrderEventAny| {
+            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&order_actor_id) {
+                strategy.handle_order_event(event.clone());
+            } else {
+                log::error!("Strategy {order_actor_id} not found for order event handling");
+            }
+        });
+        let order_handler_id = order_handler.id();
+        msgbus::subscribe_order_events(order_topic.into(), order_handler, None);
+
+        // Subscribe to position events for this strategy
+        let position_topic = get_event_positions_topic(strategy_id);
+        let position_handler = TypedHandler::from(move |event: &PositionEvent| {
+            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
+                strategy.handle_position_event(event.clone());
+            } else {
+                log::error!("Strategy {actor_id} not found for position event handling");
+            }
+        });
+        let position_handler_id = position_handler.id();
+        msgbus::subscribe_position_events(position_topic.into(), position_handler, None);
+
+        self.strategy_ids.push(strategy_id);
+        self.strategy_handler_ids
+            .insert(strategy_id, (order_handler_id, position_handler_id));
+
+        // Register stop hook
+        let stop_actor_id = actor_id;
+        let stop_fn = Box::new(move || -> bool {
+            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&stop_actor_id) {
+                Strategy::stop(&mut *strategy)
+            } else {
+                log::error!("Strategy {stop_actor_id} not found for stop");
+                true
+            }
+        });
+        self.strategy_stop_fns.insert(strategy_id, stop_fn);
+
+        log::debug!(
+            "Added strategy '{strategy_id}' to trader {} with event subscriptions",
+            self.trader_id
+        );
+
+        Ok(())
+    }
+
     /// Adds a strategy to the trader.
     ///
     /// Strategies are registered in both the component registry (for lifecycle management)
@@ -365,9 +439,8 @@ impl Trader {
             anyhow::bail!("Strategy {strategy_id} is already registered");
         }
 
-        let clock = self.create_component_clock();
         let component_id = strategy.component_id();
-        self.clocks.insert(component_id, clock.clone());
+        let clock = self.create_component_clock(component_id);
 
         // Register strategy core with portfolio for order management
         strategy.core_mut().register(
@@ -464,9 +537,8 @@ impl Trader {
             anyhow::bail!("Execution algorithm '{exec_algorithm_id}' is already registered");
         }
 
-        let clock = self.create_component_clock();
         let component_id = exec_algorithm.component_id();
-        self.clocks.insert(component_id, clock.clone());
+        let clock = self.create_component_clock(component_id);
 
         exec_algorithm.register(self.trader_id, clock, self.cache.clone())?;
 
@@ -1229,7 +1301,7 @@ mod tests {
         let instance_id = UUID4::new();
 
         // Test backtest environment - should create individual test clocks
-        let trader_backtest = Trader::new(
+        let mut trader_backtest = Trader::new(
             trader_id,
             instance_id,
             Environment::Backtest,
@@ -1238,7 +1310,8 @@ mod tests {
             portfolio.clone(),
         );
 
-        let backtest_clock = trader_backtest.create_component_clock();
+        let test_component = ComponentId::new("TEST-001");
+        let backtest_clock = trader_backtest.create_component_clock(test_component);
         // In backtest, component clock should be different from system clock
         assert_ne!(
             backtest_clock.as_ptr() as *const _,
@@ -1246,7 +1319,7 @@ mod tests {
         );
 
         // Test live environment - should share system clock
-        let trader_live = Trader::new(
+        let mut trader_live = Trader::new(
             trader_id,
             instance_id,
             Environment::Live,
@@ -1255,7 +1328,7 @@ mod tests {
             portfolio,
         );
 
-        let live_clock = trader_live.create_component_clock();
+        let live_clock = trader_live.create_component_clock(test_component);
         // In live, component clock should be same as system clock
         assert_eq!(live_clock.as_ptr() as *const _, clock.as_ptr() as *const _);
     }

@@ -231,14 +231,6 @@ impl LiveNode {
                     match config_class.call((), Some(&py_dict)) {
                         Ok(instance) => {
                             log::debug!("Successfully created config instance with kwargs");
-
-                            // Manually call __post_init__ if it exists
-                            if let Err(e) = instance.call_method0("__post_init__") {
-                                log::error!("Failed to call __post_init__ on config instance: {e}");
-                                anyhow::bail!("__post_init__ failed: {e}");
-                            }
-                            log::debug!("Successfully called __post_init__ on config instance");
-
                             instance
                         },
                         Err(kwargs_err) => {
@@ -249,7 +241,6 @@ impl LiveNode {
                                 Ok(instance) => {
                                     log::debug!("Created default config instance, setting attributes");
                                     for (key, value) in &config.config {
-                                        // Convert serde_json::Value to Python object
                                         let json_str = serde_json::to_string(value)
                                             .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
                                         let py_value = PyModule::import(py, "json")?
@@ -259,12 +250,11 @@ impl LiveNode {
                                         }
                                     }
 
-                                    // Manually call __post_init__ if it exists
-                                    if let Err(e) = instance.call_method0("__post_init__") {
-                                        log::error!("Failed to call __post_init__ on config instance: {e}");
-                                        anyhow::bail!("__post_init__ failed: {e}");
+                                    // Only call __post_init__ if it exists (setattr path
+                                    // needs it, kwargs path already triggered it via __init__)
+                                    if instance.hasattr("__post_init__")? {
+                                        instance.call_method0("__post_init__")?;
                                     }
-                                    log::debug!("Called __post_init__ on config instance");
 
                                     instance
                                 },
@@ -322,7 +312,7 @@ impl LiveNode {
                         let actor_id_val = if let Ok(actor_id_val) = actor_id.extract::<ActorId>() {
                             actor_id_val
                         } else if let Ok(actor_id_str) = actor_id.extract::<String>() {
-                            ActorId::from(actor_id_str.as_str())
+                            ActorId::new_checked(&actor_id_str)?
                         } else {
                             log::warn!("Failed to extract actor_id as ActorId or String");
                             anyhow::bail!("Invalid `actor_id` type");

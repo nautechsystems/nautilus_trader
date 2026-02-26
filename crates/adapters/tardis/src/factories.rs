@@ -30,7 +30,11 @@ impl ClientConfig for TardisDataClientConfig {
 }
 
 /// Factory for creating Tardis data clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+)]
 pub struct TardisDataClientFactory;
 
 impl TardisDataClientFactory {

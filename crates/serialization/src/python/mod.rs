@@ -25,6 +25,8 @@ use pyo3::prelude::*;
 /// # Errors
 ///
 /// Returns a `PyErr` if registering any module components fails.
+// Allow unused `m` when no feature-gated content registers on the module
+#[allow(unused_variables)]
 #[pymodule]
 pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "arrow")]

@@ -275,6 +275,17 @@ impl BacktestEngine {
         })
     }
 
+    /// Returns a reference to the underlying kernel.
+    #[must_use]
+    pub const fn kernel(&self) -> &NautilusKernel {
+        &self.kernel
+    }
+
+    /// Returns a mutable reference to the underlying kernel.
+    pub fn kernel_mut(&mut self) -> &mut NautilusKernel {
+        &mut self.kernel
+    }
+
     /// # Errors
     ///
     /// Returns an error if initializing the simulated exchange for the venue fails.

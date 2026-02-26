@@ -19,6 +19,13 @@ use crate::common::consts::{BUILDER_FEE_REFRESH_DEFAULT_MINS, info_url, ws_url};
 
 /// Configuration for the Hyperliquid data client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        from_py_object
+    )
+)]
 pub struct HyperliquidDataClientConfig {
     /// Optional private key for authenticated endpoints.
     pub private_key: Option<String>,
@@ -93,6 +100,13 @@ impl HyperliquidDataClientConfig {
 
 /// Configuration for the Hyperliquid execution client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        from_py_object
+    )
+)]
 pub struct HyperliquidExecClientConfig {
     /// Private key for signing transactions.
     ///

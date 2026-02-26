@@ -28,6 +28,10 @@ use crate::common::{
 
 /// Configuration for the OKX data client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
+)]
 pub struct OKXDataClientConfig {
     /// Optional API key for authenticated endpoints.
     pub api_key: Option<String>,
@@ -146,6 +150,10 @@ impl OKXDataClientConfig {
 
 /// Configuration for the OKX execution client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
+)]
 pub struct OKXExecClientConfig {
     /// The trader ID for the client.
     pub trader_id: TraderId,

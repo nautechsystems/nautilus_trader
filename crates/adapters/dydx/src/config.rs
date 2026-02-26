@@ -207,6 +207,10 @@ impl Default for DydxAdapterConfig {
 
 /// Configuration for the dYdX data client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
+)]
 pub struct DydxDataClientConfig {
     /// Base URL for the HTTP API.
     pub base_url_http: Option<String>,
@@ -246,7 +250,11 @@ impl Default for DydxDataClientConfig {
 
 /// Configuration for the dYdX execution client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DYDXExecClientConfig {
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
+)]
+pub struct DydxExecClientConfig {
     /// The trader ID for the client.
     pub trader_id: TraderId,
     /// The account ID for the client.
@@ -294,7 +302,7 @@ pub struct DYDXExecClientConfig {
     pub grpc_rate_limit_per_second: Option<u32>,
 }
 
-impl Default for DYDXExecClientConfig {
+impl Default for DydxExecClientConfig {
     fn default() -> Self {
         Self {
             trader_id: TraderId::from("TRADER-001"),
@@ -317,7 +325,7 @@ impl Default for DYDXExecClientConfig {
     }
 }
 
-impl DYDXExecClientConfig {
+impl DydxExecClientConfig {
     /// Returns the gRPC URLs to use, with fallback support.
     ///
     /// Returns `grpc_urls` if non-empty, otherwise uses `grpc_endpoint` if provided,

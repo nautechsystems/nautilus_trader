@@ -19,7 +19,9 @@ use pyo3::prelude::*;
 use ustr::Ustr;
 
 use crate::{
-    enums::TardisExchange, machine::types::TardisInstrumentMiniInfo,
+    config::TardisDataClientConfig,
+    enums::TardisExchange,
+    machine::types::{ReplayNormalizedRequestOptions, TardisInstrumentMiniInfo},
     parse::bar_spec_to_tardis_trade_bar_string,
 };
 
@@ -84,4 +86,34 @@ impl TardisInstrumentMiniInfo {
 #[pyfunction(name = "bar_spec_to_tardis_trade_bar_string")]
 pub fn py_bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> PyResult<String> {
     bar_spec_to_tardis_trade_bar_string(bar_spec).map_err(to_pyvalue_err)
+}
+
+#[pymethods]
+impl TardisDataClientConfig {
+    #[new]
+    #[pyo3(signature = (
+        api_key = None,
+        tardis_ws_url = None,
+        normalize_symbols = None,
+        options = None,
+    ))]
+    fn py_new(
+        api_key: Option<String>,
+        tardis_ws_url: Option<String>,
+        normalize_symbols: Option<bool>,
+        options: Option<Vec<ReplayNormalizedRequestOptions>>,
+    ) -> Self {
+        let defaults = Self::default();
+        Self {
+            api_key,
+            tardis_ws_url,
+            normalize_symbols: normalize_symbols.unwrap_or(defaults.normalize_symbols),
+            book_snapshot_output: defaults.book_snapshot_output,
+            options: options.unwrap_or_default(),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
 }

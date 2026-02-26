@@ -43,7 +43,11 @@ impl ClientConfig for KrakenDataClientConfig {
 }
 
 /// Factory for creating Kraken data clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
+)]
 pub struct KrakenDataClientFactory;
 
 impl KrakenDataClientFactory {
@@ -107,7 +111,11 @@ impl ClientConfig for KrakenExecClientConfig {
 }
 
 /// Factory for creating Kraken execution clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
+)]
 pub struct KrakenExecutionClientFactory;
 
 impl KrakenExecutionClientFactory {

@@ -34,6 +34,7 @@ python = [
   "nautilus-core/ffi", # Temporary as python currently relies on the ffi CVec
   "nautilus-core/python",
   "nautilus-model/python",
+  "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
 ]

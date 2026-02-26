@@ -20,7 +20,7 @@ pub use core::StrategyCore;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ahash::AHashSet;
-pub use config::StrategyConfig;
+pub use config::{ImportableStrategyConfig, StrategyConfig};
 use nautilus_common::{
     actor::DataActor,
     component::Component,

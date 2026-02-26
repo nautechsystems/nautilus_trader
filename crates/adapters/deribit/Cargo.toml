@@ -35,6 +35,7 @@ python = [
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-network/python",
+  "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
 ]

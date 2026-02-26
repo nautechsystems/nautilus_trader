@@ -47,6 +47,10 @@ impl ClientConfig for BitmexDataClientConfig {
 /// This wraps [`BitmexExecClientConfig`] with the additional trader and account
 /// identifiers required by the [`ExecutionClientCore`].
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
+)]
 pub struct BitmexExecFactoryConfig {
     /// The trader ID for the execution client.
     pub trader_id: TraderId,
@@ -78,7 +82,11 @@ impl ClientConfig for BitmexExecFactoryConfig {
 }
 
 /// Factory for creating BitMEX data clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
+)]
 pub struct BitmexDataClientFactory;
 
 impl BitmexDataClientFactory {
@@ -128,7 +136,11 @@ impl DataClientFactory for BitmexDataClientFactory {
 }
 
 /// Factory for creating BitMEX execution clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
+)]
 pub struct BitmexExecutionClientFactory;
 
 impl BitmexExecutionClientFactory {
