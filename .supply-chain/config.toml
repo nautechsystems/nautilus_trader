@@ -564,7 +564,7 @@ version = "1.11.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.c-kzg]]
-version = "2.1.5"
+version = "2.1.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.capnp]]
@@ -1004,9 +1004,8 @@ version = "0.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.dispatch2]]
-version = "0.3.0"
+version = "0.3.1"
 criteria = "safe-to-deploy"
-notes = "macOS Grand Central Dispatch bindings"
 
 [[exemptions.dotenvy]]
 version = "0.15.7"
@@ -1678,6 +1677,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.nybbles]]
 version = "0.4.8"
+criteria = "safe-to-deploy"
+
+[[exemptions.objc2]]
+version = "0.6.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.objc2-core-foundation]]

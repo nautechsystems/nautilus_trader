@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Fixed `StreamingFeatherWriter` duplicate events from multiple message bus topics (#3625), thanks for reporting @fomotoshi
 - Fixed Binance Futures algo order serde field renames for WS and HTTP parsing (#3624), thanks for reporting @qu1zzyboy
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
+- Fixed BinanceSymbol COIN-M perpetual symbol conversion (#3641), thanks @YeeTsai
 - Fixed Hyperliquid stop/trigger order price derivation (#3611), thanks for reporting @h-tsun3
 - Fixed Hyperliquid price normalization and inner error detection (#3612), thanks for reporting @h-tsun3
 - Fixed Interactive Brokers BarType/str comparison in get_historical_bars (#3616), thanks @powerseed
