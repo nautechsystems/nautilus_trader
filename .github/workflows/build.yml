@@ -323,6 +323,7 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
+          free-disk-space: "true"
 
       - name: Cached test data
         uses: ./.github/actions/common-test-data

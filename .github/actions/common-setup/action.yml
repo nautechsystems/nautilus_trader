@@ -32,6 +32,25 @@ runs:
         docker-images: true
         swap-storage: ${{ inputs.build-type != 'pre-commit' }}
 
+    - name: Free disk space (macOS)
+      if: inputs.free-disk-space == 'true' && runner.os == 'macOS'
+      shell: bash
+      run: |
+        echo "=== Disk usage before cleanup ==="
+        df -h /
+        # Remove iOS/watchOS/tvOS/visionOS/xrOS simulators (~10+ GB)
+        sudo rm -rf /Library/Developer/CoreSimulator
+        # Remove Android SDK (~5-10 GB)
+        rm -rf ~/Library/Android
+        # Remove .NET SDK (~2 GB)
+        rm -rf /usr/local/share/dotnet
+        # Remove PowerShell (~1.5 GB)
+        rm -rf /usr/local/share/powershell
+        # Remove Haskell/GHC (~1 GB)
+        rm -rf /usr/local/.ghcup
+        echo "=== Disk usage after cleanup ==="
+        df -h /
+
     - name: Free disk space (Windows)
       if: inputs.free-disk-space == 'true' && runner.os == 'Windows'
       shell: bash
@@ -39,6 +58,11 @@ runs:
         BUILD_TYPE: ${{ inputs.build-type }}
       run: |
         rm -rf "/c/Program Files/dotnet"
+        rm -rf "/c/Android"
+        rm -rf /c/hostedtoolcache/windows/Java_*
+        rm -rf "/c/hostedtoolcache/windows/CodeQL"
+        rm -rf "/c/Miniconda"
+        rm -rf "/c/Strawberry"
         if [ "$BUILD_TYPE" != "pre-commit" ]; then
           rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
         fi
