@@ -79,9 +79,9 @@ endif
 # Can be disabled: make cargo-test-core DEFI=false
 DEFI ?= true
 ifeq ($(DEFI),true)
-BASE_FEATURES := ffi,python,high-precision,streaming,defi,examples
+BASE_FEATURES := arrow,ffi,python,high-precision,streaming,defi,examples
 else
-BASE_FEATURES := ffi,python,high-precision,streaming,examples
+BASE_FEATURES := arrow,ffi,python,high-precision,streaming,examples
 endif
 
 # Combine base features with extra features

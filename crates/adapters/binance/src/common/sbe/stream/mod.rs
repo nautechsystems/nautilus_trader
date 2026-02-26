@@ -13,9 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// SBE stream decoders - all methods return StreamDecodeError on decode failure
-#![allow(clippy::missing_errors_doc)]
-
 //! Binance SBE market data stream decoders (schema 1:0).
 //!
 //! These decoders are hand-written for the 4 market data stream message types:
@@ -27,7 +24,10 @@
 //! All decoders return `Result<T, StreamDecodeError>` to safely handle malformed
 //! or truncated network data without panicking.
 
-use std::fmt::Display;
+use std::{error::Error, fmt::Display};
+
+/// Re-exported generic varString/group decoders shared across SBE adapters.
+pub use nautilus_serialization::sbe::{GroupSize16Encoding, GroupSizeEncoding, decode_var_string8};
 
 use crate::common::sbe::{cursor::SbeCursor, error::SbeDecodeError};
 
@@ -72,6 +72,8 @@ pub enum StreamDecodeError {
     SchemaMismatch { expected: u16, actual: u16 },
     /// Unknown template ID.
     UnknownTemplateId(u16),
+    /// Invalid fixed block length.
+    InvalidBlockLength { expected: u16, actual: u16 },
 }
 
 impl Display for StreamDecodeError {
@@ -91,11 +93,14 @@ impl Display for StreamDecodeError {
                 write!(f, "Schema mismatch: expected {expected}, was {actual}")
             }
             Self::UnknownTemplateId(id) => write!(f, "Unknown template ID: {id}"),
+            Self::InvalidBlockLength { expected, actual } => {
+                write!(f, "Invalid block length: expected {expected}, was {actual}")
+            }
         }
     }
 }
 
-impl std::error::Error for StreamDecodeError {}
+impl Error for StreamDecodeError {}
 
 impl From<SbeDecodeError> for StreamDecodeError {
     fn from(err: SbeDecodeError) -> Self {
@@ -115,10 +120,9 @@ impl From<SbeDecodeError> for StreamDecodeError {
                 count: count as usize,
                 max: max as usize,
             },
-            SbeDecodeError::InvalidBlockLength { .. } => Self::BufferTooShort {
-                expected: 0,
-                actual: 0,
-            },
+            SbeDecodeError::InvalidBlockLength { expected, actual } => {
+                Self::InvalidBlockLength { expected, actual }
+            }
             SbeDecodeError::InvalidUtf8 => Self::InvalidUtf8,
         }
     }
@@ -157,6 +161,10 @@ impl MessageHeader {
     }
 
     /// Validate schema ID matches expected stream schema.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SchemaMismatch` if the schema ID does not match [`STREAM_SCHEMA_ID`].
     pub fn validate_schema(&self) -> Result<(), StreamDecodeError> {
         if self.schema_id != STREAM_SCHEMA_ID {
             return Err(StreamDecodeError::SchemaMismatch {
@@ -200,119 +208,12 @@ pub fn mantissa_to_f64(mantissa: i64, exponent: i8) -> f64 {
     mantissa as f64 * 10_f64.powi(exponent as i32)
 }
 
-/// Decode a varString8 (1-byte length prefix + UTF-8 data).
-///
-/// Returns (string, bytes_consumed) on success.
-///
-/// # Errors
-///
-/// Returns error if buffer is too short or contains invalid UTF-8.
-pub fn decode_var_string8(buf: &[u8]) -> Result<(String, usize), StreamDecodeError> {
-    if buf.is_empty() {
-        return Err(StreamDecodeError::BufferTooShort {
-            expected: 1,
-            actual: 0,
-        });
-    }
-
-    let len = buf[0] as usize;
-    let total_len = 1 + len;
-
-    if buf.len() < total_len {
-        return Err(StreamDecodeError::BufferTooShort {
-            expected: total_len,
-            actual: buf.len(),
-        });
-    }
-
-    let s = std::str::from_utf8(&buf[1..total_len]).map_err(|_| StreamDecodeError::InvalidUtf8)?;
-
-    Ok((s.to_string(), total_len))
-}
-
-/// Group size encoding (6 bytes: u16 block_length + u32 num_in_group).
-#[derive(Debug, Clone, Copy)]
-pub struct GroupSizeEncoding {
-    pub block_length: u16,
-    pub num_in_group: u32,
-}
-
-impl GroupSizeEncoding {
-    pub const ENCODED_LENGTH: usize = 6;
-
-    /// Decode group size encoding from buffer.
-    ///
-    /// # Errors
-    ///
-    /// Returns error if buffer is too short or group count exceeds safety limit.
-    pub fn decode(buf: &[u8]) -> Result<Self, StreamDecodeError> {
-        if buf.len() < Self::ENCODED_LENGTH {
-            return Err(StreamDecodeError::BufferTooShort {
-                expected: Self::ENCODED_LENGTH,
-                actual: buf.len(),
-            });
-        }
-
-        let num_in_group = u32::from_le_bytes([buf[2], buf[3], buf[4], buf[5]]);
-
-        if num_in_group as usize > MAX_GROUP_SIZE {
-            return Err(StreamDecodeError::GroupSizeTooLarge {
-                count: num_in_group as usize,
-                max: MAX_GROUP_SIZE,
-            });
-        }
-
-        Ok(Self {
-            block_length: u16::from_le_bytes([buf[0], buf[1]]),
-            num_in_group,
-        })
-    }
-}
-
-/// Group size 16 encoding (4 bytes: u16 block_length + u16 num_in_group).
-#[derive(Debug, Clone, Copy)]
-pub struct GroupSize16Encoding {
-    pub block_length: u16,
-    pub num_in_group: u16,
-}
-
-impl GroupSize16Encoding {
-    pub const ENCODED_LENGTH: usize = 4;
-
-    /// Decode group size 16 encoding from buffer.
-    ///
-    /// # Errors
-    ///
-    /// Returns error if buffer is too short or group count exceeds safety limit.
-    pub fn decode(buf: &[u8]) -> Result<Self, StreamDecodeError> {
-        if buf.len() < Self::ENCODED_LENGTH {
-            return Err(StreamDecodeError::BufferTooShort {
-                expected: Self::ENCODED_LENGTH,
-                actual: buf.len(),
-            });
-        }
-
-        let num_in_group = u16::from_le_bytes([buf[2], buf[3]]);
-
-        if num_in_group as usize > MAX_GROUP_SIZE {
-            return Err(StreamDecodeError::GroupSizeTooLarge {
-                count: num_in_group as usize,
-                max: MAX_GROUP_SIZE,
-            });
-        }
-
-        Ok(Self {
-            block_length: u16::from_le_bytes([buf[0], buf[1]]),
-            num_in_group,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::sbe::error::SbeDecodeError;
 
     #[rstest]
     fn test_mantissa_to_f64() {
@@ -342,13 +243,13 @@ mod tests {
         buf[2..6].copy_from_slice(&count.to_le_bytes());
 
         let err = GroupSizeEncoding::decode(&buf).unwrap_err();
-        assert!(matches!(err, StreamDecodeError::GroupSizeTooLarge { .. }));
+        assert!(matches!(err, SbeDecodeError::GroupSizeTooLarge { .. }));
     }
 
     #[rstest]
     fn test_decode_var_string8_empty_buffer() {
         let err = decode_var_string8(&[]).unwrap_err();
-        assert!(matches!(err, StreamDecodeError::BufferTooShort { .. }));
+        assert!(matches!(err, SbeDecodeError::BufferTooShort { .. }));
     }
 
     #[rstest]
@@ -356,7 +257,7 @@ mod tests {
         // Length says 10 bytes, but only 5 available
         let buf = [10u8, b'H', b'E', b'L', b'L'];
         let err = decode_var_string8(&buf).unwrap_err();
-        assert!(matches!(err, StreamDecodeError::BufferTooShort { .. }));
+        assert!(matches!(err, SbeDecodeError::BufferTooShort { .. }));
     }
 
     #[rstest]

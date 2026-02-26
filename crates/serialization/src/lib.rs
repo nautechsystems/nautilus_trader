@@ -25,6 +25,7 @@
 //! - **Schema management**: Type-safe schema definitions with metadata preservation.
 //! - **Cross-format conversion**: Seamless data interchange between Arrow, Cap'n Proto, and native types.
 //! - **Cap'n Proto serialization**: Zero-copy, schema-based serialization for efficient data interchange (requires `capnp` feature).
+//! - **SBE decode utilities**: Zero-copy cursor and shared decode errors for SBE parsers (requires `sbe` feature).
 //!
 //! # Platform
 //!
@@ -43,10 +44,12 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `arrow`: Enables Apache Arrow schema definitions and RecordBatch encoding/decoding.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 //! - `extension-module`: Builds the crate as a Python extension module.
 //! - `capnp`: Enables [Cap'n Proto](https://capnproto.org/) serialization support.
+//! - `sbe`: Enables generic SBE (Simple Binary Encoding) decode utilities.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -57,13 +60,17 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+#[cfg(feature = "arrow")]
 pub mod arrow;
-
-/// Re-export MsgPack serialization helpers for consumers expecting to configure codecs via this crate.
-pub use nautilus_core::serialization::msgpack;
 
 #[cfg(feature = "capnp")]
 pub mod capnp;
+
+#[cfg(feature = "sbe")]
+pub mod sbe;
+
+/// Re-export MsgPack serialization helpers for consumers expecting to configure codecs via this crate.
+pub use nautilus_core::serialization::msgpack;
 
 #[cfg(feature = "capnp")]
 macro_rules! include_capnp_module {

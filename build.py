@@ -142,6 +142,7 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 def _set_feature_flags() -> list[str]:
     feature_list = [
+        "arrow",
         "cython-compat",
         "extension-module",
         "ffi",

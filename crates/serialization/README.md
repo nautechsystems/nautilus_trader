@@ -18,6 +18,7 @@ This enables efficient data storage, retrieval, and interoperability across diff
 - **Schema management**: Type-safe schema definitions with metadata preservation.
 - **Cross-format conversion**: Seamless data interchange between Arrow, Parquet, and native types.
 - **Cap'n Proto serialization**: Zero-copy, schema-based serialization for efficient data interchange.
+- **SBE decode utilities**: Zero-copy cursor, shared decode errors, and generic var/group decoders for SBE parsers.
 
 ## Platform
 
@@ -39,7 +40,9 @@ or as part of a Rust only build.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module (used with `python`).
 - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+- `arrow`: Enables Apache Arrow schema definitions and RecordBatch encoding/decoding.
 - `capnp`: Enables [Cap'n Proto](https://capnproto.org/) serialization support.
+- `sbe`: Enables generic SBE (Simple Binary Encoding) decode utilities.
 
 ### Building with Cap'n Proto support
 
@@ -230,6 +233,12 @@ cargo bench -p nautilus-serialization --features capnp --bench capnp_serializati
 
 # Run all comparison benchmarks
 cargo bench -p nautilus-serialization --features capnp --bench serialization_comparison
+
+# Run SBE cursor decode microbenchmarks
+cargo bench -p nautilus-serialization --no-default-features --features sbe --bench sbe_decoding
+
+# Direct QuoteTick decode comparison: Cap'n Proto vs SBE
+cargo bench -p nautilus-serialization --no-default-features --features "capnp sbe" --bench quote_tick_capnp_vs_sbe
 ```
 
 Benchmark results include serialization and deserialization times for each format.

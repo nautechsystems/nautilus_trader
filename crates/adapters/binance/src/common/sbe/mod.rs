@@ -16,8 +16,8 @@
 //! Binance SBE (Simple Binary Encoding) codec implementations.
 //!
 //! This module contains:
-//! - `cursor`: Zero-copy byte cursor for SBE decoding.
-//! - `error`: Unified decode error type.
+//! - `cursor`: Re-export of shared cursor utilities from `nautilus_serialization::sbe`.
+//! - `error`: Re-export of shared decode error types from `nautilus_serialization::sbe`.
 //! - `spot`: Generated codecs for the Spot REST/WebSocket API (schema 3:2).
 //! - `stream`: Hand-written codecs for market data streams (schema 1:0).
 //!

@@ -34,6 +34,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added catalog deduplication functionality (#3613), thanks @ms32035
+- Extracted common SBE decoder to `nautilus-serialization` crate
 - Implemented `BacktestNode` with catalog streaming in Rust
 - Improved `OrderBookImbalance` example strategy
 - Improved `BestPriceFillModel` to fill inside bid ask spread (#3428), thanks @faysou

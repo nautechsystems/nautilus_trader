@@ -58,17 +58,17 @@ pub fn decode_market_data(buf: &[u8]) -> Result<MarketDataMessage, StreamDecodeE
     header.validate_schema()?;
 
     match header.template_id {
-        template_id::TRADES_STREAM_EVENT => {
-            Ok(MarketDataMessage::Trades(TradesStreamEvent::decode(buf)?))
-        }
+        template_id::TRADES_STREAM_EVENT => Ok(MarketDataMessage::Trades(
+            TradesStreamEvent::decode_validated(buf)?,
+        )),
         template_id::BEST_BID_ASK_STREAM_EVENT => Ok(MarketDataMessage::BestBidAsk(
-            BestBidAskStreamEvent::decode(buf)?,
+            BestBidAskStreamEvent::decode_validated(buf)?,
         )),
         template_id::DEPTH_SNAPSHOT_STREAM_EVENT => Ok(MarketDataMessage::DepthSnapshot(
-            DepthSnapshotStreamEvent::decode(buf)?,
+            DepthSnapshotStreamEvent::decode_validated(buf)?,
         )),
         template_id::DEPTH_DIFF_STREAM_EVENT => Ok(MarketDataMessage::DepthDiff(
-            DepthDiffStreamEvent::decode(buf)?,
+            DepthDiffStreamEvent::decode_validated(buf)?,
         )),
         _ => Err(StreamDecodeError::UnknownTemplateId(header.template_id)),
     }
@@ -200,6 +200,8 @@ pub fn parse_depth_snapshot(
         ));
     }
 
+    // A snapshot that only contains the synthetic clear delta has no book levels
+    // to apply and is treated as "no usable update".
     if deltas.len() <= 1 {
         return None;
     }
@@ -292,9 +294,37 @@ pub fn parse_depth_diff(
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::common::sbe::stream::STREAM_SCHEMA_ID;
+
+    fn make_bbo_buffer() -> Vec<u8> {
+        let mut buf = vec![0u8; 70];
+
+        // Header
+        buf[0..2].copy_from_slice(&50u16.to_le_bytes()); // block_length
+        buf[2..4].copy_from_slice(&template_id::BEST_BID_ASK_STREAM_EVENT.to_le_bytes());
+        buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
+        buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+
+        // Body
+        let body = &mut buf[8..];
+        body[0..8].copy_from_slice(&1000000i64.to_le_bytes()); // event_time_us
+        body[8..16].copy_from_slice(&12345i64.to_le_bytes()); // book_update_id
+        body[16] = (-2i8) as u8; // price_exponent
+        body[17] = (-8i8) as u8; // qty_exponent
+        body[18..26].copy_from_slice(&4200000i64.to_le_bytes()); // bid_price
+        body[26..34].copy_from_slice(&100000000i64.to_le_bytes()); // bid_qty
+        body[34..42].copy_from_slice(&4200100i64.to_le_bytes()); // ask_price
+        body[42..50].copy_from_slice(&200000000i64.to_le_bytes()); // ask_qty
+
+        // Symbol: "BTCUSDT" (7 bytes)
+        body[50] = 7;
+        body[51..58].copy_from_slice(b"BTCUSDT");
+
+        buf
+    }
 
     #[rstest]
     fn test_decode_empty_buffer() {
@@ -331,5 +361,19 @@ mod tests {
 
         let err = decode_market_data(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::UnknownTemplateId(9999)));
+    }
+
+    #[rstest]
+    fn test_decode_valid_best_bid_ask() {
+        let buf = make_bbo_buffer();
+        let msg = decode_market_data(&buf).unwrap();
+
+        match msg {
+            MarketDataMessage::BestBidAsk(event) => {
+                assert_eq!(event.event_time_us, 1_000_000);
+                assert_eq!(event.symbol, Ustr::from("BTCUSDT"));
+            }
+            _ => panic!("Expected BestBidAsk"),
+        }
     }
 }

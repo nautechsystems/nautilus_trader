@@ -4965,6 +4965,7 @@ dependencies = [
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
+ "nautilus-serialization",
  "nautilus-system",
  "nautilus-testkit",
  "pyo3",

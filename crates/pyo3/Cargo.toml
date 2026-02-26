@@ -23,6 +23,7 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
+arrow = ["nautilus-serialization/arrow"]
 cython-compat = []
 defi = ["dep:nautilus-blockchain", "nautilus-blockchain/python"]
 extension-module = [
