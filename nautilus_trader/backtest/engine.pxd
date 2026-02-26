@@ -430,6 +430,15 @@ cdef class OrderMatchingEngine:
 
     cpdef void reset(self)
     cpdef void set_fill_model(self, FillModel fill_model)
+    cpdef bint custom_is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef void update_instrument(self, Instrument instrument)
 
 # -- QUERIES --------------------------------------------------------------------------------------

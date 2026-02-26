@@ -15,6 +15,8 @@
 
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.model.book cimport BookOrder
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -30,6 +32,15 @@ cdef class FillModel:
 
     cpdef bint is_limit_filled(self)
     cpdef bint is_slipped(self)
+    cpdef bint is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,
         Instrument instrument,
@@ -42,6 +53,15 @@ cdef class FillModel:
 
 
 cdef class BestPriceFillModel(FillModel):
+    cpdef bint is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,
         Instrument instrument,
@@ -62,6 +82,15 @@ cdef class OneTickSlippageFillModel(FillModel):
 
 
 cdef class TwoTierFillModel(FillModel):
+    cpdef bint is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,
         Instrument instrument,
@@ -72,6 +101,15 @@ cdef class TwoTierFillModel(FillModel):
 
 
 cdef class ProbabilisticFillModel(FillModel):
+    cpdef bint is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,
         Instrument instrument,
@@ -82,6 +120,15 @@ cdef class ProbabilisticFillModel(FillModel):
 
 
 cdef class SizeAwareFillModel(FillModel):
+    cpdef bint is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,
         Instrument instrument,
@@ -92,6 +139,15 @@ cdef class SizeAwareFillModel(FillModel):
 
 
 cdef class LimitOrderPartialFillModel(FillModel):
+    cpdef bint is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,
         Instrument instrument,
@@ -102,6 +158,15 @@ cdef class LimitOrderPartialFillModel(FillModel):
 
 
 cdef class ThreeTierFillModel(FillModel):
+    cpdef bint is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,
         Instrument instrument,
@@ -116,6 +181,15 @@ cdef class MarketHoursFillModel(FillModel):
 
     cpdef bint is_low_liquidity_period(self)
     cpdef void set_low_liquidity_period(self, bint is_low_liquidity)
+    cpdef bint is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,
         Instrument instrument,
@@ -129,6 +203,15 @@ cdef class VolumeSensitiveFillModel(FillModel):
     cdef double _recent_volume
 
     cpdef void set_recent_volume(self, double volume)
+    cpdef bint is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,
         Instrument instrument,
@@ -141,6 +224,15 @@ cdef class VolumeSensitiveFillModel(FillModel):
 cdef class CompetitionAwareFillModel(FillModel):
     cdef double liquidity_factor
 
+    cpdef bint is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    )
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,
         Instrument instrument,

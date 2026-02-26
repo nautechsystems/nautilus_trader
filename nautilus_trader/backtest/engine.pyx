@@ -3892,6 +3892,7 @@ cdef class OrderMatchingEngine:
             fill_market_order=self.fill_market_order,
             fill_limit_order=self.fill_limit_order,
         )
+        self._core.set_is_limit_fillable_callback(None if type(fill_model) is FillModel else self.custom_is_limit_fillable)
         self._price_prec = instrument.price_precision
         self._size_prec = instrument.size_precision
 
@@ -3977,8 +3978,23 @@ cdef class OrderMatchingEngine:
         Condition.not_none(fill_model, "fill_model")
 
         self._fill_model = fill_model
+        self._core.set_is_limit_fillable_callback(None if type(fill_model) is FillModel else self.custom_is_limit_fillable)
 
         self._log.debug(f"Changed `FillModel` to {self._fill_model}")
+
+    cpdef bint custom_is_limit_fillable(
+        self,
+        OrderSide side,
+        Price price,
+        PriceRaw bid_raw,
+        PriceRaw ask_raw,
+        bint is_bid_initialized,
+        bint is_ask_initialized,
+    ):
+        # Delegates to the fill model when a custom (non-default) fill model is used.
+        return self._fill_model.is_limit_fillable(
+            side, price, bid_raw, ask_raw, is_bid_initialized, is_ask_initialized
+        )
 
     cpdef void update_instrument(self, Instrument instrument):
         """

@@ -30,7 +30,6 @@ from nautilus_trader.analysis import TearsheetConfig
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
 from nautilus_trader.analysis.tearsheet import create_bars_with_fills
-from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import MarginModelConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.common.enums import LogColor
@@ -589,11 +588,11 @@ tearsheet_config = TearsheetConfig(
     theme="nautilus_dark",
 )
 
-create_tearsheet(
-    engine,
-    config=tearsheet_config,
-    output_path="tearsheet_with_bars_fills.html",
-)
+# create_tearsheet(
+#     engine,
+#     config=tearsheet_config,
+#     output_path="tearsheet_with_bars_fills.html",
+# )
 
 # %%
 node.dispose()

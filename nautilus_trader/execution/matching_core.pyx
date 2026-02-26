@@ -70,6 +70,7 @@ cdef class MatchingCore:
         self._trigger_stop_order = trigger_stop_order
         self._fill_market_order = fill_market_order
         self._fill_limit_order = fill_limit_order
+        self._is_limit_fillable = None
 
         # Orders
         self._orders: dict[ClientOrderId, Order] = {}
@@ -364,8 +365,19 @@ cdef class MatchingCore:
         if order.is_activated:
             self.match_stop_market_order(order)
 
+    cpdef void set_is_limit_fillable_callback(self, object callback):
+        self._is_limit_fillable = callback
+
     cpdef bint is_limit_fillable(self, OrderSide side, Price price):
-        return self.is_limit_marketable(side, price)
+        return (self.is_limit_marketable(side, price)
+                or self._is_limit_fillable is not None and self._is_limit_fillable(
+            side,
+            price,
+            self.bid_raw,
+            self.ask_raw,
+            self.is_bid_initialized,
+            self.is_ask_initialized,
+        ))
 
     cpdef bint is_limit_marketable(self, OrderSide side, Price price):
         # True when order would take liquidity (crosses the spread). Used for post-only rejection.
@@ -374,10 +386,12 @@ cdef class MatchingCore:
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
+
             return self.ask_raw <= price._mem.raw
         elif side == OrderSide.SELL:
             if not self.is_bid_initialized:
                 return False  # No market
+
             return self.bid_raw >= price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
