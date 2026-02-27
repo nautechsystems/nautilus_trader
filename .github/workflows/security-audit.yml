@@ -79,6 +79,31 @@ jobs:
       - name: Run cargo-vet
         run: cargo vet --locked
 
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Run pip-audit
+        run: >
+          uv export --no-hashes --frozen |
+          uv run --no-project --with pip-audit --
+          pip-audit --disable-pip --no-deps -r /dev/stdin
+
   osv-scanner:
     name: osv-scanner
     runs-on: ubuntu-22.04

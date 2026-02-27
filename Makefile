@@ -319,7 +319,7 @@ install-tools:  #-- Install required development tools (Rust tools from Cargo.to
 #== Security
 
 .PHONY: security-audit
-security-audit: check-audit-installed check-deny-installed check-vet-installed check-osv-scanner-installed  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, osv-scanner)
+security-audit: check-audit-installed check-deny-installed check-vet-installed check-osv-scanner-installed  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, pip-audit, osv-scanner)
 	$(info $(M) Running security audit...)
 	@printf "$(CYAN)Running cargo audit...$(RESET)\n"
 	cargo audit --color never
@@ -327,6 +327,8 @@ security-audit: check-audit-installed check-deny-installed check-vet-installed c
 	cargo deny --all-features check advisories licenses sources bans
 	@printf "\n$(CYAN)Running cargo vet (supply chain audit)...$(RESET)\n"
 	cargo vet --locked
+	@printf "\n$(CYAN)Running pip-audit (Python dependencies)...$(RESET)\n"
+	uv export --no-hashes --frozen | uv run --no-project --with pip-audit -- pip-audit --disable-pip --no-deps -r /dev/stdin
 	@printf "\n$(CYAN)Running osv-scanner (Cargo.lock + uv.lock)...$(RESET)\n"
 	osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=uv.lock
 
