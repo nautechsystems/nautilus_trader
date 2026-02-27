@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 289b8ba356b65df4440d71b9a27812e3a3f9d166562152757a054939977e0e49 # shrinks to inputs = [SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42)]
+cc de4f7dfcef504a6c6b78fb23b7bc07e01392f1cc87c2f8c818e2edafc845653d # shrinks to inputs = [SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42), SendMessage(42)]

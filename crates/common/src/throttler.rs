@@ -779,15 +779,23 @@ mod tests {
             assert_eq!(sent_count, throttler.sent_count + throttler.qsize());
         }
 
-        // Advance clock by a large amount to process all messages
-        let time_events = test_clock
-            .borrow_mut()
-            .advance_time((interval * 100).into(), true);
-        let mut clock_ref = test_clock.borrow_mut();
-        for each_event in clock_ref.match_handlers(time_events) {
-            drop(clock_ref);
-            each_event.callback.call(each_event.event);
-            clock_ref = test_clock.borrow_mut();
+        // Drain all buffered messages by repeatedly advancing the clock.
+        // Each timer callback may send up to `limit` messages and schedule
+        // a new timer for the next batch, so we must keep advancing.
+        for i in 1..=100u64 {
+            if throttler.qsize() == 0 {
+                break;
+            }
+            let advance_to = interval * 100 * i;
+            let time_events = test_clock
+                .borrow_mut()
+                .advance_time(advance_to.into(), true);
+            let mut clock_ref = test_clock.borrow_mut();
+            for each_event in clock_ref.match_handlers(time_events) {
+                drop(clock_ref);
+                each_event.callback.call(each_event.event);
+                clock_ref = test_clock.borrow_mut();
+            }
         }
         assert_eq!(throttler.qsize(), 0);
     }
