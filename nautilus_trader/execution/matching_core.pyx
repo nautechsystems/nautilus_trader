@@ -241,10 +241,21 @@ cdef class MatchingCore:
             raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
     cpdef void iterate(self, uint64_t timestamp_ns):
+        # Snapshot both sides upfront so synchronous callbacks during
+        # bid matching cannot alter the ask snapshot (and vice versa)
+        cdef list orders_bid = self._orders_bid[:]
+        cdef list orders_ask = self._orders_ask[:]
+
         cdef Order order
-        for order in self._orders_bid + self._orders_ask:  # Lists implicitly copied
+
+        for order in orders_bid:
             if order.is_closed_c():
-                continue  # Orders state has changed since iteration started  # pragma: no cover
+                continue  # pragma: no cover
+            self.match_order(order)
+
+        for order in orders_ask:
+            if order.is_closed_c():
+                continue  # pragma: no cover
             self.match_order(order)
 
 # -- MATCHING -------------------------------------------------------------------------------------

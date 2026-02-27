@@ -310,7 +310,7 @@ cdef class SimulatedExchange:
     cpdef void adjust_account(self, Money adjustment)
     cpdef void update_instrument(self, Instrument instrument)
     cdef tuple generate_inflight_command(self, TradingCommand command)
-    cpdef bint has_pending_commands(self, uint64_t ts_now)
+    cdef bint _has_pending_commands(self, uint64_t ts_now)
     cdef void _drain_commands(self, uint64_t ts_now)
     cpdef void send(self, TradingCommand command)
     cpdef void process_order_book_delta(self, OrderBookDelta delta)

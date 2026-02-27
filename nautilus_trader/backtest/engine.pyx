@@ -1806,6 +1806,7 @@ cdef class BacktestEngine:
         cdef SimulatedExchange exchange
         cdef SimulationModule module
         cdef OrderMatchingEngine matching_engine
+        cdef bint has_activity
 
         # Advance venue clocks so modules and event generators see the
         # correct timestamp even when no commands are pending
@@ -1818,18 +1819,22 @@ cdef class BacktestEngine:
         # Only process and iterate venues that had pending commands each
         # pass, to avoid extra fill-model rolls on untouched venues.
         while True:
-            active_venues = [
-                exchange for exchange in self._venues.values()
-                if exchange.has_pending_commands(ts_now)
-            ]
-            if not active_venues:
+            has_activity = False
+
+            for exchange in self._venues.values():
+                if exchange._has_pending_commands(ts_now):
+                    has_activity = True
+                    break
+
+            if not has_activity:
                 break
 
-            for exchange in active_venues:
+            # Drain all venues then iterate, keeping phases separate so
+            # cross-venue command timing is independent of iteration order
+            for exchange in self._venues.values():
                 exchange._drain_commands(ts_now)
 
-            # Iterate matching engines so newly submitted orders can match
-            for exchange in active_venues:
+            for exchange in self._venues.values():
                 for matching_engine in exchange._matching_engines.values():
                     matching_engine.iterate(ts_now)
 
@@ -1841,6 +1846,7 @@ cdef class BacktestEngine:
 
     cdef void _flush_accumulator_events(self, uint64_t ts_now):
         cdef list[TestClock] clocks = get_component_clocks(self._instance_id)
+
         cdef:
             TestClock clock
             TimeEventHandler_t handler
@@ -3255,7 +3261,7 @@ cdef class SimulatedExchange:
 
         matching_engine.update_instrument(instrument)
 
-    cpdef bint has_pending_commands(self, uint64_t ts_now):
+    cdef bint _has_pending_commands(self, uint64_t ts_now):
         if self._message_queue:
             return True
         if self._inflight_queue and self._inflight_queue[0][0][0] <= ts_now:
@@ -6643,7 +6649,7 @@ cdef class OrderMatchingEngine:
             ClientOrderId client_order_id
             PriceRaw order_price_raw
             Order order
-        for client_order_id in list(self._queue_ahead.keys()):
+        for client_order_id in list(self._queue_ahead):
             order_price_raw, _ = self._queue_ahead[client_order_id]
             if order_price_raw == deleted_price_raw:
                 order = self._core.get_order(client_order_id)
@@ -6654,7 +6660,7 @@ cdef class OrderMatchingEngine:
         cdef:
             ClientOrderId client_order_id
             PriceRaw order_price_raw
-        for client_order_id in list(self._queue_ahead.keys()):
+        for client_order_id in list(self._queue_ahead):
             order_price_raw, _ = self._queue_ahead[client_order_id]
             self._queue_ahead[client_order_id] = (order_price_raw, 0)
 
@@ -6667,7 +6673,7 @@ cdef class OrderMatchingEngine:
             QuantityRaw ahead_raw
             QuantityRaw new_ahead
             Order order
-        for client_order_id in list(self._queue_ahead.keys()):
+        for client_order_id in list(self._queue_ahead):
             order_price_raw, ahead_raw = self._queue_ahead[client_order_id]
 
             order = self._core.get_order(client_order_id)
@@ -6723,7 +6729,7 @@ cdef class OrderMatchingEngine:
             QuantityRaw ahead_raw
             bint crossed
             Order order
-        for client_order_id in list(self._queue_ahead.keys()):
+        for client_order_id in list(self._queue_ahead):
             order_price_raw, ahead_raw = self._queue_ahead[client_order_id]
 
             order = self._core.get_order(client_order_id)
@@ -6747,7 +6753,7 @@ cdef class OrderMatchingEngine:
                 self._queue_ahead[client_order_id] = (order_price_raw, new_size_raw)
 
         # Also resolve pending L1 orders affected by this price move
-        for client_order_id in list(self._queue_pending.keys()):
+        for client_order_id in list(self._queue_pending):
             order_price_raw = self._queue_pending[client_order_id]
 
             order = self._core.get_order(client_order_id)
@@ -6775,7 +6781,7 @@ cdef class OrderMatchingEngine:
             ClientOrderId client_order_id
             PriceRaw order_price_raw
             Order order
-        for client_order_id in list(self._queue_pending.keys()):
+        for client_order_id in list(self._queue_pending):
             order_price_raw = self._queue_pending[client_order_id]
 
             order = self._core.get_order(client_order_id)
@@ -6797,7 +6803,7 @@ cdef class OrderMatchingEngine:
             PriceRaw order_price_raw
             bint crossed
             Order order
-        for client_order_id in list(self._queue_pending.keys()):
+        for client_order_id in list(self._queue_pending):
             order_price_raw = self._queue_pending[client_order_id]
 
             order = self._core.get_order(client_order_id)

@@ -44,6 +44,8 @@ Released on TBD (UTC).
 - Standardized use of atomic clock across adapters
 - Standardized adapter credentials handling and testing
 - Refined build script for Windows (#3636), thanks @faysou
+- Optimized backtest engine settle loop to avoid Python list allocation on idle ticks
+- Optimized `MatchingCore.iterate` to avoid list concatenation on every call
 - Upgraded `databento` crate to v0.42.0
 
 ### Documentation Updates
