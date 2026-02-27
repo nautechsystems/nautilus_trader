@@ -1303,16 +1303,22 @@ cdef class BacktestEngine:
         """
         Run a backtest.
 
-        At the end of the run the trader and strategies will be stopped, then
-        post-run analysis performed.
+        When ``streaming`` is False (default), the run is finalized via
+        ``end()`` which stops all engines and produces results. When True,
+        the run pauses without finalizing so additional data batches can be
+        loaded. Timer advancement stops at data exhaustion to avoid producing
+        synthetic events (e.g. zero-volume bars) past the current batch.
 
-        For datasets larger than available memory, use `streaming` mode with the
-        following sequence:
-        - 1. Add initial data batch and strategies
-        - 2. Call `run(streaming=True)`
-        - 3. Call `clear_data()`
-        - 4. Add next batch of data stream
-        - 5. Call `run(streaming=False)` or `end()` when processing the final batch
+        For datasets larger than available memory, use ``streaming`` mode::
+
+            engine.add_strategy(strategy)
+
+            for batch in data_batches:
+                engine.add_data(batch)
+                engine.run(streaming=True)
+                engine.clear_data()
+
+            engine.end()
 
         Parameters
         ----------
@@ -1325,10 +1331,10 @@ cdef class BacktestEngine:
         run_config_id : str, optional
             The tokenized `BacktestRunConfig` ID.
         streaming : bool, default False
-            Controls data loading and processing mode:
-            - If False (default): Loads all data at once.
-              This is currently the only supported mode for custom data (e.g., option Greeks).
-            - If True, loads data in chunks for memory-efficient processing of large datasets.
+            If False (default), calls ``end()`` after the run to stop
+            engines and produce results.
+            If True, pauses after data exhaustion without finalizing.
+            Call ``end()`` manually after all batches are processed.
 
         Raises
         ------
@@ -1362,6 +1368,13 @@ cdef class BacktestEngine:
         Only required if you have previously been running with streaming.
 
         """
+        # Flush remaining timer events to the backtest end boundary so that
+        # tail alerts/expiries scheduled after the last data point still fire.
+        # Must run before stopping engines since DataEngine.stop() cancels
+        # bar aggregator timers.
+        if self._end_ns > 0:
+            self._flush_accumulator_events(self._end_ns)
+
         if self._kernel.trader.is_running:
             self._kernel.trader.stop()
 
@@ -1572,6 +1585,11 @@ cdef class BacktestEngine:
         try:
             while True:
                 if data is None:
+                    if streaming:
+                        # In streaming mode, don't advance timers past the
+                        # current batch. The next batch will provide more data
+                        # and timers will fire naturally as time advances.
+                        break
                     done = self._process_next_timer()
                     data = self._data_iterator.next()
                     if data is None and done:
@@ -1651,8 +1669,13 @@ cdef class BacktestEngine:
         # Process remaining messages
         self._process_and_settle_venues(self._kernel.clock.timestamp_ns())
 
-        # Flush remaining timer events up to end time
-        self._flush_accumulator_events(end_ns)
+        # Flush remaining timer events. In streaming mode only flush to the
+        # last data timestamp to avoid advancing timers past the current batch.
+        # The final flush to end_ns happens in end() or a non-streaming run.
+        if streaming:
+            self._flush_accumulator_events(self._last_ns)
+        else:
+            self._flush_accumulator_events(end_ns)
 
     cdef CVec _advance_time(self, uint64_t ts_now):
         # Advance clocks and process all events before ts_now in timestamp order.

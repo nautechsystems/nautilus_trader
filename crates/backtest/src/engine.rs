@@ -544,13 +544,14 @@ impl BacktestEngine {
     ///
     /// Processes all data chronologically. When `streaming` is false (default),
     /// finalizes the run via [`end`](Self::end). When `streaming` is true, the
-    /// run pauses without finalizing, allowing additional data to be loaded:
+    /// run pauses without finalizing so additional data batches can be loaded.
+    /// Timer advancement stops at data exhaustion to avoid producing synthetic
+    /// events (e.g. zero-volume bars) past the current batch.
     ///
+    /// Streaming workflow:
     /// 1. Add initial data and strategies
-    /// 2. Call `run(streaming=true)`
-    /// 3. Call `clear_data()`
-    /// 4. Add next batch of data
-    /// 5. Repeat steps 2-4, then call `run(streaming=false)` or `end()` for the final batch
+    /// 2. Loop: call `run(streaming=true)`, `clear_data()`, `add_data(next_batch)`
+    /// 3. After all batches: call `end()` to finalize
     ///
     /// # Errors
     ///
@@ -562,7 +563,7 @@ impl BacktestEngine {
         run_config_id: Option<String>,
         streaming: bool,
     ) -> anyhow::Result<()> {
-        self.run_impl(start, end, run_config_id)?;
+        self.run_impl(start, end, run_config_id, streaming)?;
 
         if !streaming {
             self.end();
@@ -576,6 +577,7 @@ impl BacktestEngine {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         run_config_id: Option<String>,
+        streaming: bool,
     ) -> anyhow::Result<()> {
         // Determine time boundaries
         let start_ns = start.unwrap_or_else(|| self.ts_first.unwrap_or_default());
@@ -654,6 +656,12 @@ impl BacktestEngine {
             }
 
             if data.is_none() {
+                if streaming {
+                    // In streaming mode, don't advance timers past the
+                    // current batch. The next batch will provide more data
+                    // and timers will fire naturally as time advances.
+                    break;
+                }
                 let done = self.process_next_timer(&clocks);
                 data = self.data_iterator.next();
                 if data.is_none() && done {
@@ -702,14 +710,29 @@ impl BacktestEngine {
         self.settle_venues(ts_now);
         self.run_venue_modules(ts_now);
 
-        // Flush remaining timer events up to end time
-        self.flush_accumulator_events(&clocks, end_ns);
+        // Flush remaining timer events. In streaming mode only flush to the
+        // last data timestamp to avoid advancing timers past the current batch.
+        // The final flush to end_ns happens in end() or a non-streaming run.
+        if streaming {
+            self.flush_accumulator_events(&clocks, self.last_ns);
+        } else {
+            self.flush_accumulator_events(&clocks, end_ns);
+        }
 
         Ok(())
     }
 
     /// Manually end the backtest.
     pub fn end(&mut self) {
+        // Flush remaining timer events to the backtest end boundary so that
+        // tail alerts/expiries scheduled after the last data point still fire.
+        // Must run before stopping engines since DataEngine::stop() cancels
+        // bar aggregator timers.
+        if self.end_ns.as_u64() > 0 {
+            let clocks = self.collect_all_clocks();
+            self.flush_accumulator_events(&clocks, self.end_ns);
+        }
+
         // Stop trader
         self.kernel.stop_trader();
 

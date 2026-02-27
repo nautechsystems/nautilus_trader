@@ -26,14 +26,17 @@ use nautilus_common::{
     actor::{DataActor, DataActorCore},
     timer::TimeEvent,
 };
+use nautilus_core::UnixNanos;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
     indicator::{Indicator, MovingAverage},
 };
 use nautilus_model::{
-    data::{Data, QuoteTick},
-    enums::{AccountType, BookType, OmsType, OrderSide, PriceType},
+    data::{BarSpecification, BarType, Data, QuoteTick},
+    enums::{
+        AccountType, AggregationSource, BarAggregation, BookType, OmsType, OrderSide, PriceType,
+    },
     events::OrderFilled,
     identifiers::{InstrumentId, StrategyId, Venue},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
@@ -1061,5 +1064,169 @@ fn test_all_same_timestamp_timer_commands_settled(crypto_perpetual_ethusdt: Cryp
         bt_result.total_orders, 2,
         "Expected 2 orders from dual timer callbacks, was {}",
         bt_result.total_orders
+    );
+}
+
+struct BarSubscriberStrategy {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    bar_type: BarType,
+}
+
+impl BarSubscriberStrategy {
+    fn new(instrument_id: InstrumentId, bar_type: BarType) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("BAR-SUB-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            bar_type,
+        }
+    }
+}
+
+impl Deref for BarSubscriberStrategy {
+    type Target = DataActorCore;
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl DerefMut for BarSubscriberStrategy {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
+}
+
+impl Debug for BarSubscriberStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BarSubscriberStrategy)).finish()
+    }
+}
+
+impl DataActor for BarSubscriberStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        self.subscribe_bars(self.bar_type, None, None);
+        Ok(())
+    }
+}
+
+impl Strategy for BarSubscriberStrategy {
+    fn core(&self) -> &StrategyCore {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut StrategyCore {
+        &mut self.core
+    }
+}
+
+#[rstest]
+fn test_streaming_no_dummy_bars_past_batch_data(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(instrument).unwrap();
+
+    let bar_type = BarType::new(
+        instrument_id,
+        BarSpecification::new(5, BarAggregation::Second, PriceType::Mid),
+        AggregationSource::Internal,
+    );
+    engine
+        .add_strategy(BarSubscriberStrategy::new(instrument_id, bar_type))
+        .unwrap();
+
+    let batch1: Vec<Data> = (1..=10u64)
+        .map(|i| quote(instrument_id, "1000.00", "1000.10", i * 1_000_000_000))
+        .collect();
+    engine.add_data(batch1, None, true, true);
+
+    // Run with end far past data (100s), streaming=true.
+    // Without the fix, timers fire from 10s to 100s producing ~18 dummy bars.
+    // With the fix, only bars from the actual data period are built.
+    let end = Some(UnixNanos::from(100_000_000_000u64));
+    engine.run(None, end, None, true).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let bars = cache.bars(&bar_type).unwrap_or_default();
+    assert!(
+        bars.len() <= 2,
+        "Expected at most 2 bars from 10s of data with 5s bars, found {}",
+        bars.len(),
+    );
+    drop(cache);
+
+    // Batch 2: continues from where batch 1 left off (20s to 30s).
+    // Gap bars (10-20s) fire naturally when time advances to batch 2 data.
+    engine.clear_data();
+    let batch2: Vec<Data> = (20..=30u64)
+        .map(|i| quote(instrument_id, "1001.00", "1001.10", i * 1_000_000_000))
+        .collect();
+    engine.add_data(batch2, None, true, true);
+    engine
+        .run(None, Some(UnixNanos::from(30_000_000_000u64)), None, false)
+        .unwrap();
+
+    // Batch 1 produced ~1 bar, batch 2 adds gap bars (10-20s) + data bars (20-30s)
+    let cache = engine.kernel().cache.borrow();
+    let bars = cache.bars(&bar_type).unwrap_or_default();
+    assert!(
+        bars.len() <= 6,
+        "Expected at most 6 bars across both batches, found {}",
+        bars.len(),
+    );
+}
+
+#[rstest]
+fn test_streaming_end_flushes_tail_timers(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(instrument).unwrap();
+
+    let bar_type = BarType::new(
+        instrument_id,
+        BarSpecification::new(5, BarAggregation::Second, PriceType::Mid),
+        AggregationSource::Internal,
+    );
+    engine
+        .add_strategy(BarSubscriberStrategy::new(instrument_id, bar_type))
+        .unwrap();
+
+    let batch: Vec<Data> = (1..=10u64)
+        .map(|i| quote(instrument_id, "1000.00", "1000.10", i * 1_000_000_000))
+        .collect();
+    engine.add_data(batch, None, true, true);
+
+    // Node-style workflow: all batches use streaming=true, finalize with end()
+    let end = Some(UnixNanos::from(20_000_000_000u64));
+    engine.run(None, end, None, true).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let bars_before_end = cache.bars(&bar_type).unwrap_or_default().len();
+    assert!(
+        bars_before_end <= 2,
+        "Expected at most 2 bars before end(), found {bars_before_end}",
+    );
+    drop(cache);
+
+    // end() should flush tail timers up to end_ns (20s),
+    // producing gap bars between 10s and 20s
+    engine.end();
+
+    let cache = engine.kernel().cache.borrow();
+    let bars_after_end = cache.bars(&bar_type).unwrap_or_default().len();
+    assert!(
+        bars_after_end > bars_before_end,
+        "end() should have flushed tail timers, but bar count unchanged: {bars_after_end}",
+    );
+    assert!(
+        bars_after_end <= 4,
+        "Expected at most 4 bars after end() flush to 20s, found {bars_after_end}",
     );
 }
