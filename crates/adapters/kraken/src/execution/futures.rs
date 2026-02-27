@@ -21,7 +21,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::get_runtime,
+    live::{get_runtime, runner::get_exec_event_sender},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -427,6 +427,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             return Ok(());
         }
 
+        self.emitter.set_sender(get_exec_event_sender());
         self.core.set_started();
 
         log::info!(
@@ -455,6 +456,17 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             return Ok(());
         }
 
+        if !self.core.instruments_initialized() {
+            let instruments = self
+                .http
+                .request_instruments()
+                .await
+                .context("Failed to load Kraken futures instruments")?;
+            log::info!("Loaded {} Futures instruments", instruments.len());
+            self.http.cache_instruments(instruments);
+            self.core.set_instruments_initialized();
+        }
+
         self.ws
             .connect()
             .await
@@ -471,12 +483,21 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
 
         self.ws.set_account_id(self.core.account_id);
 
+        self.spawn_message_handler()?;
+
+        // Always cache to WS handler (reconnect spawns a fresh handler)
+        let instruments: Vec<_> = self
+            .http
+            .instruments_cache
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        self.ws.cache_instruments(instruments);
+
         self.ws
             .subscribe_executions()
             .await
             .context("Failed to subscribe to executions")?;
-
-        self.spawn_message_handler()?;
 
         log::info!("Futures WebSocket authenticated and subscribed to executions");
 
@@ -836,6 +857,9 @@ mod tests {
 
     #[rstest]
     fn test_futures_exec_client_start_stop() {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::set_exec_event_sender(sender);
+
         let config = KrakenExecClientConfig {
             product_type: KrakenProductType::Futures,
             api_key: "test_key".to_string(),

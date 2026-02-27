@@ -33,6 +33,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers BarType/str comparison in get_historical_bars (#3616), thanks @powerseed
 - Fixed Interactive Brokers historical bar processing crash (#3619), thanks @shzhng
 - Fixed Interactive Brokers contract details parsing (#3638), thanks @davidsblom
+- Fixed Kraken Spot and Futures execution clients not loading instruments during connect (#3644), thanks for reporting @husariancom
 - Fixed pre-commit hooks portability for Windows (#3617), thanks for reporting @powerseed
 
 ### Internal Improvements
