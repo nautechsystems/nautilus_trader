@@ -22,6 +22,7 @@
 
 use ahash::AHashMap;
 use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
+use nautilus_common::throttler::RateLimit;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
 use nautilus_model::{
     data::{Data, OrderBookDelta},
@@ -32,16 +33,27 @@ use nautilus_model::{
     types::{Currency, Money, Quantity},
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_testkit::common::{itch_aapl_equity, load_itch_aapl_deltas};
 use nautilus_trading::examples::strategies::{GridMarketMaker, GridMarketMakerConfig};
 use rstest::rstest;
 use tempfile::TempDir;
 
 // Subsample for CI (covers initial snapshot + active trading)
-const CI_DELTA_LIMIT: usize = 100_000;
+const CI_DELTA_LIMIT: usize = 10_000;
 
 fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
-    let config = BacktestEngineConfig::default();
+    // Use an unrestricted throttle rate so the grid MM can place orders freely
+    // without hitting the default 100/sec limit on high-frequency ITCH data.
+    let unlimited = RateLimit::new(1_000_000, 1_000_000_000);
+    let config = BacktestEngineConfig {
+        risk_engine: Some(RiskEngineConfig {
+            max_order_submit: unlimited.clone(),
+            max_order_modify: unlimited,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
     let mut engine = BacktestEngine::new(config).unwrap();
     engine
         .add_venue(

@@ -34,7 +34,7 @@ use ustr::Ustr;
 use crate::{
     actor::{
         Actor,
-        registry::{get_actor_unchecked, register_actor},
+        registry::{get_actor_unchecked, register_actor, try_get_actor_unchecked},
     },
     clock::Clock,
     msgbus::{self, Endpoint, Handler, MStr, ShareableMessageHandler},
@@ -141,7 +141,7 @@ where
             is_limiting: false,
             limit,
             buffer: VecDeque::new(),
-            timestamps: VecDeque::with_capacity(limit),
+            timestamps: VecDeque::with_capacity(limit.min(1024)),
             clock,
             interval,
             timer_name: Ustr::from(&timer_name),
@@ -254,23 +254,28 @@ where
 
     #[inline]
     pub fn limit_msg(&mut self, msg: T) {
-        let callback = if self.output_drop.is_none() {
+        if self.output_drop.is_none() {
             self.buffer.push_front(msg);
             log::debug!("Buffering {}", self.buffer.len());
-            Some(ThrottlerProcess::<T, F>::new(self.actor_id).get_timer_callback())
+
+            if !self.is_limiting {
+                log::debug!("Limiting");
+                let cb = Some(ThrottlerProcess::<T, F>::new(self.actor_id).get_timer_callback());
+                self.set_timer(cb);
+                self.is_limiting = true;
+            }
         } else {
             log::debug!("Dropping");
 
             if let Some(drop) = &self.output_drop {
                 drop(msg);
             }
-            Some(throttler_resume::<T, F>(self.actor_id))
-        };
 
-        if !self.is_limiting {
-            log::debug!("Limiting");
-            self.set_timer(callback);
-            self.is_limiting = true;
+            if !self.is_limiting {
+                log::debug!("Limiting");
+                self.set_timer(Some(throttler_resume::<T, F>(self.actor_id)));
+                self.is_limiting = true;
+            }
         }
     }
 
@@ -282,7 +287,17 @@ where
     {
         self.recv_count += 1;
 
-        if self.is_limiting || self.delta_next() > 0 {
+        let delta = self.delta_next();
+
+        // Auto-reset when the rate window has passed but no timer callback
+        // arrived (e.g. for embedded throttlers not registered as actors).
+        // Gated on an empty buffer so buffered throttlers keep draining via
+        // ThrottlerProcess; only drop-mode throttlers have an empty buffer here.
+        if self.is_limiting && delta == 0 && self.buffer.is_empty() {
+            self.is_limiting = false;
+        }
+
+        if self.is_limiting || delta > 0 {
             self.limit_msg(msg);
         } else {
             self.send_msg(msg);
@@ -357,15 +372,20 @@ where
     }
 }
 
-/// Sets throttler to resume sending messages
+/// Sets throttler to resume sending messages.
+///
+/// Uses `try_get_actor_unchecked` so that embedded throttlers (not registered
+/// in the actor registry) are handled gracefully. The `send()` auto-reset
+/// ensures such throttlers recover once the rate window passes.
 pub fn throttler_resume<T, F>(actor_id: Ustr) -> TimeEventCallback
 where
     T: 'static + Debug,
     F: Fn(T) + 'static,
 {
     TimeEventCallback::from(move |_event: TimeEvent| {
-        let mut throttler = get_actor_unchecked::<Throttler<T, F>>(&actor_id);
-        throttler.is_limiting = false;
+        if let Some(mut throttler) = try_get_actor_unchecked::<Throttler<T, F>>(&actor_id) {
+            throttler.is_limiting = false;
+        }
     })
 }
 

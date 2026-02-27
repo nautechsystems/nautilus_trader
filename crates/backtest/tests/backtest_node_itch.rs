@@ -32,7 +32,10 @@ use nautilus_backtest::{
     },
     node::BacktestNode,
 };
-use nautilus_common::actor::{DataActor, DataActorCore};
+use nautilus_common::{
+    actor::{DataActor, DataActorCore},
+    throttler::RateLimit,
+};
 use nautilus_model::{
     data::QuoteTick,
     enums::{AccountType, BookType, OmsType, OrderSide},
@@ -42,6 +45,7 @@ use nautilus_model::{
     types::{Currency, Quantity},
 };
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_testkit::common::{itch_aapl_equity, load_itch_aapl_deltas};
 use nautilus_trading::{
     Strategy, StrategyConfig, StrategyCore,
@@ -52,7 +56,10 @@ use tempfile::TempDir;
 use ustr::Ustr;
 
 // Subsample for CI (covers initial snapshot + active trading)
-const CI_DELTA_LIMIT: usize = 100_000;
+const CI_DELTA_LIMIT: usize = 50_000;
+// Smaller limit for grid MM tests; order-intensive strategies are much slower
+// than simple one-shot strategies in debug builds.
+const CI_DELTA_LIMIT_GRID_MM: usize = 10_000;
 
 fn create_itch_catalog(quotes: &[QuoteTick], instrument: &InstrumentAny) -> (TempDir, String) {
     let temp_dir = TempDir::new().unwrap();
@@ -283,7 +290,7 @@ fn test_itch_node_streaming() {
 
 #[rstest]
 fn test_itch_node_grid_market_maker() {
-    let deltas = load_itch_aapl_deltas(Some(CI_DELTA_LIMIT));
+    let deltas = load_itch_aapl_deltas(Some(CI_DELTA_LIMIT_GRID_MM));
     let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
     let num_quotes = quotes.len();
     let instrument = itch_aapl_equity();
@@ -291,11 +298,23 @@ fn test_itch_node_grid_market_maker() {
 
     let (_temp_dir, catalog_path) = create_itch_catalog(&quotes, &instrument);
 
+    // Use an unrestricted throttle so the grid MM can place all orders without
+    // hitting the default 100/sec limit on high-frequency ITCH data.
+    let unlimited = RateLimit::new(1_000_000, 1_000_000_000);
+    let engine_config = BacktestEngineConfig {
+        risk_engine: Some(RiskEngineConfig {
+            max_order_submit: unlimited.clone(),
+            max_order_modify: unlimited,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
     let config = BacktestRunConfig::new(
         None,
         vec![xnas_venue_config()],
         vec![quote_data_config(&catalog_path, instrument_id)],
-        BacktestEngineConfig::default(),
+        engine_config,
         None,
         Some(false),
         None,
@@ -329,7 +348,7 @@ fn test_itch_node_grid_market_maker() {
 
 #[rstest]
 fn test_itch_node_streaming_grid_market_maker() {
-    let deltas = load_itch_aapl_deltas(Some(CI_DELTA_LIMIT));
+    let deltas = load_itch_aapl_deltas(Some(CI_DELTA_LIMIT_GRID_MM));
     let quotes = OrderBook::deltas_to_quotes(BookType::L3_MBO, &deltas);
     let num_quotes = quotes.len();
     let instrument = itch_aapl_equity();
@@ -337,12 +356,24 @@ fn test_itch_node_streaming_grid_market_maker() {
 
     let (_temp_dir, catalog_path) = create_itch_catalog(&quotes, &instrument);
 
+    // Use an unrestricted throttle so the grid MM can place all orders without
+    // hitting the default 100/sec limit on high-frequency ITCH data.
+    let unlimited = RateLimit::new(1_000_000, 1_000_000_000);
+    let engine_config = BacktestEngineConfig {
+        risk_engine: Some(RiskEngineConfig {
+            max_order_submit: unlimited.clone(),
+            max_order_modify: unlimited,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
     // Stream in chunks of 1000
     let config = BacktestRunConfig::new(
         None,
         vec![xnas_venue_config()],
         vec![quote_data_config(&catalog_path, instrument_id)],
-        BacktestEngineConfig::default(),
+        engine_config,
         Some(1000),
         Some(false),
         None,
