@@ -22,14 +22,14 @@ use super::log_not_implemented;
 use crate::messages::data::{
     RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestForwardPrices,
     RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
-    SubscribeBars,
-    SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates,
-    SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-    SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-    SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-    UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-    UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-    UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+    SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData,
+    SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+    SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks,
+    SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
+    UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+    UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+    UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
+    UnsubscribeTrades,
 };
 #[cfg(feature = "defi")]
 use crate::messages::defi::{

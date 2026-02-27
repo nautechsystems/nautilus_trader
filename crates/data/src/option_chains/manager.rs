@@ -100,6 +100,7 @@ impl OptionChainManager {
         let instruments = Self::resolve_instruments(&cache, &series_id);
 
         let mut tracker = AtmTracker::new(resolved_atm_source);
+
         if let Some(price) = initial_atm_price {
             tracker.set_initial_price(price);
             log::info!("Pre-populated ATM with forward price: {price}");
@@ -518,6 +519,7 @@ impl OptionChainManager {
         if self.bootstrapped {
             return;
         }
+
         if self.aggregator.atm_tracker().atm_price().is_none() {
             return;
         }
@@ -622,6 +624,7 @@ impl OptionChainManager {
             let topic = switchboard::get_quotes_topic(instrument_id);
             msgbus::subscribe_quotes(topic.into(), qh, Some(self.msgbus_priority));
         }
+
         if let Some(gh) = self.greeks_handlers.first().cloned() {
             let topic = switchboard::get_option_greeks_topic(instrument_id);
             msgbus::subscribe_option_greeks(topic.into(), gh, Some(self.msgbus_priority));
@@ -676,6 +679,7 @@ impl OptionChainManager {
                 msgbus::unsubscribe_quotes(switchboard::get_quotes_topic(*id).into(), qh);
             }
         }
+
         if let Some(gh) = self.greeks_handlers.first() {
             for id in &action.remove {
                 msgbus::unsubscribe_option_greeks(
@@ -695,6 +699,7 @@ impl OptionChainManager {
                 );
             }
         }
+
         if let Some(gh) = self.greeks_handlers.first().cloned() {
             for id in &action.add {
                 msgbus::subscribe_option_greeks(
@@ -751,6 +756,7 @@ impl OptionChainManager {
             let Some(expiration) = instrument.expiration_ns() else {
                 continue;
             };
+
             if expiration != series_id.expiration_ns {
                 continue;
             }

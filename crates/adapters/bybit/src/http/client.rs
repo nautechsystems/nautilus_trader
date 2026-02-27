@@ -64,8 +64,8 @@ use super::{
         BybitOrderHistoryResponse, BybitOrderbookResponse, BybitPlaceOrderResponse,
         BybitPositionListResponse, BybitServerTimeResponse, BybitSetLeverageResponse,
         BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSwitchModeResponse,
-        BybitTickerData, BybitTickerOption, BybitTickersOptionResponse,
-        BybitTradeHistoryResponse, BybitTradesResponse, BybitWalletBalanceResponse,
+        BybitTickerData, BybitTickerOption, BybitTickersOptionResponse, BybitTradeHistoryResponse,
+        BybitTradesResponse, BybitWalletBalanceResponse,
     },
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,

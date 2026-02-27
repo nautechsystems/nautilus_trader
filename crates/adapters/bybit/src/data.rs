@@ -33,15 +33,14 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, BookResponse, DataResponse, ForwardPricesResponse,
-            FundingRatesResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
-            RequestBookSnapshot, RequestForwardPrices, RequestFundingRates, RequestInstrument,
-            RequestInstruments, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
-            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
-            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, DataResponse, ForwardPricesResponse, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
+            RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeMarkPrices,
+            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -1454,6 +1453,7 @@ impl DataClient for BybitDataClient {
                                 } else {
                                     t.symbol.to_string()
                                 };
+
                                 if !seen_expiries.insert(expiry_key) {
                                     return None;
                                 }
@@ -1489,6 +1489,7 @@ impl DataClient for BybitDataClient {
                         ts,
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send forward prices response: {e}");
                     }

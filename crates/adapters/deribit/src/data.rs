@@ -1666,6 +1666,7 @@ impl DataClient for DeribitDataClient {
                         ts,
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send forward prices response: {e}");
                     }

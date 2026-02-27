@@ -1626,6 +1626,7 @@ impl DataEngine {
                     );
                     return Some(AtmSource::IndexPrice(perp.id));
                 }
+
                 if fallback.is_none() {
                     fallback = Some(perp.id);
                 }
@@ -1751,7 +1752,6 @@ impl DataEngine {
                 // No separate ATM source subscription to unsubscribe
             }
         }
-
     }
 
     fn maintain_book_updater(&mut self, instrument_id: &InstrumentId, _topics: &[MStr<Topic>]) {

@@ -385,6 +385,7 @@ mod tests {
             strikes_above: 5,
             strikes_below: 5,
         };
+
         if let StrikeRange::AtmRelative {
             strikes_above,
             strikes_below,

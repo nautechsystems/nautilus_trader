@@ -238,6 +238,7 @@ impl OptionChainAggregator {
         if !self.active_ids.contains(&quote.instrument_id) {
             return;
         }
+
         if let Some(&(strike, kind)) = self.instruments.get(&quote.instrument_id) {
             // Track max ts_event across all quotes
             if quote.ts_event > self.max_ts_event {
@@ -274,6 +275,7 @@ impl OptionChainAggregator {
         if !self.active_ids.contains(&greeks.instrument_id) {
             return;
         }
+
         if let Some(&(strike, kind)) = self.instruments.get(&greeks.instrument_id) {
             let buffer = match kind {
                 OptionKind::Call => &mut self.call_buffer,
@@ -415,6 +417,7 @@ impl OptionChainAggregator {
                 if direction > 0.0 && atm_f < threshold {
                     return None;
                 }
+
                 if direction < 0.0 && atm_f > threshold {
                     return None;
                 }

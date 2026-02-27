@@ -1658,10 +1658,7 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails.
-    pub async fn request_ticker(
-        &self,
-        instrument_name: &str,
-    ) -> anyhow::Result<DeribitTicker> {
+    pub async fn request_ticker(&self, instrument_name: &str) -> anyhow::Result<DeribitTicker> {
         let params = GetTickerParams {
             instrument_name: instrument_name.to_string(),
         };
