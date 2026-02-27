@@ -10,7 +10,7 @@ node operations, execution reconciliation, and the differences between backtesti
 
 This guide provides an overview of the key aspects of live trading.
 
-:::danger **Jupyter notebooks not recommended for live trading**
+:::danger[Jupyter notebooks not recommended for live trading]
 Running live trading nodes in Jupyter notebooks is **not recommended** due to event loop conflicts and operational risks:
 
 - Jupyter runs its own asyncio event loop, which conflicts with `TradingNode`'s event loop management.
@@ -21,14 +21,14 @@ Running live trading nodes in Jupyter notebooks is **not recommended** due to ev
 Use Jupyter notebooks for backtesting, analysis, and experimentation. For live trading, run your trading nodes as standalone Python scripts or services with proper process management.
 :::
 
-:::warning **One TradingNode per process**
+:::warning[One TradingNode per process]
 Running multiple `TradingNode` instances concurrently in the same process is not supported due to global singleton state.
 Add multiple strategies to a single node, or run additional nodes in separate processes for parallel execution.
 
 See [Processes and threads](architecture.md#processes-and-threads) for details.
 :::
 
-:::warning **Do not block the event loop**
+:::warning[Do not block the event loop]
 User code running on the event loop thread (strategy callbacks, actor handlers, and `on_event`
 methods) should return as quickly as possible. This applies to both Python and Rust implementations.
 Expensive operations such as model inference, heavy calculations, or synchronous I/O can degrade
@@ -36,7 +36,7 @@ performance and compromise correctness (missed fills, stale data, delayed order 
 Offload long-running work to an executor, or to a separate thread/process.
 :::
 
-:::info **Platform differences**
+:::info[Platform differences]
 Windows signal handling differs from Unix-like systems. If you are running on Windows, please read
 the note on [Windows signal handling](#windows-signal-handling) for guidance on graceful shutdown
 behavior and Ctrl+C (SIGINT) support.

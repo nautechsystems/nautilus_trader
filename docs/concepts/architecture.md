@@ -622,7 +622,7 @@ library, or from third party library dependencies.
 
 ### Processes and threads
 
-:::warning **One node per process**
+:::warning[One node per process]
 Running multiple `TradingNode` or `BacktestNode` instances **concurrently** in the same process is not supported due to global singleton state:
 
 - **Backtest force-stop flag** - The `_FORCE_STOP` global flag is shared across all engines in the process.
