@@ -94,8 +94,8 @@ use crate::{
         consts::{OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID, should_retry_error_code},
         credential::Credential,
         enums::{
-            OKXAlgoOrderType, OKXContractType, OKXInstrumentStatus, OKXInstrumentType,
-            OKXOrderStatus, OKXPositionMode, OKXSide, OKXTradeMode, OKXTriggerType,
+            OKXContractType, OKXInstrumentStatus, OKXInstrumentType, OKXOrderStatus,
+            OKXPositionMode, OKXSide, OKXTradeMode, OKXTriggerType, conditional_order_to_algo_type,
         },
         models::OKXInstrument,
         parse::{
@@ -2522,11 +2522,13 @@ impl OKXHttpClient {
             }
         }
 
+        // Keep the most recent N bars when limit is specified
         if let Some(lim) = limit
             && lim > 0
             && out.len() > lim as usize
         {
-            out.truncate(lim as usize);
+            let start = out.len() - lim as usize;
+            out.drain(..start);
         }
 
         Ok(out)
@@ -3057,6 +3059,39 @@ impl OKXHttpClient {
             .await
     }
 
+    /// Cancels advance algo orders (trailing stop, iceberg, TWAP) via HTTP.
+    ///
+    /// These order types cannot use the standard `cancel-algos` endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-cancel-advance-algo-order>
+    pub async fn cancel_advance_algo_orders(
+        &self,
+        requests: Vec<OKXCancelAlgoOrderRequest>,
+    ) -> Result<Vec<OKXCancelAlgoOrderResponse>, OKXHttpError> {
+        if requests.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let body =
+            serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+
+        self.inner
+            .send_request::<_, ()>(
+                Method::POST,
+                "/api/v5/trade/cancel-advance-algos",
+                None,
+                Some(body),
+                true,
+            )
+            .await
+    }
+
     /// Places an algo order using domain types.
     ///
     /// This is a convenience method that accepts Nautilus domain types
@@ -3074,10 +3109,13 @@ impl OKXHttpClient {
         order_side: OrderSide,
         order_type: OrderType,
         quantity: Quantity,
-        trigger_price: Price,
+        trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
         limit_price: Option<Price>,
         reduce_only: Option<bool>,
+        callback_ratio: Option<String>,
+        callback_spread: Option<String>,
+        activation_price: Option<Price>,
     ) -> Result<OKXPlaceAlgoOrderResponse, OKXHttpError> {
         if !matches!(order_side, OrderSide::Buy | OrderSide::Sell) {
             return Err(OKXHttpError::ValidationError(
@@ -3085,6 +3123,8 @@ impl OKXHttpClient {
             ));
         }
         let okx_side: OKXSide = order_side.into();
+        let algo_type = conditional_order_to_algo_type(order_type)
+            .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
 
         // Map trigger type to OKX format
         let trigger_px_type_enum = trigger_type.map_or(OKXTriggerType::Last, Into::into);
@@ -3092,6 +3132,9 @@ impl OKXHttpClient {
         // Determine order price based on order type
         let order_px = if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched) {
             limit_price.map(|p| p.to_string())
+        } else if order_type == OrderType::TrailingStopMarket {
+            // Trailing stops always execute as market when triggered
+            None
         } else {
             // Market orders use -1 to indicate market execution
             Some("-1".to_string())
@@ -3102,17 +3145,20 @@ impl OKXHttpClient {
             inst_id_code: None,
             td_mode,
             side: okx_side,
-            ord_type: OKXAlgoOrderType::Trigger, // All conditional orders use 'trigger' type
+            ord_type: algo_type,
             sz: quantity.to_string(),
             algo_cl_ord_id: Some(client_order_id.as_str().to_string()),
-            trigger_px: Some(trigger_price.to_string()),
+            trigger_px: trigger_price.map(|p| p.to_string()),
             order_px,
             trigger_px_type: Some(trigger_px_type_enum),
-            tgt_ccy: None,  // Let OKX determine based on instrument
-            pos_side: None, // Use default position side
+            tgt_ccy: None,
+            pos_side: None,
             close_position: None,
             tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
             reduce_only,
+            callback_ratio,
+            callback_spread,
+            active_px: activation_price.map(|p| p.to_string()),
         };
 
         self.place_algo_order(request).await
@@ -3357,6 +3403,9 @@ fn parse_http_algo_order(
         u_time: order.u_time,
         trigger_time: order.trigger_time.clone(),
         tag: order.tag.clone(),
+        callback_ratio: order.callback_ratio.clone(),
+        callback_spread: order.callback_spread.clone(),
+        active_px: order.active_px.clone(),
     };
 
     parse_algo_order_status_report(&msg, instrument, account_id, ts_init)

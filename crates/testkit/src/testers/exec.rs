@@ -29,7 +29,7 @@ use nautilus_common::{
 use nautilus_core::{Params, UnixNanos, datetime::secs_to_nanos_unchecked};
 use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{BookType, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{BookType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{ClientId, InstrumentId, StrategyId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -96,6 +96,10 @@ pub struct ExecTesterConfig {
     pub stop_trigger_type: TriggerType,
     /// Override time in force for stop orders (None uses GTC/GTD logic).
     pub stop_time_in_force: Option<TimeInForce>,
+    /// Trailing offset for TRAILING_STOP_MARKET orders.
+    pub trailing_offset: Option<Decimal>,
+    /// Trailing offset type (BasisPoints or Price).
+    pub trailing_offset_type: TrailingOffsetType,
     /// Enable bracket orders (entry with TP/SL).
     pub enable_brackets: bool,
     /// Entry order type for bracket orders.
@@ -185,6 +189,8 @@ impl ExecTesterConfig {
             stop_limit_offset_ticks: None,
             stop_trigger_type: TriggerType::Default,
             stop_time_in_force: None,
+            trailing_offset: None,
+            trailing_offset_type: TrailingOffsetType::BasisPoints,
             enable_brackets: false,
             bracket_entry_order_type: OrderType::Limit,
             bracket_offset_ticks: 500,
@@ -397,6 +403,18 @@ impl ExecTesterConfig {
         self.stop_time_in_force = tif;
         self
     }
+
+    #[must_use]
+    pub fn with_trailing_offset(mut self, offset: Decimal) -> Self {
+        self.trailing_offset = Some(offset);
+        self
+    }
+
+    #[must_use]
+    pub fn with_trailing_offset_type(mut self, offset_type: TrailingOffsetType) -> Self {
+        self.trailing_offset_type = offset_type;
+        self
+    }
 }
 
 impl Default for ExecTesterConfig {
@@ -429,6 +447,8 @@ impl Default for ExecTesterConfig {
             stop_limit_offset_ticks: None,
             stop_trigger_type: TriggerType::Default,
             stop_time_in_force: None,
+            trailing_offset: None,
+            trailing_offset_type: TrailingOffsetType::BasisPoints,
             enable_brackets: false,
             bracket_entry_order_type: OrderType::Limit,
             bracket_offset_ticks: 500,
@@ -813,7 +833,9 @@ impl ExecTester {
         let client_id = self.config.client_id;
 
         match &order {
-            OrderAny::StopMarket(_) | OrderAny::MarketIfTouched(_) => {
+            OrderAny::StopMarket(_)
+            | OrderAny::MarketIfTouched(_)
+            | OrderAny::TrailingStopMarket(_) => {
                 self.modify_order(order, None, None, Some(trigger_price), client_id)
             }
             OrderAny::StopLimit(_) | OrderAny::LimitIfTouched(_) => {
@@ -1293,6 +1315,32 @@ impl ExecTester {
                     None, // reduce_only
                     Some(self.config.use_quote_quantity),
                     self.config.order_display_qty,
+                    self.config.emulation_trigger,
+                    None, // trigger_instrument_id
+                    None, // exec_algorithm_id
+                    None, // exec_algorithm_params
+                    None, // tags
+                    None, // client_order_id
+                )
+            }
+            OrderType::TrailingStopMarket => {
+                let Some(trailing_offset) = self.config.trailing_offset else {
+                    anyhow::bail!("TRAILING_STOP_MARKET order requires trailing_offset config");
+                };
+                factory.trailing_stop_market(
+                    self.config.instrument_id,
+                    order_side,
+                    quantity,
+                    trailing_offset,
+                    Some(self.config.trailing_offset_type),
+                    Some(trigger_price),
+                    None, // trigger_price (activation_price used as trigger)
+                    Some(self.config.stop_trigger_type),
+                    Some(time_in_force),
+                    expire_time,
+                    None, // reduce_only
+                    Some(self.config.use_quote_quantity),
+                    None, // display_qty
                     self.config.emulation_trigger,
                     None, // trigger_instrument_id
                     None, // exec_algorithm_id

@@ -21,11 +21,7 @@ pub use nautilus_core::serialization::{
     deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
     deserialize_optional_string_to_u64, deserialize_string_to_u64,
 };
-use nautilus_core::{
-    UUID4,
-    datetime::{NANOSECONDS_IN_MILLISECOND, millis_to_nanos_unchecked},
-    nanos::UnixNanos,
-};
+use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
@@ -52,7 +48,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use ustr::Ustr;
 
@@ -691,7 +687,7 @@ pub fn parse_order_status_report(
     if !order.avg_px.is_empty()
         && let Ok(decimal) = Decimal::from_str(&order.avg_px)
     {
-        report = report.with_avg_px(decimal.to_f64().unwrap_or(0.0))?;
+        report.avg_px = Some(decimal);
     }
 
     if order.ord_type == OKXOrderType::PostOnly {
@@ -1642,8 +1638,8 @@ pub fn parse_futures_instrument(
     let expiry_time = definition
         .exp_time
         .ok_or_else(|| anyhow::anyhow!("`exp_time` is required for {}", definition.inst_id))?;
-    let activation_ns = UnixNanos::from(millis_to_nanos_unchecked(listing_time as f64));
-    let expiration_ns = UnixNanos::from(millis_to_nanos_unchecked(expiry_time as f64));
+    let activation_ns = parse_millisecond_timestamp(listing_time);
+    let expiration_ns = parse_millisecond_timestamp(expiry_time);
 
     if definition.tick_sz.is_empty() {
         anyhow::bail!("`tick_sz` is empty for {}", definition.inst_id);
@@ -1738,8 +1734,8 @@ pub fn parse_option_instrument(
     let expiry_time = definition
         .exp_time
         .ok_or_else(|| anyhow::anyhow!("`exp_time` is required for {}", definition.inst_id))?;
-    let activation_ns = UnixNanos::from(millis_to_nanos_unchecked(listing_time as f64));
-    let expiration_ns = UnixNanos::from(millis_to_nanos_unchecked(expiry_time as f64));
+    let activation_ns = parse_millisecond_timestamp(listing_time);
+    let expiration_ns = parse_millisecond_timestamp(expiry_time);
 
     if definition.tick_sz.is_empty() {
         anyhow::bail!("`tick_sz` is empty for {}", definition.inst_id);
@@ -1907,7 +1903,7 @@ pub fn parse_account_state(
     let account_type = AccountType::Margin;
     let is_reported = true;
     let event_id = UUID4::new();
-    let ts_event = UnixNanos::from(millis_to_nanos_unchecked(okx_account.u_time as f64));
+    let ts_event = parse_millisecond_timestamp(okx_account.u_time);
 
     Ok(AccountState::new(
         account_id,

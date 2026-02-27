@@ -22,7 +22,7 @@ use nautilus_model::enums::{
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
-use crate::common::consts::OKX_CONDITIONAL_ORDER_TYPES;
+use crate::common::consts::{OKX_ADVANCE_ALGO_ORDER_TYPES, OKX_CONDITIONAL_ORDER_TYPES};
 
 /// Represents the type of book action.
 #[derive(
@@ -579,6 +579,7 @@ pub enum OKXTakeProfitKind {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     PartialEq,
     Eq,
@@ -591,6 +592,7 @@ pub enum OKXTakeProfitKind {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum OKXTriggerType {
+    #[default]
     #[serde(rename = "")]
     None,
     Last,
@@ -813,7 +815,8 @@ impl From<OrderType> for OKXOrderType {
             OrderType::StopMarket
             | OrderType::StopLimit
             | OrderType::MarketIfTouched
-            | OrderType::LimitIfTouched => {
+            | OrderType::LimitIfTouched
+            | OrderType::TrailingStopMarket => {
                 panic!("Conditional order types must use OKXAlgoOrderType")
             }
             _ => panic!("Invalid `OrderType` cannot be represented on OKX"),
@@ -860,6 +863,11 @@ pub fn is_conditional_order(order_type: OrderType) -> bool {
     OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type)
 }
 
+/// Helper to determine if an order type requires the advance algo cancel endpoint.
+pub fn is_advance_algo_order(order_type: OrderType) -> bool {
+    OKX_ADVANCE_ALGO_ORDER_TYPES.contains(&order_type)
+}
+
 /// Converts Nautilus conditional order types to OKX algo order type.
 ///
 /// # Errors
@@ -871,6 +879,7 @@ pub fn conditional_order_to_algo_type(order_type: OrderType) -> anyhow::Result<O
         | OrderType::StopLimit
         | OrderType::MarketIfTouched
         | OrderType::LimitIfTouched => Ok(OKXAlgoOrderType::Trigger),
+        OrderType::TrailingStopMarket => Ok(OKXAlgoOrderType::MoveOrderStop),
         _ => anyhow::bail!("Not a conditional order type: {order_type:?}"),
     }
 }

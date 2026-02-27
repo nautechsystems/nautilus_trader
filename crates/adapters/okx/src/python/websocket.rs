@@ -823,6 +823,38 @@ impl OKXWebSocketClient {
         })
     }
 
+    #[pyo3(name = "subscribe_algo_advance")]
+    fn py_subscribe_algo_advance<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_algo_advance(instrument_type).await {
+                log::error!("Failed to subscribe to algo-advance '{instrument_type}': {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_algo_advance")]
+    fn py_unsubscribe_algo_advance<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_algo_advance(instrument_type).await {
+                log::error!("Failed to unsubscribe from algo-advance '{instrument_type}': {e}");
+            }
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "subscribe_fills")]
     fn py_subscribe_fills<'py>(
         &self,

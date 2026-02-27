@@ -167,8 +167,8 @@ pub enum OKXWsChannel {
     Fills,
     #[serde(rename = "orders-algo")]
     OrdersAlgo,
-    // #[display(fmt = "algo-advance")]
-    // AlgoAdvance,
+    #[serde(rename = "algo-advance")]
+    AlgoAdvance,
     // #[display(fmt = "liquidation-warning")]
     // LiquidationWarning,
     // #[display(fmt = "account-greeks")]

@@ -342,6 +342,10 @@ impl DataClient for OKXDataClient {
             return Ok(());
         }
 
+        // Create fresh token so tasks from a previous connection cycle are not
+        // immediately cancelled (the old token may already be in cancelled state)
+        self.cancellation_token = CancellationToken::new();
+
         let instrument_types = if self.config.instrument_types.is_empty() {
             vec![OKXInstrumentType::Spot]
         } else {

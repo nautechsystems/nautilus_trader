@@ -31,6 +31,7 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -44,6 +45,7 @@ from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.orders import StopLimitOrder
 from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.model.orders import TrailingStopMarketOrder
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -82,6 +84,8 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     stop_limit_offset_ticks: PositiveInt | None = None
     stop_trigger_type: TriggerType | str | None = None
     stop_time_in_force: TimeInForce | None = None
+    trailing_offset: Decimal | None = None
+    trailing_offset_type: TrailingOffsetType = TrailingOffsetType.BASIS_POINTS
     enable_brackets: bool = False
     bracket_entry_order_type: OrderType = OrderType.LIMIT
     bracket_offset_ticks: PositiveInt = 500
@@ -652,6 +656,23 @@ class ExecTester(Strategy):
                 display_qty=display_qty,
                 emulation_trigger=emulation_trigger,
             )
+        elif self.config.stop_order_type == OrderType.TRAILING_STOP_MARKET:
+            if self.config.trailing_offset is None:
+                self.log.error("TRAILING_STOP_MARKET order requires trailing_offset config")
+                return None
+            return self.order_factory.trailing_stop_market(
+                instrument_id=self.config.instrument_id,
+                order_side=order_side,
+                quantity=self.instrument.make_qty(self.config.order_qty),
+                trailing_offset=self.config.trailing_offset,
+                trailing_offset_type=self.config.trailing_offset_type,
+                activation_price=trigger_price,
+                trigger_type=trigger_type,
+                time_in_force=time_in_force,
+                expire_time=expire_time,
+                quote_quantity=self.config.use_quote_quantity,
+                emulation_trigger=emulation_trigger,
+            )
         else:
             self.log.error(f"Unknown stop order type: {self.config.stop_order_type}")
             return None
@@ -753,7 +774,11 @@ class ExecTester(Strategy):
     def get_order_trigger_price(self, order: Order) -> Price | None:
         if isinstance(
             order,
-            StopMarketOrder | StopLimitOrder | MarketIfTouchedOrder | LimitIfTouchedOrder,
+            StopMarketOrder
+            | StopLimitOrder
+            | MarketIfTouchedOrder
+            | LimitIfTouchedOrder
+            | TrailingStopMarketOrder,
         ):
             return order.trigger_price
         return None
@@ -764,8 +789,7 @@ class ExecTester(Strategy):
         trigger_price: Price,
         limit_price: Price | None = None,
     ) -> None:
-        if isinstance(order, StopMarketOrder | MarketIfTouchedOrder):
-            # Market-type stops only have trigger price
+        if isinstance(order, StopMarketOrder | MarketIfTouchedOrder | TrailingStopMarketOrder):
             self.modify_order(order, trigger_price=trigger_price)
         elif isinstance(order, StopLimitOrder | LimitIfTouchedOrder):
             # Limit-type stops have both trigger and limit price

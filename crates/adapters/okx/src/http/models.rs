@@ -541,7 +541,7 @@ pub struct OKXOrderAlgo {
     /// Instrument type.
     pub inst_type: OKXInstrumentType,
     /// Algo order type.
-    pub ord_type: OKXOrderType,
+    pub ord_type: OKXAlgoOrderType,
     /// Current order state.
     pub state: OKXOrderStatus,
     /// Order side.
@@ -588,6 +588,15 @@ pub struct OKXOrderAlgo {
     /// Optional tag supplied during submission.
     #[serde(default)]
     pub tag: String,
+    /// Callback price ratio for trailing stop (e.g. "0.01" for 1%).
+    #[serde(default)]
+    pub callback_ratio: String,
+    /// Callback price spread for trailing stop (absolute distance).
+    #[serde(default)]
+    pub callback_spread: String,
+    /// Activation price for trailing stop.
+    #[serde(default)]
+    pub active_px: String,
 }
 
 /// Represents a transaction detail (fill) from `GET /api/v5/trade/fills`.
@@ -740,6 +749,18 @@ pub struct OKXPlaceAlgoOrderRequest {
     /// Whether it's a reduce-only order.
     #[serde(rename = "reduceOnly", skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
+    /// Callback rate for trailing stop (e.g., "0.01" for 1%). Either this or
+    /// `callback_spread` is required for `move_order_stop` orders.
+    #[serde(rename = "callbackRatio", skip_serializing_if = "Option::is_none")]
+    pub callback_ratio: Option<String>,
+    /// Callback spread for trailing stop (fixed price distance). Either this or
+    /// `callback_ratio` is required for `move_order_stop` orders.
+    #[serde(rename = "callbackSpread", skip_serializing_if = "Option::is_none")]
+    pub callback_spread: Option<String>,
+    /// Activation price for trailing stop. If empty, the trailing stop
+    /// activates immediately when placed.
+    #[serde(rename = "activePx", skip_serializing_if = "Option::is_none")]
+    pub active_px: Option<String>,
 }
 
 /// Represents the response from `POST /api/v5/trade/order-algo` (place algo order).
@@ -858,6 +879,9 @@ mod tests {
             close_position: None,
             tag: None,
             reduce_only: None,
+            callback_ratio: None,
+            callback_spread: None,
+            active_px: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -895,6 +919,9 @@ mod tests {
             close_position: None,
             tag: None,
             reduce_only: Some(true),
+            callback_ratio: None,
+            callback_spread: None,
+            active_px: None,
         };
 
         // OKX expects an array of requests

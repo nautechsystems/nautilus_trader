@@ -30,7 +30,9 @@ from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -217,15 +219,15 @@ config_tester = ExecTesterConfig(
     # subscribe_quotes=False,
     # subscribe_trades=False,
     # subscribe_book=True,
-    enable_limit_buys=True,
-    enable_limit_sells=enable_limit_sells,
-    open_position_on_start_qty=order_qty,
-    open_position_time_in_force=TimeInForce.IOC,
+    enable_limit_buys=False,
+    enable_limit_sells=False,
+    # open_position_on_start_qty=order_qty,
+    # open_position_time_in_force=TimeInForce.IOC,
     # tob_offset_ticks=0,
     # stop_offset_ticks=1,
     order_qty=order_qty,
     # modify_orders_to_maintain_tob_offset=True,
-    use_post_only=True,
+    # use_post_only=True,
     use_quote_quantity=use_quote_quantity,
     # enable_stop_buys=True,
     # enable_stop_sells=True,
@@ -233,6 +235,12 @@ config_tester = ExecTesterConfig(
     # stop_trigger_type=TriggerType.LAST_PRICE,
     # stop_offset_ticks=50,  # Offset from current price for stop trigger
     # stop_limit_offset_ticks=10,  # Additional offset for STOP_LIMIT orders
+    enable_stop_sells=True,
+    stop_order_type=OrderType.TRAILING_STOP_MARKET,
+    stop_trigger_type=TriggerType.LAST_PRICE,
+    trailing_offset=Decimal(100),  # 1% callback ratio in basis points
+    trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
+    stop_offset_ticks=50,  # Activation price offset from current market
     # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,
     # use_individual_cancels_on_stop=True,
