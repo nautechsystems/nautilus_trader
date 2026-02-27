@@ -27,8 +27,9 @@ use ahash::AHashSet;
 use nautilus_common::{
     clients::{DataClient, log_command_error},
     messages::data::{
-        RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
-        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
+        RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
+        RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
+        RequestQuotes, RequestTrades, SubscribeBars,
         SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData,
         SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
         SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
@@ -714,6 +715,15 @@ impl DataClientAdapter {
     /// Returns an error if the client fails to process the trades request.
     pub fn request_funding_rates(&self, req: RequestFundingRates) -> anyhow::Result<()> {
         self.client.request_funding_rates(req)
+    }
+
+    /// Sends a forward prices request for derivatives instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to process the forward prices request.
+    pub fn request_forward_prices(&self, req: RequestForwardPrices) -> anyhow::Result<()> {
+        self.client.request_forward_prices(req)
     }
 
     /// Sends a bars request for a given instrument and bar type.

@@ -32,12 +32,12 @@ pub mod unsubscribe;
 // Re-exports
 pub use option_chain::{SubscribeOptionChain, UnsubscribeOptionChain};
 pub use request::{
-    RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
-    RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+    RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestForwardPrices,
+    RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
 };
 pub use response::{
-    BarsResponse, BookResponse, CustomDataResponse, FundingRatesResponse, InstrumentResponse,
-    InstrumentsResponse, QuotesResponse, TradesResponse,
+    BarsResponse, BookResponse, CustomDataResponse, ForwardPricesResponse, FundingRatesResponse,
+    InstrumentResponse, InstrumentsResponse, QuotesResponse, TradesResponse,
 };
 pub use subscribe::{
     SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
@@ -369,6 +369,7 @@ pub enum RequestCommand {
     Quotes(RequestQuotes),
     Trades(RequestTrades),
     FundingRates(RequestFundingRates),
+    ForwardPrices(RequestForwardPrices),
     Bars(RequestBars),
 }
 
@@ -394,6 +395,7 @@ impl RequestCommand {
             Self::Quotes(cmd) => &cmd.request_id,
             Self::Trades(cmd) => &cmd.request_id,
             Self::FundingRates(cmd) => &cmd.request_id,
+            Self::ForwardPrices(cmd) => &cmd.request_id,
             Self::Bars(cmd) => &cmd.request_id,
         }
     }
@@ -408,6 +410,7 @@ impl RequestCommand {
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
             Self::FundingRates(cmd) => cmd.client_id.as_ref(),
+            Self::ForwardPrices(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
         }
     }
@@ -422,6 +425,7 @@ impl RequestCommand {
             Self::Quotes(cmd) => Some(&cmd.instrument_id.venue),
             Self::Trades(cmd) => Some(&cmd.instrument_id.venue),
             Self::FundingRates(cmd) => Some(&cmd.instrument_id.venue),
+            Self::ForwardPrices(cmd) => Some(&cmd.venue),
             // TODO: Extract the below somewhere
             Self::Bars(cmd) => match &cmd.bar_type {
                 BarType::Standard { instrument_id, .. } => Some(&instrument_id.venue),
@@ -440,6 +444,7 @@ impl RequestCommand {
             Self::Quotes(cmd) => cmd.ts_init,
             Self::Trades(cmd) => cmd.ts_init,
             Self::FundingRates(cmd) => cmd.ts_init,
+            Self::ForwardPrices(cmd) => cmd.ts_init,
             Self::Bars(cmd) => cmd.ts_init,
         }
     }
@@ -454,6 +459,7 @@ pub enum DataResponse {
     Quotes(QuotesResponse),
     Trades(TradesResponse),
     FundingRates(FundingRatesResponse),
+    ForwardPrices(ForwardPricesResponse),
     Bars(BarsResponse),
 }
 
@@ -472,6 +478,7 @@ impl DataResponse {
             Self::Quotes(resp) => &resp.correlation_id,
             Self::Trades(resp) => &resp.correlation_id,
             Self::FundingRates(resp) => &resp.correlation_id,
+            Self::ForwardPrices(resp) => &resp.correlation_id,
             Self::Bars(resp) => &resp.correlation_id,
         }
     }

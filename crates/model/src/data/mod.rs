@@ -22,6 +22,7 @@ pub mod close;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
+pub mod forward;
 pub mod funding;
 pub mod greeks;
 pub mod option_chain;
@@ -53,6 +54,7 @@ pub use close::InstrumentClose;
 pub use delta::OrderBookDelta;
 pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
 pub use depth::{DEPTH10_LEN, OrderBookDepth10};
+pub use forward::ForwardPrice;
 pub use funding::FundingRateUpdate;
 pub use greeks::{
     BlackScholesGreeksResult, GreeksData, HasGreeks, OptionGreekValues, PortfolioGreeks,

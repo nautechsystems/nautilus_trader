@@ -29,20 +29,6 @@ use crate::{
     types::Price,
 };
 
-/// Forward/underlying price for a single option instrument from an exchange.
-///
-/// This is the payload type adapters produce in response to `DataType("OptionForwardPrices")`.
-/// The DataEngine extracts it via `downcast_ref::<Vec<OptionForwardPrice>>()`.
-#[derive(Clone, Debug)]
-pub struct OptionForwardPrice {
-    /// Nautilus instrument ID (e.g. `BTC-28MAR25-90000-C.DERIBIT`).
-    pub instrument_id: InstrumentId,
-    /// The forward/underlying price used for ATM determination.
-    pub underlying_price: f64,
-    /// The underlying index name (e.g. "SYN.BTC-28MAR25"). Exchange-specific metadata.
-    pub underlying_index: Option<String>,
-}
-
 /// Defines which strikes to include in an option chain subscription.
 #[derive(Clone, Debug, PartialEq)]
 pub enum StrikeRange {
