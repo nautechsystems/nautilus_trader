@@ -163,7 +163,7 @@ impl DataActor for OptionChainTester {
         };
 
         // Snapshot every 5 seconds
-        let snapshot_interval_ms = 5_000;
+        let snapshot_interval_ms = 2_000;
 
         let client_id = self.client_id;
         self.subscribe_option_chain(
