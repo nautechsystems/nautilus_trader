@@ -21,7 +21,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed matching engine applying order book deltas for L1 books (#3615), thanks @maksym-mikheienko
 - Fixed streaming backtest producing dummy bars past batch data exhaustion (#3628), thanks for reporting @cauta
-- Fixed pre-commit hooks portability for Windows (#3617), thanks for reporting @powerseed
+- Fixed `OrderEmulator` trailing stop activation ignoring `LAST_PRICE` trigger type (#3629), thanks for reporting @HaakonFlaaronning
 - Fixed `LiveExecEngine` position reconciliation infinite loop when venue reports flat (#3622), thanks for reporting @mrbaron3
 - Fixed `CryptoOption` instrument pyo3 transform for (#3626), thanks @davidsblom
 - Fixed `StreamingFeatherWriter` duplicate events from multiple message bus topics (#3625), thanks for reporting @fomotoshi
@@ -33,6 +33,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers BarType/str comparison in get_historical_bars (#3616), thanks @powerseed
 - Fixed Interactive Brokers historical bar processing crash (#3619), thanks @shzhng
 - Fixed Interactive Brokers contract details parsing (#3638), thanks @davidsblom
+- Fixed pre-commit hooks portability for Windows (#3617), thanks for reporting @powerseed
 
 ### Internal Improvements
 - Added catalog deduplication functionality (#3613), thanks @ms32035

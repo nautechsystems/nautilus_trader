@@ -927,13 +927,18 @@ cdef class OrderEmulator(Actor):
                 # NOTE
                 # The activation price should have been set in OrderMatchingEngine._process_trailing_stop_order()
                 # However, the implementation of the emulator bypass this step, and directly call this method through match_order().
-                market_price = ask if order.side == OrderSide.BUY else bid
+                if order.trigger_type == TriggerType.LAST_PRICE:
+                    market_price = last
+                else:
+                    market_price = ask if order.side == OrderSide.BUY else bid
                 if market_price is None:
                     # If there is no market price, we cannot process the order
+                    if order.trigger_type == TriggerType.LAST_PRICE:
+                        msg = f"no LAST price for {order.instrument_id} (add trades or use LAST bars)"
+                    else:
+                        msg = f"no BID or ASK price for {order.instrument_id} (add quotes or use BID|ASK bars)"
                     raise RuntimeError(  # pragma: no cover (design-time error)
-                        f"cannot process trailing stop, "
-                        f"no BID or ASK price for {order.instrument_id} "
-                        f"(add quotes or use bars)",
+                        f"cannot process trailing stop, {msg}",
                     )
                 order.set_activated_c(market_price)
             elif matching_core.is_touch_triggered(order.side, order.activation_price):
