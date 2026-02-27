@@ -3921,6 +3921,10 @@ cdef class OrderMatchingEngine:
             fill_market_order=self.fill_market_order,
             fill_limit_order=self.fill_limit_order,
         )
+
+        if fill_model is not None:
+            self._core.set_fill_limit_at_touch(fill_model.fill_limit_at_touch())
+
         self._price_prec = instrument.price_precision
         self._size_prec = instrument.size_precision
 
@@ -4006,6 +4010,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(fill_model, "fill_model")
 
         self._fill_model = fill_model
+        self._core.set_fill_limit_at_touch(fill_model.fill_limit_at_touch())
 
         self._log.debug(f"Changed `FillModel` to {self._fill_model}")
 
@@ -5326,8 +5331,8 @@ cdef class OrderMatchingEngine:
     ):
         cdef Price new_price = price if price is not None else order.price
 
-        if self._core.is_limit_fillable(order.side, price):
-            if order.is_post_only and self._core.is_limit_marketable(order.side, price):
+        if self._core.is_limit_marketable(order.side, price):
+            if order.is_post_only:
                 self._generate_order_modify_rejected(
                     trader_id=order.trader_id,
                     strategy_id=order.strategy_id,
@@ -5405,8 +5410,8 @@ cdef class OrderMatchingEngine:
                 return  # Cannot update order
         else:
             # Updating limit price
-            if self._core.is_limit_fillable(order.side, price):
-                if order.is_post_only and self._core.is_limit_marketable(order.side, price):
+            if self._core.is_limit_marketable(order.side, price):
+                if order.is_post_only:
                     self._generate_order_modify_rejected(
                         trader_id=order.trader_id,
                         strategy_id=order.strategy_id,
@@ -5476,8 +5481,8 @@ cdef class OrderMatchingEngine:
                 return  # Cannot update order
         else:
             # Updating limit price
-            if self._core.is_limit_fillable(order.side, price):
-                if order.is_post_only and self._core.is_limit_marketable(order.side, price):
+            if self._core.is_limit_marketable(order.side, price):
+                if order.is_post_only:
                     self._generate_order_modify_rejected(
                         trader_id=order.trader_id,
                         strategy_id=order.strategy_id,
@@ -7789,7 +7794,7 @@ cdef class OrderMatchingEngine:
             )
             return
 
-        if self._core.is_limit_fillable(order.side, price):
+        if self._core.is_limit_marketable(order.side, price):
             order.liquidity_side = LiquiditySide.TAKER
             self.fill_limit_order(order)
 

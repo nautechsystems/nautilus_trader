@@ -79,6 +79,24 @@ cdef class FillModel:
         self.prob_fill_on_limit = prob_fill_on_limit
         self.prob_slippage = prob_slippage
 
+    cpdef bint fill_limit_at_touch(self):
+        """
+        Return whether limit orders at or inside the spread are fillable.
+
+        When True, the matching core treats a limit order as fillable if its
+        price is at or better than the current best quote on its own side
+        (BUY >= bid, SELL <= ask), not just when it crosses the spread.
+
+        Override to return True in fill models that provide simulated
+        liquidity at the touch (e.g. best bid/ask).
+
+        Returns
+        -------
+        bool
+
+        """
+        return False
+
     cpdef bint is_limit_filled(self):
         """
         Return a value indicating whether a ``LIMIT`` order filled.
@@ -157,6 +175,9 @@ cdef class BestPriceFillModel(FillModel):
     immediately at the best available price. Ideal for testing basic strategy logic.
 
     """
+
+    cpdef bint fill_limit_at_touch(self):
+        return True
 
     cpdef OrderBook get_orderbook_for_fill_simulation(
         self,

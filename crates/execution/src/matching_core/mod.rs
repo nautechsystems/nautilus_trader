@@ -128,6 +128,7 @@ pub struct OrderMatchingCore {
     pub is_bid_initialized: bool,
     pub is_ask_initialized: bool,
     pub is_last_initialized: bool,
+    fill_limit_at_touch: bool,
     orders_bid: Vec<OrderMatchInfo>,
     orders_ask: Vec<OrderMatchInfo>,
 }
@@ -145,6 +146,7 @@ impl OrderMatchingCore {
             is_bid_initialized: false,
             is_ask_initialized: false,
             is_last_initialized: false,
+            fill_limit_at_touch: false,
             orders_bid: Vec::new(),
             orders_ask: Vec::new(),
         }
@@ -287,7 +289,7 @@ impl OrderMatchingCore {
 
     fn match_limit_order(&self, order: &OrderMatchInfo) -> Option<MatchAction> {
         if let Some(limit_price) = order.limit_price
-            && self.is_limit_matched(order.order_side, limit_price)
+            && self.is_limit_fillable(order.order_side, limit_price)
         {
             Some(MatchAction::FillLimit(order.client_order_id))
         } else {
@@ -330,6 +332,36 @@ impl OrderMatchingCore {
         match side {
             OrderSideSpecified::Buy => self.ask.is_some_and(|a| a <= trigger_price),
             OrderSideSpecified::Sell => self.bid.is_some_and(|b| b >= trigger_price),
+        }
+    }
+
+    pub fn set_fill_limit_at_touch(&mut self, value: bool) {
+        self.fill_limit_at_touch = value;
+    }
+
+    /// Returns whether a limit order is fillable at the given price.
+    ///
+    /// Checks `is_limit_matched` first (crosses the spread). When
+    /// `fill_limit_at_touch` is set, also checks at-or-inside spread
+    /// (BUY >= bid, SELL <= ask), requiring both sides initialized.
+    #[must_use]
+    pub fn is_limit_fillable(&self, side: OrderSideSpecified, price: Price) -> bool {
+        if self.is_limit_matched(side, price) {
+            return true;
+        }
+
+        if !self.fill_limit_at_touch {
+            return false;
+        }
+
+        // Require both quotes present since fill simulation needs best bid and ask
+        if let (Some(bid), Some(ask)) = (self.bid, self.ask) {
+            match side {
+                OrderSideSpecified::Buy => price >= bid,
+                OrderSideSpecified::Sell => price <= ask,
+            }
+        } else {
+            false
         }
     }
 }
@@ -819,6 +851,90 @@ mod tests {
         assert_eq!(actions.len(), 2);
         assert_eq!(actions[0], MatchAction::FillLimit(buy_limit_id));
         assert_eq!(actions[1], MatchAction::TriggerStop(sell_stop_id));
+    }
+
+    #[rstest]
+    fn test_is_limit_fillable_delegates_to_is_limit_matched_by_default() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut core = create_matching_core(instrument_id, Price::from("0.01"));
+        core.set_bid_raw(Price::from("100.00"));
+        core.set_ask_raw(Price::from("101.00"));
+
+        assert!(core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("101.00")));
+        assert!(!core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.00")));
+        assert!(core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("100.00")));
+        assert!(!core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("101.00")));
+    }
+
+    #[rstest]
+    fn test_is_limit_fillable_at_touch_buy_at_bid() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut core = create_matching_core(instrument_id, Price::from("0.01"));
+        core.set_bid_raw(Price::from("100.00"));
+        core.set_ask_raw(Price::from("101.00"));
+        core.set_fill_limit_at_touch(true);
+
+        assert!(core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.00")));
+        assert!(core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.50")));
+        assert!(!core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("99.00")));
+    }
+
+    #[rstest]
+    fn test_is_limit_fillable_at_touch_sell_at_ask() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut core = create_matching_core(instrument_id, Price::from("0.01"));
+        core.set_bid_raw(Price::from("100.00"));
+        core.set_ask_raw(Price::from("101.00"));
+        core.set_fill_limit_at_touch(true);
+
+        assert!(core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("101.00")));
+        assert!(core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("100.50")));
+        assert!(!core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("102.00")));
+    }
+
+    #[rstest]
+    fn test_is_limit_fillable_at_touch_requires_both_quotes_present() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut core = create_matching_core(instrument_id, Price::from("0.01"));
+        core.set_fill_limit_at_touch(true);
+
+        core.set_bid_raw(Price::from("100.00"));
+        assert!(!core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.00")));
+
+        let mut core2 = create_matching_core(instrument_id, Price::from("0.01"));
+        core2.set_fill_limit_at_touch(true);
+        core2.set_ask_raw(Price::from("101.00"));
+        assert!(!core2.is_limit_fillable(OrderSideSpecified::Sell, Price::from("101.00")));
+
+        // Ask cleared after both were set
+        let mut core3 = create_matching_core(instrument_id, Price::from("0.01"));
+        core3.set_fill_limit_at_touch(true);
+        core3.set_bid_raw(Price::from("100.00"));
+        core3.set_ask_raw(Price::from("101.00"));
+        core3.ask = None;
+        assert!(!core3.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.00")));
+    }
+
+    #[rstest]
+    fn test_iterate_fills_limit_at_touch_when_enabled() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut core = create_matching_core(instrument_id, Price::from("0.01"));
+        core.set_bid_raw(Price::from("100.00"));
+        core.set_ask_raw(Price::from("101.00"));
+        core.set_fill_limit_at_touch(true);
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("100"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        core.add_order(match_info);
+
+        let actions = core.iterate();
+        assert_eq!(actions, vec![MatchAction::FillLimit(client_order_id)]);
     }
 
     #[rstest]

@@ -37,6 +37,15 @@ pub trait FillModel {
     /// Returns `true` if an order fill should slip by one tick.
     fn is_slipped(&mut self) -> bool;
 
+    /// Returns whether limit orders at or inside the spread are fillable.
+    ///
+    /// When true, the matching core treats a limit order as fillable if its
+    /// price is at or better than the current best quote on its own side
+    /// (BUY >= bid, SELL <= ask), not just when it crosses the spread.
+    fn fill_limit_at_touch(&self) -> bool {
+        false
+    }
+
     /// Returns a simulated `OrderBook` for fill simulation.
     ///
     /// Custom fill models provide their own liquidity simulation by returning an
@@ -244,6 +253,10 @@ impl FillModel for BestPriceFillModel {
 
     fn is_slipped(&mut self) -> bool {
         self.state.is_slipped()
+    }
+
+    fn fill_limit_at_touch(&self) -> bool {
+        true
     }
 
     fn get_orderbook_for_fill_simulation(
@@ -1130,6 +1143,22 @@ impl FillModel for FillModelAny {
         }
     }
 
+    fn fill_limit_at_touch(&self) -> bool {
+        match self {
+            Self::Default(m) => m.fill_limit_at_touch(),
+            Self::BestPrice(m) => m.fill_limit_at_touch(),
+            Self::OneTickSlippage(m) => m.fill_limit_at_touch(),
+            Self::Probabilistic(m) => m.fill_limit_at_touch(),
+            Self::TwoTier(m) => m.fill_limit_at_touch(),
+            Self::ThreeTier(m) => m.fill_limit_at_touch(),
+            Self::LimitOrderPartialFill(m) => m.fill_limit_at_touch(),
+            Self::SizeAware(m) => m.fill_limit_at_touch(),
+            Self::CompetitionAware(m) => m.fill_limit_at_touch(),
+            Self::VolumeSensitive(m) => m.fill_limit_at_touch(),
+            Self::MarketHours(m) => m.fill_limit_at_touch(),
+        }
+    }
+
     fn is_slipped(&mut self) -> bool {
         match self {
             Self::Default(m) => m.is_slipped(),
@@ -1335,5 +1364,35 @@ mod tests {
         let mut model = FillModelAny::Default(DefaultFillModel::new(0.5, 0.1, Some(42)).unwrap());
         let result = model.is_limit_filled();
         assert!(!result);
+    }
+
+    #[rstest]
+    fn test_default_fill_model_fill_limit_at_touch_is_false() {
+        let model = DefaultFillModel::default();
+        assert!(!model.fill_limit_at_touch());
+    }
+
+    #[rstest]
+    fn test_best_price_fill_model_fill_limit_at_touch_is_true() {
+        let model = BestPriceFillModel::default();
+        assert!(model.fill_limit_at_touch());
+    }
+
+    #[rstest]
+    fn test_one_tick_slippage_fill_model_fill_limit_at_touch_is_false() {
+        let model = OneTickSlippageFillModel::default();
+        assert!(!model.fill_limit_at_touch());
+    }
+
+    #[rstest]
+    fn test_fill_model_any_fill_limit_at_touch_dispatch() {
+        let default = FillModelAny::Default(DefaultFillModel::default());
+        assert!(!default.fill_limit_at_touch());
+
+        let best_price = FillModelAny::BestPrice(BestPriceFillModel::default());
+        assert!(best_price.fill_limit_at_touch());
+
+        let one_tick = FillModelAny::OneTickSlippage(OneTickSlippageFillModel::default());
+        assert!(!one_tick.fill_limit_at_touch());
     }
 }

@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added matching engine L1 quote-based queue position tracking for backtests
+- Added `fill_limit_at_touch` to `FillModel` and `MatchingCore` for at-or-inside-spread limit fill control
 - Added synthetic book support for binary markets (#3495), thanks @Javdu10
 - Added `get_target_px_for_quantity` method on `OrderBook` (#3627), thanks @Javdu10
 - Added Betfair batch submit and cancel order support

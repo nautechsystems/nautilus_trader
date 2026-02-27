@@ -38,6 +38,41 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
 
+class TestFillLimitAtTouch:
+    def test_base_fill_model_returns_false(self):
+        assert FillModel().fill_limit_at_touch() is False
+
+    def test_best_price_fill_model_returns_true(self):
+        assert BestPriceFillModel().fill_limit_at_touch() is True
+
+    def test_one_tick_slippage_fill_model_returns_false(self):
+        assert OneTickSlippageFillModel().fill_limit_at_touch() is False
+
+    def test_two_tier_fill_model_returns_false(self):
+        assert TwoTierFillModel().fill_limit_at_touch() is False
+
+    def test_probabilistic_fill_model_returns_false(self):
+        assert ProbabilisticFillModel().fill_limit_at_touch() is False
+
+    def test_size_aware_fill_model_returns_false(self):
+        assert SizeAwareFillModel().fill_limit_at_touch() is False
+
+    def test_limit_order_partial_fill_model_returns_false(self):
+        assert LimitOrderPartialFillModel().fill_limit_at_touch() is False
+
+    def test_three_tier_fill_model_returns_false(self):
+        assert ThreeTierFillModel().fill_limit_at_touch() is False
+
+    def test_market_hours_fill_model_returns_false(self):
+        assert MarketHoursFillModel().fill_limit_at_touch() is False
+
+    def test_volume_sensitive_fill_model_returns_false(self):
+        assert VolumeSensitiveFillModel().fill_limit_at_touch() is False
+
+    def test_competition_aware_fill_model_returns_false(self):
+        assert CompetitionAwareFillModel().fill_limit_at_touch() is False
+
+
 class TestEnhancedFillModels:
     def setup_method(self):
         # Common test setup
