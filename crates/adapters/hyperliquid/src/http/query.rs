@@ -72,8 +72,8 @@ pub struct CancelParams {
 /// Parameters for modifying an order.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModifyParams {
-    pub oid: u64,
-    pub order: HyperliquidExecModifyOrderRequest,
+    #[serde(flatten)]
+    pub request: HyperliquidExecModifyOrderRequest,
 }
 
 /// Parameters for updating leverage.
@@ -351,10 +351,10 @@ impl ExchangeAction {
     }
 
     /// Creates an action to modify an order.
-    pub fn modify(oid: u64, order: HyperliquidExecModifyOrderRequest) -> Self {
+    pub fn modify(request: HyperliquidExecModifyOrderRequest) -> Self {
         Self {
             action_type: ExchangeActionType::Modify,
-            params: ExchangeActionParams::Modify(ModifyParams { oid, order }),
+            params: ExchangeActionParams::Modify(ModifyParams { request }),
         }
     }
 
@@ -526,17 +526,26 @@ mod tests {
     #[rstest]
     fn test_modify_serialization() {
         let modify_request = HyperliquidExecModifyOrderRequest {
-            asset: 0,
             oid: 12345,
-            price: Some(Decimal::new(51000, 0)),
-            size: Some(Decimal::new(2, 0)),
-            reduce_only: None,
-            kind: None,
+            order: HyperliquidExecPlaceOrderRequest {
+                asset: 0,
+                is_buy: true,
+                price: Decimal::new(51000, 0),
+                size: Decimal::new(2, 0),
+                reduce_only: false,
+                kind: HyperliquidExecOrderKind::Limit {
+                    limit: HyperliquidExecLimitParams {
+                        tif: HyperliquidExecTif::Gtc,
+                    },
+                },
+                cloid: None,
+            },
         };
-        let action = ExchangeAction::modify(12345, modify_request);
+        let action = ExchangeAction::modify(modify_request);
         let json = serde_json::to_string(&action).unwrap();
 
         assert!(json.contains(r#""type":"modify""#));
         assert!(json.contains(r#""oid":12345"#));
+        assert!(json.contains(r#""order""#));
     }
 }

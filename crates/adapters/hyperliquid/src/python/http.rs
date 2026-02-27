@@ -29,6 +29,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{prelude::*, types::PyList};
+use rust_decimal::Decimal;
 use serde_json::to_string;
 
 use crate::http::client::HyperliquidHttpClient;
@@ -299,6 +300,46 @@ impl HyperliquidHttpClient {
         })
     }
 
+    #[pyo3(name = "modify_order")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_modify_order<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        price: Price,
+        quantity: Quantity,
+        trigger_price: Option<Price>,
+        reduce_only: bool,
+        post_only: bool,
+        time_in_force: TimeInForce,
+        client_order_id: Option<ClientOrderId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .modify_order(
+                    instrument_id,
+                    venue_order_id,
+                    order_side,
+                    order_type,
+                    price,
+                    quantity,
+                    trigger_price,
+                    reduce_only,
+                    post_only,
+                    time_in_force,
+                    client_order_id,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "submit_orders")]
     fn py_submit_orders<'py>(
         &self,
@@ -451,9 +492,11 @@ impl HyperliquidHttpClient {
     #[pyo3(name = "update_builder_fees")]
     fn py_update_builder_fees(
         &self,
-        user_add_rate: f64,
-        user_cross_rate: f64,
-    ) -> ((u32, u32), (u32, u32)) {
-        self.update_builder_fees(user_add_rate, user_cross_rate)
+        user_add_rate: &str,
+        user_cross_rate: &str,
+    ) -> PyResult<((u32, u32), (u32, u32))> {
+        let add_rate: Decimal = user_add_rate.parse().map_err(to_pyvalue_err)?;
+        let cross_rate: Decimal = user_cross_rate.parse().map_err(to_pyvalue_err)?;
+        Ok(self.update_builder_fees(add_rate, cross_rate))
     }
 }

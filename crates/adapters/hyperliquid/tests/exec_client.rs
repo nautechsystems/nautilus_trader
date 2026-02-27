@@ -137,6 +137,11 @@ async fn handle_info(body: axum::body::Bytes) -> Response {
         }))
         .into_response(),
         "userFills" => Json(json!([])).into_response(),
+        "userFees" => Json(json!({
+            "userCrossRate": "0.00045",
+            "userAddRate": "0.00015"
+        }))
+        .into_response(),
         "clearinghouseState" => Json(json!({
             "marginSummary": {
                 "accountValue": "10000.0",

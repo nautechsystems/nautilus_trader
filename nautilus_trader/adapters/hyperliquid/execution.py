@@ -54,6 +54,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
@@ -198,8 +199,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         await self._update_account_state()
         await self._await_account_registered()
 
-        # Fetch initial builder fee tier from HL
-        await self._fetch_and_update_builder_fee(log_always=True)
+        # Fetch initial builder fee tier (fail connect if unreachable)
+        await self._fetch_and_update_builder_fee_initial()
 
         self._sync_cloid_cache()
 
@@ -308,7 +309,25 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             LogColor.BLUE,
         )
 
-    async def _fetch_and_update_builder_fee(self, log_always: bool = False) -> None:
+    async def _fetch_and_update_builder_fee_initial(self) -> None:
+        json_str = await self._client.info_user_fees()
+        data = json.loads(json_str)
+        raw_add_rate = data.get("userAddRate")
+        if raw_add_rate is None:
+            raise ValueError("missing userAddRate in response")
+
+        raw_cross_rate = data.get("userCrossRate")
+        if raw_cross_rate is None:
+            raise ValueError("missing userCrossRate in response")
+
+        (_, maker_new), (_, taker_new) = self._client.update_builder_fees(
+            str(raw_add_rate),
+            str(raw_cross_rate),
+        )
+
+        self._log_fee_summary(raw_add_rate, raw_cross_rate, maker_new, taker_new)
+
+    async def _fetch_and_update_builder_fee(self) -> None:
         try:
             json_str = await self._client.info_user_fees()
             data = json.loads(json_str)
@@ -319,14 +338,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             if raw_cross_rate is None:
                 raise ValueError("missing userCrossRate in response")
 
-            user_add_rate = float(raw_add_rate)
-            user_cross_rate = float(raw_cross_rate)
             (maker_old, maker_new), (taker_old, taker_new) = self._client.update_builder_fees(
-                user_add_rate,
-                user_cross_rate,
+                str(raw_add_rate),
+                str(raw_cross_rate),
             )
 
-            if log_always or maker_old != maker_new or taker_old != taker_new:
+            if maker_old != maker_new or taker_old != taker_new:
                 self._log_fee_summary(raw_add_rate, raw_cross_rate, maker_new, taker_new)
         except Exception as e:
             maker_bp = Decimal(self._client.builder_maker_tenths_bp()) / 10
@@ -633,11 +650,47 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         return nautilus_pyo3.Price.from_decimal(price)
 
-    async def _submit_order(self, command: SubmitOrder) -> None:
+    def _derive_limit_from_trigger(self, order, trigger_price) -> Decimal:
+        slippage_pct = Decimal("0.005")
+        base_price = Decimal(str(trigger_price))
+
+        if order.side == OrderSide.BUY:
+            price = base_price * (Decimal(1) + slippage_pct)
+        else:
+            price = base_price * (Decimal(1) - slippage_pct)
+
+        price = self._round_to_significant_figures(price, sig_figs=5)
+
+        instrument = self._cache.instrument(order.instrument_id)
+        if instrument is not None:
+            quantizer = Decimal(10) ** -instrument.price_precision
+            if order.side == OrderSide.BUY:
+                price = price.quantize(quantizer, rounding=ROUND_CEILING)
+            else:
+                price = price.quantize(quantizer, rounding=ROUND_FLOOR)
+
+        return price.normalize()
+
+    def _check_time_in_force(self, order) -> bool:
+        if order.time_in_force not in (TimeInForce.GTC, TimeInForce.IOC):
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=f"UNSUPPORTED_TIME_IN_FORCE: {TimeInForce(order.time_in_force).name} not supported by Hyperliquid",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return False
+        return True
+
+    async def _submit_order(self, command: SubmitOrder) -> None:  # noqa: C901 (too complex)
         order = command.order
 
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed")
+            return
+
+        if not self._check_time_in_force(order):
             return
 
         self.generate_order_submitted(
@@ -739,6 +792,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         if not orders:
             return
 
+        orders = [o for o in orders if self._check_time_in_force(o)]
+        if not orders:
+            return
+
         now_ns = self._clock.timestamp_ns()
 
         for order in orders:
@@ -778,10 +835,100 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        # The modify functionality exists in Rust but requires exposing post_action() to Python
-        self._log.warning(
-            f"Order modification requires venue_order_id and is not yet exposed via Python bindings for {command.client_order_id}",
-        )
+        order = self._cache.order(command.client_order_id)
+
+        if order is None:
+            self.generate_order_modify_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+                reason="ORDER_NOT_FOUND_IN_CACHE",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        venue_order_id = None
+        if order.venue_order_id:
+            venue_order_id = order.venue_order_id
+        elif command.venue_order_id:
+            venue_order_id = command.venue_order_id
+
+        if venue_order_id is None:
+            self.generate_order_modify_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=venue_order_id,
+                reason="VENUE_ORDER_ID_REQUIRED",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        # Use command values if provided, else fall back to current order values
+        price = command.price if command.price else (order.price if order.has_price else None)
+        quantity = command.quantity if command.quantity else order.leaves_qty
+        trigger_price = command.trigger_price
+        if not trigger_price and order.has_trigger_price:
+            trigger_price = order.trigger_price
+
+        # StopMarket/MarketIfTouched have no limit price — derive a
+        # slippage-adjusted limit from the trigger, matching submit path
+        if price is None and trigger_price is not None:
+            price = self._derive_limit_from_trigger(order, trigger_price)
+
+        if price is None:
+            self.generate_order_modify_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=venue_order_id,
+                reason="PRICE_REQUIRED_FOR_MODIFY",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        try:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                command.instrument_id.value,
+            )
+            pyo3_venue_order_id = nautilus_pyo3.VenueOrderId(venue_order_id.value)
+            pyo3_order_side = nautilus_pyo3.OrderSide.from_str(order.side.name)
+            pyo3_order_type = order_type_to_pyo3(order.order_type)
+            pyo3_price = nautilus_pyo3.Price.from_str(str(price))
+            pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(quantity))
+            pyo3_time_in_force = time_in_force_to_pyo3(order.time_in_force)
+            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(
+                command.client_order_id.value,
+            )
+
+            pyo3_trigger_price = None
+            if trigger_price is not None:
+                pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(trigger_price))
+
+            await self._client.modify_order(
+                instrument_id=pyo3_instrument_id,
+                venue_order_id=pyo3_venue_order_id,
+                order_side=pyo3_order_side,
+                order_type=pyo3_order_type,
+                price=pyo3_price,
+                quantity=pyo3_quantity,
+                trigger_price=pyo3_trigger_price,
+                reduce_only=order.is_reduce_only,
+                post_only=order.is_post_only,
+                time_in_force=pyo3_time_in_force,
+                client_order_id=pyo3_client_order_id,
+            )
+            self._log.info(f"Order modification requested for {command.client_order_id}")
+        except Exception as e:
+            self.generate_order_modify_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         # Try to get venue_order_id from cache first, fall back to command

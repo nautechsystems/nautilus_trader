@@ -10,6 +10,8 @@ Released on TBD (UTC).
 - Added Betfair batch submit and cancel order support
 - Added BitMEX dead man's switch (cancelAllAfter) support
 - Added BitMEX grid market maker example in Rust
+- Added Hyperliquid order modify support (Python and Rust)
+- Added Hyperliquid volume-based builder fee scaling with automatic tier detection
 - Added OKX trailing stop market order support (Rust and Python)
 
 ### Breaking Changes

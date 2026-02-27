@@ -40,7 +40,7 @@ pub const NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP: u32 = 10; // 1 bp = 0.01%
 pub const NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP: u32 = 4; // 0.4 bp = 0.004% (base tier, scales with volume)
 
 /// Default interval in minutes for periodic builder fee tier refresh.
-pub const BUILDER_FEE_REFRESH_DEFAULT_MINS: u64 = 60;
+pub const BUILDER_FEE_REFRESH_DEFAULT_MINS: u64 = 10;
 
 /// Hyperliquid signing chain ID (0x66eee = 421614 decimal).
 pub const HYPERLIQUID_CHAIN_ID: u64 = 421614;

@@ -3901,6 +3901,7 @@ ExecTesterConfig(
 ```rust
 ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
     .with_open_position_on_start(Some(Decimal::new(1, 2)))
+    .with_reduce_only_on_stop(true)
     .with_close_positions_on_stop(true)
     .with_enable_limit_buys(false)
     .with_enable_limit_sells(false)

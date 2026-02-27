@@ -18,12 +18,11 @@
 //! This is a ONE-TIME setup step required before trading on Hyperliquid.
 //!
 //! What you are approving:
-//! - Taker: 1 bp (0.01%) on perpetual fills
-//! - Maker: 0.5 bp (0.005%) on perpetual post-only fills
-//! - No builder fee on spot orders
+//! - 1 bp (0.01%) approval ceiling (perpetuals only, no fee on spot)
+//! - Taker: 1.0 bp (0.01%) base on perpetual fills, scales down with volume
+//! - Maker: 0.4 bp (0.004%) base on perpetual post-only fills, scales down with volume
 //!
-//! This is at the low end of ecosystem norms. Hyperliquid allows builders to charge
-//! up to 10 basis points (0.1%) for perps and 100 basis points (1%) for spot.
+//! Hyperliquid allows builders to charge up to 10 bp on perps and 100 bp on spot.
 //!
 //! The script will display full details and prompt for confirmation before proceeding.
 //! Use --yes to skip the confirmation prompt.

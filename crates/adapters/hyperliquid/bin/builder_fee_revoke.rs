@@ -15,8 +15,8 @@
 
 //! Revoke the Nautilus builder fee approval for Hyperliquid trading.
 //!
-//! This removes your approval of the Nautilus builder fee, disabling builder
-//! fee charges on your fills.
+//! This revokes your approval of the Nautilus builder fee. After revoking,
+//! you will not be able to trade via NautilusTrader until you re-approve.
 //!
 //! Prerequisites:
 //! - Set environment variable: HYPERLIQUID_PK (mainnet) or HYPERLIQUID_TESTNET_PK (testnet)

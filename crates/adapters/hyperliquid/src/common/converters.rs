@@ -172,10 +172,18 @@ pub fn nautilus_time_in_force_to_hyperliquid(
         TimeInForce::Fok => {
             anyhow::bail!("FOK time in force is not supported by Hyperliquid")
         }
-        TimeInForce::Gtd => Ok(HyperliquidTimeInForce::Gtc), // GTD maps to GTC
-        TimeInForce::Day => Ok(HyperliquidTimeInForce::Gtc), // DAY maps to GTC
-        TimeInForce::AtTheOpen => Ok(HyperliquidTimeInForce::Gtc), // ATO maps to GTC
-        TimeInForce::AtTheClose => Ok(HyperliquidTimeInForce::Gtc), // ATC maps to GTC
+        TimeInForce::Gtd => {
+            anyhow::bail!("GTD time in force is not supported by Hyperliquid")
+        }
+        TimeInForce::Day => {
+            anyhow::bail!("DAY time in force is not supported by Hyperliquid")
+        }
+        TimeInForce::AtTheOpen => {
+            anyhow::bail!("AT_THE_OPEN time in force is not supported by Hyperliquid")
+        }
+        TimeInForce::AtTheClose => {
+            anyhow::bail!("AT_THE_CLOSE time in force is not supported by Hyperliquid")
+        }
     }
 }
 
@@ -420,14 +428,19 @@ mod tests {
     }
 
     #[rstest]
-    fn test_fok_time_in_force_returns_error() {
-        let result = nautilus_time_in_force_to_hyperliquid(TimeInForce::Fok);
+    #[case(TimeInForce::Fok, "FOK")]
+    #[case(TimeInForce::Gtd, "GTD")]
+    #[case(TimeInForce::Day, "DAY")]
+    #[case(TimeInForce::AtTheOpen, "AT_THE_OPEN")]
+    #[case(TimeInForce::AtTheClose, "AT_THE_CLOSE")]
+    fn test_unsupported_time_in_force_returns_error(#[case] tif: TimeInForce, #[case] name: &str) {
+        let result = nautilus_time_in_force_to_hyperliquid(tif);
         assert!(result.is_err());
         assert!(
             result
                 .unwrap_err()
                 .to_string()
-                .contains("FOK time in force is not supported")
+                .contains(&format!("{name} time in force is not supported"))
         );
     }
 

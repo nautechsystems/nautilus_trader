@@ -8499,7 +8499,7 @@ class HyperliquidHttpClient:
     def builder_maker_tenths_bp(self) -> int: ...
     def builder_taker_tenths_bp(self) -> int: ...
     def update_builder_fees(
-        self, user_add_rate: float, user_cross_rate: float
+        self, user_add_rate: str, user_cross_rate: str
     ) -> tuple[tuple[int, int], tuple[int, int]]: ...
     async def get_perp_meta(self) -> str: ...
     async def get_spot_meta(self) -> str: ...
@@ -8560,6 +8560,20 @@ class HyperliquidHttpClient:
         self,
         orders: list[Order],
     ) -> list[OrderStatusReport]: ...
+    async def modify_order(
+        self,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        price: Price,
+        quantity: Quantity,
+        trigger_price: Price | None = None,
+        reduce_only: bool = False,
+        post_only: bool = False,
+        time_in_force: TimeInForce = ...,
+        client_order_id: ClientOrderId | None = None,
+    ) -> None: ...
     async def cancel_order(
         self,
         instrument_id: InstrumentId,

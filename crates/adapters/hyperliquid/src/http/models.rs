@@ -785,36 +785,15 @@ pub struct HyperliquidExecCancelByCloidRequest {
 }
 
 /// Modify specification for modifying existing orders via exchange endpoint.
+///
+/// The HL API requires the full order spec (same as a place order) plus
+/// the venue order ID to modify.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperliquidExecModifyOrderRequest {
-    /// Asset ID.
-    #[serde(rename = "a")]
-    pub asset: AssetId,
-    /// Order ID to modify.
-    #[serde(rename = "o")]
+    /// Venue order ID to modify.
     pub oid: OrderId,
-    /// New price (optional).
-    #[serde(
-        rename = "p",
-        skip_serializing_if = "Option::is_none",
-        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
-    )]
-    pub price: Option<Decimal>,
-    /// New size (optional).
-    #[serde(
-        rename = "s",
-        skip_serializing_if = "Option::is_none",
-        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
-        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
-    )]
-    pub size: Option<Decimal>,
-    /// New reduce-only flag (optional).
-    #[serde(rename = "r", skip_serializing_if = "Option::is_none")]
-    pub reduce_only: Option<bool>,
-    /// New order type (optional).
-    #[serde(rename = "t", skip_serializing_if = "Option::is_none")]
-    pub kind: Option<HyperliquidExecOrderKind>,
+    /// Full replacement order specification.
+    pub order: HyperliquidExecPlaceOrderRequest,
 }
 
 /// TWAP (Time-Weighted Average Price) order specification for exchange endpoint.

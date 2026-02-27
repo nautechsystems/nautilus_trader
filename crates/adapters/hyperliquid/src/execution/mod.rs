@@ -48,6 +48,7 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance},
 };
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
 
@@ -57,9 +58,11 @@ use crate::{
         consts::HYPERLIQUID_VENUE,
         credential::Secrets,
         parse::{
-            client_order_id_to_cancel_request_with_asset, derive_market_order_price,
-            extract_error_message, extract_inner_error, extract_inner_errors, normalize_price,
+            clamp_price_to_precision, client_order_id_to_cancel_request_with_asset,
+            derive_limit_from_trigger, derive_market_order_price, extract_error_message,
+            extract_inner_error, extract_inner_errors, normalize_price,
             order_to_hyperliquid_request_with_asset, parse_account_balances_and_margins,
+            round_to_sig_figs,
         },
     },
     config::HyperliquidExecClientConfig,
@@ -67,7 +70,7 @@ use crate::{
         client::HyperliquidHttpClient,
         models::{
             ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecGrouping,
-            HyperliquidExecModifyOrderRequest,
+            HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
         },
     },
     websocket::{ExecutionReport, NautilusWsMessage, client::HyperliquidWebSocketClient},
@@ -337,7 +340,7 @@ impl HyperliquidExecutionClient {
 
     async fn fetch_and_update_builder_fees(
         &self,
-    ) -> anyhow::Result<(f64, f64, (u32, u32), (u32, u32))> {
+    ) -> anyhow::Result<(Decimal, Decimal, (u32, u32), (u32, u32))> {
         let account_address = self.get_account_address()?;
         fetch_and_update_builder_fees(&self.http_client, &account_address).await
     }
@@ -346,7 +349,7 @@ impl HyperliquidExecutionClient {
 async fn fetch_and_update_builder_fees(
     http_client: &HyperliquidHttpClient,
     account_address: &str,
-) -> anyhow::Result<(f64, f64, (u32, u32), (u32, u32))> {
+) -> anyhow::Result<(Decimal, Decimal, (u32, u32), (u32, u32))> {
     let json = http_client
         .info_user_fees(account_address)
         .await
@@ -355,39 +358,33 @@ async fn fetch_and_update_builder_fees(
     let user_add_rate = json
         .get("userAddRate")
         .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<f64>().ok())
+        .and_then(|s| s.parse::<Decimal>().ok())
         .ok_or_else(|| anyhow::anyhow!("missing or invalid userAddRate in response"))?;
 
     let user_cross_rate = json
         .get("userCrossRate")
         .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<f64>().ok())
+        .and_then(|s| s.parse::<Decimal>().ok())
         .ok_or_else(|| anyhow::anyhow!("missing or invalid userCrossRate in response"))?;
 
     let (maker, taker) = http_client.update_builder_fees(user_add_rate, user_cross_rate);
     Ok((user_add_rate, user_cross_rate, maker, taker))
 }
 
-fn fmt_pct(value: f64) -> String {
-    let s = format!("{value:.6}");
-    let s = s.trim_end_matches('0');
-    s.trim_end_matches('.').to_string()
-}
-
-fn fmt_bp(bp: f64) -> String {
-    format!("{bp:.1} bp ({}%)", fmt_pct(bp / 100.0))
+fn fmt_bp(bp: Decimal) -> String {
+    format!("{bp:.1} bp ({}%)", (bp / dec!(100)).normalize())
 }
 
 fn log_fee_summary(
-    maker_rate: f64,
-    taker_rate: f64,
+    maker_rate: Decimal,
+    taker_rate: Decimal,
     builder_maker_tenths_bp: u32,
     builder_taker_tenths_bp: u32,
 ) {
-    let hl_maker_bp = maker_rate * 10_000.0;
-    let hl_taker_bp = taker_rate * 10_000.0;
-    let builder_maker_bp = builder_maker_tenths_bp as f64 / 10.0;
-    let builder_taker_bp = builder_taker_tenths_bp as f64 / 10.0;
+    let hl_maker_bp = maker_rate * dec!(10000);
+    let hl_taker_bp = taker_rate * dec!(10000);
+    let builder_maker_bp = Decimal::from(builder_maker_tenths_bp) / dec!(10);
+    let builder_taker_bp = Decimal::from(builder_taker_tenths_bp) / dec!(10);
     let total_maker_bp = hl_maker_bp + builder_maker_bp;
     let total_taker_bp = hl_taker_bp + builder_taker_bp;
     log::info!(
@@ -597,6 +594,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
             self.http_client.builder_maker_tenths_bp(),
             self.http_client.builder_taker_tenths_bp(),
         );
+        log::info!(
+            "Order {} builder fee: {}",
+            order.client_order_id(),
+            match &builder {
+                Some(f) => format!("{} tenths bp", f.fee_tenths_bp),
+                None => "none".to_string(),
+            },
+        );
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -710,6 +715,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
             self.http_client.builder_maker_tenths_bp(),
             self.http_client.builder_taker_tenths_bp(),
         );
+        log::info!(
+            "Order list builder fee: {}",
+            match &builder {
+                Some(f) => format!("{} tenths bp", f.fee_tenths_bp),
+                None => "none".to_string(),
+            },
+        );
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -778,11 +790,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
     fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
         log::debug!("Modifying order: {cmd:?}");
 
-        // Parse venue_order_id as u64
         let venue_order_id = match cmd.venue_order_id {
             Some(id) => id,
             None => {
-                log::warn!("Cannot modify order: venue_order_id is None");
+                let reason = "venue_order_id is required for modify";
+                log::warn!("Cannot modify order {}: {reason}", cmd.client_order_id);
+                self.emitter.emit_order_modify_rejected_event(
+                    cmd.strategy_id,
+                    cmd.instrument_id,
+                    cmd.client_order_id,
+                    None,
+                    reason,
+                    self.clock.get_time_ns(),
+                );
                 return Ok(());
             }
         };
@@ -790,51 +810,111 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let oid: u64 = match venue_order_id.as_str().parse() {
             Ok(id) => id,
             Err(e) => {
-                log::warn!("Failed to parse venue_order_id '{venue_order_id}' as u64: {e}");
+                let reason = format!("Failed to parse venue_order_id '{venue_order_id}': {e}");
+                log::warn!("{reason}");
+                self.emitter.emit_order_modify_rejected_event(
+                    cmd.strategy_id,
+                    cmd.instrument_id,
+                    cmd.client_order_id,
+                    Some(venue_order_id),
+                    &reason,
+                    self.clock.get_time_ns(),
+                );
+                return Ok(());
+            }
+        };
+
+        // Look up cached order to get side, reduce_only, post_only, TIF
+        let order = match self.core.cache().order(&cmd.client_order_id).cloned() {
+            Some(o) => o,
+            None => {
+                let reason = "order not found in cache";
+                log::warn!("Cannot modify order {}: {reason}", cmd.client_order_id);
+                self.emitter.emit_order_modify_rejected_event(
+                    cmd.strategy_id,
+                    cmd.instrument_id,
+                    cmd.client_order_id,
+                    Some(venue_order_id),
+                    reason,
+                    self.clock.get_time_ns(),
+                );
                 return Ok(());
             }
         };
 
         let http_client = self.http_client.clone();
-        let price = cmd.price;
-        let quantity = cmd.quantity;
         let symbol = cmd.instrument_id.symbol.to_string();
         let should_normalize = self.config.normalize_prices;
 
+        let quantity = cmd.quantity.unwrap_or(order.leaves_qty());
+        let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
+        let asset = match http_client.get_asset_index(&symbol) {
+            Some(a) => a,
+            None => {
+                log::warn!(
+                    "Asset index not found for symbol {symbol}, ensure instruments are loaded",
+                );
+                return Ok(());
+            }
+        };
+
+        // Build base request from cached order (derives slippage-adjusted
+        // limit for trigger-market types like StopMarket/MarketIfTouched)
+        let hyperliquid_order = match order_to_hyperliquid_request_with_asset(
+            &order,
+            asset,
+            price_decimals,
+            should_normalize,
+        ) {
+            Ok(mut req) => {
+                // Only override price when explicitly provided
+                if let Some(p) = cmd.price.or(order.price()) {
+                    let price_dec = p.as_decimal();
+                    req.price = if should_normalize {
+                        normalize_price(price_dec, price_decimals).normalize()
+                    } else {
+                        price_dec.normalize()
+                    };
+                } else if let Some(tp) = cmd.trigger_price {
+                    // Trigger changed but no explicit price: re-derive the
+                    // slippage-adjusted limit from the new trigger
+                    let is_buy = order.order_side() == OrderSide::Buy;
+                    let base = tp.as_decimal().normalize();
+                    let derived = derive_limit_from_trigger(base, is_buy);
+                    let sig_rounded = round_to_sig_figs(derived, 5);
+                    req.price =
+                        clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize();
+                }
+                // else: keep the derived price from order_to_hyperliquid_request
+
+                req.size = quantity.as_decimal().normalize();
+
+                // Update trigger_px if the command provides a new trigger
+                if let (Some(tp), HyperliquidExecOrderKind::Trigger { trigger }) =
+                    (cmd.trigger_price, &mut req.kind)
+                {
+                    let tp_dec = tp.as_decimal();
+                    trigger.trigger_px = if should_normalize {
+                        normalize_price(tp_dec, price_decimals).normalize()
+                    } else {
+                        tp_dec.normalize()
+                    };
+                }
+
+                req
+            }
+            Err(e) => {
+                log::warn!("Order conversion failed for modify: {e}");
+                return Ok(());
+            }
+        };
+
         self.spawn_task("modify_order", async move {
-            let asset = match http_client.get_asset_index(&symbol) {
-                Some(a) => a,
-                None => {
-                    log::warn!(
-                        "Asset index not found for symbol {symbol}, ensure instruments are loaded"
-                    );
-                    return Ok(());
-                }
-            };
-
-            let normalized_price = price.map(|p| {
-                let raw: Decimal = (*p).into();
-
-                if should_normalize {
-                    let decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
-                    normalize_price(raw, decimals).normalize()
-                } else {
-                    raw.normalize()
-                }
-            });
-
-            // Build typed modify request with new price and/or quantity
-            let modify_request = HyperliquidExecModifyOrderRequest {
-                asset,
-                oid,
-                price: normalized_price,
-                size: quantity.map(|q| (*q).into()),
-                reduce_only: None,
-                kind: None,
-            };
-
             let action = HyperliquidExecAction::Modify {
-                modify: modify_request,
+                modify: HyperliquidExecModifyOrderRequest {
+                    oid,
+                    order: hyperliquid_order,
+                },
             };
 
             match http_client.post_action_exec(&action).await {
@@ -1099,25 +1179,25 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Start WebSocket stream (connects and subscribes to user channels)
         self.start_ws_stream().await?;
 
-        // Initialize account state and wait for it to be registered in cache
-        self.refresh_account_state().await?;
-        self.await_account_registered(30.0).await?;
+        // Post-WS setup: if any step fails, tear down WS before returning
+        let post_ws = async {
+            self.refresh_account_state().await?;
+            self.await_account_registered(30.0).await?;
 
-        // Fetch initial builder fee tiers from HL
-        match self.fetch_and_update_builder_fees().await {
-            Ok((maker_rate, taker_rate, (_maker_old, maker_new), (_taker_old, taker_new))) => {
-                log_fee_summary(maker_rate, taker_rate, maker_new, taker_new);
-            }
-            Err(e) => {
-                let maker_bp = self.http_client.builder_maker_tenths_bp() as f64 / 10.0;
-                let taker_bp = self.http_client.builder_taker_tenths_bp() as f64 / 10.0;
-                log::warn!(
-                    "Failed to query userFees, \
-                     retaining builder fees: maker {}, taker {}: {e}",
-                    fmt_bp(maker_bp),
-                    fmt_bp(taker_bp),
-                );
-            }
+            let (maker_rate, taker_rate, (_, maker_new), (_, taker_new)) = self
+                .fetch_and_update_builder_fees()
+                .await
+                .context("Failed to fetch initial builder fee tiers from Hyperliquid")?;
+            log_fee_summary(maker_rate, taker_rate, maker_new, taker_new);
+
+            Ok::<(), anyhow::Error>(())
+        };
+
+        if let Err(e) = post_ws.await {
+            log::warn!("Connect failed after WS started, tearing down: {e}");
+            let _ = self.ws_client.disconnect().await;
+            self.abort_pending_tasks();
+            return Err(e);
         }
 
         // Spawn periodic builder fee refresh if configured
@@ -1145,18 +1225,20 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             (taker_old, taker_new),
                         )) => {
                             if maker_old == maker_new && taker_old == taker_new {
+                                let maker_bp = Decimal::from(maker_new) / dec!(10);
+                                let taker_bp = Decimal::from(taker_new) / dec!(10);
                                 log::trace!(
-                                    "Builder fees unchanged: maker {:.1} bp, taker {:.1} bp",
-                                    maker_new as f64 / 10.0,
-                                    taker_new as f64 / 10.0,
+                                    "Builder fees unchanged: maker {maker_bp} bp, taker {taker_bp} bp",
                                 );
                             } else {
                                 log_fee_summary(maker_rate, taker_rate, maker_new, taker_new);
                             }
                         }
                         Err(e) => {
-                            let maker_bp = http_client.builder_maker_tenths_bp() as f64 / 10.0;
-                            let taker_bp = http_client.builder_taker_tenths_bp() as f64 / 10.0;
+                            let maker_bp =
+                                Decimal::from(http_client.builder_maker_tenths_bp()) / dec!(10);
+                            let taker_bp =
+                                Decimal::from(http_client.builder_taker_tenths_bp()) / dec!(10);
                             log::warn!(
                                 "Failed to query userFees, \
                                  retaining builder fees: maker {}, taker {}: {e}",
@@ -1498,28 +1580,14 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case(0.015, "0.015")]
-    #[case(0.004, "0.004")]
-    #[case(0.019, "0.019")]
-    #[case(0.01, "0.01")]
-    #[case(0.1, "0.1")]
-    #[case(1.0, "1")]
-    #[case(0.0, "0")]
-    #[case(0.045, "0.045")]
-    #[case(0.055, "0.055")]
-    fn test_fmt_pct(#[case] value: f64, #[case] expected: &str) {
-        assert_eq!(fmt_pct(value), expected);
-    }
-
-    #[rstest]
-    #[case(1.5, "1.5 bp (0.015%)")]
-    #[case(0.4, "0.4 bp (0.004%)")]
-    #[case(1.9, "1.9 bp (0.019%)")]
-    #[case(1.0, "1.0 bp (0.01%)")]
-    #[case(0.0, "0.0 bp (0%)")]
-    #[case(3.5, "3.5 bp (0.035%)")]
-    #[case(4.5, "4.5 bp (0.045%)")]
-    fn test_fmt_bp(#[case] bp: f64, #[case] expected: &str) {
+    #[case(dec!(1.5), "1.5 bp (0.015%)")]
+    #[case(dec!(0.4), "0.4 bp (0.004%)")]
+    #[case(dec!(1.9), "1.9 bp (0.019%)")]
+    #[case(dec!(1.0), "1.0 bp (0.01%)")]
+    #[case(dec!(0.0), "0.0 bp (0%)")]
+    #[case(dec!(3.5), "3.5 bp (0.035%)")]
+    #[case(dec!(4.5), "4.5 bp (0.045%)")]
+    fn test_fmt_bp(#[case] bp: Decimal, #[case] expected: &str) {
         assert_eq!(fmt_bp(bp), expected);
     }
 }

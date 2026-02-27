@@ -39,6 +39,8 @@ use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::Eip712Domain;
 use nautilus_network::http::{HttpClient, Method};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use tabled::{Table, Tabled, settings::Style};
 
@@ -57,6 +59,41 @@ use crate::{
 /// Builder fee approval rate (0.01% = 1 basis point).
 const BUILDER_CODES_APPROVAL_FEE_RATE: &str = "0.01%";
 
+// Hyperliquid effective rate thresholds (Base staking tier, volume tiers 0-6).
+// HL fees are 2D: volume tier x staking tier. We key off the effective
+// rates (`userAddRate`/`userCrossRate`) which absorb both dimensions.
+//
+// Source: https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees
+// Last verified: 2026-02-27
+//
+// Maker thresholds (`userAddRate`):
+const HL_MAKER_RATE_TIER_0: Decimal = dec!(0.00012); // > $5M
+const HL_MAKER_RATE_TIER_1: Decimal = dec!(0.00008); // > $25M
+const HL_MAKER_RATE_TIER_2: Decimal = dec!(0.00004); // > $100M
+
+// Taker thresholds (`userCrossRate`):
+const HL_TAKER_RATE_TIER_0: Decimal = dec!(0.00040); // > $5M
+const HL_TAKER_RATE_TIER_1: Decimal = dec!(0.00035); // > $25M
+const HL_TAKER_RATE_TIER_2: Decimal = dec!(0.00030); // > $100M
+const HL_TAKER_RATE_TIER_3: Decimal = dec!(0.00028); // > $500M
+const HL_TAKER_RATE_TIER_4: Decimal = dec!(0.00026); // > $2B
+const HL_TAKER_RATE_TIER_5: Decimal = dec!(0.00024); // > $7B
+
+// Builder fee values in tenths of a basis point (0.1 bp units).
+const BUILDER_MAKER_FEE_TIER_0: u32 = 4; // 0.4 bp
+const BUILDER_MAKER_FEE_TIER_1: u32 = 3; // 0.3 bp
+const BUILDER_MAKER_FEE_TIER_2: u32 = 2; // 0.2 bp
+const BUILDER_MAKER_FEE_TIER_3: u32 = 1; // 0.1 bp
+const BUILDER_MAKER_FEE_TIER_4: u32 = 0; // 0.0 bp (maker rate is zero)
+
+const BUILDER_TAKER_FEE_TIER_0: u32 = 10; // 1.0 bp
+const BUILDER_TAKER_FEE_TIER_1: u32 = 8; // 0.8 bp
+const BUILDER_TAKER_FEE_TIER_2: u32 = 6; // 0.6 bp
+const BUILDER_TAKER_FEE_TIER_3: u32 = 4; // 0.4 bp
+const BUILDER_TAKER_FEE_TIER_4: u32 = 3; // 0.3 bp
+const BUILDER_TAKER_FEE_TIER_5: u32 = 2; // 0.2 bp
+const BUILDER_TAKER_FEE_TIER_6: u32 = 1; // 0.1 bp
+
 /// Resolves the builder maker fee tier from the Hyperliquid effective maker rate.
 ///
 /// Maps `userAddRate` (effective maker rate including all discounts) to a
@@ -64,17 +101,17 @@ const BUILDER_CODES_APPROVAL_FEE_RATE: &str = "0.01%";
 /// the full volume-to-fee mapping.
 #[must_use]
 #[allow(clippy::bool_to_int_with_if)]
-pub fn resolve_maker_tenths_bp(user_add_rate: f64) -> u32 {
-    if user_add_rate > 0.000_12 {
-        4
-    } else if user_add_rate > 0.000_08 {
-        3
-    } else if user_add_rate > 0.000_04 {
-        2
-    } else if user_add_rate > 0.0 {
-        1
+pub fn resolve_maker_tenths_bp(user_add_rate: Decimal) -> u32 {
+    if user_add_rate > HL_MAKER_RATE_TIER_0 {
+        BUILDER_MAKER_FEE_TIER_0
+    } else if user_add_rate > HL_MAKER_RATE_TIER_1 {
+        BUILDER_MAKER_FEE_TIER_1
+    } else if user_add_rate > HL_MAKER_RATE_TIER_2 {
+        BUILDER_MAKER_FEE_TIER_2
+    } else if user_add_rate > Decimal::ZERO {
+        BUILDER_MAKER_FEE_TIER_3
     } else {
-        0
+        BUILDER_MAKER_FEE_TIER_4
     }
 }
 
@@ -84,17 +121,21 @@ pub fn resolve_maker_tenths_bp(user_add_rate: f64) -> u32 {
 /// builder taker fee tier in tenths of a basis point. See `FEE_TIERS` for
 /// the full volume-to-fee mapping.
 #[must_use]
-pub fn resolve_taker_tenths_bp(user_cross_rate: f64) -> u32 {
-    if user_cross_rate > 0.000_32 {
-        10
-    } else if user_cross_rate > 0.000_28 {
-        8
-    } else if user_cross_rate > 0.000_22 {
-        6
-    } else if user_cross_rate > 0.000_15 {
-        4
+pub fn resolve_taker_tenths_bp(user_cross_rate: Decimal) -> u32 {
+    if user_cross_rate > HL_TAKER_RATE_TIER_0 {
+        BUILDER_TAKER_FEE_TIER_0
+    } else if user_cross_rate > HL_TAKER_RATE_TIER_1 {
+        BUILDER_TAKER_FEE_TIER_1
+    } else if user_cross_rate > HL_TAKER_RATE_TIER_2 {
+        BUILDER_TAKER_FEE_TIER_2
+    } else if user_cross_rate > HL_TAKER_RATE_TIER_3 {
+        BUILDER_TAKER_FEE_TIER_3
+    } else if user_cross_rate > HL_TAKER_RATE_TIER_4 {
+        BUILDER_TAKER_FEE_TIER_4
+    } else if user_cross_rate > HL_TAKER_RATE_TIER_5 {
+        BUILDER_TAKER_FEE_TIER_5
     } else {
-        2
+        BUILDER_TAKER_FEE_TIER_6
     }
 }
 
@@ -221,30 +262,37 @@ impl BuilderFeeInfo {
 #[derive(Tabled)]
 #[tabled(rename_all = "verbatim")]
 struct FeeTierRow {
+    #[tabled(rename = "Tier")]
+    tier: &'static str,
     #[tabled(rename = "14d Volume")]
     volume: &'static str,
-    #[tabled(rename = "HL Maker Rate")]
+    #[tabled(rename = "HL Maker (Base)")]
     hl_maker: &'static str,
-    #[tabled(rename = "HL Taker Rate")]
-    hl_taker: &'static str,
-    #[tabled(rename = "Builder Maker Fee")]
+    #[tabled(rename = "Builder Maker")]
     builder_maker: &'static str,
-    #[tabled(rename = "Builder Taker Fee")]
+    #[tabled(rename = "Total Maker")]
+    total_maker: &'static str,
+    #[tabled(rename = "HL Taker (Base)")]
+    hl_taker: &'static str,
+    #[tabled(rename = "Builder Taker")]
     builder_taker: &'static str,
+    #[tabled(rename = "Total Taker")]
+    total_taker: &'static str,
 }
 
 #[rustfmt::skip]
-const FEE_TIERS: [FeeTierRow; 5] = [
-    FeeTierRow { volume: "Base",    hl_maker: "1.5 bp", hl_taker: "3.5 bp", builder_maker: "0.4 bp (4 tenths)",  builder_taker: "1.0 bp (10 tenths)" },
-    FeeTierRow { volume: "> $5M",   hl_maker: "1.2 bp", hl_taker: "3.2 bp", builder_maker: "0.3 bp (3 tenths)",  builder_taker: "0.8 bp (8 tenths)" },
-    FeeTierRow { volume: "> $25M",  hl_maker: "0.8 bp", hl_taker: "2.8 bp", builder_maker: "0.2 bp (2 tenths)",  builder_taker: "0.6 bp (6 tenths)" },
-    FeeTierRow { volume: "> $100M", hl_maker: "0.4 bp", hl_taker: "2.2 bp", builder_maker: "0.1 bp (1 tenth)",   builder_taker: "0.4 bp (4 tenths)" },
-    FeeTierRow { volume: "> $500M", hl_maker: "0.0 bp", hl_taker: "1.5 bp", builder_maker: "0.0 bp (zero)",      builder_taker: "0.2 bp (2 tenths)" },
+const FEE_TIERS: [FeeTierRow; 7] = [
+    FeeTierRow { tier: "0", volume: "-",       hl_maker: "1.5 bp", builder_maker: "0.4 bp", total_maker: "1.9 bp", hl_taker: "4.5 bp", builder_taker: "1.0 bp", total_taker: "5.5 bp" },
+    FeeTierRow { tier: "1", volume: "> $5M",   hl_maker: "1.2 bp", builder_maker: "0.3 bp", total_maker: "1.5 bp", hl_taker: "4.0 bp", builder_taker: "0.8 bp", total_taker: "4.8 bp" },
+    FeeTierRow { tier: "2", volume: "> $25M",  hl_maker: "0.8 bp", builder_maker: "0.2 bp", total_maker: "1.0 bp", hl_taker: "3.5 bp", builder_taker: "0.6 bp", total_taker: "4.1 bp" },
+    FeeTierRow { tier: "3", volume: "> $100M", hl_maker: "0.4 bp", builder_maker: "0.1 bp", total_maker: "0.5 bp", hl_taker: "3.0 bp", builder_taker: "0.4 bp", total_taker: "3.4 bp" },
+    FeeTierRow { tier: "4", volume: "> $500M", hl_maker: "0.0 bp", builder_maker: "0.0 bp", total_maker: "0.0 bp", hl_taker: "2.8 bp", builder_taker: "0.3 bp", total_taker: "3.1 bp" },
+    FeeTierRow { tier: "5", volume: "> $2B",   hl_maker: "0.0 bp", builder_maker: "0.0 bp", total_maker: "0.0 bp", hl_taker: "2.6 bp", builder_taker: "0.2 bp", total_taker: "2.8 bp" },
+    FeeTierRow { tier: "6", volume: "> $7B",   hl_maker: "0.0 bp", builder_maker: "0.0 bp", total_maker: "0.0 bp", hl_taker: "2.4 bp", builder_taker: "0.1 bp", total_taker: "2.5 bp" },
 ];
 
 fn print_fee_tier_table() {
-    println!("Both maker and taker fees scale down with your Hyperliquid volume tier.");
-    println!("At the highest tier, the builder maker fee is zero and taker is 0.2 bp:");
+    println!("All-in perp fees (HL Base + builder) by volume tier:");
     println!();
 
     let table = Table::new(&FEE_TIERS).with(Style::rounded()).to_string();
@@ -253,8 +301,12 @@ fn print_fee_tier_table() {
     }
 
     println!();
-    println!("These fees are charged in addition to Hyperliquid's standard fees.");
-    println!("Fee tiers are detected automatically from your HL volume tier.");
+    println!("HL rates shown are Base staking tier. If your staking tier is higher");
+    println!("(Wood/Bronze/Silver/Gold/Platinum/Diamond), your HL rates are lower.");
+    println!("Builder fees are computed from your effective HL rates, so staking");
+    println!("and referral discounts are reflected automatically.");
+    println!("HL allows builders up to 10 bp on perps and 100 bp on spot.");
+    println!("Maker rebate tiers (negative rates) do not attract any builder fee.");
     println!();
     println!("Hyperliquid fees: https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees");
     println!(
@@ -443,12 +495,14 @@ pub async fn approve_from_env(non_interactive: bool) -> bool {
     println!("Approving Nautilus builder fee on {network}");
     println!("Builder address: {}", info.address);
     println!(
-        "Approval rate: 1.0 bp ({}) ceiling, covers perpetual taker and maker fills",
-        info.approval_rate
+        "Approval rate: 1 bp ({}) ceiling (perpetuals only, no fee on spot)",
+        info.approval_rate,
     );
+    println!();
+    println!("Fees charged per perpetual fill (no builder fee on spot orders):");
     println!("  - Taker: 1.0 bp (0.01%) base, scales down with volume");
-    println!("  - Maker: 0.4 bp (0.004%) base, scales down with volume");
-    println!("  - Spot: no builder fee");
+    println!("  - Maker (post-only): 0.4 bp (0.004%) base, scales down with volume");
+    println!("  - Maker fee reaches 0 bp at Tier 4 (> $500M 14d volume)");
     println!();
     print_fee_tier_table();
     println!();
@@ -653,7 +707,7 @@ pub async fn revoke_from_env(non_interactive: bool) -> bool {
     println!("Builder address: {NAUTILUS_BUILDER_FEE_ADDRESS}");
     println!();
     println!("WARNING: After revoking, you will not be able to trade on");
-    println!("Hyperliquid via NautilusTrader until you re-approve.");
+    println!("Hyperliquid via NautilusTrader until you re-approve the builder fee.");
     println!();
 
     if !non_interactive && !wait_for_confirmation("Press Enter to revoke or Ctrl+C to cancel... ") {
@@ -674,7 +728,9 @@ pub async fn revoke_from_env(non_interactive: bool) -> bool {
 
             if result.success {
                 println!("Builder fee revoked successfully.");
-                println!("You will need to re-approve to trade via NautilusTrader.");
+                println!(
+                    "You will need to re-approve the builder fee to trade via NautilusTrader."
+                );
             } else {
                 println!("Revocation may have failed. Check the response above.");
             }
@@ -775,7 +831,7 @@ pub async fn verify_builder_fee(
     let approved_rate = approved_tenths_bp.map(|tenths| {
         let bps = tenths as f64 / 10.0;
         let percent = bps / 100.0;
-        format!("{percent}%")
+        format!("{bps} bp ({percent}%)")
     });
     let is_approved = approved_tenths_bp.is_some_and(|tenths| tenths >= 10);
 
@@ -866,9 +922,7 @@ pub async fn verify_from_env_or_address(wallet_address: Option<String>) -> bool 
             if result.is_approved {
                 println!("Status: APPROVED");
                 println!();
-                println!("NautilusTrader builder fee rates (perpetuals only, no fee on spot):");
-                println!("  - Taker: 1.0 bp (0.01%) base, scales down with volume");
-                println!("  - Maker: 0.4 bp (0.004%) base, scales down with volume");
+                print_fee_tier_table();
             } else {
                 println!("Status: NOT APPROVED");
                 println!();
@@ -1044,6 +1098,7 @@ fn wait_for_confirmation(prompt: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -1057,37 +1112,41 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0.00020, 4)] // Well above base
-    #[case(0.00015, 4)] // At HL base rate
-    #[case(0.00013, 4)] // Just above threshold
-    #[case(0.00012, 3)] // At threshold (not above)
-    #[case(0.00010, 3)] // Between thresholds
-    #[case(0.00008, 2)] // At second threshold
-    #[case(0.00006, 2)] // Between thresholds
-    #[case(0.00004, 1)] // At third threshold
-    #[case(0.00002, 1)] // Between thresholds
-    #[case(0.00001, 1)] // Just above zero
-    #[case(0.0, 0)] // Zero rate (> $500M volume)
-    #[case(-0.001, 0)] // Negative rate treated as zero tier
-    fn test_resolve_maker_tenths_bp(#[case] rate: f64, #[case] expected: u32) {
+    #[case(dec!(0.00020), 4)] // Well above base
+    #[case(dec!(0.00015), 4)] // At HL base rate
+    #[case(dec!(0.00013), 4)] // Just above threshold
+    #[case(dec!(0.00012), 3)] // At threshold (not above)
+    #[case(dec!(0.00010), 3)] // Between thresholds
+    #[case(dec!(0.00008), 2)] // At second threshold
+    #[case(dec!(0.00006), 2)] // Between thresholds
+    #[case(dec!(0.00004), 1)] // At third threshold
+    #[case(dec!(0.00002), 1)] // Between thresholds
+    #[case(dec!(0.00001), 1)] // Just above zero
+    #[case(dec!(0.0), 0)] // Zero rate (> $500M volume)
+    #[case(dec!(-0.001), 0)] // Negative rate treated as zero tier
+    fn test_resolve_maker_tenths_bp(#[case] rate: Decimal, #[case] expected: u32) {
         assert_eq!(resolve_maker_tenths_bp(rate), expected);
     }
 
     #[rstest]
-    #[case(0.00040, 10)] // Well above base
-    #[case(0.00035, 10)] // At HL base rate
-    #[case(0.00033, 10)] // Just above threshold
-    #[case(0.00032, 8)] // At threshold (not above)
-    #[case(0.00030, 8)] // Between thresholds
-    #[case(0.00028, 6)] // At second threshold
-    #[case(0.00025, 6)] // Between thresholds
-    #[case(0.00022, 4)] // At third threshold
-    #[case(0.00018, 4)] // Between thresholds
-    #[case(0.00015, 2)] // At fourth threshold
-    #[case(0.00010, 2)] // Below all thresholds
-    #[case(0.0, 2)] // Zero rate
-    #[case(-0.001, 2)] // Negative rate
-    fn test_resolve_taker_tenths_bp(#[case] rate: f64, #[case] expected: u32) {
+    #[case(dec!(0.00050), 10)] // Well above base
+    #[case(dec!(0.00045), 10)] // At HL base rate
+    #[case(dec!(0.00041), 10)] // Just above threshold
+    #[case(dec!(0.00040), 8)] // At threshold (not above)
+    #[case(dec!(0.00038), 8)] // Between thresholds
+    #[case(dec!(0.00035), 6)] // At second threshold
+    #[case(dec!(0.00033), 6)] // Between thresholds
+    #[case(dec!(0.00030), 4)] // At third threshold
+    #[case(dec!(0.00029), 4)] // Between thresholds
+    #[case(dec!(0.00028), 3)] // At fourth threshold
+    #[case(dec!(0.00027), 3)] // Between thresholds
+    #[case(dec!(0.00026), 2)] // At fifth threshold
+    #[case(dec!(0.00025), 2)] // Between thresholds
+    #[case(dec!(0.00024), 1)] // At sixth threshold
+    #[case(dec!(0.00020), 1)] // Below all thresholds
+    #[case(dec!(0.0), 1)] // Zero rate
+    #[case(dec!(-0.001), 1)] // Negative rate
+    fn test_resolve_taker_tenths_bp(#[case] rate: Decimal, #[case] expected: u32) {
         assert_eq!(resolve_taker_tenths_bp(rate), expected);
     }
 

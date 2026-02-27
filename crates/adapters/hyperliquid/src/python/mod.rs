@@ -125,7 +125,7 @@ fn py_approve_hyperliquid_builder_fee(non_interactive: bool) -> PyResult<bool> {
 /// Set `HYPERLIQUID_TESTNET=true` to use testnet.
 ///
 /// WARNING: After revoking, you will not be able to trade on Hyperliquid via
-/// NautilusTrader until you re-approve.
+/// NautilusTrader until you re-approve the builder fee.
 ///
 /// # Returns
 ///
