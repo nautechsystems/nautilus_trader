@@ -118,15 +118,17 @@ RESET  := \033[0m
 .PHONY: install-deps
 install-deps:  #-- Install Python dependencies only (no package build)
 	$(info $(M) Installing Python dependencies...)
-	$Q uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
+	$Q uv sync --active --all-groups --all-extras --inexact --no-install-package nautilus_trader
 
 .PHONY: install
+install: install-deps
 install: export BUILD_MODE=release
 install:  #-- Install in release mode with all dependencies and extras
 	$(info $(M) Installing NautilusTrader in release mode...)
 	$Q uv sync --active --all-groups --all-extras --inexact
 
 .PHONY: install-debug
+install-debug: install-deps
 install-debug: export BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
 	$(info $(M) Installing NautilusTrader in debug mode...)
@@ -135,12 +137,14 @@ install-debug:  #-- Install in debug mode for development
 #== Build
 
 .PHONY: build
+build: install-deps
 build: export BUILD_MODE=release
 build: export CARGO_TARGET_DIR=$(TARGET_DIR)
 build:  #-- Build the package in release mode
 	uv run --active --no-sync build.py
 
 .PHONY: build-debug
+build-debug: install-deps
 build-debug: export BUILD_MODE=debug
 build-debug: export CARGO_TARGET_DIR=$(TARGET_DIR)
 build-debug:  #-- Build the package in debug mode (recommended for development)
