@@ -26,7 +26,7 @@ pub struct SubscribeOptionChain {
     pub series_id: OptionSeriesId,
     pub strike_range: StrikeRange,
     pub atm_source: Option<AtmSource>,
-    pub snapshot_interval_ms: u64,
+    pub snapshot_interval_ms: Option<u64>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub client_id: Option<ClientId>,
@@ -40,7 +40,7 @@ impl SubscribeOptionChain {
         series_id: OptionSeriesId,
         strike_range: StrikeRange,
         atm_source: Option<AtmSource>,
-        snapshot_interval_ms: u64,
+        snapshot_interval_ms: Option<u64>,
         command_id: UUID4,
         ts_init: UnixNanos,
         client_id: Option<ClientId>,
@@ -118,7 +118,7 @@ mod tests {
             series_id,
             strike_range,
             Some(atm_source),
-            1000,
+            Some(1000),
             UUID4::new(),
             UnixNanos::from(1u64),
             None,
@@ -126,7 +126,7 @@ mod tests {
         );
 
         assert_eq!(cmd.series_id, series_id);
-        assert_eq!(cmd.snapshot_interval_ms, 1000);
+        assert_eq!(cmd.snapshot_interval_ms, Some(1000));
     }
 
     #[rstest]

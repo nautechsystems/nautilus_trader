@@ -162,8 +162,8 @@ impl DataActor for OptionChainTester {
             strikes_below: 3,
         };
 
-        // Snapshot every 5 seconds
-        let snapshot_interval_ms = 5_000;
+        // Snapshot every 5 seconds (use None for raw stream mode)
+        let snapshot_interval_ms = Some(5_000);
 
         let client_id = self.client_id;
         self.subscribe_option_chain(

@@ -74,6 +74,8 @@ pub struct OptionChainManager {
     bootstrapped: bool,
     /// Wire-level instrument subscriptions deferred until ATM bootstrap.
     pending_wire_instruments: Option<Vec<InstrumentId>>,
+    /// When `true`, every quote/greeks update for an active instrument immediately publishes a snapshot.
+    raw_mode: bool,
 }
 
 impl OptionChainManager {
@@ -112,6 +114,8 @@ impl OptionChainManager {
         // If active set is already populated (Fixed range or ATM provided), we're bootstrapped
         let bootstrapped = !active_instrument_ids.is_empty() || all_instrument_ids.is_empty();
 
+        let raw_mode = cmd.snapshot_interval_ms.is_none();
+
         let manager = Self {
             aggregator,
             atm_source: resolved_atm_source,
@@ -124,6 +128,7 @@ impl OptionChainManager {
             msgbus_priority,
             bootstrapped,
             pending_wire_instruments: None,
+            raw_mode,
         };
         let manager_rc = Rc::new(RefCell::new(manager));
 
@@ -159,7 +164,9 @@ impl OptionChainManager {
             clock,
         );
 
-        let timer_name = Self::setup_timer(&manager_rc, series_id, cmd.snapshot_interval_ms, clock);
+        let timer_name = cmd
+            .snapshot_interval_ms
+            .map(|ms| Self::setup_timer(&manager_rc, series_id, ms, clock));
 
         {
             let mut mgr = manager_rc.borrow_mut();
@@ -167,14 +174,17 @@ impl OptionChainManager {
             mgr.greeks_handlers = greeks_handlers;
             mgr.mark_handler = mark_handler;
             mgr.index_handler = index_handler;
-            mgr.timer_name = Some(timer_name);
+            mgr.timer_name = timer_name;
         }
 
+        let mode_str = match cmd.snapshot_interval_ms {
+            Some(ms) => format!("interval={ms}ms"),
+            None => "mode=raw".to_string(),
+        };
         log::info!(
-            "Subscribed option chain for {series_id} ({} active/{} total instruments, interval={}ms)",
+            "Subscribed option chain for {series_id} ({} active/{} total instruments, {mode_str})",
             active_instrument_ids.len(),
             all_instrument_ids.len(),
-            cmd.snapshot_interval_ms,
         );
 
         manager_rc
@@ -459,6 +469,13 @@ impl OptionChainManager {
         self.aggregator.update_greeks(greeks);
         // Check if first ATM arrival triggers deferred bootstrap
         self.maybe_bootstrap();
+
+        if self.raw_mode
+            && self.bootstrapped
+            && self.aggregator.active_ids().contains(&greeks.instrument_id)
+        {
+            self.publish_slice(greeks.ts_event);
+        }
     }
 
     /// Routes a mark price update to the ATM tracker, then bootstraps if ready.
@@ -484,6 +501,13 @@ impl OptionChainManager {
     pub fn handle_quote(&mut self, quote: &QuoteTick) {
         self.aggregator.update_quote(quote);
         self.maybe_bootstrap();
+
+        if self.raw_mode
+            && self.bootstrapped
+            && self.aggregator.active_ids().contains(&quote.instrument_id)
+        {
+            self.publish_slice(quote.ts_event);
+        }
     }
 
     /// Bootstraps the active instrument set on the first ATM price arrival.
@@ -800,6 +824,7 @@ mod tests {
             msgbus_priority: 0,
             bootstrapped: true,
             pending_wire_instruments: None,
+            raw_mode: false,
         }
     }
 
@@ -886,6 +911,7 @@ mod tests {
             msgbus_priority: 0,
             bootstrapped: false,
             pending_wire_instruments: None,
+            raw_mode: false,
         }
     }
 
@@ -1020,6 +1046,7 @@ mod tests {
             msgbus_priority: 0,
             bootstrapped: false,
             pending_wire_instruments: None,
+            raw_mode: false,
         }
     }
 

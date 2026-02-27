@@ -1359,7 +1359,7 @@ pub trait DataActor:
         series_id: OptionSeriesId,
         strike_range: StrikeRange,
         atm_source: Option<AtmSource>,
-        snapshot_interval_ms: u64,
+        snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
     ) where
         Self: 'static + Debug + Sized,
@@ -3385,7 +3385,7 @@ impl DataActorCore {
         series_id: OptionSeriesId,
         strike_range: StrikeRange,
         atm_source: Option<AtmSource>,
-        snapshot_interval_ms: u64,
+        snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
     ) {
         self.check_registered();

@@ -162,14 +162,14 @@ impl DataActor for OptionChainTester {
             strikes_below: 3,
         };
 
-        // Snapshot every 5 seconds
-        let snapshot_interval_ms = 2_000;
+        // Snapshot every 2 seconds (use None for raw stream mode)
+        let snapshot_interval_ms = Some(2_000u64);
 
         let client_id = self.client_id;
         self.subscribe_option_chain(
             series_id,
             strike_range,
-            None, // auto-resolved to IndexPrice from BTC-PERPETUAL
+            None, // auto-resolved to ForwardPrice (from option ticker underlying_price)
             snapshot_interval_ms,
             Some(client_id),
         );
