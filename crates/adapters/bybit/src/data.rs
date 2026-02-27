@@ -33,14 +33,15 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
-            InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
-            RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeMarkPrices,
-            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, DataResponse, ForwardPricesResponse,
+            FundingRatesResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
+            RequestBookSnapshot, RequestForwardPrices, RequestFundingRates, RequestInstrument,
+            RequestInstruments, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+            SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
+            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -50,12 +51,13 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API, option_chain::OptionForwardPrice},
+    data::{Data, ForwardPrice, OrderBookDeltas_API},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::book::OrderBook,
 };
+use rust_decimal::Decimal;
 use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
 
@@ -1380,66 +1382,111 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
-    fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
-        if request.data_type.type_name() != "OptionForwardPrices" {
-            log::warn!(
-                "Bybit data client does not handle custom data type: {}",
-                request.data_type.type_name(),
-            );
-            return Ok(());
-        }
-
-        let base_coin = request
-            .data_type
-            .metadata()
-            .and_then(|m| m.get("currency").cloned())
-            .unwrap_or_else(|| "BTC".to_string());
-
+    fn request_forward_prices(&self, request: RequestForwardPrices) -> anyhow::Result<()> {
+        let underlying = request.underlying.to_string();
+        let instrument_id = request.instrument_id;
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
         let request_id = request.request_id;
-        let client_id = request.client_id;
-        let data_type = request.data_type.clone();
+        let client_id = self.client_id();
         let params = request.params;
         let clock = self.clock;
         let venue = *BYBIT_VENUE;
 
-        log::info!("Requesting option forward prices for base_coin={base_coin}");
-
         get_runtime().spawn(async move {
-            match http_client.request_option_tickers_raw(&base_coin).await {
-                Ok(tickers) => {
-                    let forward_prices: Vec<OptionForwardPrice> = tickers
-                        .into_iter()
-                        .filter_map(|t| {
-                            let up: f64 = t.underlying_price.parse().ok()?;
-                            if up == 0.0 {
-                                return None;
-                            }
-                            Some(OptionForwardPrice {
-                                instrument_id: BybitSymbol::new(format!("{}-OPTION", t.symbol))
-                                    .map(|s| s.to_instrument_id())
-                                    .ok()?,
-                                underlying_price: up,
-                                underlying_index: None,
+            let result = if let Some(inst_id) = instrument_id {
+                // Single-instrument path: fetch ticker for one symbol
+                let raw_symbol = extract_raw_symbol(inst_id.symbol.as_str()).to_string();
+                log::info!(
+                    "Requesting forward price for {underlying} (single instrument: {raw_symbol})"
+                );
+
+                let params = crate::http::query::BybitTickersParams {
+                    category: BybitProductType::Option,
+                    symbol: Some(raw_symbol.clone()),
+                    base_coin: None,
+                    exp_date: None,
+                };
+                match http_client.request_option_tickers_raw_with_params(&params).await {
+                    Ok(tickers) => {
+                        let ts = clock.get_time_ns();
+                        let forward_prices: Vec<ForwardPrice> = tickers
+                            .into_iter()
+                            .filter_map(|t| {
+                                let up: Decimal = t.underlying_price.parse().ok()?;
+                                if up.is_zero() {
+                                    return None;
+                                }
+                                Some(ForwardPrice::new(inst_id, up, None, ts, ts))
                             })
-                        })
-                        .collect();
+                            .collect();
 
-                    log::info!(
-                        "Fetched {} option forward prices for {base_coin}",
-                        forward_prices.len(),
-                    );
+                        log::info!(
+                            "Fetched {} forward price for {underlying} (single instrument: {raw_symbol})",
+                            forward_prices.len(),
+                        );
+                        Ok((forward_prices, ts))
+                    }
+                    Err(e) => Err(e),
+                }
+            } else {
+                // Bulk path: fetch all option tickers
+                log::info!("Requesting option forward prices for base_coin={underlying} (bulk)");
 
-                    let response = DataResponse::Data(CustomDataResponse::new(
+                match http_client.request_option_tickers_raw(&underlying).await {
+                    Ok(tickers) => {
+                        let ts = clock.get_time_ns();
+
+                        // Deduplicate: all options at the same expiry share the same
+                        // forward price. Extract expiry prefix (e.g. "BTC-28FEB26" from
+                        // "BTC-28FEB26-65000-C") and keep only one entry per expiry.
+                        let mut seen_expiries = std::collections::HashSet::new();
+                        let forward_prices: Vec<ForwardPrice> = tickers
+                            .into_iter()
+                            .filter_map(|t| {
+                                let up: Decimal = t.underlying_price.parse().ok()?;
+                                if up.is_zero() {
+                                    return None;
+                                }
+                                let parts: Vec<&str> = t.symbol.splitn(3, '-').collect();
+                                let expiry_key = if parts.len() >= 2 {
+                                    format!("{}-{}", parts[0], parts[1])
+                                } else {
+                                    t.symbol.to_string()
+                                };
+                                if !seen_expiries.insert(expiry_key) {
+                                    return None;
+                                }
+                                Some(ForwardPrice::new(
+                                    BybitSymbol::new(format!("{}-OPTION", t.symbol))
+                                        .map(|s| s.to_instrument_id())
+                                        .ok()?,
+                                    up,
+                                    None,
+                                    ts,
+                                    ts,
+                                ))
+                            })
+                            .collect();
+
+                        log::info!(
+                            "Fetched {} forward prices (per-expiry) for {underlying}",
+                            forward_prices.len(),
+                        );
+                        Ok((forward_prices, ts))
+                    }
+                    Err(e) => Err(e),
+                }
+            };
+
+            match result {
+                Ok((forward_prices, ts)) => {
+                    let response = DataResponse::ForwardPrices(ForwardPricesResponse::new(
                         request_id,
                         client_id,
-                        Some(venue),
-                        data_type,
+                        venue,
                         forward_prices,
-                        None,
-                        None,
-                        clock.get_time_ns(),
+                        ts,
                         params,
                     ));
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
@@ -1447,7 +1494,7 @@ impl DataClient for BybitDataClient {
                     }
                 }
                 Err(e) => {
-                    log::error!("Forward prices request failed for {base_coin}: {e:?}");
+                    log::error!("Forward prices request failed for {underlying}: {e:?}");
                 }
             }
         });

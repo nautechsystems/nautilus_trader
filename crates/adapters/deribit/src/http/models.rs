@@ -544,6 +544,22 @@ pub struct DeribitBookSummary {
     pub creation_timestamp: i64,
 }
 
+/// Ticker data from `/public/ticker` endpoint.
+///
+/// Only the fields needed for forward price extraction are included;
+/// serde will ignore the many additional fields returned by the API.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitTicker {
+    /// Unique instrument identifier (e.g., "BTC-28FEB26-65000-C")
+    pub instrument_name: String,
+    /// Underlying price for implied volatility calculations (options only)
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub underlying_price: Option<Decimal>,
+    /// Name of the underlying future or index (e.g., "BTC-28MAR25" or "SYN.BTC-28MAR25")
+    #[serde(default)]
+    pub underlying_index: Option<String>,
+}
+
 /// Position data from `/private/get_positions` endpoint.
 ///
 /// Contains information about a single position in a specific instrument.

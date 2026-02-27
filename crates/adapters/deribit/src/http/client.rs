@@ -51,14 +51,16 @@ use ustr::Ustr;
 use super::{
     error::DeribitHttpError,
     models::{
-        DeribitAccountSummariesResponse, DeribitCurrency, DeribitInstrument, DeribitJsonRpcRequest,
-        DeribitJsonRpcResponse, DeribitPosition, DeribitProductType, DeribitUserTradesResponse,
+        DeribitAccountSummariesResponse, DeribitBookSummary, DeribitCurrency, DeribitInstrument,
+        DeribitJsonRpcRequest, DeribitJsonRpcResponse, DeribitPosition, DeribitProductType,
+        DeribitTicker, DeribitUserTradesResponse,
     },
     query::{
-        GetAccountSummariesParams, GetInstrumentParams, GetInstrumentsParams,
-        GetOpenOrdersByInstrumentParams, GetOpenOrdersParams, GetOrderHistoryByCurrencyParams,
-        GetOrderHistoryByInstrumentParams, GetOrderStateParams, GetPositionsParams,
-        GetUserTradesByCurrencyAndTimeParams, GetUserTradesByInstrumentAndTimeParams,
+        GetAccountSummariesParams, GetBookSummaryByCurrencyParams, GetInstrumentParams,
+        GetInstrumentsParams, GetOpenOrdersByInstrumentParams, GetOpenOrdersParams,
+        GetOrderHistoryByCurrencyParams, GetOrderHistoryByInstrumentParams, GetOrderStateParams,
+        GetPositionsParams, GetTickerParams, GetUserTradesByCurrencyAndTimeParams,
+        GetUserTradesByInstrumentAndTimeParams,
     },
 };
 use crate::{
@@ -732,11 +734,22 @@ impl DeribitRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_book_summary_by_currency(
         &self,
-        params: super::query::GetBookSummaryByCurrencyParams,
-    ) -> Result<DeribitJsonRpcResponse<Vec<super::models::DeribitBookSummary>>, DeribitHttpError>
-    {
+        params: GetBookSummaryByCurrencyParams,
+    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitBookSummary>>, DeribitHttpError> {
         self.send_request("public/get_book_summary_by_currency", params, false)
             .await
+    }
+
+    /// Gets ticker data for a single instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_ticker(
+        &self,
+        params: GetTickerParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitTicker>, DeribitHttpError> {
+        self.send_request("public/ticker", params, false).await
     }
 
     /// Gets positions for a specific currency.
@@ -1638,6 +1651,30 @@ impl DeribitHttpClient {
         Ok(reports)
     }
 
+    /// Requests ticker data for a single instrument.
+    ///
+    /// Returns the `DeribitTicker` which includes `underlying_price` (forward price).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_ticker(
+        &self,
+        instrument_name: &str,
+    ) -> anyhow::Result<DeribitTicker> {
+        let params = GetTickerParams {
+            instrument_name: instrument_name.to_string(),
+        };
+        let response = self
+            .inner
+            .get_ticker(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result in ticker response"))
+    }
+
     /// Requests book summaries for options of a given currency.
     ///
     /// Returns raw `DeribitBookSummary` items which include `underlying_price`
@@ -1649,24 +1686,16 @@ impl DeribitHttpClient {
     pub async fn request_book_summaries(
         &self,
         currency: &str,
-    ) -> anyhow::Result<Vec<super::models::DeribitBookSummary>> {
-        let params = super::query::GetBookSummaryByCurrencyParams::options(currency);
+    ) -> anyhow::Result<Vec<DeribitBookSummary>> {
+        let params = GetBookSummaryByCurrencyParams::options(currency);
         let full_response = self
             .inner
             .get_book_summary_by_currency(params)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
-        let summaries = full_response
+        full_response
             .result
-            .ok_or_else(|| anyhow::anyhow!("No result in book summary response"))?;
-
-        log::info!(
-            "Fetched {} book summaries for {} options",
-            summaries.len(),
-            currency,
-        );
-
-        Ok(summaries)
+            .ok_or_else(|| anyhow::anyhow!("No result in book summary response"))
     }
 
     /// Requests position status reports for reconciliation.

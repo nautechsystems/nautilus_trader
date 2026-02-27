@@ -55,7 +55,7 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
-        CustomDataResponse, DataCommand, DataResponse, RequestCommand, RequestCustomData,
+        DataCommand, DataResponse, ForwardPricesResponse, RequestCommand, RequestForwardPrices,
         SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
         SubscribeCommand, SubscribeOptionChain, UnsubscribeBars, UnsubscribeBookDeltas,
         UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
@@ -83,7 +83,7 @@ use nautilus_model::{
         Bar, BarType, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
         InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
         QuoteTick, TradeTick,
-        option_chain::{AtmSource, OptionForwardPrice, OptionGreeks, StrikeRange},
+        option_chain::{AtmSource, OptionGreeks, StrikeRange},
     },
     enums::{AggregationSource, BarAggregation, BookType, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
@@ -840,6 +840,7 @@ impl DataEngine {
                 RequestCommand::Quotes(req) => client.request_quotes(req),
                 RequestCommand::Trades(req) => client.request_trades(req),
                 RequestCommand::FundingRates(req) => client.request_funding_rates(req),
+                RequestCommand::ForwardPrices(req) => client.request_forward_prices(req),
                 RequestCommand::Bars(req) => client.request_bars(req),
             }
         } else {
@@ -931,13 +932,10 @@ impl DataEngine {
                 }
             }
             DataResponse::Book(r) => self.handle_book_response(&r.data),
-            DataResponse::Data(r) => {
-                if r.data_type.type_name() == "OptionForwardPrices" {
-                    return self.handle_forward_prices_response(&correlation_id, r);
-                } else {
-                    log::debug!("Received custom data response: {}", r.data_type.type_name());
-                }
+            DataResponse::ForwardPrices(r) => {
+                return self.handle_forward_prices_response(&correlation_id, r);
             }
+            _ => todo!("Handle other response types"),
         }
 
         msgbus::send_response(&correlation_id, resp);
@@ -1512,24 +1510,38 @@ impl DataEngine {
 
             if let Some(client_id) = resolved_client_id {
                 let request_id = UUID4::new();
-                let currency = series_id.underlying.to_string();
-                let metadata = Some([("currency".to_string(), currency)].into_iter().collect());
-                let data_type = DataType::new("OptionForwardPrices", metadata);
                 let ts_init = self.clock.borrow().timestamp_ns();
-                let request = RequestCustomData::new(
-                    client_id, data_type, None, None, None, request_id, ts_init, None,
+
+                // Pick any one option instrument at this expiry from cache
+                // to enable single-instrument forward price fetch (1 HTTP call)
+                let sample_instrument_id = {
+                    let cache = self.cache.borrow();
+                    cache
+                        .instruments(&series_id.venue, Some(&series_id.underlying))
+                        .iter()
+                        .find(|i| {
+                            i.expiration_ns() == Some(series_id.expiration_ns)
+                                && i.settlement_currency().code == series_id.settlement_currency
+                        })
+                        .map(|i| i.id())
+                };
+
+                let request = RequestForwardPrices::new(
+                    series_id.venue,
+                    series_id.underlying,
+                    sample_instrument_id,
+                    Some(client_id),
+                    request_id,
+                    ts_init,
+                    None,
                 );
 
                 self.pending_option_chain_requests
                     .insert(request_id, (cmd.clone(), resolved_atm_source));
 
-                // Re-borrow client to make the request
-                if let Some(client) =
-                    self.get_client(cmd.client_id.as_ref(), Some(&series_id.venue))
-                    && let Err(e) = client.request_data(request)
-                {
+                let req_cmd = RequestCommand::ForwardPrices(request);
+                if let Err(e) = self.execute_request(req_cmd) {
                     log::warn!("Failed to request forward prices for {series_id}: {e}");
-                    // Fall through to create manager without forward price
                     let (cmd, atm_source) = self
                         .pending_option_chain_requests
                         .remove(&request_id)
@@ -1740,11 +1752,6 @@ impl DataEngine {
             }
         }
 
-        log::info!(
-            "Forwarded {} quote + {} greeks unsubscriptions + ATM source to DataClient",
-            instrument_ids.len(),
-            instrument_ids.len(),
-        );
     }
 
     fn maintain_book_updater(&mut self, instrument_id: &InstrumentId, _topics: &[MStr<Topic>]) {
@@ -1858,12 +1865,12 @@ impl DataEngine {
         }
     }
 
-    /// Handles an `OptionForwardPrices` response by extracting the forward price
+    /// Handles a `ForwardPricesResponse` by extracting the forward price
     /// for the pending option chain and creating the manager with instant bootstrap.
     fn handle_forward_prices_response(
         &mut self,
         correlation_id: &UUID4,
-        resp: &CustomDataResponse,
+        resp: &ForwardPricesResponse,
     ) {
         let Some((cmd, atm_source)) = self.pending_option_chain_requests.remove(correlation_id)
         else {
@@ -1875,37 +1882,28 @@ impl DataEngine {
 
         let series_id = cmd.series_id;
 
-        let forward_prices = match resp.data.downcast_ref::<Vec<OptionForwardPrice>>() {
-            Some(prices) => prices,
-            None => {
-                log::warn!(
-                    "Failed to downcast forward prices response for {series_id}, \
-                     creating manager without forward price"
-                );
-                self.create_option_chain_manager(&cmd, atm_source, None);
-                return;
-            }
-        };
-
         // Find a forward price that matches an instrument in this series.
         // We look up each forward price instrument in the cache to match by expiry and currency.
         let cache = self.cache.borrow();
-        let mut best_price: Option<f64> = None;
+        let mut best_price: Option<Price> = None;
 
-        for fp in forward_prices {
+        for fp in &resp.data {
             // Check if any cached instrument with this id belongs to our series
             if let Some(instrument) = cache.instrument(&fp.instrument_id)
                 && let Some(expiration) = instrument.expiration_ns()
                 && expiration == series_id.expiration_ns
                 && instrument.settlement_currency().code == series_id.settlement_currency
             {
-                best_price = Some(fp.underlying_price);
+                match Price::from_decimal(fp.forward_price) {
+                    Ok(price) => best_price = Some(price),
+                    Err(e) => log::warn!("Invalid forward price for {}: {e}", fp.instrument_id),
+                }
                 break;
             }
         }
         drop(cache);
 
-        let initial_price = best_price.map(|p| Price::new(p, 2));
+        let initial_price = best_price;
 
         if let Some(price) = initial_price {
             log::info!("Forward price for {series_id}: {price} (instant bootstrap)",);

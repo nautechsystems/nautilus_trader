@@ -64,8 +64,8 @@ use super::{
         BybitOrderHistoryResponse, BybitOrderbookResponse, BybitPlaceOrderResponse,
         BybitPositionListResponse, BybitServerTimeResponse, BybitSetLeverageResponse,
         BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSwitchModeResponse,
-        BybitTickerData, BybitTradeHistoryResponse, BybitTradesResponse,
-        BybitWalletBalanceResponse,
+        BybitTickerData, BybitTickerOption, BybitTickersOptionResponse,
+        BybitTradeHistoryResponse, BybitTradesResponse, BybitWalletBalanceResponse,
     },
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
@@ -2849,23 +2849,30 @@ impl BybitHttpClient {
     pub async fn request_option_tickers_raw(
         &self,
         base_coin: &str,
-    ) -> anyhow::Result<Vec<super::models::BybitTickerOption>> {
-        use super::models::BybitTickersOptionResponse;
-
-        let params = super::query::BybitTickersParams {
+    ) -> anyhow::Result<Vec<BybitTickerOption>> {
+        let params = BybitTickersParams {
             category: BybitProductType::Option,
             symbol: None,
             base_coin: Some(base_coin.to_string()),
             exp_date: None,
         };
         let response: BybitTickersOptionResponse = self.inner.get_tickers(&params).await?;
+        Ok(response.result.list)
+    }
 
-        log::info!(
-            "Fetched {} raw option tickers for {}",
-            response.result.list.len(),
-            base_coin,
-        );
-
+    /// Request raw option tickers with custom params.
+    ///
+    /// This allows fetching a single instrument by setting `symbol` in the params,
+    /// instead of fetching all options for a base coin.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_option_tickers_raw_with_params(
+        &self,
+        params: &BybitTickersParams,
+    ) -> anyhow::Result<Vec<BybitTickerOption>> {
+        let response: BybitTickersOptionResponse = self.inner.get_tickers(params).await?;
         Ok(response.result.list)
     }
 

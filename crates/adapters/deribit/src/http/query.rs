@@ -455,6 +455,13 @@ impl GetBookSummaryByCurrencyParams {
     }
 }
 
+/// Query parameters for `/public/ticker` endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GetTickerParams {
+    /// Instrument name (e.g., "BTC-28FEB26-65000-C")
+    pub instrument_name: String,
+}
+
 /// Query parameters for `/private/get_positions` endpoint.
 /// Retrieves positions for a specific currency.
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]
