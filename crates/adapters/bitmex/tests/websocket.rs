@@ -1754,7 +1754,6 @@ async fn test_heartbeat_timeout_reconnection() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(client.is_active());
 
-    // SAFETY: Heartbeat configuration doesn't break connection
     // TODO: Add server flag to suppress pong responses and test actual heartbeat timeout
 
     // Wait a bit longer to see if heartbeat causes any issues

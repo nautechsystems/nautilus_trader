@@ -582,8 +582,6 @@ impl PyDataActor {
 
     /// Updates the actor_id in both the core config and the actor_id field.
     ///
-    /// # Safety
-    ///
     /// This method is only exposed for the Python actor to assist with configuration and should
     /// **never** be called post registration. Calling this after registration will cause
     /// inconsistent state where the actor is registered under one ID but its internal actor_id

@@ -114,7 +114,6 @@ impl Venue {
 
     #[must_use]
     pub fn synthetic() -> Self {
-        // SAFETY: Unwrap safe as using known synthetic venue constant
         Self::new(SYNTHETIC_VENUE)
     }
 

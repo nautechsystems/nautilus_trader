@@ -1234,8 +1234,6 @@ cdef extern from "../includes/model.h":
 
     # Creates a new [`OrderBookDeltas_API`] instance from a `CVec` of `OrderBookDelta`.
     #
-    # # Safety
-    #
     # - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects.
     # - This function clones the data pointed to by `deltas` into Rust-managed memory, then forgets the original `Vec` to prevent Rust from auto-deallocating it.
     # - The caller is responsible for managing the memory of `deltas` (including its deallocation) to avoid memory leaks.

@@ -703,8 +703,6 @@ void logging_clock_set_static_time(uint64_t time_ns);
 /**
  * Drops a `TimeEventHandler_API`, releasing any Python callback reference.
  *
- * # Safety
- *
  * The handler must be valid and not previously dropped.
  */
 void time_event_handler_drop(struct TimeEventHandler_t handler);

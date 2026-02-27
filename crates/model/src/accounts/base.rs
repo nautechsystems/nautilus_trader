@@ -225,8 +225,7 @@ impl BaseAccount {
 
         // Guarantee ≥ 1 event
         if retained_events.is_empty() && !self.events.is_empty() {
-            // SAFETY: events was already checked not empty
-            retained_events.push(self.events.last().unwrap().clone());
+            retained_events.push(self.events.last().expect("events not empty").clone());
         }
 
         self.events = retained_events;

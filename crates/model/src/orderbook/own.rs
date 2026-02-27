@@ -915,7 +915,7 @@ impl OwnBookLevel {
         if self.orders.shift_remove(client_order_id).is_none() {
             // TODO: Use a generic anyhow result for now pending specific error types
             anyhow::bail!("Order {client_order_id} not found for delete");
-        };
+        }
         Ok(())
     }
 }

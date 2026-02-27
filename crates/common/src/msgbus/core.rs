@@ -950,7 +950,7 @@ mod tests {
                 pattern.push('?');
             } else if val >= 0.5 {
                 pattern.push(c);
-            };
+            }
         }
 
         pattern

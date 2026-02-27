@@ -2879,7 +2879,7 @@ impl OKXHttpClient {
                 Err(e) => {
                     log::error!("Failed to parse position status report: {e}");
                 }
-            };
+            }
         }
 
         Ok(reports)
@@ -2953,7 +2953,7 @@ impl OKXHttpClient {
                             "Failed to parse spot margin position from balance for {ccy_str}: {e}"
                         );
                     }
-                };
+                }
             }
         }
 

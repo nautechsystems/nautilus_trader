@@ -82,8 +82,7 @@ impl OrderBookDeltas {
         deltas: Vec<OrderBookDelta>,
     ) -> anyhow::Result<Self> {
         check_predicate_true(!deltas.is_empty(), "`deltas` cannot be empty")?;
-        // SAFETY: We asserted `deltas` is not empty
-        let last = deltas.last().unwrap();
+        let last = deltas.last().expect("deltas not empty");
         let flags = last.flags;
         let sequence = last.sequence;
         let ts_event = last.ts_event;

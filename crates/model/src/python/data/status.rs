@@ -239,14 +239,12 @@ impl InstrumentStatus {
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
     fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        // SAFETY: Unwrap safe when serializing a valid object
         self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        // SAFETY: Unwrap safe when serializing a valid object
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }

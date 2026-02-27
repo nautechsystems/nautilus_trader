@@ -160,8 +160,9 @@ pub fn commissions_from_vec(py: Python<'_>, commissions: Vec<Money>) -> PyResult
         Ok(PyNone::get(py).to_owned().into_any())
     } else {
         values.sort();
-        // SAFETY: Reasonable to expect `ExactSizeIterator` should be correctly implemented
-        Ok(PyList::new(py, &values).unwrap().into_any())
+        Ok(PyList::new(py, &values)
+            .expect("ExactSizeIterator")
+            .into_any())
     }
 }
 

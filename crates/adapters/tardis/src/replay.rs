@@ -64,7 +64,6 @@ impl DateCursor {
         let date_utc = current_utc.date_naive();
 
         // Calculate end of the current UTC day
-        // SAFETY: Known safe input values
         let end_utc =
             date_utc.and_hms_opt(23, 59, 59).unwrap() + Duration::nanoseconds(999_999_999);
         let end_ns = UnixNanos::from(end_utc.and_utc().timestamp_nanos_opt().unwrap() as u64);

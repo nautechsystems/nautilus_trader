@@ -157,14 +157,8 @@ pub fn logging_clock_set_static_time(time_ns: u64) {
 /// Logging can be configured to filter components and write up to a specific level only
 /// by passing a configuration using the `NAUTILUS_LOG` environment variable.
 ///
-/// # Safety
-///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-///
-/// Logging should be used for Python and sync Rust logic which is most of
-/// the components in the `nautilus_trader` package.
-/// Logging can be configured via the `NAUTILUS_LOG` environment variable.
 ///
 /// # Errors
 ///

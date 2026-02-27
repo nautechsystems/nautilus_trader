@@ -337,7 +337,7 @@ pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> 
 /// Returns an error if the validation check fails.
 #[inline(always)]
 pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> anyhow::Result<()> {
-    // SAFETY: Hardcoded epsilon is intentional and appropriate here because:
+    // Hardcoded epsilon is intentional and appropriate here because:
     // - 1e-15 is conservative for IEEE 754 double precision (machine epsilon ~2.22e-16)
     // - This function is used for validation, not high-precision calculations
     // - The epsilon prevents spurious failures due to floating-point representation

@@ -68,11 +68,8 @@ impl FileWriterConfig {
 /// Logging can be configured to filter components and write up to a specific level only
 /// by passing a configuration using the `NAUTILUS_LOG` environment variable.
 ///
-/// # Safety
-///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-/// Initializes logging via Python interface.
 ///
 /// # Errors
 ///

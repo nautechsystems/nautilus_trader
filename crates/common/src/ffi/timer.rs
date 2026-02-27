@@ -211,8 +211,6 @@ impl TimeEventHandler_API {
 
 /// Drops a `TimeEventHandler_API`, releasing any Python callback reference.
 ///
-/// # Safety
-///
 /// The handler must be valid and not previously dropped.
 #[unsafe(no_mangle)]
 pub extern "C" fn time_event_handler_drop(handler: TimeEventHandler_API) {

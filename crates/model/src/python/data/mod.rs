@@ -80,14 +80,6 @@ impl DataType {
 /// This function panics if the `PyCapsule` creation fails, which may occur if
 /// there are issues with memory allocation or if the `Data` instance cannot be
 /// properly encapsulated.
-///
-/// # Safety
-///
-/// This function is safe as long as the `Data` instance does not violate Rust's
-/// safety guarantees (e.g., no invalid memory access). Users of the
-/// `PyCapsule` in Python must ensure they understand how to extract and use the
-/// encapsulated `Data` safely, especially when converting the capsule back to a
-/// Rust data structure.
 #[must_use]
 pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
     // Register a destructor which simply drops the `Data` value once the
@@ -108,11 +100,8 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
 /// Panics if the capsule cannot be downcast to a `PyCapsule`, indicating a type
 /// mismatch or improper capsule handling.
 ///
-/// # Safety
-///
-/// This function is unsafe as it involves raw pointer dereferencing and manual memory
+/// This function involves raw pointer dereferencing and manual memory
 /// management. The caller must ensure the `PyCapsule` contains a valid `CVec` pointer.
-/// Incorrect usage can lead to memory corruption or undefined behavior.
 #[cfg(feature = "ffi")]
 #[pyfunction]
 #[allow(unsafe_code)]

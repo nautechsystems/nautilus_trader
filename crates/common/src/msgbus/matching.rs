@@ -181,7 +181,7 @@ mod tests {
             // 50% chance of keeping the character
             else if val >= 0.5 {
                 pattern.push(c);
-            };
+            }
         }
 
         pattern

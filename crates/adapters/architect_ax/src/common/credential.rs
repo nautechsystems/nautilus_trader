@@ -77,7 +77,7 @@ impl Credential {
 
     /// Returns the API secret associated with this credential.
     ///
-    /// # Safety
+    /// # Security
     ///
     /// The secret should be handled carefully and never logged or exposed.
     #[must_use]

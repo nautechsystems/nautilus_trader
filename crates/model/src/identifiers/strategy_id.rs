@@ -99,7 +99,6 @@ impl StrategyId {
 
     #[must_use]
     pub fn external() -> Self {
-        // SAFETY:: Constant value is safe
         Self::new(EXTERNAL_STRATEGY_ID)
     }
 

@@ -94,8 +94,6 @@ impl<'a> SbeCursor<'a> {
 
     /// Skips `n` bytes without bounds checking.
     ///
-    /// # Safety
-    ///
     /// Caller must ensure `n` bytes are available.
     pub fn skip(&mut self, n: usize) {
         self.pos += n;

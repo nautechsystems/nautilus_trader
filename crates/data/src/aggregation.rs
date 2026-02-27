@@ -260,7 +260,7 @@ impl BarBuilder {
             self.high = Some(close);
         }
 
-        // SAFETY: The open was checked, so we can assume all prices are Some
+        // The open was checked, so we can assume all prices are Some
         let bar = Bar::new(
             self.bar_type,
             self.open.unwrap(),

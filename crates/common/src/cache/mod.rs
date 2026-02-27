@@ -1009,7 +1009,7 @@ impl Cache {
         // Check if order exists and is safe to purge before removing
         let order = self.orders.get(&client_order_id).cloned();
 
-        // SAFETY: Prevent purging open orders
+        // Prevent purging open orders
         if let Some(ref ord) = order
             && ord.is_open()
         {
@@ -1122,7 +1122,7 @@ impl Cache {
         // Check if position exists and is safe to purge before removing
         let position = self.positions.get(&position_id).cloned();
 
-        // SAFETY: Prevent purging open positions
+        // Prevent purging open positions
         if let Some(ref pos) = position
             && pos.is_open()
         {

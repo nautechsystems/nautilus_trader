@@ -84,7 +84,7 @@ impl UUID4 {
     /// Panics if the internal byte array is not a valid C string (does not end with a null terminator).
     #[must_use]
     pub fn to_cstr(&self) -> &CStr {
-        // SAFETY: We always store valid C strings
+        // We always store valid C strings
         CStr::from_bytes_with_nul(&self.value)
             .expect("UUID byte representation should be a valid C string")
     }
@@ -92,7 +92,7 @@ impl UUID4 {
     /// Returns the UUID as a string slice.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        // SAFETY: We always store valid ASCII UUID strings
+        // We always store valid ASCII UUID strings
         self.to_cstr().to_str().expect("UUID should be valid UTF-8")
     }
 

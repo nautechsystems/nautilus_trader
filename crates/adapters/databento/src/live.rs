@@ -127,9 +127,8 @@ impl DatabentoFeedHandler {
             Duration::from_secs(600)
         };
 
-        // SAFETY: Hardcoded parameters are all valid
-        let backoff =
-            ExponentialBackoff::new(Duration::from_secs(1), delay_max, 2.0, 1000, false).unwrap();
+        let backoff = ExponentialBackoff::new(Duration::from_secs(1), delay_max, 2.0, 1000, false)
+            .expect("hardcoded backoff parameters are valid");
 
         Self {
             key,
@@ -553,7 +552,7 @@ impl DatabentoFeedHandler {
                             buffering_start = None;
                         }
 
-                        // SAFETY: We can guarantee a deltas vec exists
+                        // We can guarantee a deltas vec exists
                         let buffer =
                             buffered_deltas
                                 .remove(&delta.instrument_id)

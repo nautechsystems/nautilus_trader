@@ -19,7 +19,6 @@ use crate::types::price::{Price, PriceRaw};
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
-    // SAFETY: Assumes `value` and `precision` are properly validated
     Price::new(value, precision)
 }
 

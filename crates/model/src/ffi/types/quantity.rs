@@ -19,7 +19,6 @@ use crate::types::quantity::{Quantity, QuantityRaw};
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
-    // SAFETY: Assumes `value` and `precision` are properly validated
     Quantity::new(value, precision)
 }
 

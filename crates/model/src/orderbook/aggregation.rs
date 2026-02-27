@@ -74,7 +74,7 @@ pub(crate) fn pre_process_order(book_type: BookType, mut order: BookOrder, flags
                 order.order_id = price_based_order_id(&order);
             }
         }
-    };
+    }
     order
 }
 

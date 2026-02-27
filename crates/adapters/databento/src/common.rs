@@ -58,8 +58,7 @@ impl Credential {
     /// having been created from a String.
     #[must_use]
     pub fn api_key(&self) -> &str {
-        // SAFETY: The API key is always valid UTF-8 since it was created from a String
-        std::str::from_utf8(&self.api_key).unwrap()
+        std::str::from_utf8(&self.api_key).expect("API key is valid UTF-8")
     }
 
     /// Returns a masked version of the API key for logging purposes.

@@ -473,7 +473,7 @@ impl LiveNode {
                         color = LogColor::Blue
                     );
 
-                    // SAFETY: Do not hold the Rc across an await point
+                    // Do not hold the Rc across an await point
                     let exec_engine_rc = self.kernel.exec_engine.clone();
 
                     let result = self

@@ -1428,7 +1428,7 @@ impl OKXWsFeedHandler {
             let previous_state =
                 effective_client_id.and_then(|cid| self.order_state_cache.get(&cid).cloned());
 
-            // SAFETY: order_metadata being Some implies effective_client_id is Some
+            // order_metadata being Some implies effective_client_id is Some
             if let (Some((trader_id, strategy_id, _instrument_id)), Some(canonical_client_id)) =
                 (order_metadata, effective_client_id)
             {

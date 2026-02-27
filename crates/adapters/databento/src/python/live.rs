@@ -258,7 +258,7 @@ impl DatabentoLiveClient {
         let (msg_tx, msg_rx) = tokio::sync::mpsc::channel::<LiveMessage>(self.buffer_size);
 
         // Consume the receiver
-        // SAFETY: We guard the client from being started more than once with the
+        // We guard the client from being started more than once with the
         // `is_running` flag, so here it is safe to unwrap the command receiver.
         let cmd_rx = self
             .cmd_rx

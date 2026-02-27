@@ -852,8 +852,6 @@ impl PyStrategy {
 
     /// Updates the strategy_id (actor_id) in both the core config and the actor_id field.
     ///
-    /// # Safety
-    ///
     /// Must only be called before registration. See `PyDataActor::set_actor_id`.
     pub fn set_strategy_id(&mut self, strategy_id: StrategyId) {
         let actor_id = ActorId::from(strategy_id.inner().as_str());

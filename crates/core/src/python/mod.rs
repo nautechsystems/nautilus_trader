@@ -75,11 +75,6 @@ use crate::{
 /// - Avoid circular references between Rust and Python memory management.
 /// - Ensure proper Python reference counting under the GIL.
 /// - Allow both Rust and Python garbage collectors to work correctly.
-///
-/// # Safety
-///
-/// This function properly acquires the Python GIL before performing the clone operation,
-/// ensuring thread-safe access to the Python object and correct reference counting.
 #[must_use]
 pub fn clone_py_object(obj: &Py<PyAny>) -> Py<PyAny> {
     Python::attach(|py| obj.clone_ref(py))

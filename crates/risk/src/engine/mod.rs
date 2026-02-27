@@ -607,8 +607,7 @@ impl RiskEngine {
 
     fn check_order(&self, instrument: InstrumentAny, order: OrderAny) -> bool {
         if order.time_in_force() == TimeInForce::Gtd {
-            // SAFETY: GTD guarantees an expire time
-            let expire_time = order.expire_time().unwrap();
+            let expire_time = order.expire_time().expect("GTD has expire time");
             if expire_time <= self.clock.borrow().timestamp_ns() {
                 self.deny_order(
                     order,

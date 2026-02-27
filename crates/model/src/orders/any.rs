@@ -83,7 +83,6 @@ impl OrderAny {
     /// Panics if the first event is not `OrderInitialized` (violates invariant).
     #[must_use]
     pub fn init_event(&self) -> &crate::events::OrderInitialized {
-        // SAFETY: Order specification guarantees at least one event (OrderInitialized)
         match self
             .events()
             .first()

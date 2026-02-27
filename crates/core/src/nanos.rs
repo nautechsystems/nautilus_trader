@@ -195,7 +195,7 @@ impl UnixNanos {
                 return Err("Unix timestamp cannot be negative".into());
             }
 
-            // SAFETY: Checked that nanos >= 0, so cast to u64 is safe
+            // Checked that nanos >= 0, so cast to u64 is safe
             return Ok(Self(nanos as u64));
         }
 

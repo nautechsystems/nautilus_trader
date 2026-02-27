@@ -297,7 +297,7 @@ impl OKXWebSocketClient {
                                             report.into_py_any(py)
                                         });
                                     }
-                                };
+                                }
                             }
                         }
                         NautilusWsMessage::Deltas(msg) => Python::attach(|py| {

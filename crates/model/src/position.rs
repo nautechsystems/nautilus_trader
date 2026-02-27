@@ -342,7 +342,7 @@ impl Position {
             self.apply_adjustment(adjustment);
         }
 
-        // SAFETY: size_precision is valid from instrument
+        // size_precision is valid from instrument
         self.quantity = Quantity::new(self.signed_qty.abs(), self.size_precision);
         if self.quantity > self.peak_qty {
             self.peak_qty = self.quantity;

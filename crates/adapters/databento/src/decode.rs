@@ -46,7 +46,7 @@
 
 use std::{ffi::c_char, num::NonZeroUsize};
 
-use databento::dbn::{self};
+use databento::dbn;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND, uuid::UUID4};
 use nautilus_model::{
     data::{
@@ -73,7 +73,6 @@ use super::{
     types::{DatabentoImbalance, DatabentoStatistics},
 };
 
-// SAFETY: Known valid value
 const STEP_ONE: NonZeroUsize = NonZeroUsize::new(1).unwrap();
 
 const BAR_SPEC_1S: BarSpecification = BarSpecification {

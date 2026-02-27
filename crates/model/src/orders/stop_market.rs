@@ -444,7 +444,7 @@ impl Order for StopMarketOrder {
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
-        };
+        }
 
         let is_order_filled = matches!(event, OrderEventAny::Filled(_));
         let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
@@ -463,7 +463,7 @@ impl Order for StopMarketOrder {
 
         if is_order_filled {
             self.core.set_slippage(self.trigger_price);
-        };
+        }
 
         Ok(())
     }

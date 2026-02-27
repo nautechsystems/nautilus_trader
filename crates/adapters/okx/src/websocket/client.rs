@@ -2002,7 +2002,7 @@ impl OKXWebSocketClient {
                     builder.reduce_only(ro);
                 }
             }
-        };
+        }
 
         // For SPOT market orders in Cash mode, handle tgtCcy parameter
         // https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order
@@ -2036,7 +2036,7 @@ impl OKXWebSocketClient {
 
         if let Some(pos_side) = position_side {
             builder.pos_side(pos_side);
-        };
+        }
 
         // OKX implements FOK/IOC as order types rather than separate time-in-force
         // Market + FOK is unsupported (FOK requires a limit price)

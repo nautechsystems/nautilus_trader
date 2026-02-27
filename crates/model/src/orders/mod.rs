@@ -346,7 +346,6 @@ pub trait Order: 'static + Send {
     fn events(&self) -> Vec<&OrderEventAny>;
 
     fn last_event(&self) -> &OrderEventAny {
-        // SAFETY: Order specification guarantees at least one event (OrderInitialized)
         self.events()
             .last()
             .expect("Order invariant violated: no events")

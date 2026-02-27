@@ -66,7 +66,7 @@ pub fn get_sqrt_ratio_at_tick(tick: i32) -> U160 {
     if abs_tick & 0x4 != 0 {
         ratio =
             (ratio * U256::from_str_radix("fff2e50f5f656932ef12357cf3c7fdcc", 16).unwrap()) >> 128;
-    };
+    }
 
     if abs_tick & 0x8 != 0 {
         ratio =

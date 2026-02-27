@@ -234,7 +234,7 @@ impl FeedHandler {
                     let nautilus_msgs = self.process_raw_message(msg).await;
                     if !nautilus_msgs.is_empty() {
                         let mut iter = nautilus_msgs.into_iter();
-                        // SAFETY: We just checked that nautilus_msgs is not empty
+                        // We just checked that nautilus_msgs is not empty
                         let first = iter.next().expect("non-empty vec has first element");
                         self.message_buffer.extend(iter);
                         log::trace!("Handler sending message: {:?}", std::mem::discriminant(&first));

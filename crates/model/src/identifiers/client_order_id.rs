@@ -78,7 +78,6 @@ impl ClientOrderId {
     /// Creates an external client order ID used when no ID was provided.
     #[must_use]
     pub fn external() -> Self {
-        // SAFETY: Constant value is safe
         Self::new("EXTERNAL")
     }
 

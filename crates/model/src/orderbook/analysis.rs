@@ -241,7 +241,7 @@ pub fn book_check_integrity(book: &OrderBook) -> Result<(), BookIntegrityError> 
             }
         }
         BookType::L3_MBO => {}
-    };
+    }
 
     if let (Some(top_bid_level), Some(top_ask_level)) = (book.bids.top(), book.asks.top()) {
         let best_bid = top_bid_level.price;
