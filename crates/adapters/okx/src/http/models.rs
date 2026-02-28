@@ -814,6 +814,57 @@ pub struct OKXCancelAlgoOrderResponse {
     pub s_msg: Option<String>,
 }
 
+/// Represents the request body for `POST /api/v5/trade/amend-algos` (amend algo order).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAmendAlgoOrderRequest {
+    /// Instrument ID.
+    pub inst_id: String,
+    /// Algo order ID.
+    pub algo_id: String,
+    /// Client-supplied algo order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub algo_cl_ord_id: Option<String>,
+    /// New order size.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_sz: Option<String>,
+    /// New trigger price (for trigger/conditional orders).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_trigger_px: Option<String>,
+    /// New order price (for limit orders after trigger).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_order_px: Option<String>,
+    /// New callback ratio for trailing stop (e.g., "0.01" for 1%).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_callback_ratio: Option<String>,
+    /// New callback spread for trailing stop (fixed price distance).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_callback_spread: Option<String>,
+    /// New activation price for trailing stop.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_active_px: Option<String>,
+}
+
+/// Represents the response from `POST /api/v5/trade/amend-algos` (amend algo order).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAmendAlgoOrderResponse {
+    /// Algo order ID.
+    pub algo_id: String,
+    /// Client-supplied algo order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub algo_cl_ord_id: Option<String>,
+    /// The result of the request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub s_code: Option<String>,
+    /// Error message if the request failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub s_msg: Option<String>,
+    /// Request ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub req_id: Option<String>,
+}
+
 /// Represents the response from `GET /api/v5/public/time` (get system time).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -976,5 +1027,56 @@ mod tests {
         assert!(json.contains("\"instId\":\"BTC-USDT\""));
         assert!(json.contains("\"algoClOrdId\":\"client123\""));
         assert!(!json.contains("\"algoId\""));
+    }
+
+    #[rstest]
+    fn test_amend_algo_order_trigger_serialization() {
+        let request = OKXAmendAlgoOrderRequest {
+            inst_id: "ETH-USDT-SWAP".to_string(),
+            algo_id: "123456".to_string(),
+            algo_cl_ord_id: None,
+            new_sz: None,
+            new_trigger_px: Some("3500".to_string()),
+            new_order_px: Some("3490".to_string()),
+            new_callback_ratio: None,
+            new_callback_spread: None,
+            new_active_px: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        assert!(json.contains("\"instId\":\"ETH-USDT-SWAP\""));
+        assert!(json.contains("\"algoId\":\"123456\""));
+        assert!(json.contains("\"newTriggerPx\":\"3500\""));
+        assert!(json.contains("\"newOrderPx\":\"3490\""));
+        assert!(!json.contains("newSz"));
+        assert!(!json.contains("algoClOrdId"));
+        assert!(!json.contains("newCallbackRatio"));
+    }
+
+    #[rstest]
+    fn test_amend_algo_order_trailing_stop_serialization() {
+        let request = OKXAmendAlgoOrderRequest {
+            inst_id: "BTC-USDT-SWAP".to_string(),
+            algo_id: "789012".to_string(),
+            algo_cl_ord_id: Some("client456".to_string()),
+            new_sz: Some("0.1".to_string()),
+            new_trigger_px: None,
+            new_order_px: None,
+            new_callback_ratio: Some("0.02".to_string()),
+            new_callback_spread: None,
+            new_active_px: Some("50000".to_string()),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        assert!(json.contains("\"instId\":\"BTC-USDT-SWAP\""));
+        assert!(json.contains("\"algoId\":\"789012\""));
+        assert!(json.contains("\"algoClOrdId\":\"client456\""));
+        assert!(json.contains("\"newSz\":\"0.1\""));
+        assert!(json.contains("\"newCallbackRatio\":\"0.02\""));
+        assert!(json.contains("\"newActivePx\":\"50000\""));
+        assert!(!json.contains("newTriggerPx"));
+        assert!(!json.contains("newOrderPx"));
     }
 }

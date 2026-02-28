@@ -7924,6 +7924,17 @@ class OKXHttpClient:
         self,
         orders: list[tuple[InstrumentId, str]],
     ) -> list[Any]: ...
+    async def amend_algo_order(
+        self,
+        instrument_id: InstrumentId,
+        algo_id: str,
+        new_trigger_price: Price | None = None,
+        new_limit_price: Price | None = None,
+        new_quantity: Quantity | None = None,
+        new_callback_ratio: str | None = None,
+        new_callback_spread: str | None = None,
+        new_activation_price: Price | None = None,
+    ) -> Any: ...
     async def cancel_advance_algo_order(
         self,
         instrument_id: InstrumentId,

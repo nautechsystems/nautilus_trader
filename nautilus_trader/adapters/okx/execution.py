@@ -1312,6 +1312,88 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             return
 
+        # Pending conditional orders use HTTP algo amend,
+        # triggered conditional orders become regular on OKX
+        is_pending_algo = self._is_conditional_order(order) and not self._is_order_triggered(
+            order,
+        )
+
+        if is_pending_algo:
+            await self._modify_algo_order_http(command, order)
+        else:
+            await self._modify_order_websocket(command, order)
+
+    async def _modify_algo_order_http(self, command: ModifyOrder, order: Order) -> None:
+        algo_id = self._resolve_algo_id(order)
+        if not algo_id:
+            self._log.error(
+                f"Cannot amend pending algo order {command.client_order_id!r}: "
+                "no algo_id resolved from mapping or venue_order_id",
+            )
+            self.generate_order_modify_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason="no algo_id available for pending conditional order",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+            command.instrument_id.value,
+        )
+        new_trigger_price = (
+            nautilus_pyo3.Price.from_str(str(command.trigger_price))
+            if command.trigger_price
+            else None
+        )
+        new_limit_price = (
+            nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
+        )
+        new_quantity = (
+            nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
+        )
+
+        self._log.debug(
+            f"Amending OKX algo order using algo_id {algo_id} for {command.client_order_id!r}",
+        )
+
+        try:
+            resp = await self._http_client.amend_algo_order(
+                instrument_id=pyo3_instrument_id,
+                algo_id=algo_id,
+                new_trigger_price=new_trigger_price,
+                new_limit_price=new_limit_price,
+                new_quantity=new_quantity,
+            )
+
+            s_code = resp.get("s_code", "0")
+            if s_code != "0":
+                s_msg = resp.get("s_msg", "unknown")
+                reason = f"s_code={s_code}, s_msg={s_msg}"
+                self._log.error(
+                    f"OKX rejected amend for algo order {algo_id}: {reason}",
+                )
+                self.generate_order_modify_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=reason,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        except Exception as e:
+            self.generate_order_modify_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+    async def _modify_order_websocket(self, command: ModifyOrder, order: Order) -> None:
         pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
         pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)

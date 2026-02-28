@@ -73,10 +73,10 @@ use ustr::Ustr;
 use super::{
     error::OKXHttpError,
     models::{
-        OKXAccount, OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXFeeRate,
-        OKXIndexTicker, OKXMarkPrice, OKXOrderAlgo, OKXOrderHistory, OKXPlaceAlgoOrderRequest,
-        OKXPlaceAlgoOrderResponse, OKXPosition, OKXPositionHistory, OKXPositionTier, OKXServerTime,
-        OKXTransactionDetail,
+        OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse, OKXCancelAlgoOrderRequest,
+        OKXCancelAlgoOrderResponse, OKXFeeRate, OKXIndexTicker, OKXMarkPrice, OKXOrderAlgo,
+        OKXOrderHistory, OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPosition,
+        OKXPositionHistory, OKXPositionTier, OKXServerTime, OKXTransactionDetail,
     },
     query::{
         GetAlgoOrdersParams, GetAlgoOrdersParamsBuilder, GetCandlesticksParams,
@@ -246,6 +246,10 @@ impl OKXRawHttpClient {
             ),
             (
                 "okx:/api/v5/trade/cancel-algos".to_string(),
+                Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant"),
+            ),
+            (
+                "okx:/api/v5/trade/amend-algos".to_string(),
                 Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant"),
             ),
         ]
@@ -3090,6 +3094,73 @@ impl OKXHttpClient {
                 true,
             )
             .await
+    }
+
+    /// Amends an algo order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-amend-algo-order>
+    pub async fn amend_algo_order(
+        &self,
+        request: OKXAmendAlgoOrderRequest,
+    ) -> Result<OKXAmendAlgoOrderResponse, OKXHttpError> {
+        let body =
+            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+
+        let resp: Vec<OKXAmendAlgoOrderResponse> = self
+            .inner
+            .send_request::<_, ()>(
+                Method::POST,
+                "/api/v5/trade/amend-algos",
+                None,
+                Some(body),
+                true,
+            )
+            .await?;
+
+        resp.into_iter()
+            .next()
+            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+    }
+
+    /// Amends an algo order using domain types.
+    ///
+    /// This is a convenience method that accepts Nautilus domain types
+    /// and builds the appropriate OKX request structure internally.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn amend_algo_order_with_domain_types(
+        &self,
+        instrument_id: InstrumentId,
+        algo_id: String,
+        new_trigger_price: Option<Price>,
+        new_limit_price: Option<Price>,
+        new_quantity: Option<Quantity>,
+        new_callback_ratio: Option<String>,
+        new_callback_spread: Option<String>,
+        new_activation_price: Option<Price>,
+    ) -> Result<OKXAmendAlgoOrderResponse, OKXHttpError> {
+        let request = OKXAmendAlgoOrderRequest {
+            inst_id: instrument_id.symbol.as_str().to_string(),
+            algo_id,
+            algo_cl_ord_id: None,
+            new_sz: new_quantity.map(|q| q.to_string()),
+            new_trigger_px: new_trigger_price.map(|p| p.to_string()),
+            new_order_px: new_limit_price.map(|p| p.to_string()),
+            new_callback_ratio,
+            new_callback_spread,
+            new_active_px: new_activation_price.map(|p| p.to_string()),
+        };
+
+        self.amend_algo_order(request).await
     }
 
     /// Places an algo order using domain types.

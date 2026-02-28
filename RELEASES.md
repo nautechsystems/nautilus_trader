@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added BitMEX grid market maker example in Rust
 - Added Hyperliquid order modify support (Python and Rust)
 - Added OKX trailing stop market order support (Rust and Python)
+- Added OKX algo order amend support (Rust and Python)
 - Removed Hyperliquid builder fee charges (builder-fee approval no longer required)
 
 ### Breaking Changes
