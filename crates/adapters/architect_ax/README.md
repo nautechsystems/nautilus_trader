@@ -23,16 +23,15 @@ algorithmic trading platform, providing quantitative traders with the ability to
 portfolios of automated trading strategies on historical data with an event-driven engine,
 and also deploy those same strategies live, with no code changes.
 
-NautilusTrader's design, architecture, and implementation philosophy prioritizes software
-correctness and safety at the highest level, with the aim of supporting mission-critical trading
-system backtesting and live deployment workloads.
+NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 
 ## Feature flags
 
 This crate provides feature flags to control source code inclusion during compilation:
 
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-- `extension-module`: Builds as a Python extension module (used with `python`).
+- `extension-module`: Builds as a Python extension module.
 
 ## Documentation
 
@@ -72,14 +71,13 @@ cargo run -p nautilus-architect-ax --bin ax-ws-orders
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
-Contributions to the project are welcome and require the completion of a standard [Contributor License Agreement (CLA)](https://github.com/nautechsystems/nautilus_trader/blob/develop/CLA.md).
-
----
 
 NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
 For more information, visit <https://nautilustrader.io>.
 
-<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
+<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="300" height="auto"/>
+
+Use of this software is subject to the [Disclaimer](https://nautilustrader.io/legal/disclaimer/).
 
 © 2015-2026 Nautech Systems Pty Ltd. All rights reserved.

@@ -1,6 +1,13 @@
 # nautilus-pyo3
 
-A temporary crate to provide all Python bindings for the main `nautilus_trader` Python package.
+[![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
+![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
+
+Python bindings for [NautilusTrader](http://nautilustrader.io).
+
+The `nautilus-pyo3` crate provides all [PyO3](https://pyo3.rs) Python bindings for the
+main `nautilus_trader` Python package, built via [maturin](https://github.com/PyO3/maturin).
 
 ## Platform
 
@@ -14,11 +21,9 @@ highest level, with the aim of supporting mission-critical, trading system backt
 
 ## Feature flags
 
-This crate is primarily intended to be built for Python via
-[maturin](https://github.com/PyO3/maturin) and therefore provides a broad set of feature flags
-to toggle bindings and optional dependencies:
+This crate provides feature flags to control source code inclusion during compilation:
 
-- `extension-module`: Builds the crate as a Python extension module (automatically enabled by `maturin`).
+- `extension-module`: Builds as a Python extension module (automatically enabled by `maturin`).
 - `ffi`: Enables the C foreign function interface (FFI) support in dependent crates.
 - `high-precision`: Uses 128-bit value types throughout the workspace.
 - `cython-compat`: Adjusts the module name so it can be imported from Cython generated code.
@@ -27,3 +32,17 @@ to toggle bindings and optional dependencies:
 - `hypersync`: Enables hypersync support (fast parallel hash maps) where available.
 - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
 - `defi`: Enables DeFi (Decentralized Finance) support including blockchain adapters.
+
+## License
+
+The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
+
+NautilusTrader™ is developed and maintained by Nautech Systems, a technology
+company specializing in the development of high-performance trading systems.
+For more information, visit <https://nautilustrader.io>.
+
+<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="300" height="auto"/>
+
+Use of this software is subject to the [Disclaimer](https://nautilustrader.io/legal/disclaimer/).
+
+© 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
