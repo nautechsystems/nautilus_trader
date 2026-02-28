@@ -1047,10 +1047,6 @@ mod tests {
         let _ = nanos.as_i64(); // Should panic
     }
 
-    ////////////////////////////////////////////////////////////////////////////////
-    // Property-based testing
-    ////////////////////////////////////////////////////////////////////////////////
-
     use proptest::prelude::*;
 
     fn unix_nanos_strategy() -> impl Strategy<Value = UnixNanos> {
@@ -1059,8 +1055,10 @@ mod tests {
             0u64..1_000_000u64,
             // Medium values (microseconds range)
             1_000_000u64..1_000_000_000_000u64,
-            // Large values (nanoseconds since 1970, but safe for arithmetic)
+            // Large values (nanoseconds since 1970)
             1_000_000_000_000u64..=i64::MAX as u64,
+            // Values above i64::MAX (sentinel range, GTC/infinity)
+            (i64::MAX as u64 + 1)..=u64::MAX,
             // Edge cases
             Just(0u64),
             Just(1u64),
@@ -1068,6 +1066,8 @@ mod tests {
             Just(1_000_000_000_000u64),         // ~2001 timestamp
             Just(1_700_000_000_000_000_000u64), // ~2023 timestamp
             Just((i64::MAX / 2) as u64),        // Safe for doubling
+            Just(i64::MAX as u64),              // i64 boundary
+            Just(u64::MAX),                     // Sentinel / max value
         ]
         .prop_map(UnixNanos::from)
     }
@@ -1078,9 +1078,9 @@ mod tests {
 
     proptest! {
         #[rstest]
-        fn prop_unix_nanos_construction_roundtrip(value in 0u64..=i64::MAX as u64) {
-            let nanos = UnixNanos::from(value);
-            prop_assert_eq!(nanos.as_u64(), value);
+        fn prop_unix_nanos_construction_roundtrip(nanos in unix_nanos_strategy()) {
+            let value = nanos.as_u64();
+            prop_assert_eq!(UnixNanos::from(value).as_u64(), value);
             prop_assert_eq!(nanos.as_f64(), value as f64);
 
             // Test i64 conversion only for values within i64 range
@@ -1261,6 +1261,48 @@ mod tests {
                 prop_assert_eq!(sat_sub, checked_diff, "Saturating sub should match checked sub when no underflow");
             } else {
                 prop_assert_eq!(sat_sub, UnixNanos::default(), "Saturating sub should be zero on underflow");
+            }
+        }
+
+        #[rstest]
+        fn prop_unix_nanos_assign_mirrors_op(
+            (nanos1, nanos2) in unix_nanos_pair_strategy()
+        ) {
+            // AddAssign should produce the same result as Add
+            if let Some(expected) = nanos1.checked_add(nanos2.as_u64()) {
+                let mut add_result = nanos1;
+                add_result += nanos2;
+                prop_assert_eq!(add_result, expected, "AddAssign should mirror Add");
+            }
+
+            // SubAssign should produce the same result as Sub
+            if nanos1.as_u64() >= nanos2.as_u64() {
+                let expected = nanos1 - nanos2;
+                let mut sub_result = nanos1;
+                sub_result -= nanos2;
+                prop_assert_eq!(sub_result, expected, "SubAssign should mirror Sub");
+            }
+        }
+
+        #[rstest]
+        fn prop_unix_nanos_serde_roundtrip(nanos in unix_nanos_strategy()) {
+            let json = serde_json::to_string(&nanos).unwrap();
+            let deserialized: UnixNanos = serde_json::from_str(&json).unwrap();
+            prop_assert_eq!(deserialized, nanos, "Serde JSON should round-trip exactly");
+        }
+
+        #[rstest]
+        fn prop_unix_nanos_f64_deserialize_never_panics(val: f64) {
+            // Use IntoDeserializer to hit visit_f64 directly,
+            // bypassing JSON text encoding ambiguity
+            use serde::de::{IntoDeserializer, value::{Error as ValueError, F64Deserializer}};
+            let deserializer: F64Deserializer<ValueError> = val.into_deserializer();
+            let result = UnixNanos::deserialize(deserializer);
+
+            if val.is_finite() && val >= 0.0 && val * 1_000_000_000.0 <= u64::MAX as f64 {
+                prop_assert!(result.is_ok(), "Should succeed for valid f64: {}", val);
+            } else {
+                prop_assert!(result.is_err(), "Should error for invalid f64: {}", val);
             }
         }
     }

@@ -10,7 +10,29 @@ The suite covers these categories:
 - Integration tests
 - Acceptance tests
 - Performance tests
+- Property-based tests
+- Fuzzing
 - Memory leak tests
+
+## Property-based testing
+
+Property testing verifies that logic holds for *all* valid inputs, not just hand-picked examples.
+We use [`proptest`](https://altsysrq.github.io/proptest-book/intro.html) in Rust to enforce invariants.
+
+- **Use cases:** Core domain types (`Price`, `Quantity`, `UnixNanos`), accounting engines, matching engines, and state machines.
+- **Example invariants:**
+  - Round-trip serialization: `parse(to_string(value)) == value`
+  - Inverse operations: `(A + B) - B == A`
+  - Transitivity: `If A < B and B < C, then A < C`
+
+## Fuzzing
+
+Fuzzing introduces unstructured or malicious data to the system to ensure it fails gracefully.
+
+- **Use cases:** Network boundaries, exchange data parsers (JSON, FIX, WebSocket feeds), and complex state machines.
+- **Goal:** The system returns a `Result::Err` and never panics, hangs, or leaks memory when encountering malformed data.
+
+When building or modifying core types, write property tests to cover the mathematical boundaries.
 
 Performance tests help evolve performance-critical components.
 
