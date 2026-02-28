@@ -13,7 +13,6 @@ documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
-
 [lints]
 workspace = true
 
