@@ -84,7 +84,10 @@ use crate::common::{
         OKXInstrumentType, OKXOrderType, OKXPositionSide, OKXTargetCurrency, OKXTradeMode,
         OKXTriggerType, OKXVipLevel, conditional_order_to_algo_type, is_conditional_order,
     },
-    parse::{bar_spec_as_okx_channel, okx_instrument_type, okx_instrument_type_from_symbol},
+    parse::{
+        bar_spec_as_okx_channel, okx_instrument_type, okx_instrument_type_from_symbol,
+        parse_base_quote_from_symbol,
+    },
 };
 
 /// Default OKX WebSocket connection rate limit: 3 requests per second.
@@ -1000,6 +1003,34 @@ impl OKXWebSocketClient {
         Ok(())
     }
 
+    async fn subscribe_inst_id(
+        &self,
+        channel: OKXWsChannel,
+        inst_id: Ustr,
+    ) -> Result<(), OKXWsError> {
+        self.subscribe(vec![OKXSubscriptionArg {
+            channel,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(inst_id),
+        }])
+        .await
+    }
+
+    async fn unsubscribe_inst_id(
+        &self,
+        channel: OKXWsChannel,
+        inst_id: Ustr,
+    ) -> Result<(), OKXWsError> {
+        self.unsubscribe(vec![OKXSubscriptionArg {
+            channel,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(inst_id),
+        }])
+        .await
+    }
+
     /// Unsubscribes from all active subscriptions in batched messages.
     ///
     /// Collects all confirmed subscriptions and sends unsubscribe requests in batches,
@@ -1100,7 +1131,8 @@ impl OKXWebSocketClient {
     /// Subscribes to instrument updates for a specific instrument.
     ///
     /// Since OKX doesn't support subscribing to individual instruments via `instId`,
-    /// this method subscribes to the entire instrument type if not already subscribed.
+    /// this method subscribes to the entire instrument type. OKX handles duplicate
+    /// subscriptions gracefully and pushes a fresh snapshot on each subscribe.
     ///
     /// # Errors
     ///
@@ -1114,17 +1146,6 @@ impl OKXWebSocketClient {
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
         let inst_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
-
-        let already_subscribed = self
-            .subscriptions_inst_type
-            .get(&OKXWsChannel::Instruments)
-            .is_some_and(|types| types.contains(&inst_type));
-
-        if already_subscribed {
-            log::debug!("Already subscribed to instrument type {inst_type:?} for {instrument_id}");
-            return Ok(());
-        }
-
         log::debug!("Subscribing to instrument type {inst_type:?} for {instrument_id}");
         self.subscribe_instruments(inst_type).await
     }
@@ -1146,13 +1167,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Books,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        self.subscribe_inst_id(OKXWsChannel::Books, instrument_id.symbol.inner())
+            .await
     }
 
     /// Subscribes to 5-level order book snapshot data for an instrument.
@@ -1170,13 +1186,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Books5,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        self.subscribe_inst_id(OKXWsChannel::Books5, instrument_id.symbol.inner())
+            .await
     }
 
     /// Subscribes to 50-level tick-by-tick order book data for an instrument.
@@ -1194,13 +1205,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Books50Tbt,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        self.subscribe_inst_id(OKXWsChannel::Books50Tbt, instrument_id.symbol.inner())
+            .await
     }
 
     /// Subscribes to tick-by-tick full depth (400 levels) order book data for an instrument.
@@ -1218,13 +1224,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::BooksTbt,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        self.subscribe_inst_id(OKXWsChannel::BooksTbt, instrument_id.symbol.inner())
+            .await
     }
 
     /// Subscribes to order book data with automatic channel selection based on VIP level and depth.
@@ -1286,13 +1287,8 @@ impl OKXWebSocketClient {
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-best-bid-offer-channel>.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::BboTbt,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        self.subscribe_inst_id(OKXWsChannel::BboTbt, instrument_id.symbol.inner())
+            .await
     }
 
     /// Subscribes to trade data for an instrument.
@@ -1318,14 +1314,8 @@ impl OKXWebSocketClient {
         } else {
             OKXWsChannel::Trades
         };
-
-        let arg = OKXSubscriptionArg {
-            channel,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        self.subscribe_inst_id(channel, instrument_id.symbol.inner())
+            .await
     }
 
     /// Subscribes to 24hr rolling ticker data for an instrument.
@@ -1340,13 +1330,8 @@ impl OKXWebSocketClient {
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-ws-tickers-channel>.
     pub async fn subscribe_ticker(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Tickers,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        self.subscribe_inst_id(OKXWsChannel::Tickers, instrument_id.symbol.inner())
+            .await
     }
 
     /// Subscribes to mark price data for derivatives instruments.
@@ -1364,13 +1349,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::MarkPrice,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        self.subscribe_inst_id(OKXWsChannel::MarkPrice, instrument_id.symbol.inner())
+            .await
     }
 
     /// Subscribes to index price data for an instrument.
@@ -1388,11 +1368,30 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
+        // Index-tickers channel requires base pair format (e.g., BTC-USDT)
+        let symbol = instrument_id.symbol.inner();
+        let (base, quote) = parse_base_quote_from_symbol(symbol.as_str())
+            .map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+        let base_pair = Ustr::from(&format!("{base}-{quote}"));
+
+        // Register mapping so the handler can resolve back to the original symbol
+        if let Err(e) = self
+            .cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::MapIndexTicker {
+                base_pair,
+                original: symbol,
+            })
+        {
+            log::error!("Failed to send MapIndexTicker command: {e}");
+        }
+
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::IndexTickers,
             inst_type: None,
             inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
+            inst_id: Some(base_pair),
         };
         self.subscribe(vec![arg]).await
     }
@@ -1412,13 +1411,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::FundingRate,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        self.subscribe_inst_id(OKXWsChannel::FundingRate, instrument_id.symbol.inner())
+            .await
     }
 
     /// Subscribes to candlestick/bar data for an instrument.
@@ -1436,14 +1430,8 @@ impl OKXWebSocketClient {
         // Use regular trade-price candlesticks which work for all instrument types
         let channel = bar_spec_as_okx_channel(bar_type.spec())
             .map_err(|e| OKXWsError::ClientError(e.to_string()))?;
-
-        let arg = OKXSubscriptionArg {
-            channel,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(bar_type.instrument_id().symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        self.subscribe_inst_id(channel, bar_type.instrument_id().symbol.inner())
+            .await
     }
 
     /// Unsubscribes from instrument updates for a specific instrument type.
@@ -1466,20 +1454,19 @@ impl OKXWebSocketClient {
 
     /// Unsubscribe from instrument updates for a specific instrument.
     ///
+    /// No-op: the instruments channel is per-type (SWAP, FUTURES, etc.) and
+    /// other instruments of the same type may still need it. The channel
+    /// stays subscribed; overhead is negligible.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the subscription request fails.
+    /// Returns an error if the unsubscription request fails.
     pub async fn unsubscribe_instrument(
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Instruments,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        log::debug!("Instrument unsubscribe is a no-op (shared per-type channel): {instrument_id}");
+        Ok(())
     }
 
     /// Unsubscribe from full order book data for an instrument.
@@ -1488,13 +1475,8 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Books,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        self.unsubscribe_inst_id(OKXWsChannel::Books, instrument_id.symbol.inner())
+            .await
     }
 
     /// Unsubscribe from 5-level order book snapshot data for an instrument.
@@ -1506,13 +1488,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Books5,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        self.unsubscribe_inst_id(OKXWsChannel::Books5, instrument_id.symbol.inner())
+            .await
     }
 
     /// Unsubscribe from 50-level tick-by-tick order book data for an instrument.
@@ -1524,13 +1501,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Books50Tbt,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        self.unsubscribe_inst_id(OKXWsChannel::Books50Tbt, instrument_id.symbol.inner())
+            .await
     }
 
     /// Unsubscribe from tick-by-tick full depth order book data for an instrument.
@@ -1542,13 +1514,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::BooksTbt,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        self.unsubscribe_inst_id(OKXWsChannel::BooksTbt, instrument_id.symbol.inner())
+            .await
     }
 
     /// Unsubscribe from best bid/ask quote data for an instrument.
@@ -1557,13 +1524,8 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::BboTbt,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        self.unsubscribe_inst_id(OKXWsChannel::BboTbt, instrument_id.symbol.inner())
+            .await
     }
 
     /// Unsubscribe from 24hr rolling ticker data for an instrument.
@@ -1572,13 +1534,8 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_ticker(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Tickers,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        self.unsubscribe_inst_id(OKXWsChannel::Tickers, instrument_id.symbol.inner())
+            .await
     }
 
     /// Unsubscribe from mark price data for a derivatives instrument.
@@ -1590,13 +1547,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::MarkPrice,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        self.unsubscribe_inst_id(OKXWsChannel::MarkPrice, instrument_id.symbol.inner())
+            .await
     }
 
     /// Unsubscribe from index price data for an instrument.
@@ -1608,13 +1560,27 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::IndexTickers,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        // Remove this instrument from the handler's index-ticker mapping.
+        // Don't send WS unsubscribe — other instruments may share the same
+        // base pair. The handler silently drops events with no active mapping.
+        let symbol = instrument_id.symbol.inner();
+        let (base, quote) = parse_base_quote_from_symbol(symbol.as_str())
+            .map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+        let base_pair = Ustr::from(&format!("{base}-{quote}"));
+
+        if let Err(e) = self
+            .cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::UnmapIndexTicker {
+                base_pair,
+                original: symbol,
+            })
+        {
+            log::error!("Failed to send UnmapIndexTicker command: {e}");
+        }
+
+        Ok(())
     }
 
     /// Unsubscribe from funding rate data for a perpetual swap instrument.
@@ -1626,13 +1592,8 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::FundingRate,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        self.unsubscribe_inst_id(OKXWsChannel::FundingRate, instrument_id.symbol.inner())
+            .await
     }
 
     /// Unsubscribe from trade data for an instrument.
@@ -1650,14 +1611,8 @@ impl OKXWebSocketClient {
         } else {
             OKXWsChannel::Trades
         };
-
-        let arg = OKXSubscriptionArg {
-            channel,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        self.unsubscribe_inst_id(channel, instrument_id.symbol.inner())
+            .await
     }
 
     /// Unsubscribe from candlestick/bar data for an instrument.
@@ -1666,17 +1621,10 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the subscription request fails.
     pub async fn unsubscribe_bars(&self, bar_type: BarType) -> Result<(), OKXWsError> {
-        // Use regular trade-price candlesticks which work for all instrument types
         let channel = bar_spec_as_okx_channel(bar_type.spec())
             .map_err(|e| OKXWsError::ClientError(e.to_string()))?;
-
-        let arg = OKXSubscriptionArg {
-            channel,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(bar_type.instrument_id().symbol.inner()),
-        };
-        self.unsubscribe(vec![arg]).await
+        self.unsubscribe_inst_id(channel, bar_type.instrument_id().symbol.inner())
+            .await
     }
 
     /// Subscribes to order updates for the given instrument type.

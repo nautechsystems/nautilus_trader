@@ -103,6 +103,43 @@ pub struct OKXIndexTicker {
     pub ts: u64,
 }
 
+/// Represents an order book level from the GET /api/v5/market/books endpoint.
+/// Each entry is a 4-element tuple: [price, size, liquidated_orders, num_orders].
+pub type OKXOrderBookLevel = (String, String, String, String);
+
+/// Represents an order book snapshot from the GET /api/v5/market/books endpoint.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXOrderBookSnapshot {
+    /// Ask levels [price, size, liquidated_orders_count, orders_count].
+    pub asks: Vec<OKXOrderBookLevel>,
+    /// Bid levels [price, size, liquidated_orders_count, orders_count].
+    pub bids: Vec<OKXOrderBookLevel>,
+    /// Timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub ts: u64,
+}
+
+/// Represents a funding rate history entry from the GET /api/v5/public/funding-rate-history endpoint.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXFundingRateHistory {
+    /// Instrument type.
+    pub inst_type: OKXInstrumentType,
+    /// Instrument ID.
+    pub inst_id: Ustr,
+    /// Funding rate.
+    pub funding_rate: String,
+    /// Realized rate.
+    pub realized_rate: String,
+    /// Funding time, Unix timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub funding_time: u64,
+    /// Funding rate calculation method.
+    #[serde(default)]
+    pub method: Option<String>,
+}
+
 /// Represents a position tier from the GET /api/v5/public/position-tiers endpoint.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

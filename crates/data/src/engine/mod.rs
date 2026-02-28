@@ -79,7 +79,8 @@ use nautilus_model::defi::DefiData;
 use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+        QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BarAggregation, BookType, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
@@ -843,6 +844,8 @@ impl DataEngine {
             self.handle_instrument(instrument.clone());
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {
             self.handle_funding_rate(*funding_rate);
+        } else if let Some(status) = data.downcast_ref::<InstrumentStatus>() {
+            self.handle_instrument_status(*status);
         } else {
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }
@@ -1079,6 +1082,11 @@ impl DataEngine {
 
         let topic = switchboard::get_funding_rate_topic(funding_rate.instrument_id);
         msgbus::publish_funding_rate(topic, &funding_rate);
+    }
+
+    fn handle_instrument_status(&mut self, status: InstrumentStatus) {
+        let topic = switchboard::get_instrument_status_topic(status.instrument_id);
+        msgbus::publish_any(topic, &status);
     }
 
     fn handle_instrument_close(&mut self, close: InstrumentClose) {

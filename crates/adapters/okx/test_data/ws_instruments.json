@@ -1,0 +1,41 @@
+{
+  "arg": {
+    "channel": "instruments",
+    "instType": "SWAP"
+  },
+  "data": [
+    {
+      "alias": "",
+      "baseCcy": "",
+      "category": "1",
+      "ctMult": "1",
+      "ctType": "linear",
+      "ctVal": "0.01",
+      "ctValCcy": "BTC",
+      "expTime": "",
+      "instFamily": "BTC-USDT",
+      "instId": "BTC-USDT-SWAP",
+      "instType": "SWAP",
+      "lever": "125",
+      "listTime": "1611916828000",
+      "lotSz": "1",
+      "maxIcebergSz": "100000000.0000000000000000",
+      "maxLmtAmt": "20000000",
+      "maxLmtSz": "100000000",
+      "maxMktAmt": "",
+      "maxMktSz": "30000",
+      "maxStopSz": "30000",
+      "maxTriggerSz": "100000000.0000000000000000",
+      "maxTwapSz": "100000000.0000000000000000",
+      "minSz": "1",
+      "optType": "",
+      "quoteCcy": "",
+      "ruleType": "normal",
+      "settleCcy": "USDT",
+      "state": "live",
+      "stk": "",
+      "tickSz": "0.1",
+      "uly": "BTC-USDT"
+    }
+  ]
+}

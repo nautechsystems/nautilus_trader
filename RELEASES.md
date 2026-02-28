@@ -14,6 +14,9 @@ Released on TBD (UTC).
 - Added Hyperliquid order modify support (Rust and Python)
 - Added OKX trailing stop market order support (Rust and Python)
 - Added OKX algo order amend support (Rust and Python)
+- Added OKX instrument status updates from WebSocket instruments channel (Rust)
+- Added OKX index price subscriptions with base-pair remapping to derivatives (Rust)
+- Added OKX book snapshot and funding rate request support (Rust)
 - Removed Hyperliquid builder fee charges (builder-fee approval no longer required)
 
 ### Breaking Changes

@@ -37,8 +37,8 @@ use nautilus_model::{
         },
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, LiquiditySide, OptionKind, OrderSide,
-        OrderStatus, OrderType, PositionSide, TimeInForce,
+        AccountType, AggregationSource, AggressorSide, LiquiditySide, MarketStatusAction,
+        OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::AccountState,
     identifiers::{
@@ -57,8 +57,8 @@ use crate::{
     common::{
         consts::OKX_VENUE,
         enums::{
-            OKXExecType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
-            OKXTargetCurrency, OKXVipLevel,
+            OKXExecType, OKXInstrumentStatus, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
+            OKXPositionSide, OKXSide, OKXTargetCurrency, OKXVipLevel,
         },
         models::OKXInstrument,
     },
@@ -217,6 +217,17 @@ pub fn parse_base_quote_from_symbol(symbol: &str) -> anyhow::Result<(&str, &str)
         anyhow::anyhow!("Invalid symbol format: missing quote currency in '{symbol}'")
     })?;
     Ok((base, quote))
+}
+
+/// Maps an [`OKXInstrumentStatus`] to a Nautilus [`MarketStatusAction`].
+#[must_use]
+pub fn okx_status_to_market_action(status: OKXInstrumentStatus) -> MarketStatusAction {
+    match status {
+        OKXInstrumentStatus::Live => MarketStatusAction::Trading,
+        OKXInstrumentStatus::Suspend => MarketStatusAction::Suspend,
+        OKXInstrumentStatus::Preopen => MarketStatusAction::PreOpen,
+        OKXInstrumentStatus::Test => MarketStatusAction::NotAvailableForTrading,
+    }
 }
 
 /// Parses a Nautilus instrument ID from the given OKX `symbol` value.

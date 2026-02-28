@@ -302,8 +302,20 @@ impl DataTesterConfig {
     }
 
     #[must_use]
+    pub fn with_request_quotes(mut self, request: bool) -> Self {
+        self.request_quotes = request;
+        self
+    }
+
+    #[must_use]
     pub fn with_request_funding_rates(mut self, request: bool) -> Self {
         self.request_funding_rates = request;
+        self
+    }
+
+    #[must_use]
+    pub fn with_book_levels_to_print(mut self, levels: usize) -> Self {
+        self.book_levels_to_print = levels;
         self
     }
 

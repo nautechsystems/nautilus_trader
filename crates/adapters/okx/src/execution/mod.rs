@@ -1404,7 +1404,8 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
         | NautilusWsMessage::Raw(_)
         | NautilusWsMessage::Data(_)
         | NautilusWsMessage::FundingRates(_)
-        | NautilusWsMessage::Instrument(_) => {
+        | NautilusWsMessage::Instrument(_, _)
+        | NautilusWsMessage::InstrumentStatus(_) => {
             log::debug!("Ignoring websocket data message");
         }
     }

@@ -17,7 +17,7 @@
 
 use derive_builder::Builder;
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas},
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired,
         OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
@@ -49,7 +49,8 @@ pub enum NautilusWsMessage {
     Data(Vec<Data>),
     Deltas(OrderBookDeltas),
     FundingRates(Vec<FundingRateUpdate>),
-    Instrument(Box<InstrumentAny>),
+    Instrument(Box<InstrumentAny>, Option<InstrumentStatus>),
+    InstrumentStatus(InstrumentStatus),
     AccountUpdate(AccountState),
     PositionUpdate(PositionStatusReport),
     OrderAccepted(OrderAccepted),

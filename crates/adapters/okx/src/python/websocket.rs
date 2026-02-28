@@ -244,7 +244,7 @@ impl OKXWebSocketClient {
 
                 while let Some(msg) = stream.next().await {
                     match msg {
-                        NautilusWsMessage::Instrument(msg) => {
+                        NautilusWsMessage::Instrument(msg, _status) => {
                             call_python_with_data(&callback, |py| {
                                 instrument_any_to_pyobject(py, *msg)
                             });
@@ -309,6 +309,9 @@ impl OKXWebSocketClient {
                             call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::PositionUpdate(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::InstrumentStatus(msg) => {
                             call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::Reconnected => {} // Nothing to handle

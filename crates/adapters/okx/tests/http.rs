@@ -101,7 +101,15 @@ fn has_auth_headers(headers: &HeaderMap) -> bool {
 }
 
 fn load_instruments_any() -> Vec<InstrumentAny> {
-    let payload = load_test_data("http_get_instruments_spot.json");
+    load_instruments_from("http_get_instruments_spot.json")
+}
+
+fn load_swap_instruments_any() -> Vec<InstrumentAny> {
+    load_instruments_from("http_get_instruments_swap.json")
+}
+
+fn load_instruments_from(filename: &str) -> Vec<InstrumentAny> {
+    let payload = load_test_data(filename);
     let response: OKXResponse<OKXInstrument> = serde_json::from_value(payload).unwrap();
     let ts_init = UnixNanos::default();
     response
@@ -2626,4 +2634,102 @@ async fn test_http_empty_response_data() {
     let result = client.get_instruments(params).await.unwrap();
 
     assert!(result.is_empty());
+}
+
+#[tokio::test]
+async fn test_request_book_snapshot() {
+    let router = Router::new()
+        .route(
+            "/api/v5/public/instruments",
+            get(|| async {
+                Json(load_test_data("http_get_instruments_swap.json")).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/market/books",
+            get(|| async { Json(load_test_data("http_get_order_book.json")).into_response() }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    wait_for_server(addr, "/api/v5/public/instruments").await;
+
+    let base_url = format!("http://{addr}");
+    let client =
+        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let book = client
+        .request_book_snapshot(InstrumentId::from("BTC-USDT-SWAP.OKX"), Some(5))
+        .await
+        .unwrap();
+
+    assert_eq!(book.bids(None).count(), 3);
+    assert_eq!(book.asks(None).count(), 3);
+}
+
+#[tokio::test]
+async fn test_request_funding_rates() {
+    let router = Router::new()
+        .route(
+            "/api/v5/public/instruments",
+            get(|| async {
+                Json(load_test_data("http_get_instruments_swap.json")).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/public/funding-rate-history",
+            get(|| async {
+                Json(load_test_data("http_get_funding_rate_history.json")).into_response()
+            }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    wait_for_server(addr, "/api/v5/public/instruments").await;
+
+    let base_url = format!("http://{addr}");
+    let client =
+        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let rates = client
+        .request_funding_rates(
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            None,
+            None,
+            Some(10),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(rates.len(), 2);
+    assert_eq!(
+        rates[0].instrument_id,
+        InstrumentId::from("BTC-USDT-SWAP.OKX")
+    );
+    assert_eq!(
+        rates[1].instrument_id,
+        InstrumentId::from("BTC-USDT-SWAP.OKX")
+    );
 }

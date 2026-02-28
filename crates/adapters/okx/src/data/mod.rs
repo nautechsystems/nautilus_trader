@@ -29,12 +29,14 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, DataResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
+            BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
+            InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestFundingRates,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
             SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrumentStatus,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -216,10 +218,21 @@ impl OKXDataClient {
                 Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
             }
             NautilusWsMessage::FundingRates(updates) => {
-                emit_funding_rates(updates);
+                emit_funding_rates(data_sender, updates);
             }
-            NautilusWsMessage::Instrument(instrument) => {
+            NautilusWsMessage::Instrument(instrument, status) => {
                 upsert_instrument(instruments, *instrument);
+
+                if let Some(status) = status
+                    && let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status))
+                {
+                    log::error!("Failed to emit instrument status event: {e}");
+                }
+            }
+            NautilusWsMessage::InstrumentStatus(status) => {
+                if let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status)) {
+                    log::error!("Failed to emit instrument status event: {e}");
+                }
             }
             NautilusWsMessage::AccountUpdate(_)
             | NautilusWsMessage::PositionUpdate(_)
@@ -250,16 +263,14 @@ impl OKXDataClient {
     }
 }
 
-fn emit_funding_rates(updates: Vec<FundingRateUpdate>) {
-    if updates.is_empty() {
-        return;
-    }
-
+fn emit_funding_rates(
+    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    updates: Vec<FundingRateUpdate>,
+) {
     for update in updates {
-        log::debug!(
-            "Received funding rate update for {} but forwarding is not yet supported",
-            update.instrument_id
-        );
+        if let Err(e) = sender.send(DataEvent::FundingRate(update)) {
+            log::error!("Failed to emit funding rate event: {e}");
+        }
     }
 }
 
@@ -678,6 +689,21 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        let ws = self.business_ws()?.clone();
+        let bar_type = cmd.bar_type;
+
+        self.spawn_ws(
+            async move {
+                ws.subscribe_bars(bar_type)
+                    .await
+                    .context("bars subscription")
+            },
+            "bar subscription",
+        );
+        Ok(())
+    }
+
     fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
@@ -693,17 +719,20 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
-        let ws = self.business_ws()?.clone();
-        let bar_type = cmd.bar_type;
+    fn subscribe_instrument_status(
+        &mut self,
+        cmd: &SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        let ws = self.public_ws()?.clone();
+        let instrument_id = cmd.instrument_id;
 
         self.spawn_ws(
             async move {
-                ws.subscribe_bars(bar_type)
+                ws.subscribe_instrument(instrument_id)
                     .await
-                    .context("bars subscription")
+                    .context("instrument status subscription")
             },
-            "bar subscription",
+            "instrument status subscription",
         );
         Ok(())
     }
@@ -808,6 +837,21 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        let ws = self.business_ws()?.clone();
+        let bar_type = cmd.bar_type;
+
+        self.spawn_ws(
+            async move {
+                ws.unsubscribe_bars(bar_type)
+                    .await
+                    .context("bars unsubscribe")
+            },
+            "bar unsubscribe",
+        );
+        Ok(())
+    }
+
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
@@ -823,17 +867,20 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let ws = self.business_ws()?.clone();
-        let bar_type = cmd.bar_type;
+    fn unsubscribe_instrument_status(
+        &mut self,
+        cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        let ws = self.public_ws()?.clone();
+        let instrument_id = cmd.instrument_id;
 
         self.spawn_ws(
             async move {
-                ws.unsubscribe_bars(bar_type)
+                ws.unsubscribe_instrument(instrument_id)
                     .await
-                    .context("bars unsubscribe")
+                    .context("instrument status unsubscription")
             },
-            "bar unsubscribe",
+            "instrument status unsubscription",
         );
         Ok(())
     }
@@ -1017,6 +1064,45 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
+    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instrument_id = request.instrument_id;
+        let depth = request.depth.map(|n| n.get() as u32);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params;
+        let clock = self.clock;
+
+        get_runtime().spawn(async move {
+            match http
+                .request_book_snapshot(instrument_id, depth)
+                .await
+                .context("failed to request book snapshot from OKX")
+            {
+                Ok(book) => {
+                    let response = DataResponse::Book(BookResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        book,
+                        None,
+                        None,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send book snapshot response: {e}");
+                    }
+                }
+                Err(e) => log::error!("Book snapshot request failed: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
@@ -1097,6 +1183,49 @@ impl DataClient for OKXDataClient {
                     }
                 }
                 Err(e) => log::error!("Bar request failed: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instrument_id = request.instrument_id;
+        let start = request.start;
+        let end = request.end;
+        let limit = request.limit.map(|n| n.get() as u32);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params;
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+
+        get_runtime().spawn(async move {
+            match http
+                .request_funding_rates(instrument_id, start, end, limit)
+                .await
+                .context("failed to request funding rates from OKX")
+            {
+                Ok(funding_rates) => {
+                    let response = DataResponse::FundingRates(FundingRatesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        funding_rates,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send funding rates response: {e}");
+                    }
+                }
+                Err(e) => log::error!("Funding rates request failed: {e:?}"),
             }
         });
 

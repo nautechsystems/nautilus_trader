@@ -48,15 +48,18 @@ use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var, string::REDACTED,
-    time::get_atomic_clock_realtime,
+    AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, datetime::NANOSECONDS_IN_MILLISECOND,
+    env::get_or_env_var, string::REDACTED, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{Bar, BarType, IndexPriceUpdate, MarkPriceUpdate, TradeTick},
-    enums::{AggregationSource, BarAggregation, OrderSide, OrderType, TriggerType},
+    data::{
+        Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, TradeTick,
+    },
+    enums::{AggregationSource, BarAggregation, BookType, OrderSide, OrderType, TriggerType},
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
+    orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
 };
@@ -74,19 +77,21 @@ use super::{
     error::OKXHttpError,
     models::{
         OKXAccount, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse, OKXCancelAlgoOrderRequest,
-        OKXCancelAlgoOrderResponse, OKXFeeRate, OKXIndexTicker, OKXMarkPrice, OKXOrderAlgo,
-        OKXOrderHistory, OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPosition,
-        OKXPositionHistory, OKXPositionTier, OKXServerTime, OKXTransactionDetail,
+        OKXCancelAlgoOrderResponse, OKXFeeRate, OKXFundingRateHistory, OKXIndexTicker,
+        OKXMarkPrice, OKXOrderAlgo, OKXOrderBookSnapshot, OKXOrderHistory,
+        OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPosition, OKXPositionHistory,
+        OKXPositionTier, OKXServerTime, OKXTransactionDetail,
     },
     query::{
         GetAlgoOrdersParams, GetAlgoOrdersParamsBuilder, GetCandlesticksParams,
-        GetCandlesticksParamsBuilder, GetIndexTickerParams, GetIndexTickerParamsBuilder,
-        GetInstrumentsParams, GetInstrumentsParamsBuilder, GetMarkPriceParams,
-        GetMarkPriceParamsBuilder, GetOrderHistoryParams, GetOrderHistoryParamsBuilder,
-        GetOrderListParams, GetOrderListParamsBuilder, GetPositionTiersParams,
-        GetPositionsHistoryParams, GetPositionsParams, GetPositionsParamsBuilder,
-        GetTradeFeeParams, GetTradesParams, GetTradesParamsBuilder, GetTransactionDetailsParams,
-        GetTransactionDetailsParamsBuilder, SetPositionModeParams, SetPositionModeParamsBuilder,
+        GetCandlesticksParamsBuilder, GetFundingRateHistoryParams, GetIndexTickerParams,
+        GetIndexTickerParamsBuilder, GetInstrumentsParams, GetInstrumentsParamsBuilder,
+        GetMarkPriceParams, GetMarkPriceParamsBuilder, GetOrderBookParams, GetOrderHistoryParams,
+        GetOrderHistoryParamsBuilder, GetOrderListParams, GetOrderListParamsBuilder,
+        GetPositionTiersParams, GetPositionsHistoryParams, GetPositionsParams,
+        GetPositionsParamsBuilder, GetTradeFeeParams, GetTradesParams, GetTradesParamsBuilder,
+        GetTransactionDetailsParams, GetTransactionDetailsParamsBuilder, SetPositionModeParams,
+        SetPositionModeParamsBuilder,
     },
 };
 use crate::{
@@ -100,8 +105,9 @@ use crate::{
         models::OKXInstrument,
         parse::{
             okx_instrument_type, okx_instrument_type_from_symbol, parse_account_state,
-            parse_candlestick, parse_fill_report, parse_index_price_update, parse_instrument_any,
-            parse_mark_price_update, parse_order_status_report, parse_position_status_report,
+            parse_base_quote_from_symbol, parse_candlestick, parse_fill_report,
+            parse_index_price_update, parse_instrument_any, parse_mark_price_update,
+            parse_order_status_report, parse_position_status_report, parse_price, parse_quantity,
             parse_spot_margin_position_from_balance, parse_trade_tick,
         },
     },
@@ -738,6 +744,52 @@ impl OKXRawHttpClient {
         self.send_request(
             Method::GET,
             "/api/v5/market/history-trades",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Requests order book snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-market-data-get-order-book>
+    pub async fn get_order_book(
+        &self,
+        params: GetOrderBookParams,
+    ) -> Result<Vec<OKXOrderBookSnapshot>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/market/books",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Requests funding rate history.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#public-data-rest-api-get-funding-rate-history>
+    pub async fn get_funding_rate_history(
+        &self,
+        params: GetFundingRateHistoryParams,
+    ) -> Result<Vec<OKXFundingRateHistory>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/public/funding-rate-history",
             Some(&params),
             None,
             false,
@@ -1550,8 +1602,13 @@ impl OKXHttpClient {
         &self,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<IndexPriceUpdate> {
+        // Index tickers endpoint requires base pair format (e.g., BTC-USDT)
+        let symbol = instrument_id.symbol.inner();
+        let (base, quote) = parse_base_quote_from_symbol(symbol.as_str())?;
+        let inst_id = format!("{base}-{quote}");
+
         let mut params = GetIndexTickerParamsBuilder::default();
-        params.inst_id(instrument_id.symbol.inner());
+        params.inst_id(Ustr::from(&inst_id));
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
         let resp = self
@@ -1570,6 +1627,121 @@ impl OKXHttpClient {
             parse_index_price_update(raw, instrument_id, inst.price_precision(), ts_init)
                 .map_err(|e| anyhow::anyhow!(e))?;
         Ok(index_price)
+    }
+
+    /// Requests an order book snapshot for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or book parsing fails.
+    pub async fn request_book_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> anyhow::Result<OrderBook> {
+        let inst = self.instrument_from_cache(instrument_id.symbol.inner())?;
+        let price_precision = inst.price_precision();
+        let size_precision = inst.size_precision();
+
+        let params = GetOrderBookParams {
+            inst_id: instrument_id.symbol.to_string(),
+            sz: depth,
+        };
+
+        let resp = self
+            .inner
+            .get_order_book(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let snapshot = resp
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No order book returned from OKX"))?;
+
+        let ts_event = UnixNanos::from(snapshot.ts * NANOSECONDS_IN_MILLISECOND);
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        for (i, level) in snapshot.bids.iter().enumerate() {
+            let price = parse_price(&level.0, price_precision)?;
+            let size = parse_quantity(&level.1, size_precision)?;
+            let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
+            book.add(order, 0, i as u64, ts_event);
+        }
+
+        let bids_len = snapshot.bids.len();
+        for (i, level) in snapshot.asks.iter().enumerate() {
+            let price = parse_price(&level.0, price_precision)?;
+            let size = parse_quantity(&level.1, size_precision)?;
+            let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
+            book.add(order, 0, (bids_len + i) as u64, ts_event);
+        }
+
+        log::info!(
+            "Fetched order book for {} with {} bids and {} asks",
+            instrument_id,
+            snapshot.bids.len(),
+            snapshot.asks.len(),
+        );
+
+        Ok(book)
+    }
+
+    /// Requests historical funding rates for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_funding_rates(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        let mut params = GetFundingRateHistoryParams {
+            inst_id: instrument_id.symbol.to_string(),
+            ..Default::default()
+        };
+
+        // OKX uses "before" for newer-than and "after" for older-than
+        if let Some(start) = start {
+            params.before = Some(start.timestamp_millis().to_string());
+        }
+
+        if let Some(end) = end {
+            params.after = Some(end.timestamp_millis().to_string());
+        }
+
+        params.limit = limit;
+
+        let resp = self
+            .inner
+            .get_funding_rate_history(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let ts_init = self.generate_ts_init();
+        let mut rates = Vec::with_capacity(resp.len());
+
+        for raw in &resp {
+            let rate = Decimal::from_str(&raw.funding_rate)?;
+            let ts_event = UnixNanos::from(raw.funding_time * NANOSECONDS_IN_MILLISECOND);
+            rates.push(FundingRateUpdate::new(
+                instrument_id,
+                rate,
+                None,
+                ts_event,
+                ts_init,
+            ));
+        }
+
+        log::info!(
+            "Fetched {} funding rates for {}",
+            rates.len(),
+            instrument_id,
+        );
+
+        Ok(rates)
     }
 
     /// Requests trades for the `instrument_id` and `start` -> `end` time range.
