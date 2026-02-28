@@ -9,8 +9,9 @@ Released on TBD (UTC).
 - Added `get_target_px_for_quantity` method on `OrderBook` (#3627), thanks @Javdu10
 - Added Betfair batch submit and cancel order support
 - Added BitMEX dead man's switch (cancelAllAfter) support
-- Added BitMEX grid market maker example in Rust
-- Added Hyperliquid order modify support (Python and Rust)
+- Added BitMEX grid market maker example (Rust)
+- Added Bybit book snapshot and funding rate request support (Rust)
+- Added Hyperliquid order modify support (Rust and Python)
 - Added OKX trailing stop market order support (Rust and Python)
 - Added OKX algo order amend support (Rust and Python)
 - Removed Hyperliquid builder fee charges (builder-fee approval no longer required)

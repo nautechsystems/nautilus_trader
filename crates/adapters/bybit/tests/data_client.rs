@@ -47,7 +47,10 @@ use nautilus_common::{
     live::runner::set_data_event_sender,
     messages::{
         DataEvent,
-        data::{SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades},
+        data::{
+            DataResponse, RequestBookSnapshot, RequestFundingRates, SubscribeBookDeltas,
+            SubscribeQuotes, SubscribeTrades,
+        },
     },
     testing::wait_until_async,
 };
@@ -129,6 +132,16 @@ async fn handle_get_server_time() -> impl IntoResponse {
         "retExtInfo": {},
         "time": 1704470400123i64
     }))
+}
+
+async fn handle_get_orderbook() -> impl IntoResponse {
+    let orderbook = load_test_data("http_get_orderbook.json");
+    Json(orderbook).into_response()
+}
+
+async fn handle_get_funding_history() -> impl IntoResponse {
+    let funding = load_test_data("http_get_funding_history.json");
+    Json(funding).into_response()
 }
 
 async fn handle_websocket(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
@@ -323,6 +336,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/v5/market/instruments-info", get(handle_get_instruments))
+        .route("/v5/market/orderbook", get(handle_get_orderbook))
+        .route(
+            "/v5/market/funding/history",
+            get(handle_get_funding_history),
+        )
         .route("/v5/account/fee-rate", get(handle_get_fee_rate))
         .route("/v3/public/time", get(handle_get_server_time))
         .route("/v5/public/linear", get(handle_websocket))
@@ -626,6 +644,158 @@ async fn test_data_client_emits_instruments_on_connect() {
     assert!(
         instruments_received.load(Ordering::Relaxed) > 0,
         "Expected to receive instrument events on connect"
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_request_book_snapshot() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_test_config(addr);
+    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    client.connect().await.unwrap();
+
+    // Drain instrument events from connect
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+    let request = RequestBookSnapshot::new(
+        instrument_id,
+        None,
+        Some(ClientId::new("BYBIT")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.request_book_snapshot(request).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for book snapshot response")
+        .expect("channel closed");
+
+    assert!(
+        matches!(event, DataEvent::Response(DataResponse::Book(_))),
+        "Expected Book response, was: {event:?}"
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_request_funding_rates() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_test_config(addr);
+    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    client.connect().await.unwrap();
+
+    // Drain instrument events from connect
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+    let request = RequestFundingRates::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(ClientId::new("BYBIT")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.request_funding_rates(request).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for funding rates response")
+        .expect("channel closed");
+
+    assert!(
+        matches!(event, DataEvent::Response(DataResponse::FundingRates(_))),
+        "Expected FundingRates response, was: {event:?}"
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_request_funding_rates_rejects_spot() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_test_config(addr);
+    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    client.connect().await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let instrument_id = InstrumentId::from("BTCUSDT-SPOT.BYBIT");
+    let request = RequestFundingRates::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(ClientId::new("BYBIT")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let result = client.request_funding_rates(request);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Funding rates not available for Spot instruments"),
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_request_funding_rates_rejects_option() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_test_config(addr);
+    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    client.connect().await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let instrument_id = InstrumentId::from("BTC-26DEC25-100000-C-OPTION.BYBIT");
+    let request = RequestFundingRates::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(ClientId::new("BYBIT")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let result = client.request_funding_rates(request);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Funding rates not available for Option instruments"),
     );
 
     client.disconnect().await.unwrap();

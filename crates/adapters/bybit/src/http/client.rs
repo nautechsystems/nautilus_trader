@@ -3058,7 +3058,12 @@ impl BybitHttpClient {
 
         let mut pages: Vec<Vec<FundingRateUpdate>> = Vec::new();
         let mut total_funding_rates = 0usize;
-        let mut current_end = end.map(|dt| dt.timestamp_millis());
+
+        // Bybit requires endTime when startTime is provided
+        let mut current_end = match (start, end) {
+            (Some(_), None) => Some(Utc::now().timestamp_millis()),
+            _ => end.map(|dt| dt.timestamp_millis()),
+        };
 
         loop {
             let mut params_builder = BybitFundingParamsBuilder::default();
