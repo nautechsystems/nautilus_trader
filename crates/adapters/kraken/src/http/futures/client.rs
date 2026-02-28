@@ -62,7 +62,7 @@ use crate::{
             bar_type_to_futures_resolution, parse_bar, parse_futures_fill_report,
             parse_futures_instrument, parse_futures_order_event_status_report,
             parse_futures_order_status_report, parse_futures_position_status_report,
-            parse_futures_public_execution,
+            parse_futures_public_execution, truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -1720,7 +1720,7 @@ impl KrakenFuturesHttpClient {
 
         let mut builder = KrakenFuturesSendOrderParamsBuilder::default();
         builder
-            .cli_ord_id(client_order_id.to_string())
+            .cli_ord_id(truncate_cl_ord_id(&client_order_id))
             .broker(NAUTILUS_KRAKEN_BROKER_ID)
             .symbol(raw_symbol)
             .side(kraken_side)
@@ -1918,7 +1918,7 @@ impl KrakenFuturesHttpClient {
             .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
 
         let order_id = venue_order_id.as_ref().map(|id| id.to_string());
-        let cli_ord_id = client_order_id.as_ref().map(|id| id.to_string());
+        let cli_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
 
         if order_id.is_none() && cli_ord_id.is_none() {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");
@@ -1988,7 +1988,7 @@ impl KrakenFuturesHttpClient {
             .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
 
         let order_id = venue_order_id.as_ref().map(|id| id.to_string());
-        let cli_ord_id = client_order_id.as_ref().map(|id| id.to_string());
+        let cli_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
 
         if order_id.is_none() && cli_ord_id.is_none() {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");

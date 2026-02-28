@@ -81,6 +81,10 @@ pub enum SpotHandlerCommand {
         trader_id: TraderId,
         strategy_id: StrategyId,
     },
+    CacheTruncatedId {
+        truncated: String,
+        original: ClientOrderId,
+    },
 }
 
 /// Key for buffering OHLC bars: (symbol, interval).
@@ -99,6 +103,7 @@ pub(super) struct SpotFeedHandler {
     subscriptions: SubscriptionState,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
     client_order_cache: AHashMap<ClientOrderId, CachedOrderInfo>,
+    truncated_id_map: AHashMap<String, ClientOrderId>,
     order_qty_cache: AHashMap<VenueOrderId, f64>,
     book_sequence: u64,
     pending_messages: VecDeque<NautilusWsMessage>,
@@ -123,6 +128,7 @@ impl SpotFeedHandler {
             subscriptions,
             instruments_cache: AHashMap::new(),
             client_order_cache: AHashMap::new(),
+            truncated_id_map: AHashMap::new(),
             order_qty_cache: AHashMap::new(),
             book_sequence: 0,
             pending_messages: VecDeque::new(),
@@ -227,6 +233,15 @@ impl SpotFeedHandler {
                                     strategy_id,
                                 },
                             );
+                        }
+                        SpotHandlerCommand::CacheTruncatedId {
+                            truncated,
+                            original,
+                        } => {
+                            log::debug!(
+                                "Cached truncated ID mapping: {truncated} -> {original}"
+                            );
+                            self.truncated_id_map.insert(truncated, original);
                         }
                     }
                 }
@@ -607,6 +622,17 @@ impl SpotFeedHandler {
                             .insert(VenueOrderId::new(&exec_data.order_id), qty);
                     }
 
+                    let resolved_cl_ord_id = exec_data
+                        .cl_ord_id
+                        .as_ref()
+                        .filter(|id| !id.is_empty())
+                        .map(|id| {
+                            self.truncated_id_map
+                                .get(id)
+                                .copied()
+                                .unwrap_or_else(|| ClientOrderId::new(id))
+                        });
+
                     // Resolve instrument and cached order info
                     let (instrument, cached_info) = if let Some(ref symbol) = exec_data.symbol {
                         let symbol_ustr = Ustr::from(symbol.as_str());
@@ -617,23 +643,12 @@ impl SpotFeedHandler {
                                 exec_data.order_id
                             );
                         }
-                        let cached = exec_data
-                            .cl_ord_id
+                        let cached = resolved_cl_ord_id
                             .as_ref()
-                            .filter(|id| !id.is_empty())
-                            .and_then(|id| {
-                                self.client_order_cache
-                                    .get(&ClientOrderId::new(id))
-                                    .cloned()
-                            });
+                            .and_then(|id| self.client_order_cache.get(id).cloned());
                         (inst, cached)
-                    } else if let Some(ref cl_ord_id) =
-                        exec_data.cl_ord_id.as_ref().filter(|id| !id.is_empty())
-                    {
-                        let cached = self
-                            .client_order_cache
-                            .get(&ClientOrderId::new(cl_ord_id))
-                            .cloned();
+                    } else if let Some(ref resolved_id) = resolved_cl_ord_id {
+                        let cached = self.client_order_cache.get(resolved_id).cloned();
                         let inst = cached.as_ref().and_then(|info| {
                             self.instruments_cache
                                 .iter()
@@ -668,11 +683,8 @@ impl SpotFeedHandler {
                     // Emit proper order events when we have cached info, otherwise fall back
                     // to OrderStatusReport for external orders or reconciliation
                     if let Some(ref info) = cached_info {
-                        let client_order_id = exec_data
-                            .cl_ord_id
-                            .as_ref()
-                            .map(ClientOrderId::new)
-                            .expect("cl_ord_id should exist if cached");
+                        let client_order_id =
+                            resolved_cl_ord_id.expect("cl_ord_id should exist if cached");
                         let venue_order_id = VenueOrderId::new(&exec_data.order_id);
 
                         match exec_data.exec_type {
@@ -786,13 +798,14 @@ impl SpotFeedHandler {
                                     exec_data.last_qty.is_some_and(|q| q > 0.0)
                                         && exec_data.last_price.is_some_and(|p| p > 0.0);
 
-                                if let Ok(status_report) = parse_ws_order_status_report(
+                                if let Ok(mut status_report) = parse_ws_order_status_report(
                                     &exec_data,
                                     &instrument,
                                     account_id,
                                     cached_order_qty,
                                     ts_init,
                                 ) {
+                                    status_report.client_order_id = Some(client_order_id);
                                     self.pending_messages.push_back(
                                         NautilusWsMessage::OrderStatusReport(Box::new(
                                             status_report,
@@ -801,13 +814,14 @@ impl SpotFeedHandler {
                                 }
 
                                 if has_complete_trade_data
-                                    && let Ok(fill_report) = parse_ws_fill_report(
+                                    && let Ok(mut fill_report) = parse_ws_fill_report(
                                         &exec_data,
                                         &instrument,
                                         account_id,
                                         ts_init,
                                     )
                                 {
+                                    fill_report.client_order_id = Some(client_order_id);
                                     self.pending_messages
                                         .push_back(NautilusWsMessage::FillReport(Box::new(
                                             fill_report,
@@ -839,13 +853,14 @@ impl SpotFeedHandler {
                             }
                             KrakenExecType::Status => {
                                 // Status update without state change - emit OrderStatusReport
-                                if let Ok(status_report) = parse_ws_order_status_report(
+                                if let Ok(mut status_report) = parse_ws_order_status_report(
                                     &exec_data,
                                     &instrument,
                                     account_id,
                                     cached_order_qty,
                                     ts_init,
                                 ) {
+                                    status_report.client_order_id = Some(client_order_id);
                                     self.pending_messages.push_back(
                                         NautilusWsMessage::OrderStatusReport(Box::new(
                                             status_report,
@@ -868,7 +883,7 @@ impl SpotFeedHandler {
                                     && exec_data.last_price.is_some_and(|p| p > 0.0);
 
                             if has_order_data
-                                && let Ok(status_report) = parse_ws_order_status_report(
+                                && let Ok(mut status_report) = parse_ws_order_status_report(
                                     &exec_data,
                                     &instrument,
                                     account_id,
@@ -876,31 +891,34 @@ impl SpotFeedHandler {
                                     ts_init,
                                 )
                             {
+                                status_report.client_order_id = resolved_cl_ord_id;
                                 self.pending_messages.push_back(
                                     NautilusWsMessage::OrderStatusReport(Box::new(status_report)),
                                 );
                             }
 
                             if has_complete_trade_data
-                                && let Ok(fill_report) = parse_ws_fill_report(
+                                && let Ok(mut fill_report) = parse_ws_fill_report(
                                     &exec_data,
                                     &instrument,
                                     account_id,
                                     ts_init,
                                 )
                             {
+                                fill_report.client_order_id = resolved_cl_ord_id;
                                 self.pending_messages
                                     .push_back(NautilusWsMessage::FillReport(Box::new(
                                         fill_report,
                                     )));
                             }
-                        } else if let Ok(report) = parse_ws_order_status_report(
+                        } else if let Ok(mut report) = parse_ws_order_status_report(
                             &exec_data,
                             &instrument,
                             account_id,
                             cached_order_qty,
                             ts_init,
                         ) {
+                            report.client_order_id = resolved_cl_ord_id;
                             self.pending_messages
                                 .push_back(NautilusWsMessage::OrderStatusReport(Box::new(report)));
                         }

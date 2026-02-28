@@ -852,6 +852,18 @@ impl KrakenFuturesWebSocketClient {
         }
     }
 
+    /// Caches a truncated cl_ord_id mapping for reverse lookup.
+    pub fn cache_truncated_id(&self, truncated: String, original: ClientOrderId) {
+        if let Ok(tx) = self.cmd_tx.try_read()
+            && let Err(e) = tx.send(HandlerCommand::CacheTruncatedId {
+                truncated,
+                original,
+            })
+        {
+            log::debug!("Failed to cache truncated ID: {e}");
+        }
+    }
+
     /// Requests a challenge from the WebSocket for authentication.
     ///
     /// After calling this, listen for the challenge response message and then

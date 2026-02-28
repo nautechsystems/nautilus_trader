@@ -28,7 +28,7 @@ use nautilus_model::{
         AggressorSide, BarAggregation, ContingencyType, LiquiditySide, OrderStatus, OrderType,
         PositionSideSpecified, TimeInForce, TrailingOffsetType, TriggerType,
     },
-    identifiers::{AccountId, InstrumentId, Symbol, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{
         Instrument, any::InstrumentAny, crypto_perpetual::CryptoPerpetual,
         currency_pair::CurrencyPair,
@@ -1061,6 +1061,34 @@ pub fn bar_type_to_futures_resolution(bar_type: BarType) -> anyhow::Result<&'sta
     }
 }
 
+/// Truncates a `ClientOrderId` for Kraken's `cl_ord_id` field.
+///
+/// Kraken accepts three formats:
+/// - Long UUID (36 chars with hyphens): passed through
+/// - Short UUID (32 hex chars): passed through
+/// - Free text: max 18 chars
+///
+/// Sequential NautilusTrader IDs (e.g. `O202602270023210040011`) exceed the
+/// 18-char free-text limit. These are truncated to 'O' + last 17 chars,
+/// preserving the counter portion for maximum entropy.
+pub fn truncate_cl_ord_id(client_order_id: &ClientOrderId) -> String {
+    let id = client_order_id.as_str();
+
+    if id.len() <= 18 {
+        return id.to_string();
+    }
+
+    if id.len() == 36 && id.bytes().filter(|b| *b == b'-').count() == 4 {
+        return id.to_string();
+    }
+
+    if id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return id.to_string();
+    }
+
+    format!("O{}", &id[id.len() - 17..])
+}
+
 #[cfg(test)]
 mod tests {
     use indexmap::IndexMap;
@@ -1537,5 +1565,83 @@ mod tests {
     #[case("ETH/BTC", "ETH/BTC")]
     fn test_normalize_spot_symbol(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(normalize_spot_symbol(input), expected);
+    }
+
+    #[rstest]
+    #[case("A", "A")] // 1 char, minimum
+    #[case("O2026022700232", "O2026022700232")] // 14 chars, typical short
+    #[case("ABCDEFGHIJKLMNOPQR", "ABCDEFGHIJKLMNOPQR")] // 18 chars, at limit
+    fn test_truncate_cl_ord_id_short_passthrough(#[case] input: &str, #[case] expected: &str) {
+        let id = ClientOrderId::new(input);
+        assert_eq!(truncate_cl_ord_id(&id), expected);
+    }
+
+    #[rstest]
+    #[case("6d47a5f0-6fd4-4b84-b56e-c23f0f689c20")] // lowercase hex
+    #[case("6D47A5F0-6FD4-4B84-B56E-C23F0F689C20")] // uppercase hex
+    #[case("00000000-0000-0000-0000-000000000000")] // nil UUID
+    #[case("ffffffff-ffff-ffff-ffff-ffffffffffff")] // max UUID
+    fn test_truncate_cl_ord_id_uuid_hyphenated_passthrough(#[case] input: &str) {
+        let id = ClientOrderId::new(input);
+        assert_eq!(truncate_cl_ord_id(&id), input);
+    }
+
+    #[rstest]
+    #[case("6d47a5f06fd44b84b56ec23f0f689c20")] // lowercase
+    #[case("6D47A5F06FD44B84B56EC23F0F689C20")] // uppercase
+    #[case("00000000000000000000000000000000")] // all zeros
+    #[case("aAbBcCdDeEfF00112233445566778899")] // mixed case
+    fn test_truncate_cl_ord_id_uuid_compact_passthrough(#[case] input: &str) {
+        let id = ClientOrderId::new(input);
+        assert_eq!(truncate_cl_ord_id(&id), input);
+    }
+
+    #[rstest]
+    #[case("O2026022700232100400", "O26022700232100400")] // 20 chars → O + last 17
+    #[case("O202602270023210040011", "O02270023210040011")] // 22 chars, typical sequential
+    #[case("O20260227002321004001100", "O27002321004001100")] // 24 chars
+    fn test_truncate_cl_ord_id_sequential_truncated(#[case] input: &str, #[case] expected: &str) {
+        let id = ClientOrderId::new(input);
+        let result = truncate_cl_ord_id(&id);
+        assert_eq!(result, expected);
+        assert_eq!(result.len(), 18);
+        assert!(result.starts_with('O'));
+    }
+
+    #[rstest]
+    fn test_truncate_cl_ord_id_32_chars_non_hex_truncated() {
+        let input = "0123456789abcdef0123456789abcdeg";
+        let id = ClientOrderId::new(input);
+        let result = truncate_cl_ord_id(&id);
+        assert_eq!(result.len(), 18);
+        assert!(result.starts_with('O'));
+        assert_eq!(result, "Of0123456789abcdeg");
+    }
+
+    #[rstest]
+    fn test_truncate_cl_ord_id_36_chars_wrong_hyphens_truncated() {
+        let input = "6d47a5f0-6fd4-4b84-b56ec23f0f689c200";
+        let id = ClientOrderId::new(input);
+        let result = truncate_cl_ord_id(&id);
+        assert_eq!(result.len(), 18);
+        assert!(result.starts_with('O'));
+    }
+
+    #[rstest]
+    fn test_truncate_cl_ord_id_19_chars_truncated() {
+        let input = "O202602270023210040";
+        assert_eq!(input.len(), 19);
+        let id = ClientOrderId::new(input);
+        let result = truncate_cl_ord_id(&id);
+        assert_eq!(result.len(), 18);
+        assert_eq!(result, "O02602270023210040");
+    }
+
+    #[rstest]
+    fn test_truncate_cl_ord_id_preserves_tail() {
+        let input = "O20260227002321004001100";
+        let id = ClientOrderId::new(input);
+        let result = truncate_cl_ord_id(&id);
+        assert_eq!(&result[1..], &input[input.len() - 17..]);
     }
 }

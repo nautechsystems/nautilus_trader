@@ -59,6 +59,7 @@ use crate::{
         parse::{
             bar_type_to_spot_interval, normalize_currency_code, parse_bar, parse_fill_report,
             parse_order_status_report, parse_spot_instrument, parse_trade_tick_from_array,
+            truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -1749,7 +1750,7 @@ impl KrakenSpotHttpClient {
 
         let mut builder = KrakenSpotAddOrderParamsBuilder::default();
         builder
-            .cl_ord_id(client_order_id.to_string())
+            .cl_ord_id(truncate_cl_ord_id(&client_order_id))
             .broker(NAUTILUS_KRAKEN_BROKER_ID)
             .pair(raw_symbol)
             .side(kraken_side)
@@ -1832,7 +1833,7 @@ impl KrakenSpotHttpClient {
             .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
 
         let txid = venue_order_id.as_ref().map(|id| id.to_string());
-        let cl_ord_id = client_order_id.as_ref().map(|id| id.to_string());
+        let cl_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
 
         if txid.is_none() && cl_ord_id.is_none() {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");
@@ -1893,7 +1894,7 @@ impl KrakenSpotHttpClient {
             .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
 
         let txid = venue_order_id.as_ref().map(|id| id.to_string());
-        let cl_ord_id = client_order_id.as_ref().map(|id| id.to_string());
+        let cl_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
 
         if txid.is_none() && cl_ord_id.is_none() {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");

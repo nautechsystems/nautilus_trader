@@ -21,6 +21,8 @@ Released on TBD (UTC).
 - Removed Hyperliquid `builder_fee_refresh_mins` config option (builder fees no longer charged)
 
 ### Security
+- Added `pip-audit` to security audit pipeline
+- Added Docker image cosign signing and SBOM generation
 - Bumped all eligible GitHub Actions pinned SHAs to latest versions (2-week release policy)
 
 ### Fixes
@@ -39,6 +41,9 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers historical bar processing crash (#3619), thanks @shzhng
 - Fixed Interactive Brokers contract details parsing (#3638), thanks @davidsblom
 - Fixed Kraken Spot and Futures execution clients not loading instruments during connect (#3644), thanks for reporting @husariancom
+- Fixed Kraken Spot execution client HTTP client created without credentials (#3650), thanks for reporting @husariancom
+- Fixed Kraken sequential `ClientOrderId` exceeding `cl_ord_id` 18-char free-text limit (#3651), thanks for reporting @husariancom
+- Fixed Kraken missing account state registration during connect (#3652), thanks for reporting @husariancom
 - Fixed pre-commit hooks portability for Windows (#3617), thanks for reporting @powerseed
 
 ### Internal Improvements
@@ -57,6 +62,9 @@ Released on TBD (UTC).
 ### Documentation Updates
 - Added AX Exchange gold perps book imbalance tutorial
 - Added AX Exchange spot FX bars mean reversion tutorial
+- Added BitMEX grid market maker tutorial
+- Added order book concepts documentation
+- Improved backtesting mermaid diagram and tutorial formatting
 
 ---
 
