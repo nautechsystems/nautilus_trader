@@ -281,6 +281,22 @@ impl BybitProductType {
         }
     }
 
+    /// Returns the product type identified by the suffix in the symbol string.
+    #[must_use]
+    pub fn from_suffix(symbol: &str) -> Option<Self> {
+        if symbol.ends_with("-SPOT") {
+            Some(Self::Spot)
+        } else if symbol.ends_with("-LINEAR") {
+            Some(Self::Linear)
+        } else if symbol.ends_with("-INVERSE") {
+            Some(Self::Inverse)
+        } else if symbol.ends_with("-OPTION") {
+            Some(Self::Option)
+        } else {
+            None
+        }
+    }
+
     /// Returns `true` if the product is a spot instrument.
     #[must_use]
     pub fn is_spot(self) -> bool {

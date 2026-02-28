@@ -176,19 +176,9 @@ impl BybitDataClient {
         instrument_id: InstrumentId,
     ) -> Option<BybitProductType> {
         let guard = self.instruments.read().expect(MUTEX_POISONED);
-        guard.get(&instrument_id).map(|inst| {
-            // Determine product type based on instrument characteristics
-            let symbol_str = instrument_id.symbol.as_str();
-            if symbol_str.ends_with("-SPOT") || !symbol_str.contains('-') {
-                BybitProductType::Spot
-            } else if symbol_str.ends_with("-OPTION") {
-                BybitProductType::Option
-            } else if inst.is_inverse() {
-                BybitProductType::Inverse
-            } else {
-                BybitProductType::Linear
-            }
-        })
+        guard
+            .get(&instrument_id)
+            .and_then(|_| BybitProductType::from_suffix(instrument_id.symbol.as_str()))
     }
 
     fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
@@ -1069,21 +1059,9 @@ impl DataClient for BybitDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        // Determine product type from symbol
-        let symbol_str = instrument_id.symbol.as_str();
-        let product_type = if symbol_str.ends_with("-SPOT") || !symbol_str.contains('-') {
-            BybitProductType::Spot
-        } else if symbol_str.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else if symbol_str.contains("USD")
-            && !symbol_str.contains("USDT")
-            && !symbol_str.contains("USDC")
-        {
-            BybitProductType::Inverse
-        } else {
-            BybitProductType::Linear
-        };
-        let raw_symbol = extract_raw_symbol(symbol_str).to_string();
+        let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .unwrap_or(BybitProductType::Linear);
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str()).to_string();
 
         get_runtime().spawn(async move {
             match http
@@ -1131,20 +1109,8 @@ impl DataClient for BybitDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        // Determine product type from symbol
-        let symbol_str = instrument_id.symbol.as_str();
-        let product_type = if symbol_str.ends_with("-SPOT") || !symbol_str.contains('-') {
-            BybitProductType::Spot
-        } else if symbol_str.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else if symbol_str.contains("USD")
-            && !symbol_str.contains("USDT")
-            && !symbol_str.contains("USDC")
-        {
-            BybitProductType::Inverse
-        } else {
-            BybitProductType::Linear
-        };
+        let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .unwrap_or(BybitProductType::Linear);
 
         get_runtime().spawn(async move {
             match http
@@ -1195,20 +1161,8 @@ impl DataClient for BybitDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        // Determine product type from symbol
-        let symbol_str = instrument_id.symbol.as_str();
-        let product_type = if symbol_str.ends_with("-SPOT") || !symbol_str.contains('-') {
-            BybitProductType::Spot
-        } else if symbol_str.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else if symbol_str.contains("USD")
-            && !symbol_str.contains("USDT")
-            && !symbol_str.contains("USDC")
-        {
-            BybitProductType::Inverse
-        } else {
-            BybitProductType::Linear
-        };
+        let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .unwrap_or(BybitProductType::Linear);
 
         get_runtime().spawn(async move {
             match http
@@ -1253,21 +1207,9 @@ impl DataClient for BybitDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        // Determine product type from symbol
         let instrument_id = bar_type.instrument_id();
-        let symbol_str = instrument_id.symbol.as_str();
-        let product_type = if symbol_str.ends_with("-SPOT") || !symbol_str.contains('-') {
-            BybitProductType::Spot
-        } else if symbol_str.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else if symbol_str.contains("USD")
-            && !symbol_str.contains("USDT")
-            && !symbol_str.contains("USDC")
-        {
-            BybitProductType::Inverse
-        } else {
-            BybitProductType::Linear
-        };
+        let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .unwrap_or(BybitProductType::Linear);
 
         get_runtime().spawn(async move {
             match http
@@ -1312,20 +1254,8 @@ impl DataClient for BybitDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        // Determine product type from symbol
-        let symbol_str = instrument_id.symbol.as_str();
-        let product_type = if symbol_str.ends_with("-SPOT") || !symbol_str.contains('-') {
-            BybitProductType::Spot
-        } else if symbol_str.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else if symbol_str.contains("USD")
-            && !symbol_str.contains("USDT")
-            && !symbol_str.contains("USDC")
-        {
-            BybitProductType::Inverse
-        } else {
-            BybitProductType::Linear
-        };
+        let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .unwrap_or(BybitProductType::Linear);
 
         if product_type == BybitProductType::Spot || product_type == BybitProductType::Option {
             anyhow::bail!("Funding rates not available for {product_type} instruments");

@@ -52,15 +52,16 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{
-            BYBIT_BASE_COIN, BYBIT_NAUTILUS_BROKER_ID, BYBIT_QUOTE_COIN, BYBIT_WS_TOPIC_DELIMITER,
-        },
+        consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_WS_TOPIC_DELIMITER},
         credential::Credential,
         enums::{
             BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
-            BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
+            BybitTriggerType, BybitWsOrderRequestOp,
         },
-        parse::{bar_spec_to_bybit_interval, extract_raw_symbol, make_bybit_symbol},
+        parse::{
+            bar_spec_to_bybit_interval, extract_raw_symbol, make_bybit_symbol, map_time_in_force,
+            spot_leverage, spot_market_unit, trigger_direction,
+        },
         symbol::BybitSymbol,
         urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
     },
@@ -1639,67 +1640,14 @@ impl BybitWebSocketClient {
             }
         };
 
-        let bybit_tif = if bybit_order_type == BybitOrderType::Market {
-            None
-        } else if post_only == Some(true) {
-            Some(BybitTimeInForce::PostOnly)
-        } else if let Some(tif) = time_in_force {
-            Some(match tif {
-                TimeInForce::Gtc => BybitTimeInForce::Gtc,
-                TimeInForce::Ioc => BybitTimeInForce::Ioc,
-                TimeInForce::Fok => BybitTimeInForce::Fok,
-                _ => {
-                    return Err(BybitWsError::ClientError(format!(
-                        "Unsupported time in force: {tif:?}"
-                    )));
-                }
-            })
-        } else {
-            None
-        };
-
-        // For SPOT market orders, specify baseCoin to interpret qty as base currency.
-        // This ensures Nautilus quantities (always in base currency) are interpreted correctly.
-        let market_unit = if product_type == BybitProductType::Spot
-            && bybit_order_type == BybitOrderType::Market
-        {
-            if is_quote_quantity {
-                Some(BYBIT_QUOTE_COIN.to_string())
-            } else {
-                Some(BYBIT_BASE_COIN.to_string())
-            }
-        } else {
-            None
-        };
-
-        // Only SPOT products support is_leverage parameter
-        let is_leverage_value = if product_type == BybitProductType::Spot {
-            Some(i32::from(is_leverage))
-        } else {
-            None
-        };
-
-        // Stop semantics: Buy stops trigger on rise (breakout), sell stops trigger on fall (breakdown)
-        // MIT semantics: Buy MIT triggers on fall (pullback entry), sell MIT triggers on rise (rally entry)
-        let trigger_direction = if is_stop_order {
-            match (order_type, order_side) {
-                (OrderType::StopMarket | OrderType::StopLimit, OrderSide::Buy) => {
-                    Some(BybitTriggerDirection::RisesTo as i32)
-                }
-                (OrderType::StopMarket | OrderType::StopLimit, OrderSide::Sell) => {
-                    Some(BybitTriggerDirection::FallsTo as i32)
-                }
-                (OrderType::MarketIfTouched | OrderType::LimitIfTouched, OrderSide::Buy) => {
-                    Some(BybitTriggerDirection::FallsTo as i32)
-                }
-                (OrderType::MarketIfTouched | OrderType::LimitIfTouched, OrderSide::Sell) => {
-                    Some(BybitTriggerDirection::RisesTo as i32)
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
+        let bybit_tif =
+            map_time_in_force(bybit_order_type, time_in_force, post_only).map_err(|tif| {
+                BybitWsError::ClientError(format!("Unsupported time in force: {tif:?}"))
+            })?;
+        let market_unit = spot_market_unit(product_type, bybit_order_type, is_quote_quantity);
+        let is_leverage_value = spot_leverage(product_type, is_leverage);
+        let trigger_dir =
+            trigger_direction(order_type, order_side, is_stop_order).map(|d| d as i32);
 
         let params = if is_stop_order {
             // For conditional orders, ALL types use triggerPrice field
@@ -1719,7 +1667,7 @@ impl BybitWebSocketClient {
                 close_on_trigger: None,
                 trigger_price: trigger_price.map(|p| p.to_string()),
                 trigger_by: Some(BybitTriggerType::LastPrice),
-                trigger_direction,
+                trigger_direction: trigger_dir,
                 tpsl_mode: None, // Not needed for standalone conditional orders
                 take_profit: None,
                 stop_loss: None,
@@ -1743,11 +1691,7 @@ impl BybitWebSocketClient {
                 is_leverage: is_leverage_value,
                 market_unit,
                 price: price.map(|p| p.to_string()),
-                time_in_force: if bybit_order_type == BybitOrderType::Market {
-                    None
-                } else {
-                    bybit_tif
-                },
+                time_in_force: bybit_tif,
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
                 close_on_trigger: None,
@@ -1906,63 +1850,14 @@ impl BybitWebSocketClient {
             }
         };
 
-        let bybit_tif = if post_only == Some(true) {
-            Some(BybitTimeInForce::PostOnly)
-        } else if let Some(tif) = time_in_force {
-            Some(match tif {
-                TimeInForce::Gtc => BybitTimeInForce::Gtc,
-                TimeInForce::Ioc => BybitTimeInForce::Ioc,
-                TimeInForce::Fok => BybitTimeInForce::Fok,
-                _ => {
-                    return Err(BybitWsError::ClientError(format!(
-                        "Unsupported time in force: {tif:?}"
-                    )));
-                }
-            })
-        } else {
-            None
-        };
-
-        let market_unit = if product_type == BybitProductType::Spot
-            && bybit_order_type == BybitOrderType::Market
-        {
-            if is_quote_quantity {
-                Some(BYBIT_QUOTE_COIN.to_string())
-            } else {
-                Some(BYBIT_BASE_COIN.to_string())
-            }
-        } else {
-            None
-        };
-
-        // Only SPOT products support is_leverage parameter
-        let is_leverage_value = if product_type == BybitProductType::Spot {
-            Some(i32::from(is_leverage))
-        } else {
-            None
-        };
-
-        // Stop semantics: Buy stops trigger on rise (breakout), sell stops trigger on fall (breakdown)
-        // MIT semantics: Buy MIT triggers on fall (pullback entry), sell MIT triggers on rise (rally entry)
-        let trigger_direction = if is_stop_order {
-            match (order_type, order_side) {
-                (OrderType::StopMarket | OrderType::StopLimit, OrderSide::Buy) => {
-                    Some(BybitTriggerDirection::RisesTo as i32)
-                }
-                (OrderType::StopMarket | OrderType::StopLimit, OrderSide::Sell) => {
-                    Some(BybitTriggerDirection::FallsTo as i32)
-                }
-                (OrderType::MarketIfTouched | OrderType::LimitIfTouched, OrderSide::Buy) => {
-                    Some(BybitTriggerDirection::FallsTo as i32)
-                }
-                (OrderType::MarketIfTouched | OrderType::LimitIfTouched, OrderSide::Sell) => {
-                    Some(BybitTriggerDirection::RisesTo as i32)
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
+        let bybit_tif =
+            map_time_in_force(bybit_order_type, time_in_force, post_only).map_err(|tif| {
+                BybitWsError::ClientError(format!("Unsupported time in force: {tif:?}"))
+            })?;
+        let market_unit = spot_market_unit(product_type, bybit_order_type, is_quote_quantity);
+        let is_leverage_value = spot_leverage(product_type, is_leverage);
+        let trigger_dir =
+            trigger_direction(order_type, order_side, is_stop_order).map(|d| d as i32);
 
         let params = if is_stop_order {
             BybitWsPlaceOrderParams {
@@ -1974,17 +1869,13 @@ impl BybitWebSocketClient {
                 is_leverage: is_leverage_value,
                 market_unit,
                 price: price.map(|p| p.to_string()),
-                time_in_force: if bybit_order_type == BybitOrderType::Market {
-                    None
-                } else {
-                    bybit_tif
-                },
+                time_in_force: bybit_tif,
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
                 close_on_trigger: None,
                 trigger_price: trigger_price.map(|p| p.to_string()),
                 trigger_by: Some(BybitTriggerType::LastPrice),
-                trigger_direction,
+                trigger_direction: trigger_dir,
                 tpsl_mode: if take_profit.is_some() || stop_loss.is_some() {
                     Some("Full".to_string())
                 } else {
@@ -2011,11 +1902,7 @@ impl BybitWebSocketClient {
                 is_leverage: is_leverage_value,
                 market_unit,
                 price: price.map(|p| p.to_string()),
-                time_in_force: if bybit_order_type == BybitOrderType::Market {
-                    None
-                } else {
-                    bybit_tif
-                },
+                time_in_force: bybit_tif,
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
                 close_on_trigger: None,
@@ -2171,7 +2058,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::testing::load_test_json,
+        common::{
+            consts::{BYBIT_BASE_COIN, BYBIT_QUOTE_COIN},
+            testing::load_test_json,
+        },
         websocket::{classify_bybit_message, messages::BybitWsMessage},
     };
 

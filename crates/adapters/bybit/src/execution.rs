@@ -228,17 +228,10 @@ impl BybitExecutionClient {
     }
 
     fn get_product_type_for_instrument(&self, instrument_id: InstrumentId) -> BybitProductType {
-        // Determine product type from instrument symbol
-        let symbol = instrument_id.symbol.as_str();
-        if symbol.ends_with("-SPOT") || (!symbol.contains('-') && !symbol.contains("PERP")) {
-            BybitProductType::Spot
-        } else if symbol.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else if symbol.contains("USD") && !symbol.contains("USDT") && !symbol.contains("USDC") {
-            BybitProductType::Inverse
-        } else {
+        BybitProductType::from_suffix(instrument_id.symbol.as_str()).unwrap_or_else(|| {
+            log::warn!("No product-type suffix on {instrument_id}, defaulting to Linear");
             BybitProductType::Linear
-        }
+        })
     }
 
     fn map_order_type(order_type: OrderType) -> anyhow::Result<BybitOrderType> {
