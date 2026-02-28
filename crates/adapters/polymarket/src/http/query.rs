@@ -17,10 +17,14 @@
 
 use ahash::AHashMap;
 use derive_builder::Builder;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    common::enums::{PolymarketOrderType, SignatureType},
+    common::{
+        enums::{PolymarketOrderType, SignatureType},
+        parse::{deserialize_decimal_from_str, deserialize_optional_decimal_from_str},
+    },
     http::models::PolymarketOrder,
 };
 
@@ -91,9 +95,10 @@ pub enum AssetType {
 /// Balance and allowance response from `GET /balance-allowance`.
 #[derive(Clone, Debug, Deserialize)]
 pub struct BalanceAllowance {
-    pub balance: String,
-    #[serde(default)]
-    pub allowance: Option<String>,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub balance: Decimal,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub allowance: Option<Decimal>,
 }
 
 /// Order submission response from `POST /order` and `POST /orders`.
@@ -142,6 +147,24 @@ pub struct OrderSubmission {
     pub post_only: bool,
 }
 
+/// Query parameters for Gamma API `GET /markets`.
+#[derive(Clone, Debug, Default, Serialize, Builder)]
+#[builder(setter(into, strip_option), default)]
+pub struct GetGammaMarketsParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ascending: Option<bool>,
+}
+
 /// Paginated response wrapper for CLOB list endpoints.
 #[derive(Clone, Debug, Deserialize)]
 pub struct PaginatedResponse<T> {
@@ -152,6 +175,7 @@ pub struct PaginatedResponse<T> {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -188,15 +212,15 @@ mod tests {
     fn test_balance_allowance_with_allowance() {
         let ba: BalanceAllowance = load("http_balance_allowance_collateral.json");
 
-        assert_eq!(ba.balance, "1000.000000");
-        assert_eq!(ba.allowance.as_deref(), Some("999999999.000000"));
+        assert_eq!(ba.balance, dec!(1000.000000));
+        assert_eq!(ba.allowance, Some(dec!(999999999.000000)));
     }
 
     #[rstest]
     fn test_balance_allowance_no_allowance() {
         let ba: BalanceAllowance = load("http_balance_allowance_no_allowance.json");
 
-        assert_eq!(ba.balance, "250.500000");
+        assert_eq!(ba.balance, dec!(250.500000));
         assert!(ba.allowance.is_none());
     }
 

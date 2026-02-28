@@ -43,7 +43,8 @@ use nautilus_polymarket::{
         client::PolymarketRawHttpClient,
         models::PolymarketOrder,
         query::{
-            CancelMarketOrdersParams, GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams,
+            CancelMarketOrdersParams, GetBalanceAllowanceParams, GetGammaMarketsParams,
+            GetOrdersParams, GetTradesParams,
         },
     },
 };
@@ -60,8 +61,8 @@ struct TestServerState {
     last_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_headers: Arc<tokio::sync::Mutex<AHashMap<String, String>>>,
     rate_limit_after: Arc<AtomicUsize>,
-    // Pre-queued paginated responses for /data/orders
     orders_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
+    gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -72,6 +73,7 @@ impl Default for TestServerState {
             last_headers: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             orders_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 }
@@ -99,6 +101,18 @@ fn create_authed_client(addr: &SocketAddr) -> PolymarketRawHttpClient {
     PolymarketRawHttpClient::with_credential(
         test_credential(),
         TEST_ADDRESS.to_string(),
+        Some(format!("http://{addr}")),
+        None,
+        Some(5),
+    )
+    .unwrap()
+}
+
+fn create_client_with_gamma(addr: &SocketAddr) -> PolymarketRawHttpClient {
+    PolymarketRawHttpClient::with_credential(
+        test_credential(),
+        TEST_ADDRESS.to_string(),
+        Some(format!("http://{addr}")),
         Some(format!("http://{addr}")),
         Some(5),
     )
@@ -230,6 +244,14 @@ async fn handle_cancel_market(
     Json(load_json("http_batch_cancel_response.json")).into_response()
 }
 
+async fn handle_gamma_markets(State(state): State<TestServerState>) -> Response {
+    let resp = state.gamma_response.lock().await;
+    match resp.as_ref() {
+        Some(v) => Json(v.clone()).into_response(),
+        None => Json(json!([])).into_response(),
+    }
+}
+
 async fn handle_health() -> impl IntoResponse {
     StatusCode::OK
 }
@@ -246,6 +268,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/orders", delete(handle_delete_orders))
         .route("/cancel-all", delete(handle_cancel_all))
         .route("/cancel-market-orders", delete(handle_cancel_market))
+        .route("/markets", get(handle_gamma_markets))
         .route("/health", get(handle_health))
         .with_state(state)
 }
@@ -316,8 +339,11 @@ async fn test_get_balance_allowance_returns_data() {
         .await
         .unwrap();
 
-    assert_eq!(balance.balance, "1000.000000");
-    assert_eq!(balance.allowance.as_deref(), Some("999999999.000000"));
+    assert_eq!(balance.balance, rust_decimal_macros::dec!(1000.000000));
+    assert_eq!(
+        balance.allowance,
+        Some(rust_decimal_macros::dec!(999999999.000000))
+    );
 }
 
 #[rstest]
@@ -553,4 +579,42 @@ async fn test_get_orders_with_caller_provided_cursor_not_overwritten() {
 
     // Just verify it succeeds (cursor was passed through, server ignored it)
     assert!(result.is_ok());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_gamma_markets_bare_array_response() {
+    let state = TestServerState::default();
+    let gamma_market = load_json("gamma_market.json");
+    *state.gamma_response.lock().await = Some(json!([gamma_market]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_client_with_gamma(&addr);
+
+    let markets = client
+        .get_gamma_markets(GetGammaMarketsParams::default())
+        .await
+        .unwrap();
+
+    assert_eq!(markets.len(), 1);
+    assert_eq!(markets[0].condition_id, "0xabc123def456789");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_gamma_markets_wrapped_data_response() {
+    let state = TestServerState::default();
+    let gamma_market = load_json("gamma_market.json");
+    *state.gamma_response.lock().await = Some(json!({"data": [gamma_market]}));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_client_with_gamma(&addr);
+
+    let markets = client
+        .get_gamma_markets(GetGammaMarketsParams::default())
+        .await
+        .unwrap();
+
+    assert_eq!(markets.len(), 1);
+    assert_eq!(markets[0].condition_id, "0xabc123def456789");
 }

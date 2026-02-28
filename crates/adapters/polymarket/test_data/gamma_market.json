@@ -1,0 +1,21 @@
+{
+    "id": "123456",
+    "conditionId": "0xabc123def456789",
+    "questionID": "0xquestion123",
+    "clobTokenIds": "[\"71321045679252212594626385532706912750332728571942532289631379312455583992563\", \"52114319501245678901234567890123456789012345678901234567890123456789\"]",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.60\", \"0.40\"]",
+    "question": "Will BTC exceed $100k by end of 2025?",
+    "description": "This market resolves Yes if BTC price exceeds $100,000.",
+    "startDate": "2025-01-01T00:00:00Z",
+    "endDate": "2025-12-31T23:59:59Z",
+    "active": true,
+    "closed": false,
+    "acceptingOrders": true,
+    "enableOrderBook": true,
+    "orderPriceMinTickSize": 0.01,
+    "orderMinSize": 5.0,
+    "makerBaseFee": 0,
+    "takerBaseFee": 30,
+    "slug": "will-btc-exceed-100k-by-end-of-2025"
+}

@@ -76,8 +76,8 @@ pub struct PolymarketOpenOrder {
     )]
     pub original_size: Decimal,
     pub outcome: PolymarketOutcome,
-    pub maker_address: Ustr,
-    pub owner: Ustr,
+    pub maker_address: String,
+    pub owner: String,
     #[serde(
         serialize_with = "serialize_decimal_as_str",
         deserialize_with = "deserialize_decimal_from_str"
@@ -125,11 +125,66 @@ pub struct PolymarketTradeReport {
     pub last_update: String,
     pub outcome: PolymarketOutcome,
     pub bucket_index: u64,
-    pub owner: Ustr,
-    pub maker_address: Ustr,
+    pub owner: String,
+    pub maker_address: String,
     pub transaction_hash: String,
     pub maker_orders: Vec<PolymarketMakerOrder>,
     pub trader_side: PolymarketLiquiditySide,
+}
+
+/// A market response from the Gamma API `GET /markets`.
+///
+/// References: <https://docs.polymarket.com/developers/gamma-markets-api/get-markets>
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GammaMarket {
+    /// Internal Gamma market ID.
+    pub id: String,
+    /// On-chain condition ID for the CTF contracts.
+    pub condition_id: String,
+    /// Hash used for resolution.
+    #[serde(rename = "questionID")]
+    pub question_id: Option<String>,
+    /// JSON-encoded array of two CLOB token IDs (Yes, No).
+    pub clob_token_ids: String,
+    /// JSON-encoded outcome labels (e.g. `["Yes", "No"]`).
+    pub outcomes: String,
+    /// Market question/title.
+    pub question: String,
+    /// Detailed description.
+    pub description: Option<String>,
+    /// Market start date (ISO 8601).
+    pub start_date: Option<String>,
+    /// Market end date (ISO 8601).
+    pub end_date: Option<String>,
+    /// Whether market is active.
+    pub active: Option<bool>,
+    /// Whether market is closed.
+    pub closed: Option<bool>,
+    /// Whether CLOB is accepting orders.
+    pub accepting_orders: Option<bool>,
+    /// Whether order book trading is enabled.
+    pub enable_order_book: Option<bool>,
+    /// Minimum price increment.
+    pub order_price_min_tick_size: Option<f64>,
+    /// Minimum order size.
+    pub order_min_size: Option<f64>,
+    /// Maker fee in basis points.
+    pub maker_base_fee: Option<i64>,
+    /// Taker fee in basis points.
+    pub taker_base_fee: Option<i64>,
+    /// URL slug.
+    #[serde(rename = "slug")]
+    pub market_slug: Option<String>,
+}
+
+/// Tick size response from CLOB `GET /tick-size`.
+///
+/// References: <https://docs.polymarket.com/api-reference/market-data/get-tick-size>
+#[derive(Clone, Debug, Deserialize)]
+pub struct TickSizeResponse {
+    /// Minimum tick size (price increment) for a token.
+    pub minimum_tick_size: f64,
 }
 
 #[cfg(test)]

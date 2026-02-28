@@ -23,22 +23,29 @@ use nautilus_core::{
 };
 use nautilus_network::http::{HttpClient, HttpClientError, Method, USER_AGENT};
 use serde::{Serialize, de::DeserializeOwned};
+use serde_json::Value;
 
 use crate::{
-    common::{credential::Credential, enums::PolymarketOrderType, urls::clob_http_url},
+    common::{
+        credential::Credential,
+        enums::PolymarketOrderType,
+        urls::{clob_http_url, gamma_api_url},
+    },
     http::{
         error::{Error, Result},
-        models::{PolymarketOpenOrder, PolymarketOrder, PolymarketTradeReport},
+        models::{
+            GammaMarket, PolymarketOpenOrder, PolymarketOrder, PolymarketTradeReport,
+            TickSizeResponse,
+        },
         query::{
             BalanceAllowance, BatchCancelResponse, CancelMarketOrdersParams, CancelResponse,
-            GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams, OrderResponse,
-            PaginatedResponse,
+            GetBalanceAllowanceParams, GetGammaMarketsParams, GetOrdersParams, GetTradesParams,
+            OrderResponse, PaginatedResponse,
         },
         rate_limits::POLYMARKET_REST_QUOTA,
     },
 };
 
-// Pagination cursors used by the CLOB API
 const CURSOR_START: &str = "MA==";
 const CURSOR_END: &str = "LTE=";
 
@@ -49,8 +56,6 @@ const PATH_POST_ORDER: &str = "/order";
 const PATH_POST_ORDERS: &str = "/orders";
 const PATH_CANCEL_ALL: &str = "/cancel-all";
 const PATH_CANCEL_MARKET_ORDERS: &str = "/cancel-market-orders";
-
-// Internal body structs used for request serialization only
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,6 +81,7 @@ struct CancelOrderBody<'a> {
 pub struct PolymarketRawHttpClient {
     client: HttpClient,
     base_url: String,
+    gamma_base_url: String,
     credential: Option<Credential>,
     address: Option<String>,
     clock: &'static AtomicTime,
@@ -89,6 +95,7 @@ impl PolymarketRawHttpClient {
     /// Returns an error if the HTTP client cannot be created.
     pub fn new(
         base_url: Option<String>,
+        gamma_base_url: Option<String>,
         timeout_secs: Option<u64>,
     ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
@@ -102,6 +109,10 @@ impl PolymarketRawHttpClient {
             )?,
             base_url: base_url
                 .unwrap_or_else(|| clob_http_url().to_string())
+                .trim_end_matches('/')
+                .to_string(),
+            gamma_base_url: gamma_base_url
+                .unwrap_or_else(|| gamma_api_url().to_string())
                 .trim_end_matches('/')
                 .to_string(),
             credential: None,
@@ -119,6 +130,7 @@ impl PolymarketRawHttpClient {
         credential: Credential,
         address: String,
         base_url: Option<String>,
+        gamma_base_url: Option<String>,
         timeout_secs: Option<u64>,
     ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
@@ -132,6 +144,10 @@ impl PolymarketRawHttpClient {
             )?,
             base_url: base_url
                 .unwrap_or_else(|| clob_http_url().to_string())
+                .trim_end_matches('/')
+                .to_string(),
+            gamma_base_url: gamma_base_url
+                .unwrap_or_else(|| gamma_api_url().to_string())
                 .trim_end_matches('/')
                 .to_string(),
             credential: Some(credential),
@@ -149,6 +165,10 @@ impl PolymarketRawHttpClient {
 
     fn url(&self, path: &str) -> String {
         format!("{}{path}", self.base_url)
+    }
+
+    fn gamma_url(&self, path: &str) -> String {
+        format!("{}{path}", self.gamma_base_url)
     }
 
     fn timestamp(&self) -> String {
@@ -399,5 +419,63 @@ impl PolymarketRawHttpClient {
         let body_bytes = serde_json::to_vec(&params).map_err(Error::Serde)?;
         self.send_delete(PATH_CANCEL_MARKET_ORDERS, Some(body_bytes))
             .await
+    }
+
+    async fn send_gamma_get<P: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        params: Option<&P>,
+    ) -> Result<T> {
+        let url = self.gamma_url(path);
+        let response = self
+            .client
+            .request_with_params(Method::GET, url, params, None, None, None, None)
+            .await
+            .map_err(Error::from_http_client)?;
+
+        if response.status.is_success() {
+            serde_json::from_slice(&response.body).map_err(Error::Serde)
+        } else {
+            Err(Error::from_status_code(
+                response.status.as_u16(),
+                &response.body,
+            ))
+        }
+    }
+
+    /// Fetches markets from the Gamma API.
+    ///
+    /// Handles both bare array and `{"data": [...]}` response schemas.
+    pub async fn get_gamma_markets(
+        &self,
+        params: GetGammaMarketsParams,
+    ) -> Result<Vec<GammaMarket>> {
+        let value: Value = self.send_gamma_get("/markets", Some(&params)).await?;
+
+        let array = match value {
+            Value::Array(_) => value,
+            Value::Object(ref map) if map.contains_key("data") => {
+                map.get("data").cloned().unwrap_or(Value::Array(vec![]))
+            }
+            _ => {
+                return Err(Error::decode(
+                    "Unrecognized Gamma markets response schema".to_string(),
+                ));
+            }
+        };
+
+        serde_json::from_value(array).map_err(Error::Serde)
+    }
+
+    /// Fetches a single market by ID from the Gamma API.
+    pub async fn get_gamma_market(&self, market_id: &str) -> Result<GammaMarket> {
+        let path = format!("/markets/{market_id}");
+        self.send_gamma_get::<(), _>(&path, None::<&()>).await
+    }
+
+    /// Fetches the tick size for a token from the CLOB API.
+    pub async fn get_tick_size(&self, token_id: &str) -> Result<TickSizeResponse> {
+        let params = [("token_id", token_id)];
+        self.send_get("/tick-size", Some(&params), false).await
     }
 }

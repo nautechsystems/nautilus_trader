@@ -36,7 +36,7 @@ pub struct PolymarketMakerOrder {
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub fee_rate_bps: Decimal,
-    pub maker_address: Ustr,
+    pub maker_address: String,
     #[serde(
         serialize_with = "serialize_decimal_as_str",
         deserialize_with = "deserialize_decimal_from_str"
@@ -44,7 +44,7 @@ pub struct PolymarketMakerOrder {
     pub matched_amount: Decimal,
     pub order_id: String,
     pub outcome: PolymarketOutcome,
-    pub owner: Ustr,
+    pub owner: String,
     #[serde(
         serialize_with = "serialize_decimal_as_str",
         deserialize_with = "deserialize_decimal_from_str"
