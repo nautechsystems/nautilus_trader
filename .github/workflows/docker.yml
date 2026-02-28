@@ -393,6 +393,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      id-token: write
     needs: build-docker-images-nautilus-trader
     steps:
       - name: Download digests
@@ -430,18 +431,36 @@ jobs:
             type=raw,value=latest,enable=${{ steps.branch-name.outputs.current_branch == 'master' }}
 
       - name: Create manifest list and push
+        id: push
         working-directory: /tmp/digests/nautilus_trader
         shell: bash
         run: |
           mapfile -t tags < <(jq -cr '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           mapfile -t digests < <(printf 'ghcr.io/${{ github.repository_owner }}/nautilus_trader@sha256:%s\n' *)
           docker buildx imagetools create "${tags[@]}" "${digests[@]}"
+          TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
+          IMAGE="ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAG"
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
         run: |
-          TAGS=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
           docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAGS"
+            "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+      - name: Sign image with cosign
+        run: |
+          cosign sign --yes \
+            "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
+
+      - name: Generate and attach SBOM
+        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
+          output-file: sbom.spdx.json
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
@@ -582,6 +601,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      id-token: write
     needs: build-docker-images-jupyterlab
     steps:
       - name: Download digests
@@ -619,15 +639,33 @@ jobs:
             type=raw,value=latest,enable=${{ steps.branch-name.outputs.current_branch == 'master' }}
 
       - name: Create manifest list and push
+        id: push
         working-directory: /tmp/digests/jupyterlab
         shell: bash
         run: |
           mapfile -t tags < <(jq -cr '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           mapfile -t digests < <(printf 'ghcr.io/${{ github.repository_owner }}/jupyterlab@sha256:%s\n' *)
           docker buildx imagetools create "${tags[@]}" "${digests[@]}"
+          TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
+          IMAGE="ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAG"
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
         run: |
-          TAGS=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
           docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAGS"
+            "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+      - name: Sign image with cosign
+        run: |
+          cosign sign --yes \
+            "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
+
+      - name: Generate and attach SBOM
+        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
+          output-file: sbom.spdx.json
