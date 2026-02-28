@@ -1735,6 +1735,10 @@ impl OKXHttpClient {
             ));
         }
 
+        // OKX returns newest-first; reverse to chronological order so that
+        // cache.add_funding_rates (which push_fronts) leaves the newest at front
+        rates.reverse();
+
         log::info!(
             "Fetched {} funding rates for {}",
             rates.len(),
