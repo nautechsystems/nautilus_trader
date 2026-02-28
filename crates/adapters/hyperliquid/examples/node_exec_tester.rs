@@ -17,7 +17,6 @@
 //!
 //! Prerequisites:
 //! - Set `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK` for testnet)
-//! - Approve the Nautilus builder fee for your wallet (one-time setup)
 //!
 //! Run with: `cargo run --example hyperliquid-exec-tester --package nautilus-hyperliquid`
 

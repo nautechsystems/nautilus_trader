@@ -41,9 +41,6 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Environment variables required:
 # Mainnet: HYPERLIQUID_PK (and optionally HYPERLIQUID_VAULT)
 # Testnet: HYPERLIQUID_TESTNET_PK (and optionally HYPERLIQUID_TESTNET_VAULT)
-#
-# Before trading, approve builder fees (one-time per wallet per network):
-#   python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_approve.py
 
 
 class HyperliquidProductType(Enum):

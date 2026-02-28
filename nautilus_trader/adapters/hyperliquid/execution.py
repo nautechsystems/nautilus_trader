@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import math
 from decimal import ROUND_CEILING
 from decimal import ROUND_FLOOR
@@ -24,7 +23,6 @@ from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
-from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_BUILDER_FEE_NOT_APPROVED
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_POST_ONLY_WOULD_MATCH
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
@@ -150,8 +148,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._terminal_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._pending_filled: set[str] = set()
 
-        self._fee_refresh_task: asyncio.Task | None = None
-
         # Get user address from HTTP client for WebSocket subscriptions
         # Use vault address when vault trading, otherwise order/fill
         # updates for the vault will be missed
@@ -199,9 +195,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         await self._update_account_state()
         await self._await_account_registered()
 
-        # Fetch initial builder fee tier (fail connect if unreachable)
-        await self._fetch_and_update_builder_fee_initial()
-
         self._sync_cloid_cache()
 
         instruments = self._instrument_provider.instruments_pyo3()
@@ -219,21 +212,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             await self._ws_client.subscribe_user_events(self._user_address)
             self._log.info(
                 f"Subscribed to user events (includes fills) for {self._user_address}",
-                LogColor.BLUE,
-            )
-
-        # Start periodic builder fee refresh after successful connect
-        if self._fee_refresh_task is not None:
-            self._fee_refresh_task.cancel()
-            self._fee_refresh_task = None
-
-        refresh_mins = self._config.builder_fee_refresh_mins
-        if refresh_mins is not None:
-            self._fee_refresh_task = self.create_task(
-                self._builder_fee_refresh_loop(refresh_mins * 60),
-            )
-            self._log.info(
-                f"Builder fee refresh scheduled every {refresh_mins}m",
                 LogColor.BLUE,
             )
 
@@ -279,95 +257,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 f"Generated account state with {len(account_state.balances)} balance(s)",
             )
 
-    @staticmethod
-    def _fmt_bp(bp: Decimal) -> str:
-        return f"{bp:.1f} bp ({(bp / 100).normalize()}%)"
-
-    def _log_fee_summary(
-        self,
-        maker_rate: str,
-        taker_rate: str,
-        builder_maker_tenths_bp: int,
-        builder_taker_tenths_bp: int,
-    ) -> None:
-        maker_d = Decimal(maker_rate)
-        taker_d = Decimal(taker_rate)
-        hl_maker_bp = maker_d * 10_000
-        hl_taker_bp = taker_d * 10_000
-        builder_maker_bp = Decimal(builder_maker_tenths_bp) / 10
-        builder_taker_bp = Decimal(builder_taker_tenths_bp) / 10
-        self._log.info(
-            f"HL maker: {self._fmt_bp(hl_maker_bp)}, "
-            f"builder maker: {self._fmt_bp(builder_maker_bp)}, "
-            f"total maker: {self._fmt_bp(hl_maker_bp + builder_maker_bp)}",
-            LogColor.BLUE,
-        )
-        self._log.info(
-            f"HL taker: {self._fmt_bp(hl_taker_bp)}, "
-            f"builder taker: {self._fmt_bp(builder_taker_bp)}, "
-            f"total taker: {self._fmt_bp(hl_taker_bp + builder_taker_bp)}",
-            LogColor.BLUE,
-        )
-
-    async def _fetch_and_update_builder_fee_initial(self) -> None:
-        json_str = await self._client.info_user_fees()
-        data = json.loads(json_str)
-        raw_add_rate = data.get("userAddRate")
-        if raw_add_rate is None:
-            raise ValueError("missing userAddRate in response")
-
-        raw_cross_rate = data.get("userCrossRate")
-        if raw_cross_rate is None:
-            raise ValueError("missing userCrossRate in response")
-
-        (_, maker_new), (_, taker_new) = self._client.update_builder_fees(
-            str(raw_add_rate),
-            str(raw_cross_rate),
-        )
-
-        self._log_fee_summary(raw_add_rate, raw_cross_rate, maker_new, taker_new)
-
-    async def _fetch_and_update_builder_fee(self) -> None:
-        try:
-            json_str = await self._client.info_user_fees()
-            data = json.loads(json_str)
-            raw_add_rate = data.get("userAddRate")
-            if raw_add_rate is None:
-                raise ValueError("missing userAddRate in response")
-            raw_cross_rate = data.get("userCrossRate")
-            if raw_cross_rate is None:
-                raise ValueError("missing userCrossRate in response")
-
-            (maker_old, maker_new), (taker_old, taker_new) = self._client.update_builder_fees(
-                str(raw_add_rate),
-                str(raw_cross_rate),
-            )
-
-            if maker_old != maker_new or taker_old != taker_new:
-                self._log_fee_summary(raw_add_rate, raw_cross_rate, maker_new, taker_new)
-        except Exception as e:
-            maker_bp = Decimal(self._client.builder_maker_tenths_bp()) / 10
-            taker_bp = Decimal(self._client.builder_taker_tenths_bp()) / 10
-            self._log.warning(
-                f"Failed to query userFees, retaining builder fees: "
-                f"maker {self._fmt_bp(maker_bp)}, taker {self._fmt_bp(taker_bp)}: {e}",
-            )
-
-    async def _builder_fee_refresh_loop(self, interval_secs: int) -> None:
-        try:
-            while True:
-                await asyncio.sleep(interval_secs)
-                await self._fetch_and_update_builder_fee()
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'builder_fee_refresh'")
-            return
-
     async def _disconnect(self) -> None:
-        if self._fee_refresh_task is not None:
-            self._log.debug("Canceling task 'builder_fee_refresh'")
-            self._fee_refresh_task.cancel()
-            self._fee_refresh_task = None
-
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
 
@@ -683,7 +573,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             return False
         return True
 
-    async def _submit_order(self, command: SubmitOrder) -> None:  # noqa: C901 (too complex)
+    async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
 
         if order.is_closed:
@@ -752,12 +642,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         except Exception as e:
             error_str = str(e)
             due_post_only = HYPERLIQUID_POST_ONLY_WOULD_MATCH in error_str
-
-            if HYPERLIQUID_BUILDER_FEE_NOT_APPROVED in error_str:
-                self._log.warning(
-                    "Builder fee not approved. See: "
-                    "https://nautilustrader.io/docs/nightly/integrations/hyperliquid#builder-fee-approval",
-                )
 
             self._terminal_orders.add(order.client_order_id.value)
 

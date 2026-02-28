@@ -28,6 +28,3 @@ HYPERLIQUID_CLIENT_ID: Final[ClientId] = ClientId(HYPERLIQUID)
 
 # Error message substrings for detecting specific rejection reasons
 HYPERLIQUID_POST_ONLY_WOULD_MATCH: Final[str] = nautilus_pyo3.HYPERLIQUID_POST_ONLY_WOULD_MATCH
-HYPERLIQUID_BUILDER_FEE_NOT_APPROVED: Final[str] = (
-    nautilus_pyo3.HYPERLIQUID_BUILDER_FEE_NOT_APPROVED
-)

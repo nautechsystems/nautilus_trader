@@ -58,14 +58,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        builder_fee::{
-            resolve_builder_fee, resolve_builder_fee_batch, resolve_maker_tenths_bp,
-            resolve_taker_tenths_bp,
-        },
-        consts::{
-            HYPERLIQUID_VENUE, NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP,
-            NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP, exchange_url, info_url,
-        },
+        consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS, exchange_url, info_url},
         credential::{Secrets, VaultAddress},
         enums::{
             HyperliquidBarInterval, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
@@ -81,7 +74,7 @@ use crate::{
         error::{Error, Result},
         models::{
             Cloid, HyperliquidCandleSnapshot, HyperliquidExchangeRequest,
-            HyperliquidExchangeResponse, HyperliquidExecAction,
+            HyperliquidExchangeResponse, HyperliquidExecAction, HyperliquidExecBuilderFee,
             HyperliquidExecCancelByCloidRequest, HyperliquidExecCancelOrderRequest,
             HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecModifyOrderRequest,
             HyperliquidExecOrderKind, HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
@@ -760,10 +753,6 @@ pub struct HyperliquidHttpClient {
     spot_fill_coins: Arc<RwLock<AHashMap<Ustr, Ustr>>>,
     account_id: Option<AccountId>,
     normalize_prices: bool,
-    /// Dynamic builder maker fee in tenths of a basis point (volume-tier adjusted).
-    builder_maker_tenths_bp: Arc<RwLock<u32>>,
-    /// Dynamic builder taker fee in tenths of a basis point (volume-tier adjusted).
-    builder_taker_tenths_bp: Arc<RwLock<u32>>,
 }
 
 impl Default for HyperliquidHttpClient {
@@ -812,45 +801,7 @@ impl HyperliquidHttpClient {
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
             normalize_prices: true,
-            builder_maker_tenths_bp: Arc::new(RwLock::new(NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP)),
-            builder_taker_tenths_bp: Arc::new(RwLock::new(NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP)),
         }
-    }
-
-    /// Returns the current builder maker fee in tenths of a basis point.
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn builder_maker_tenths_bp(&self) -> u32 {
-        *self.builder_maker_tenths_bp.read().unwrap()
-    }
-
-    /// Returns the current builder taker fee in tenths of a basis point.
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn builder_taker_tenths_bp(&self) -> u32 {
-        *self.builder_taker_tenths_bp.read().unwrap()
-    }
-
-    /// Updates builder fee tiers from the HL effective rates.
-    ///
-    /// Returns `((maker_old, maker_new), (taker_old, taker_new))`.
-    #[allow(clippy::missing_panics_doc)]
-    pub fn update_builder_fees(
-        &self,
-        user_add_rate: Decimal,
-        user_cross_rate: Decimal,
-    ) -> ((u32, u32), (u32, u32)) {
-        let maker_new = resolve_maker_tenths_bp(user_add_rate);
-        let mut maker_guard = self.builder_maker_tenths_bp.write().unwrap();
-        let maker_old = *maker_guard;
-        *maker_guard = maker_new;
-
-        let taker_new = resolve_taker_tenths_bp(user_cross_rate);
-        let mut taker_guard = self.builder_taker_tenths_bp.write().unwrap();
-        let taker_old = *taker_guard;
-        *taker_guard = taker_new;
-
-        ((maker_old, maker_new), (taker_old, taker_new))
     }
 
     /// Overrides the base info URL (for testing with mock servers).
@@ -891,8 +842,6 @@ impl HyperliquidHttpClient {
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
             normalize_prices: true,
-            builder_maker_tenths_bp: Arc::new(RwLock::new(NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP)),
-            builder_taker_tenths_bp: Arc::new(RwLock::new(NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP)),
         })
     }
 
@@ -957,12 +906,6 @@ impl HyperliquidHttpClient {
                     spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
                     account_id: None,
                     normalize_prices: true,
-                    builder_maker_tenths_bp: Arc::new(RwLock::new(
-                        NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP,
-                    )),
-                    builder_taker_tenths_bp: Arc::new(RwLock::new(
-                        NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP,
-                    )),
                 })
             }
             None => {
@@ -1001,8 +944,6 @@ impl HyperliquidHttpClient {
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
             normalize_prices: true,
-            builder_maker_tenths_bp: Arc::new(RwLock::new(NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP)),
-            builder_taker_tenths_bp: Arc::new(RwLock::new(NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP)),
         })
     }
 
@@ -2164,12 +2105,10 @@ impl HyperliquidHttpClient {
         let action = HyperliquidExecAction::Order {
             orders: vec![hyperliquid_order],
             grouping: HyperliquidExecGrouping::Na,
-            builder: resolve_builder_fee(
-                symbol,
-                post_only,
-                self.builder_maker_tenths_bp(),
-                self.builder_taker_tenths_bp(),
-            ),
+            builder: Some(HyperliquidExecBuilderFee {
+                address: NAUTILUS_BUILDER_ADDRESS.to_string(),
+                fee_tenths_bp: 0,
+            }),
         };
 
         let response = self.inner.post_action_exec(&action).await?;
@@ -2363,22 +2302,13 @@ impl HyperliquidHttpClient {
             hyperliquid_orders.push(request);
         }
 
-        let order_props: Vec<(String, bool)> = orders
-            .iter()
-            .map(|o| (o.instrument_id().symbol.to_string(), o.is_post_only()))
-            .collect();
-        let batch_refs: Vec<(&str, bool)> =
-            order_props.iter().map(|(s, p)| (s.as_str(), *p)).collect();
-        let builder = resolve_builder_fee_batch(
-            &batch_refs,
-            self.builder_maker_tenths_bp(),
-            self.builder_taker_tenths_bp(),
-        );
-
         let action = HyperliquidExecAction::Order {
             orders: hyperliquid_orders,
             grouping: HyperliquidExecGrouping::Na,
-            builder,
+            builder: Some(HyperliquidExecBuilderFee {
+                address: NAUTILUS_BUILDER_ADDRESS.to_string(),
+                fee_tenths_bp: 0,
+            }),
         };
 
         // Submit to exchange using the typed exec endpoint
@@ -2511,17 +2441,10 @@ mod tests {
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
-    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::HyperliquidHttpClient;
-    use crate::{
-        common::{
-            consts::{NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP, NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP},
-            enums::HyperliquidProductType,
-        },
-        http::query::InfoRequest,
-    };
+    use crate::{common::enums::HyperliquidProductType, http::query::InfoRequest};
 
     #[rstest]
     fn stable_json_roundtrips() {
@@ -2647,67 +2570,5 @@ mod tests {
             client.get_or_create_instrument(&Ustr::from("vntls:vCURSOR"), None);
         assert!(retrieved_without_type.is_some());
         assert_eq!(retrieved_without_type.unwrap().id(), instrument.id());
-    }
-
-    #[rstest]
-    fn test_builder_fee_defaults() {
-        let client = HyperliquidHttpClient::default();
-        assert_eq!(
-            client.builder_maker_tenths_bp(),
-            NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP,
-        );
-        assert_eq!(
-            client.builder_taker_tenths_bp(),
-            NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP,
-        );
-    }
-
-    #[rstest]
-    fn test_update_builder_fees_returns_old_and_new() {
-        let client = HyperliquidHttpClient::default();
-        let ((maker_old, maker_new), (taker_old, taker_new)) =
-            client.update_builder_fees(dec!(0.00010), dec!(0.00038));
-        assert_eq!(maker_old, NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP);
-        assert_eq!(maker_new, 3);
-        assert_eq!(client.builder_maker_tenths_bp(), 3);
-        assert_eq!(taker_old, NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP);
-        assert_eq!(taker_new, 8);
-        assert_eq!(client.builder_taker_tenths_bp(), 8);
-    }
-
-    #[rstest]
-    fn test_update_builder_fees_successive_updates() {
-        let client = HyperliquidHttpClient::default();
-
-        let ((_, maker_new), (_, taker_new)) =
-            client.update_builder_fees(dec!(0.00010), dec!(0.00033));
-        assert_eq!(maker_new, 3);
-        assert_eq!(taker_new, 6);
-
-        let ((maker_old, maker_new), (taker_old, taker_new)) =
-            client.update_builder_fees(dec!(0.0), dec!(0.00010));
-        assert_eq!(maker_old, 3);
-        assert_eq!(maker_new, 0);
-        assert_eq!(taker_old, 6);
-        assert_eq!(taker_new, 1);
-
-        // Back up
-        let ((maker_old, maker_new), (taker_old, taker_new)) =
-            client.update_builder_fees(dec!(0.00015), dec!(0.00045));
-        assert_eq!(maker_old, 0);
-        assert_eq!(maker_new, 4);
-        assert_eq!(taker_old, 1);
-        assert_eq!(taker_new, 10);
-    }
-
-    #[rstest]
-    fn test_update_builder_fees_unchanged() {
-        let client = HyperliquidHttpClient::default();
-        let ((maker_old, maker_new), (taker_old, taker_new)) =
-            client.update_builder_fees(dec!(0.00015), dec!(0.00045));
-        assert_eq!(maker_old, maker_new);
-        assert_eq!(maker_new, NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP);
-        assert_eq!(taker_old, taker_new);
-        assert_eq!(taker_new, NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP);
     }
 }

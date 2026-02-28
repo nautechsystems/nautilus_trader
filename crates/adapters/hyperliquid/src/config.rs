@@ -15,7 +15,7 @@
 
 //! Configuration structures for the Hyperliquid adapter.
 
-use crate::common::consts::{BUILDER_FEE_REFRESH_DEFAULT_MINS, info_url, ws_url};
+use crate::common::consts::{info_url, ws_url};
 
 /// Configuration for the Hyperliquid data client.
 #[derive(Clone, Debug)]
@@ -142,9 +142,6 @@ pub struct HyperliquidExecClientConfig {
     /// When true, normalize order prices to 5 significant figures
     /// before submission (Hyperliquid requirement).
     pub normalize_prices: bool,
-    /// Interval in minutes for refreshing the builder fee tier from HL.
-    /// Set to `None` to disable periodic refresh.
-    pub builder_fee_refresh_mins: Option<u64>,
 }
 
 impl Default for HyperliquidExecClientConfig {
@@ -163,7 +160,6 @@ impl Default for HyperliquidExecClientConfig {
             retry_delay_initial_ms: 100,
             retry_delay_max_ms: 5000,
             normalize_prices: true,
-            builder_fee_refresh_mins: Some(BUILDER_FEE_REFRESH_DEFAULT_MINS),
         }
     }
 }

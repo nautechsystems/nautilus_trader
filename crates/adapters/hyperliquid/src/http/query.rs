@@ -319,7 +319,7 @@ where
 }
 
 impl ExchangeAction {
-    /// Creates an action to place orders with builder fee.
+    /// Creates an action to place orders with builder attribution.
     pub fn order(
         orders: Vec<HyperliquidExecPlaceOrderRequest>,
         builder: Option<HyperliquidExecBuilderFee>,

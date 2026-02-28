@@ -29,7 +29,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{prelude::*, types::PyList};
-use rust_decimal::Decimal;
 use serde_json::to_string;
 
 use crate::http::client::HyperliquidHttpClient;
@@ -472,31 +471,5 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
             to_string(&json).map_err(to_pyvalue_err)
         })
-    }
-
-    /// Returns the current builder maker fee in tenths of a basis point.
-    #[pyo3(name = "builder_maker_tenths_bp")]
-    fn py_builder_maker_tenths_bp(&self) -> u32 {
-        self.builder_maker_tenths_bp()
-    }
-
-    /// Returns the current builder taker fee in tenths of a basis point.
-    #[pyo3(name = "builder_taker_tenths_bp")]
-    fn py_builder_taker_tenths_bp(&self) -> u32 {
-        self.builder_taker_tenths_bp()
-    }
-
-    /// Updates builder fee tiers from the HL effective rates.
-    ///
-    /// Returns `((maker_old, maker_new), (taker_old, taker_new))`.
-    #[pyo3(name = "update_builder_fees")]
-    fn py_update_builder_fees(
-        &self,
-        user_add_rate: &str,
-        user_cross_rate: &str,
-    ) -> PyResult<((u32, u32), (u32, u32))> {
-        let add_rate: Decimal = user_add_rate.parse().map_err(to_pyvalue_err)?;
-        let cross_rate: Decimal = user_cross_rate.parse().map_err(to_pyvalue_err)?;
-        Ok(self.update_builder_fees(add_rate, cross_rate))
     }
 }

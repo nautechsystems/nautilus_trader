@@ -77,12 +77,6 @@ def exec_client_builder(
             return_value="0x1234567890abcdef1234567890abcdef12345678",
         )
         mock_http_client.get_spot_fill_coin_mapping = MagicMock(return_value={})
-        mock_http_client.builder_maker_tenths_bp = MagicMock(return_value=4)
-        mock_http_client.builder_taker_tenths_bp = MagicMock(return_value=10)
-        mock_http_client.update_builder_fees = MagicMock(return_value=((4, 4), (10, 10)))
-        mock_http_client.info_user_fees = AsyncMock(
-            return_value='{"userAddRate": "0.00015", "userCrossRate": "0.00035"}',
-        )
         mock_instrument_provider.initialize.reset_mock()
         mock_instrument_provider.instruments_pyo3.reset_mock()
         mock_instrument_provider.instruments_pyo3.return_value = []

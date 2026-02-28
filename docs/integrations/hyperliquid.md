@@ -29,136 +29,19 @@ and won't need to work directly with these lower-level components.
 
 You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/).
 
-## Builder fees
+## Revoking builder code approval
 
-NautilusTrader participates in the Hyperliquid
-[Builder Codes](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes) program.
-A small proportional fee on perpetual fills funds ongoing development and maintenance of this integration.
-These fees are charged by Hyperliquid in addition to standard fees:
-
-- **Taker**: 1.0 bp (0.01%) base, scales down with your effective HL rate (volume + staking + referrals).
-- **Maker**: 0.4 bp (0.004%) base, scales down with your effective HL rate (volume + staking + referrals).
-- **Spot**: no builder fee.
-
-All-in perp fees (HL Base + builder) by volume tier:
-
-| Tier | 14d Volume | HL Maker (Base) | Builder Maker | **Total Maker** | HL Taker (Base) | Builder Taker | **Total Taker** |
-|------|------------|-----------------|---------------|-----------------|-----------------|---------------|-----------------|
-| 0    | —          | 1.5 bp          | 0.4 bp        | **1.9 bp**      | 4.5 bp          | 1.0 bp        | **5.5 bp**      |
-| 1    | > $5M      | 1.2 bp          | 0.3 bp        | **1.5 bp**      | 4.0 bp          | 0.8 bp        | **4.8 bp**      |
-| 2    | > $25M     | 0.8 bp          | 0.2 bp        | **1.0 bp**      | 3.5 bp          | 0.6 bp        | **4.1 bp**      |
-| 3    | > $100M    | 0.4 bp          | 0.1 bp        | **0.5 bp**      | 3.0 bp          | 0.4 bp        | **3.4 bp**      |
-| 4    | > $500M    | 0.0 bp          | 0.0 bp        | **0.0 bp**      | 2.8 bp          | 0.3 bp        | **3.1 bp**      |
-| 5    | > $2B      | 0.0 bp          | 0.0 bp        | **0.0 bp**      | 2.6 bp          | 0.2 bp        | **2.8 bp**      |
-| 6    | > $7B      | 0.0 bp          | 0.0 bp        | **0.0 bp**      | 2.4 bp          | 0.1 bp        | **2.5 bp**      |
-
-*HL rates shown are Base staking tier. Last verified: 2026-02-27.*
-
-Your tier is detected automatically on connect and refreshed periodically
-(default: 10 minutes, configurable via `builder_fee_refresh_mins`).
-The tier is based on your effective HL rate, which reflects all discounts
-(volume tier, staking, referrals). If your staking tier is higher
-(Wood/Bronze/Silver/Gold/Platinum/Diamond), your HL rates are lower and
-builder fees scale down accordingly. Maker rebate tiers (negative rates)
-do not attract any builder fee.
-
-The initial fee tier fetch is required for connect to succeed. If the Hyperliquid
-`userFees` endpoint is unreachable, the execution client will fail to connect.
-This ensures you are never charged builder fees higher than your effective HL rate warrants.
-Subsequent refresh failures are non-fatal: the current tier is retained until
-the next successful query.
-
-The builder fee applied to each order is logged at submission time.
-Hyperliquid also returns the builder fee charged on each fill in the WebSocket fill messages,
-so actual costs are independently verifiable.
-
-:::info
-For reference, Hyperliquid allows builders to charge up to 10 bp on perps and 100 bp on spot.
-See [Builder Codes](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes)
-and [Fees](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees) for details.
-:::
-
-### Checking approval status
-
-You can check whether your wallet has approved the builder fee.
-By default, the address is derived from your private key environment variable (`HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`).
-You can also pass a specific wallet address as an argument.
-
-```bash
-python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_verify.py
-python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_verify.py 0x1234...
-```
-
-Alternatively, from Rust:
-
-```bash
-cargo run --bin hyperliquid-builder-fee-verify
-cargo run --bin hyperliquid-builder-fee-verify -- 0x1234...
-```
-
-### Approving builder fees
-
-Before you can trade on Hyperliquid via NautilusTrader, you must approve the builder fee.
-This is a **one-time** setup step per wallet address, per network.
-
-:::warning
-You must sign the approval with your **main wallet** private key (the same key used for trading).
-This cannot be done with an API key or agent wallet.
-
-If you trade through a **vault**, the approval must be on the **operator wallet** (the key that
-signs orders), not the vault address. The vault's volume tier is used to determine the fee rate.
-:::
-
-#### Running the approval script
+Previous versions of NautilusTrader required users to approve a builder code fee before trading.
+**This is no longer required.** If you previously approved the builder fee and wish to revoke it,
+you can run the revoke script.
 
 The script reads your private key from environment variables (`HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`).
-It prompts for confirmation before submitting.
-
-Mainnet (uses `HYPERLIQUID_PK`):
-
-```bash
-python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_approve.py
-```
-
-Testnet (uses `HYPERLIQUID_TESTNET_PK`):
-
-```bash
-HYPERLIQUID_TESTNET=true python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_approve.py
-```
-
-Alternatively, from Rust:
-
-```bash
-cargo run --bin hyperliquid-builder-fee-approve
-```
-
-The script outputs confirmation of the approval. Once approved, all subsequent orders
-placed through NautilusTrader include the builder fee automatically.
-
-:::note
-The approval authorizes a maximum 1 bp (0.01%) fee rate on perpetuals only (no fee on spot).
-This is the ceiling Nautilus requests; Hyperliquid allows builders up to 10 bp on perps.
-The actual fee charged depends on your order type and volume tier: taker fills pay up to
-1.0 bp, while post-only (maker) fills pay up to 0.4 bp at base tier and 0 bp at Tier 4+.
-See the [fee table](#builder-fees) above for details.
-
-You only need to run this script **once** per wallet per network. The approval persists until
-you explicitly revoke it.
-:::
-
-### Revoking approval
-
-If you need to revoke the builder fee approval, the script reads from the same environment
-variables as the approval script (`HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`).
-The script prompts for confirmation before submitting.
-
-Mainnet (uses `HYPERLIQUID_PK`):
 
 ```bash
 python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_revoke.py
 ```
 
-Testnet (uses `HYPERLIQUID_TESTNET_PK`):
+Testnet:
 
 ```bash
 HYPERLIQUID_TESTNET=true python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_revoke.py
@@ -169,19 +52,6 @@ Alternatively, from Rust:
 ```bash
 cargo run --bin hyperliquid-builder-fee-revoke
 ```
-
-:::warning
-After revoking, you will not be able to trade on Hyperliquid via NautilusTrader until you re-approve the builder fee.
-:::
-
-### Troubleshooting
-
-**API error related to builder fee approval**
-
-If you see an error mentioning "builder fee" when placing orders, this indicates the builder fee
-has not been approved for your wallet. Run the approval script as described above to resolve this.
-
-You can verify your approval status at any time using the [verify script](#checking-approval-status).
 
 ## Testnet setup
 
@@ -320,15 +190,15 @@ instrument_provider=InstrumentProviderConfig(
 
 The adapter supports the following data subscriptions:
 
-| Data type         | Subscription | Historical | Nautilus type      | Notes                                          |
-|-------------------|--------------|------------|--------------------|------------------------------------------------|
-| Trade ticks       | ✓            | -          | `TradeTick`        | Via WebSocket trades channel.                  |
-| Quote ticks       | ✓            | -          | `QuoteTick`        | Best bid/offer from WebSocket.                 |
-| Order book deltas | ✓            | -          | `OrderBookDelta`   | L2 depth. Each message is a full snapshot.     |
-| Bars              | ✓            | ✓          | `Bar`              | See supported intervals below.                 |
-| Mark prices       | ✓            | -          | `MarkPriceUpdate`  | Perpetual mark price ticks.                    |
-| Index prices      | ✓            | -          | `IndexPriceUpdate` | Underlying index reference prices.             |
-| Funding rates     | ✓            | -          | `FundingRate`      | Perpetual funding rate updates.                |
+| Data type         | Subscription | Historical | Nautilus type      | Notes                                      |
+|-------------------|--------------|------------|--------------------|--------------------------------------------|
+| Trade ticks       | ✓            | -          | `TradeTick`        | Via WebSocket trades channel.              |
+| Quote ticks       | ✓            | -          | `QuoteTick`        | Best bid/offer from WebSocket.             |
+| Order book deltas | ✓            | -          | `OrderBookDelta`   | L2 depth. Each message is a full snapshot. |
+| Bars              | ✓            | ✓          | `Bar`              | See supported intervals below.             |
+| Mark prices       | ✓            | -          | `MarkPriceUpdate`  | Perpetual mark price ticks.                |
+| Index prices      | ✓            | -          | `IndexPriceUpdate` | Underlying index reference prices.         |
+| Funding rates     | ✓            | -          | `FundingRate`      | Perpetual funding rate updates.            |
 
 :::note
 Historical quote tick and trade tick requests are not yet supported by this adapter.
@@ -419,19 +289,19 @@ def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
 
 ### Time in force
 
-| Time in force | Perpetuals | Spot | Notes                        |
-|---------------|------------|------|------------------------------|
-| `GTC`         | ✓          | ✓    | Good Till Canceled.          |
-| `IOC`         | ✓          | ✓    | Immediate or Cancel.         |
-| `FOK`         | -          | -    | *Not supported*.             |
-| `GTD`         | -          | -    | *Not supported*.             |
+| Time in force | Perpetuals | Spot | Notes                |
+|---------------|------------|------|----------------------|
+| `GTC`         | ✓          | ✓    | Good Till Canceled.  |
+| `IOC`         | ✓          | ✓    | Immediate or Cancel. |
+| `FOK`         | -          | -    | *Not supported*.     |
+| `GTD`         | -          | -    | *Not supported*.     |
 
 ### Execution instructions
 
-| Instruction   | Perpetuals | Spot | Notes                              |
-|---------------|------------|------|------------------------------------|
-| `post_only`   | ✓          | ✓    | Equivalent to ALO time in force.   |
-| `reduce_only` | ✓          | ✓    | Close-only orders.                 |
+| Instruction   | Perpetuals | Spot | Notes                            |
+|---------------|------------|------|----------------------------------|
+| `post_only`   | ✓          | ✓    | Equivalent to ALO time in force. |
+| `reduce_only` | ✓          | ✓    | Close-only orders.               |
 
 :::info
 Post-only orders that would immediately match are rejected by Hyperliquid. The adapter detects
@@ -535,13 +405,13 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 
 ### Data client configuration options
 
-| Option              | Default | Description                                    |
-|---------------------|---------|------------------------------------------------|
-| `base_url_ws`       | `None`  | Override for the WebSocket base URL.           |
-| `testnet`           | `False` | Connect to the Hyperliquid testnet when `True`.|
-| `http_timeout_secs` | `10`    | Timeout (seconds) applied to REST calls.       |
-| `http_proxy_url`    | `None`  | Optional HTTP proxy URL.                       |
-| `ws_proxy_url`      | `None`  | Reserved; WebSocket proxy not yet implemented. |
+| Option              | Default | Description                                     |
+|---------------------|---------|-------------------------------------------------|
+| `base_url_ws`       | `None`  | Override for the WebSocket base URL.            |
+| `testnet`           | `False` | Connect to the Hyperliquid testnet when `True`. |
+| `http_timeout_secs` | `10`    | Timeout (seconds) applied to REST calls.        |
+| `http_proxy_url`    | `None`  | Optional HTTP proxy URL.                        |
+| `ws_proxy_url`      | `None`  | Reserved; WebSocket proxy not yet implemented.  |
 
 ### Execution client configuration options
 
@@ -556,7 +426,6 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 | `retry_delay_max_ms`       | `None`  | Maximum delay (milliseconds) between retries.                                             |
 | `http_timeout_secs`        | `10`    | Timeout (seconds) applied to REST calls.                                                  |
 | `normalize_prices`         | `True`  | Normalize order prices to 5 significant figures before submission.                        |
-| `builder_fee_refresh_mins` | `10`    | Interval (minutes) for refreshing builder fee tier from HL. `None` to disable.            |
 | `http_proxy_url`           | `None`  | Optional HTTP proxy URL.                                                                  |
 | `ws_proxy_url`             | `None`  | Reserved; WebSocket proxy not yet implemented.                                            |
 

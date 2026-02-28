@@ -86,10 +86,6 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         dynamic constraint that depends on the price magnitude and cannot be fully encoded
         in the static instrument tick size. When enabled, prices are automatically rounded
         to comply with this rule. Disable if you want full control over price formatting.
-    builder_fee_refresh_mins : PositiveInt or None, default 10
-        Interval in minutes for refreshing the builder fee tier from Hyperliquid.
-        Builder fees scale down with volume.
-        Set to ``None`` to disable.
 
     Warnings
     --------
@@ -108,4 +104,3 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_max_ms: PositiveInt | None = None
     http_timeout_secs: PositiveInt = 10
     normalize_prices: bool = True
-    builder_fee_refresh_mins: PositiveInt | None = 10

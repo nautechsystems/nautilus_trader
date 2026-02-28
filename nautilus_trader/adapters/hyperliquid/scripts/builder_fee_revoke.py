@@ -16,9 +16,6 @@
 """
 Script to revoke Nautilus builder fee approval for Hyperliquid trading.
 
-WARNING: After revoking, you will not be able to trade on Hyperliquid via
-NautilusTrader until you re-approve the builder fee.
-
 Prerequisites:
 - Set environment variable: HYPERLIQUID_PK (mainnet) or HYPERLIQUID_TESTNET_PK (testnet)
 

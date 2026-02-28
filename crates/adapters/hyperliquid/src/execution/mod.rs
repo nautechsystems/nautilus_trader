@@ -26,7 +26,6 @@ use async_trait::async_trait;
 use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
-    enums::LogColor,
     live::{runner::get_exec_event_sender, runtime::get_runtime},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -47,15 +46,12 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use crate::{
     common::{
-        builder_fee::{resolve_builder_fee, resolve_builder_fee_batch},
-        consts::HYPERLIQUID_VENUE,
+        consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
         credential::Secrets,
         parse::{
             clamp_price_to_precision, client_order_id_to_cancel_request_with_asset,
@@ -69,8 +65,8 @@ use crate::{
     http::{
         client::HyperliquidHttpClient,
         models::{
-            ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecGrouping,
-            HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
+            ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecBuilderFee,
+            HyperliquidExecGrouping, HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
         },
     },
     websocket::{ExecutionReport, NautilusWsMessage, client::HyperliquidWebSocketClient},
@@ -86,7 +82,6 @@ pub struct HyperliquidExecutionClient {
     ws_client: HyperliquidWebSocketClient,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
-    fee_refresh_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl HyperliquidExecutionClient {
@@ -206,7 +201,6 @@ impl HyperliquidExecutionClient {
             ws_client,
             pending_tasks: Mutex::new(Vec::new()),
             ws_stream_handle: Mutex::new(None),
-            fee_refresh_handle: Mutex::new(None),
         })
     }
 
@@ -337,70 +331,6 @@ impl HyperliquidExecutionClient {
             handle.abort();
         }
     }
-
-    async fn fetch_and_update_builder_fees(
-        &self,
-    ) -> anyhow::Result<(Decimal, Decimal, (u32, u32), (u32, u32))> {
-        let account_address = self.get_account_address()?;
-        fetch_and_update_builder_fees(&self.http_client, &account_address).await
-    }
-}
-
-async fn fetch_and_update_builder_fees(
-    http_client: &HyperliquidHttpClient,
-    account_address: &str,
-) -> anyhow::Result<(Decimal, Decimal, (u32, u32), (u32, u32))> {
-    let json = http_client
-        .info_user_fees(account_address)
-        .await
-        .context("failed to query userFees")?;
-
-    let user_add_rate = json
-        .get("userAddRate")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<Decimal>().ok())
-        .ok_or_else(|| anyhow::anyhow!("missing or invalid userAddRate in response"))?;
-
-    let user_cross_rate = json
-        .get("userCrossRate")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<Decimal>().ok())
-        .ok_or_else(|| anyhow::anyhow!("missing or invalid userCrossRate in response"))?;
-
-    let (maker, taker) = http_client.update_builder_fees(user_add_rate, user_cross_rate);
-    Ok((user_add_rate, user_cross_rate, maker, taker))
-}
-
-fn fmt_bp(bp: Decimal) -> String {
-    format!("{bp:.1} bp ({}%)", (bp / dec!(100)).normalize())
-}
-
-fn log_fee_summary(
-    maker_rate: Decimal,
-    taker_rate: Decimal,
-    builder_maker_tenths_bp: u32,
-    builder_taker_tenths_bp: u32,
-) {
-    let hl_maker_bp = maker_rate * dec!(10000);
-    let hl_taker_bp = taker_rate * dec!(10000);
-    let builder_maker_bp = Decimal::from(builder_maker_tenths_bp) / dec!(10);
-    let builder_taker_bp = Decimal::from(builder_taker_tenths_bp) / dec!(10);
-    let total_maker_bp = hl_maker_bp + builder_maker_bp;
-    let total_taker_bp = hl_taker_bp + builder_taker_bp;
-    log::info!(
-        color = LogColor::Blue as u8;
-        "HL maker: {}, builder maker: {}, total maker: {}",
-        fmt_bp(hl_maker_bp),
-        fmt_bp(builder_maker_bp),
-        fmt_bp(total_maker_bp),
-    );
-    log::info!(
-        color = LogColor::Blue as u8;
-        "HL taker: {}, builder taker: {}, total taker: {}",
-        fmt_bp(hl_taker_bp),
-        fmt_bp(builder_taker_bp),
-        fmt_bp(total_taker_bp),
-    );
 }
 
 #[async_trait(?Send)]
@@ -469,10 +399,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         log::info!("Stopping Hyperliquid execution client");
-
-        if let Some(handle) = self.fee_refresh_handle.lock().expect(MUTEX_POISONED).take() {
-            handle.abort();
-        }
 
         if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
             handle.abort();
@@ -588,21 +514,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         self.emitter.emit_order_submitted(&order);
 
-        let builder = resolve_builder_fee(
-            &symbol,
-            order.is_post_only(),
-            self.http_client.builder_maker_tenths_bp(),
-            self.http_client.builder_taker_tenths_bp(),
-        );
-        log::info!(
-            "Order {} builder fee: {}",
-            order.client_order_id(),
-            match &builder {
-                Some(f) => format!("{} tenths bp", f.fee_tenths_bp),
-                None => "none".to_string(),
-            },
-        );
-
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let ws_client = self.ws_client.clone();
@@ -612,7 +523,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let action = HyperliquidExecAction::Order {
                 orders: vec![hyperliquid_order],
                 grouping: HyperliquidExecGrouping::Na,
-                builder,
+                builder: Some(HyperliquidExecBuilderFee {
+                    address: NAUTILUS_BUILDER_ADDRESS.to_string(),
+                    fee_tenths_bp: 0,
+                }),
             };
 
             match http_client.post_action_exec(&action).await {
@@ -704,25 +618,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
             self.emitter.emit_order_submitted(order);
         }
 
-        let order_props: Vec<(String, bool)> = valid_orders
-            .iter()
-            .map(|o| (o.instrument_id().symbol.to_string(), o.is_post_only()))
-            .collect();
-        let batch_refs: Vec<(&str, bool)> =
-            order_props.iter().map(|(s, p)| (s.as_str(), *p)).collect();
-        let builder = resolve_builder_fee_batch(
-            &batch_refs,
-            self.http_client.builder_maker_tenths_bp(),
-            self.http_client.builder_taker_tenths_bp(),
-        );
-        log::info!(
-            "Order list builder fee: {}",
-            match &builder {
-                Some(f) => format!("{} tenths bp", f.fee_tenths_bp),
-                None => "none".to_string(),
-            },
-        );
-
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let ws_client = self.ws_client.clone();
@@ -735,7 +630,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let action = HyperliquidExecAction::Order {
                 orders: hyperliquid_orders,
                 grouping: HyperliquidExecGrouping::Na,
-                builder,
+                builder: Some(HyperliquidExecBuilderFee {
+                    address: NAUTILUS_BUILDER_ADDRESS.to_string(),
+                    fee_tenths_bp: 0,
+                }),
             };
             match http_client.post_action_exec(&action).await {
                 Ok(response) => {
@@ -1184,12 +1082,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
             self.refresh_account_state().await?;
             self.await_account_registered(30.0).await?;
 
-            let (maker_rate, taker_rate, (_, maker_new), (_, taker_new)) = self
-                .fetch_and_update_builder_fees()
-                .await
-                .context("Failed to fetch initial builder fee tiers from Hyperliquid")?;
-            log_fee_summary(maker_rate, taker_rate, maker_new, taker_new);
-
             Ok::<(), anyhow::Error>(())
         };
 
@@ -1198,60 +1090,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let _ = self.ws_client.disconnect().await;
             self.abort_pending_tasks();
             return Err(e);
-        }
-
-        // Spawn periodic builder fee refresh if configured
-        if let Some(mins) = self.config.builder_fee_refresh_mins {
-            anyhow::ensure!(mins > 0, "builder_fee_refresh_mins must be > 0");
-            let http_client = self.http_client.clone();
-            let account_address = self.get_account_address()?;
-            let interval = Duration::from_mins(mins);
-
-            let handle = get_runtime().spawn(async move {
-                let mut ticker = tokio::time::interval(interval);
-                ticker.tick().await; // Skip immediate first tick
-
-                loop {
-                    ticker.tick().await;
-
-                    let result =
-                        fetch_and_update_builder_fees(&http_client, &account_address).await;
-
-                    match result {
-                        Ok((
-                            maker_rate,
-                            taker_rate,
-                            (maker_old, maker_new),
-                            (taker_old, taker_new),
-                        )) => {
-                            if maker_old == maker_new && taker_old == taker_new {
-                                let maker_bp = Decimal::from(maker_new) / dec!(10);
-                                let taker_bp = Decimal::from(taker_new) / dec!(10);
-                                log::trace!(
-                                    "Builder fees unchanged: maker {maker_bp} bp, taker {taker_bp} bp",
-                                );
-                            } else {
-                                log_fee_summary(maker_rate, taker_rate, maker_new, taker_new);
-                            }
-                        }
-                        Err(e) => {
-                            let maker_bp =
-                                Decimal::from(http_client.builder_maker_tenths_bp()) / dec!(10);
-                            let taker_bp =
-                                Decimal::from(http_client.builder_taker_tenths_bp()) / dec!(10);
-                            log::warn!(
-                                "Failed to query userFees, \
-                                 retaining builder fees: maker {}, taker {}: {e}",
-                                fmt_bp(maker_bp),
-                                fmt_bp(taker_bp),
-                            );
-                        }
-                    }
-                }
-            });
-
-            *self.fee_refresh_handle.lock().expect(MUTEX_POISONED) = Some(handle);
-            log::info!("Builder fee refresh scheduled every {mins}m");
         }
 
         self.core.set_connected();
@@ -1266,11 +1104,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         log::info!("Disconnecting Hyperliquid execution client");
-
-        // Abort fee refresh task
-        if let Some(handle) = self.fee_refresh_handle.lock().expect(MUTEX_POISONED).take() {
-            handle.abort();
-        }
 
         // Disconnect WebSocket
         self.ws_client.disconnect().await?;
@@ -1570,24 +1403,5 @@ impl HyperliquidExecutionClient {
         *self.ws_stream_handle.lock().expect(MUTEX_POISONED) = Some(handle);
         log::info!("Hyperliquid WebSocket execution stream started");
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-
-    use super::*;
-
-    #[rstest]
-    #[case(dec!(1.5), "1.5 bp (0.015%)")]
-    #[case(dec!(0.4), "0.4 bp (0.004%)")]
-    #[case(dec!(1.9), "1.9 bp (0.019%)")]
-    #[case(dec!(1.0), "1.0 bp (0.01%)")]
-    #[case(dec!(0.0), "0.0 bp (0%)")]
-    #[case(dec!(3.5), "3.5 bp (0.035%)")]
-    #[case(dec!(4.5), "4.5 bp (0.045%)")]
-    fn test_fmt_bp(#[case] bp: Decimal, #[case] expected: &str) {
-        assert_eq!(fmt_bp(bp), expected);
     }
 }

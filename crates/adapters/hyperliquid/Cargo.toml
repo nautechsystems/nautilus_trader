@@ -97,21 +97,6 @@ futures-util = { workspace = true }
 rstest = { workspace = true }
 
 [[bin]]
-name = "hyperliquid-builder-fee-verify"
-path = "bin/builder_fee_verify.rs"
-doc = false
-
-[[bin]]
-name = "hyperliquid-builder-fee-approve"
-path = "bin/builder_fee_approve.rs"
-doc = false
-
-[[bin]]
-name = "hyperliquid-builder-fee-revoke"
-path = "bin/builder_fee_revoke.rs"
-doc = false
-
-[[bin]]
 name = "hyperliquid-http-public"
 path = "bin/http_public.rs"
 doc = false
@@ -139,6 +124,11 @@ doc = false
 [[bin]]
 name = "hyperliquid-capture-test-data"
 path = "bin/capture_test_data.rs"
+doc = false
+
+[[bin]]
+name = "hyperliquid-builder-fee-revoke"
+path = "bin/builder_fee_revoke.rs"
 doc = false
 
 # Run with `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid`.

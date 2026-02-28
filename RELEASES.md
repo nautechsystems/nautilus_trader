@@ -11,12 +11,13 @@ Released on TBD (UTC).
 - Added BitMEX dead man's switch (cancelAllAfter) support
 - Added BitMEX grid market maker example in Rust
 - Added Hyperliquid order modify support (Python and Rust)
-- Added Hyperliquid volume-based builder fee scaling with automatic tier detection
 - Added OKX trailing stop market order support (Rust and Python)
+- Removed Hyperliquid builder fee charges (builder-fee approval no longer required)
 
 ### Breaking Changes
 - Removed Coinbase International (`COINBASE_INTX`) adapter, see RFC (#3555)
 - Removed Binance `BINANCE_ED25519_*` env vars for Spot/Margin (use `BINANCE_API_KEY`/`BINANCE_API_SECRET`; Futures deprecated with warning)
+- Removed Hyperliquid `builder_fee_refresh_mins` config option (builder fees no longer charged)
 
 ### Security
 - Bumped all eligible GitHub Actions pinned SHAs to latest versions (2-week release policy)

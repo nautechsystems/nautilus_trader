@@ -710,13 +710,13 @@ pub struct HyperliquidExecTriggerParams {
     pub tpsl: HyperliquidExecTpSl,
 }
 
-/// Optional builder fee for orders in exchange endpoint.
+/// Builder code for order attribution in the exchange endpoint.
 ///
-/// The builder fee is specified in tenths of a basis point.
+/// The fee is specified in tenths of a basis point.
 /// For example, `f: 10` represents 1 basis point (0.01%).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HyperliquidExecBuilderFee {
-    /// Builder address to receive the fee.
+    /// Builder address for attribution.
     #[serde(rename = "b")]
     pub address: String,
     /// Fee in tenths of a basis point.
@@ -833,7 +833,7 @@ pub enum HyperliquidExecAction {
         /// Grouping strategy for TP/SL orders.
         #[serde(default)]
         grouping: HyperliquidExecGrouping,
-        /// Optional builder fee.
+        /// Optional builder code for attribution.
         #[serde(skip_serializing_if = "Option::is_none")]
         builder: Option<HyperliquidExecBuilderFee>,
     },
