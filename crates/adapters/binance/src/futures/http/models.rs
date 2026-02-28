@@ -840,7 +840,7 @@ pub struct BinanceLeverageResponse {
 #[serde(rename_all = "camelCase")]
 pub struct BinanceCancelAllOrdersResponse {
     /// Response code (200 = success).
-    pub code: i32,
+    pub code: String,
     /// Response message.
     pub msg: String,
 }
@@ -1306,7 +1306,7 @@ pub struct BinanceFuturesAlgoOrderCancelResponse {
     /// Client algo order ID.
     pub client_algo_id: String,
     /// Response code (200 for success).
-    pub code: i32,
+    pub code: String,
     /// Response message.
     pub msg: String,
 }
@@ -1631,7 +1631,7 @@ mod tests {
         let json = r#"{
             "algoId": 123456789,
             "clientAlgoId": "test-algo-order-1",
-            "code": 200,
+            "code": "200",
             "msg": "success"
         }"#;
 
@@ -1640,7 +1640,7 @@ mod tests {
 
         assert_eq!(response.algo_id, 123456789);
         assert_eq!(response.client_algo_id, "test-algo-order-1");
-        assert_eq!(response.code, 200);
+        assert_eq!(response.code, "200");
         assert_eq!(response.msg, "success");
     }
 }

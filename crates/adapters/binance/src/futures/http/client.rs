@@ -1789,7 +1789,7 @@ impl BinanceFuturesHttpClient {
         };
 
         let response = self.raw.cancel_algo_order(&params).await?;
-        if response.code == 200 {
+        if response.code.parse::<i32>().unwrap_or(0) == 200 {
             Ok(())
         } else {
             anyhow::bail!(
@@ -1817,7 +1817,7 @@ impl BinanceFuturesHttpClient {
         };
 
         let response = self.raw.cancel_all_orders(&params).await?;
-        if response.code == 200 {
+        if response.code.parse::<i32>().unwrap_or(0) == 200 {
             Ok(vec![])
         } else {
             anyhow::bail!("Cancel all orders failed: {}", response.msg);
@@ -1838,7 +1838,7 @@ impl BinanceFuturesHttpClient {
         };
 
         let response = self.raw.cancel_all_algo_orders(&params).await?;
-        if response.code == 200 {
+        if response.code.parse::<i32>().unwrap_or(0) == 200 {
             Ok(())
         } else {
             anyhow::bail!("Cancel all algo orders failed: {}", response.msg);
