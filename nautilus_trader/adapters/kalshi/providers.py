@@ -16,13 +16,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.kalshi.config import KalshiDataClientConfig
 from nautilus_trader.common.providers import InstrumentProvider
-
-if TYPE_CHECKING:
-    from nautilus_trader.model.instruments import BinaryOption
 
 
 _log = logging.getLogger(__name__)
@@ -121,7 +117,7 @@ class KalshiInstrumentProvider(InstrumentProvider):
     """
 
     def __init__(self, config: KalshiDataClientConfig) -> None:
-        super().__init__()
+        super().__init__(config=config)
         self._config = config
         self._base_url = config.base_url or KALSHI_REST_BASE
         self._http_client = _KalshiHttpClient(base_url=self._base_url)
@@ -152,6 +148,7 @@ class KalshiInstrumentProvider(InstrumentProvider):
         import decimal  # noqa: PLC0415
 
         from nautilus_trader.core.datetime import dt_to_unix_nanos  # noqa: PLC0415
+        from nautilus_trader.model.enums import AssetClass  # noqa: PLC0415
         from nautilus_trader.model.identifiers import InstrumentId  # noqa: PLC0415
         from nautilus_trader.model.identifiers import Symbol  # noqa: PLC0415
         from nautilus_trader.model.identifiers import Venue  # noqa: PLC0415
@@ -173,6 +170,7 @@ class KalshiInstrumentProvider(InstrumentProvider):
         return BinaryOption(
             instrument_id=instrument_id,
             raw_symbol=Symbol(ticker),
+            asset_class=AssetClass.ALTERNATIVE,
             currency=Currency.from_str("USD"),
             activation_ns=parse_ts(market.get("open_time")),
             expiration_ns=parse_ts(
@@ -182,14 +180,10 @@ class KalshiInstrumentProvider(InstrumentProvider):
             size_precision=2,
             price_increment=Price.from_str("0.0001"),
             size_increment=Quantity.from_str("0.01"),
-            margin_init=decimal.Decimal("0"),
-            margin_maint=decimal.Decimal("0"),
             maker_fee=decimal.Decimal("0"),
             taker_fee=decimal.Decimal("0"),
             outcome="Yes",
             description=market.get("title"),
-            max_price=Price.from_str("0.9999"),
-            min_price=Price.from_str("0.0001"),
             ts_event=0,
             ts_init=0,
         )
