@@ -35,8 +35,9 @@ class KalshiDataClient(LiveMarketDataClient):
     """
     Provides a Kalshi market data client for live paper trading and backtesting.
 
-    For backtesting, this client feeds historical REST data into the engine.
-    For live paper trading, it uses authenticated WebSocket streams.
+    Currently a skeleton that loads instruments on connect. Subscribe methods
+    for orderbook deltas, trade ticks, and OHLCV bars are not yet implemented.
+    Reference nautilus_trader/adapters/polymarket/data.py for the patterns.
 
     Parameters
     ----------
@@ -79,10 +80,9 @@ class KalshiDataClient(LiveMarketDataClient):
             instrument_provider=instrument_provider,
         )
         self._config = config
-        self._instrument_provider = instrument_provider
 
     async def _connect(self) -> None:
-        await self._instrument_provider.load_all_async()
+        await self._instrument_provider.initialize()
 
     async def _disconnect(self) -> None:
         pass
