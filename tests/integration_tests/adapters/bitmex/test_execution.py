@@ -553,7 +553,7 @@ async def test_handle_order_update_message(exec_client):
 
     # Act
     # Simulate receiving message through WebSocket
-    handler = exec_client._mock_ws_client.connect.call_args[0][1]
+    handler = exec_client._mock_ws_client.connect.call_args[0][2]
     handler(mock_event)
 
     # Assert - handler was called without error
@@ -590,7 +590,7 @@ async def test_handle_execution_message(exec_client):
     )
 
     # Act
-    handler = exec_client._mock_ws_client.connect.call_args[0][1]
+    handler = exec_client._mock_ws_client.connect.call_args[0][2]
     handler(mock_event)
 
     # Assert - handler was called without error
@@ -625,7 +625,7 @@ async def test_handle_position_update_message(exec_client):
     )
 
     # Act
-    handler = exec_client._mock_ws_client.connect.call_args[0][1]
+    handler = exec_client._mock_ws_client.connect.call_args[0][2]
     handler(mock_event)
 
     # Assert - handler was called without error
@@ -656,7 +656,7 @@ async def test_handle_account_state_update(exec_client):
     )
 
     # Act
-    handler = exec_client._mock_ws_client.connect.call_args[0][1]
+    handler = exec_client._mock_ws_client.connect.call_args[0][2]
     handler(mock_event)
 
     # Assert - handler was called without error

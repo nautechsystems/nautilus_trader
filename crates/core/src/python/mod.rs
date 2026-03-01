@@ -87,6 +87,22 @@ pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     }
 }
 
+/// Schedules a Python callback on the event loop thread via `call_soon_threadsafe`.
+///
+/// This must be used instead of [`call_python`] when invoking Python callbacks
+/// from Tokio worker threads, since Python callbacks that enter the kernel
+/// (e.g. via `MessageBus.send`) must run on the asyncio event loop thread.
+pub fn call_python_threadsafe(
+    py: Python,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+    py_obj: Py<PyAny>,
+) {
+    if let Err(e) = call_soon.call1(py, (callback, py_obj)) {
+        log::error!("Error scheduling Python callback on event loop: {e}");
+    }
+}
+
 /// Extend `IntoPyObjectExt` helper trait to unwrap `Py<PyAny>` after conversion.
 pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
     /// Convert `self` into a [`Py<PyAny>`] while *panicking* if the conversion fails.

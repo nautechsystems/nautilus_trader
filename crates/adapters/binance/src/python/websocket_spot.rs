@@ -17,7 +17,7 @@
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{call_python, to_pyruntime_err};
+use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err};
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
@@ -67,8 +67,10 @@ impl BinanceSpotWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
+        loop_: Py<PyAny>,
         callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
         let mut client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -86,7 +88,7 @@ impl BinanceSpotWebSocketClient {
                                 Python::attach(|py| {
                                     for data in data_vec {
                                         let py_obj = data_to_pycapsule(py, data);
-                                        call_python(py, &callback, py_obj);
+                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     }
                                 });
                             }
@@ -96,7 +98,7 @@ impl BinanceSpotWebSocketClient {
                                         py,
                                         Data::Deltas(OrderBookDeltas_API::new(deltas)),
                                     );
-                                    call_python(py, &callback, py_obj);
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                 });
                             }
                             _ => {}

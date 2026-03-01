@@ -16,7 +16,7 @@
 //! Python bindings for the Hyperliquid WebSocket client.
 
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::to_pyruntime_err;
+use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     identifiers::{AccountId, ClientOrderId, InstrumentId},
@@ -93,9 +93,12 @@ impl HyperliquidWebSocketClient {
     fn py_connect<'py>(
         &self,
         py: Python<'py>,
+        loop_: Py<PyAny>,
         instruments: Vec<Py<PyAny>>,
         callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
+
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
             self.cache_instrument(inst_any);
@@ -119,20 +122,14 @@ impl HyperliquidWebSocketClient {
                                     Python::attach(|py| {
                                         for tick in trade_ticks {
                                             let py_obj = data_to_pycapsule(py, Data::Trade(tick));
-                                            if let Err(e) = callback.bind(py).call1((py_obj,)) {
-                                                log::error!(
-                                                    "Error calling Python callback: {e}"
-                                                );
-                                            }
+                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                         }
                                     });
                                 }
                                 NautilusWsMessage::Quote(quote_tick) => {
                                     Python::attach(|py| {
                                         let py_obj = data_to_pycapsule(py, Data::Quote(quote_tick));
-                                        if let Err(e) = callback.bind(py).call1((py_obj,)) {
-                                            log::error!("Error calling Python callback: {e}");
-                                        }
+                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     });
                                 }
                                 NautilusWsMessage::Deltas(deltas) => {
@@ -141,18 +138,13 @@ impl HyperliquidWebSocketClient {
                                             py,
                                             Data::Deltas(OrderBookDeltas_API::new(deltas)),
                                         );
-
-                                        if let Err(e) = callback.bind(py).call1((py_obj,)) {
-                                            log::error!("Error calling Python callback: {e}");
-                                        }
+                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     });
                                 }
                                 NautilusWsMessage::Candle(bar) => {
                                     Python::attach(|py| {
                                         let py_obj = data_to_pycapsule(py, Data::Bar(bar));
-                                        if let Err(e) = callback.bind(py).call1((py_obj,)) {
-                                            log::error!("Error calling Python callback: {e}");
-                                        }
+                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     });
                                 }
                                 NautilusWsMessage::MarkPrice(mark_price) => {
@@ -161,10 +153,7 @@ impl HyperliquidWebSocketClient {
                                             py,
                                             Data::MarkPriceUpdate(mark_price),
                                         );
-
-                                        if let Err(e) = callback.bind(py).call1((py_obj,)) {
-                                            log::error!("Error calling Python callback: {e}");
-                                        }
+                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     });
                                 }
                                 NautilusWsMessage::IndexPrice(index_price) => {
@@ -173,18 +162,13 @@ impl HyperliquidWebSocketClient {
                                             py,
                                             Data::IndexPriceUpdate(index_price),
                                         );
-
-                                        if let Err(e) = callback.bind(py).call1((py_obj,)) {
-                                            log::error!("Error calling Python callback: {e}");
-                                        }
+                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     });
                                 }
                                 NautilusWsMessage::FundingRate(funding_rate) => {
                                     Python::attach(|py| {
-                                        if let Ok(py_obj) = funding_rate.into_py_any(py)
-                                            && let Err(e) = callback.bind(py).call1((py_obj,))
-                                        {
-                                            log::error!("Error calling Python callback: {e}");
+                                        if let Ok(py_obj) = funding_rate.into_py_any(py) {
+                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                         }
                                     });
                                 }
@@ -200,11 +184,7 @@ impl HyperliquidWebSocketClient {
                                                     );
                                                     match Py::new(py, order_report) {
                                                         Ok(py_obj) => {
-                                                            if let Err(e) =
-                                                                callback.bind(py).call1((py_obj,))
-                                                            {
-                                                                log::error!("Error calling Python callback: {e}");
-                                                            }
+                                                            call_python_threadsafe(py, &call_soon, &callback, py_obj.into_any());
                                                         }
                                                         Err(e) => {
                                                             log::error!("Error converting OrderStatusReport to Python: {e}");
@@ -221,11 +201,7 @@ impl HyperliquidWebSocketClient {
                                                     );
                                                     match Py::new(py, fill_report) {
                                                         Ok(py_obj) => {
-                                                            if let Err(e) =
-                                                                callback.bind(py).call1((py_obj,))
-                                                            {
-                                                                log::error!("Error calling Python callback: {e}");
-                                                            }
+                                                            call_python_threadsafe(py, &call_soon, &callback, py_obj.into_any());
                                                         }
                                                         Err(e) => {
                                                             log::error!("Error converting FillReport to Python: {e}");

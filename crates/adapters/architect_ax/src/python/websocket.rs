@@ -17,7 +17,7 @@
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{call_python, to_pyruntime_err};
+use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     enums::{OrderSide, OrderType, TimeInForce},
@@ -91,8 +91,11 @@ impl AxMdWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
+        loop_: Py<PyAny>,
         callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
+
         let mut client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -109,7 +112,7 @@ impl AxMdWebSocketClient {
                             Python::attach(|py| {
                                 for data in data_vec {
                                     let py_obj = data_to_pycapsule(py, data);
-                                    call_python(py, &callback, py_obj);
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                 }
                             });
                         }
@@ -119,13 +122,13 @@ impl AxMdWebSocketClient {
                                     py,
                                     Data::Deltas(OrderBookDeltas_API::new(deltas)),
                                 );
-                                call_python(py, &callback, py_obj);
+                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
                             });
                         }
                         NautilusDataWsMessage::Bar(bar) => {
                             Python::attach(|py| {
                                 let py_obj = data_to_pycapsule(py, Data::Bar(bar));
-                                call_python(py, &callback, py_obj);
+                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
                             });
                         }
                         NautilusDataWsMessage::Heartbeat => {
@@ -365,9 +368,12 @@ impl AxOrdersWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
+        loop_: Py<PyAny>,
         callback: Py<PyAny>,
         bearer_token: String,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
+
         let mut client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -384,7 +390,7 @@ impl AxOrdersWebSocketClient {
                 while let Some(msg) = stream.next().await {
                     match msg {
                         AxOrdersWsMessage::Nautilus(exec_msg) => {
-                            handle_exec_message(&callback, exec_msg);
+                            handle_exec_message(&call_soon, &callback, exec_msg);
                         }
                         AxOrdersWsMessage::PlaceOrderResponse(resp) => {
                             log::debug!(
@@ -532,64 +538,46 @@ impl AxOrdersWebSocketClient {
     }
 }
 
-fn handle_exec_message(callback: &Py<PyAny>, msg: NautilusExecWsMessage) {
+fn handle_exec_message(call_soon: &Py<PyAny>, callback: &Py<PyAny>, msg: NautilusExecWsMessage) {
     match msg {
         NautilusExecWsMessage::OrderAccepted(event) => {
-            call_python_with_event(callback, move |py| {
-                event.into_py_any(py).map(|obj| obj.into_bound(py))
-            });
+            call_python_with_event(call_soon, callback, move |py| event.into_py_any(py));
         }
         NautilusExecWsMessage::OrderFilled(event) => {
-            call_python_with_event(callback, move |py| {
-                event.into_py_any(py).map(|obj| obj.into_bound(py))
-            });
+            call_python_with_event(call_soon, callback, move |py| event.into_py_any(py));
         }
         NautilusExecWsMessage::OrderCanceled(event) => {
-            call_python_with_event(callback, move |py| {
-                event.into_py_any(py).map(|obj| obj.into_bound(py))
-            });
+            call_python_with_event(call_soon, callback, move |py| event.into_py_any(py));
         }
         NautilusExecWsMessage::OrderExpired(event) => {
-            call_python_with_event(callback, move |py| {
-                event.into_py_any(py).map(|obj| obj.into_bound(py))
-            });
+            call_python_with_event(call_soon, callback, move |py| event.into_py_any(py));
         }
         NautilusExecWsMessage::OrderRejected(event) => {
-            call_python_with_event(callback, move |py| {
-                event.into_py_any(py).map(|obj| obj.into_bound(py))
-            });
+            call_python_with_event(call_soon, callback, move |py| event.into_py_any(py));
         }
         NautilusExecWsMessage::OrderCancelRejected(event) => {
-            call_python_with_event(callback, move |py| {
-                event.into_py_any(py).map(|obj| obj.into_bound(py))
-            });
+            call_python_with_event(call_soon, callback, move |py| event.into_py_any(py));
         }
         NautilusExecWsMessage::OrderStatusReports(reports) => {
             for report in reports {
-                call_python_with_event(callback, move |py| {
-                    report.into_py_any(py).map(|obj| obj.into_bound(py))
-                });
+                call_python_with_event(call_soon, callback, move |py| report.into_py_any(py));
             }
         }
         NautilusExecWsMessage::FillReports(reports) => {
             for report in reports {
-                call_python_with_event(callback, move |py| {
-                    report.into_py_any(py).map(|obj| obj.into_bound(py))
-                });
+                call_python_with_event(call_soon, callback, move |py| report.into_py_any(py));
             }
         }
     }
 }
 
-fn call_python_with_event<F>(callback: &Py<PyAny>, event_fn: F)
+fn call_python_with_event<F>(call_soon: &Py<PyAny>, callback: &Py<PyAny>, event_fn: F)
 where
-    F: FnOnce(Python<'_>) -> PyResult<Bound<'_, PyAny>> + Send + 'static,
+    F: FnOnce(Python<'_>) -> PyResult<Py<PyAny>> + Send + 'static,
 {
     Python::attach(|py| match event_fn(py) {
-        Ok(event) => {
-            if let Err(e) = callback.call1(py, (event,)) {
-                log::error!("Error calling Python callback: {e}");
-            }
+        Ok(py_obj) => {
+            call_python_threadsafe(py, call_soon, callback, py_obj);
         }
         Err(e) => {
             log::error!("Error converting event to Python: {e}");

@@ -168,6 +168,7 @@ class AxExecutionClient(LiveExecutionClient):
                 self._ws_orders_client.cache_instrument(inst)
 
             await self._ws_orders_client.connect(
+                loop_=self._loop,
                 callback=self._handle_msg,
                 bearer_token=bearer_token,
             )

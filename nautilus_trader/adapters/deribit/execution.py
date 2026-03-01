@@ -150,6 +150,7 @@ class DeribitExecutionClient(LiveExecutionClient):
         # Connect WebSocket with instruments and callback dispatch
         self._log.info("Connecting WebSocket for execution...")
         await self._ws_client.connect(
+            loop_=self._loop,
             instruments=instruments,
             callback=self._handle_ws_message,
         )

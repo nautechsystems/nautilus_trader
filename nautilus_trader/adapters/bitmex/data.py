@@ -152,6 +152,7 @@ class BitmexDataClient(LiveMarketDataClient):
         instruments = self.instrument_provider.instruments_pyo3()
 
         await self._ws_client.connect(
+            self._loop,
             instruments,
             self._handle_msg,
         )

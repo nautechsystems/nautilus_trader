@@ -298,6 +298,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         instruments = self._instrument_provider.instruments_pyo3()  # type: ignore
 
         await self._ws_client.connect(
+            self._loop,
             instruments,
             self._handle_msg,
         )

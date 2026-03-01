@@ -252,6 +252,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self.create_task(self._check_clock_sync())
 
         await self._ws_client.connect(
+            loop_=self._loop,
             instruments=self.okx_instrument_provider.instruments_pyo3(),
             callback=self._handle_msg,
         )
@@ -268,6 +269,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info("OKX API key authenticated", LogColor.GREEN)
 
         await self._ws_business_client.connect(
+            loop_=self._loop,
             instruments=self.okx_instrument_provider.instruments_pyo3(),
             callback=self._handle_msg,
         )

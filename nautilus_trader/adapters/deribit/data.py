@@ -167,6 +167,7 @@ class DeribitDataClient(LiveMarketDataClient):
         instruments = self.instrument_provider.instruments_pyo3()
 
         await self._ws_client.connect(
+            loop_=self._loop,
             instruments=instruments,
             callback=self._handle_msg,
         )

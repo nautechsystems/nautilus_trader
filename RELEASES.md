@@ -36,6 +36,7 @@ Released on TBD (UTC).
 - Fixed `LiveExecEngine` position reconciliation infinite loop when venue reports flat (#3622), thanks for reporting @mrbaron3
 - Fixed `CryptoOption` instrument pyo3 transform for (#3626), thanks @davidsblom
 - Fixed `StreamingFeatherWriter` duplicate events from multiple message bus topics (#3625), thanks for reporting @fomotoshi
+- Fixed Python WS callbacks running off asyncio event-loop thread in Rust adapters (#3653), thanks for reporting @camilorodegheri
 - Fixed Binance Futures algo order serde field renames for WS and HTTP parsing (#3624), thanks for reporting @qu1zzyboy
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
 - Fixed BinanceSymbol COIN-M perpetual symbol conversion (#3641), thanks @YeeTsai

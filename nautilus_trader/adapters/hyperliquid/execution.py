@@ -199,7 +199,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         instruments = self._instrument_provider.instruments_pyo3()
 
-        await self._ws_client.connect(instruments, self._handle_msg)
+        await self._ws_client.connect(self._loop, instruments, self._handle_msg)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
         if self._user_address:
