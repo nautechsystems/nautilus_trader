@@ -28,15 +28,15 @@ fn load_str(filename: &str) -> String {
         .unwrap_or_else(|_| panic!("missing: {filename}"))
 }
 
-#[tokio::test]
-async fn test_ws_message_parsing_snapshot() {
+#[test]
+fn test_ws_message_parsing_snapshot() {
     let raw = load_str("ws_orderbook_snapshot.json");
     let msg = KalshiWsMessage::from_json(&raw).unwrap();
     assert!(matches!(msg, KalshiWsMessage::OrderbookSnapshot { .. }));
 }
 
-#[tokio::test]
-async fn test_ws_message_parsing_trade() {
+#[test]
+fn test_ws_message_parsing_trade() {
     let raw = load_str("ws_trade.json");
     let msg = KalshiWsMessage::from_json(&raw).unwrap();
     assert!(matches!(msg, KalshiWsMessage::Trade { .. }));

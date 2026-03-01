@@ -62,7 +62,7 @@ impl KalshiWebSocketClient {
     }
 
     fn next_id(&self) -> u32 {
-        self.next_cmd_id.fetch_add(1, Ordering::SeqCst)
+        self.next_cmd_id.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Returns the WebSocket URL this client connects to.
@@ -100,10 +100,10 @@ impl KalshiWebSocketClient {
         &self,
         market_tickers: Vec<String>,
     ) -> Result<(), KalshiWsError> {
-        let cmd = KalshiSubscribeCmd::orderbook(self.next_id(), market_tickers.clone());
+        info!("Kalshi WS: subscribing orderbook for {market_tickers:?}");
+        let cmd = KalshiSubscribeCmd::orderbook(self.next_id(), market_tickers);
         let cmd_json =
             serde_json::to_string(&cmd).map_err(|e| KalshiWsError::Connection(e.to_string()))?;
-        info!("Kalshi WS: subscribing orderbook for {market_tickers:?}");
         self.send_command(cmd_json).await
     }
 
@@ -117,10 +117,10 @@ impl KalshiWebSocketClient {
         &self,
         market_tickers: Vec<String>,
     ) -> Result<(), KalshiWsError> {
-        let cmd = KalshiSubscribeCmd::trades(self.next_id(), market_tickers.clone());
+        info!("Kalshi WS: subscribing trades for {market_tickers:?}");
+        let cmd = KalshiSubscribeCmd::trades(self.next_id(), market_tickers);
         let cmd_json =
             serde_json::to_string(&cmd).map_err(|e| KalshiWsError::Connection(e.to_string()))?;
-        info!("Kalshi WS: subscribing trades for {market_tickers:?}");
         self.send_command(cmd_json).await
     }
 
