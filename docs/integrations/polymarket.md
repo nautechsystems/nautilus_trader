@@ -676,86 +676,40 @@ event_markets = await loader.get_event_markets("highest-temperature-in-nyc-on-ja
 For quick exploration without creating a loader, use the static `query_*` methods
 (see [Method naming conventions](#method-naming-conventions) above).
 
-### Fetching order book history
+### Fetching trade history
 
-The `load_orderbook_snapshots()` convenience method fetches and parses order book data in one step:
-
-```python
-import pandas as pd
-
-# Define time range
-end = pd.Timestamp.now(tz="UTC")
-start = end - pd.Timedelta(hours=24)
-
-# Fetch and parse order book snapshots (automatic pagination handling)
-deltas = await loader.load_orderbook_snapshots(
-    start=start,
-    end=end,
-)
-```
-
-Alternatively, you can fetch and parse separately using the lower-level methods:
-
-```python
-# Convert timestamps to milliseconds for the API
-start_time_ms = int(start.timestamp() * 1000)
-end_time_ms = int(end.timestamp() * 1000)
-token_id = loader.token_id
-
-orderbook_snapshots = await loader.fetch_orderbook_history(
-    token_id=token_id,
-    start_time_ms=start_time_ms,
-    end_time_ms=end_time_ms,
-)
-
-# Parse to NautilusTrader OrderBookDeltas
-deltas = loader.parse_orderbook_snapshots(orderbook_snapshots)
-```
-
-### Fetching price history
-
-The `load_trades()` convenience method fetches and parses trade data in one step:
+The `load_trades()` convenience method fetches and parses historical trades in one step:
 
 ```python
 import pandas as pd
 
-# Define time range
+# Load all available trades
+trades = await loader.load_trades()
+
+# Or filter by time range (client-side filtering)
 end = pd.Timestamp.now(tz="UTC")
 start = end - pd.Timedelta(hours=24)
 
-# Fetch and parse trade ticks (1-minute fidelity)
 trades = await loader.load_trades(
     start=start,
     end=end,
-    fidelity=1,  # 1 = 1 minute resolution
 )
 ```
 
 Alternatively, you can fetch and parse separately using the lower-level methods:
 
 ```python
-# Convert timestamps to milliseconds for the API
-start_time_ms = int(start.timestamp() * 1000)
-end_time_ms = int(end.timestamp() * 1000)
-token_id = loader.token_id
+condition_id = loader.condition_id
 
-# Fetch raw price history
-price_history = await loader.fetch_price_history(
-    token_id=token_id,
-    start_time_ms=start_time_ms,
-    end_time_ms=end_time_ms,
-    fidelity=1,  # 1 = 1 minute resolution
-)
+# Fetch raw trades from the Polymarket Data API
+raw_trades = await loader.fetch_trades(condition_id=condition_id)
 
 # Parse to NautilusTrader TradeTicks
-trades = loader.parse_price_history(price_history)
+trades = loader.parse_trades(raw_trades)
 ```
 
-:::warning
-The `parse_price_history()` method creates synthetic `TradeTick` objects from price points,
-as the price history endpoint doesn't include actual trade sizes. Trade sizes are set to `1.0`
-and the aggressor side is inferred from price movements.
-:::
+Trade data is sourced from the [Polymarket Data API](https://data-api.polymarket.com/trades),
+which provides real execution data including price, size, side, and on-chain transaction hash.
 
 ### Complete backtest example
 
@@ -765,17 +719,15 @@ A complete working example is available at `examples/backtest/polymarket_simple_
 import asyncio
 from decimal import Decimal
 
-import pandas as pd
-
 from nautilus_trader.adapters.polymarket import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket import PolymarketDataLoader
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnly
+from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnlyConfig
 from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
@@ -785,19 +737,8 @@ async def run_backtest():
     loader = await PolymarketDataLoader.from_market_slug("gta-vi-released-before-june-2026")
     instrument = loader.instrument
 
-    # Fetch historical data (last 24 hours)
-    end = pd.Timestamp.now(tz="UTC")
-    start = end - pd.Timedelta(hours=24)
-
-    deltas = await loader.load_orderbook_snapshots(
-        start=start,
-        end=end,
-    )
-
-    trades = await loader.load_trades(
-        start=start,
-        end=end,
-    )
+    # Load historical trades from the Polymarket Data API
+    trades = await loader.load_trades()
 
     # Configure and run backtest
     config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
@@ -809,19 +750,19 @@ async def run_backtest():
         account_type=AccountType.CASH,
         base_currency=USDC_POS,
         starting_balances=[Money(10_000, USDC_POS)],
-        book_type=BookType.L2_MBP,
     )
 
     engine.add_instrument(instrument)
-    engine.add_data(deltas)
     engine.add_data(trades)
 
-    strategy_config = OrderBookImbalanceConfig(
+    bar_type = BarType.from_str(f"{instrument.id}-100-TICK-LAST-INTERNAL")
+    strategy_config = EMACrossLongOnlyConfig(
         instrument_id=instrument.id,
-        max_trade_size=Decimal("20"),
+        bar_type=bar_type,
+        trade_size=Decimal("20"),
     )
 
-    strategy = OrderBookImbalance(config=strategy_config)
+    strategy = EMACrossLongOnly(config=strategy_config)
     engine.add_strategy(strategy=strategy)
     engine.run()
 
