@@ -17,7 +17,9 @@ use std::fmt::Display;
 
 use derive_builder::Builder;
 use nautilus_core::{Params, UUID4, UnixNanos};
-use nautilus_model::identifiers::{ClientId, ClientOrderId, InstrumentId, TraderId, Venue};
+use nautilus_model::identifiers::{
+    ClientId, ClientOrderId, InstrumentId, TraderId, Venue, VenueOrderId,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::enums::LogLevel;
@@ -36,7 +38,7 @@ pub struct GenerateOrderStatusReport {
     #[builder(default)]
     pub client_order_id: Option<ClientOrderId>,
     #[builder(default)]
-    pub venue_order_id: Option<ClientOrderId>,
+    pub venue_order_id: Option<VenueOrderId>,
     #[builder(default)]
     pub params: Option<Params>,
     #[builder(default)]
@@ -50,7 +52,7 @@ impl GenerateOrderStatusReport {
         ts_init: UnixNanos,
         instrument_id: Option<InstrumentId>,
         client_order_id: Option<ClientOrderId>,
-        venue_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
         params: Option<Params>,
         correlation_id: Option<UUID4>,
     ) -> Self {
@@ -150,7 +152,7 @@ pub struct GenerateFillReports {
     #[builder(default)]
     pub instrument_id: Option<InstrumentId>,
     #[builder(default)]
-    pub venue_order_id: Option<ClientOrderId>,
+    pub venue_order_id: Option<VenueOrderId>,
     #[builder(default)]
     pub start: Option<UnixNanos>,
     #[builder(default)]
@@ -172,7 +174,7 @@ impl GenerateFillReports {
         command_id: UUID4,
         ts_init: UnixNanos,
         instrument_id: Option<InstrumentId>,
-        venue_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         params: Option<Params>,
