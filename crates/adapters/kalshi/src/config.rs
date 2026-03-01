@@ -24,7 +24,9 @@ pub struct KalshiDataClientConfig {
     pub base_url: Option<String>,
     /// WebSocket base URL. Defaults to production.
     pub ws_url: Option<String>,
+    /// HTTP request timeout in seconds. Default: 60.
     pub http_timeout_secs: u64,
+    /// WebSocket connection timeout in seconds. Default: 30.
     pub ws_timeout_secs: u64,
     /// Series tickers to include, e.g. `["KXBTC", "PRES-2024"]`.
     pub series_tickers: Vec<String>,
