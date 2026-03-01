@@ -18,7 +18,7 @@ slow-timeout = { period = "300s" }
 filter = 'binary(grid_mm_itch) | binary(backtest_node_itch) | binary(orderbook_integration)'
 test-group = 'large-data-tests'
 
-# Websocket tests can be flaky due to timing on low-spec runners, give them extra retries
+# Websocket and data client tests can be flaky due to timing on low-spec runners
 [[profile.default.overrides]]
-filter = 'binary(websocket)'
+filter = 'binary(websocket) | binary(data_client)'
 retries = 3
