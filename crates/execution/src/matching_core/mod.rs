@@ -128,7 +128,7 @@ pub struct OrderMatchingCore {
     pub is_bid_initialized: bool,
     pub is_ask_initialized: bool,
     pub is_last_initialized: bool,
-    fill_limit_at_touch: bool,
+    fill_limit_inside_spread: bool,
     orders_bid: Vec<OrderMatchInfo>,
     orders_ask: Vec<OrderMatchInfo>,
 }
@@ -146,7 +146,7 @@ impl OrderMatchingCore {
             is_bid_initialized: false,
             is_ask_initialized: false,
             is_last_initialized: false,
-            fill_limit_at_touch: false,
+            fill_limit_inside_spread: false,
             orders_bid: Vec::new(),
             orders_ask: Vec::new(),
         }
@@ -335,14 +335,14 @@ impl OrderMatchingCore {
         }
     }
 
-    pub fn set_fill_limit_at_touch(&mut self, value: bool) {
-        self.fill_limit_at_touch = value;
+    pub fn set_fill_limit_inside_spread(&mut self, value: bool) {
+        self.fill_limit_inside_spread = value;
     }
 
     /// Returns whether a limit order is fillable at the given price.
     ///
     /// Checks `is_limit_matched` first (crosses the spread). When
-    /// `fill_limit_at_touch` is set, also checks at-or-inside spread
+    /// `fill_limit_inside_spread` is set, also checks at-or-inside spread
     /// (BUY >= bid, SELL <= ask), requiring both sides initialized.
     #[must_use]
     pub fn is_limit_fillable(&self, side: OrderSideSpecified, price: Price) -> bool {
@@ -350,7 +350,7 @@ impl OrderMatchingCore {
             return true;
         }
 
-        if !self.fill_limit_at_touch {
+        if !self.fill_limit_inside_spread {
             return false;
         }
 
@@ -867,12 +867,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_is_limit_fillable_at_touch_buy_at_bid() {
+    fn test_is_limit_fillable_inside_spread_buy_at_bid() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut core = create_matching_core(instrument_id, Price::from("0.01"));
         core.set_bid_raw(Price::from("100.00"));
         core.set_ask_raw(Price::from("101.00"));
-        core.set_fill_limit_at_touch(true);
+        core.set_fill_limit_inside_spread(true);
 
         assert!(core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.00")));
         assert!(core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.50")));
@@ -880,12 +880,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_is_limit_fillable_at_touch_sell_at_ask() {
+    fn test_is_limit_fillable_inside_spread_sell_at_ask() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut core = create_matching_core(instrument_id, Price::from("0.01"));
         core.set_bid_raw(Price::from("100.00"));
         core.set_ask_raw(Price::from("101.00"));
-        core.set_fill_limit_at_touch(true);
+        core.set_fill_limit_inside_spread(true);
 
         assert!(core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("101.00")));
         assert!(core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("100.50")));
@@ -893,22 +893,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_is_limit_fillable_at_touch_requires_both_quotes_present() {
+    fn test_is_limit_fillable_inside_spread_requires_both_quotes_present() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut core = create_matching_core(instrument_id, Price::from("0.01"));
-        core.set_fill_limit_at_touch(true);
+        core.set_fill_limit_inside_spread(true);
 
         core.set_bid_raw(Price::from("100.00"));
         assert!(!core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.00")));
 
         let mut core2 = create_matching_core(instrument_id, Price::from("0.01"));
-        core2.set_fill_limit_at_touch(true);
+        core2.set_fill_limit_inside_spread(true);
         core2.set_ask_raw(Price::from("101.00"));
         assert!(!core2.is_limit_fillable(OrderSideSpecified::Sell, Price::from("101.00")));
 
         // Ask cleared after both were set
         let mut core3 = create_matching_core(instrument_id, Price::from("0.01"));
-        core3.set_fill_limit_at_touch(true);
+        core3.set_fill_limit_inside_spread(true);
         core3.set_bid_raw(Price::from("100.00"));
         core3.set_ask_raw(Price::from("101.00"));
         core3.ask = None;
@@ -916,12 +916,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_iterate_fills_limit_at_touch_when_enabled() {
+    fn test_iterate_fills_limit_inside_spread_when_enabled() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut core = create_matching_core(instrument_id, Price::from("0.01"));
         core.set_bid_raw(Price::from("100.00"));
         core.set_ask_raw(Price::from("101.00"));
-        core.set_fill_limit_at_touch(true);
+        core.set_fill_limit_inside_spread(true);
 
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)

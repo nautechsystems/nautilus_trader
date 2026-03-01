@@ -42,7 +42,7 @@ pub trait FillModel {
     /// When true, the matching core treats a limit order as fillable if its
     /// price is at or better than the current best quote on its own side
     /// (BUY >= bid, SELL <= ask), not just when it crosses the spread.
-    fn fill_limit_at_touch(&self) -> bool {
+    fn fill_limit_inside_spread(&self) -> bool {
         false
     }
 
@@ -255,7 +255,7 @@ impl FillModel for BestPriceFillModel {
         self.state.is_slipped()
     }
 
-    fn fill_limit_at_touch(&self) -> bool {
+    fn fill_limit_inside_spread(&self) -> bool {
         true
     }
 
@@ -1143,19 +1143,19 @@ impl FillModel for FillModelAny {
         }
     }
 
-    fn fill_limit_at_touch(&self) -> bool {
+    fn fill_limit_inside_spread(&self) -> bool {
         match self {
-            Self::Default(m) => m.fill_limit_at_touch(),
-            Self::BestPrice(m) => m.fill_limit_at_touch(),
-            Self::OneTickSlippage(m) => m.fill_limit_at_touch(),
-            Self::Probabilistic(m) => m.fill_limit_at_touch(),
-            Self::TwoTier(m) => m.fill_limit_at_touch(),
-            Self::ThreeTier(m) => m.fill_limit_at_touch(),
-            Self::LimitOrderPartialFill(m) => m.fill_limit_at_touch(),
-            Self::SizeAware(m) => m.fill_limit_at_touch(),
-            Self::CompetitionAware(m) => m.fill_limit_at_touch(),
-            Self::VolumeSensitive(m) => m.fill_limit_at_touch(),
-            Self::MarketHours(m) => m.fill_limit_at_touch(),
+            Self::Default(m) => m.fill_limit_inside_spread(),
+            Self::BestPrice(m) => m.fill_limit_inside_spread(),
+            Self::OneTickSlippage(m) => m.fill_limit_inside_spread(),
+            Self::Probabilistic(m) => m.fill_limit_inside_spread(),
+            Self::TwoTier(m) => m.fill_limit_inside_spread(),
+            Self::ThreeTier(m) => m.fill_limit_inside_spread(),
+            Self::LimitOrderPartialFill(m) => m.fill_limit_inside_spread(),
+            Self::SizeAware(m) => m.fill_limit_inside_spread(),
+            Self::CompetitionAware(m) => m.fill_limit_inside_spread(),
+            Self::VolumeSensitive(m) => m.fill_limit_inside_spread(),
+            Self::MarketHours(m) => m.fill_limit_inside_spread(),
         }
     }
 
@@ -1367,32 +1367,32 @@ mod tests {
     }
 
     #[rstest]
-    fn test_default_fill_model_fill_limit_at_touch_is_false() {
+    fn test_default_fill_model_fill_limit_inside_spread_is_false() {
         let model = DefaultFillModel::default();
-        assert!(!model.fill_limit_at_touch());
+        assert!(!model.fill_limit_inside_spread());
     }
 
     #[rstest]
-    fn test_best_price_fill_model_fill_limit_at_touch_is_true() {
+    fn test_best_price_fill_model_fill_limit_inside_spread_is_true() {
         let model = BestPriceFillModel::default();
-        assert!(model.fill_limit_at_touch());
+        assert!(model.fill_limit_inside_spread());
     }
 
     #[rstest]
-    fn test_one_tick_slippage_fill_model_fill_limit_at_touch_is_false() {
+    fn test_one_tick_slippage_fill_model_fill_limit_inside_spread_is_false() {
         let model = OneTickSlippageFillModel::default();
-        assert!(!model.fill_limit_at_touch());
+        assert!(!model.fill_limit_inside_spread());
     }
 
     #[rstest]
-    fn test_fill_model_any_fill_limit_at_touch_dispatch() {
+    fn test_fill_model_any_fill_limit_inside_spread_dispatch() {
         let default = FillModelAny::Default(DefaultFillModel::default());
-        assert!(!default.fill_limit_at_touch());
+        assert!(!default.fill_limit_inside_spread());
 
         let best_price = FillModelAny::BestPrice(BestPriceFillModel::default());
-        assert!(best_price.fill_limit_at_touch());
+        assert!(best_price.fill_limit_inside_spread());
 
         let one_tick = FillModelAny::OneTickSlippage(OneTickSlippageFillModel::default());
-        assert!(!one_tick.fill_limit_at_touch());
+        assert!(!one_tick.fill_limit_inside_spread());
     }
 }

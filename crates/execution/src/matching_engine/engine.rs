@@ -153,7 +153,7 @@ impl OrderMatchingEngine {
     ) -> Self {
         let book = OrderBook::new(instrument.id(), book_type);
         let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
-        core.set_fill_limit_at_touch(fill_model.fill_limit_at_touch());
+        core.set_fill_limit_inside_spread(fill_model.fill_limit_inside_spread());
         let ids_generator = IdsGenerator::new(
             instrument.id().venue,
             oms_type,
@@ -372,7 +372,7 @@ impl OrderMatchingEngine {
     /// Sets the fill model for the matching engine.
     pub fn set_fill_model(&mut self, fill_model: FillModelAny) {
         self.core
-            .set_fill_limit_at_touch(fill_model.fill_limit_at_touch());
+            .set_fill_limit_inside_spread(fill_model.fill_limit_inside_spread());
         self.fill_model = fill_model;
     }
 

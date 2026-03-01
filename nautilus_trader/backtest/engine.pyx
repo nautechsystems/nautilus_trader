@@ -3923,7 +3923,7 @@ cdef class OrderMatchingEngine:
         )
 
         if fill_model is not None:
-            self._core.set_fill_limit_at_touch(fill_model.fill_limit_at_touch())
+            self._core.set_fill_limit_inside_spread(fill_model.fill_limit_inside_spread())
 
         self._price_prec = instrument.price_precision
         self._size_prec = instrument.size_precision
@@ -4010,7 +4010,7 @@ cdef class OrderMatchingEngine:
         Condition.not_none(fill_model, "fill_model")
 
         self._fill_model = fill_model
-        self._core.set_fill_limit_at_touch(fill_model.fill_limit_at_touch())
+        self._core.set_fill_limit_inside_spread(fill_model.fill_limit_inside_spread())
 
         self._log.debug(f"Changed `FillModel` to {self._fill_model}")
 

@@ -70,7 +70,7 @@ cdef class MatchingCore:
         self._trigger_stop_order = trigger_stop_order
         self._fill_market_order = fill_market_order
         self._fill_limit_order = fill_limit_order
-        self._fill_limit_at_touch = False
+        self._fill_limit_inside_spread = False
 
         # Orders
         self._orders: dict[ClientOrderId, Order] = {}
@@ -376,14 +376,14 @@ cdef class MatchingCore:
         if order.is_activated:
             self.match_stop_market_order(order)
 
-    cpdef void set_fill_limit_at_touch(self, bint value):
-        self._fill_limit_at_touch = value
+    cpdef void set_fill_limit_inside_spread(self, bint value):
+        self._fill_limit_inside_spread = value
 
     cpdef bint is_limit_fillable(self, OrderSide side, Price price):
         if self.is_limit_marketable(side, price):
             return True
 
-        if not self._fill_limit_at_touch:
+        if not self._fill_limit_inside_spread:
             return False
 
         # Require both sides initialized since fill simulation needs best bid and ask
