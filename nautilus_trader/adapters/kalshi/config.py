@@ -15,13 +15,13 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+
+from nautilus_trader.config import LiveDataClientConfig
 
 
-@dataclass
-class KalshiDataClientConfig:
+class KalshiDataClientConfig(LiveDataClientConfig, frozen=True):
     """
-    Configuration for the Kalshi data client.
+    Configuration for ``KalshiDataClient`` instances.
 
     Parameters
     ----------
@@ -29,33 +29,38 @@ class KalshiDataClientConfig:
         REST base URL. Defaults to production (https://api.elections.kalshi.com/trade-api/v2).
     ws_url : str, optional
         WebSocket URL. Defaults to production (wss://api.elections.kalshi.com/trade-api/ws/v2).
-    series_tickers : list[str]
-        Series tickers to load instruments for, e.g. ``["KXBTC", "PRES-2024"]``.
-    event_tickers : list[str]
+    series_tickers : tuple[str, ...], default ()
+        Series tickers to load instruments for, e.g. ``("KXBTC", "PRES-2024")``.
+    event_tickers : tuple[str, ...], default ()
         Optional event tickers for finer-grained filtering.
-    instrument_reload_interval_mins : int
-        How often to refresh instruments from the API. Default: 60.
-    rate_limit_rps : int
-        REST requests per second. Default: 20 (Basic tier).
+    instrument_reload_interval_mins : int, default 60
+        How often to refresh instruments from the API.
+    rate_limit_rps : int, default 20
+        REST requests per second (Basic tier default).
     api_key_id : str, optional
-        Kalshi API key ID. Falls back to ``KALSHI_API_KEY_ID`` env var.
+        Kalshi API key ID.
+        If ``None`` then will source the ``KALSHI_API_KEY_ID`` environment variable.
     private_key_pem : str, optional
-        RSA private key in PEM format. Falls back to ``KALSHI_PRIVATE_KEY_PEM`` env var.
+        RSA private key in PEM format.
+        If ``None`` then will source the ``KALSHI_PRIVATE_KEY_PEM`` environment variable.
+
     """
 
     base_url: str | None = None
     ws_url: str | None = None
-    series_tickers: list[str] = field(default_factory=list)
-    event_tickers: list[str] = field(default_factory=list)
+    series_tickers: tuple[str, ...] = ()
+    event_tickers: tuple[str, ...] = ()
     instrument_reload_interval_mins: int = 60
     rate_limit_rps: int = 20
     api_key_id: str | None = None
     private_key_pem: str | None = None
 
     def resolved_api_key_id(self) -> str | None:
+        # TODO: consider moving credential resolution into the factory/client
         return self.api_key_id or os.environ.get("KALSHI_API_KEY_ID")
 
     def resolved_private_key_pem(self) -> str | None:
+        # TODO: consider moving credential resolution into the factory/client
         return self.private_key_pem or os.environ.get("KALSHI_PRIVATE_KEY_PEM")
 
     def has_credentials(self) -> bool:
