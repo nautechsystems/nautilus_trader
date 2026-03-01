@@ -13,4 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// stub
+//! WebSocket error types for the Kalshi adapter.
+
+use thiserror::Error;
+
+/// Errors that can occur in the Kalshi WebSocket client.
+#[derive(Debug, Error)]
+pub enum KalshiWsError {
+    /// WebSocket connection failed.
+    #[error("WebSocket connection error: {0}")]
+    Connection(String),
+    /// Sequence number gap detected — re-subscribe required.
+    #[error("Sequence gap on sid={sid}: expected {expected}, got {got}")]
+    SequenceGap { sid: u32, expected: u64, got: u64 },
+    /// JSON parsing failed.
+    #[error("WebSocket JSON parse error: {0}")]
+    Parse(#[from] serde_json::Error),
+    /// Authentication required for WebSocket connection.
+    #[error("Authentication required for WebSocket connection")]
+    NoCredential,
+}

@@ -1,0 +1,12 @@
+{
+  "type": "orderbook_delta",
+  "sid": 1,
+  "seq": 2,
+  "msg": {
+    "market_ticker": "KXBTC-25MAR15-B100000",
+    "price_dollars": "0.4200",
+    "delta_fp": "50.00",
+    "side": "yes",
+    "ts": "2025-03-01T18:26:53.361842Z"
+  }
+}

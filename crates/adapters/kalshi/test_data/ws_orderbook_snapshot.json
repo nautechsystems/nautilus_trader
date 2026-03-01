@@ -1,0 +1,11 @@
+{
+  "type": "orderbook_snapshot",
+  "sid": 1,
+  "seq": 1,
+  "msg": {
+    "market_ticker": "KXBTC-25MAR15-B100000",
+    "market_id": "9b0f6b43-5b68-4f9f-9f02-9a2d1b8ac1a1",
+    "yes_dollars_fp": [["0.3500", "200.00"], ["0.4200", "13.00"]],
+    "no_dollars_fp": [["0.5400", "400.00"], ["0.5600", "17.00"]]
+  }
+}
