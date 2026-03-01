@@ -6,10 +6,11 @@
 //  You may not use this file except in compliance with the License.
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 //
-//  Unless required by applicable law or agreed to in writing, software distributed under the
-//  License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-//  KIND, either express or implied. See the License for the specific language governing
-//  permissions and limitations under the License.
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
 //! WebSocket message handler with sequence tracking and orderbook reconstruction.
@@ -24,8 +25,10 @@
 //! standard bid/ask orderbook on the YES side.
 
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use log::{debug, warn};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::websocket::{
@@ -113,9 +116,8 @@ impl KalshiOrderBook {
 
 /// Convert a NO bid price to the equivalent YES ask price: `1.0000 - no_price`.
 fn complement_price(no_price: &str) -> Option<String> {
-    use std::str::FromStr;
-    let p: rust_decimal::Decimal = rust_decimal::Decimal::from_str(no_price).ok()?;
-    let one = rust_decimal::Decimal::ONE;
+    let p: Decimal = Decimal::from_str(no_price).ok()?;
+    let one = Decimal::ONE;
     let ask = one - p;
     // Format to 4 decimal places matching Kalshi's precision.
     Some(format!("{ask:.4}"))
@@ -127,8 +129,7 @@ fn complement_price(no_price: &str) -> Option<String> {
 /// - Negative delta: subtract from quantity.
 /// - Zero delta or quantity reaches zero: remove the level.
 fn apply_level(levels: &mut HashMap<String, String>, price: &str, delta_fp: &str) {
-    use std::str::FromStr;
-    let delta = match rust_decimal::Decimal::from_str(delta_fp) {
+    let delta = match Decimal::from_str(delta_fp) {
         Ok(d) => d,
         Err(e) => {
             warn!("Kalshi: invalid delta_fp '{delta_fp}': {e}");
@@ -136,18 +137,18 @@ fn apply_level(levels: &mut HashMap<String, String>, price: &str, delta_fp: &str
         }
     };
 
-    if delta == rust_decimal::Decimal::ZERO {
+    if delta == Decimal::ZERO {
         levels.remove(price);
         return;
     }
 
     let existing = levels
         .get(price)
-        .and_then(|q| rust_decimal::Decimal::from_str(q).ok())
-        .unwrap_or(rust_decimal::Decimal::ZERO);
+        .and_then(|q| Decimal::from_str(q).ok())
+        .unwrap_or(Decimal::ZERO);
 
     let new_qty = existing + delta;
-    if new_qty <= rust_decimal::Decimal::ZERO {
+    if new_qty <= Decimal::ZERO {
         levels.remove(price);
     } else {
         levels.insert(price.to_string(), format!("{new_qty:.2}"));
@@ -171,8 +172,7 @@ impl KalshiWsHandler {
     ///
     /// Returns the parsed message on success, or an error on sequence gap or parse failure.
     pub fn handle(&mut self, raw: &str) -> Result<KalshiWsMessage, KalshiWsError> {
-        let msg = KalshiWsMessage::from_json(raw)
-            .map_err(|e| KalshiWsError::Connection(e.to_string()))?;
+        let msg = KalshiWsMessage::from_json(raw)?;
 
         match &msg {
             KalshiWsMessage::OrderbookSnapshot { sid, seq, data } => {
@@ -191,12 +191,8 @@ impl KalshiWsHandler {
                     warn!("Kalshi: delta before snapshot for {}", data.market_ticker);
                 }
             }
-            KalshiWsMessage::Trade {
-                sid: _,
-                seq: _,
-                data: _,
-            } => {
-                // Trades do not update the orderbook — just pass through.
+            KalshiWsMessage::Trade { sid, seq, .. } => {
+                self.seq_tracker.check(*sid, *seq)?;
             }
             KalshiWsMessage::Error(e) => {
                 warn!("Kalshi WS error {}: {}", e.code, e.msg);

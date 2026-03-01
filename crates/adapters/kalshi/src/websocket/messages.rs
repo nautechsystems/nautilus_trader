@@ -182,7 +182,7 @@ impl KalshiWsMessage {
     /// Returns an error if the top-level envelope JSON is invalid.
     /// Individual message body parse failures are returned as [`KalshiWsMessage::Unknown`]
     /// with a warning log rather than propagating as errors (resilient parsing).
-    pub fn from_json(json: &str) -> anyhow::Result<Self> {
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         let env: KalshiWsEnvelope = serde_json::from_str(json)?;
         let sid = env.sid.unwrap_or(0);
         let seq = env.seq.unwrap_or(0);
