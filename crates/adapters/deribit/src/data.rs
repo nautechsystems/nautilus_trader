@@ -34,11 +34,12 @@ use nautilus_common::{
             BarsResponse, BookResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
             RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
             SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments, SubscribeMarkPrices,
-            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstruments,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentStatus,
+            SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -262,6 +263,11 @@ impl DeribitDataClient {
                     if let Err(e) = sender.send(DataEvent::FundingRate(funding_rate)) {
                         log::error!("Failed to send funding rate: {e}");
                     }
+                }
+            }
+            NautilusWsMessage::InstrumentStatus(status) => {
+                if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
+                    log::error!("Failed to send instrument status event: {e}");
                 }
             }
             NautilusWsMessage::OrderStatusReports(reports) => {
@@ -515,11 +521,11 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
 
-        log::info!("Subscribing to instrument state changes for {kind}.{currency}");
+        log::info!("Subscribing to instrument status changes for {kind}.{currency}");
 
         get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_instrument_state(&kind, &currency).await {
-                log::error!("Failed to subscribe to instrument state for {kind}.{currency}: {e}");
+            if let Err(e) = ws.subscribe_instrument_status(&kind, &currency).await {
+                log::error!("Failed to subscribe to instrument status for {kind}.{currency}: {e}");
             }
         });
 
@@ -552,13 +558,13 @@ impl DataClient for DeribitDataClient {
             .clone();
 
         log::info!(
-            "Subscribing to instrument state for {instrument_id} (channel: {kind}.{currency})"
+            "Subscribing to instrument status for {instrument_id} (channel: {kind}.{currency})"
         );
 
         // Subscribe to broader kind/currency channel (filter in handler)
         get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_instrument_state(&kind, &currency).await {
-                log::error!("Failed to subscribe to instrument state for {instrument_id}: {e}");
+            if let Err(e) = ws.subscribe_instrument_status(&kind, &currency).await {
+                log::error!("Failed to subscribe to instrument status for {instrument_id}: {e}");
             }
         });
 
@@ -816,6 +822,56 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
+    fn subscribe_instrument_status(
+        &mut self,
+        cmd: &SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        let (kind, currency) = parse_instrument_kind_currency(&instrument_id);
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        log::info!("Subscribing to instrument status for {instrument_id} ({kind}.{currency})");
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_instrument_status(&kind, &currency).await {
+                log::error!("Failed to subscribe to instrument status for {instrument_id}: {e}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_instrument_status(
+        &mut self,
+        cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        let (kind, currency) = parse_instrument_kind_currency(&instrument_id);
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        log::info!("Unsubscribing from instrument status for {instrument_id} ({kind}.{currency})");
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_instrument_status(&kind, &currency).await {
+                log::error!(
+                    "Failed to unsubscribe from instrument status for {instrument_id}: {e}"
+                );
+            }
+        });
+
+        Ok(())
+    }
+
     fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
         let kind = cmd
             .params
@@ -836,12 +892,12 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
 
-        log::info!("Unsubscribing from instrument state changes for {kind}.{currency}");
+        log::info!("Unsubscribing from instrument status changes for {kind}.{currency}");
 
         get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_instrument_state(&kind, &currency).await {
+            if let Err(e) = ws.unsubscribe_instrument_status(&kind, &currency).await {
                 log::error!(
-                    "Failed to unsubscribe from instrument state for {kind}.{currency}: {e}"
+                    "Failed to unsubscribe from instrument status for {kind}.{currency}: {e}"
                 );
             }
         });
@@ -862,12 +918,14 @@ impl DataClient for DeribitDataClient {
             .clone();
 
         log::info!(
-            "Unsubscribing from instrument state for {instrument_id} (channel: {kind}.{currency})"
+            "Unsubscribing from instrument status for {instrument_id} (channel: {kind}.{currency})"
         );
 
         get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_instrument_state(&kind, &currency).await {
-                log::error!("Failed to unsubscribe from instrument state for {instrument_id}: {e}");
+            if let Err(e) = ws.unsubscribe_instrument_status(&kind, &currency).await {
+                log::error!(
+                    "Failed to unsubscribe from instrument status for {instrument_id}: {e}"
+                );
             }
         });
 

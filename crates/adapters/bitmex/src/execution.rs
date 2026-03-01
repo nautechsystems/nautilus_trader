@@ -1069,6 +1069,7 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
         }
         NautilusWsMessage::Data(_)
         | NautilusWsMessage::Instruments(_)
+        | NautilusWsMessage::InstrumentStatus(_)
         | NautilusWsMessage::FundingRateUpdates(_) => {
             log::debug!("Ignoring BitMEX data message on execution stream");
         }

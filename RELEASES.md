@@ -8,9 +8,11 @@ Released on TBD (UTC).
 - Added synthetic book support for binary markets (#3495), thanks @Javdu10
 - Added `get_target_px_for_quantity` method on `OrderBook` (#3627), thanks @Javdu10
 - Added Betfair batch submit and cancel order support
-- Added BitMEX dead man's switch (cancelAllAfter) support
+- Added BitMEX dead man's switch (cancelAllAfter) support (Rust and Python)
 - Added BitMEX grid market maker example (Rust)
+- Added BitMEX instrument status subscription support (Rust and Python)
 - Added Bybit book snapshot and funding rate request support (Rust)
+- Added Deribit instrument status subscription support (Rust and Python)
 - Added Hyperliquid order modify support (Rust and Python)
 - Added OKX trailing stop market order support (Rust and Python)
 - Added OKX algo order amend support (Rust and Python)

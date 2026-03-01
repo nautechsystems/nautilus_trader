@@ -1106,14 +1106,14 @@ impl DeribitWebSocketClient {
         self.send_unsubscribe(vec![channel]).await
     }
 
-    /// Subscribes to instrument state changes for lifecycle notifications.
+    /// Subscribes to instrument status changes for lifecycle notifications.
     ///
     /// Channel format: `instrument.state.{kind}.{currency}`
     ///
     /// # Errors
     ///
     /// Returns an error if subscription fails.
-    pub async fn subscribe_instrument_state(
+    pub async fn subscribe_instrument_status(
         &self,
         kind: &str,
         currency: &str,
@@ -1122,12 +1122,12 @@ impl DeribitWebSocketClient {
         self.send_subscribe(vec![channel]).await
     }
 
-    /// Unsubscribes from instrument state changes.
+    /// Unsubscribes from instrument status changes.
     ///
     /// # Errors
     ///
     /// Returns an error if unsubscription fails.
-    pub async fn unsubscribe_instrument_state(
+    pub async fn unsubscribe_instrument_status(
         &self,
         kind: &str,
         currency: &str,

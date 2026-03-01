@@ -70,6 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_subscribe_trades(true)
         .with_subscribe_index_prices(true)
         .with_subscribe_mark_prices(true)
+        .with_subscribe_instrument_status(true)
         .with_bar_types(bar_types)
         .with_subscribe_bars(true)
         .with_request_trades(true)

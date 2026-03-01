@@ -65,6 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_subscribe_mark_prices(true)
         .with_subscribe_index_prices(true)
         .with_subscribe_funding_rates(true)
+        .with_subscribe_instrument_status(true)
         .with_subscribe_book_at_interval(true)
         .with_book_interval_ms(NonZeroUsize::new(10).expect("10 is non-zero"));
     let tester = DataTester::new(tester_config);

@@ -219,6 +219,11 @@ impl BitmexWebSocketClient {
                                 }
                             }
                         }
+                        NautilusWsMessage::InstrumentStatus(status) => {
+                            if let Ok(py_obj) = status.into_py_any(py) {
+                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                            }
+                        }
                         NautilusWsMessage::Reconnected => {}
                         NautilusWsMessage::Authenticated => {}
                     });

@@ -35,10 +35,11 @@ use nautilus_common::{
             BarsResponse, DataResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
             SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
-            SubscribeInstrument, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth10, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -213,6 +214,11 @@ impl BitmexDataClient {
                     if let Err(e) = sender.send(DataEvent::Instrument(instrument)) {
                         log::error!("Failed to send instrument event: {e}");
                     }
+                }
+            }
+            NautilusWsMessage::InstrumentStatus(status) => {
+                if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
+                    log::error!("Failed to send instrument status event: {e}");
                 }
             }
             NautilusWsMessage::FundingRateUpdates(updates) => {
@@ -681,6 +687,42 @@ impl DataClient for BitmexDataClient {
                     .map_err(|e| anyhow::anyhow!(e))
             },
             "BitMEX bar subscription",
+        );
+        Ok(())
+    }
+
+    fn subscribe_instrument_status(
+        &mut self,
+        cmd: &SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        let ws = self.ws_client()?.clone();
+
+        self.spawn_ws(
+            async move {
+                ws.subscribe_instrument(instrument_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
+            },
+            "BitMEX instrument status subscription",
+        );
+        Ok(())
+    }
+
+    fn unsubscribe_instrument_status(
+        &mut self,
+        cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        let ws = self.ws_client()?.clone();
+
+        self.spawn_ws(
+            async move {
+                ws.unsubscribe_instrument(instrument_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
+            },
+            "BitMEX instrument status unsubscribe",
         );
         Ok(())
     }

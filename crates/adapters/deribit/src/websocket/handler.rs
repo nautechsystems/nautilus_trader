@@ -31,9 +31,12 @@ use ahash::AHashMap;
 use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicTime, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::{Bar, Data},
+    data::{Bar, Data, InstrumentStatus},
+    enums::MarketStatusAction,
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
+    },
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
@@ -64,7 +67,8 @@ use super::{
     },
 };
 use crate::common::{
-    consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER},
+    consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE},
+    enums::DeribitInstrumentState,
     parse::parse_portfolio_to_account_state,
 };
 
@@ -1723,7 +1727,6 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         DeribitWsChannel::InstrumentState => {
-                            // Parse instrument state lifecycle notifications
                             match serde_json::from_value::<DeribitInstrumentStateMsg>(data.clone())
                             {
                                 Ok(state_msg) => {
@@ -1733,12 +1736,41 @@ impl DeribitWsFeedHandler {
                                         state_msg.state,
                                         state_msg.timestamp
                                     );
-                                    // Return raw data for consumers to handle state changes
-                                    // TODO: Optionally emit instrument updates when instrument transitions to 'started'
-                                    return Some(NautilusWsMessage::Raw(data.clone()));
+
+                                    let instrument_id = if let Some(instrument) =
+                                        self.instruments_cache.get(&state_msg.instrument_name)
+                                    {
+                                        instrument.id()
+                                    } else {
+                                        log::debug!(
+                                            "Instrument '{}' not in cache, constructing ID",
+                                            state_msg.instrument_name
+                                        );
+                                        InstrumentId::new(
+                                            Symbol::new(state_msg.instrument_name),
+                                            *DERIBIT_VENUE,
+                                        )
+                                    };
+
+                                    let action = MarketStatusAction::from(state_msg.state);
+                                    let is_trading =
+                                        Some(state_msg.state == DeribitInstrumentState::Started);
+                                    let ts_event = UnixNanos::from(state_msg.timestamp * 1_000_000);
+                                    let status = InstrumentStatus::new(
+                                        instrument_id,
+                                        action,
+                                        ts_event,
+                                        ts_init,
+                                        None,
+                                        None,
+                                        is_trading,
+                                        None,
+                                        None,
+                                    );
+                                    return Some(NautilusWsMessage::InstrumentStatus(status));
                                 }
                                 Err(e) => {
-                                    log::warn!("Failed to parse instrument state message: {e}");
+                                    log::warn!("Failed to parse instrument status message: {e}");
                                 }
                             }
                         }
@@ -2252,6 +2284,7 @@ impl DeribitWsFeedHandler {
                                     NautilusWsMessage::Data(_)
                                     | NautilusWsMessage::Deltas(_)
                                     | NautilusWsMessage::Instrument(_)
+                                    | NautilusWsMessage::InstrumentStatus(_)
                                     | NautilusWsMessage::Raw(_)
                                     | NautilusWsMessage::Error(_) => {
                                         let _ = self.out_tx.send(nautilus_msg);

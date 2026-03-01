@@ -113,6 +113,7 @@ config_tester = DataTesterConfig(
     # subscribe_mark_prices=True,
     # subscribe_funding_rates=True,
     # subscribe_bars=True,
+    subscribe_instrument_status=True,
     request_trades=True,
     request_bars=True,
     bar_types=bar_types,

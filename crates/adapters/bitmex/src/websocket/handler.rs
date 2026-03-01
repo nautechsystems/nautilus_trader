@@ -28,8 +28,8 @@ use dashmap::DashMap;
 use nautilus_common::cache::quote::QuoteCache;
 use nautilus_core::{AtomicTime, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::Data,
-    enums::{OrderStatus, OrderType},
+    data::{Data, InstrumentStatus},
+    enums::{MarketStatusAction, OrderStatus, OrderType},
     identifiers::{AccountId, ClientOrderId},
     instruments::{Instrument, InstrumentAny},
     types::Price,
@@ -59,8 +59,10 @@ use super::{
 };
 use crate::{
     common::{
-        enums::{BitmexExecType, BitmexOrderType, BitmexPegPriceType},
-        parse::parse_contracts_quantity,
+        enums::{BitmexExecType, BitmexInstrumentState, BitmexOrderType, BitmexPegPriceType},
+        parse::{
+            parse_contracts_quantity, parse_instrument_id, parse_optional_datetime_to_unix_nanos,
+        },
     },
     http::parse::{InstrumentParseResult, parse_instrument_any},
 };
@@ -963,6 +965,40 @@ impl FeedHandler {
             }
             BitmexAction::Update => {
                 let mut data_msgs = Vec::with_capacity(data.len());
+
+                for msg in &data {
+                    if let Some(state_str) = &msg.state
+                        && let Ok(state) = serde_json::from_str::<BitmexInstrumentState>(&format!(
+                            "\"{state_str}\""
+                        ))
+                    {
+                        let instrument_id = parse_instrument_id(msg.symbol);
+                        let action = MarketStatusAction::from(&state);
+                        let is_trading = Some(state == BitmexInstrumentState::Open);
+                        let ts_event = parse_optional_datetime_to_unix_nanos(
+                            &Some(msg.timestamp),
+                            "timestamp",
+                        );
+                        let status = InstrumentStatus::new(
+                            instrument_id,
+                            action,
+                            ts_event,
+                            ts_init,
+                            None,
+                            None,
+                            is_trading,
+                            None,
+                            None,
+                        );
+
+                        if let Err(e) = self
+                            .out_tx
+                            .send(NautilusWsMessage::InstrumentStatus(status))
+                        {
+                            log::error!("Error sending instrument status: {e}");
+                        }
+                    }
+                }
 
                 for msg in data {
                     let parsed = parse_instrument_msg(msg, &self.instruments_cache, ts_init);
