@@ -1,0 +1,27 @@
+{
+  "markets": [
+    {
+      "ticker": "KXBTC-25MAR15-B100000",
+      "event_ticker": "KXBTC-25MAR15",
+      "market_type": "binary",
+      "title": "Will Bitcoin exceed $100,000 by March 15?",
+      "subtitle": "",
+      "yes_sub_title": "Yes",
+      "no_sub_title": "No",
+      "open_time": "2025-03-01T00:00:00Z",
+      "close_time": "2025-03-15T23:59:59Z",
+      "latest_expiration_time": "2025-03-15T23:59:59Z",
+      "status": "active",
+      "yes_bid_dollars": "0.4200",
+      "yes_ask_dollars": "0.4500",
+      "no_bid_dollars": "0.5400",
+      "no_ask_dollars": "0.5700",
+      "last_price_dollars": "0.4300",
+      "volume_fp": "125000.00",
+      "open_interest_fp": "50000.00",
+      "notional_value_dollars": "1.0000",
+      "rules_primary": "Resolves Yes if BTC/USD spot price exceeds $100,000 at market close."
+    }
+  ],
+  "cursor": ""
+}

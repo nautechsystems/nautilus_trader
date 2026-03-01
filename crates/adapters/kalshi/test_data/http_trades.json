@@ -1,0 +1,14 @@
+{
+  "trades": [
+    {
+      "trade_id": "d91bc706-ee49-470d-82d8-11418bda6fed",
+      "ticker": "KXBTC-25MAR15-B100000",
+      "yes_price_dollars": "0.3600",
+      "no_price_dollars": "0.6400",
+      "count_fp": "136.00",
+      "taker_side": "no",
+      "created_time": "2025-03-01T18:44:01Z"
+    }
+  ],
+  "cursor": ""
+}
