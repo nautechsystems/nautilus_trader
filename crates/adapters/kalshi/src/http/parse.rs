@@ -115,6 +115,7 @@ mod tests {
         let resp: KalshiMarketsResponse = serde_json::from_str(&json).unwrap();
         let instrument = market_to_binary_option(&resp.markets[0]).unwrap();
         assert_eq!(instrument.id.symbol.as_str(), "KXBTC-25MAR15-B100000");
+        assert_eq!(instrument.raw_symbol.as_str(), "KXBTC-25MAR15-B100000");
         assert_eq!(instrument.price_precision, 4);
         assert_eq!(instrument.size_precision, 2);
     }

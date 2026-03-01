@@ -29,7 +29,9 @@ pub fn parse_datetime_to_nanos(s: &str) -> anyhow::Result<UnixNanos> {
     let nanos = dt
         .timestamp_nanos_opt()
         .ok_or_else(|| anyhow::anyhow!("Datetime out of nanosecond range: {s}"))?;
-    Ok(UnixNanos::from(nanos as u64))
+    let nanos_u64 = u64::try_from(nanos)
+        .map_err(|_| anyhow::anyhow!("Datetime predates Unix epoch: {s}"))?;
+    Ok(UnixNanos::from(nanos_u64))
 }
 
 #[cfg(test)]
