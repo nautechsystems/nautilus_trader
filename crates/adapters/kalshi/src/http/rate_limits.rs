@@ -13,4 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// stub
+//! Rate limit configuration for the Kalshi HTTP client.
+//!
+//! Kalshi REST API tiers:
+//! - Basic: 20 req/s
+//! - Advanced: 30 req/s
+//! - Premier: 100 req/s
+//! - Prime: 400 req/s
+
+use std::{num::NonZeroU32, sync::LazyLock};
+
+use nautilus_network::ratelimiter::quota::Quota;
+
+use crate::common::consts::HTTP_RATE_LIMIT_RPS;
+
+/// Global REST quota for Kalshi requests (Basic tier: 20 req/s).
+pub static KALSHI_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(HTTP_RATE_LIMIT_RPS).unwrap())
+        .expect("HTTP_RATE_LIMIT_RPS must be non-zero")
+});
