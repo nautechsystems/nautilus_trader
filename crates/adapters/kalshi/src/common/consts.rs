@@ -13,4 +13,29 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// stub
+//! Constants for the Kalshi adapter.
+
+use std::sync::LazyLock;
+
+use nautilus_model::identifiers::Venue;
+use ustr::Ustr;
+
+pub const KALSHI: &str = "KALSHI";
+
+pub static KALSHI_VENUE: LazyLock<Venue> =
+    LazyLock::new(|| Venue::new(Ustr::from(KALSHI)));
+
+pub const USD: &str = "USD";
+
+/// Minimum YES price (dollar string).
+pub const MIN_PRICE: &str = "0.0001";
+/// Maximum YES price (dollar string).
+pub const MAX_PRICE: &str = "0.9999";
+
+/// Price precision: 4 decimal places (supports subpenny pricing).
+pub const PRICE_PRECISION: u8 = 4;
+/// Size precision: 2 decimal places.
+pub const SIZE_PRECISION: u8 = 2;
+
+/// Default REST requests per second (Basic tier).
+pub const HTTP_RATE_LIMIT_RPS: u32 = 20;
