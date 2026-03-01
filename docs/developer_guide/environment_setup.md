@@ -234,7 +234,7 @@ docker-compose up -d postgres
 
 Used services are:
 
-- `postgres`: Postgres database with root user `POSTRES_USER` which defaults to `postgres`, `POSTGRES_PASSWORD` which defaults to `pass` and `POSTGRES_DB` which defaults to `postgres`.
+- `postgres`: Postgres database with root user `POSTGRES_USER` which defaults to `postgres`, `POSTGRES_PASSWORD` which defaults to `pass` and `POSTGRES_DB` which defaults to `postgres`.
 - `redis`: Redis server.
 - `pgadmin`: PgAdmin4 for database management and administration.
 

@@ -516,7 +516,6 @@ class MyStrategy(Strategy):
         # This way, multiple strategies can call self.cache.get("shared_strategy_info")
         # to retrieve the same data
         self.cache.add("shared_strategy_info", pickle.dumps(shared_data))
-
 ```
 
 Another strategy can retrieve the cached data as follows:

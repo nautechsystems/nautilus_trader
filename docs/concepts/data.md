@@ -1592,7 +1592,6 @@ class MyDataPoint(Data):
 
         """
         return self._ts_init
-
 ```
 
 The `Data` abstract base class acts as a contract within the system and requires two properties

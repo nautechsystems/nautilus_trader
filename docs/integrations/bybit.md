@@ -589,7 +589,7 @@ config = TradingNodeConfig(
             "api_key": "YOUR_BYBIT_API_KEY",
             "api_secret": "YOUR_BYBIT_API_SECRET",
             "base_url_http": None,  # Override with custom endpoint
-            "product_types": [BybitProductType.LINEAR]
+            "product_types": [BybitProductType.LINEAR],
             "testnet": False,
         },
     },
@@ -598,7 +598,7 @@ config = TradingNodeConfig(
             "api_key": "YOUR_BYBIT_API_KEY",
             "api_secret": "YOUR_BYBIT_API_SECRET",
             "base_url_http": None,  # Override with custom endpoint
-            "product_types": [BybitProductType.LINEAR]
+            "product_types": [BybitProductType.LINEAR],
             "testnet": False,
         },
     },

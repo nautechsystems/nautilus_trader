@@ -152,8 +152,8 @@ See the `PortfolioAnalyzer` [API Reference](../api_reference/analysis.md#class-p
 :::
 
 :::tip
-Ensure your statistic is robust to degenerate inputs such as ``None``, empty series, or insufficient data.
-Return ``None`` for unknown/incalculable values, or a reasonable default like ``0.0`` when semantically appropriate (e.g., win rate with no trades).
+Ensure your statistic is robust to degenerate inputs such as `None`, empty series, or insufficient data.
+Return `None` for unknown/incalculable values, or a reasonable default like `0.0` when semantically appropriate (e.g., win rate with no trades).
 :::
 
 ## Backtest analysis

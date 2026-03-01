@@ -23,7 +23,7 @@ While the `MessageBus` is a lower-level component that users typically interact 
 
 ```python
 def publish_data(self, data_type: DataType, data: Data) -> None:
-def publish_signal(self, name: str, value, ts_event: int | None = None) -> None:
+def publish_signal(self, name: str, value, ts_event: int = 0) -> None:
 ```
 
 These methods allow you to publish custom data and signals efficiently without needing to work directly with the `MessageBus` interface.
@@ -36,7 +36,6 @@ classes through the `self.msgbus` reference, which provides the full message bus
 To publish a custom message directly, you can specify a topic as a `str` and any Python `object` as the message payload, for example:
 
 ```python
-
 self.msgbus.publish("MyTopic", "MyMessage")
 ```
 
@@ -395,7 +394,6 @@ from nautilus_trader.model.data import TradeTick
 message_bus = MessageBusConfig(
     types_filter=[QuoteTick, TradeTick]
 )
-
 ```
 
 ### Stream auto-trimming

@@ -323,7 +323,6 @@ The following example shows how individual order and position objects can be fet
 ```python
 order = self.cache.order(client_order_id)
 position = self.cache.position(position_id)
-
 ```
 
 :::info
@@ -483,9 +482,7 @@ Any managed GTD timer will also be canceled after the command has left the strat
 The following shows how to cancel an individual order:
 
 ```python
-
 self.cancel_order(order)
-
 ```
 
 The following shows how to cancel a batch of orders:
@@ -496,15 +493,12 @@ from nautilus_trader.model.orders import Order
 
 my_order_list: list[Order] = [order1, order2, order3]
 self.cancel_orders(my_order_list)
-
 ```
 
 The following shows how to cancel all orders:
 
 ```python
-
 self.cancel_all_orders()
-
 ```
 
 #### Modifying orders
@@ -535,7 +529,6 @@ from nautilus_trader.model import Quantity
 
 new_quantity: Quantity = Quantity.from_int(5)
 self.modify_order(order, new_quantity)
-
 ```
 
 :::info
