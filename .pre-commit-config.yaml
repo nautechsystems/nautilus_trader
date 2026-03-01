@@ -298,7 +298,7 @@ repos:
         name: ruff-format
 
   - repo: https://github.com/pycqa/isort
-    rev: 8.0.0
+    rev: 8.0.1
     hooks:
       - id: isort
         name: isort (cython)
@@ -342,7 +342,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.10.6 # Must match uv-version file
+    rev: 0.10.7 # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

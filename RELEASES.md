@@ -25,6 +25,7 @@ Released on TBD (UTC).
 - Removed Coinbase International (`COINBASE_INTX`) adapter, see RFC (#3555)
 - Removed Binance `BINANCE_ED25519_*` env vars for Spot/Margin (use `BINANCE_API_KEY`/`BINANCE_API_SECRET`; Futures deprecated with warning)
 - Removed Hyperliquid `builder_fee_refresh_mins` config option (builder fees no longer charged)
+- Removed Polymarket `fetch_orderbook_history`, `load_orderbook_snapshots`, `fetch_price_history` and related methods (endpoints decommissioned, #3635)
 
 ### Security
 - Added `pip-audit` to security audit pipeline
@@ -42,6 +43,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures algo order serde field renames for WS and HTTP parsing (#3624), thanks for reporting @qu1zzyboy
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
 - Fixed BinanceSymbol COIN-M perpetual symbol conversion (#3641), thanks @YeeTsai
+- Fixed Binance algo order cancellation parsing (#3646), thanks @qu1zzyboy
 - Fixed Hyperliquid stop/trigger order price derivation (#3611), thanks for reporting @h-tsun3
 - Fixed Hyperliquid price normalization and inner error detection (#3612), thanks for reporting @h-tsun3
 - Fixed Interactive Brokers BarType/str comparison in get_historical_bars (#3616), thanks @powerseed
@@ -52,6 +54,7 @@ Released on TBD (UTC).
 - Fixed Kraken sequential `ClientOrderId` exceeding `cl_ord_id` 18-char free-text limit (#3651), thanks for reporting @husariancom
 - Fixed Kraken missing account state registration during connect (#3652), thanks for reporting @husariancom
 - Fixed Polymarket Gamma API `load_ids` path skipping sibling tokens (#3654), thanks for reporting @likenji
+- Fixed Polymarket loader to use Data API trades instead of decommissioned orderbook/price history endpoints (#3635), thanks for reporting @JSai23
 - Fixed pre-commit hooks portability for Windows (#3617), thanks for reporting @powerseed
 
 ### Internal Improvements
@@ -67,6 +70,7 @@ Released on TBD (UTC).
 - Optimized backtest engine settle loop to avoid Python list allocation on idle ticks
 - Optimized `MatchingCore.iterate` to avoid list concatenation on every call
 - Upgraded `databento` crate to v0.42.0
+- Upgraded `datafusion` crate to v52.2.0
 
 ### Documentation Updates
 - Added AX Exchange gold perps book imbalance tutorial
