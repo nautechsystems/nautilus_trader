@@ -316,12 +316,13 @@ async def test_load_markets_seq_without_filter_includes_closed_markets(
 
 
 @pytest.mark.asyncio
-async def test_gamma_markets_filters_specific_token_ids(mock_clob_client, live_clock):
+async def test_gamma_markets_loads_all_sibling_tokens(mock_clob_client, live_clock):
     """
-    Test that Gamma API loader only loads explicitly requested token_ids.
+    Test that Gamma API loader loads all sibling tokens for a market.
 
-    When requesting specific instruments like POLYMARKET-123.YES, it should only load
-    that specific token, not both YES and NO tokens from the market.
+    When requesting only the YES token, the loader must also load the NO token because
+    WebSocket price_change messages include updates for all tokens in a market
+    regardless of which was subscribed to.
 
     """
     # Arrange
@@ -335,6 +336,10 @@ async def test_gamma_markets_filters_specific_token_ids(mock_clob_client, live_c
     yes_instrument_id = InstrumentId.from_str(
         f"{ACTIVE_OPEN_MARKET['condition_id']}-"
         f"{ACTIVE_OPEN_MARKET['tokens'][0]['token_id']}.POLYMARKET",
+    )
+    no_instrument_id = InstrumentId.from_str(
+        f"{ACTIVE_OPEN_MARKET['condition_id']}-"
+        f"{ACTIVE_OPEN_MARKET['tokens'][1]['token_id']}.POLYMARKET",
     )
 
     gamma_market = {
@@ -358,16 +363,16 @@ async def test_gamma_markets_filters_specific_token_ids(mock_clob_client, live_c
 
         mock_list_markets.side_effect = mock_async_list_markets
 
-        # Act
+        # Act: Request only YES token
         await provider.load_ids_async([yes_instrument_id])
 
-        # Assert: Only YES token should be loaded, not NO
+        # Assert: Both YES and NO tokens should be loaded
         instruments = provider.list_all()
-        assert len(instruments) == 1
+        assert len(instruments) == 2
 
-        instrument = instruments[0]
-        assert instrument.id == yes_instrument_id
-        assert instrument.outcome == "Yes"
+        instrument_ids = {instr.id for instr in instruments}
+        assert yes_instrument_id in instrument_ids
+        assert no_instrument_id in instrument_ids
 
 
 @pytest.mark.asyncio
