@@ -25,10 +25,10 @@ use crate::{
     data::{
         BookOrder, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
-    enums::{BookType, OrderSide},
+    enums::{BookType, OrderSide, OrderSideSpecified},
     identifiers::InstrumentId,
-    orderbook::{OrderBook, analysis::book_check_integrity},
-    types::{ERROR_PRICE, Price, Quantity},
+    orderbook::{OrderBook, analysis::book_check_integrity, ladder::BookPrice},
+    types::{ERROR_PRICE, Price, Quantity, price::PriceRaw},
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
@@ -212,6 +212,40 @@ pub extern "C" fn orderbook_asks(book: &mut OrderBook_API) -> CVec {
         .levels
         .values()
         .map(|level| BookLevel_API::new(level.clone()))
+        .collect::<Vec<BookLevel_API>>()
+        .into()
+}
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_bids_down_to(
+    book: &mut OrderBook_API,
+    price_raw: PriceRaw,
+    price_prec: u8,
+) -> CVec {
+    let price = Price::from_raw(price_raw, price_prec);
+    let bound = BookPrice::new(price, OrderSideSpecified::Buy);
+    book.bids
+        .levels
+        .range(..=bound)
+        .map(|(_, level)| BookLevel_API::new(level.clone()))
+        .collect::<Vec<BookLevel_API>>()
+        .into()
+}
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_asks_up_to(
+    book: &mut OrderBook_API,
+    price_raw: PriceRaw,
+    price_prec: u8,
+) -> CVec {
+    let price = Price::from_raw(price_raw, price_prec);
+    let bound = BookPrice::new(price, OrderSideSpecified::Sell);
+    book.asks
+        .levels
+        .range(..=bound)
+        .map(|(_, level)| BookLevel_API::new(level.clone()))
         .collect::<Vec<BookLevel_API>>()
         .into()
 }

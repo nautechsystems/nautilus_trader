@@ -2101,6 +2101,10 @@ cdef extern from "../includes/model.h":
 
     CVec orderbook_asks(OrderBook_API *book);
 
+    CVec orderbook_bids_down_to(OrderBook_API *book, PriceRaw price_raw, uint8_t price_prec);
+
+    CVec orderbook_asks_up_to(OrderBook_API *book, PriceRaw price_raw, uint8_t price_prec);
+
     uint8_t orderbook_has_bid(OrderBook_API *book);
 
     uint8_t orderbook_has_ask(OrderBook_API *book);

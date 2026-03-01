@@ -3119,6 +3119,10 @@ CVec orderbook_bids(struct OrderBook_API *book);
 
 CVec orderbook_asks(struct OrderBook_API *book);
 
+CVec orderbook_bids_down_to(struct OrderBook_API *book, PriceRaw price_raw, uint8_t price_prec);
+
+CVec orderbook_asks_up_to(struct OrderBook_API *book, PriceRaw price_raw, uint8_t price_prec);
+
 uint8_t orderbook_has_bid(struct OrderBook_API *book);
 
 uint8_t orderbook_has_ask(struct OrderBook_API *book);

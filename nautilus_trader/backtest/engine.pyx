@@ -98,6 +98,7 @@ from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookAction
+from nautilus_trader.core.rust.model cimport BookLevel_API
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
@@ -119,12 +120,15 @@ from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.rust.model cimport level_price
 from nautilus_trader.core.rust.model cimport level_size_raw
+from nautilus_trader.core.rust.model cimport orderbook_asks_up_to
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
 from nautilus_trader.core.rust.model cimport orderbook_best_bid_price
+from nautilus_trader.core.rust.model cimport orderbook_bids_down_to
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
 from nautilus_trader.core.rust.model cimport orderbook_ts_last
 from nautilus_trader.core.rust.model cimport trade_id_new
+from nautilus_trader.core.rust.model cimport vec_drop_book_levels
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataCommand
@@ -5970,14 +5974,18 @@ cdef class OrderMatchingEngine:
         if trade_size_raw == 0:
             return
 
+        # Skip when no resting orders in the matching engine
+        if not self._core.get_orders_bid() and not self._core.get_orders_ask():
+            return
+
         # If the book was updated after the trade's event time, depth deltas
         # already reflect this trade's consumed volume, skip to avoid double-counting
         if orderbook_ts_last(&self._book._mem) > trade_ts_event:
             return
 
         cdef:
-            list all_levels
-            list levels
+            CVec raw_levels_vec
+            BookLevel_API* raw_levels
             dict consumption
             QuantityRaw level_size
             QuantityRaw available
@@ -5986,33 +5994,30 @@ cdef class OrderMatchingEngine:
             QuantityRaw remaining
             PriceRaw level_price_raw
             tuple level_state
+            uint64_t i
 
         if aggressor_side == AggressorSide.BUYER:
-            all_levels = self._book.asks()
+            raw_levels_vec = orderbook_asks_up_to(
+                &self._book._mem, trade_price_raw, self._price_prec,
+            )
             consumption = self._ask_consumption
         elif aggressor_side == AggressorSide.SELLER:
-            all_levels = self._book.bids()
+            raw_levels_vec = orderbook_bids_down_to(
+                &self._book._mem, trade_price_raw, self._price_prec,
+            )
             consumption = self._bid_consumption
         else:
             return
 
-        cdef BookLevel level
-        levels = []
-        for level in all_levels:
-            level_price_raw = level_price(&level._mem).raw
-            if aggressor_side == AggressorSide.BUYER and level_price_raw > trade_price_raw:
-                break
-            if aggressor_side == AggressorSide.SELLER and level_price_raw < trade_price_raw:
-                break
-            levels.append(level)
+        raw_levels = <BookLevel_API*>raw_levels_vec.ptr
 
         remaining = trade_size_raw
-        for level in levels:
+        for i in range(raw_levels_vec.len):
             if remaining == 0:
                 break
-            level_size = level_size_raw(&level._mem)
+            level_size = level_size_raw(&raw_levels[i])
+            level_price_raw = level_price(&raw_levels[i]).raw
 
-            level_price_raw = level_price(&level._mem).raw
             level_state = consumption.get(level_price_raw)
             if level_state is not None:
                 # Reconcile stale level size to prevent reset in _apply_liquidity_consumption
@@ -6027,6 +6032,8 @@ cdef class OrderMatchingEngine:
             consume = min(remaining, available)
             consumption[level_price_raw] = (level_size, already_consumed + consume)
             remaining -= consume
+
+        vec_drop_book_levels(raw_levels_vec)
 
     cdef list[tuple[Price, Quantity]] _apply_liquidity_consumption(
         self,
