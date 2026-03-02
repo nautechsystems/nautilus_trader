@@ -31,6 +31,8 @@ use nautilus_model::{
 pub struct AtmTracker {
     source: AtmSource,
     atm_price: Option<Price>,
+    /// Precision used when converting forward prices from f64 to Price.
+    forward_precision: u8,
 }
 
 impl AtmTracker {
@@ -39,7 +41,13 @@ impl AtmTracker {
         Self {
             source,
             atm_price: None,
+            forward_precision: 2,
         }
+    }
+
+    /// Sets the precision used when converting forward prices from f64 to Price.
+    pub fn set_forward_precision(&mut self, precision: u8) {
+        self.forward_precision = precision;
     }
 
     /// Returns the current raw ATM price (if available).
@@ -110,7 +118,7 @@ impl AtmTracker {
         if self.source == AtmSource::ForwardPrice
             && let Some(fwd) = greeks.underlying_price
         {
-            self.atm_price = Some(Price::new(fwd, 2));
+            self.atm_price = Some(Price::new(fwd, self.forward_precision));
             return true;
         }
         false

@@ -111,6 +111,11 @@ impl OptionChainManager {
 
         let mut tracker = AtmTracker::new(resolved_atm_source);
 
+        // Derive forward price precision from instrument strike prices
+        if let Some((strike, _)) = instruments.values().next() {
+            tracker.set_forward_precision(strike.precision);
+        }
+
         if let Some(price) = initial_atm_price {
             tracker.set_initial_price(price);
             log::info!("Pre-populated ATM with forward price: {price}");
