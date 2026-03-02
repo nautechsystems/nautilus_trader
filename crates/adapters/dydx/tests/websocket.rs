@@ -34,10 +34,19 @@ use axum::{
     routing::get,
 };
 use nautilus_common::testing::wait_until_async;
-use nautilus_dydx::websocket::client::DydxWebSocketClient;
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_core::UnixNanos;
+use nautilus_dydx::{
+    common::enums::DydxMarketStatus,
+    http::{models::PerpetualMarket, parse::parse_instrument_any},
+    websocket::{NautilusWsMessage, client::DydxWebSocketClient},
+};
+use nautilus_model::{
+    enums::MarketStatusAction, identifiers::InstrumentId, instruments::InstrumentAny,
+};
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::json;
+use ustr::Ustr;
 
 #[derive(Clone)]
 struct TestServerState {
@@ -221,6 +230,8 @@ async fn handle_subscribe(
                 send_sample_candle(socket, channel_str).await;
             } else if channel_str.starts_with("v4_subaccounts") {
                 send_sample_subaccounts(socket, channel_str, value).await;
+            } else if channel_str == "v4_markets" {
+                send_sample_markets(socket).await;
             }
         }
     }
@@ -433,6 +444,79 @@ async fn send_sample_subaccounts(socket: &mut WebSocket, channel: &str, value: &
     let _ = socket
         .send(Message::Text(update_msg.to_string().into()))
         .await;
+}
+
+async fn send_sample_markets(socket: &mut WebSocket) {
+    let markets_msg = json!({
+        "type": "channel_data",
+        "connection_id": "test-conn-123",
+        "message_id": 20,
+        "channel": "v4_markets",
+        "version": "1.0.0",
+        "contents": {
+            "oraclePrices": {
+                "BTC-USD": {
+                    "oraclePrice": "43250.0",
+                    "effectiveAt": "2024-01-01T00:01:00.000Z",
+                    "effectiveAtHeight": "12345679",
+                    "marketId": 0
+                }
+            },
+            "trading": {
+                "BTC-USD": {
+                    "nextFundingRate": "0.000125"
+                },
+                "ETH-USD": {
+                    "status": "PAUSED"
+                },
+                "SOL-USD": {
+                    "nextFundingRate": "0.0001"
+                }
+            }
+        }
+    });
+    let _ = socket
+        .send(Message::Text(markets_msg.to_string().into()))
+        .await;
+}
+
+fn create_btc_instrument() -> InstrumentAny {
+    let market = PerpetualMarket {
+        clob_pair_id: 0,
+        ticker: Ustr::from("BTC-USD"),
+        status: DydxMarketStatus::Active,
+        base_asset: Some(Ustr::from("BTC")),
+        quote_asset: Some(Ustr::from("USD")),
+        step_size: dec!(0.0001),
+        tick_size: dec!(1),
+        index_price: Some(dec!(43250)),
+        oracle_price: dec!(43250),
+        price_change_24h: dec!(500),
+        next_funding_rate: dec!(0.0001),
+        next_funding_at: None,
+        min_order_size: Some(dec!(0.0001)),
+        market_type: None,
+        initial_margin_fraction: dec!(0.05),
+        maintenance_margin_fraction: dec!(0.03),
+        base_position_notional: None,
+        incremental_position_size: None,
+        incremental_initial_margin_fraction: None,
+        max_position_size: None,
+        open_interest: dec!(500000000),
+        atomic_resolution: -10,
+        quantum_conversion_exponent: -9,
+        subticks_per_tick: 100000,
+        step_base_quantums: 1000000,
+        is_reduce_only: false,
+    };
+
+    parse_instrument_any(
+        &market,
+        Some(dec!(0.0002)),
+        Some(dec!(0.0005)),
+        UnixNanos::default(),
+    )
+    .unwrap()
 }
 
 fn create_test_router(state: TestServerState) -> Router {
@@ -2937,4 +3021,273 @@ async fn test_block_height_field_names_differ() {
     let channel_data: DydxBlockHeightChannelContents =
         serde_json::from_str(channel_data_json).unwrap();
     assert_eq!(channel_data.block_height, "200");
+}
+
+/// Helper to receive the first message matching a predicate from the WS receiver.
+async fn recv_matching<F>(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>,
+    predicate: F,
+) -> NautilusWsMessage
+where
+    F: Fn(&NautilusWsMessage) -> bool,
+{
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(msg) = rx.recv().await {
+            if predicate(&msg) {
+                return msg;
+            }
+        }
+        panic!("Channel closed without matching message");
+    })
+    .await
+    .expect("Timed out waiting for matching message")
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_markets_produces_mark_and_index_price_messages() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v4/ws");
+
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    client.cache_instrument(create_btc_instrument());
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+
+    let mut rx = client.take_receiver().unwrap();
+    client.subscribe_markets().await.unwrap();
+
+    // MarkPrice and IndexPrice are emitted as a pair for each oracle price
+    let mark = recv_matching(&mut rx, |m| matches!(m, NautilusWsMessage::MarkPrice(_))).await;
+    let NautilusWsMessage::MarkPrice(mark_price) = mark else {
+        unreachable!()
+    };
+    assert_eq!(
+        mark_price.instrument_id,
+        InstrumentId::from("BTC-USD-PERP.DYDX")
+    );
+    assert_eq!(mark_price.value.to_string(), "43250");
+
+    let index = recv_matching(&mut rx, |m| matches!(m, NautilusWsMessage::IndexPrice(_))).await;
+    let NautilusWsMessage::IndexPrice(index_price) = index else {
+        unreachable!()
+    };
+    assert_eq!(
+        index_price.instrument_id,
+        InstrumentId::from("BTC-USD-PERP.DYDX")
+    );
+    assert_eq!(index_price.value.to_string(), "43250");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_markets_produces_funding_rate_messages() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v4/ws");
+
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    client.cache_instrument(create_btc_instrument());
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+
+    let mut rx = client.take_receiver().unwrap();
+    client.subscribe_markets().await.unwrap();
+
+    let msg = recv_matching(&mut rx, |m| matches!(m, NautilusWsMessage::FundingRate(_))).await;
+    let NautilusWsMessage::FundingRate(funding_rate) = msg else {
+        unreachable!()
+    };
+    assert_eq!(
+        funding_rate.instrument_id,
+        InstrumentId::from("BTC-USD-PERP.DYDX")
+    );
+    assert_eq!(funding_rate.rate.to_string(), "0.000125");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_markets_produces_instrument_status_messages() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v4/ws");
+
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+
+    // Cache ETH so the handler can parse its status
+    let eth_market = PerpetualMarket {
+        clob_pair_id: 1,
+        ticker: Ustr::from("ETH-USD"),
+        status: DydxMarketStatus::Active,
+        base_asset: Some(Ustr::from("ETH")),
+        quote_asset: Some(Ustr::from("USD")),
+        step_size: dec!(0.001),
+        tick_size: dec!(0.1),
+        index_price: Some(dec!(2500)),
+        oracle_price: dec!(2500),
+        price_change_24h: dec!(50),
+        next_funding_rate: dec!(0.00008),
+        next_funding_at: None,
+        min_order_size: Some(dec!(0.001)),
+        market_type: None,
+        initial_margin_fraction: dec!(0.05),
+        maintenance_margin_fraction: dec!(0.03),
+        base_position_notional: None,
+        incremental_position_size: None,
+        incremental_initial_margin_fraction: None,
+        max_position_size: None,
+        open_interest: dec!(100000000),
+        atomic_resolution: -9,
+        quantum_conversion_exponent: -9,
+        subticks_per_tick: 100000,
+        step_base_quantums: 1000000,
+        is_reduce_only: false,
+    };
+    let eth_instrument = parse_instrument_any(
+        &eth_market,
+        Some(dec!(0.0002)),
+        Some(dec!(0.0005)),
+        UnixNanos::default(),
+    )
+    .unwrap();
+
+    client.cache_instrument(create_btc_instrument());
+    client.cache_instrument(eth_instrument);
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+
+    let mut rx = client.take_receiver().unwrap();
+    client.subscribe_markets().await.unwrap();
+
+    // The mock sends ETH-USD with status "PAUSED"
+    let msg = recv_matching(&mut rx, |m| {
+        matches!(m, NautilusWsMessage::InstrumentStatus(_))
+    })
+    .await;
+    let NautilusWsMessage::InstrumentStatus(status) = msg else {
+        unreachable!()
+    };
+    assert_eq!(
+        status.instrument_id,
+        InstrumentId::from("ETH-USD-PERP.DYDX")
+    );
+    assert_eq!(status.action, MarketStatusAction::Pause);
+    assert_eq!(status.is_trading, Some(false));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_markets_skips_uncached_instruments() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v4/ws");
+
+    // Do NOT cache any instruments
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+
+    let mut rx = client.take_receiver().unwrap();
+    client.subscribe_markets().await.unwrap();
+
+    // Oracle prices for BTC-USD should be skipped (not cached)
+    // Trading data for ETH-USD with status should also emit NewInstrumentDiscovered
+    // But no MarkPrice should arrive
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        while let Some(msg) = rx.recv().await {
+            if matches!(&msg, NautilusWsMessage::MarkPrice(_)) {
+                return Some(msg);
+            }
+        }
+        None
+    })
+    .await;
+
+    if let Ok(Some(_)) = result {
+        panic!("Should not receive MarkPrice for uncached instruments");
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_markets_discovers_new_instruments() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v4/ws");
+
+    // Cache BTC but NOT SOL — SOL should be discovered
+    // (ETH-USD has status "PAUSED" so is filtered from discovery)
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    client.cache_instrument(create_btc_instrument());
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+
+    let mut rx = client.take_receiver().unwrap();
+    client.subscribe_markets().await.unwrap();
+
+    // The mock sends trading data for BTC-USD, ETH-USD (PAUSED), and SOL-USD (no status)
+    // SOL-USD is not cached and has no status → NewInstrumentDiscovered
+    let msg = recv_matching(&mut rx, |m| {
+        matches!(m, NautilusWsMessage::NewInstrumentDiscovered { .. })
+    })
+    .await;
+    let NautilusWsMessage::NewInstrumentDiscovered { ticker } = msg else {
+        unreachable!()
+    };
+    assert_eq!(ticker, "SOL-USD");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_trades_produces_trade_data() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v4/ws");
+
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    client.cache_instrument(create_btc_instrument());
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+
+    let mut rx = client.take_receiver().unwrap();
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+    client.subscribe_trades(instrument_id).await.unwrap();
+
+    let msg = recv_matching(&mut rx, |m| matches!(m, NautilusWsMessage::Data(_))).await;
+    let NautilusWsMessage::Data(data) = msg else {
+        unreachable!()
+    };
+    assert!(!data.is_empty(), "Should contain at least one trade");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_orderbook_produces_deltas() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v4/ws");
+
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    client.cache_instrument(create_btc_instrument());
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+
+    let mut rx = client.take_receiver().unwrap();
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+    client.subscribe_orderbook(instrument_id).await.unwrap();
+
+    let msg = recv_matching(&mut rx, |m| matches!(m, NautilusWsMessage::Deltas(_))).await;
+    let NautilusWsMessage::Deltas(deltas) = msg else {
+        unreachable!()
+    };
+    assert_eq!(deltas.instrument_id, instrument_id);
+    assert!(!deltas.deltas.is_empty(), "Should contain orderbook deltas");
+
+    client.disconnect().await.unwrap();
 }

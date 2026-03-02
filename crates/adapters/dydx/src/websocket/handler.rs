@@ -22,7 +22,7 @@
 //! Tokio task within the lock-free I/O boundary.
 
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     fmt::Debug,
     sync::{
         Arc,
@@ -37,8 +37,10 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
+        Bar, BarType, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDeltas,
     },
+    enums::MarketStatusAction,
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     types::Price,
@@ -58,17 +60,17 @@ use super::{
     enums::{DydxWsChannel, DydxWsMessage, NautilusWsMessage},
     error::DydxWebSocketError,
     messages::{
-        DydxCandle, DydxMarketsContents, DydxOrderbookContents, DydxOrderbookSnapshotContents,
-        DydxSubscription, DydxTradeContents, DydxWsBlockHeightMessage, DydxWsCandlesMessage,
-        DydxWsChannelBatchDataMsg, DydxWsChannelDataMsg, DydxWsConnectedMsg, DydxWsFeedMessage,
-        DydxWsGenericMsg, DydxWsMarketsMessage, DydxWsOrderbookMessage,
-        DydxWsParentSubaccountsMessage, DydxWsSubaccountsChannelContents,
-        DydxWsSubaccountsChannelData, DydxWsSubaccountsMessage, DydxWsSubaccountsSubscribed,
-        DydxWsSubscriptionMsg, DydxWsTradesMessage,
+        DydxCandle, DydxMarketTradingUpdate, DydxMarketsContents, DydxOrderbookContents,
+        DydxOrderbookSnapshotContents, DydxSubscription, DydxTradeContents,
+        DydxWsBlockHeightMessage, DydxWsCandlesMessage, DydxWsChannelBatchDataMsg,
+        DydxWsChannelDataMsg, DydxWsConnectedMsg, DydxWsFeedMessage, DydxWsGenericMsg,
+        DydxWsMarketsMessage, DydxWsOrderbookMessage, DydxWsParentSubaccountsMessage,
+        DydxWsSubaccountsChannelContents, DydxWsSubaccountsChannelData, DydxWsSubaccountsMessage,
+        DydxWsSubaccountsSubscribed, DydxWsSubscriptionMsg, DydxWsTradesMessage,
     },
     parse as ws_parse,
 };
-use crate::common::parse::parse_instrument_id;
+use crate::common::{enums::DydxMarketStatus, parse::parse_instrument_id};
 
 /// Commands sent to the feed handler.
 #[derive(Debug, Clone)]
@@ -986,76 +988,129 @@ impl FeedHandler {
         // Parse oracle prices → MarkPriceUpdate + IndexPriceUpdate
         if let Some(oracle_prices) = &contents.oracle_prices {
             for (symbol_str, oracle_market) in oracle_prices {
-                let Ok(instrument_id) = self.parse_instrument_id(symbol_str) else {
-                    continue;
-                };
-                let Some(instrument) = self.instruments.get(&instrument_id.symbol.inner()) else {
-                    continue;
-                };
-                let Ok(oracle_price_dec) = oracle_market.oracle_price.parse::<Decimal>() else {
-                    log::error!("Failed to parse oracle price: market={symbol_str}");
-                    continue;
-                };
-                let Ok(price) =
-                    Price::from_decimal_dp(oracle_price_dec, instrument.price_precision())
-                else {
-                    log::error!("Failed to create Price: market={symbol_str}");
-                    continue;
-                };
-
-                messages.push(NautilusWsMessage::MarkPrice(MarkPriceUpdate::new(
-                    instrument_id,
-                    price,
+                self.emit_oracle_price(
+                    symbol_str,
+                    &oracle_market.oracle_price,
                     ts_init,
-                    ts_init,
-                )));
-                messages.push(NautilusWsMessage::IndexPrice(IndexPriceUpdate::new(
-                    instrument_id,
-                    price,
-                    ts_init,
-                    ts_init,
-                )));
+                    &mut messages,
+                );
             }
         }
 
-        // Parse trading data → FundingRateUpdate (and detect new instruments)
+        // Parse trading data → InstrumentStatus, FundingRateUpdate (and detect new instruments)
         if let Some(trading) = &contents.trading {
-            for (symbol_str, trading_data) in trading {
-                let Ok(instrument_id) = self.parse_instrument_id(symbol_str) else {
-                    continue;
-                };
+            self.parse_market_entries(trading, ts_init, &mut messages);
+        }
 
-                // Check if this is a new instrument not in our cache
-                if !self.instruments.contains_key(&instrument_id.symbol.inner()) {
+        // Parse initial subscription snapshot (uses "markets" key with full market objects)
+        if let Some(markets) = &contents.markets {
+            for (symbol_str, market_data) in markets {
+                if let Some(oracle_price_str) = &market_data.oracle_price {
+                    self.emit_oracle_price(symbol_str, oracle_price_str, ts_init, &mut messages);
+                }
+            }
+            self.parse_market_entries(markets, ts_init, &mut messages);
+        }
+
+        Ok(messages)
+    }
+
+    fn emit_oracle_price(
+        &self,
+        symbol_str: &str,
+        oracle_price_str: &str,
+        ts_init: UnixNanos,
+        messages: &mut Vec<NautilusWsMessage>,
+    ) {
+        let Ok(instrument_id) = self.parse_instrument_id(symbol_str) else {
+            return;
+        };
+        let Some(instrument) = self.instruments.get(&instrument_id.symbol.inner()) else {
+            return;
+        };
+        let Ok(oracle_price_dec) = oracle_price_str.parse::<Decimal>() else {
+            log::error!("Failed to parse oracle price: market={symbol_str}");
+            return;
+        };
+        let Ok(price) = Price::from_decimal_dp(oracle_price_dec, instrument.price_precision())
+        else {
+            log::error!("Failed to create Price: market={symbol_str}");
+            return;
+        };
+
+        messages.push(NautilusWsMessage::MarkPrice(MarkPriceUpdate::new(
+            instrument_id,
+            price,
+            ts_init,
+            ts_init,
+        )));
+        messages.push(NautilusWsMessage::IndexPrice(IndexPriceUpdate::new(
+            instrument_id,
+            price,
+            ts_init,
+            ts_init,
+        )));
+    }
+
+    fn parse_market_entries(
+        &self,
+        entries: &HashMap<String, DydxMarketTradingUpdate>,
+        ts_init: UnixNanos,
+        messages: &mut Vec<NautilusWsMessage>,
+    ) {
+        for (symbol_str, trading_data) in entries {
+            let Ok(instrument_id) = self.parse_instrument_id(symbol_str) else {
+                continue;
+            };
+
+            if !self.instruments.contains_key(&instrument_id.symbol.inner()) {
+                // Only discover instruments that are active or have unknown status
+                let is_active = trading_data
+                    .status
+                    .as_ref()
+                    .is_none_or(|s| matches!(s, DydxMarketStatus::Active));
+
+                if is_active {
                     log::info!("New instrument discovered via WebSocket: {symbol_str}");
                     messages.push(NautilusWsMessage::NewInstrumentDiscovered {
                         ticker: symbol_str.clone(),
                     });
-                    continue;
                 }
+                continue;
+            }
 
-                // Existing instrument - emit funding rate if available
-                let Some(rate_str) = &trading_data.next_funding_rate else {
-                    continue;
-                };
-                let Ok(rate) = rate_str.parse::<Decimal>() else {
-                    log::error!(
-                        "Failed to parse funding rate: market={symbol_str}, rate={rate_str}"
-                    );
-                    continue;
-                };
-
-                messages.push(NautilusWsMessage::FundingRate(FundingRateUpdate::new(
+            if let Some(status) = &trading_data.status {
+                let action = MarketStatusAction::from(*status);
+                let is_trading = matches!(status, DydxMarketStatus::Active);
+                messages.push(NautilusWsMessage::InstrumentStatus(InstrumentStatus::new(
                     instrument_id,
-                    rate,
+                    action,
+                    ts_init,
+                    ts_init,
                     None,
-                    ts_init,
-                    ts_init,
+                    None,
+                    Some(is_trading),
+                    None,
+                    None,
                 )));
             }
-        }
 
-        Ok(messages)
+            let Some(rate_str) = &trading_data.next_funding_rate else {
+                continue;
+            };
+            let Ok(rate) = rate_str.parse::<Decimal>() else {
+                log::error!("Failed to parse funding rate: market={symbol_str}, rate={rate_str}");
+                continue;
+            };
+
+            messages.push(NautilusWsMessage::FundingRate(FundingRateUpdate::new(
+                instrument_id,
+                rate,
+                None,
+                ts_init,
+                ts_init,
+            )));
+        }
     }
 
     fn parse_subaccounts(

@@ -124,25 +124,20 @@ impl DydxWebSocketClient {
     ) -> PyResult<Bound<'py, PyAny>> {
         let call_soon = loop_.getattr(py, "call_soon_threadsafe")?;
 
-        // Convert Python instruments to Rust InstrumentAny
         let mut instruments_any = Vec::new();
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
             instruments_any.push(inst_any);
         }
 
-        // Cache instruments first
         self.cache_instruments(instruments_any);
 
         let mut client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            // Connect the WebSocket client
             client.connect().await.map_err(to_pyvalue_err)?;
 
-            // Take the receiver for messages
             if let Some(mut rx) = client.take_receiver() {
-                // Spawn task to process messages and call Python callback
                 get_runtime().spawn(async move {
                     let _client = client; // Keep client alive in spawned task
                     let clock = get_atomic_clock_realtime();
@@ -178,7 +173,6 @@ impl DydxWebSocketClient {
                                 });
                             }
                             NautilusWsMessage::SubaccountSubscribed(data) => {
-                                // Get account_id from the client
                                 let Some(account_id) = _client.account_id() else {
                                     log::warn!("Cannot parse subaccount subscription: account_id not set");
                                     continue;
@@ -187,11 +181,9 @@ impl DydxWebSocketClient {
                                 let instrument_cache = _client.instrument_cache();
                                 let ts_init = clock.get_time_ns();
 
-                                // Build maps from instrument cache
                                 let inst_map = instrument_cache.to_instrument_id_map();
                                 let oracle_map = instrument_cache.to_oracle_prices_map();
 
-                                // Parse and emit AccountState + PositionStatusReports
                                 if let Some(ref subaccount) = data.contents.subaccount {
                                     match parse_account_state(
                                         subaccount,
@@ -214,7 +206,6 @@ impl DydxWebSocketClient {
                                     Err(e) => log::error!("Failed to parse account state: {e}"),
                                 }
 
-                                // Parse and emit PositionStatusReports
                                 if let Some(ref positions) = subaccount.open_perpetual_positions {
                                     for (market, ws_position) in positions {
                                         match parse_ws_position_report(
@@ -393,6 +384,16 @@ impl DydxWebSocketClient {
                                             call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                         }
                                         Err(e) => log::error!("Failed to convert FundingRateUpdate to Python: {e}"),
+                                    }
+                                });
+                            }
+                            NautilusWsMessage::InstrumentStatus(status) => {
+                                Python::attach(|py| {
+                                    match status.into_py_any(py) {
+                                        Ok(py_obj) => {
+                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                        }
+                                        Err(e) => log::error!("Failed to convert InstrumentStatus to Python: {e}"),
                                     }
                                 });
                             }

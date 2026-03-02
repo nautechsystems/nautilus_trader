@@ -28,6 +28,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -453,6 +454,14 @@ class DataTester(Actor):
         """
         if self.config.log_data:
             self.log.info(repr(index_price), LogColor.CYAN)
+
+    def on_instrument_status(self, data: InstrumentStatus) -> None:
+        """
+        Actions to be performed when the actor is running and receives an instrument
+        status update.
+        """
+        if self.config.log_data:
+            self.log.info(repr(data), LogColor.CYAN)
 
     def on_funding_rate(self, funding_rate: FundingRateUpdate) -> None:
         """

@@ -14,6 +14,7 @@ Released on TBD (UTC).
 - Added Bybit book snapshot and funding rate request support (Rust)
 - Added Databento `skip_on_error` flag for `load_instruments` to skip unparsable definitions (#3657), thanks for reporting @davidsblom
 - Added Deribit instrument status subscription support (Rust and Python)
+- Added dYdX instrument status subscription support (Rust and Python)
 - Added Hyperliquid order modify support (Rust and Python)
 - Added OKX trailing stop market order support (Rust and Python)
 - Added OKX algo order amend support (Rust and Python)
@@ -59,6 +60,9 @@ Released on TBD (UTC).
 - Fixed Polymarket Gamma API `load_ids` path skipping sibling tokens (#3654), thanks for reporting @likenji
 - Fixed Polymarket loader to use Data API trades instead of decommissioned orderbook/price history endpoints (#3635), thanks for reporting @JSai23
 - Fixed pre-commit hooks portability for Windows (#3617), thanks for reporting @powerseed
+- Fixed `LiveNode` startup `RefCell` panic when execution reports arrive during `connect()`
+- Fixed dYdX new instrument discovery flooding logs with inactive/delisted markets
+- Fixed dYdX fills and orders API requests missing required `marketType` parameter
 
 ### Internal Improvements
 - Added catalog deduplication functionality (#3613), thanks @ms32035

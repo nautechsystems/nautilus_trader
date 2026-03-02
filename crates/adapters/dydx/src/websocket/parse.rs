@@ -1827,4 +1827,48 @@ mod tests {
             assert_eq!(bar.ts_event.as_u64(), started_at_ns);
         }
     }
+
+    #[rstest]
+    fn test_deserialize_market_trading_update_with_status() {
+        let json = load_json_fixture("ws_markets_status_update.json");
+        let contents: super::super::messages::DydxMarketsContents =
+            serde_json::from_value(json["contents"].clone())
+                .expect("Failed to deserialize markets contents");
+
+        let trading = contents.trading.expect("Expected trading data");
+        assert_eq!(trading.len(), 2);
+
+        let btc = trading.get("BTC-USD").expect("Expected BTC-USD");
+        assert_eq!(btc.status, Some(DydxMarketStatus::Paused));
+        assert_eq!(btc.next_funding_rate, Some("0.0001".to_string()));
+
+        let eth = trading.get("ETH-USD").expect("Expected ETH-USD");
+        assert_eq!(eth.status, Some(DydxMarketStatus::Active));
+    }
+
+    #[rstest]
+    #[case("ACTIVE", DydxMarketStatus::Active)]
+    #[case("PAUSED", DydxMarketStatus::Paused)]
+    #[case("CANCEL_ONLY", DydxMarketStatus::CancelOnly)]
+    #[case("POST_ONLY", DydxMarketStatus::PostOnly)]
+    #[case("INITIALIZING", DydxMarketStatus::Initializing)]
+    #[case("FINAL_SETTLEMENT", DydxMarketStatus::FinalSettlement)]
+    fn test_deserialize_market_status_variants(
+        #[case] status_str: &str,
+        #[case] expected: DydxMarketStatus,
+    ) {
+        let json_str = format!(r#"{{"status": "{status_str}"}}"#);
+        let update: super::super::messages::DydxMarketTradingUpdate =
+            serde_json::from_str(&json_str).expect("Failed to deserialize");
+        assert_eq!(update.status, Some(expected));
+    }
+
+    #[rstest]
+    fn test_deserialize_market_trading_update_without_status() {
+        let json_str = r#"{"nextFundingRate": "0.0001"}"#;
+        let update: super::super::messages::DydxMarketTradingUpdate =
+            serde_json::from_str(json_str).expect("Failed to deserialize");
+        assert_eq!(update.status, None);
+        assert_eq!(update.next_funding_rate, Some("0.0001".to_string()));
+    }
 }

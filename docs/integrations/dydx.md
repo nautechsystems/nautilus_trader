@@ -248,7 +248,7 @@ configuration is required.
 | Category        | Placement   | Expiry            | Typical use                                   |
 |-----------------|-------------|-------------------|-----------------------------------------------|
 | Short-term      | In-memory   | Block height      | IOC/FOK, or orders expiring within 20 blocks. |
-| Long-term       | On-chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond ~60 seconds.       |
+| Long-term       | On-chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond the short-term window (~10s at ~0.5s/block). |
 | Conditional     | On-chain    | Timestamp (UTC)   | Stop-loss and take-profit triggers.           |
 
 At the protocol level, **all dYdX orders are limit orders**. The `MARKET` order type

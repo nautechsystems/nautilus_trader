@@ -17,7 +17,10 @@
 
 use chrono::{DateTime, Utc};
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas},
+    data::{
+        Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDeltas,
+    },
     events::AccountState,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
@@ -228,6 +231,8 @@ pub enum NautilusWsMessage {
     IndexPrice(IndexPriceUpdate),
     /// Funding rate update from market trading data.
     FundingRate(FundingRateUpdate),
+    /// Instrument status update from market trading data.
+    InstrumentStatus(InstrumentStatus),
     /// Block height update from chain with timestamp.
     BlockHeight { height: u64, time: DateTime<Utc> },
     /// New instrument discovered via WebSocket that needs HTTP fetch.

@@ -556,6 +556,7 @@ impl DydxRawHttpClient {
 
         if let Some(m) = market {
             query_parts.push(format!("market={m}"));
+            query_parts.push("marketType=PERPETUAL".to_string());
         }
 
         if let Some(l) = limit {
@@ -585,6 +586,7 @@ impl DydxRawHttpClient {
 
         if let Some(m) = market {
             query_parts.push(format!("market={m}"));
+            query_parts.push("marketType=PERPETUAL".to_string());
         }
 
         if let Some(l) = limit {
