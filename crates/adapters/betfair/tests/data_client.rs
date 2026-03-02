@@ -58,6 +58,7 @@ fn create_test_data_client(
         plain_stream_config(stream_port),
         NavigationFilter::default(),
         currency,
+        None,
     );
 
     (client, rx)

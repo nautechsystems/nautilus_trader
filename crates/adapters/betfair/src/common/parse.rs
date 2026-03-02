@@ -99,6 +99,7 @@ pub fn parse_market_catalogue(
     catalogue: &MarketCatalogue,
     currency: Currency,
     ts_init: UnixNanos,
+    min_notional: Option<Money>,
 ) -> anyhow::Result<Vec<InstrumentAny>> {
     let runners = catalogue
         .runners
@@ -203,7 +204,7 @@ pub fn parse_market_catalogue(
             None,               // max_quantity
             None,               // min_quantity
             None,               // max_notional
-            None,               // min_notional
+            min_notional,       // min_notional
             None,               // max_price
             None,               // min_price
             Some(Decimal::ONE), // margin_init (pre-funded)
@@ -241,6 +242,7 @@ pub fn parse_market_definition(
     def: &MarketDefinition,
     currency: Currency,
     ts_init: UnixNanos,
+    min_notional: Option<Money>,
 ) -> anyhow::Result<Vec<InstrumentAny>> {
     let runners = def
         .runners
@@ -333,7 +335,7 @@ pub fn parse_market_definition(
             None,               // max_quantity
             None,               // min_quantity
             None,               // max_notional
-            None,               // min_notional
+            min_notional,       // min_notional
             None,               // max_price
             None,               // min_price
             Some(Decimal::ONE), // margin_init
@@ -499,7 +501,8 @@ mod tests {
         let data = load_test_json("rest/list_market_catalogue.json");
         let catalogue: MarketCatalogue = serde_json::from_str(&data).unwrap();
         let instruments =
-            parse_market_catalogue(&catalogue, Currency::GBP(), UnixNanos::default()).unwrap();
+            parse_market_catalogue(&catalogue, Currency::GBP(), UnixNanos::default(), None)
+                .unwrap();
 
         assert_eq!(instruments.len(), 3);
 
@@ -529,7 +532,7 @@ mod tests {
         let mut total = 0;
         for cat in &catalogues {
             let instruments =
-                parse_market_catalogue(cat, Currency::GBP(), UnixNanos::default()).unwrap();
+                parse_market_catalogue(cat, Currency::GBP(), UnixNanos::default(), None).unwrap();
             total += instruments.len();
         }
         assert!(total > 0);
@@ -553,6 +556,7 @@ mod tests {
                 def,
                 Currency::GBP(),
                 parse_millis_timestamp(mcm.pt),
+                None,
             )
             .unwrap();
 

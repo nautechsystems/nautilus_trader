@@ -32,12 +32,13 @@ use nautilus_common::{
             UnsubscribeInstrumentStatus, UnsubscribeTrades,
         },
     },
+    providers::InstrumentProvider,
 };
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API, TradeTick},
     identifiers::{ClientId, InstrumentId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny},
-    types::{Currency, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use nautilus_network::socket::TcpMessageHandler;
 use rust_decimal::Decimal;
@@ -52,7 +53,7 @@ use crate::{
         },
     },
     http::client::BetfairHttpClient,
-    provider::{NavigationFilter, load_instruments},
+    provider::{BetfairInstrumentProvider, NavigationFilter},
     stream::{
         client::BetfairStreamClient,
         config::BetfairStreamConfig,
@@ -65,11 +66,11 @@ use crate::{
 #[derive(Debug)]
 pub struct BetfairDataClient {
     client_id: ClientId,
-    http_client: BetfairHttpClient,
+    http_client: Arc<BetfairHttpClient>,
+    provider: BetfairInstrumentProvider,
     stream_client: Option<Arc<BetfairStreamClient>>,
     credential: BetfairCredential,
     stream_config: BetfairStreamConfig,
-    nav_filter: NavigationFilter,
     currency: Currency,
     is_connected: AtomicBool,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -87,15 +88,24 @@ impl BetfairDataClient {
         stream_config: BetfairStreamConfig,
         nav_filter: NavigationFilter,
         currency: Currency,
+        min_notional: Option<Money>,
     ) -> Self {
         let data_sender = get_data_event_sender();
+        let http_client = Arc::new(http_client);
+        let provider = BetfairInstrumentProvider::new(
+            Arc::clone(&http_client),
+            nav_filter,
+            currency,
+            min_notional,
+        );
+
         Self {
             client_id,
             http_client,
+            provider,
             stream_client: None,
             credential,
             stream_config,
-            nav_filter,
             currency,
             is_connected: AtomicBool::new(false),
             data_sender,
@@ -108,6 +118,7 @@ impl BetfairDataClient {
         data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
         instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
         currency: Currency,
+        min_notional: Option<Money>,
     ) -> TcpMessageHandler {
         Arc::new(move |data: &[u8]| {
             let msg = match stream_decode(data) {
@@ -158,7 +169,13 @@ impl BetfairDataClient {
                                 }
                             }
 
-                            match parse_market_definition(&mc.id, def, currency, ts_init) {
+                            match parse_market_definition(
+                                &mc.id,
+                                def,
+                                currency,
+                                ts_init,
+                                min_notional,
+                            ) {
                                 Ok(new_instruments) => {
                                     if let Ok(mut guard) = instruments.write() {
                                         for inst in &new_instruments {
@@ -299,6 +316,7 @@ impl DataClient for BetfairDataClient {
         log::info!("Resetting Betfair data client: {}", self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
         self.stream_client = None;
+        self.provider.store_mut().clear();
 
         if let Ok(mut guard) = self.instruments.write() {
             guard.clear();
@@ -329,30 +347,33 @@ impl DataClient for BetfairDataClient {
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let all_instruments =
-            load_instruments(&self.http_client, &self.nav_filter, self.currency).await?;
+        self.provider.load_all(None).await?;
+
+        let loaded: Vec<InstrumentAny> = self
+            .provider
+            .store()
+            .list_all()
+            .into_iter()
+            .cloned()
+            .collect();
 
         {
             let mut guard = self
                 .instruments
                 .write()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            for inst in &all_instruments {
+            for inst in &loaded {
                 guard.insert(inst.id(), inst.clone());
             }
         }
 
-        for inst in &all_instruments {
+        for inst in &loaded {
             if let Err(e) = self.data_sender.send(DataEvent::Instrument(inst.clone())) {
                 log::warn!("Failed to send instrument: {e}");
             }
         }
 
-        log::info!(
-            "Cached {} instruments for {}",
-            all_instruments.len(),
-            self.client_id,
-        );
+        log::info!("Cached {} instruments for {}", loaded.len(), self.client_id,);
 
         let session_token = self
             .http_client
@@ -364,6 +385,7 @@ impl DataClient for BetfairDataClient {
             self.data_sender.clone(),
             Arc::clone(&self.instruments),
             self.currency,
+            self.provider.min_notional(),
         );
 
         let stream_client = BetfairStreamClient::connect(

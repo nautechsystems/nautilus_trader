@@ -16,20 +16,30 @@
 //! Betfair instrument provider for loading instruments from the Navigation
 //! and Betting APIs.
 
-use std::time::SystemTime;
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use ahash::AHashSet;
+use async_trait::async_trait;
+use nautilus_common::providers::{InstrumentProvider, InstrumentStore};
 use nautilus_core::UnixNanos;
-use nautilus_model::{instruments::InstrumentAny, types::Currency};
+use nautilus_model::{
+    identifiers::InstrumentId,
+    instruments::InstrumentAny,
+    types::{Currency, Money},
+};
 use ustr::Ustr;
 
 use crate::{
-    common::{enums::MarketProjection, parse::parse_market_catalogue, types::MarketId},
+    common::{
+        enums::MarketProjection,
+        parse::{extract_market_id, parse_betfair_timestamp, parse_market_catalogue},
+        types::MarketId,
+    },
     http::{
         client::BetfairHttpClient,
         models::{
-            FlattenedMarket, ListMarketCatalogueParams, MarketCatalogue, MarketFilter, Navigation,
-            NavigationChild,
+            AccountDetailsResponse, FlattenedMarket, ListMarketCatalogueParams, MarketCatalogue,
+            MarketFilter, Navigation, NavigationChild, TimeRange,
         },
     },
 };
@@ -55,6 +65,10 @@ pub struct NavigationFilter {
     pub market_types: Option<Vec<String>>,
     /// Specific market IDs to include.
     pub market_ids: Option<Vec<String>>,
+    /// Minimum market start time (ISO 8601 date, e.g. "2024-01-15T00:00:00Z").
+    pub min_market_start_time: Option<String>,
+    /// Maximum market start time (ISO 8601 date, e.g. "2024-12-31T00:00:00Z").
+    pub max_market_start_time: Option<String>,
 }
 
 impl NavigationFilter {
@@ -124,6 +138,40 @@ impl NavigationFilter {
                     }
                 }
                 None => return false,
+            }
+        }
+
+        if let Some(min_time) = &self.min_market_start_time {
+            match (
+                &market.market_start_time,
+                parse_betfair_timestamp(min_time).ok(),
+            ) {
+                (Some(start_str), Some(min_ts)) => {
+                    if let Ok(start_ts) = parse_betfair_timestamp(start_str)
+                        && start_ts < min_ts
+                    {
+                        return false;
+                    }
+                }
+                (None, _) => return false,
+                _ => {}
+            }
+        }
+
+        if let Some(max_time) = &self.max_market_start_time {
+            match (
+                &market.market_start_time,
+                parse_betfair_timestamp(max_time).ok(),
+            ) {
+                (Some(start_str), Some(max_ts)) => {
+                    if let Ok(start_ts) = parse_betfair_timestamp(start_str)
+                        && start_ts > max_ts
+                    {
+                        return false;
+                    }
+                }
+                (None, _) => return false,
+                _ => {}
             }
         }
 
@@ -225,6 +273,7 @@ pub async fn load_instruments(
     client: &BetfairHttpClient,
     filter: &NavigationFilter,
     currency: Currency,
+    min_notional: Option<Money>,
 ) -> anyhow::Result<Vec<InstrumentAny>> {
     let navigation: Navigation = client
         .send_navigation()
@@ -245,6 +294,16 @@ pub async fn load_instruments(
         .into_iter()
         .collect();
 
+    let time_range =
+        if filter.min_market_start_time.is_some() || filter.max_market_start_time.is_some() {
+            Some(TimeRange {
+                from: filter.min_market_start_time.clone(),
+                to: filter.max_market_start_time.clone(),
+            })
+        } else {
+            None
+        };
+
     let ts_init = UnixNanos::from(SystemTime::now());
     let mut all_instruments = Vec::new();
 
@@ -252,6 +311,7 @@ pub async fn load_instruments(
         let params = ListMarketCatalogueParams {
             filter: MarketFilter {
                 market_ids: Some(chunk.to_vec()),
+                market_start_time: time_range.clone(),
                 ..Default::default()
             },
             market_projection: Some(vec![
@@ -274,7 +334,7 @@ pub async fn load_instruments(
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         for catalogue in &catalogues {
-            match parse_market_catalogue(catalogue, currency, ts_init) {
+            match parse_market_catalogue(catalogue, currency, ts_init, min_notional) {
                 Ok(instruments) => all_instruments.extend(instruments),
                 Err(e) => {
                     log::warn!("Failed to parse catalogue {}: {e}", catalogue.market_id);
@@ -285,6 +345,175 @@ pub async fn load_instruments(
 
     log::info!("Loaded {} instruments", all_instruments.len());
     Ok(all_instruments)
+}
+
+/// Betfair instrument provider backed by the Navigation and Betting APIs.
+#[derive(Debug)]
+pub struct BetfairInstrumentProvider {
+    store: InstrumentStore,
+    http_client: Arc<BetfairHttpClient>,
+    nav_filter: NavigationFilter,
+    currency: Currency,
+    min_notional: Option<Money>,
+}
+
+impl BetfairInstrumentProvider {
+    /// Creates a new [`BetfairInstrumentProvider`] instance.
+    #[must_use]
+    pub fn new(
+        http_client: Arc<BetfairHttpClient>,
+        nav_filter: NavigationFilter,
+        currency: Currency,
+        min_notional: Option<Money>,
+    ) -> Self {
+        Self {
+            store: InstrumentStore::new(),
+            http_client,
+            nav_filter,
+            currency,
+            min_notional,
+        }
+    }
+
+    /// Returns the currency used for instrument definitions.
+    #[must_use]
+    pub fn currency(&self) -> Currency {
+        self.currency
+    }
+
+    /// Returns the default minimum notional for instruments.
+    #[must_use]
+    pub fn min_notional(&self) -> Option<Money> {
+        self.min_notional
+    }
+
+    /// Fetches the account currency from the Betfair Account API.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API call fails or the currency code is missing/unknown.
+    pub async fn get_account_currency(&self) -> anyhow::Result<Currency> {
+        let details: AccountDetailsResponse = self
+            .http_client
+            .send_accounts(
+                "AccountAPING/v1.0/getAccountDetails",
+                &serde_json::json!({}),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        let code = details
+            .currency_code
+            .ok_or_else(|| anyhow::anyhow!("No currency_code in account details"))?;
+        code.as_str().parse::<Currency>()
+    }
+
+    /// Builds an effective filter by merging runtime overrides with the base filter.
+    fn build_effective_filter(
+        &self,
+        overrides: Option<&HashMap<String, String>>,
+    ) -> NavigationFilter {
+        let Some(overrides) = overrides else {
+            return self.nav_filter.clone();
+        };
+
+        let parse_csv = |key: &str| -> Option<Vec<String>> {
+            overrides
+                .get(key)
+                .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+        };
+
+        NavigationFilter {
+            event_type_ids: parse_csv("event_type_ids")
+                .or_else(|| self.nav_filter.event_type_ids.clone()),
+            event_type_names: parse_csv("event_type_names")
+                .or_else(|| self.nav_filter.event_type_names.clone()),
+            event_ids: parse_csv("event_ids").or_else(|| self.nav_filter.event_ids.clone()),
+            country_codes: parse_csv("country_codes")
+                .or_else(|| self.nav_filter.country_codes.clone()),
+            market_types: parse_csv("market_types")
+                .or_else(|| self.nav_filter.market_types.clone()),
+            market_ids: parse_csv("market_ids").or_else(|| self.nav_filter.market_ids.clone()),
+            min_market_start_time: overrides
+                .get("min_market_start_time")
+                .cloned()
+                .or_else(|| self.nav_filter.min_market_start_time.clone()),
+            max_market_start_time: overrides
+                .get("max_market_start_time")
+                .cloned()
+                .or_else(|| self.nav_filter.max_market_start_time.clone()),
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl InstrumentProvider for BetfairInstrumentProvider {
+    fn store(&self) -> &InstrumentStore {
+        &self.store
+    }
+
+    fn store_mut(&mut self) -> &mut InstrumentStore {
+        &mut self.store
+    }
+
+    async fn load_all(&mut self, filters: Option<&HashMap<String, String>>) -> anyhow::Result<()> {
+        self.store.clear();
+        let effective_filter = self.build_effective_filter(filters);
+        let instruments = load_instruments(
+            &self.http_client,
+            &effective_filter,
+            self.currency,
+            self.min_notional,
+        )
+        .await?;
+        self.store.add_bulk(instruments);
+        self.store.set_initialized();
+        Ok(())
+    }
+
+    async fn load(
+        &mut self,
+        instrument_id: &InstrumentId,
+        _filters: Option<&HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        let market_id = extract_market_id(instrument_id)?;
+        let ts_init = UnixNanos::from(SystemTime::now());
+
+        let params = ListMarketCatalogueParams {
+            filter: MarketFilter {
+                market_ids: Some(vec![market_id]),
+                ..Default::default()
+            },
+            market_projection: Some(vec![
+                MarketProjection::EventType,
+                MarketProjection::Event,
+                MarketProjection::Competition,
+                MarketProjection::MarketDescription,
+                MarketProjection::RunnerDescription,
+                MarketProjection::RunnerMetadata,
+                MarketProjection::MarketStartTime,
+            ]),
+            max_results: Some(1),
+            sort: None,
+            locale: None,
+        };
+
+        let catalogues: Vec<MarketCatalogue> = self
+            .http_client
+            .send_betting("SportsAPING/v1.0/listMarketCatalogue", &params)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        for catalogue in &catalogues {
+            let instruments =
+                parse_market_catalogue(catalogue, self.currency, ts_init, self.min_notional)?;
+            for inst in instruments {
+                self.store.add(inst);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
