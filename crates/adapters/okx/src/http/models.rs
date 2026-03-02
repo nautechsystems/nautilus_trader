@@ -1116,4 +1116,169 @@ mod tests {
         assert!(!json.contains("newTriggerPx"));
         assert!(!json.contains("newOrderPx"));
     }
+
+    #[rstest]
+    fn test_trailing_stop_request_callback_ratio_serialization() {
+        let request = OKXPlaceAlgoOrderRequest {
+            inst_id: "BTC-USDT-SWAP".to_string(),
+            inst_id_code: None,
+            td_mode: OKXTradeMode::Cross,
+            side: OKXSide::Buy,
+            ord_type: OKXAlgoOrderType::MoveOrderStop,
+            sz: "0.1".to_string(),
+            algo_cl_ord_id: Some("trail-001".to_string()),
+            trigger_px: None,
+            order_px: None,
+            trigger_px_type: None,
+            tgt_ccy: None,
+            pos_side: None,
+            close_position: None,
+            tag: None,
+            reduce_only: None,
+            callback_ratio: Some("0.01".to_string()),
+            callback_spread: None,
+            active_px: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        assert!(json.contains("\"ordType\":\"move_order_stop\""));
+        assert!(json.contains("\"callbackRatio\":\"0.01\""));
+        assert!(!json.contains("callbackSpread"));
+        assert!(!json.contains("activePx"));
+    }
+
+    #[rstest]
+    fn test_trailing_stop_request_callback_spread_serialization() {
+        let request = OKXPlaceAlgoOrderRequest {
+            inst_id: "ETH-USDT-SWAP".to_string(),
+            inst_id_code: None,
+            td_mode: OKXTradeMode::Isolated,
+            side: OKXSide::Sell,
+            ord_type: OKXAlgoOrderType::MoveOrderStop,
+            sz: "1.0".to_string(),
+            algo_cl_ord_id: None,
+            trigger_px: None,
+            order_px: None,
+            trigger_px_type: None,
+            tgt_ccy: None,
+            pos_side: None,
+            close_position: None,
+            tag: None,
+            reduce_only: Some(true),
+            callback_ratio: None,
+            callback_spread: Some("50.5".to_string()),
+            active_px: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        assert!(json.contains("\"callbackSpread\":\"50.5\""));
+        assert!(!json.contains("callbackRatio"));
+        assert!(!json.contains("activePx"));
+    }
+
+    #[rstest]
+    fn test_trailing_stop_request_with_activation_price_serialization() {
+        let request = OKXPlaceAlgoOrderRequest {
+            inst_id: "BTC-USDT-SWAP".to_string(),
+            inst_id_code: None,
+            td_mode: OKXTradeMode::Cross,
+            side: OKXSide::Buy,
+            ord_type: OKXAlgoOrderType::MoveOrderStop,
+            sz: "0.5".to_string(),
+            algo_cl_ord_id: None,
+            trigger_px: None,
+            order_px: None,
+            trigger_px_type: None,
+            tgt_ccy: None,
+            pos_side: None,
+            close_position: None,
+            tag: None,
+            reduce_only: None,
+            callback_ratio: Some("0.005".to_string()),
+            callback_spread: None,
+            active_px: Some("65000".to_string()),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        assert!(json.contains("\"callbackRatio\":\"0.005\""));
+        assert!(json.contains("\"activePx\":\"65000\""));
+        assert!(!json.contains("callbackSpread"));
+    }
+
+    #[rstest]
+    fn test_amend_algo_order_callback_spread_serialization() {
+        let request = OKXAmendAlgoOrderRequest {
+            inst_id: "ETH-USDT-SWAP".to_string(),
+            algo_id: "456789".to_string(),
+            algo_cl_ord_id: None,
+            new_sz: None,
+            new_trigger_px: None,
+            new_order_px: None,
+            new_callback_ratio: None,
+            new_callback_spread: Some("25.0".to_string()),
+            new_active_px: Some("4000".to_string()),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        assert!(json.contains("\"newCallbackSpread\":\"25.0\""));
+        assert!(json.contains("\"newActivePx\":\"4000\""));
+        assert!(!json.contains("newCallbackRatio"));
+        assert!(!json.contains("newTriggerPx"));
+        assert!(!json.contains("newSz"));
+    }
+
+    #[rstest]
+    fn test_amend_algo_order_size_only_serialization() {
+        let request = OKXAmendAlgoOrderRequest {
+            inst_id: "BTC-USDT-SWAP".to_string(),
+            algo_id: "111222".to_string(),
+            algo_cl_ord_id: None,
+            new_sz: Some("0.5".to_string()),
+            new_trigger_px: None,
+            new_order_px: None,
+            new_callback_ratio: None,
+            new_callback_spread: None,
+            new_active_px: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        assert!(json.contains("\"newSz\":\"0.5\""));
+        assert!(!json.contains("newTriggerPx"));
+        assert!(!json.contains("newOrderPx"));
+        assert!(!json.contains("newCallbackRatio"));
+        assert!(!json.contains("newCallbackSpread"));
+        assert!(!json.contains("newActivePx"));
+    }
+
+    #[rstest]
+    fn test_amend_algo_order_all_fields_serialization() {
+        let request = OKXAmendAlgoOrderRequest {
+            inst_id: "BTC-USDT-SWAP".to_string(),
+            algo_id: "333444".to_string(),
+            algo_cl_ord_id: Some("client789".to_string()),
+            new_sz: Some("1.0".to_string()),
+            new_trigger_px: Some("60000".to_string()),
+            new_order_px: Some("59900".to_string()),
+            new_callback_ratio: Some("0.015".to_string()),
+            new_callback_spread: Some("100".to_string()),
+            new_active_px: Some("62000".to_string()),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+
+        assert!(json.contains("\"instId\":\"BTC-USDT-SWAP\""));
+        assert!(json.contains("\"algoId\":\"333444\""));
+        assert!(json.contains("\"algoClOrdId\":\"client789\""));
+        assert!(json.contains("\"newSz\":\"1.0\""));
+        assert!(json.contains("\"newTriggerPx\":\"60000\""));
+        assert!(json.contains("\"newOrderPx\":\"59900\""));
+        assert!(json.contains("\"newCallbackRatio\":\"0.015\""));
+        assert!(json.contains("\"newCallbackSpread\":\"100\""));
+        assert!(json.contains("\"newActivePx\":\"62000\""));
+    }
 }
