@@ -78,7 +78,7 @@ class _KalshiHttpClient:
         list[dict]
             Raw market dictionaries as returned by the Kalshi API.
         """
-        params: dict = {"limit": 1000, "status": "active"}
+        params: dict = {"limit": 1000, "status": "open"}
         if series_tickers:
             params["series_ticker"] = ",".join(series_tickers)
 
@@ -117,7 +117,7 @@ class KalshiInstrumentProvider(InstrumentProvider):
     """
 
     def __init__(self, config: KalshiDataClientConfig) -> None:
-        super().__init__(config=config)
+        super().__init__()  # InstrumentProvider expects InstrumentProviderConfig, not LiveDataClientConfig
         self._config = config
         self._base_url = config.base_url or KALSHI_REST_BASE
         self._http_client = _KalshiHttpClient(base_url=self._base_url)
