@@ -15,12 +15,13 @@
 
 //! Provides the HTTP client for the Polymarket CLOB REST API.
 
-use std::{collections::HashMap, result::Result as StdResult, str::from_utf8};
+use std::{collections::HashMap, result::Result as StdResult, str::from_utf8, sync::Arc};
 
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::http::{HttpClient, HttpClientError, Method, USER_AGENT};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -37,6 +38,7 @@ use crate::{
             GammaMarket, PolymarketOpenOrder, PolymarketOrder, PolymarketTradeReport,
             TickSizeResponse,
         },
+        parse::{create_instrument_from_def, parse_gamma_market},
         query::{
             BalanceAllowance, BatchCancelResponse, CancelMarketOrdersParams, CancelResponse,
             GetBalanceAllowanceParams, GetGammaMarketsParams, GetOrdersParams, GetTradesParams,
@@ -477,5 +479,109 @@ impl PolymarketRawHttpClient {
     pub async fn get_tick_size(&self, token_id: &str) -> Result<TickSizeResponse> {
         let params = [("token_id", token_id)];
         self.send_get("/tick-size", Some(&params), false).await
+    }
+}
+
+/// Provides a domain HTTP client for Polymarket instrument fetching.
+///
+/// Wraps [`PolymarketRawHttpClient`] with instrument parsing: fetch from
+/// the Gamma API and parse into Nautilus types. Stateless with respect to
+/// instrument storage; caching is handled by the instrument provider.
+#[derive(Debug, Clone)]
+pub struct PolymarketHttpClient {
+    inner: Arc<PolymarketRawHttpClient>,
+    clock: &'static AtomicTime,
+}
+
+impl PolymarketHttpClient {
+    /// Creates a new [`PolymarketHttpClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying HTTP client cannot be created.
+    pub fn new(
+        base_url: Option<String>,
+        gamma_base_url: Option<String>,
+        timeout_secs: Option<u64>,
+    ) -> StdResult<Self, HttpClientError> {
+        Ok(Self {
+            inner: Arc::new(PolymarketRawHttpClient::new(
+                base_url,
+                gamma_base_url,
+                timeout_secs,
+            )?),
+            clock: get_atomic_clock_realtime(),
+        })
+    }
+
+    /// Wraps an existing raw client.
+    #[must_use]
+    pub fn from_raw(raw_client: Arc<PolymarketRawHttpClient>) -> Self {
+        Self {
+            inner: raw_client,
+            clock: get_atomic_clock_realtime(),
+        }
+    }
+
+    // Fetches all active markets from the Gamma API, paginating automatically
+    async fn fetch_all_gamma_markets(&self) -> anyhow::Result<Vec<GammaMarket>> {
+        const PAGE_LIMIT: u32 = 500;
+        let mut all_markets = Vec::new();
+        let mut offset: u32 = 0;
+
+        loop {
+            let params = GetGammaMarketsParams {
+                active: Some(true),
+                closed: Some(false),
+                limit: Some(PAGE_LIMIT),
+                offset: Some(offset),
+                ..Default::default()
+            };
+
+            let page = self.inner.get_gamma_markets(params).await?;
+            let page_len = page.len() as u32;
+            all_markets.extend(page);
+
+            if page_len < PAGE_LIMIT {
+                break;
+            }
+            offset += PAGE_LIMIT;
+        }
+
+        Ok(all_markets)
+    }
+
+    /// Fetches instruments from the Gamma API and returns Nautilus domain types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request or parsing fails.
+    pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
+        let markets = self.fetch_all_gamma_markets().await?;
+        let ts_init = self.clock.get_time_ns();
+
+        let mut instruments = Vec::new();
+        for market in &markets {
+            match parse_gamma_market(market) {
+                Ok(defs) => {
+                    for def in defs {
+                        match create_instrument_from_def(&def, ts_init) {
+                            Ok(instrument) => instruments.push(instrument),
+                            Err(e) => log::warn!("Failed to create instrument: {e}"),
+                        }
+                    }
+                }
+                Err(e) => log::warn!("Failed to parse gamma market: {e}"),
+            }
+        }
+
+        log::info!("Parsed {} instruments from Gamma API", instruments.len());
+        Ok(instruments)
+    }
+
+    /// Returns a reference to the underlying raw HTTP client.
+    #[must_use]
+    pub fn inner(&self) -> &Arc<PolymarketRawHttpClient> {
+        &self.inner
     }
 }

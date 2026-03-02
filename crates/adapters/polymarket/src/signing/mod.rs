@@ -17,4 +17,5 @@
 //!
 //! L2 HMAC-SHA256 signing lives on [`Credential`](crate::common::credential::Credential).
 
+pub mod eip712;
 pub mod hmac;

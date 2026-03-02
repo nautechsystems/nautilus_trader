@@ -137,6 +137,11 @@ impl FeedHandler {
                         self.subscriptions.mark_failure(id);
                     }
                     log::error!("Failed to send market subscribe: {e}");
+                } else {
+                    // Polymarket has no server ACK, treat successful send as confirmation
+                    for id in asset_ids {
+                        self.subscriptions.confirm_subscribe(id);
+                    }
                 }
             }
             Err(e) => {
@@ -292,6 +297,9 @@ impl FeedHandler {
                                 self.subscriptions.mark_unsubscribe(id);
                             }
                             self.send_unsubscribe_market(&ids).await;
+                            for id in &ids {
+                                self.subscriptions.confirm_unsubscribe(id);
+                            }
                         }
                         HandlerCommand::SubscribeUser => {
                             self.user_subscribed = true;
@@ -324,9 +332,7 @@ impl FeedHandler {
                         }
                         Message::Ping(data) => {
                             if let Some(ref client) = self.client
-                                && let Err(e) = client
-                                    .send_text(String::from_utf8_lossy(&data).to_string(), None)
-                                    .await
+                                && let Err(e) = client.send_pong(data.to_vec()).await
                             {
                                 log::warn!("Failed to send pong: {e}");
                             }

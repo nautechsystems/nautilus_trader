@@ -46,6 +46,34 @@ pub enum WsChannel {
     User,
 }
 
+/// Lightweight handle for subscribing/unsubscribing to market data.
+///
+/// `Clone` + `Send` safe for use in spawned async tasks.
+#[derive(Clone, Debug)]
+pub struct WsSubscriptionHandle {
+    cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
+}
+
+impl WsSubscriptionHandle {
+    /// Sends a market subscribe command to the handler.
+    pub async fn subscribe_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::SubscribeMarket(asset_ids))
+            .map_err(|e| anyhow::anyhow!("Failed to send SubscribeMarket: {e}"))
+    }
+
+    /// Sends a market unsubscribe command to the handler.
+    pub async fn unsubscribe_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::UnsubscribeMarket(asset_ids))
+            .map_err(|e| anyhow::anyhow!("Failed to send UnsubscribeMarket: {e}"))
+    }
+}
+
 /// Provides a WebSocket client for the Polymarket CLOB API.
 ///
 /// A single instance targets one channel (market or user). Use
@@ -340,6 +368,26 @@ impl PolymarketWebSocketClient {
         // leave user_subscribed=true and cause an unintended replay on the next connect().
         self.user_subscribed.store(true, Ordering::Relaxed);
         Ok(())
+    }
+
+    /// Returns a cloneable subscription handle for use in spawned tasks.
+    #[must_use]
+    pub fn clone_subscription_handle(&self) -> WsSubscriptionHandle {
+        WsSubscriptionHandle {
+            cmd_tx: Arc::clone(&self.cmd_tx),
+        }
+    }
+
+    /// Takes the message receiver, leaving `None` in its place.
+    ///
+    /// This is useful when the data client needs to spawn its own handler
+    /// task that reads messages independently of the WS client.
+    /// Subscription methods (`subscribe_market`, etc.) remain usable on `&self`.
+    #[must_use]
+    pub fn take_message_receiver(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<PolymarketWsMessage>> {
+        self.out_rx.take()
     }
 
     /// Receives the next message from the WebSocket handler.

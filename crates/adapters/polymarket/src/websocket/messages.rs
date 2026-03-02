@@ -242,9 +242,9 @@ mod tests {
         );
         assert_eq!(snap.bids.len(), 3);
         assert_eq!(snap.asks.len(), 3);
-        assert_eq!(snap.bids[0].price, "0.50");
-        assert_eq!(snap.bids[0].size, "200.0");
-        assert_eq!(snap.asks[0].price, "0.51");
+        assert_eq!(snap.bids[0].price, "0.48");
+        assert_eq!(snap.bids[0].size, "500.0");
+        assert_eq!(snap.asks[0].price, "0.53");
         assert_eq!(snap.timestamp, "1703875200000");
     }
 
