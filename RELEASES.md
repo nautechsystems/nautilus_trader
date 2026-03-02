@@ -58,6 +58,7 @@ Released on TBD (UTC).
 - Fixed Kraken missing account state registration during connect (#3652), thanks for reporting @husariancom
 - Fixed Polymarket Gamma API `load_ids` path skipping sibling tokens (#3654), thanks for reporting @likenji
 - Fixed Polymarket loader to use Data API trades instead of decommissioned orderbook/price history endpoints (#3635), thanks for reporting @JSai23
+- Fixed Binance Spot testnet WebSocket API URL (legacy URL removed by Binance in May 2025) (#3660)
 - Fixed pre-commit hooks portability for Windows (#3617), thanks for reporting @powerseed
 
 ### Internal Improvements
