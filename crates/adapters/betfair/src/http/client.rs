@@ -80,6 +80,11 @@ pub struct BetfairHttpClient {
     retry_manager: RetryManager<BetfairHttpError>,
     cancellation_token: CancellationToken,
     request_id: AtomicU64,
+    url_identity_login: String,
+    url_keep_alive: String,
+    url_betting: String,
+    url_accounts: String,
+    url_navigation: String,
 }
 
 impl BetfairHttpClient {
@@ -121,7 +126,35 @@ impl BetfairHttpClient {
             retry_manager: RetryManager::new(retry_config),
             cancellation_token: CancellationToken::new(),
             request_id: AtomicU64::new(1),
+            url_identity_login: BETFAIR_IDENTITY_LOGIN_URL.to_string(),
+            url_keep_alive: BETFAIR_KEEP_ALIVE_URL.to_string(),
+            url_betting: BETFAIR_BETTING_URL.to_string(),
+            url_accounts: BETFAIR_ACCOUNTS_URL.to_string(),
+            url_navigation: BETFAIR_NAVIGATION_URL.to_string(),
         })
+    }
+
+    /// Overrides the API base URLs (for testing with mock servers).
+    ///
+    /// The keep-alive URL is derived from `identity_login` by replacing the
+    /// path with `/keepAlive`.
+    #[must_use]
+    pub fn with_urls(
+        mut self,
+        identity_login: String,
+        betting: String,
+        accounts: String,
+        navigation: String,
+    ) -> Self {
+        // Derive keep-alive from same host as login
+        if let Some(base) = identity_login.rfind('/') {
+            self.url_keep_alive = format!("{}/keepAlive", &identity_login[..base]);
+        }
+        self.url_identity_login = identity_login;
+        self.url_betting = betting;
+        self.url_accounts = accounts;
+        self.url_navigation = navigation;
+        self
     }
 
     /// Returns the cancellation token for this client.
@@ -162,7 +195,7 @@ impl BetfairHttpClient {
         );
 
         let resp_bytes = self
-            .send_identity(BETFAIR_IDENTITY_LOGIN_URL, form_body.into_bytes())
+            .send_identity(&self.url_identity_login, form_body.into_bytes())
             .await?;
 
         let resp: LoginResponse = serde_json::from_slice(&resp_bytes)?;
@@ -201,9 +234,7 @@ impl BetfairHttpClient {
     ///
     /// Returns an error if the keep-alive request fails.
     pub async fn keep_alive(&self) -> Result<(), BetfairHttpError> {
-        let resp_bytes = self
-            .send_identity(BETFAIR_KEEP_ALIVE_URL, Vec::new())
-            .await?;
+        let resp_bytes = self.send_identity(&self.url_keep_alive, Vec::new()).await?;
 
         let resp: LoginResponse = serde_json::from_slice(&resp_bytes)?;
 
@@ -228,7 +259,7 @@ impl BetfairHttpClient {
         T: DeserializeOwned,
         P: Serialize,
     {
-        self.send_jsonrpc(BETFAIR_BETTING_URL, method, params, false)
+        self.send_jsonrpc(&self.url_betting, method, params, false)
             .await
     }
 
@@ -247,7 +278,7 @@ impl BetfairHttpClient {
         T: DeserializeOwned,
         P: Serialize,
     {
-        self.send_jsonrpc(BETFAIR_BETTING_URL, method, params, true)
+        self.send_jsonrpc(&self.url_betting, method, params, true)
             .await
     }
 
@@ -262,7 +293,7 @@ impl BetfairHttpClient {
         T: DeserializeOwned,
         P: Serialize,
     {
-        self.send_jsonrpc(BETFAIR_ACCOUNTS_URL, method, params, false)
+        self.send_jsonrpc(&self.url_accounts, method, params, false)
             .await
     }
 
@@ -281,7 +312,7 @@ impl BetfairHttpClient {
             .client
             .request(
                 Method::GET,
-                BETFAIR_NAVIGATION_URL.to_string(),
+                self.url_navigation.clone(),
                 None,
                 Some(headers),
                 None,

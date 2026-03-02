@@ -31,11 +31,13 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
+nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
@@ -52,5 +54,9 @@ ustr = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+nautilus-execution = { workspace = true }
 nautilus-testkit = { workspace = true }
+
+axum = { workspace = true }
 rstest = { workspace = true }
+tokio = { workspace = true, features = ["full"] }

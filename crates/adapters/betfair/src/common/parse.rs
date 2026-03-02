@@ -28,7 +28,10 @@ use nautilus_model::{
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
-use super::consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION, BETFAIR_VENUE};
+use super::{
+    consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION, BETFAIR_VENUE},
+    types::SelectionId,
+};
 use crate::{
     http::models::{AccountFundsResponse, MarketCatalogue},
     stream::messages::MarketDefinition,
@@ -389,6 +392,53 @@ pub fn parse_account_state(
     ))
 }
 
+/// Extracts the Betfair market ID from a Nautilus instrument ID.
+///
+/// Instrument IDs follow the format `{market_id}-{selection_id}.BETFAIR`
+/// or `{market_id}-{selection_id}-{handicap}.BETFAIR`.
+///
+/// # Errors
+///
+/// Returns an error if the symbol does not contain a hyphen separator.
+pub fn extract_market_id(instrument_id: &InstrumentId) -> anyhow::Result<String> {
+    let symbol = instrument_id.symbol.as_str();
+    let parts: Vec<&str> = symbol.splitn(3, '-').collect();
+    if parts.len() >= 2 {
+        Ok(parts[0].to_string())
+    } else {
+        anyhow::bail!("Cannot extract market ID from {instrument_id}")
+    }
+}
+
+/// Extracts the selection ID and handicap from a Nautilus instrument ID.
+///
+/// # Errors
+///
+/// Returns an error if the symbol cannot be parsed into the expected format.
+pub fn extract_selection_id(
+    instrument_id: &InstrumentId,
+) -> anyhow::Result<(SelectionId, Decimal)> {
+    let symbol = instrument_id.symbol.as_str();
+    let parts: Vec<&str> = symbol.splitn(3, '-').collect();
+    if parts.len() < 2 {
+        anyhow::bail!("Cannot extract selection ID from {instrument_id}");
+    }
+
+    let selection_id: SelectionId = parts[1]
+        .parse()
+        .with_context(|| format!("invalid selection ID in {instrument_id}"))?;
+
+    let handicap = if parts.len() == 3 {
+        parts[2]
+            .parse::<Decimal>()
+            .with_context(|| format!("invalid handicap in {instrument_id}"))?
+    } else {
+        Decimal::ZERO
+    };
+
+    Ok((selection_id, handicap))
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -537,5 +587,35 @@ mod tests {
         assert_eq!(state.balances.len(), 1);
         assert!(state.is_reported);
         assert_eq!(state.base_currency, Some(Currency::GBP()));
+    }
+
+    #[rstest]
+    fn test_extract_market_id_no_handicap() {
+        let instrument_id = make_instrument_id("1.180737206", 19248890, Decimal::ZERO);
+        let market_id = extract_market_id(&instrument_id).unwrap();
+        assert_eq!(market_id, "1.180737206");
+    }
+
+    #[rstest]
+    fn test_extract_market_id_with_handicap() {
+        let instrument_id = make_instrument_id("1.180737206", 19248890, Decimal::new(15, 1));
+        let market_id = extract_market_id(&instrument_id).unwrap();
+        assert_eq!(market_id, "1.180737206");
+    }
+
+    #[rstest]
+    fn test_extract_selection_id_no_handicap() {
+        let instrument_id = make_instrument_id("1.180737206", 19248890, Decimal::ZERO);
+        let (selection_id, handicap) = extract_selection_id(&instrument_id).unwrap();
+        assert_eq!(selection_id, 19248890);
+        assert_eq!(handicap, Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_extract_selection_id_with_handicap() {
+        let instrument_id = make_instrument_id("1.180737206", 19248890, Decimal::new(15, 1));
+        let (selection_id, handicap) = extract_selection_id(&instrument_id).unwrap();
+        assert_eq!(selection_id, 19248890);
+        assert_eq!(handicap, Decimal::new(15, 1));
     }
 }
