@@ -147,6 +147,43 @@ impl OptionChainAggregator {
         self.instruments.keys().copied().collect()
     }
 
+    /// Returns `true` if the instrument catalog is empty.
+    #[must_use]
+    pub fn is_catalog_empty(&self) -> bool {
+        self.instruments.is_empty()
+    }
+
+    /// Permanently removes an instrument from the catalog.
+    ///
+    /// Removes from `instruments`, `active_ids`, `pending_greeks`, and cleans
+    /// buffer entries (only if no other instrument shares the same strike+kind).
+    /// Returns `true` if the instrument was found and removed.
+    #[must_use]
+    pub fn remove_instrument(&mut self, instrument_id: &InstrumentId) -> bool {
+        let Some((strike, kind)) = self.instruments.remove(instrument_id) else {
+            return false;
+        };
+
+        self.active_ids.remove(instrument_id);
+        self.pending_greeks.remove(instrument_id);
+
+        // Only remove buffer entry if no sibling instrument shares the same strike+kind
+        let has_sibling = self
+            .instruments
+            .values()
+            .any(|(s, k)| *s == strike && *k == kind);
+
+        if !has_sibling {
+            let buffer = match kind {
+                OptionKind::Call => &mut self.call_buffer,
+                OptionKind::Put => &mut self.put_buffer,
+            };
+            buffer.remove(&strike);
+        }
+
+        true
+    }
+
     /// Returns a reference to the ATM tracker.
     #[must_use]
     pub fn atm_tracker(&self) -> &AtmTracker {
@@ -1090,5 +1127,85 @@ mod tests {
         let slice = agg.snapshot(UnixNanos::from(1000u64));
         // No quotes → ts_event falls back to ts_init
         assert_eq!(slice.ts_event, UnixNanos::from(1000u64));
+    }
+
+    #[rstest]
+    fn test_remove_instrument_from_catalog() {
+        let (mut agg, call_id, put_id) = make_aggregator();
+        assert_eq!(agg.instruments().len(), 2);
+
+        let removed = agg.remove_instrument(&call_id);
+        assert!(removed);
+        assert_eq!(agg.instruments().len(), 1);
+        assert!(!agg.active_ids().contains(&call_id));
+        assert!(agg.instruments().contains_key(&put_id));
+    }
+
+    #[rstest]
+    fn test_remove_instrument_cleans_buffer() {
+        let (mut agg, call_id, _) = make_aggregator();
+        let quote = make_quote(call_id, "100.00", "101.00");
+        agg.update_quote(&quote);
+        assert_eq!(agg.call_buffer_len(), 1);
+
+        let _ = agg.remove_instrument(&call_id);
+        // No sibling call at same strike, buffer entry should be removed
+        assert_eq!(agg.call_buffer_len(), 0);
+    }
+
+    #[rstest]
+    fn test_remove_instrument_preserves_sibling_buffer() {
+        let (mut agg, call_id, _) = make_aggregator();
+        // Add a second call at the same strike
+        let sibling_id = InstrumentId::from("BTC-20240101-50000-C2.DERIBIT");
+        let strike = Price::from("50000");
+        let _ = agg.add_instrument(sibling_id, strike, OptionKind::Call);
+
+        let quote = make_quote(call_id, "100.00", "101.00");
+        agg.update_quote(&quote);
+        assert_eq!(agg.call_buffer_len(), 1);
+
+        // Remove original — sibling still shares the strike+kind
+        let _ = agg.remove_instrument(&call_id);
+        assert_eq!(agg.call_buffer_len(), 1); // buffer preserved
+        assert!(agg.instruments().contains_key(&sibling_id));
+    }
+
+    #[rstest]
+    fn test_remove_instrument_unknown_noop() {
+        let (mut agg, _, _) = make_aggregator();
+        let unknown = InstrumentId::from("ETH-20240101-3000-C.DERIBIT");
+        assert!(!agg.remove_instrument(&unknown));
+        assert_eq!(agg.instruments().len(), 2);
+    }
+
+    #[rstest]
+    fn test_remove_instrument_cleans_pending_greeks() {
+        let (mut agg, call_id, _) = make_aggregator();
+        let greeks = OptionGreeks {
+            instrument_id: call_id,
+            greeks: OptionGreekValues {
+                delta: 0.55,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        agg.update_greeks(&greeks);
+        assert_eq!(agg.pending_greeks_count(), 1);
+
+        let _ = agg.remove_instrument(&call_id);
+        assert_eq!(agg.pending_greeks_count(), 0);
+    }
+
+    #[rstest]
+    fn test_is_catalog_empty_after_full_removal() {
+        let (mut agg, call_id, put_id) = make_aggregator();
+        assert!(!agg.is_catalog_empty());
+
+        let _ = agg.remove_instrument(&call_id);
+        assert!(!agg.is_catalog_empty());
+
+        let _ = agg.remove_instrument(&put_id);
+        assert!(agg.is_catalog_empty());
     }
 }

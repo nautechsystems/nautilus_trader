@@ -505,6 +505,43 @@ impl OptionChainManager {
         self.maybe_bootstrap();
     }
 
+    /// Handles an expired/settled instrument by removing it from the aggregator,
+    /// unregistering msgbus handlers, and pushing deferred wire unsubscribes.
+    ///
+    /// Returns `true` if the aggregator catalog is now empty (all instruments expired),
+    /// signaling the engine to tear down this entire manager.
+    pub fn handle_instrument_expired(&mut self, instrument_id: &InstrumentId) -> bool {
+        let was_active = self.aggregator.active_ids().contains(instrument_id);
+
+        if !self.aggregator.remove_instrument(instrument_id) {
+            return self.aggregator.is_catalog_empty();
+        }
+
+        if was_active {
+            // Unregister msgbus handlers for this instrument
+            if let Some(qh) = self.quote_handlers.first() {
+                let topic = switchboard::get_quotes_topic(*instrument_id);
+                msgbus::unsubscribe_quotes(topic.into(), qh);
+            }
+
+            if let Some(gh) = self.greeks_handlers.first() {
+                let topic = switchboard::get_option_greeks_topic(*instrument_id);
+                msgbus::unsubscribe_option_greeks(topic.into(), gh);
+            }
+
+            // Push deferred wire unsubscribes
+            self.push_unsubscribe_pair(*instrument_id);
+        }
+
+        log::info!(
+            "Removed expired instrument {instrument_id} from option chain {} (was_active={was_active}, remaining={})",
+            self.aggregator.series_id(),
+            self.aggregator.instruments().len(),
+        );
+
+        self.aggregator.is_catalog_empty()
+    }
+
     /// Routes an incoming quote tick to the aggregator, then bootstraps if ready.
     ///
     /// This handles both option instrument quotes (aggregator) and ATM source quotes
@@ -1149,5 +1186,95 @@ mod tests {
         };
         manager.handle_greeks(&greeks);
         assert!(!manager.bootstrapped);
+    }
+
+    #[rstest]
+    fn test_handle_instrument_expired_removes_from_aggregator() {
+        let (mut manager, queue) = make_rebalance_manager();
+        // Bootstrap so instruments are active
+        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
+        manager.handle_quote(&perp_quote);
+        assert!(manager.bootstrapped);
+        let initial_count = manager.aggregator.instruments().len();
+        queue.borrow_mut().clear(); // clear bootstrap commands
+
+        let expired_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
+        let is_empty = manager.handle_instrument_expired(&expired_id);
+
+        assert!(!is_empty);
+        assert_eq!(manager.aggregator.instruments().len(), initial_count - 1);
+        assert!(!manager.aggregator.active_ids().contains(&expired_id));
+    }
+
+    #[rstest]
+    fn test_handle_instrument_expired_pushes_deferred_unsubscribes() {
+        let (mut manager, queue) = make_rebalance_manager();
+        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
+        manager.handle_quote(&perp_quote);
+        queue.borrow_mut().clear();
+
+        let expired_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
+        manager.handle_instrument_expired(&expired_id);
+
+        // Should push 2 unsubscribe commands (quotes + greeks)
+        let cmds: Vec<_> = queue.borrow().iter().cloned().collect();
+        assert_eq!(cmds.len(), 2);
+        assert!(
+            cmds.iter()
+                .all(|c| matches!(c, DeferredCommand::Unsubscribe(_)))
+        );
+    }
+
+    #[rstest]
+    fn test_handle_instrument_expired_returns_true_when_last() {
+        let series_id = make_series_id();
+        let topic = switchboard::get_option_chain_topic(series_id);
+        let atm_source = AtmSource::MarkPrice(btc_perp());
+        let call_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
+        let strike = Price::from("50000");
+        let mut instruments = HashMap::new();
+        instruments.insert(call_id, (strike, OptionKind::Call));
+        let tracker = AtmTracker::new(atm_source);
+        let aggregator = OptionChainAggregator::new(
+            series_id,
+            StrikeRange::Fixed(vec![strike]),
+            tracker,
+            instruments,
+        );
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let queue = make_test_queue();
+
+        let mut manager = OptionChainManager {
+            aggregator,
+            atm_source,
+            topic,
+            quote_handlers: Vec::new(),
+            greeks_handlers: Vec::new(),
+            mark_handler: None,
+            index_handler: None,
+            timer_name: None,
+            msgbus_priority: 0,
+            bootstrapped: true,
+            deferred_cmd_queue: queue,
+            clock,
+            raw_mode: false,
+        };
+
+        let is_empty = manager.handle_instrument_expired(&call_id);
+        assert!(is_empty);
+        assert!(manager.aggregator.is_catalog_empty());
+    }
+
+    #[rstest]
+    fn test_handle_instrument_expired_unknown_noop() {
+        let (mut manager, queue) = make_manager();
+        queue.borrow_mut().clear();
+
+        let unknown = InstrumentId::from("ETH-20240101-3000-C.DERIBIT");
+        let is_empty = manager.handle_instrument_expired(&unknown);
+
+        // Empty manager returns true (catalog was already empty)
+        assert!(is_empty);
+        assert!(queue.borrow().is_empty()); // no deferred commands pushed
     }
 }

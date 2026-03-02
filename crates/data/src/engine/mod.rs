@@ -70,7 +70,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    UUID4, WeakCell,
+    UUID4, UnixNanos, WeakCell,
     correctness::{
         FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
     },
@@ -85,7 +85,9 @@ use nautilus_model::{
         QuoteTick, TradeTick,
         option_chain::{AtmSource, OptionGreeks, StrikeRange},
     },
-    enums::{AggregationSource, BarAggregation, BookType, PriceType, RecordFlag},
+    enums::{
+        AggregationSource, BarAggregation, BookType, MarketStatusAction, PriceType, RecordFlag,
+    },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -185,6 +187,7 @@ pub struct DataEngine {
     bar_aggregators: AHashMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarType, Vec<BarAggregatorSubscription>>,
     option_chain_managers: AHashMap<OptionSeriesId, Rc<RefCell<OptionChainManager>>>,
+    option_chain_instrument_index: AHashMap<InstrumentId, OptionSeriesId>,
     deferred_cmd_queue: DeferredCommandQueue,
     pending_option_chain_requests: AHashMap<UUID4, (SubscribeOptionChain, AtmSource)>,
     _synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
@@ -236,6 +239,7 @@ impl DataEngine {
             bar_aggregators: AHashMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
             option_chain_managers: AHashMap::new(),
+            option_chain_instrument_index: AHashMap::new(),
             deferred_cmd_queue: Rc::new(RefCell::new(VecDeque::new())),
             pending_option_chain_requests: AHashMap::new(),
             _synthetic_quote_feeds: AHashMap::new(),
@@ -1002,9 +1006,14 @@ impl DataEngine {
 
         let clock = self.clock.clone();
         let client = self.get_client(None, Some(&venue));
-        manager_rc
+
+        if manager_rc
             .borrow_mut()
-            .add_instrument(instrument.id(), strike, kind, client, &clock);
+            .add_instrument(instrument.id(), strike, kind, client, &clock)
+        {
+            self.option_chain_instrument_index
+                .insert(instrument.id(), series_id);
+        }
     }
 
     fn handle_delta(&mut self, delta: OrderBookDelta) {
@@ -1167,6 +1176,57 @@ impl DataEngine {
     fn handle_instrument_status(&mut self, status: InstrumentStatus) {
         let topic = switchboard::get_instrument_status_topic(status.instrument_id);
         msgbus::publish_any(topic, &status);
+
+        // Check if this instrument belongs to an option chain before expiring
+        if self
+            .option_chain_instrument_index
+            .contains_key(&status.instrument_id)
+            && matches!(
+                status.action,
+                MarketStatusAction::Close | MarketStatusAction::NotAvailableForTrading
+            )
+        {
+            self.expire_option_chain_instrument(status.instrument_id);
+        }
+    }
+
+    /// Removes a settled/expired instrument from its option chain manager.
+    ///
+    /// Looks up the owning series via the reverse index, delegates removal to
+    /// the manager (which unregisters msgbus handlers and pushes deferred wire
+    /// unsubscribes), then drains those commands. When the series catalog
+    /// becomes empty, the entire manager is torn down.
+    fn expire_option_chain_instrument(&mut self, instrument_id: InstrumentId) {
+        let Some(series_id) = self.option_chain_instrument_index.remove(&instrument_id) else {
+            return;
+        };
+
+        let Some(manager_rc) = self.option_chain_managers.get(&series_id).cloned() else {
+            return;
+        };
+
+        let series_empty = manager_rc
+            .borrow_mut()
+            .handle_instrument_expired(&instrument_id);
+
+        // Drain deferred unsubscribe commands pushed by the manager
+        self.drain_deferred_commands();
+
+        log::info!(
+            "Expired instrument {instrument_id} from option chain {series_id} (series_empty={series_empty})",
+        );
+
+        if series_empty {
+            let atm_source = manager_rc.borrow().atm_source();
+            let venue = manager_rc.borrow().venue();
+
+            manager_rc.borrow_mut().teardown(&self.clock);
+            self.option_chain_managers.remove(&series_id);
+
+            self.forward_atm_source_unsubscribe(atm_source, venue, None);
+
+            log::info!("Torn down empty option chain manager for {series_id}");
+        }
     }
 
     fn handle_instrument_close(&mut self, close: InstrumentClose) {
@@ -1588,6 +1648,11 @@ impl DataEngine {
             )
         };
 
+        // Index all instruments for reverse lookup
+        for id in manager_rc.borrow().all_instrument_ids() {
+            self.option_chain_instrument_index.insert(id, series_id);
+        }
+
         self.option_chain_managers.insert(series_id, manager_rc);
     }
 
@@ -1648,6 +1713,11 @@ impl DataEngine {
         let atm_source = manager_rc.borrow().atm_source();
         let venue = manager_rc.borrow().venue();
 
+        // Remove all instruments from reverse index
+        for id in &all_ids {
+            self.option_chain_instrument_index.remove(id);
+        }
+
         manager_rc.borrow_mut().teardown(&self.clock);
 
         // Forward wire-level unsubscribes to the data client
@@ -1698,6 +1768,34 @@ impl DataEngine {
             ));
         }
 
+        Self::forward_atm_source_unsubscribe_to(client, atm_source, venue, client_id, ts_init);
+    }
+
+    /// Forwards a wire-level unsubscribe for the ATM source feed to the data client.
+    fn forward_atm_source_unsubscribe(
+        &mut self,
+        atm_source: AtmSource,
+        venue: Venue,
+        client_id: Option<ClientId>,
+    ) {
+        let ts_init = self.clock.borrow().timestamp_ns();
+
+        let Some(client) = self.get_client(client_id.as_ref(), Some(&venue)) else {
+            log::error!("Cannot forward ATM source unsubscribe: no client found for venue={venue}",);
+            return;
+        };
+
+        Self::forward_atm_source_unsubscribe_to(client, atm_source, venue, client_id, ts_init);
+    }
+
+    /// Static helper: sends ATM source unsubscribe to the given client.
+    fn forward_atm_source_unsubscribe_to(
+        client: &mut DataClientAdapter,
+        atm_source: AtmSource,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        ts_init: UnixNanos,
+    ) {
         match atm_source {
             AtmSource::MarkPrice(source_id) => {
                 client.execute_unsubscribe(&UnsubscribeCommand::MarkPrices(
