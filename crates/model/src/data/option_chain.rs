@@ -15,7 +15,7 @@
 
 //! Option chain data types for aggregated option series snapshots.
 
-use std::{collections::BTreeMap, fmt::Display, ops::Deref};
+use std::{collections::{BTreeMap, HashSet}, fmt::Display, ops::Deref};
 
 use nautilus_core::UnixNanos;
 
@@ -59,7 +59,18 @@ impl StrikeRange {
     #[must_use]
     pub fn resolve(&self, atm_price: Option<Price>, all_strikes: &[Price]) -> Vec<Price> {
         match self {
-            Self::Fixed(strikes) => strikes.clone(),
+            Self::Fixed(strikes) => {
+                if all_strikes.is_empty() {
+                    strikes.clone()
+                } else {
+                    let available: HashSet<Price> = all_strikes.iter().copied().collect();
+                    strikes
+                        .iter()
+                        .filter(|s| available.contains(s))
+                        .copied()
+                        .collect()
+                }
+            }
             Self::AtmRelative {
                 strikes_above,
                 strikes_below,
