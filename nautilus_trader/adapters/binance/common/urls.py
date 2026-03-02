@@ -74,7 +74,7 @@ def get_ws_api_base_url(  # noqa: C901 (URL dispatch)
     """
     if environment == BinanceEnvironment.TESTNET:
         if account_type.is_spot_or_margin:
-            return "wss://testnet.binance.vision/ws-api/v3"
+            return "wss://ws-api.testnet.binance.vision/ws-api/v3"
         elif account_type == BinanceAccountType.USDT_FUTURES:
             return "wss://testnet.binancefuture.com/ws-fapi/v1"
         elif account_type == BinanceAccountType.COIN_FUTURES:

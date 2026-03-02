@@ -18,6 +18,7 @@ import pytest
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
+from nautilus_trader.adapters.binance.common.urls import get_ws_api_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 
 
@@ -177,3 +178,94 @@ def test_get_http_base_url(account_type, environment, is_us, expected):
 def test_get_ws_base_url(account_type, environment, is_us, expected):
     url = get_ws_base_url(account_type, environment=environment, is_us=is_us)
     assert url == expected
+
+
+@pytest.mark.parametrize(
+    ("account_type", "environment", "is_us", "expected"),
+    [
+        # Live URLs
+        (
+            BinanceAccountType.SPOT,
+            BinanceEnvironment.LIVE,
+            False,
+            "wss://ws-api.binance.com:443/ws-api/v3",
+        ),
+        (
+            BinanceAccountType.SPOT,
+            BinanceEnvironment.LIVE,
+            True,
+            "wss://ws-api.binance.us:443/ws-api/v3",
+        ),
+        (
+            BinanceAccountType.MARGIN,
+            BinanceEnvironment.LIVE,
+            False,
+            "wss://ws-api.binance.com:443/ws-api/v3",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.LIVE,
+            False,
+            "wss://ws-fapi.binance.com/ws-fapi/v1",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            BinanceEnvironment.LIVE,
+            False,
+            "wss://ws-dapi.binance.com/ws-dapi/v1",
+        ),
+        # Testnet URLs
+        (
+            BinanceAccountType.SPOT,
+            BinanceEnvironment.TESTNET,
+            False,
+            "wss://ws-api.testnet.binance.vision/ws-api/v3",
+        ),
+        (
+            BinanceAccountType.MARGIN,
+            BinanceEnvironment.TESTNET,
+            False,
+            "wss://ws-api.testnet.binance.vision/ws-api/v3",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.TESTNET,
+            False,
+            "wss://testnet.binancefuture.com/ws-fapi/v1",
+        ),
+        # Demo URLs
+        (
+            BinanceAccountType.SPOT,
+            BinanceEnvironment.DEMO,
+            False,
+            "wss://demo-ws-api.binance.com/ws-api/v3",
+        ),
+        (
+            BinanceAccountType.MARGIN,
+            BinanceEnvironment.DEMO,
+            False,
+            "wss://demo-ws-api.binance.com/ws-api/v3",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.DEMO,
+            False,
+            "wss://testnet.binancefuture.com/ws-fapi/v1",
+        ),
+    ],
+)
+def test_get_ws_api_base_url(account_type, environment, is_us, expected):
+    url = get_ws_api_base_url(account_type, environment=environment, is_us=is_us)
+    assert url == expected
+
+
+@pytest.mark.parametrize(
+    ("account_type", "environment"),
+    [
+        (BinanceAccountType.COIN_FUTURES, BinanceEnvironment.TESTNET),
+        (BinanceAccountType.COIN_FUTURES, BinanceEnvironment.DEMO),
+    ],
+)
+def test_get_ws_api_base_url_raises_for_coin_futures(account_type, environment):
+    with pytest.raises(ValueError):
+        get_ws_api_base_url(account_type, environment=environment, is_us=False)
