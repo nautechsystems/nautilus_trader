@@ -17,7 +17,10 @@
 
 use std::{
     future::Future,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -69,34 +72,49 @@ use crate::{
     },
 };
 
-/// Maximum entries in the dedup sets before they are cleared. The race window
-/// between the two WS streams is at most a few seconds, so by the time a set
-/// reaches this capacity the oldest entries are well past their useful lifetime.
+/// Maximum entries in the dedup sets before they are cleared.
 const DEDUP_CAPACITY: usize = 10_000;
 
 /// Shared state for cross-stream event deduplication between the private
-/// and business WebSocket dispatch loops. Tracks which client orders have
-/// reached higher lifecycle phases so that stale events arriving on a
-/// slower stream can be dropped.
+/// and business WebSocket dispatch loops.
 #[doc(hidden)]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct WsDispatchState {
     pub filled_orders: DashSet<ClientOrderId>,
     pub triggered_orders: DashSet<ClientOrderId>,
+    clearing: AtomicBool,
+}
+
+impl Default for WsDispatchState {
+    fn default() -> Self {
+        Self {
+            filled_orders: DashSet::default(),
+            triggered_orders: DashSet::default(),
+            clearing: AtomicBool::new(false),
+        }
+    }
 }
 
 impl WsDispatchState {
-    fn insert_filled(&self, cid: ClientOrderId) {
-        if self.filled_orders.len() >= DEDUP_CAPACITY {
-            self.filled_orders.clear();
+    fn evict_if_full(&self, set: &DashSet<ClientOrderId>) {
+        if set.len() >= DEDUP_CAPACITY
+            && self
+                .clearing
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+        {
+            set.clear();
+            self.clearing.store(false, Ordering::Release);
         }
+    }
+
+    fn insert_filled(&self, cid: ClientOrderId) {
+        self.evict_if_full(&self.filled_orders);
         self.filled_orders.insert(cid);
     }
 
     fn insert_triggered(&self, cid: ClientOrderId) {
-        if self.triggered_orders.len() >= DEDUP_CAPACITY {
-            self.triggered_orders.clear();
-        }
+        self.evict_if_full(&self.triggered_orders);
         self.triggered_orders.insert(cid);
     }
 }
@@ -784,6 +802,7 @@ impl ExecutionClient for OKXExecutionClient {
         // Spawn instrument bootstrap task
         let http_client = self.http_client.clone();
         let ws_private = self.ws_private.clone();
+        let ws_business = self.ws_business.clone();
         let instrument_types = self.config.instrument_types.clone();
 
         get_runtime().spawn(async move {
@@ -812,8 +831,10 @@ impl ExecutionClient for OKXExecutionClient {
                     "Instrument bootstrap yielded no instruments; WebSocket submissions may fail"
                 );
             } else {
-                ws_private.cache_instruments(all_instruments);
-                ws_private.cache_inst_id_codes(all_inst_id_codes);
+                ws_private.cache_instruments(all_instruments.clone());
+                ws_private.cache_inst_id_codes(all_inst_id_codes.clone());
+                ws_business.cache_instruments(all_instruments);
+                ws_business.cache_inst_id_codes(all_inst_id_codes);
                 log::info!("Instruments initialized");
             }
         });
@@ -1313,8 +1334,13 @@ impl ExecutionClient for OKXExecutionClient {
 
         reports.append(&mut margin_reports);
 
-        let _ = nanos_to_datetime(cmd.start);
-        let _ = nanos_to_datetime(cmd.end);
+        if let Some(start) = cmd.start {
+            reports.retain(|r| r.ts_last >= start);
+        }
+
+        if let Some(end) = cmd.end {
+            reports.retain(|r| r.ts_last <= end);
+        }
 
         Ok(reports)
     }
@@ -1377,9 +1403,7 @@ impl ExecutionClient for OKXExecutionClient {
     }
 }
 
-/// Dispatches a WebSocket message using the event emitter, with shared
-/// cross-stream deduplication state to prevent stale lifecycle events
-/// (e.g. `OrderAccepted` arriving after a fill from the other WS stream).
+/// Dispatches a WebSocket message with cross-stream deduplication.
 #[doc(hidden)]
 pub fn dispatch_ws_message(
     message: NautilusWsMessage,

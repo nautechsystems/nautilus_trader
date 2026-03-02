@@ -889,7 +889,16 @@ impl OKXWsFeedHandler {
                     .get(&order_id)
                     .copied()
                     .unwrap_or_else(|| Money::new(0.0, fill_report.commission.currency));
-                let total_fee = current_fee + fill_report.commission;
+                let total_fee = if current_fee.currency == fill_report.commission.currency {
+                    current_fee + fill_report.commission
+                } else {
+                    log::warn!(
+                        "Fee cache currency mismatch for {order_id}: cached={}, fill={}, resetting cache",
+                        current_fee.currency.code,
+                        fill_report.commission.currency.code,
+                    );
+                    fill_report.commission
+                };
                 self.fee_cache.insert(order_id, total_fee);
 
                 let current_filled_qty = self
@@ -1330,7 +1339,13 @@ impl OKXWsFeedHandler {
             return None;
         };
 
-        let inst = self.instruments_cache.get(&inst_id)?;
+        let inst = match self.instruments_cache.get(&inst_id) {
+            Some(inst) => inst,
+            None => {
+                log::warn!("Instrument not in cache for book data: {inst_id}");
+                return None;
+            }
+        };
 
         let instrument_id = inst.id();
         let price_precision = inst.price_precision();
@@ -1682,7 +1697,15 @@ impl OKXWsFeedHandler {
         self.order_state_cache.remove(client_order_id);
         self.active_client_orders.remove(client_order_id);
         self.client_id_aliases.remove(client_order_id);
-        self.client_id_aliases.retain(|_, v| *v != *client_order_id);
+        let stale_keys: Vec<ClientOrderId> = self
+            .client_id_aliases
+            .iter()
+            .filter(|entry| entry.value() == client_order_id)
+            .map(|entry| *entry.key())
+            .collect();
+        for key in stale_keys {
+            self.client_id_aliases.remove(&key);
+        }
 
         self.fee_cache.remove(&venue_order_id.inner());
         self.filled_qty_cache.remove(&venue_order_id.inner());

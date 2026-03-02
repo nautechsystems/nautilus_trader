@@ -79,9 +79,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Quantity::from("0.01"),
     )
     .with_log_data(false)
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-    .with_enable_stop_sells(true)
+    // .with_enable_limit_buys(false)
+    // .with_enable_limit_sells(false)
+    // .with_enable_stop_sells(true)
     // .with_stop_order_type(OrderType::TrailingStopMarket)
     // .with_trailing_offset(Decimal::from(100))
     // .with_trailing_offset_type(TrailingOffsetType::BasisPoints)

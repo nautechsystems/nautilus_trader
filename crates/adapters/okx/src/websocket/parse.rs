@@ -1471,6 +1471,12 @@ pub fn parse_fill_report(
 
             // Calculate incremental fill as: current_total - previous_total
             if let Some(prev_qty) = previous_filled_qty {
+                if current_filled < prev_qty {
+                    anyhow::bail!(
+                        "Cumulative fill went backwards: acc_fill_sz='{acc_fill_sz}' < previous_filled_qty={prev_qty} \
+                         (possible stale data after reconnect)"
+                    );
+                }
                 let incremental = current_filled - prev_qty;
                 if incremental.is_zero() {
                     anyhow::bail!(
@@ -1508,34 +1514,44 @@ pub fn parse_fill_report(
 
     // OKX sends cumulative fees, so we subtract the previous total to get this fill's fee
     let commission = if let Some(previous_fee) = previous_fee {
-        let incremental = total_fee - previous_fee;
+        if total_fee.currency == previous_fee.currency {
+            let incremental = total_fee - previous_fee;
 
-        if incremental < Money::zero(fee_currency) {
-            log::debug!(
-                "Negative incremental fee detected - likely a maker rebate or fee refund: order_id={}, total_fee={}, previous_fee={}, incremental={}",
-                msg.ord_id.as_str(),
-                total_fee,
-                previous_fee,
-                incremental,
-            );
-        }
+            if incremental < Money::zero(fee_currency) {
+                log::debug!(
+                    "Negative incremental fee detected - likely a maker rebate or fee refund: order_id={}, total_fee={}, previous_fee={}, incremental={}",
+                    msg.ord_id.as_str(),
+                    total_fee,
+                    previous_fee,
+                    incremental,
+                );
+            }
 
-        // Skip corruption check when previous is negative (rebate), as transitions from
-        // rebate to charge legitimately have incremental > total (e.g., -1 → +2 gives +3)
-        if previous_fee >= Money::zero(fee_currency)
-            && total_fee > Money::zero(fee_currency)
-            && incremental > total_fee
-        {
-            log::error!(
-                "Incremental fee exceeds total fee - likely fee cache corruption, using total fee as fallback: order_id={}, total_fee={}, previous_fee={}, incremental={}",
+            // Skip corruption check when previous is negative (rebate), as transitions from
+            // rebate to charge legitimately have incremental > total (e.g., -1 → +2 gives +3)
+            if previous_fee >= Money::zero(fee_currency)
+                && total_fee > Money::zero(fee_currency)
+                && incremental > total_fee
+            {
+                log::error!(
+                    "Incremental fee exceeds total fee - likely fee cache corruption, using total fee as fallback: order_id={}, total_fee={}, previous_fee={}, incremental={}",
+                    msg.ord_id.as_str(),
+                    total_fee,
+                    previous_fee,
+                    incremental,
+                );
+                total_fee
+            } else {
+                incremental
+            }
+        } else {
+            log::warn!(
+                "Fee currency changed from {} to {} for order_id={}, using total fee as commission",
+                previous_fee.currency.code,
+                total_fee.currency.code,
                 msg.ord_id.as_str(),
-                total_fee,
-                previous_fee,
-                incremental,
             );
             total_fee
-        } else {
-            incremental
         }
     } else {
         total_fee
@@ -3041,6 +3057,34 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_fill_report_fee_currency_change_no_panic() {
+        let instrument = create_stub_instrument();
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        // First fill charged in USDT
+        let previous_fee = Money::new(1.0, Currency::USDT());
+
+        // Second fill charged in BTC (fee currency changed)
+        let mut order_msg =
+            create_stub_order_msg("0.01", Some("0.02".to_string()), "1234567890", "trade_2");
+        order_msg.fee = Some("-0.00005".to_string());
+        order_msg.fee_ccy = Ustr::from("BTC");
+
+        let result = parse_fill_report(
+            &order_msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            Some(previous_fee),
+            Some(Quantity::from("0.01")),
+            ts_init,
+        );
+
+        let fill_report = result.unwrap();
+        assert_eq!(fill_report.commission.currency, Currency::BTC());
+    }
+
+    #[rstest]
     fn test_parse_fill_report_empty_fill_sz_first_fill() {
         let instrument = create_stub_instrument();
         let account_id = AccountId::new("OKX-001");
@@ -3143,6 +3187,30 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("Cannot determine fill quantity"));
         assert!(err_msg.contains("acc_fill_sz is None"));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_error_acc_fill_sz_less_than_previous() {
+        let instrument = create_stub_instrument();
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        // acc_fill_sz (0.01) < previous_filled_qty (0.03) — stale data after reconnect
+        let order_msg =
+            create_stub_order_msg("", Some("0.01".to_string()), "1234567890", "trade_2");
+
+        let result = parse_fill_report(
+            &order_msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            account_id,
+            None,
+            Some(Quantity::from("0.03")),
+            ts_init,
+        );
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Cumulative fill went backwards"));
     }
 
     #[rstest]

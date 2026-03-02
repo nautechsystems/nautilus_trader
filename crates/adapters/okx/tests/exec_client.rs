@@ -37,8 +37,6 @@ use nautilus_okx::{
 };
 use rstest::rstest;
 
-// -- Test helpers -----------------------------------------------------------
-
 fn test_emitter() -> (
     ExecutionEventEmitter,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -134,8 +132,6 @@ fn drain_events(
     events
 }
 
-// -- BatchCancelOrders tests ------------------------------------------------
-
 #[rstest]
 fn test_batch_cancel_orders_builds_payload() {
     let trader_id = TraderId::from("TRADER-001");
@@ -217,8 +213,6 @@ fn test_batch_cancel_orders_with_empty_cancels() {
     assert_eq!(payload.len(), 0);
 }
 
-// -- dispatch_ws_message: baseline pass-through --------------------------------
-
 #[rstest]
 fn test_dispatch_order_accepted_passes_through() {
     let (emitter, mut rx) = test_emitter();
@@ -279,8 +273,6 @@ fn test_dispatch_order_status_report_accepted_passes_through() {
     assert_eq!(events.len(), 1);
 }
 
-// -- OrderAccepted dedup ----------------------------------------------------
-
 #[rstest]
 fn test_dispatch_order_accepted_skipped_when_already_triggered() {
     let (emitter, mut rx) = test_emitter();
@@ -307,8 +299,6 @@ fn test_dispatch_order_accepted_skipped_when_already_filled() {
     assert_eq!(events.len(), 0);
 }
 
-// -- OrderTriggered dedup ---------------------------------------------------
-
 #[rstest]
 fn test_dispatch_order_triggered_skipped_when_already_filled() {
     let (emitter, mut rx) = test_emitter();
@@ -321,8 +311,6 @@ fn test_dispatch_order_triggered_skipped_when_already_filled() {
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 0);
 }
-
-// -- OrderStatusReport dedup ------------------------------------------------
 
 #[rstest]
 fn test_dispatch_status_report_accepted_skipped_when_triggered() {
@@ -369,8 +357,6 @@ fn test_dispatch_status_report_triggered_skipped_when_filled() {
     assert_eq!(events.len(), 0);
 }
 
-// -- OrderStatusReport state recording --------------------------------------
-
 #[rstest]
 fn test_dispatch_status_report_triggered_records_state() {
     let (emitter, mut rx) = test_emitter();
@@ -405,8 +391,6 @@ fn test_dispatch_status_report_filled_records_state() {
     assert!(state.filled_orders.contains(&ClientOrderId::new("O-001")));
 }
 
-// -- Cross-order isolation --------------------------------------------------
-
 #[rstest]
 fn test_dispatch_dedup_does_not_affect_different_orders() {
     let (emitter, mut rx) = test_emitter();
@@ -419,8 +403,6 @@ fn test_dispatch_dedup_does_not_affect_different_orders() {
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
 }
-
-// -- Full lifecycle ---------------------------------------------------------
 
 #[rstest]
 fn test_dispatch_full_lifecycle_stale_accepted_skipped() {
