@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added BitMEX grid market maker example (Rust)
 - Added BitMEX instrument status subscription support (Rust and Python)
 - Added Bybit book snapshot and funding rate request support (Rust)
+- Added Databento `skip_on_error` flag for `load_instruments` to skip unparsable definitions (#3657), thanks for reporting @davidsblom
 - Added Deribit instrument status subscription support (Rust and Python)
 - Added Hyperliquid order modify support (Rust and Python)
 - Added OKX trailing stop market order support (Rust and Python)
