@@ -154,15 +154,16 @@ use_hyphens_in_client_order_ids=False
 | Order Type          | Linear Perpetual Swap | Notes                                                         |
 |---------------------|-----------------------|---------------------------------------------------------------|
 | `MARKET`            | ✓                     | Immediate execution at market price. Supports quote quantity. |
+| `MARKET_TO_LIMIT`   | ✓                     | Market order converted to IOC limit.                          |
 | `LIMIT`             | ✓                     | Execution at specified price or better.                       |
 | `STOP_MARKET`       | ✓                     | Conditional market order (OKX algo order).                    |
 | `STOP_LIMIT`        | ✓                     | Conditional limit order (OKX algo order).                     |
 | `MARKET_IF_TOUCHED` | ✓                     | Conditional market order (OKX algo order).                    |
 | `LIMIT_IF_TOUCHED`  | ✓                     | Conditional limit order (OKX algo order).                     |
-| `TRAILING_STOP`     | -                     | *Not yet supported*.                                          |
+| `TRAILING_STOP_MARKET` | ✓                  | Trailing stop market order (OKX advance algo order).          |
 
 :::info
-**Conditional orders**: `STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, and `LIMIT_IF_TOUCHED` are implemented as OKX algo orders, providing advanced trigger capabilities with multiple price sources.
+**Conditional orders**: `STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, and `TRAILING_STOP_MARKET` are implemented as OKX algo orders, providing advanced trigger capabilities with multiple price sources. `TRAILING_STOP_MARKET` uses OKX's advance algo order API (`move_order_stop`) and requires the separate `cancel-advance-algos` endpoint for cancellation.
 :::
 
 ### Quantity semantics for spot margin trading
@@ -240,7 +241,7 @@ If you need GTD functionality, you must use Nautilus's strategy-managed GTD feat
 | Query positions   | ✓                     | Real-time position updates.                          |
 | Position mode     | ✓                     | Net vs Long/Short mode (see below).                  |
 | Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.          |
-| Margin mode       | ✓                     | Supports cash, isolated, cross, spot_isolated modes. |
+| Margin mode       | ✓                     | Supports cash, isolated, and cross modes.            |
 
 #### Position modes
 
@@ -270,9 +271,8 @@ OKX supports four trade modes, which the adapter selects automatically based on 
 | Mode                | Used For                                   | Leverage | Borrowing | Configuration |
 |---------------------|--------------------------------------------|----------|-----------|---------------|
 | **`cash`**          | Simple spot trading                        | -        | -         | `use_spot_margin=False` (default for SPOT) |
-| **`spot_isolated`** | Spot trading with margin/leverage          | ✓        | ✓         | `use_spot_margin=True` |
-| **`isolated`**      | Derivatives trading (SWAP/FUTURES/OPTIONS) | ✓        | ✓         | `margin_mode=ISOLATED` or unset (default for derivatives) |
-| **`cross`**         | Derivatives with shared margin pool        | ✓        | ✓         | `margin_mode=CROSS` |
+| **`isolated`**      | Spot margin or derivatives (default)       | ✓        | ✓         | `use_spot_margin=True` with `margin_mode=ISOLATED` (or unset) for SPOT; default for derivatives |
+| **`cross`**         | Spot margin or derivatives, shared pool    | ✓        | ✓         | `use_spot_margin=True` with `margin_mode=CROSS` for SPOT; `margin_mode=CROSS` for derivatives |
 
 #### Configuration-based trade mode selection
 
@@ -293,11 +293,12 @@ exec_clients={
     ),
 }
 
-# SPOT trading WITH margin/leverage (uses 'spot_isolated' mode)
+# SPOT trading WITH margin/leverage (uses 'isolated' or 'cross' mode)
 exec_clients={
     OKX: OKXExecClientConfig(
         instrument_types=(OKXInstrumentType.SPOT,),
         use_spot_margin=True,  # Enable margin trading for SPOT
+        margin_mode=OKXMarginMode.ISOLATED,  # Or CROSS for shared margin
         # ... other config
     ),
 }
@@ -343,7 +344,7 @@ exec_clients={
 
 **How it works:**
 
-- **SPOT orders** → Uses `spot_isolated` mode (because `use_spot_margin=True`)
+- **SPOT orders** → Uses `cross` mode (because `use_spot_margin=True` and `margin_mode=CROSS`)
 - **SWAP orders** → Uses `cross` mode (because `margin_mode=CROSS`)
 - Each order automatically gets the correct `tdMode` based on its instrument type
 - No manual intervention required
@@ -408,6 +409,7 @@ This design ensures:
 | `STOP_LIMIT`        | Last, Mark, Index      | Limit order placement when triggered.     |
 | `MARKET_IF_TOUCHED` | Last, Mark, Index      | Market execution when price touched.      |
 | `LIMIT_IF_TOUCHED`  | Last, Mark, Index      | Limit order placement when price touched. |
+| `TRAILING_STOP_MARKET` | Last, Mark, Index   | Trailing stop with callback ratio.        |
 
 #### Trigger price types
 
@@ -595,7 +597,7 @@ The OKX execution client provides the following configuration options:
 | `api_secret`               | `None`      | Falls back to `OKX_API_SECRET` environment variable when unset. |
 | `api_passphrase`           | `None`      | Falls back to `OKX_API_PASSPHRASE` environment variable when unset. |
 | `margin_mode`              | `None`      | Margin mode for derivatives trading (`ISOLATED` or `CROSS`). Only applies to SWAP/FUTURES/OPTIONS. Defaults to `ISOLATED` if not specified. |
-| `use_spot_margin`          | `False`     | Enables margin/leverage for SPOT trading. When `True`, uses `spot_isolated` trade mode. When `False`, uses `cash` trade mode (no leverage). Only applies to SPOT instruments. |
+| `use_spot_margin`          | `False`     | Enables margin/leverage for SPOT trading. When `True`, uses `isolated` or `cross` trade mode (determined by `margin_mode`). When `False`, uses `cash` trade mode (no leverage). Only applies to SPOT instruments. |
 | `is_demo`                  | `False`     | Connects to the OKX demo trading environment. |
 | `http_timeout_secs`        | `60`        | Request timeout (seconds) for REST trading calls. |
 | `use_fills_channel`        | `False`     | Subscribes to the dedicated fills channel (VIP5+ required) for lower-latency fill reports. |
@@ -613,7 +615,7 @@ Below is an example configuration for a live trading node using OKX data and exe
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig, OKXExecClientConfig
 from nautilus_trader.adapters.okx.factories import OKXLiveDataClientFactory, OKXLiveExecClientFactory
-from nautilus_trader.config import InstrumentProviderConfig, LiveExecEngineConfig, LoggingConfig, TradingNodeConfig
+from nautilus_trader.config import InstrumentProviderConfig, TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode

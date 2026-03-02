@@ -44,7 +44,7 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
         The OKX instrument families to load (e.g., "BTC-USD", "ETH-USD").
         Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN.
         If None, all available instrument families will be attempted (may fail for OPTIONS).
-    contract_types : tuple[OKXInstrumentType], optional
+    contract_types : tuple[OKXContractType], optional
         The OKX contract types of instruments to load.
         If None, all contract types are loaded (subject to instrument types and their compatibility with contract types).
     base_url_http : str, optional
@@ -107,7 +107,7 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     instrument_types : tuple[OKXInstrumentType], default `(OKXInstrumentType.SPOT,)`
         The OKX instrument types of instruments to load.
         If None, all instrument types are loaded (subject to contract types and their compatibility with instrument types).
-    contract_types : tuple[OKXInstrumentType], optional
+    contract_types : tuple[OKXContractType], optional
         The OKX contract types of instruments to load.
         If None, all contract types are loaded (subject to instrument types and their compatibility with contract types).
     instrument_families : tuple[str, ...], optional

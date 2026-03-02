@@ -1855,6 +1855,10 @@ Before running data tests:
 - Sandbox/testnet account with valid API credentials.
 - Target instrument available and loadable via the instrument provider.
 - Environment variables set: `{VENUE}_API_KEY`, `{VENUE}_API_SECRET` (or sandbox variants).
+- If the venue offers a demo/testnet mode (e.g. `is_demo=True`), ensure you are using
+  credentials created for that environment. Demo and production API keys are typically
+  separate and not interchangeable — using the wrong credentials will result in
+  authentication errors (e.g. HTTP 401).
 
 **Python node setup** (reference: `examples/live/{adapter}/{adapter}_data_tester.py`):
 
@@ -2669,6 +2673,10 @@ Before running execution tests:
 - Account funded with sufficient margin for the test instrument and quantities.
 - Target instrument available and loadable via the instrument provider.
 - Environment variables set: `{VENUE}_API_KEY`, `{VENUE}_API_SECRET` (or sandbox variants).
+- If the venue offers a demo/testnet mode (e.g. `is_demo=True`), ensure you are using
+  credentials created for that environment. Demo and production API keys are typically
+  separate and not interchangeable — using the wrong credentials will result in
+  authentication errors (e.g. HTTP 401).
 - Risk engine bypassed (`LiveRiskEngineConfig(bypass=True)`) to avoid interference.
 - Reconciliation enabled to verify state consistency.
 

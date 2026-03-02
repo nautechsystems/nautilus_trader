@@ -17,13 +17,14 @@
 
 use std::{
     future::Future,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use anyhow::Context;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use dashmap::DashSet;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
@@ -43,7 +44,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderType, TrailingOffsetType},
+    enums::{AccountType, OmsType, OrderStatus, OrderType, TrailingOffsetType},
     events::OrderEventAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
@@ -68,6 +69,38 @@ use crate::{
     },
 };
 
+/// Maximum entries in the dedup sets before they are cleared. The race window
+/// between the two WS streams is at most a few seconds, so by the time a set
+/// reaches this capacity the oldest entries are well past their useful lifetime.
+const DEDUP_CAPACITY: usize = 10_000;
+
+/// Shared state for cross-stream event deduplication between the private
+/// and business WebSocket dispatch loops. Tracks which client orders have
+/// reached higher lifecycle phases so that stale events arriving on a
+/// slower stream can be dropped.
+#[doc(hidden)]
+#[derive(Debug, Default)]
+pub struct WsDispatchState {
+    pub filled_orders: DashSet<ClientOrderId>,
+    pub triggered_orders: DashSet<ClientOrderId>,
+}
+
+impl WsDispatchState {
+    fn insert_filled(&self, cid: ClientOrderId) {
+        if self.filled_orders.len() >= DEDUP_CAPACITY {
+            self.filled_orders.clear();
+        }
+        self.filled_orders.insert(cid);
+    }
+
+    fn insert_triggered(&self, cid: ClientOrderId) {
+        if self.triggered_orders.len() >= DEDUP_CAPACITY {
+            self.triggered_orders.clear();
+        }
+        self.triggered_orders.insert(cid);
+    }
+}
+
 #[derive(Debug)]
 pub struct OKXExecutionClient {
     core: ExecutionClientCore,
@@ -80,6 +113,7 @@ pub struct OKXExecutionClient {
     trade_mode: OKXTradeMode,
     ws_stream_handle: Option<JoinHandle<()>>,
     ws_business_stream_handle: Option<JoinHandle<()>>,
+    ws_dispatch_state: Arc<WsDispatchState>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
 }
 
@@ -147,6 +181,7 @@ impl OKXExecutionClient {
             trade_mode,
             ws_stream_handle: None,
             ws_business_stream_handle: None,
+            ws_dispatch_state: Arc::new(WsDispatchState::default()),
             pending_tasks: Mutex::new(Vec::new()),
         })
     }
@@ -613,10 +648,11 @@ impl ExecutionClient for OKXExecutionClient {
         if self.ws_stream_handle.is_none() {
             let stream = self.ws_private.stream();
             let emitter = self.emitter.clone();
+            let state = Arc::clone(&self.ws_dispatch_state);
             let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 while let Some(message) = stream.next().await {
-                    dispatch_ws_message(message, &emitter);
+                    dispatch_ws_message(message, &emitter, &state);
                 }
             });
             self.ws_stream_handle = Some(handle);
@@ -629,10 +665,11 @@ impl ExecutionClient for OKXExecutionClient {
         if self.ws_business_stream_handle.is_none() {
             let stream = self.ws_business.stream();
             let emitter = self.emitter.clone();
+            let state = Arc::clone(&self.ws_dispatch_state);
             let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 while let Some(message) = stream.next().await {
-                    dispatch_ws_message(message, &emitter);
+                    dispatch_ws_message(message, &emitter, &state);
                 }
             });
             self.ws_business_stream_handle = Some(handle);
@@ -1340,11 +1377,18 @@ impl ExecutionClient for OKXExecutionClient {
     }
 }
 
-/// Dispatches a WebSocket message using the event emitter.
-fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitter) {
+/// Dispatches a WebSocket message using the event emitter, with shared
+/// cross-stream deduplication state to prevent stale lifecycle events
+/// (e.g. `OrderAccepted` arriving after a fill from the other WS stream).
+#[doc(hidden)]
+pub fn dispatch_ws_message(
+    message: NautilusWsMessage,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+) {
     match message {
-        NautilusWsMessage::AccountUpdate(state) => {
-            emitter.send_account_state(state);
+        NautilusWsMessage::AccountUpdate(account_state) => {
+            emitter.send_account_state(account_state);
         }
         NautilusWsMessage::PositionUpdate(report) => {
             emitter.send_position_report(report);
@@ -1354,24 +1398,78 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
             for report in reports {
                 match report {
                     ExecutionReport::Order(order_report) => {
+                        if let Some(cid) = order_report.client_order_id {
+                            match order_report.order_status {
+                                OrderStatus::Accepted => {
+                                    if state.filled_orders.contains(&cid)
+                                        || state.triggered_orders.contains(&cid)
+                                    {
+                                        log::debug!(
+                                            "Skipping stale OrderStatusReport(Accepted) \
+                                             for {cid} (already triggered/filled)"
+                                        );
+                                        continue;
+                                    }
+                                }
+                                OrderStatus::Triggered => {
+                                    if state.filled_orders.contains(&cid) {
+                                        log::debug!(
+                                            "Skipping stale OrderStatusReport(Triggered) \
+                                             for {cid} (already filled)"
+                                        );
+                                        continue;
+                                    }
+                                    state.insert_triggered(cid);
+                                }
+                                OrderStatus::Filled => {
+                                    state.insert_filled(cid);
+                                    state.triggered_orders.remove(&cid);
+                                }
+                                OrderStatus::Canceled
+                                | OrderStatus::Expired
+                                | OrderStatus::Rejected => {
+                                    state.triggered_orders.remove(&cid);
+                                    state.filled_orders.remove(&cid);
+                                }
+                                _ => {}
+                            }
+                        }
                         emitter.send_order_status_report(order_report);
                     }
                     ExecutionReport::Fill(fill_report) => {
+                        if let Some(cid) = fill_report.client_order_id {
+                            state.insert_filled(cid);
+                            state.triggered_orders.remove(&cid);
+                        }
                         emitter.send_fill_report(fill_report);
                     }
                 }
             }
         }
         NautilusWsMessage::OrderAccepted(event) => {
+            let cid = event.client_order_id;
+            if state.filled_orders.contains(&cid) || state.triggered_orders.contains(&cid) {
+                log::debug!("Skipping stale OrderAccepted for {cid} (already triggered/filled)");
+                return;
+            }
             emitter.send_order_event(OrderEventAny::Accepted(event));
         }
         NautilusWsMessage::OrderCanceled(event) => {
+            let cid = event.client_order_id;
+            state.triggered_orders.remove(&cid);
+            state.filled_orders.remove(&cid);
             emitter.send_order_event(OrderEventAny::Canceled(event));
         }
         NautilusWsMessage::OrderExpired(event) => {
+            let cid = event.client_order_id;
+            state.triggered_orders.remove(&cid);
+            state.filled_orders.remove(&cid);
             emitter.send_order_event(OrderEventAny::Expired(event));
         }
         NautilusWsMessage::OrderRejected(event) => {
+            let cid = event.client_order_id;
+            state.triggered_orders.remove(&cid);
+            state.filled_orders.remove(&cid);
             emitter.send_order_event(OrderEventAny::Rejected(event));
         }
         NautilusWsMessage::OrderCancelRejected(event) => {
@@ -1381,6 +1479,12 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
             emitter.send_order_event(OrderEventAny::ModifyRejected(event));
         }
         NautilusWsMessage::OrderTriggered(event) => {
+            let cid = event.client_order_id;
+            if state.filled_orders.contains(&cid) {
+                log::debug!("Skipping stale OrderTriggered for {cid} (already filled)");
+                return;
+            }
+            state.insert_triggered(cid);
             emitter.send_order_event(OrderEventAny::Triggered(event));
         }
         NautilusWsMessage::OrderUpdated(event) => {
@@ -1413,96 +1517,4 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
 
 fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<DateTime<Utc>> {
     value.map(|nanos| nanos.to_datetime_utc())
-}
-
-#[cfg(test)]
-mod tests {
-    use nautilus_common::messages::execution::{BatchCancelOrders, CancelOrder};
-    use nautilus_core::{UUID4, UnixNanos};
-    use nautilus_model::identifiers::{
-        ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
-    };
-    use rstest::rstest;
-
-    #[rstest]
-    fn test_batch_cancel_orders_builds_payload() {
-        let trader_id = TraderId::from("TRADER-001");
-        let strategy_id = StrategyId::from("STRATEGY-001");
-        let client_id = Some(ClientId::from("OKX"));
-        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
-        let client_order_id1 = ClientOrderId::new("order1");
-        let client_order_id2 = ClientOrderId::new("order2");
-        let venue_order_id1 = VenueOrderId::new("venue1");
-        let venue_order_id2 = VenueOrderId::new("venue2");
-
-        let cmd = BatchCancelOrders {
-            trader_id,
-            client_id,
-            strategy_id,
-            instrument_id,
-            cancels: vec![
-                CancelOrder {
-                    trader_id,
-                    client_id,
-                    strategy_id,
-                    instrument_id,
-                    client_order_id: client_order_id1,
-                    venue_order_id: Some(venue_order_id1),
-                    command_id: UUID4::default(),
-                    ts_init: UnixNanos::default(),
-                    params: None,
-                },
-                CancelOrder {
-                    trader_id,
-                    client_id,
-                    strategy_id,
-                    instrument_id,
-                    client_order_id: client_order_id2,
-                    venue_order_id: Some(venue_order_id2),
-                    command_id: UUID4::default(),
-                    ts_init: UnixNanos::default(),
-                    params: None,
-                },
-            ],
-            command_id: UUID4::default(),
-            ts_init: UnixNanos::default(),
-            params: None,
-        };
-
-        // Verify we can build the payload structure
-        let mut payload = Vec::with_capacity(cmd.cancels.len());
-        for cancel in &cmd.cancels {
-            payload.push((
-                cancel.instrument_id,
-                Some(cancel.client_order_id),
-                cancel.venue_order_id,
-            ));
-        }
-
-        assert_eq!(payload.len(), 2);
-        assert_eq!(payload[0].0, instrument_id);
-        assert_eq!(payload[0].1, Some(client_order_id1));
-        assert_eq!(payload[0].2, Some(venue_order_id1));
-        assert_eq!(payload[1].0, instrument_id);
-        assert_eq!(payload[1].1, Some(client_order_id2));
-        assert_eq!(payload[1].2, Some(venue_order_id2));
-    }
-
-    #[rstest]
-    fn test_batch_cancel_orders_with_empty_cancels() {
-        let cmd = BatchCancelOrders {
-            trader_id: TraderId::from("TRADER-001"),
-            client_id: Some(ClientId::from("OKX")),
-            strategy_id: StrategyId::from("STRATEGY-001"),
-            instrument_id: InstrumentId::from("BTC-USDT.OKX"),
-            cancels: vec![],
-            command_id: UUID4::default(),
-            ts_init: UnixNanos::default(),
-            params: None,
-        };
-
-        let payload: Vec<(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>)> =
-            Vec::with_capacity(cmd.cancels.len());
-        assert_eq!(payload.len(), 0);
-    }
 }

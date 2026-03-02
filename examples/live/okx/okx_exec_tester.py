@@ -31,7 +31,6 @@ from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
@@ -236,11 +235,17 @@ config_tester = ExecTesterConfig(
     # stop_offset_ticks=50,  # Offset from current price for stop trigger
     # stop_limit_offset_ticks=10,  # Additional offset for STOP_LIMIT orders
     enable_stop_sells=True,
-    stop_order_type=OrderType.TRAILING_STOP_MARKET,
+    stop_order_type=OrderType.STOP_MARKET,
     stop_trigger_type=TriggerType.LAST_PRICE,
-    trailing_offset=Decimal(100),  # 1% callback ratio in basis points
-    trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
-    stop_offset_ticks=50,  # Activation price offset from current market
+    stop_offset_ticks=50,
+    # stop_order_type=OrderType.STOP_LIMIT,
+    # stop_limit_offset_ticks=10,
+    # stop_order_type=OrderType.MARKET_IF_TOUCHED,
+    # stop_order_type=OrderType.LIMIT_IF_TOUCHED,
+    # stop_limit_offset_ticks=10,
+    # stop_order_type=OrderType.TRAILING_STOP_MARKET,
+    # trailing_offset=Decimal(100),  # 1% callback ratio in basis points
+    # trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
     # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,
     # use_individual_cancels_on_stop=True,
