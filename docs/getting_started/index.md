@@ -43,14 +43,7 @@ Sequential execution with proper disposal between runs is supported.
 See [Processes and threads](../concepts/architecture.md#processes-and-threads) for details.
 :::
 
-Backtesting involves running simulated trading systems on historical data.
-
-To get started backtesting with NautilusTrader you need to first understand the two different API
-levels which are provided, and which one may be more suitable for your intended use case.
-
-:::info
-For more information on which API level to choose, refer to the [Backtesting](../concepts/backtesting.md) guide.
-:::
+See the [Backtesting](../concepts/backtesting.md) guide for help choosing an API level.
 
 ### Backtest (low-level API)
 
@@ -76,14 +69,7 @@ installation. This is the fastest way to get up and running to try out NautilusT
 - Open your web browser to `localhost:{port}`:
   - <http://localhost:8888>
 
-:::info
-NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
-therefore we set `log_level` to `ERROR` in the examples. Lowering this level to see
-more logging will cause the notebook to hang during cell execution. We are currently
-investigating a fix that involves either raising the configured rate limits for
-Jupyter, or throttling the log flushing from Nautilus.
-
-- <https://github.com/jupyterlab/jupyterlab/issues/12845>
-- <https://github.com/deshaw/jupyterlab-limit-output>
-
+:::warning
+Examples use `log_level="ERROR"` because Nautilus logging exceeds Jupyter's stdout rate limit,
+causing notebooks to hang at lower log levels.
 :::

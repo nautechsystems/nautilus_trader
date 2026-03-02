@@ -526,14 +526,8 @@ http://127.0.0.1:8888/lab
 
 > [!WARNING]
 >
-> NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
-> Therefore, we set the `log_level` to `ERROR` in the examples. Lowering this level to see more
-> logging will cause the notebook to hang during cell execution. We are investigating a fix that
-> may involve either raising the configured rate limits for Jupyter or throttling the log flushing
-> from Nautilus.
->
-> - <https://github.com/jupyterlab/jupyterlab/issues/12845>
-> - <https://github.com/deshaw/jupyterlab-limit-output>
+> Examples use `log_level="ERROR"` because Nautilus logging exceeds Jupyter's stdout rate limit,
+> causing notebooks to hang at lower log levels.
 
 ## Development
 

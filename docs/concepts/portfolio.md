@@ -147,9 +147,7 @@ stat = WinRate()
 engine.portfolio.analyzer.register_statistic(stat)
 ```
 
-:::info
-See the `PortfolioAnalyzer` [API Reference](../api_reference/analysis.md#class-portfolioanalyzer) for details on available methods.
-:::
+See the [`PortfolioAnalyzer` API Reference](../api_reference/analysis.md#class-portfolioanalyzer) for all available methods.
 
 :::tip
 Ensure your statistic is robust to degenerate inputs such as `None`, empty series, or insufficient data.

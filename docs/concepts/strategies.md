@@ -1,8 +1,7 @@
 # Strategies
 
-The heart of the NautilusTrader user experience is in writing and working with
-trading strategies. Defining a strategy involves inheriting the `Strategy` class and
-implementing the methods required by the strategy's logic.
+Strategies are defined by inheriting the `Strategy` class and implementing
+the methods required by the strategy's logic.
 
 **Capabilities**:
 
@@ -24,10 +23,7 @@ Using the basic building blocks of data ingest, event handling, and order manage
 below), it's possible to implement any type of strategy including directional, momentum, re-balancing,
 pairs, market making etc.
 
-:::info
-See the `Strategy` [API Reference](../api_reference/trading.md) for a complete description
-of all available methods.
-:::
+See the [`Strategy` API Reference](../api_reference/trading.md) for all available methods.
 
 There are two main parts of a Nautilus trading strategy:
 
@@ -243,9 +239,7 @@ def on_start(self) -> None:
 Strategies have access to a `Clock` which provides a number of methods for creating
 different timestamps, as well as setting time alerts or timers to trigger `TimeEvent`s.
 
-:::info
-See the `Clock` [API reference](../api_reference/common.md) for a complete list of available methods.
-:::
+See the [`Clock` API Reference](../api_reference/common.md) for all available methods.
 
 #### Current timestamps
 
@@ -325,10 +319,7 @@ order = self.cache.order(client_order_id)
 position = self.cache.position(position_id)
 ```
 
-:::info
-See the `Cache` [API Reference](../api_reference/cache.md) for a complete description
-of all available methods.
-:::
+See the [`Cache` API Reference](../api_reference/cache.md) for all available methods.
 
 ### Portfolio access
 
@@ -366,10 +357,7 @@ def is_flat(self, instrument_id: InstrumentId) -> bool
 def is_completely_flat(self) -> bool
 ```
 
-:::info
-See the `Portfolio` [API Reference](../api_reference/portfolio.md) for a complete description
-of all available methods.
-:::
+See the [`Portfolio` API Reference](../api_reference/portfolio.md) for all available methods.
 
 #### Reports and analysis
 
@@ -377,25 +365,12 @@ The `Portfolio` also makes a `PortfolioAnalyzer` available, which can be fed wit
 (to accommodate different lookback windows). The analyzer can provide tracking for and generating of performance
 metrics and statistics.
 
-:::info
-See the `PortfolioAnalyzer` [API Reference](../api_reference/analysis.md) for a complete description
-of all available methods.
-:::
-
-:::info
-See the [Portfolio statistics](portfolio.md#portfolio-statistics) guide.
-:::
+See the [`PortfolioAnalyzer` API Reference](../api_reference/analysis.md) and [Portfolio statistics](portfolio.md#portfolio-statistics) guide.
 
 ### Trading commands
 
-NautilusTrader offers a comprehensive suite of trading commands, enabling granular order management
-tailored for algorithmic trading. These commands are essential for executing strategies, managing risk,
-and ensuring seamless interaction with various trading venues. In the following sections, we will
-delve into the specifics of each command and its use cases.
-
-:::info
-The [Execution](../concepts/execution.md) guide explains the flow through the system, and can be helpful to read in conjunction with the below.
-:::
+The following trading commands are available for order management.
+See also the [Execution](../concepts/execution.md) guide for the full flow through the system.
 
 #### Submitting orders
 
@@ -708,9 +683,7 @@ various commands and events belong to. A strategy ID is made up of the
 strategy class name, and the strategies `order_id_tag` separated by a hyphen. For
 example the above config would result in a strategy ID of `MyStrategy-001`.
 
-:::note
-See the `StrategyId` [API Reference](../api_reference/model/identifiers.md) for further details.
-:::
+See the [`StrategyId` API Reference](../api_reference/model/identifiers.md) for further details.
 
 ## Related guides
 

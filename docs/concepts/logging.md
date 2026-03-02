@@ -299,9 +299,7 @@ log_guard = init_logging()
 logger = Logger("MyLogger")
 ```
 
-:::info
-See the `init_logging` [API Reference](../api_reference/common.md) for further details.
-:::
+See the [`init_logging` API Reference](../api_reference/common.md) for further details.
 
 :::warning
 Only one logging subsystem can be initialized per process with an `init_logging` call. Multiple `LogGuard` instances (up to 255) can exist concurrently, and the logging thread will remain active until all guards are dropped.

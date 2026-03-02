@@ -507,10 +507,7 @@ Considerable effort has been made to validate inputs, including the derivation f
 synthetic instruments. Despite this, caution is advised as invalid or erroneous inputs may lead to
 undefined behavior.
 
-:::info
-See the `SyntheticInstrument` [API reference](../api_reference/model/instruments.md#class-syntheticinstrument-1)
-for a detailed understanding of input requirements and potential exceptions.
-:::
+See the [`SyntheticInstrument` API Reference](../api_reference/model/instruments.md#class-syntheticinstrument-1) for input requirements and potential exceptions.
 
 ## Related guides
 
