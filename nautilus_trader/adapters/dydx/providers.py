@@ -21,12 +21,9 @@ This provider uses the Rust-backed HTTP client to fetch instruments from dYdX.
 
 from typing import Any
 
-from nautilus_trader.adapters.dydx.constants import DYDX_VENUE
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
@@ -83,41 +80,3 @@ class DydxInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
 
         self._log.info(f"Loaded {len(instruments)} instruments")
-
-    async def load_ids_async(
-        self,
-        instrument_ids: list[InstrumentId],
-        filters: dict | None = None,
-    ) -> None:
-        if not instrument_ids:
-            self._log.info("No instrument IDs given for loading")
-            return
-
-        for instrument_id in instrument_ids:
-            PyCondition.equal(instrument_id.venue, DYDX_VENUE, "instrument_id.venue", "DYDX")
-
-        # dYdX doesn't support fetching individual instruments, so we load all and filter
-        await self.load_all_async(filters)
-
-        # Filter to only the requested instruments
-        loaded_ids = {inst.id for inst in self.get_all().values()}
-        missing = [str(iid) for iid in instrument_ids if iid not in loaded_ids]
-        if missing and self._log_warnings:
-            self._log.warning(f"Instruments not found: {missing}")
-
-    async def load_async(
-        self,
-        instrument_id: InstrumentId,
-        filters: dict | None = None,
-    ) -> None:
-        PyCondition.equal(instrument_id.venue, DYDX_VENUE, "instrument_id.venue", "DYDX")
-
-        # Check if already loaded
-        if self.find(instrument_id) is not None:
-            return
-
-        # dYdX doesn't support fetching individual instruments, so we load all
-        await self.load_all_async(filters)
-
-        if self.find(instrument_id) is None and self._log_warnings:
-            self._log.warning(f"Instrument {instrument_id} not found")

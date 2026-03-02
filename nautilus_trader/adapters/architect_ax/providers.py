@@ -16,12 +16,9 @@
 from decimal import Decimal
 from typing import Any
 
-from nautilus_trader.adapters.architect_ax.constants import AX_VENUE
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
@@ -82,21 +79,3 @@ class AxInstrumentProvider(InstrumentProvider):
             self.add(instrument)
 
         self._log.info(f"Loaded {len(instruments)} instruments")
-
-    async def load_ids_async(
-        self,
-        instrument_ids: list[InstrumentId],
-        filters: dict | None = None,
-    ) -> None:
-        if not instrument_ids:
-            self._log.warning("No instrument IDs given for loading")
-            return
-
-        for instrument_id in instrument_ids:
-            PyCondition.equal(instrument_id.venue, AX_VENUE, "instrument_id.venue", "AX")
-
-        await self.load_all_async(filters)
-
-    async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
-        PyCondition.not_none(instrument_id, "instrument_id")
-        await self.load_ids_async([instrument_id], filters)

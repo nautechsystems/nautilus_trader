@@ -41,6 +41,7 @@ Released on TBD (UTC).
 - Fixed `CryptoOption` instrument pyo3 transform for (#3626), thanks @davidsblom
 - Fixed `StreamingFeatherWriter` duplicate events from multiple message bus topics (#3625), thanks for reporting @fomotoshi
 - Fixed `VolumeImbalanceBarAggregator` and `VolumeRunsBarAggregator` integer overflow for step >= 923 in high-precision mode (#3658), thanks for reporting @honvl
+- Fixed `InstrumentProvider` `load_ids_async` loading all instruments instead of filtering to requested IDs (affected dYdX, Kraken, AX, Hyperliquid)
 - Fixed Python WS callbacks running off asyncio event-loop thread in Rust adapters (#3653), thanks for reporting @camilorodegheri
 - Fixed Binance Futures algo order serde field renames for WS and HTTP parsing (#3624), thanks for reporting @qu1zzyboy
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
