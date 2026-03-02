@@ -329,6 +329,8 @@ impl DataQueryResult {
                 "drop_chunk: null ptr with non-zero len ({len}) - memory corruption"
             );
 
+            // SAFETY: `ptr`, `len`, and `cap` originate from a valid `CVec` and the
+            // assertions above verify the invariants required by `Vec::from_raw_parts`.
             let data: Vec<Data> = unsafe { Vec::from_raw_parts(ptr.cast::<Data>(), len, cap) };
             drop(data);
         }

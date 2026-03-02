@@ -16,8 +16,8 @@
 //! Enumerations mapping OKX concepts onto idiomatic Nautilus variants.
 
 use nautilus_model::enums::{
-    AggressorSide, LiquiditySide, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
-    TriggerType,
+    AggressorSide, LiquiditySide, OptionKind, OrderSide, OrderSideSpecified, OrderStatus,
+    OrderType, PositionSide, TriggerType,
 };
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
@@ -94,12 +94,11 @@ pub enum OKXSide {
     Sell,
 }
 
-impl From<OrderSide> for OKXSide {
-    fn from(value: OrderSide) -> Self {
+impl From<OrderSideSpecified> for OKXSide {
+    fn from(value: OrderSideSpecified) -> Self {
         match value {
-            OrderSide::Buy => Self::Buy,
-            OrderSide::Sell => Self::Sell,
-            _ => panic!("Invalid `OrderSide`"),
+            OrderSideSpecified::Buy => Self::Buy,
+            OrderSideSpecified::Sell => Self::Sell,
         }
     }
 }
@@ -186,7 +185,7 @@ impl From<OrderStatus> for OKXOrderStatus {
             OrderStatus::Accepted => Self::Live,
             OrderStatus::PartiallyFilled => Self::PartiallyFilled,
             OrderStatus::Filled => Self::Filled,
-            _ => panic!("Invalid `OrderStatus`"),
+            _ => panic!("Invalid `OrderStatus` for OKX: {value:?}"),
         }
     }
 }
@@ -356,7 +355,7 @@ impl From<OKXOptionType> for OptionKind {
         match option_type {
             OKXOptionType::Call => Self::Call,
             OKXOptionType::Put => Self::Put,
-            _ => panic!("Invalid `option_type`, was None"),
+            _ => panic!("Invalid `OKXOptionType` for OptionKind: {option_type:?}"),
         }
     }
 }
@@ -819,7 +818,7 @@ impl From<OrderType> for OKXOrderType {
             | OrderType::TrailingStopMarket => {
                 panic!("Conditional order types must use OKXAlgoOrderType")
             }
-            _ => panic!("Invalid `OrderType` cannot be represented on OKX"),
+            _ => panic!("Invalid `OrderType` cannot be represented on OKX: {value:?}"),
         }
     }
 }

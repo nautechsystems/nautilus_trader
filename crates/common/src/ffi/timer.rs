@@ -279,6 +279,7 @@ pub unsafe extern "C" fn time_event_new(
     ts_event: u64,
     ts_init: u64,
 ) -> TimeEvent {
+    // SAFETY: `name_ptr` is guaranteed to be a valid C string by the FFI caller contract.
     TimeEvent::new(
         unsafe { cstr_to_ustr(name_ptr) },
         event_id,

@@ -3369,7 +3369,7 @@ impl OKXHttpClient {
                 "Invalid order side".to_string(),
             ));
         }
-        let okx_side: OKXSide = order_side.into();
+        let okx_side = OKXSide::from(order_side.as_specified());
         let algo_type = conditional_order_to_algo_type(order_type)
             .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
 

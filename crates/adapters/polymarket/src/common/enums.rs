@@ -128,12 +128,14 @@ impl From<PolymarketOrderSide> for OrderSide {
     }
 }
 
-impl From<OrderSide> for PolymarketOrderSide {
-    fn from(value: OrderSide) -> Self {
+impl TryFrom<OrderSide> for PolymarketOrderSide {
+    type Error = anyhow::Error;
+
+    fn try_from(value: OrderSide) -> anyhow::Result<Self> {
         match value {
-            OrderSide::Buy => Self::Buy,
-            OrderSide::Sell => Self::Sell,
-            _ => panic!("Invalid `OrderSide` for Polymarket: {value:?}"),
+            OrderSide::Buy => Ok(Self::Buy),
+            OrderSide::Sell => Ok(Self::Sell),
+            _ => anyhow::bail!("Invalid `OrderSide` for Polymarket: {value:?}"),
         }
     }
 }
@@ -159,14 +161,16 @@ impl From<PolymarketOrderType> for TimeInForce {
     }
 }
 
-impl From<TimeInForce> for PolymarketOrderType {
-    fn from(value: TimeInForce) -> Self {
+impl TryFrom<TimeInForce> for PolymarketOrderType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: TimeInForce) -> anyhow::Result<Self> {
         match value {
-            TimeInForce::Gtc => Self::GTC,
-            TimeInForce::Gtd => Self::GTD,
-            TimeInForce::Fok => Self::FOK,
-            TimeInForce::Ioc => Self::FAK,
-            _ => panic!("Unsupported `TimeInForce` for Polymarket: {value:?}"),
+            TimeInForce::Gtc => Ok(Self::GTC),
+            TimeInForce::Gtd => Ok(Self::GTD),
+            TimeInForce::Fok => Ok(Self::FOK),
+            TimeInForce::Ioc => Ok(Self::FAK),
+            _ => anyhow::bail!("Unsupported `TimeInForce` for Polymarket: {value:?}"),
         }
     }
 }
@@ -284,7 +288,7 @@ mod tests {
         #[case] nautilus: OrderSide,
         #[case] expected: PolymarketOrderSide,
     ) {
-        assert_eq!(PolymarketOrderSide::from(nautilus), expected);
+        assert_eq!(PolymarketOrderSide::try_from(nautilus).unwrap(), expected);
     }
 
     #[rstest]
@@ -318,7 +322,7 @@ mod tests {
         #[case] tif: TimeInForce,
         #[case] expected: PolymarketOrderType,
     ) {
-        assert_eq!(PolymarketOrderType::from(tif), expected);
+        assert_eq!(PolymarketOrderType::try_from(tif).unwrap(), expected);
     }
 
     #[rstest]
