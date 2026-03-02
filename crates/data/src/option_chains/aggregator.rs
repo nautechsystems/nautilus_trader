@@ -472,6 +472,8 @@ impl OptionChainAggregator {
             .retain(|strike, _| active_strikes.contains(strike));
         self.put_buffer
             .retain(|strike, _| active_strikes.contains(strike));
+        self.pending_greeks
+            .retain(|id, _| self.active_ids.contains(id));
 
         // Update last_atm_strike and record rebalance timestamp
         if let Some(atm) = self.atm_tracker.atm_price() {
