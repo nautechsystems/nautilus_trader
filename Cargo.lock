@@ -5502,6 +5502,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-kalshi"
+version = "0.54.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-lc-rs",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-testkit",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "ustr",
+ "zeroize",
+]
+
+[[package]]
 name = "nautilus-kraken"
 version = "0.54.0"
 dependencies = [
@@ -5820,6 +5850,7 @@ dependencies = [
  "nautilus-hyperliquid",
  "nautilus-indicators",
  "nautilus-infrastructure",
+ "nautilus-kalshi",
  "nautilus-kraken",
  "nautilus-live",
  "nautilus-model",
