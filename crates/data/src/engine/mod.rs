@@ -1529,6 +1529,10 @@ impl DataEngine {
             self.forward_option_chain_unsubscribes(&all_ids, old_atm, old_venue, cmd.client_id);
         }
 
+        // Drain any stale pending forward price requests for this series
+        self.pending_option_chain_requests
+            .retain(|_, (pending_cmd, _)| pending_cmd.series_id != series_id);
+
         let resolved_atm_source = match cmd.atm_source {
             Some(source) => source,
             None => match self.resolve_default_atm_source(&series_id) {
