@@ -27,7 +27,8 @@ use nautilus_common::{
     clock::Clock,
     messages::data::{
         SubscribeCommand, SubscribeIndexPrices, SubscribeMarkPrices, SubscribeOptionChain,
-        SubscribeOptionGreeks, SubscribeQuotes,
+        SubscribeOptionGreeks, SubscribeQuotes, UnsubscribeCommand, UnsubscribeOptionGreeks,
+        UnsubscribeQuotes,
     },
     msgbus::{self, MStr, Topic, TypedHandler, switchboard},
     timer::{TimeEvent, TimeEventCallback},
@@ -54,6 +55,13 @@ use super::{
 };
 use crate::client::DataClientAdapter;
 
+/// Pending wire-level changes from rebalance, to be drained by the `DataEngine`.
+#[derive(Debug, Default)]
+pub struct PendingWireChanges {
+    pub subscribe: Vec<InstrumentId>,
+    pub unsubscribe: Vec<InstrumentId>,
+}
+
 /// Per-series option chain manager.
 ///
 /// Each instance manages a single option series: its aggregator,
@@ -74,6 +82,8 @@ pub struct OptionChainManager {
     bootstrapped: bool,
     /// Wire-level instrument subscriptions deferred until ATM bootstrap.
     pending_wire_instruments: Option<Vec<InstrumentId>>,
+    /// Wire-level subscribe/unsubscribe changes deferred from rebalance.
+    pending_rebalance_wire: Option<PendingWireChanges>,
     /// When `true`, every quote/greeks update for an active instrument immediately publishes a snapshot.
     raw_mode: bool,
 }
@@ -129,6 +139,7 @@ impl OptionChainManager {
             msgbus_priority,
             bootstrapped,
             pending_wire_instruments: None,
+            pending_rebalance_wire: None,
             raw_mode,
         };
         let manager_rc = Rc::new(RefCell::new(manager));
@@ -543,6 +554,11 @@ impl OptionChainManager {
         self.pending_wire_instruments.take()
     }
 
+    /// Takes pending rebalance wire changes (for DataEngine to drain).
+    pub fn take_pending_rebalance_wire(&mut self) -> Option<PendingWireChanges> {
+        self.pending_rebalance_wire.take()
+    }
+
     /// Registers msgbus handlers for a batch of instruments.
     fn register_handlers_for_instruments_bulk(&mut self, instrument_ids: &[InstrumentId]) {
         for &id in instrument_ids {
@@ -583,6 +599,46 @@ impl OptionChainManager {
                 correlation_id: None,
                 params: None,
             }));
+        }
+    }
+
+    /// Forwards quote and greeks wire unsubscriptions for a batch of instruments.
+    pub fn forward_bulk_instrument_unsubscriptions(
+        client: Option<&mut DataClientAdapter>,
+        instrument_ids: &[InstrumentId],
+        venue: Venue,
+        clock: &Rc<RefCell<dyn Clock>>,
+    ) {
+        let Some(client) = client else {
+            log::error!(
+                "Cannot forward deferred unsubscriptions: no client for venue={venue}",
+            );
+            return;
+        };
+
+        let ts_init = clock.borrow().timestamp_ns();
+
+        for &instrument_id in instrument_ids {
+            client.execute_unsubscribe(&UnsubscribeCommand::Quotes(UnsubscribeQuotes {
+                instrument_id,
+                client_id: None,
+                venue: Some(venue),
+                command_id: UUID4::new(),
+                ts_init,
+                correlation_id: None,
+                params: None,
+            }));
+            client.execute_unsubscribe(&UnsubscribeCommand::OptionGreeks(
+                UnsubscribeOptionGreeks {
+                    instrument_id,
+                    client_id: None,
+                    venue: Some(venue),
+                    command_id: UUID4::new(),
+                    ts_init,
+                    correlation_id: None,
+                    params: None,
+                },
+            ));
         }
     }
 
@@ -711,6 +767,13 @@ impl OptionChainManager {
         }
 
         if !action.add.is_empty() || !action.remove.is_empty() {
+            // Store pending wire changes for the DataEngine to drain
+            let changes = self
+                .pending_rebalance_wire
+                .get_or_insert_with(PendingWireChanges::default);
+            changes.subscribe.extend(action.add.iter());
+            changes.unsubscribe.extend(action.remove.iter());
+
             log::info!(
                 "Rebalanced option chain for {}: +{} -{} instruments",
                 self.aggregator.series_id(),

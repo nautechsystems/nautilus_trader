@@ -24,4 +24,4 @@ pub mod manager;
 pub use aggregator::{OptionChainAggregator, RebalanceAction};
 pub use atm_tracker::AtmTracker;
 pub use handlers::{OptionChainGreeksHandler, OptionChainQuoteHandler, OptionChainSlicePublisher};
-pub use manager::OptionChainManager;
+pub use manager::{OptionChainManager, PendingWireChanges};

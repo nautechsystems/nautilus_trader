@@ -108,7 +108,7 @@ use crate::{
         VolumeRunsBarAggregator,
     },
     client::DataClientAdapter,
-    option_chains::OptionChainManager,
+    option_chains::{OptionChainManager, PendingWireChanges},
 };
 
 /// Typed subscription for bar aggregator handlers.
@@ -1159,8 +1159,10 @@ impl DataEngine {
         msgbus::publish_any(topic, &close);
     }
 
-    /// Drains pending wire subscriptions from option chain managers that just bootstrapped.
+    /// Drains pending wire subscriptions from option chain managers that just bootstrapped
+    /// or rebalanced.
     fn forward_pending_option_chain_subscriptions(&mut self) {
+        // Drain bootstrap pending wire instruments
         let pending: Vec<(OptionSeriesId, Vec<InstrumentId>)> = self
             .option_chain_managers
             .iter()
@@ -1185,6 +1187,50 @@ impl DataEngine {
                 "Forwarded {} deferred wire subscriptions for option chain {series_id}",
                 instruments.len(),
             );
+        }
+
+        // Drain rebalance pending wire changes (subscribe + unsubscribe)
+        let rebalance_pending: Vec<(OptionSeriesId, PendingWireChanges)> = self
+            .option_chain_managers
+            .iter()
+            .filter_map(|(id, mgr)| {
+                mgr.borrow_mut()
+                    .take_pending_rebalance_wire()
+                    .map(|changes| (*id, changes))
+            })
+            .collect();
+
+        for (series_id, changes) in rebalance_pending {
+            let venue = series_id.venue;
+            let clock = self.clock.clone();
+
+            if !changes.subscribe.is_empty() {
+                let client = self.get_client(None, Some(&venue));
+                OptionChainManager::forward_bulk_instrument_subscriptions(
+                    client,
+                    &changes.subscribe,
+                    venue,
+                    &clock,
+                );
+                log::info!(
+                    "Forwarded {} rebalance wire subscriptions for option chain {series_id}",
+                    changes.subscribe.len(),
+                );
+            }
+
+            if !changes.unsubscribe.is_empty() {
+                let client = self.get_client(None, Some(&venue));
+                OptionChainManager::forward_bulk_instrument_unsubscriptions(
+                    client,
+                    &changes.unsubscribe,
+                    venue,
+                    &clock,
+                );
+                log::info!(
+                    "Forwarded {} rebalance wire unsubscriptions for option chain {series_id}",
+                    changes.unsubscribe.len(),
+                );
+            }
         }
     }
 
