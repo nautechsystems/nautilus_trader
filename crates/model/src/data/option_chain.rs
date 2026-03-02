@@ -15,7 +15,11 @@
 
 //! Option chain data types for aggregated option series snapshots.
 
-use std::{collections::{BTreeMap, HashSet}, fmt::Display, ops::Deref};
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt::Display,
+    ops::Deref,
+};
 
 use nautilus_core::UnixNanos;
 

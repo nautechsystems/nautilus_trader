@@ -17,9 +17,12 @@ use std::num::NonZeroUsize;
 
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
-    data::{BarType, DataType},
+    data::{
+        BarType, DataType,
+        option_chain::{AtmSource, StrikeRange},
+    },
     enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
 };
 
 use super::check_client_id_or_venue;
@@ -582,6 +585,45 @@ impl SubscribeInstrumentClose {
             ts_init,
             correlation_id,
             params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SubscribeOptionChain {
+    pub series_id: OptionSeriesId,
+    pub strike_range: StrikeRange,
+    pub atm_source: Option<AtmSource>,
+    pub snapshot_interval_ms: Option<u64>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+}
+
+impl SubscribeOptionChain {
+    /// Creates a new [`SubscribeOptionChain`] instance.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        series_id: OptionSeriesId,
+        strike_range: StrikeRange,
+        atm_source: Option<AtmSource>,
+        snapshot_interval_ms: Option<u64>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+    ) -> Self {
+        check_client_id_or_venue(&client_id, &venue);
+        Self {
+            series_id,
+            strike_range,
+            atm_source,
+            snapshot_interval_ms,
+            command_id,
+            ts_init,
+            client_id,
+            venue,
         }
     }
 }

@@ -53,14 +53,10 @@ use super::{
         OptionChainQuoteHandler, OptionChainSlicePublisher,
     },
 };
-use crate::client::DataClientAdapter;
-
-/// Pending wire-level changes from rebalance, to be drained by the `DataEngine`.
-#[derive(Debug, Default)]
-pub struct PendingWireChanges {
-    pub subscribe: Vec<InstrumentId>,
-    pub unsubscribe: Vec<InstrumentId>,
-}
+use crate::{
+    client::DataClientAdapter,
+    engine::{DeferredCommand, DeferredCommandQueue},
+};
 
 /// Per-series option chain manager.
 ///
@@ -80,10 +76,10 @@ pub struct OptionChainManager {
     msgbus_priority: u8,
     /// Whether the first ATM price has been received and the active set bootstrapped.
     bootstrapped: bool,
-    /// Wire-level instrument subscriptions deferred until ATM bootstrap.
-    pending_wire_instruments: Option<Vec<InstrumentId>>,
-    /// Wire-level subscribe/unsubscribe changes deferred from rebalance.
-    pending_rebalance_wire: Option<PendingWireChanges>,
+    /// Shared deferred command queue — the `DataEngine` drains this on each data tick.
+    deferred_cmd_queue: DeferredCommandQueue,
+    /// Clock reference for constructing command timestamps.
+    clock: Rc<RefCell<dyn Clock>>,
     /// When `true`, every quote/greeks update for an active instrument immediately publishes a snapshot.
     raw_mode: bool,
 }
@@ -96,7 +92,7 @@ impl OptionChainManager {
     /// Returns the manager wrapped in `Rc<RefCell<>>` (needed for `WeakCell`
     /// handler pattern).
     #[allow(clippy::too_many_arguments)]
-    pub fn create_and_setup(
+    pub(crate) fn create_and_setup(
         series_id: OptionSeriesId,
         cache: Rc<RefCell<Cache>>,
         cmd: &SubscribeOptionChain,
@@ -105,6 +101,7 @@ impl OptionChainManager {
         msgbus_priority: u8,
         client: Option<&mut DataClientAdapter>,
         initial_atm_price: Option<Price>,
+        deferred_cmd_queue: DeferredCommandQueue,
     ) -> Rc<RefCell<Self>> {
         let topic = switchboard::get_option_chain_topic(series_id);
         let instruments = Self::resolve_instruments(&cache, &series_id);
@@ -143,8 +140,8 @@ impl OptionChainManager {
             timer_name: None,
             msgbus_priority,
             bootstrapped,
-            pending_wire_instruments: None,
-            pending_rebalance_wire: None,
+            deferred_cmd_queue,
+            clock: clock.clone(),
             raw_mode,
         };
         let manager_rc = Rc::new(RefCell::new(manager));
@@ -324,9 +321,6 @@ impl OptionChainManager {
                 correlation_id: None,
                 params: None,
             }));
-        }
-
-        for instrument_id in instrument_ids {
             client.execute_subscribe(&SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
                 instrument_id: *instrument_id,
                 client_id: cmd.client_id,
@@ -530,7 +524,7 @@ impl OptionChainManager {
     /// Bootstraps the active instrument set on the first ATM price arrival.
     ///
     /// Computes active strikes, registers msgbus handlers for those instruments,
-    /// and stores pending wire subscriptions for the DataEngine to drain.
+    /// and pushes deferred wire subscriptions into the shared command queue.
     fn maybe_bootstrap(&mut self) {
         if self.bootstrapped {
             return;
@@ -543,107 +537,24 @@ impl OptionChainManager {
         // First ATM received — compute active set and register handlers
         let active_ids = self.aggregator.recompute_active_set();
         self.register_handlers_for_instruments_bulk(&active_ids);
-        let count = active_ids.len();
-        self.pending_wire_instruments = Some(active_ids);
+
+        for &id in &active_ids {
+            self.push_subscribe_pair(id);
+        }
+
         self.bootstrapped = true;
 
         log::info!(
             "Bootstrapped option chain for {} ({} active instruments)",
             self.aggregator.series_id(),
-            count,
+            active_ids.len(),
         );
-    }
-
-    /// Takes the pending wire instrument subscriptions (for DataEngine to drain).
-    pub fn take_pending_wire_instruments(&mut self) -> Option<Vec<InstrumentId>> {
-        self.pending_wire_instruments.take()
-    }
-
-    /// Takes pending rebalance wire changes (for DataEngine to drain).
-    pub fn take_pending_rebalance_wire(&mut self) -> Option<PendingWireChanges> {
-        self.pending_rebalance_wire.take()
     }
 
     /// Registers msgbus handlers for a batch of instruments.
     fn register_handlers_for_instruments_bulk(&mut self, instrument_ids: &[InstrumentId]) {
         for &id in instrument_ids {
             self.register_handlers_for_instrument(id);
-        }
-    }
-
-    /// Forwards quote and greeks wire subscriptions for a batch of instruments.
-    pub fn forward_bulk_instrument_subscriptions(
-        client: Option<&mut DataClientAdapter>,
-        instrument_ids: &[InstrumentId],
-        venue: Venue,
-        clock: &Rc<RefCell<dyn Clock>>,
-    ) {
-        let Some(client) = client else {
-            log::error!("Cannot forward deferred subscriptions: no client for venue={venue}",);
-            return;
-        };
-
-        let ts_init = clock.borrow().timestamp_ns();
-
-        for &instrument_id in instrument_ids {
-            client.execute_subscribe(&SubscribeCommand::Quotes(SubscribeQuotes {
-                instrument_id,
-                client_id: None,
-                venue: Some(venue),
-                command_id: UUID4::new(),
-                ts_init,
-                correlation_id: None,
-                params: None,
-            }));
-            client.execute_subscribe(&SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
-                instrument_id,
-                client_id: None,
-                venue: Some(venue),
-                command_id: UUID4::new(),
-                ts_init,
-                correlation_id: None,
-                params: None,
-            }));
-        }
-    }
-
-    /// Forwards quote and greeks wire unsubscriptions for a batch of instruments.
-    pub fn forward_bulk_instrument_unsubscriptions(
-        client: Option<&mut DataClientAdapter>,
-        instrument_ids: &[InstrumentId],
-        venue: Venue,
-        clock: &Rc<RefCell<dyn Clock>>,
-    ) {
-        let Some(client) = client else {
-            log::error!(
-                "Cannot forward deferred unsubscriptions: no client for venue={venue}",
-            );
-            return;
-        };
-
-        let ts_init = clock.borrow().timestamp_ns();
-
-        for &instrument_id in instrument_ids {
-            client.execute_unsubscribe(&UnsubscribeCommand::Quotes(UnsubscribeQuotes {
-                instrument_id,
-                client_id: None,
-                venue: Some(venue),
-                command_id: UUID4::new(),
-                ts_init,
-                correlation_id: None,
-                params: None,
-            }));
-            client.execute_unsubscribe(&UnsubscribeCommand::OptionGreeks(
-                UnsubscribeOptionGreeks {
-                    instrument_id,
-                    client_id: None,
-                    venue: Some(venue),
-                    command_id: UUID4::new(),
-                    ts_init,
-                    correlation_id: None,
-                    params: None,
-                },
-            ));
         }
     }
 
@@ -690,6 +601,64 @@ impl OptionChainManager {
             let topic = switchboard::get_option_greeks_topic(instrument_id);
             msgbus::subscribe_option_greeks(topic.into(), gh, Some(self.msgbus_priority));
         }
+    }
+
+    /// Pushes deferred subscribe commands (quotes + greeks) for a single instrument.
+    fn push_subscribe_pair(&self, instrument_id: InstrumentId) {
+        let venue = self.aggregator.series_id().venue;
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let mut queue = self.deferred_cmd_queue.borrow_mut();
+        queue.push_back(DeferredCommand::Subscribe(SubscribeCommand::Quotes(
+            SubscribeQuotes {
+                instrument_id,
+                client_id: None,
+                venue: Some(venue),
+                command_id: UUID4::new(),
+                ts_init,
+                correlation_id: None,
+                params: None,
+            },
+        )));
+        queue.push_back(DeferredCommand::Subscribe(SubscribeCommand::OptionGreeks(
+            SubscribeOptionGreeks {
+                instrument_id,
+                client_id: None,
+                venue: Some(venue),
+                command_id: UUID4::new(),
+                ts_init,
+                correlation_id: None,
+                params: None,
+            },
+        )));
+    }
+
+    /// Pushes deferred unsubscribe commands (quotes + greeks) for a single instrument.
+    fn push_unsubscribe_pair(&self, instrument_id: InstrumentId) {
+        let venue = self.aggregator.series_id().venue;
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let mut queue = self.deferred_cmd_queue.borrow_mut();
+        queue.push_back(DeferredCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+            UnsubscribeQuotes {
+                instrument_id,
+                client_id: None,
+                venue: Some(venue),
+                command_id: UUID4::new(),
+                ts_init,
+                correlation_id: None,
+                params: None,
+            },
+        )));
+        queue.push_back(DeferredCommand::Unsubscribe(
+            UnsubscribeCommand::OptionGreeks(UnsubscribeOptionGreeks {
+                instrument_id,
+                client_id: None,
+                venue: Some(venue),
+                command_id: UUID4::new(),
+                ts_init,
+                correlation_id: None,
+                params: None,
+            }),
+        ));
     }
 
     /// Forwards quote and greeks subscriptions for a single instrument to the data client.
@@ -771,14 +740,15 @@ impl OptionChainManager {
             }
         }
 
-        if !action.add.is_empty() || !action.remove.is_empty() {
-            // Store pending wire changes for the DataEngine to drain
-            let changes = self
-                .pending_rebalance_wire
-                .get_or_insert_with(PendingWireChanges::default);
-            changes.subscribe.extend(action.add.iter());
-            changes.unsubscribe.extend(action.remove.iter());
+        // Push deferred wire-level changes into the shared command queue
+        for &id in &action.add {
+            self.push_subscribe_pair(id);
+        }
+        for &id in &action.remove {
+            self.push_unsubscribe_pair(id);
+        }
 
+        if !action.add.is_empty() || !action.remove.is_empty() {
             log::info!(
                 "Rebalanced option chain for {}: +{} -{} instruments",
                 self.aggregator.series_id(),
@@ -850,6 +820,8 @@ impl OptionChainManager {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use nautilus_common::clock::TestClock;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
@@ -874,7 +846,11 @@ mod tests {
         InstrumentId::from("BTC-PERPETUAL.DERIBIT")
     }
 
-    fn make_manager() -> OptionChainManager {
+    fn make_test_queue() -> DeferredCommandQueue {
+        Rc::new(RefCell::new(VecDeque::new()))
+    }
+
+    fn make_manager() -> (OptionChainManager, DeferredCommandQueue) {
         let series_id = make_series_id();
         let topic = switchboard::get_option_chain_topic(series_id);
         let atm_source = AtmSource::MarkPrice(btc_perp());
@@ -885,8 +861,10 @@ mod tests {
             tracker,
             HashMap::new(),
         );
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let queue = make_test_queue();
 
-        OptionChainManager {
+        let manager = OptionChainManager {
             aggregator,
             atm_source,
             topic,
@@ -897,14 +875,16 @@ mod tests {
             timer_name: None,
             msgbus_priority: 0,
             bootstrapped: true,
-            pending_wire_instruments: None,
+            deferred_cmd_queue: queue.clone(),
+            clock,
             raw_mode: false,
-        }
+        };
+        (manager, queue)
     }
 
     #[rstest]
     fn test_manager_handle_quote_no_instrument() {
-        let mut manager = make_manager();
+        let (mut manager, _queue) = make_manager();
 
         // Should not panic — quote for unknown instrument
         let quote = QuoteTick::new(
@@ -921,7 +901,7 @@ mod tests {
 
     #[rstest]
     fn test_manager_publish_slice_empty() {
-        let mut manager = make_manager();
+        let (mut manager, _queue) = make_manager();
         // Should not panic — empty slice skips publish
         manager.publish_slice(UnixNanos::from(100u64));
     }
@@ -929,7 +909,7 @@ mod tests {
     #[rstest]
     fn test_manager_teardown_no_handlers() {
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
-        let mut manager = make_manager();
+        let (mut manager, _queue) = make_manager();
         // Should not panic — no handlers to unregister
         manager.teardown(&clock);
         assert!(manager.quote_handlers.is_empty());
@@ -947,7 +927,7 @@ mod tests {
         )
     }
 
-    fn make_rebalance_manager() -> OptionChainManager {
+    fn make_rebalance_manager() -> (OptionChainManager, DeferredCommandQueue) {
         let series_id = make_series_id();
         let topic = switchboard::get_option_chain_topic(series_id);
         let atm_source = AtmSource::UnderlyingQuoteMid(btc_perp());
@@ -972,8 +952,10 @@ mod tests {
             tracker,
             instruments,
         );
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let queue = make_test_queue();
 
-        OptionChainManager {
+        let manager = OptionChainManager {
             aggregator,
             atm_source,
             topic,
@@ -984,14 +966,16 @@ mod tests {
             timer_name: None,
             msgbus_priority: 0,
             bootstrapped: false,
-            pending_wire_instruments: None,
+            deferred_cmd_queue: queue.clone(),
+            clock,
             raw_mode: false,
-        }
+        };
+        (manager, queue)
     }
 
     #[rstest]
     fn test_manager_publish_slice_triggers_rebalance() {
-        let mut manager = make_rebalance_manager();
+        let (mut manager, queue) = make_rebalance_manager();
         // Initially no instruments active (ATM unknown, deferred)
         assert_eq!(manager.aggregator.instrument_ids().len(), 0);
 
@@ -1001,9 +985,8 @@ mod tests {
         assert!(manager.bootstrapped);
         assert_eq!(manager.aggregator.instrument_ids().len(), 6); // 3 strikes × 2
 
-        // Pending wire instruments should be set
-        assert!(manager.pending_wire_instruments.is_some());
-        assert_eq!(manager.pending_wire_instruments.as_ref().unwrap().len(), 6);
+        // Deferred queue should contain subscribe commands (6 instruments × 2 = 12 commands)
+        assert_eq!(queue.borrow().len(), 12);
 
         // publish_slice should still work normally after bootstrap
         manager.publish_slice(UnixNanos::from(100u64));
@@ -1012,7 +995,7 @@ mod tests {
 
     #[rstest]
     fn test_manager_add_instrument_new() {
-        let mut manager = make_rebalance_manager();
+        let (mut manager, _queue) = make_rebalance_manager();
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let new_id = InstrumentId::from("BTC-20240101-57500-C.DERIBIT");
         let strike = Price::from("57500");
@@ -1026,7 +1009,7 @@ mod tests {
 
     #[rstest]
     fn test_manager_add_instrument_already_known() {
-        let mut manager = make_rebalance_manager();
+        let (mut manager, _queue) = make_rebalance_manager();
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let existing_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
         let strike = Price::from("50000");
@@ -1040,11 +1023,11 @@ mod tests {
 
     #[rstest]
     fn test_manager_deferred_bootstrap_on_first_atm() {
-        let mut manager = make_rebalance_manager();
+        let (mut manager, queue) = make_rebalance_manager();
         // Initially not bootstrapped, no active instruments
         assert!(!manager.bootstrapped);
         assert_eq!(manager.aggregator.instrument_ids().len(), 0);
-        assert!(manager.pending_wire_instruments.is_none());
+        assert!(queue.borrow().is_empty());
 
         // Feed ATM via quote → triggers bootstrap
         let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
@@ -1052,17 +1035,21 @@ mod tests {
 
         assert!(manager.bootstrapped);
         assert_eq!(manager.aggregator.instrument_ids().len(), 6); // 3 strikes × 2
-        let pending = manager.take_pending_wire_instruments();
-        assert!(pending.is_some());
-        assert_eq!(pending.unwrap().len(), 6);
+        // 6 instruments × 2 commands each (quotes + greeks) = 12 deferred commands
+        assert_eq!(queue.borrow().len(), 12);
 
-        // Second call returns None (already taken)
-        assert!(manager.take_pending_wire_instruments().is_none());
+        // All commands should be Subscribe variants
+        assert!(
+            queue
+                .borrow()
+                .iter()
+                .all(|cmd| matches!(cmd, DeferredCommand::Subscribe(_)))
+        );
     }
 
     #[rstest]
     fn test_manager_bootstrap_idempotent() {
-        let mut manager = make_rebalance_manager();
+        let (mut manager, _queue) = make_rebalance_manager();
         let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
         manager.handle_quote(&perp_quote);
         assert!(manager.bootstrapped);
@@ -1077,12 +1064,12 @@ mod tests {
     #[rstest]
     fn test_manager_fixed_range_bootstrapped_immediately() {
         // Fixed range manager is bootstrapped at creation (no ATM needed)
-        let manager = make_manager();
+        let (manager, queue) = make_manager();
         assert!(manager.bootstrapped);
-        assert!(manager.pending_wire_instruments.is_none());
+        assert!(queue.borrow().is_empty());
     }
 
-    fn make_forward_price_manager() -> OptionChainManager {
+    fn make_forward_price_manager() -> (OptionChainManager, DeferredCommandQueue) {
         let series_id = make_series_id();
         let topic = switchboard::get_option_chain_topic(series_id);
         let atm_source = AtmSource::ForwardPrice;
@@ -1107,8 +1094,10 @@ mod tests {
             tracker,
             instruments,
         );
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let queue = make_test_queue();
 
-        OptionChainManager {
+        let manager = OptionChainManager {
             aggregator,
             atm_source,
             topic,
@@ -1119,16 +1108,18 @@ mod tests {
             timer_name: None,
             msgbus_priority: 0,
             bootstrapped: false,
-            pending_wire_instruments: None,
+            deferred_cmd_queue: queue.clone(),
+            clock,
             raw_mode: false,
-        }
+        };
+        (manager, queue)
     }
 
     #[rstest]
     fn test_manager_forward_price_bootstrap_from_greeks() {
         use nautilus_model::data::option_chain::OptionGreeks;
 
-        let mut manager = make_forward_price_manager();
+        let (mut manager, _queue) = make_forward_price_manager();
         assert!(!manager.bootstrapped);
 
         // First greeks with underlying_price → updates ATM tracker and triggers bootstrap
@@ -1147,7 +1138,7 @@ mod tests {
     fn test_manager_forward_price_no_bootstrap_without_underlying() {
         use nautilus_model::data::option_chain::OptionGreeks;
 
-        let mut manager = make_forward_price_manager();
+        let (mut manager, _queue) = make_forward_price_manager();
         assert!(!manager.bootstrapped);
 
         // Greeks with no underlying_price → should not bootstrap

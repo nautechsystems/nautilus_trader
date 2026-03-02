@@ -226,8 +226,7 @@ impl OptionChainAggregator {
             .min_by(|a, b| {
                 let da = (a.as_f64() - atm.as_f64()).abs();
                 let db = (b.as_f64() - atm.as_f64()).abs();
-                da.partial_cmp(&db)
-                    .unwrap_or(std::cmp::Ordering::Equal)
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
             })
             .copied()
     }
@@ -310,8 +309,7 @@ impl OptionChainAggregator {
         let allowed_strikes = self.strike_range.resolve(atm_price, &all_strikes);
 
         // Find closest strike to ATM for atm_strike field
-        let atm_strike =
-            atm_price.and_then(|atm| Self::find_closest_strike(&all_strikes, atm));
+        let atm_strike = atm_price.and_then(|atm| Self::find_closest_strike(&all_strikes, atm));
 
         // Build filtered snapshot (clone from buffers)
         let mut calls = BTreeMap::new();

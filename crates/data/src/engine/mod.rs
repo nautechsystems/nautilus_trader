@@ -38,7 +38,7 @@ pub mod pool;
 use std::{
     any::{Any, type_name},
     cell::{Ref, RefCell},
-    collections::hash_map::Entry,
+    collections::{VecDeque, hash_map::Entry},
     fmt::{Debug, Display},
     num::NonZeroUsize,
     rc::Rc,
@@ -108,8 +108,21 @@ use crate::{
         VolumeRunsBarAggregator,
     },
     client::DataClientAdapter,
-    option_chains::{OptionChainManager, PendingWireChanges},
+    option_chains::OptionChainManager,
 };
+
+/// Deferred subscribe/unsubscribe command.
+///
+/// Components that lack direct `DataClientAdapter` access (handlers, timers)
+/// push commands here; the `DataEngine` drains on each data tick.
+#[derive(Debug, Clone)]
+pub(crate) enum DeferredCommand {
+    Subscribe(SubscribeCommand),
+    Unsubscribe(UnsubscribeCommand),
+}
+
+/// Shared queue for deferred subscribe/unsubscribe commands.
+pub(crate) type DeferredCommandQueue = Rc<RefCell<VecDeque<DeferredCommand>>>;
 
 /// Typed subscription for bar aggregator handlers.
 ///
@@ -223,6 +236,7 @@ impl DataEngine {
             bar_aggregators: AHashMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
             option_chain_managers: AHashMap::new(),
+            deferred_cmd_queue: Rc::new(RefCell::new(VecDeque::new())),
             pending_option_chain_requests: AHashMap::new(),
             _synthetic_quote_feeds: AHashMap::new(),
             _synthetic_trade_feeds: AHashMap::new(),
@@ -867,6 +881,7 @@ impl DataEngine {
             self.cache.borrow_mut().add_option_greeks(*option_greeks);
             let topic = switchboard::get_option_greeks_topic(option_greeks.instrument_id);
             msgbus::publish_option_greeks(topic, option_greeks);
+            self.drain_deferred_commands();
         } else {
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }
@@ -882,17 +897,17 @@ impl DataEngine {
             Data::Depth10(depth) => self.handle_depth10(*depth),
             Data::Quote(quote) => {
                 self.handle_quote(quote);
-                self.forward_pending_option_chain_subscriptions();
+                self.drain_deferred_commands();
             }
             Data::Trade(trade) => self.handle_trade(trade),
             Data::Bar(bar) => self.handle_bar(bar),
             Data::MarkPriceUpdate(mark_price) => {
                 self.handle_mark_price(mark_price);
-                self.forward_pending_option_chain_subscriptions();
+                self.drain_deferred_commands();
             }
             Data::IndexPriceUpdate(index_price) => {
                 self.handle_index_price(index_price);
-                self.forward_pending_option_chain_subscriptions();
+                self.drain_deferred_commands();
             }
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
         }
@@ -1159,77 +1174,27 @@ impl DataEngine {
         msgbus::publish_any(topic, &close);
     }
 
-    /// Drains pending wire subscriptions from option chain managers that just bootstrapped
-    /// or rebalanced.
-    fn forward_pending_option_chain_subscriptions(&mut self) {
-        // Drain bootstrap pending wire instruments
-        let pending: Vec<(OptionSeriesId, Vec<InstrumentId>)> = self
-            .option_chain_managers
-            .iter()
-            .filter_map(|(id, mgr)| {
-                mgr.borrow_mut()
-                    .take_pending_wire_instruments()
-                    .map(|instruments| (*id, instruments))
-            })
-            .collect();
+    /// Drains deferred subscribe/unsubscribe commands pushed by option chain
+    /// managers (or any other component) and executes them against the appropriate
+    /// data client.
+    fn drain_deferred_commands(&mut self) {
+        let commands: VecDeque<DeferredCommand> =
+            std::mem::take(&mut *self.deferred_cmd_queue.borrow_mut());
 
-        for (series_id, instruments) in pending {
-            let venue = series_id.venue;
-            let clock = self.clock.clone();
-            let client = self.get_client(None, Some(&venue));
-            OptionChainManager::forward_bulk_instrument_subscriptions(
-                client,
-                &instruments,
-                venue,
-                &clock,
-            );
-            log::info!(
-                "Forwarded {} deferred wire subscriptions for option chain {series_id}",
-                instruments.len(),
-            );
-        }
-
-        // Drain rebalance pending wire changes (subscribe + unsubscribe)
-        let rebalance_pending: Vec<(OptionSeriesId, PendingWireChanges)> = self
-            .option_chain_managers
-            .iter()
-            .filter_map(|(id, mgr)| {
-                mgr.borrow_mut()
-                    .take_pending_rebalance_wire()
-                    .map(|changes| (*id, changes))
-            })
-            .collect();
-
-        for (series_id, changes) in rebalance_pending {
-            let venue = series_id.venue;
-            let clock = self.clock.clone();
-
-            if !changes.subscribe.is_empty() {
-                let client = self.get_client(None, Some(&venue));
-                OptionChainManager::forward_bulk_instrument_subscriptions(
-                    client,
-                    &changes.subscribe,
-                    venue,
-                    &clock,
-                );
-                log::info!(
-                    "Forwarded {} rebalance wire subscriptions for option chain {series_id}",
-                    changes.subscribe.len(),
-                );
-            }
-
-            if !changes.unsubscribe.is_empty() {
-                let client = self.get_client(None, Some(&venue));
-                OptionChainManager::forward_bulk_instrument_unsubscriptions(
-                    client,
-                    &changes.unsubscribe,
-                    venue,
-                    &clock,
-                );
-                log::info!(
-                    "Forwarded {} rebalance wire unsubscriptions for option chain {series_id}",
-                    changes.unsubscribe.len(),
-                );
+        for cmd in commands {
+            match cmd {
+                DeferredCommand::Subscribe(sub) => {
+                    let client = self.get_client(sub.client_id(), sub.venue());
+                    if let Some(client) = client {
+                        client.execute_subscribe(&sub);
+                    }
+                }
+                DeferredCommand::Unsubscribe(unsub) => {
+                    let client = self.get_client(unsub.client_id(), unsub.venue());
+                    if let Some(client) = client {
+                        client.execute_unsubscribe(&unsub);
+                    }
+                }
             }
         }
     }
@@ -1533,22 +1498,10 @@ impl DataEngine {
         self.pending_option_chain_requests
             .retain(|_, (pending_cmd, _)| pending_cmd.series_id != series_id);
 
-        let resolved_atm_source = match cmd.atm_source {
-            Some(source) => source,
-            None => match self.resolve_default_atm_source(&series_id) {
-                Some(source) => source,
-                None => {
-                    log::error!(
-                        "Cannot subscribe option chain for {series_id}: no ATM source provided \
-                         and no CryptoPerpetual with underlying '{}' found in cache for venue '{}'. \
-                         Either pass an explicit AtmSource or ensure the perpetual instrument is loaded",
-                        series_id.underlying,
-                        series_id.venue,
-                    );
-                    return Ok(());
-                }
-            },
-        };
+        // Default to ForwardPrice — the exchange-provided forward price embedded
+        // in every option ticker update, eliminating spot-forward basis error
+        // and removing the need for a separate perpetual subscription.
+        let resolved_atm_source = cmd.atm_source.unwrap_or(AtmSource::ForwardPrice);
 
         // For ATM-based strike ranges, request forward prices from the adapter
         // to enable instant bootstrap without waiting for the first WebSocket tick.
@@ -1618,6 +1571,7 @@ impl DataEngine {
         let cache = self.cache.clone();
         let clock = self.clock.clone();
         let priority = self.msgbus_priority;
+        let deferred_cmd_queue = self.deferred_cmd_queue.clone();
 
         let manager_rc = {
             let client = self.get_client(cmd.client_id.as_ref(), Some(&series_id.venue));
@@ -1630,24 +1584,11 @@ impl DataEngine {
                 priority,
                 client,
                 initial_atm_price,
+                deferred_cmd_queue,
             )
         };
 
         self.option_chain_managers.insert(series_id, manager_rc);
-    }
-
-    /// Resolves the default ATM source for an option series.
-    ///
-    /// Always returns `ForwardPrice` — the exchange-provided forward price embedded
-    /// in every option ticker update. This eliminates the spot-forward basis error
-    /// and removes the need for a separate perpetual subscription.
-    ///
-    /// HTTP bootstrap provides the initial forward price instantly on startup.
-    /// If bootstrap fails, `handle_forward_prices_response` falls back to
-    /// `IndexPrice` of the perpetual.
-    fn resolve_default_atm_source(&self, series_id: &OptionSeriesId) -> Option<AtmSource> {
-        log::info!("Auto-resolved ATM source for {series_id}: ForwardPrice");
-        Some(AtmSource::ForwardPrice)
     }
 
     /// Resolves a perpetual-based ATM source for an option series by searching the cache
@@ -1744,9 +1685,6 @@ impl DataEngine {
                 None,
                 None,
             )));
-        }
-
-        for instrument_id in instrument_ids {
             client.execute_unsubscribe(&UnsubscribeCommand::OptionGreeks(
                 UnsubscribeOptionGreeks::new(
                     *instrument_id,

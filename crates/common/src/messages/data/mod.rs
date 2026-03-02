@@ -23,14 +23,12 @@ use nautilus_model::{
     identifiers::{ClientId, Venue},
 };
 
-pub mod option_chain;
 pub mod request;
 pub mod response;
 pub mod subscribe;
 pub mod unsubscribe;
 
 // Re-exports
-pub use option_chain::{SubscribeOptionChain, UnsubscribeOptionChain};
 pub use request::{
     RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestForwardPrices,
     RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
@@ -43,13 +41,14 @@ pub use subscribe::{
     SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
     SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
     SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+    SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
 };
 pub use unsubscribe::{
     UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
     UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
     UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-    UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+    UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
+    UnsubscribeTrades,
 };
 
 #[cfg(feature = "defi")]

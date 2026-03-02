@@ -110,12 +110,16 @@ impl DataActor for GreeksTester {
                 .collect()
         }; // cache borrow dropped here
 
+        // Discard already-expired options
+        let now_ns = self.timestamp_ns().as_u64();
+        options.retain(|(_, _, exp)| *exp > now_ns);
+
         if options.is_empty() {
-            log::warn!("No BTC CALL options found in cache");
+            log::warn!("No BTC CALL options found in cache (all expired)");
             return Ok(());
         }
 
-        // Find the nearest (soonest) expiry
+        // Find the nearest (soonest) non-expired expiry
         let nearest_expiry = options.iter().map(|(_, _, exp)| *exp).min().unwrap();
 
         // Filter to only instruments at that expiry, sort by strike
