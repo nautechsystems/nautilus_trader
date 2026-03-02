@@ -76,8 +76,7 @@ pub const BINANCE_SPOT_SBE_WS_API_URL: &str =
     "wss://ws-api.binance.com:443/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=2";
 
 /// Binance Spot SBE WebSocket API URL (testnet).
-pub const BINANCE_SPOT_SBE_WS_API_TESTNET_URL: &str =
-    "wss://ws-api.testnet.binance.vision/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=2";
+pub const BINANCE_SPOT_SBE_WS_API_TESTNET_URL: &str = "wss://ws-api.testnet.binance.vision/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=2";
 
 /// Binance Spot SBE WebSocket API URL (demo).
 pub const BINANCE_SPOT_SBE_WS_API_DEMO_URL: &str =
