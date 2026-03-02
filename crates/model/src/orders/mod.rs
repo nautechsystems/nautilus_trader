@@ -36,7 +36,7 @@ pub mod stubs;
 use ahash::AHashSet;
 use enum_dispatch::enum_dispatch;
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, impl_error_codes};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -144,6 +144,27 @@ pub enum OrderError {
     DuplicateFill(TradeId),
     #[error("{0}")]
     Invariant(#[from] anyhow::Error),
+}
+
+impl_error_codes! {
+    OrderError {
+        /// Order was not found by its client order ID.
+        NotFound(_) => "NT-0301",
+        /// Order must have a side for the requested operation.
+        NoOrderSide => "NT-0302",
+        /// The event type is not valid for this order type.
+        InvalidOrderEvent => "NT-0303",
+        /// The order state transition is not allowed.
+        InvalidStateTransition => "NT-0304",
+        /// Order was already initialized and cannot be re-initialized.
+        AlreadyInitialized => "NT-0305",
+        /// Order has no previous state to restore.
+        NoPreviousState => "NT-0306",
+        /// A fill with this trade ID was already applied to the order.
+        DuplicateFill(_) => "NT-0307",
+        /// An order invariant was violated.
+        Invariant(_) => "NT-0308",
+    }
 }
 
 /// Converts an IndexMap with `Ustr` keys and values to `String` keys and values.
@@ -935,6 +956,8 @@ mod tests {
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
+    use nautilus_core::ErrorCode;
+
     use super::*;
     use crate::{
         enums::{OrderSide, OrderStatus, PositionSide},
@@ -1583,5 +1606,35 @@ mod tests {
 
         assert_eq!(order.status(), OrderStatus::Triggered);
         assert_eq!(order.quantity(), Quantity::from(80_000));
+    }
+
+    #[rstest]
+    fn test_order_error_codes() {
+        assert_eq!(
+            OrderError::NotFound(ClientOrderId::from("O-001")).code(),
+            "NT-0301"
+        );
+        assert_eq!(OrderError::NoOrderSide.code(), "NT-0302");
+        assert_eq!(OrderError::InvalidOrderEvent.code(), "NT-0303");
+        assert_eq!(OrderError::InvalidStateTransition.code(), "NT-0304");
+        assert_eq!(OrderError::AlreadyInitialized.code(), "NT-0305");
+        assert_eq!(OrderError::NoPreviousState.code(), "NT-0306");
+        assert_eq!(
+            OrderError::DuplicateFill(TradeId::from("T-001")).code(),
+            "NT-0307"
+        );
+        assert_eq!(
+            OrderError::Invariant(anyhow::anyhow!("test")).code(),
+            "NT-0308"
+        );
+    }
+
+    #[rstest]
+    fn test_order_error_coded_message() {
+        let err = OrderError::NoOrderSide;
+        assert_eq!(
+            err.coded_message(),
+            "[NT-0302] Order invariant failed: must have a side for this operation"
+        );
     }
 }

@@ -622,6 +622,12 @@ pub struct BarTypeParseError {
     position: usize,
 }
 
+impl nautilus_core::ErrorCode for BarTypeParseError {
+    fn code(&self) -> &'static str {
+        "NT-0401"
+    }
+}
+
 impl FromStr for BarType {
     type Err = BarTypeParseError;
 

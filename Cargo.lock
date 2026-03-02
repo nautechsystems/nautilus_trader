@@ -5208,6 +5208,7 @@ dependencies = [
  "iai",
  "indexmap 2.13.0",
  "log",
+ "paste",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -6069,6 +6070,14 @@ dependencies = [
  "serde_json",
  "strum 0.28.0",
  "ustr",
+]
+
+[[package]]
+name = "nautilus-xtask"
+version = "0.53.0"
+dependencies = [
+ "regex",
+ "walkdir",
 ]
 
 [[package]]

@@ -62,6 +62,7 @@ pub mod correctness;
 pub mod datetime;
 pub mod drop;
 pub mod env;
+pub mod error;
 pub mod formatting;
 pub mod math;
 pub mod message;
@@ -91,6 +92,7 @@ compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, and W
 pub use crate::params::from_pydict;
 pub use crate::{
     drop::CleanDrop,
+    error::ErrorCode,
     nanos::UnixNanos,
     params::Params,
     shared::{SharedCell, WeakCell},
@@ -98,6 +100,11 @@ pub use crate::{
     time::AtomicTime,
     uuid::UUID4,
 };
+
+// Re-export paste so the `impl_error_codes!` macro resolves it at call sites
+// without downstream crates needing a direct `paste` dependency.
+#[doc(hidden)]
+pub use paste;
 
 /// Message for when a mutex guard cannot be acquired due to poisoning.
 ///

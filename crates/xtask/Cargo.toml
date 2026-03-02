@@ -1,0 +1,26 @@
+[package]
+name = "nautilus-xtask"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Developer tooling for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+regex = { workspace = true }
+walkdir = { workspace = true }
+
+[[bin]]
+name = "nautilus-xtask"
+path = "src/main.rs"
+doc = false
