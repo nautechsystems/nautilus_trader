@@ -8,7 +8,7 @@ ingest and order execution with BitMEX.
 ## Overview
 
 This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
-It does not require external BitMEX client libraries—the core components are compiled as a static library and linked automatically during the build.
+It does not require external BitMEX client libraries; the core components are compiled as a static library and linked automatically during the build.
 
 ## Examples
 
@@ -388,7 +388,7 @@ first page; wider pagination support is scheduled for a future update.
 
 ### HTTP Keep-Alive
 
-The BitMEX adapter utilizes HTTP keep-alive for optimal performance:
+The BitMEX adapter uses HTTP keep-alive for optimal performance:
 
 - **Connection pooling**: Connections are automatically pooled and reused.
 - **Keep-alive timeout**: 90 seconds (matches BitMEX server-side timeout).
@@ -563,7 +563,7 @@ Order cancellations are time-critical operations - when a strategy decides to ca
 - **Fault tolerance**: If one HTTP client experiences network issues, DNS failures, or connection timeouts, other clients in the pool continue processing.
 - **Idempotent success handling**: Responses indicating the order was already canceled (such as "orderID not found" or similar idempotent states) are treated as success rather than failure, preventing unnecessary error propagation.
 
-This architecture ensures that a single network path failure or slow connection doesn't block critical cancel operations, improving the reliability of risk management and position control in live trading.
+This architecture ensures that a single network path failure or slow connection doesn't block cancel operations, improving the reliability of risk management and position control in live trading.
 
 ### Health monitoring
 
@@ -650,7 +650,7 @@ all open orders.
 Disarming the dead man's switch during disconnect requires careful ordering. The disarm
 request (`timeout=0`) should be the last `cancelAllAfter` call to reach BitMEX. If an
 in-flight heartbeat were processed after the disarm, it would re-arm the server-side timer
-and orders could be unexpectedly cancelled after the timeout expires — even though the
+and orders could be unexpectedly cancelled after the timeout expires, even though the
 adapter disconnected gracefully.
 
 The adapter mitigates this in both implementations:
@@ -662,7 +662,7 @@ The adapter mitigates this in both implementations:
   unwinds before the disarm request is sent.
 
 In a force-stop scenario (e.g., process shutdown via `stop()`), the heartbeat task is
-aborted without disarming — this is intentional, as the server-side timer provides the
+aborted without disarming. This is intentional, as the server-side timer provides the
 desired safety behavior when the process exits unexpectedly.
 
 :::note
@@ -830,7 +830,7 @@ native `clOrdLinkID`/`contingencyType` mechanics. When the engine submits
 
 This means common bracket flows (entry + stop + take-profit) and multi-leg stop structures can
 now be managed directly by BitMEX instead of being emulated client-side. When defining
-strategies, continue to use Nautilus `OrderList`/`ContingencyType` abstractions—the adapter
+strategies, continue to use Nautilus `OrderList`/`ContingencyType` abstractions. The adapter
 handles the required BitMEX wiring automatically.
 
 ### Contract specifications

@@ -225,7 +225,7 @@ Historical quote tick and trade tick requests are not yet supported by this adap
 
 ## Orders capability
 
-Hyperliquid supports a comprehensive set of order types and execution options.
+Hyperliquid supports a full set of order types and execution options.
 
 ### Order types
 

@@ -141,7 +141,7 @@ If both `demo` and `testnet` are set to `True`, demo takes priority.
 
 Bybit offers a flexible combination of trigger types, enabling a broader range of Nautilus orders.
 All the order types listed below can be used as *either* entries or exits, except for trailing stops
-(which utilize a position-related API).
+(which use a position-related API).
 
 ### Order types
 

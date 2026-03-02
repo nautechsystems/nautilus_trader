@@ -6,7 +6,7 @@ the execution instructions supported for each.
 Orders are one of the fundamental building blocks of any algorithmic trading strategy.
 NautilusTrader supports a broad set of order types and execution instructions, from standard to advanced,
 exposing as much of a trading venue's functionality as possible. This enables traders to define instructions
-and contingencies for order execution and management, facilitating the creation of virtually any trading strategy.
+and contingencies for order execution and management, enabling the creation of virtually any trading strategy.
 
 ## Overview
 
@@ -725,7 +725,7 @@ Here are all the available values you can set into `emulation_trigger` parameter
 The platform makes it possible to emulate most order types locally, regardless
 of whether the type is supported on a trading venue. The logic and code paths for
 order emulation are exactly the same for all [environment contexts](architecture.md#environment-contexts)
-and utilize a common `OrderEmulator` component.
+and use a common `OrderEmulator` component.
 
 :::note
 There is no limitation on the number of emulated orders you can have per running instance.

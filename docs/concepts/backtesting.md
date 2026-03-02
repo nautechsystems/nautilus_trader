@@ -140,7 +140,7 @@ past the last data point (e.g. bar aggregation intervals) are deferred until mor
 or `end()` is called, which flushes up to the `end` boundary from the last `run()` call.
 :::
 
-:::tip Performance impact
+:::tip[Performance impact]
 For a backtest with 10 instruments, each with 1M bars:
 
 - Sorting on each call: ~10 sorts of increasing size (1M, 2M, 3M, ... 10M bars).
@@ -267,11 +267,12 @@ engine.run()
 Instruments and data persist across resets by default for `BacktestEngine`, making parameter optimizations straightforward.
 :::
 
-:::tip Best practices
+:::tip[Best practices]
 
 - **For production backtesting:** Use `BacktestNode` with configuration objects.
 - **For parameter optimizations:** Use `BacktestEngine.reset()` to run multiple strategies against the same data.
 - **For quick experiments:** Either approach works - choose based on individual use case.
+
 :::
 
 ## Data
@@ -303,7 +304,7 @@ flowchart LR
 ```
 
 1. **Order Book Data/Deltas (L3 market-by-order)**:
-   - Comprehensive market depth with visibility of all individual orders.
+   - Full market depth with visibility of all individual orders.
 
 2. **Order Book Data/Deltas (L2 market-by-price)**:
    - Market depth visibility across all price levels.
@@ -449,9 +450,9 @@ correctly. Commands with future timestamps are deferred and processed when the e
 
 ### Fill modeling philosophy
 
-NautilusTrader treats historical order book and trade data as **immutable** during backtesting. What happened in the market is preserved exactly as recorded—fills never modify the underlying book state.
+NautilusTrader treats historical order book and trade data as **immutable** during backtesting. What happened in the market is preserved exactly as recorded. Fills never modify the underlying book state.
 
-This addresses a gap in academic literature: most research focuses on live market dynamics where the book actually evolves. Historical backtesting with frozen snapshots is a distinct engineering problem—how do we simulate realistic fills against data that doesn't change in response to our orders?
+This addresses a gap in academic literature: most research focuses on live market dynamics where the book actually evolves. Historical backtesting with frozen snapshots is a distinct engineering problem: how do we simulate realistic fills against data that doesn't change in response to our orders?
 
 **Design choices:**
 
@@ -631,7 +632,7 @@ The order book itself handles slippage naturally based on available liquidity at
 :::warning
 The historical order book is immutable during backtesting. Book depth is **not** decremented after fills.
 By default (`liquidity_consumption=False`), the same liquidity can be consumed repeatedly within an iteration.
-Enable `liquidity_consumption=True` to track consumed liquidity per price level—consumption resets when fresh
+Enable `liquidity_consumption=True` to track consumed liquidity per price level. Consumption resets when fresh
 data arrives at that level. See [Order book immutability](#order-book-immutability) for details.
 :::
 
@@ -686,8 +687,8 @@ venue_config = BacktestVenueConfig(
 
 For each price level, the engine maintains:
 
-- `original_size`: The book's quantity when tracking began
-- `consumed`: How much has been filled against this level
+- `original_size`: The book's quantity when tracking began.
+- `consumed`: How much has been filled against this level.
 
 When processing a fill:
 
@@ -725,7 +726,7 @@ order quantity after exhausting displayed liquidity.
 6. Order fills another 200 units. 770 units remain open.
 7. Fills continue as fresh liquidity arrives at crossed price levels.
 
-This behavior provides conservative fill simulation—your order only fills against liquidity
+This behavior provides conservative fill simulation: your order only fills against liquidity
 actually observed in the data, rather than inferring liquidity from price movements.
 
 **Trade tick liquidity:**
@@ -805,7 +806,7 @@ When a trade tick triggers order matching, the engine determines fills as follow
 1. **Book reflects trade price**: If the order book has liquidity at the trade price, fills use book depth (standard behavior).
 2. **Book doesn't reflect trade price**: If the book's liquidity is at a different price, the engine uses a "trade-driven fill" at the order's limit price, capped to `min(order.leaves_qty, trade.size)`.
 
-This ensures that when a trade prints through the spread but the book hasn't updated, fills are bounded by what the trade tick actually evidences. When `liquidity_consumption=False` (default), the same trade size can fill multiple orders within an iteration. When `liquidity_consumption=True`, consumption tracking applies to trade-driven fills as well—repeated fills at the same trade price will be bounded by consumed liquidity until fresh data arrives.
+This ensures that when a trade prints through the spread but the book hasn't updated, fills are bounded by what the trade tick actually evidences. When `liquidity_consumption=False` (default), the same trade size can fill multiple orders within an iteration. When `liquidity_consumption=True`, consumption tracking applies to trade-driven fills as well. Repeated fills at the same trade price will be bounded by consumed liquidity until fresh data arrives.
 
 **Restoration behavior:**
 
@@ -834,10 +835,10 @@ while trade ticks trigger execution for orders that might be inside the spread o
 
 A common source of confusion is the `aggressor_side` field on trade ticks:
 
-- **SELLER trade**: A seller aggressed—they sold into the bid. This provides evidence of fill-able liquidity for **BUY** orders at the trade price.
-- **BUYER trade**: A buyer aggressed—they bought from the ask. This provides evidence of fill-able liquidity for **SELL** orders at the trade price.
+- **SELLER trade**: A seller aggressed, selling into the bid. This provides evidence of fill-able liquidity for **BUY** orders at the trade price.
+- **BUYER trade**: A buyer aggressed, buying from the ask. This provides evidence of fill-able liquidity for **SELL** orders at the trade price.
 
-In other words, trade ticks trigger fills for orders on the **opposite** side of the aggressor. A SELLER trade at 100.00 can fill your resting BUY LIMIT at 100.00, but cannot fill your SELL LIMIT—the trade already represents someone else selling.
+In other words, trade ticks trigger fills for orders on the **opposite** side of the aggressor. A SELLER trade at 100.00 can fill your resting BUY LIMIT at 100.00, but cannot fill your SELL LIMIT, since the trade already represents someone else selling.
 
 #### Combining L2 book data with trade ticks
 
@@ -874,18 +875,18 @@ orders are "ahead" of your order at a given price level.
 2. **Trade ticks**: When trade ticks occur at the order's price level, the "quantity ahead" is
    decremented by the trade size. Only trades on the correct side affect the queue (BUYER trades
    decrement queue for SELL orders, SELLER trades decrement queue for BUY orders). Trades with
-   `NO_AGGRESSOR` (common in historical datasets lacking aggressor metadata) affect both sides—
-   this is pessimistic but prevents orders from stalling indefinitely.
+   `NO_AGGRESSOR` (common in historical datasets lacking aggressor metadata) affect both sides.
+   This is pessimistic but prevents orders from stalling indefinitely.
 
 3. **Fill eligibility**: The order becomes eligible to fill only when the quantity ahead reaches zero.
    On the tick that clears the queue, only the excess volume (trade size minus queue ahead) is
-   available for fill—preventing overfill.
+   available for fill, preventing overfill.
 
 4. **Price level DELETE**: If the order book level is deleted (BookAction.DELETE), the queue clears
    immediately, making the order fill-eligible. UPDATE actions are ignored (queue unchanged).
 
 5. **Order modification**: If the order is modified (price or quantity change), the queue position
-   resets—the order moves to the back of the queue at its new price level.
+   resets. The order moves to the back of the queue at its new price level.
 
 **Configuration:**
 
@@ -1011,7 +1012,7 @@ Even when you provide bar data, Nautilus maintains an internal order book for ea
      - If your bars are timestamped at the **open**, set `ts_init_delta` to the bar's duration in nanoseconds (e.g., 60_000_000_000 for 1-minute bars) to shift `ts_init` to the close time.
    - The platform ensures all events happen in the correct sequence based on `ts_init`, preventing any possibility of look-ahead bias in your backtests.
 
-:::note Exceptions for bar execution
+:::note[Exceptions for bar execution]
 Bars will **not** be processed for execution (and will not update the order book) in the following cases:
 
 - **Internally aggregated bars**: Bars with `AggregationSource.INTERNAL` are skipped to avoid processing bars that are derived from already-processed tick data.
@@ -1084,7 +1085,7 @@ engine.add_venue(
 ### Internal bar aggregation timing
 
 When aggregating time bars internally from tick data, the data engine uses timers to close bars at
-interval boundaries. A timing edge case occurs when data arrives at the exact bar close timestamp—the
+interval boundaries. A timing edge case occurs when data arrives at the exact bar close timestamp: the
 timer may fire before processing boundary data.
 
 Configure `time_bars_build_delay` in `DataEngineConfig` to delay bar close timers:
@@ -1310,7 +1311,7 @@ Also verify that:
 
 ## Account types
 
-When you attach a venue to the engine—either for live trading or a back‑test—you must pick one of three accounting modes by passing the `account_type` parameter:
+When you attach a venue to the engine, either for live trading or a backtest, you must pick one of three accounting modes by passing the `account_type` parameter:
 
 | Account type | Typical use-case                                 | What the engine locks                                                     |
 | ------------ | ------------------------------------------------ | ------------------------------------------------------------------------- |
@@ -1345,7 +1346,7 @@ Cash accounts settle trades in full; there is no leverage and therefore no conce
 
 ### Margin accounts
 
-A *margin account* facilitates trading of instruments requiring margin, such as futures or leveraged products.
+A *margin account* supports trading of instruments requiring margin, such as futures or leveraged products.
 It tracks account balances, calculates required margins, and manages leverage to ensure sufficient collateral for positions and orders.
 
 **Key concepts**:
@@ -1357,7 +1358,7 @@ It tracks account balances, calculates required margins, and manages leverage to
 
 :::note
 Reduce-only orders **do not** contribute to `balance_locked` in cash accounts,
-nor do they add to initial margin in margin accounts—as they can only reduce existing exposure.
+nor do they add to initial margin in margin accounts, as they can only reduce existing exposure.
 :::
 
 ### Betting accounts

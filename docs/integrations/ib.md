@@ -2,7 +2,7 @@
 
 Interactive Brokers (IB) is a trading platform providing market access across a wide range of financial instruments, including stocks, options, futures, currencies, bonds, funds, and cryptocurrencies. NautilusTrader offers an adapter to integrate with IB using their [Trader Workstation (TWS) API](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/) through their Python library, [ibapi](https://github.com/nautechsystems/ibapi).
 
-The TWS API serves as an interface to IB's standalone trading applications: TWS and IB Gateway. Both can be downloaded from the IB website. If you haven't installed TWS or IB Gateway yet, refer to the [Initial Setup](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#tws-download) guide. In NautilusTrader, you'll establish a connection to one of these applications via the `InteractiveBrokersClient`.
+The TWS API is an interface to IB's standalone trading applications: TWS and IB Gateway. Both can be downloaded from the IB website. If you haven't installed TWS or IB Gateway yet, refer to the [Initial Setup](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#tws-download) guide. In NautilusTrader, you'll establish a connection to one of these applications via the `InteractiveBrokersClient`.
 
 Alternatively, you can start with a [dockerized version](https://github.com/gnzsnz/ib-gateway-docker) of the IB Gateway, which is particularly useful when deploying trading strategies on a hosted cloud platform. This requires having [Docker](https://www.docker.com/) installed on your machine, along with the [docker](https://pypi.org/project/docker/) Python package, which NautilusTrader conveniently includes as an extra package.
 
@@ -112,16 +112,16 @@ To supply credentials to the Interactive Brokers Gateway, either pass the `usern
 
 ### Connection management
 
-The adapter includes robust connection management features:
+The adapter includes connection management features:
 
 - **Automatic reconnection**: Configure retries with the `IB_MAX_CONNECTION_ATTEMPTS` environment variable.
 - **Connection timeout**: Adjust the timeout with the `connection_timeout` parameter (default: 300 seconds).
 - **Connection watchdog**: Monitor connection health and trigger reconnection automatically when required.
-- **Graceful error handling**: Handle diverse connection scenarios with comprehensive error classification.
+- **Graceful error handling**: Handle diverse connection scenarios with error classification.
 
 ## Overview
 
-The Interactive Brokers adapter provides a comprehensive integration with IB's TWS API. The adapter includes several major components:
+The Interactive Brokers adapter provides an integration with IB's TWS API. The adapter includes several major components:
 
 ### Core components
 
@@ -134,7 +134,7 @@ The Interactive Brokers adapter provides a comprehensive integration with IB's T
 ### Supporting components
 
 - **`DockerizedIBGateway`**: Manages dockerized IB Gateway instances for automated deployments.
-- **Configuration classes**: Provide comprehensive configuration options for all components.
+- **Configuration classes**: Provide configuration options for all components.
 - **Factory classes**: Create and configure client instances with the necessary dependencies.
 
 ### Supported asset classes
@@ -151,7 +151,7 @@ The adapter supports trading across all major asset classes available through In
 
 ## The Interactive Brokers client
 
-The `InteractiveBrokersClient` serves as the central component of the IB adapter, overseeing a range of critical functions. These include establishing and maintaining connections, handling API errors, executing trades, and gathering various types of data such as market data, contract/instrument data, and account details.
+The `InteractiveBrokersClient` is the central component of the IB adapter, overseeing a range of functions. These include establishing and maintaining connections, handling API errors, executing trades, and gathering various types of data such as market data, contract/instrument data, and account details.
 
 To ensure efficient management of these diverse responsibilities, the `InteractiveBrokersClient` is divided into several specialized mixin classes. This modular approach enhances manageability and clarity.
 
@@ -171,7 +171,7 @@ The client uses a mixin-based architecture where each mixin handles a specific a
 - Processes all API errors and warnings.
 - Categorizes errors by type (client errors, connectivity issues, request errors).
 - Handles subscription and request-specific error scenarios.
-- Provides comprehensive error logging and debugging information.
+- Provides error logging and debugging information.
 
 #### Account management (`InteractiveBrokersClientAccountMixin`)
 
@@ -204,7 +204,7 @@ The client uses a mixin-based architecture where each mixin handles a specific a
 ### Key features
 
 - **Asynchronous operation**: All operations are fully asynchronous using Python's asyncio.
-- **Robust error handling**: Comprehensive error categorization and handling.
+- **Robust error handling**: Error categorization and handling.
 - **Connection resilience**: Automatic reconnection with configurable retry logic.
 - **Message processing**: Efficient message queue processing for high-throughput scenarios.
 - **State management**: Proper state tracking for connections, subscriptions, and requests.
@@ -355,7 +355,7 @@ In Interactive Brokers, a NautilusTrader `Instrument` corresponds to an IB [Cont
 
 #### Contract details (`IBContractDetails`)
 
-- Contains comprehensive contract information including:
+- Contains contract information including:
   - Order types supported
   - Trading hours and calendar
   - Margin requirements
@@ -546,7 +546,7 @@ When using `build_options_chain=True` or `build_futures_chain=True`, the `secTyp
 
 ## Option spreads
 
-Interactive Brokers supports option spreads through BAG contracts, which combine multiple option legs into a single tradeable instrument. NautilusTrader provides comprehensive support for creating, loading, and trading option spreads.
+Interactive Brokers supports option spreads through BAG contracts, which combine multiple option legs into a single tradeable instrument. NautilusTrader provides support for creating, loading, and trading option spreads.
 
 ### Creating option spread instrument IDs
 
@@ -608,7 +608,7 @@ def on_instrument(self, instrument):
 
 ## Historical data and backtesting
 
-The `HistoricInteractiveBrokersClient` provides comprehensive methods for retrieving historical data from Interactive Brokers for backtesting and research purposes.
+The `HistoricInteractiveBrokersClient` provides methods for retrieving historical data from Interactive Brokers for backtesting and research purposes.
 
 ### Supported data types
 
@@ -858,7 +858,7 @@ The live trading setup consists of three main components:
 
 ### InstrumentProvider configuration
 
-The `InteractiveBrokersInstrumentProvider` serves as the bridge for accessing financial instrument data from IB. It supports loading individual instruments, options chains, and futures chains.
+The `InteractiveBrokersInstrumentProvider` provides access to financial instrument data from IB. It supports loading individual instruments, options chains, and futures chains.
 
 #### Basic configuration
 
@@ -1028,7 +1028,7 @@ production_data_config = InteractiveBrokersDataClientConfig(
 
 ### Execution client configuration
 
-The `InteractiveBrokersExecutionClient` handles trade execution, order management, account information, and position tracking. It provides comprehensive order lifecycle management and real-time account updates.
+The `InteractiveBrokersExecutionClient` handles trade execution, order management, account information, and position tracking. It provides order lifecycle management and real-time account updates.
 
 #### Supported functionality
 
@@ -1181,7 +1181,7 @@ order = order_factory.limit(
 
 #### OCA (one-cancels-all) orders
 
-The adapter provides comprehensive support for OCA orders through explicit configuration using `IBOrderTags`:
+The adapter provides support for OCA orders through explicit configuration using `IBOrderTags`:
 
 ### Basic OCA configuration
 
@@ -1481,7 +1481,7 @@ Set `conditionsCancelOrder` to control what happens when conditions are met:
 
 ### Complete trading node configuration
 
-Setting up a complete trading environment involves configuring a `TradingNodeConfig` with all necessary components. Here are comprehensive examples for different scenarios.
+Setting up a complete trading environment involves configuring a `TradingNodeConfig` with all necessary components. Here are examples for different scenarios.
 
 #### Paper trading configuration
 

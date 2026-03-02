@@ -15,10 +15,10 @@ with a REST API or WebSocket stream via modular adapters.
 - **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker.
 - **Flexible**: Modular adapters mean any REST API or WebSocket stream can be integrated.
 - **Advanced**: Time in force `IOC`, `FOK`, `GTC`, `GTD`, `DAY`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency orders including `OCO`, `OUO`, `OTO`.
-- **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the [cache](cache.md) and [message bus](message_bus.md).
+- **Customizable**: Add user-defined custom components, or assemble entire systems from scratch using the [cache](cache.md) and [message bus](message_bus.md).
 - **Backtesting**: Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
 - **Live**: Use identical strategy implementations between backtesting and live deployments.
-- **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies.
+- **Multi-venue**: Multiple venue capabilities support market-making and statistical arbitrage strategies.
 - **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
 ## Why NautilusTrader?
@@ -42,7 +42,7 @@ be built using the sandbox adapter.
 
 :::note
 
-- All examples will utilize these default system implementations.
+- All examples will use these default system implementations.
 - We consider trading strategies to be subcomponents of end-to-end trading systems, these systems
 include the application and infrastructure layers.
 
@@ -51,11 +51,11 @@ include the application and infrastructure layers.
 ## Distributed
 
 The platform is designed to be easily integrated into a larger distributed system.
-To facilitate this, nearly all configuration and domain objects can be serialized using JSON, MessagePack or Apache Arrow (Feather) for communication over the network.
+To support this, nearly all configuration and domain objects can be serialized using JSON, MessagePack or Apache Arrow (Feather) for communication over the network.
 
 ## Common core
 
-The common system core is utilized by all node [environment contexts](architecture.md#environment-contexts) (`backtest`, `sandbox`, and `live`).
+The common system core is used by all node [environment contexts](architecture.md#environment-contexts) (`backtest`, `sandbox`, and `live`).
 User-defined `Actor`, `Strategy` and `ExecAlgorithm` components are managed consistently across these environment contexts.
 
 ## Backtesting
@@ -67,11 +67,11 @@ a higher level `BacktestNode` and `ParquetDataCatalog`, and then running the dat
 
 A `TradingNode` can ingest data and events from multiple data and execution clients, supporting both demo/paper trading accounts and real accounts. High performance can be achieved by running
 asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html),
-with the potential to further boost performance by leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
+with the potential to further boost performance by using the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
 
 ## Domain model
 
-The platform features a comprehensive trading domain model that includes various value types such as
+The platform features a trading domain model that includes various value types such as
 `Price` and `Quantity`, as well as more complex entities such as `Order` and `Position` objects,
 which are used to aggregate multiple events to determine state.
 
@@ -97,7 +97,7 @@ For the complete specification, refer to [RFC 3339: Date and Time on the Interne
 ## UUIDs
 
 The platform uses Universally Unique Identifiers (UUID) version 4 (RFC 4122) for unique identifiers.
-Our high-performance implementation leverages the `uuid` crate for correctness validation when parsing from strings,
+Our high-performance implementation uses the `uuid` crate for correctness validation when parsing from strings,
 ensuring input UUIDs comply with the specification.
 
 A valid UUID v4 consists of:

@@ -3,7 +3,7 @@
 ## Introduction
 
 This developer guide provides specifications and instructions on how to develop an integration adapter for the NautilusTrader platform.
-Adapters provide connectivity to trading venues and data providers—translating raw venue APIs into Nautilus’s unified interface and normalized domain model.
+Adapters provide connectivity to trading venues and data providers, translating raw venue APIs into Nautilus’s unified interface and normalized domain model.
 
 ## Structure of an adapter
 
@@ -94,7 +94,7 @@ nautilus_trader/adapters/your_adapter/
 ## Adapter implementation sequence
 
 This section outlines the recommended order for implementing an adapter. The sequence follows a dependency-driven approach where each phase builds upon the previous ones.
-Adapters use a Rust-first architecture—implement the Rust core before any Python layer.
+Adapters use a Rust-first architecture: implement the Rust core before any Python layer.
 
 ### Phase 1: Rust core infrastructure
 
@@ -116,7 +116,7 @@ Build the low-level networking and parsing foundation.
 
 ### Phase 2: Instrument definitions
 
-Instruments are the foundation—both data and execution clients depend on them.
+Instruments are the foundation: both data and execution clients depend on them.
 
 | Step | Component                  | Description                                                                                  |
 |------|----------------------------|----------------------------------------------------------------------------------------------|
@@ -540,8 +540,8 @@ For WebSocket authentication, the handler constructs login messages using the sa
 
 Each adapter's `common/credential.rs` must provide two things:
 
-1. **`credential_env_vars()` free function** — returns environment variable names as a tuple.
-2. **`Credential::resolve()` method** — resolves credentials from config values or environment
+1. **`credential_env_vars()` free function**: returns environment variable names as a tuple.
+2. **`Credential::resolve()` method**: resolves credentials from config values or environment
    variables using `resolve_env_var_pair` from `nautilus_core::env`.
 
 Config structs are DTOs and must not contain credential resolution logic. All resolution
@@ -1152,10 +1152,10 @@ crates/adapters/your_adapter/
 
 | File                 | Purpose                                                                                                                   |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------|
-| `tests/data_client.rs` | Integration tests for the data client—validates data subscriptions, historical data requests, and market data parsing.    |
-| `tests/exec_client.rs` | Integration tests for the execution client—validates order submission, modification, cancellation, and execution reports. |
-| `tests/http.rs`      | Low-level HTTP client tests—validates request signing, error handling, and response parsing against mock Axum servers.    |
-| `tests/websocket.rs` | WebSocket client tests—validates connection lifecycle, authentication, subscriptions, and message routing.                |
+| `tests/data_client.rs` | Integration tests for the data client. Validates data subscriptions, historical data requests, and market data parsing.    |
+| `tests/exec_client.rs` | Integration tests for the execution client. Validates order submission, modification, cancellation, and execution reports. |
+| `tests/http.rs`      | Low-level HTTP client tests. Validates request signing, error handling, and response parsing against mock Axum servers.    |
+| `tests/websocket.rs` | WebSocket client tests. Validates connection lifecycle, authentication, subscriptions, and message routing.                |
 
 **Guidelines:**
 
@@ -1227,7 +1227,7 @@ At a minimum, review existing adapter test suites for reference patterns and ens
 
 **CI robustness:**
 
-- Never use bare `tokio::time::sleep()` with arbitrary durations—tests become flaky under CI load and slower than necessary.
+- Never use bare `tokio::time::sleep()` with arbitrary durations. Tests become flaky under CI load and slower than necessary.
 - Use the `wait_until_async` test helper to poll for conditions with timeout. This makes tests both faster (returns immediately when condition is met) and more robust (explicit timeout instead of hoping a sleep duration is long enough).
 - Prefer event-driven assertions with shared state (for example, collect `subscription_events`, track pending/confirmed topics, wait for `connection_count` transitions).
 - Use adapter-specific helpers to gate on explicit signals such as "auth confirmed" or "reconnection finished" so suites remain deterministic under load.
@@ -1292,10 +1292,10 @@ tests/integration_tests/adapters/your_adapter/
 
 | File                | Purpose                                                                                                            |
 |---------------------|--------------------------------------------------------------------------------------------------------------------|
-| `test_data.py`      | Tests for `LiveDataClient` and `LiveMarketDataClient`—validates subscriptions, data parsing, and message handling. |
-| `test_execution.py` | Tests for `LiveExecutionClient`—validates order submission, modification, cancellation, and execution reports.     |
-| `test_providers.py` | Tests for `InstrumentProvider`—validates instrument loading, filtering, and caching behavior.                      |
-| `test_factories.py` | Tests for factory functions—validates client instantiation and configuration wiring.                               |
+| `test_data.py`      | Tests for `LiveDataClient` and `LiveMarketDataClient`. Validates subscriptions, data parsing, and message handling. |
+| `test_execution.py` | Tests for `LiveExecutionClient`. Validates order submission, modification, cancellation, and execution reports.     |
+| `test_providers.py` | Tests for `InstrumentProvider`. Validates instrument loading, filtering, and caching behavior.                      |
+| `test_factories.py` | Tests for factory functions. Validates client instantiation and configuration wiring.                               |
 
 **Guidelines:**
 
@@ -1307,7 +1307,7 @@ tests/integration_tests/adapters/your_adapter/
 
 ## Documentation
 
-All adapter documentation—module-level docs, doc comments, and inline comments—should follow the [Documentation Style Guide](docs.md).
+All adapter documentation (module-level docs, doc comments, and inline comments) should follow the [Documentation Style Guide](docs.md).
 Consistent documentation helps maintainers and users understand adapter behavior without reading implementation details.
 
 ### Rust documentation requirements
@@ -1316,9 +1316,9 @@ Every Rust module, struct, and public method must have documentation comments.
 Use third-person declarative voice (e.g., "Returns the account ID" not "Return the account ID").
 
 - **Modules**: Use `//!` doc comments at the top of each file (after the license header) to describe the module's purpose.
-- **Structs**: Use `///` doc comments above struct definitions. Keep descriptions concise—one sentence is often sufficient.
+- **Structs**: Use `///` doc comments above struct definitions. Keep descriptions concise; one sentence is often sufficient.
 - **Public methods**: Every `pub fn` and `pub async fn` must have a `///` doc comment describing what the method does.
-  Do not document individual parameters in a separate `# Arguments` section—the type signatures and names should be self-explanatory.
+  Do not document individual parameters in a separate `# Arguments` section. The type signatures and names should be self-explanatory.
   Parameters may be mentioned in the description when behavior is complex or non-obvious.
 
 **What NOT to document**:
@@ -1326,7 +1326,7 @@ Use third-person declarative voice (e.g., "Returns the account ID" not "Return t
 - Private methods and fields (unless complex logic warrants it).
 - Individual parameters/arguments (use descriptive names instead).
 - Implementation details that are obvious from the code.
-- Files in the `python/` module (PyO3 bindings)—documentation conventions are TBD (*may* use numpydoc specification).
+- Files in the `python/` module (PyO3 bindings). Documentation conventions are TBD (*may* use numpydoc specification).
 
 ---
 
@@ -1672,7 +1672,7 @@ last_add_delta = OrderBookDelta(
 ```
 
 :::warning
-A missing `F_LAST` is a silent bug — no error is raised, but subscribers
+A missing `F_LAST` is a silent bug: no error is raised, but subscribers
 never receive the data when buffering is enabled.
 :::
 
@@ -2060,7 +2060,7 @@ DataTesterConfig(
 )
 ```
 
-**Rust config:** Not yet supported — book depth subscription is TODO in the Rust `DataTester`.
+**Rust config:** Not yet supported. Book depth subscription is TODO in the Rust `DataTester`.
 
 #### TC-D13: Request book snapshot
 
@@ -2145,7 +2145,7 @@ DataTesterConfig(
 )
 ```
 
-**Rust config:** Not yet supported — historical book delta requests are TODO in the Rust `DataTester`.
+**Rust config:** Not yet supported. Historical book delta requests are TODO in the Rust `DataTester`.
 
 ---
 

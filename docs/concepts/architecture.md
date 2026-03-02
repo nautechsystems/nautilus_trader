@@ -22,7 +22,7 @@ The major architectural techniques and design patterns employed by NautilusTrade
 - [Ports and adapters](https://en.wikipedia.org/wiki/Hexagonal_architecture_(software))
 - [Crash-only design](#crash-only-design)
 
-These techniques have been utilized to assist in achieving certain architectural quality attributes.
+These techniques have been used to assist in achieving certain architectural quality attributes.
 
 ### Quality attributes
 
@@ -169,7 +169,7 @@ The NautilusTrader codebase is actually both a framework for composing trading
 
 ### Core components
 
-The platform is built around several key components that work together to provide a comprehensive trading system:
+The platform is built around several key components that work together to provide a complete trading system:
 
 #### `NautilusKernel`
 
@@ -219,7 +219,7 @@ Manages order lifecycle and execution:
 
 #### `RiskEngine`
 
-Provides comprehensive risk management:
+Provides risk management:
 
 - Pre-trade risk checks and validation.
 - Position and exposure monitoring.
@@ -415,7 +415,7 @@ The traits are managed by separate registries to support their different access 
 
 ### Messaging
 
-To facilitate modularity and loose coupling, an extremely efficient `MessageBus` passes messages (data, commands and events) between components.
+For modularity and loose coupling, an extremely efficient `MessageBus` passes messages (data, commands and events) between components.
 
 #### Threading model
 

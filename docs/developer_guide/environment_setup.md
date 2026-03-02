@@ -283,7 +283,7 @@ The Nautilus CLI command is only supported on UNIX-like systems.
 
 ## Install
 
-You can install the Nautilus CLI using the below Makefile target, which leverages `cargo install` under the hood.
+You can install the Nautilus CLI using the below Makefile target, which uses `cargo install` under the hood.
 This will place the nautilus binary in your system's PATH, assuming Rust's `cargo` is properly configured.
 
 ```bash

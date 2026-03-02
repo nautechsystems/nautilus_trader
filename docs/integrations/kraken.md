@@ -9,7 +9,7 @@ execution for both Kraken Spot and Kraken Derivatives (Futures) markets.
 ## Overview
 
 This adapter is implemented in Rust with Python bindings for ease of use in
-Python-based workflows. It does not require external Kraken client libraries—the
+Python-based workflows. It does not require external Kraken client libraries; the
 core components are compiled as a static library and linked automatically during
 the build.
 
@@ -108,7 +108,7 @@ We chose this approach over timer-based emission because:
 - Buffering ensures data integrity at the cost of latency.
 
 :::warning
-If bar latency is critical for your strategy, consider using trade tick data
+If bar latency matters for your strategy, consider using trade tick data
 and aggregating bars locally with `BarAggregator`.
 :::
 
@@ -253,7 +253,7 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 ## Reconciliation
 
-The Kraken adapter provides comprehensive reconciliation capabilities for both
+The Kraken adapter provides reconciliation capabilities for both
 Spot and Futures markets, allowing traders to synchronize their local state with
 the exchange state at startup or during operation.
 

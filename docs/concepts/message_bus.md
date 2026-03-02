@@ -120,7 +120,7 @@ The Data publish/subscribe approach excels when you need:
 
 - **Exchange of structured trading data** like market data, indicators, custom metrics, or option greeks.
 - **Proper event ordering** via built-in timestamps (`ts_event`, `ts_init`) crucial for backtest accuracy.
-- **Data persistence and serialization** through the `@customdataclass` decorator, integrating seamlessly with NautilusTrader's data catalog system.
+- **Data persistence and serialization** through the `@customdataclass` decorator, integrating with NautilusTrader's data catalog system.
 - **Standardized trading data exchange** between system components.
 
 #### Considerations

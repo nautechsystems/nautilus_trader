@@ -330,7 +330,7 @@ Order operations are rate-limited by `DERIBIT_WS_ORDER_QUOTA` (5 req/sec, 20 bur
 ### Credit-based system details
 
 Deribit uses a sophisticated credit-based rate limiting system where credits are replenished
-continuously at a fixed rate—each second, credits "drip" back into your sub-account's credit pool.
+continuously at a fixed rate. Each second, credits "drip" back into your sub-account's credit pool.
 
 **Non-matching engine requests:**
 
@@ -403,7 +403,7 @@ This session-based approach allows:
 The adapter follows Deribit's
 [recommended connection practices](https://support.deribit.com/hc/en-us/articles/25944603459613):
 
-1. **Uses WebSocket subscriptions** for real-time data instead of REST polling — fewer requests,
+1. **Uses WebSocket subscriptions** for real-time data instead of REST polling, resulting in fewer requests,
    lower latency, and reduced rate limit consumption.
 2. **Authenticates all connections** when credentials are provided. Authenticated users benefit
    from higher rate limits and are less likely to be IP rate-limited.

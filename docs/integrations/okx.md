@@ -7,7 +7,7 @@ execution on OKX.
 ## Overview
 
 This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
-It does not require external OKX client libraries—the core components are compiled as a static library and linked automatically during the build.
+It does not require external OKX client libraries; the core components are compiled as a static library and linked automatically during the build.
 
 ## Examples
 
@@ -441,7 +441,7 @@ The OKX adapter automatically detects and handles exchange-initiated risk manage
 :::info
 **Liquidation and ADL events are logged at WARNING level** with details including order ID, instrument, and state. Monitor your logs for these events as part of your risk management process.
 
-The adapter handles these exchange-generated orders seamlessly, generating appropriate `OrderFilled` events and updating positions accordingly. No special handling is required in your strategy code.
+The adapter handles these exchange-generated orders, generating appropriate `OrderFilled` events and updating positions accordingly. No special handling is required in your strategy code.
 :::
 
 ## Authentication
@@ -509,7 +509,7 @@ When demo mode is enabled:
 - WebSocket connections use demo endpoints (`wspap.okx.com`).
 
 :::note
-Demo API keys are separate from production keys. You must create API keys specifically for demo trading through the Demo Trading interface—production API keys will not work in demo mode.
+Demo API keys are separate from production keys. You must create API keys specifically for demo trading through the Demo Trading interface. Production API keys will not work in demo mode.
 :::
 
 ## Rate limiting

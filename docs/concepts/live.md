@@ -1,7 +1,7 @@
 # Live Trading
 
 NautilusTrader enables traders to deploy their backtested strategies in a real-time
-trading environment with no code changes. This seamless transition from backtesting to live trading
+trading environment with no code changes. This transition from backtesting to live trading
 is a core feature of the platform, ensuring consistency and reliability.
 
 **Live trading involves real financial risk and requires a careful, risk-managed approach.
@@ -197,7 +197,7 @@ See [Execution reconciliation](#execution-reconciliation) for additional backgro
 | `filter_unclaimed_external_orders` | False   | Filters out unclaimed external orders to prevent irrelevant orders from impacting the strategy.            |
 | `filter_position_reports`          | False   | Filters out position status reports, useful when multiple nodes trade the same account to avoid conflicts. |
 
-:::note Order tagging behavior
+:::note[Order tagging behavior]
 During reconciliation, orders are tagged to distinguish their origin:
 
 - **`VENUE` tag**: Applied to external orders discovered from the venue (placed outside this system).
@@ -403,7 +403,7 @@ Execution reconciliation is the process of aligning the external state of realit
 (both closed and open) with the system's internal state built from events.
 This process is primarily applicable to live trading, which is why only the `LiveExecutionEngine` has reconciliation capability.
 
-:::note Terminology
+:::note[Terminology]
 An **in-flight order** is one awaiting venue acknowledgement:
 
 - `SUBMITTED` - initial submission, awaiting accept/reject.
@@ -430,7 +430,7 @@ Additionally, you can specify the lookback window for reconciliation by setting 
 
 :::tip
 We recommend not setting a specific `reconciliation_lookback_mins`. This allows the requests made
-to the venues to utilize the maximum execution history available for reconciliation.
+to the venues to use the maximum execution history available for reconciliation.
 :::
 
 :::warning

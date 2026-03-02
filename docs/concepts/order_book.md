@@ -9,7 +9,7 @@ orders separately, enabling filtered views that show true available liquidity.
 This guide documents the Rust API. These types are also available from Python via
 PyO3 bindings (`nautilus_pyo3.OrderBook`, `nautilus_pyo3.OwnOrderBook`). The legacy
 Cython `OrderBook` (`nautilus_trader.model.book.OrderBook`) returned by
-`cache.order_book()` has a similar but not identical interface — refer to the
+`cache.order_book()` has a similar but not identical interface. Refer to the
 API reference for differences.
 :::
 
@@ -199,7 +199,7 @@ let filtered = book.filtered_view(Some(&own_book), None, status, None, None);
 The `accepted_buffer_ns` parameter provides a grace period: when set, only orders
 where `ts_accepted + buffer <= now` are included. This excludes recently accepted
 orders that may not yet appear in the public book feed. The buffer applies to the
-`ts_accepted` field regardless of order status — combine with a status filter to
+`ts_accepted` field regardless of order status. Combine with a status filter to
 also exclude non-accepted orders.
 
 ```rust
