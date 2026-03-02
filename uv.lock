@@ -1540,7 +1540,7 @@ dev = [
     { name = "types-toml", specifier = ">=0.10.2,<1.0.0" },
 ]
 docs = [
-    { name = "linkify-it-py", specifier = ">=2.0.3,<3.0.0" },
+    { name = "linkify-it-py", specifier = ">=2.1.0,<3.0.0" },
     { name = "myst-parser", specifier = ">=5.0.0,<6.0.0" },
     { name = "numpydoc", specifier = ">=1.10.0,<2.0.0" },
     { name = "sphinx-comments", specifier = ">=0.0.3,<1.0.0" },

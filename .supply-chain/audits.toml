@@ -16,3 +16,27 @@ delta = "0.23.2 -> 0.24.1"
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "0.23.3 -> 0.24.1"
+
+[[audits.const-hex]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.18.0 -> 1.18.1"
+notes = "SIMD decode optimizations, serde alloc gate removal. No new deps, no build script changes."
+
+[[audits.sysinfo]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.38.2 -> 0.38.3"
+notes = "macOS memory reporting fix, cosmetic changes only. No new deps or unsafe."
+
+[[audits.tokio-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.6.0 -> 2.6.1"
+notes = "Better error messages for return-type mismatches, lint hygiene fix. Compile-time only."
+
+[[audits.zlib-rs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.6.2 -> 0.6.3"
+notes = "Off-by-one fix in longest_match, integer overflow fixes. Improves correctness and safety."

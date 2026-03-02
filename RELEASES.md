@@ -48,6 +48,7 @@ Released on TBD (UTC).
 - Fixed Binance silent HMAC fallback when using encrypted Ed25519 PEM keys (now warns)
 - Fixed BinanceSymbol COIN-M perpetual symbol conversion (#3641), thanks @YeeTsai
 - Fixed Binance algo order cancellation parsing (#3646), thanks @qu1zzyboy
+- Fixed Binance Spot testnet WebSocket API URL (#3661), thanks @penguinwokrs
 - Fixed Hyperliquid stop/trigger order price derivation (#3611), thanks for reporting @h-tsun3
 - Fixed Hyperliquid price normalization and inner error detection (#3612), thanks for reporting @h-tsun3
 - Fixed Interactive Brokers BarType/str comparison in get_historical_bars (#3616), thanks @powerseed

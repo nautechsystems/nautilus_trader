@@ -44,8 +44,8 @@ docs = "https://nautilustrader.io/docs"
 # For now we use the poetry build backend until uv supports custom build scripts
 [build-system]
 requires = [
-  "setuptools>=80",
-  "poetry-core==2.2.1", # Pinned to 2.2.1 for stability
+  "setuptools>=82",
+  "poetry-core==2.3.1", # Pinned to 2.3.1 for stability
   "numpy>=1.26.4",
   "cython==3.2.4", # Pinned to 3.2.4 for stability
 ]
@@ -110,7 +110,7 @@ test = [
 ]
 docs = [
   "numpydoc>=1.10.0,<2.0.0",
-  "linkify-it-py>=2.0.3,<3.0.0",
+  "linkify-it-py>=2.1.0,<3.0.0",
   "myst-parser>=5.0.0,<6.0.0",
   "sphinx-comments>=0.0.3,<1.0.0",
   "sphinx-markdown-builder>=0.6.9,<1.0.0",
