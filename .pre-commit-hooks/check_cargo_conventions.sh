@@ -382,11 +382,15 @@ if [[ -f "Cargo.toml" ]]; then
     echo "$1" | cut -d. -f1,2
   }
 
-  # capnp and capnpc must have exact same version
+  # capnp and capnpc must have same major.minor (patch can differ when one releases a fix first)
   capnp_ver=$(get_version "capnp")
   capnpc_ver=$(get_version "capnpc")
-  if [[ -n "$capnp_ver" && -n "$capnpc_ver" && "$capnp_ver" != "$capnpc_ver" ]]; then
-    version_alignment_violations+="  Cargo.toml: capnp ($capnp_ver) and capnpc ($capnpc_ver) versions must match"$'\n'
+  if [[ -n "$capnp_ver" && -n "$capnpc_ver" ]]; then
+    capnp_mm=$(get_major_minor "$capnp_ver")
+    capnpc_mm=$(get_major_minor "$capnpc_ver")
+    if [[ "$capnp_mm" != "$capnpc_mm" ]]; then
+      version_alignment_violations+="  Cargo.toml: capnp ($capnp_ver) and capnpc ($capnpc_ver) major.minor versions must match"$'\n'
+    fi
   fi
 
   # arrow and parquet must have same major.minor (from same arrow-rs release)

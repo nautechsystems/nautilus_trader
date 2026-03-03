@@ -121,12 +121,12 @@ arrow = { version = "57.3.0", default-features = false, features = [
 arrow-row = "57.3.0"
 async-stream = "0.3.6"
 async-trait = "0.1.89"
-aws-lc-rs = { version = "1.16.0", default-features = false, features = [
+aws-lc-rs = { version = "1.16.1", default-features = false, features = [
   "non-fips",
 ] }
 base64 = "0.22.1"
 bytes = { version = "1.11.1", features = ["serde"] }
-capnp = "0.25.0"
+capnp = "0.25.1"
 chrono = { version = "0.4.44", default-features = false, features = [
   "serde",
   "std",
@@ -254,7 +254,7 @@ tabled = { version = "0.20.0", default-features = false, features = [
   "derive",
 ] }
 thiserror = "2.0.18"
-tokio = { version = "1.49.0", default-features = false, features = [
+tokio = { version = "1.50.0", default-features = false, features = [
   "rt-multi-thread",
   "sync",
   "fs",
