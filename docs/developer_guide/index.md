@@ -21,5 +21,7 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 - [Docs Style](docs.md)
 - [Release Notes](releases.md)
 - [Adapters](adapters.md)
+- [Data Testing Spec](spec_data_testing.md)
+- [Execution Testing Spec](spec_exec_testing.md)
 - [Benchmarking](benchmarking.md)
 - [FFI Memory Contract](ffi.md)
