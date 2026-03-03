@@ -126,7 +126,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
         external_strategy_id: str = "bybit_binance_plumeusdt_makerv3"
         bot_on: bool = True
         qty: Decimal | None = None
-        hedge_qty: NonNegativeFloat = 0.0
         des_qty_global: NonNegativeFloat = 0.0
         max_qty_global: NonNegativeFloat = 20_000.0
         max_skew_bps_global: NonNegativeFloat = 0.0
@@ -150,18 +149,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
         place_edge3: NonNegativeFloat = 2.0
         distance3: NonNegativeFloat = 0.08
         n_orders3: NonNegativeInt = 1
-        bid_edge_hedge: NonNegativeFloat = 0.0
-        ask_edge_hedge: NonNegativeFloat = 0.0
-        distance_hedge: NonNegativeFloat = 0.0
-        n_orders_hedge: NonNegativeInt = 0
-        place_edge_hedge: NonNegativeFloat = 2.0
-        strategy_take_enabled: bool = False
-        bid_edge_take: NonNegativeFloat = 0.0
-        ask_edge_take: NonNegativeFloat = 0.0
-        take_qty: NonNegativeFloat = 0.0
-        take_cooldown: NonNegativeFloat = 0.0
-        hedge_reduce_only: bool = True
-        hedge_touch_at_max_qty: bool = False
         quote_fail_critical_after_count: NonNegativeInt = 3
         quote_fail_critical_after_s: NonNegativeFloat = 60.0
         maker_price_anchor: str = "reference_leg"
