@@ -440,7 +440,7 @@ jobs:
           docker buildx imagetools create "${tags[@]}" "${digests[@]}"
           TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
           IMAGE="ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAG"
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest')
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
@@ -648,7 +648,7 @@ jobs:
           docker buildx imagetools create "${tags[@]}" "${digests[@]}"
           TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
           IMAGE="ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAG"
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest')
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
