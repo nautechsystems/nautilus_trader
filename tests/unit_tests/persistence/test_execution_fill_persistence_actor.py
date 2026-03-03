@@ -125,6 +125,19 @@ def test_actor_subscribes_to_events_fills_only_and_matches_dotted_instrument_ids
     assert _row_count(db_path) == 1
 
 
+def test_actor_threaded_writer_mode_persists_without_thread_affinity_errors(tmp_path) -> None:
+    actor, msgbus, db_path = _make_actor(tmp_path, run_writer_thread=True)
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(instrument=instrument)
+
+    actor.start()
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    actor.flush()
+    actor.stop()
+
+    assert _row_count(db_path) == 1
+
+
 def test_actor_enforces_idempotency_and_allows_trade_id_collision(tmp_path) -> None:
     actor, msgbus, db_path = _make_actor(tmp_path)
     instrument = TestInstrumentProvider.btcusdt_binance()
@@ -227,4 +240,3 @@ def test_actor_db_down_log_and_drop_drops_rows(tmp_path) -> None:
 
     assert actor.dropped == 1
     assert _row_count(db_path) == 0
-

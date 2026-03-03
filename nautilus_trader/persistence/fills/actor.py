@@ -78,18 +78,23 @@ class ExecutionFillPersistenceActor(Actor):
         self._flush_event.clear()
         self._writer_error = None
 
-        self._conn = self._connect_fn(self.config.db_path)
-        self._ensure_schema_fn(self._conn)
-
         self.msgbus.subscribe(topic=self.config.topic, handler=self._on_fill_message)
 
         if self._run_writer_thread:
+            # Create schema with a short-lived connection in the actor thread.
+            conn = self._connect_fn(self.config.db_path)
+            self._ensure_schema_fn(conn)
+            conn.close()
+
             self._writer_thread = threading.Thread(
                 target=self._writer_loop,
                 name=f"{self.id}-fills-writer",
                 daemon=True,
             )
             self._writer_thread.start()
+        else:
+            self._conn = self._connect_fn(self.config.db_path)
+            self._ensure_schema_fn(self._conn)
 
     def on_stop(self) -> None:
         if self.msgbus is not None:
@@ -100,18 +105,24 @@ class ExecutionFillPersistenceActor(Actor):
 
         if self._writer_thread is not None:
             self._writer_thread.join(timeout=5.0)
+            if self._writer_thread.is_alive():
+                self._writer_error = RuntimeError(
+                    "Execution fill writer thread did not stop cleanly",
+                )
+                raise self._writer_error
             self._writer_thread = None
 
-        # Final best-effort flush for synchronous test mode.
-        try:
-            self.flush()
-        except RuntimeError:
-            # Keep stop path best-effort and non-fatal.
-            pass
+        if not self._run_writer_thread:
+            # Final best-effort flush for synchronous mode.
+            try:
+                self.flush()
+            except RuntimeError:
+                # Keep stop path best-effort and non-fatal.
+                pass
 
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
 
         self._pending_rows.clear()
 
@@ -122,6 +133,7 @@ class ExecutionFillPersistenceActor(Actor):
     def on_order_filled(self, event: OrderFilled) -> None:
         self._raise_if_writer_failed()
 
+        # Keep cross-thread payloads primitive (tuple row), no waits / no DB I/O.
         row = fill_to_row(event, on_info_encode_error=self._on_info_encode_error)
 
         try:
@@ -151,7 +163,7 @@ class ExecutionFillPersistenceActor(Actor):
             while time.monotonic() < deadline:
                 if self._writer_error is not None:
                     break
-                if self._queue.empty() and not self._pending_rows:
+                if self._queue.empty():
                     break
                 time.sleep(0.001)
             self._raise_if_writer_failed()
@@ -163,14 +175,22 @@ class ExecutionFillPersistenceActor(Actor):
         self._raise_if_writer_failed()
 
     def _writer_loop(self) -> None:
+        try:
+            conn = self._connect_fn(self.config.db_path)
+            self._conn = conn
+        except Exception as exc:
+            self._writer_error = RuntimeError("Execution fill writer failed to start")
+            self.log.error(f"{self._writer_error}: {exc!r}")
+            return
+
         while True:
             processed = self._flush_once()
 
             if self._writer_error is not None:
-                return
+                break
 
             if self._stop_event.is_set() and self._queue.empty() and not self._pending_rows:
-                return
+                break
 
             if processed:
                 continue
@@ -180,6 +200,11 @@ class ExecutionFillPersistenceActor(Actor):
 
             self._flush_event.wait(timeout=self.config.flush_interval_ms / 1000.0)
             self._flush_event.clear()
+
+        try:
+            conn.close()
+        finally:
+            self._conn = None
 
     def _flush_once(self) -> bool:
         if self._conn is None:
@@ -263,4 +288,3 @@ class ExecutionFillPersistenceActor(Actor):
 
     def _on_info_encode_error(self) -> None:
         self.info_encode_errors += 1
-
