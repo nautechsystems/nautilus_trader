@@ -539,23 +539,12 @@ BASE_HTML_TEMPLATE = """<!doctype html>
   <body>
     <div class=\"wrap\">
       <h1>Nautilus TokenMM</h1>
-      <nav id=\"menu\"></nav>
       <div id=\"status\" class=\"status mono\">loading</div>
       <div class=\"card\" id=\"content\"></div>
     </div>
   <script>
-      const ROUTE = window.location.pathname;
       const STRATEGY = new URLSearchParams(window.location.search).get('strategy') || '__DEFAULT_STRATEGY__';
       const STRATEGY_QUERY = `strategy=${encodeURIComponent(STRATEGY)}`;
-
-      const pages = [
-        ['/tokenmm', 'Home'],
-        ['/tokenmm/signal', 'Signal'],
-        ['/tokenmm/params', 'Params'],
-        ['/tokenmm/balances', 'Balances'],
-        ['/tokenmm/trades', 'Trades'],
-        ['/tokenmm/alerts', 'Alerts'],
-      ];
 
       const fmt = (value) => (value === null || value === undefined ? '-' : String(value));
       const fmtTs = (value) => {
@@ -581,14 +570,6 @@ BASE_HTML_TEMPLATE = """<!doctype html>
           throw new Error(`HTTP ${response.status}`);
         }
         return response.json();
-      };
-
-      const renderMenu = () => {
-        const links = pages.map(([href, label]) => {
-          const active = href === '/tokenmm' ? (ROUTE === '/tokenmm' || ROUTE === '/' ? 'active' : '') : ROUTE === href ? 'active' : '';
-          return `<a href=\"${href}?strategy=${STRATEGY}\" class=\"${active}\">${label}</a>`;
-        }).join('');
-        document.getElementById('menu').innerHTML = links;
       };
 
       const renderSignalPanel = (strategy, fvRow, legs) => {
@@ -699,33 +680,6 @@ BASE_HTML_TEMPLATE = """<!doctype html>
         }
       };
 
-      const renderSignal = async () => {
-        const data = await apiGet('/api/v1/signals');
-        const strategy = (data?.data?.strategies || [])[0] || {};
-        document.getElementById('content').innerHTML = renderSignalPanel(strategy, strategy.fv_row || {}, strategy.legs || {});
-      };
-
-      const renderParams = async () => {
-        const data = await apiGet('/api/v1/params');
-        const row = (data?.data?.strategies || [])[0] || {};
-        document.getElementById('content').innerHTML = renderParamsSection({
-          params: row.params || {},
-          schema: row.schema || {},
-          prefix: 'params',
-          title: 'Parameters',
-        });
-        document
-          .getElementById('params-params-form')
-          .addEventListener('submit', (event) => {
-            postParams(event, {
-              prefix: 'params',
-              refresh: async () => {
-                await renderParams();
-              },
-            });
-          });
-      };
-
       const renderHome = async () => {
         const [signalData, paramsData, balancesData, tradesData, alertsData] = await Promise.all([
           apiGet('/api/v1/signals'),
@@ -769,51 +723,17 @@ BASE_HTML_TEMPLATE = """<!doctype html>
           });
       };
 
-      const renderBalances = async () => {
-        const data = await apiGet('/api/v1/balances');
-        const rows = data?.data?.rows || [];
-        const body = rows.map((row) => `<tr><td>${fmt(row.strategy_id)}</td><td>${fmt(row.exchange || row.venue || '')}</td><td>${fmt(row.base || row.coin || '')}</td><td>${fmt(row.free)}</td><td>${fmt(row.locked)}</td><td>${fmt(row.total)}</td></tr>`).join('');
-        document.getElementById('content').innerHTML = `<div class=\"section card\"><h3>Balances</h3>${renderTable('<th>strategy_id</th><th>exchange</th><th>asset</th><th>free</th><th>locked</th><th>total</th>', body)}</div>`;
-      };
-
-      const renderTrades = async () => {
-        const data = await apiGet('/api/v1/trades');
-        const rows = data?.data?.rows || [];
-        const body = rows.map((row) => `<tr><td>${fmtTs(row.ts_ms)}</td><td>${fmt(row.side || row.order_side)}</td><td>${fmt(row.qty)}</td><td>${fmt(row.price)}</td><td>${fmt(row.symbol || row.coin)}</td><td>${fmt(row.venue || row.exchange)}</td></tr>`).join('');
-        document.getElementById('content').innerHTML = `<div class=\"section card\"><h3>Trades</h3>${renderTable('<th>time</th><th>side</th><th>qty</th><th>price</th><th>symbol</th><th>venue</th>', body)}</div>`;
-      };
-
-      const renderAlerts = async () => {
-        const data = await apiGet('/api/v1/alerts');
-        const rows = data?.data?.rows || [];
-        const body = rows.map((row) => `<tr><td>${fmtTs(row.ts_ms)}</td><td>${fmt(row.level)}</td><td>${fmt(row.message || row.event || row.text)}</td><td>${fmt(row.reason)}</td></tr>`).join('');
-        document.getElementById('content').innerHTML = `<div class=\"section card\"><h3>Alerts</h3>${renderTable('<th>time</th><th>level</th><th>message</th><th>reason</th>', body)}</div>`;
-      };
-
-      const renderMap = {
-        '/tokenmm/signal': renderSignal,
-        '/tokenmm': renderHome,
-        '/': renderHome,
-        '/tokenmm/params': renderParams,
-        '/tokenmm/balances': renderBalances,
-        '/tokenmm/trades': renderTrades,
-        '/tokenmm/alerts': renderAlerts,
-      };
-
       const render = async () => {
-        const target = (ROUTE === '/tokenmm' || ROUTE === '/') ? '/tokenmm' : ROUTE;
-        const fn = renderMap[target] || renderSignal;
         try {
-        const health = await (await fetch('/api/v1/healthz')).json();
+          const health = await (await fetch('/api/v1/healthz')).json();
           const ok = health?.ok ? 'ok' : 'error';
           document.getElementById('status').innerHTML = `${ok} redis=${health?.data?.redis_available ? 'up' : 'down'} strategy=${escapeHtml(STRATEGY)}`;
-          await fn();
+          await renderHome();
         } catch (err) {
           document.getElementById('status').innerHTML = `<span class=\"err\">dashboard error</span> ${err}`;
         }
       };
 
-      renderMenu();
       render();
       setInterval(render, 2000);
     </script>
