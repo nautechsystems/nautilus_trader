@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- None
+- Added option chains and greeks in Rust (#3637), thanks @filipmacek
 
 ### Breaking Changes
 - None

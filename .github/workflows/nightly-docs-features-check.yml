@@ -45,7 +45,7 @@ jobs:
 
       # https://github.com/taiki-e/install-action
       - name: Install cargo-hack
-        uses: taiki-e/install-action@f176c07a0a40cbfdd08ee9aa8bf1655701d11e69 # v2.67.25
+        uses: taiki-e/install-action@cede0bb282aae847dfa8aacca3a41c86d973d4d7 # v2.68.1
         with:
           tool: cargo-hack
 
@@ -81,7 +81,7 @@ jobs:
 
       # https://github.com/taiki-e/install-action
       - name: Install cargo-hack
-        uses: taiki-e/install-action@f176c07a0a40cbfdd08ee9aa8bf1655701d11e69 # v2.67.25
+        uses: taiki-e/install-action@cede0bb282aae847dfa8aacca3a41c86d973d4d7 # v2.68.1
         with:
           tool: cargo-hack
 
