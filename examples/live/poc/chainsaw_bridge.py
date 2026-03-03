@@ -821,7 +821,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Bridge Nautilus msgbus Redis streams into Fluxboard-compatible Redis keys.",
     )
     parser.add_argument("--redis-host", default="127.0.0.1")
-    parser.add_argument("--redis-port", type=int, default=6379)
+    parser.add_argument("--redis-port", type=int, default=6380)
     parser.add_argument("--redis-db", type=int, default=0)
     parser.add_argument("--redis-username", default=None)
     parser.add_argument("--redis-password", default=None)

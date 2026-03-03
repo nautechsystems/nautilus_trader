@@ -14,46 +14,75 @@ This directory defines the shared translation contract for the MakerV3 single-le
    redis-server
    ```
 
-2. Run the Nautilus strategy node.
+2. Load API keys from AWS Secrets Manager.
 
    ```bash
-  python examples/live/poc/makerv3_single_leg_node.py
+   export POC_AWS_REGION="ap-southeast-1"
+   for secret in /nautilus/makerv3/bybit /nautilus/makerv3/binance /nautilus/makerv3/okx; do
+     aws secretsmanager get-secret-value --region "${POC_AWS_REGION}" --secret-id "${secret}" --query SecretString --output text \
+       | jq -r 'to_entries[] | "export " + .key + "=" + (.value|@sh)' \
+       | while IFS= read -r stmt; do
+         eval "${stmt}"
+       done
+   done
+   ```
+
+3. Run the Nautilus strategy node.
+
+   ```bash
+  POC_REDIS_PORT=6380 python examples/live/poc/makerv3_single_leg_node.py
   ```
 
    Start with execution disabled by default (`POC_ENABLE_EXEC=0`). Enable live quoting only after your Bybit API keys are configured in your environment (how the Bybit adapter resolves credentials):
 
    ```bash
-   POC_ENABLE_EXEC=1 python examples/live/poc/makerv3_single_leg_node.py
+   POC_ENABLE_EXEC=1 POC_REDIS_PORT=6380 python examples/live/poc/makerv3_single_leg_node.py
    ```
 
    Use a dedicated Redis DB (recommended) to avoid sharing with existing Fluxboard/Chainsaw services:
 
    ```bash
-   POC_REDIS_DB=1 python examples/live/poc/makerv3_single_leg_node.py
+   POC_REDIS_DB=1 POC_REDIS_PORT=6380 python examples/live/poc/makerv3_single_leg_node.py
    ```
 
-3. Run the Nautilus<->Fluxboard bridge.
+4. Run the Nautilus<->Fluxboard bridge.
 
    ```bash
-   python examples/live/poc/chainsaw_bridge.py
+   python examples/live/poc/chainsaw_bridge.py --redis-port 6380
    ```
 
    Match the node Redis DB (or set explicitly):
 
    ```bash
-   python examples/live/poc/chainsaw_bridge.py --redis-db 1 --strategy-id bybit_binance_plumeusdt_makerv3
+   python examples/live/poc/chainsaw_bridge.py --redis-db 1 --redis-port 6380 --strategy-id bybit_binance_plumeusdt_makerv3
    ```
 
-4. Run the minimal TokenMM API + UI.
+5. Run the minimal TokenMM API + UI.
 
    ```bash
-   PORT=5022 python examples/live/poc/nautilus_fluxapi.py
+   POC_REDIS_PORT=6380 PORT=5022 python examples/live/poc/nautilus_fluxapi.py
    ```
 
    Match the same Redis DB as above:
 
    ```bash
-   POC_REDIS_DB=1 PORT=5022 python examples/live/poc/nautilus_fluxapi.py
+   POC_REDIS_DB=1 POC_REDIS_PORT=6380 PORT=5022 python examples/live/poc/nautilus_fluxapi.py
    ```
 
-5. Open `http://<host>:5022/tokenmm` (single-page home view with Signal/Params/Balances/Trades/Alerts).
+6. Open `http://<host>:5022/tokenmm` (single-page home view with Signal/Params/Balances/Trades/Alerts).
+
+## AWS keystore bootstrap (once-off)
+
+Use these secrets names and keep them aligned with adapter env variables:
+
+- `/nautilus/makerv3/bybit`: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
+- `/nautilus/makerv3/binance`: `BINANCE_API_KEY`, `BINANCE_API_SECRET`
+- `/nautilus/makerv3/okx`: `OKX_API_KEY`, `OKX_API_SECRET`, `OKX_API_PASSPHRASE`
+
+Create/update from terminal:
+
+```bash
+aws secretsmanager put-secret-value --region "${POC_AWS_REGION}" --secret-id /nautilus/makerv3/bybit --secret-string '{"BYBIT_API_KEY":"...","BYBIT_API_SECRET":"..."}'
+aws secretsmanager put-secret-value --region "${POC_AWS_REGION}" --secret-id /nautilus/makerv3/binance --secret-string '{"BINANCE_API_KEY":"...","BINANCE_API_SECRET":"..."}'
+aws secretsmanager put-secret-value --region "${POC_AWS_REGION}" --secret-id /nautilus/makerv3/okx --secret-string '{"OKX_API_KEY":"...","OKX_API_SECRET":"...","OKX_API_PASSPHRASE":"..."}'
+```

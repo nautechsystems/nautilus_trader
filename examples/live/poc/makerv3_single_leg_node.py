@@ -63,7 +63,7 @@ BYBIT_EXEC_INSTRUMENT_ID = InstrumentId.from_str("PLUMEUSDT-LINEAR.BYBIT")
 BINANCE_DATA_INSTRUMENT_ID = InstrumentId.from_str("PLUMEUSDT.BINANCE")
 ENABLE_EXEC = os.getenv("POC_ENABLE_EXEC", "0") == "1"
 REDIS_HOST = os.getenv("POC_REDIS_HOST", "127.0.0.1")
-REDIS_PORT = int(os.getenv("POC_REDIS_PORT", "6379"))
+REDIS_PORT = int(os.getenv("POC_REDIS_PORT", "6380"))
 REDIS_DB = int(os.getenv("POC_REDIS_DB", "0"))
 REDIS_USERNAME = os.getenv("POC_REDIS_USERNAME") or None
 REDIS_PASSWORD = os.getenv("POC_REDIS_PASSWORD") or None
