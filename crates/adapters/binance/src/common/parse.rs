@@ -296,11 +296,36 @@ pub fn parse_coinm_instrument(
 /// SBE status value for Trading.
 const SBE_STATUS_TRADING: u8 = 0;
 
+/// Derives the number of significant decimal places from an SBE mantissa/exponent pair.
+///
+/// Binance SBE encodes values as `mantissa * 10^exponent` where `exponent` is a global
+/// fixed-point encoding parameter (typically -8), not the instrument's trading precision.
+/// The actual precision is determined by how many trailing zeros the mantissa carries.
+///
+/// # Examples
+///
+/// - ETHUSDC tick_size: mantissa=1_000_000, exp=-8 → 0.01 → precision=2
+/// - DOGEUSDT tick_size: mantissa=1_000, exp=-8 → 0.00001 → precision=5
+/// - SHIBUSDT tick_size: mantissa=1, exp=-8 → 0.00000001 → precision=8
+/// - BTCTRY tick_size: mantissa=100_000_000, exp=-8 → 1.0 → precision=0
+fn sbe_mantissa_precision(mantissa: i64, exponent: i8) -> u8 {
+    if mantissa == 0 {
+        return 0;
+    }
+    let mut m = mantissa.abs();
+    let mut trailing_zeros: i8 = 0;
+    while m > 0 && m % 10 == 0 {
+        m /= 10;
+        trailing_zeros += 1;
+    }
+    (-exponent - trailing_zeros).max(0) as u8
+}
+
 /// Parses an SBE price filter into tick_size, max_price, min_price.
 fn parse_sbe_price_filter(
     filter: &BinancePriceFilterSbe,
 ) -> anyhow::Result<(Price, Option<Price>, Option<Price>)> {
-    let precision = (-filter.price_exponent).max(0) as u8;
+    let precision = sbe_mantissa_precision(filter.tick_size, filter.price_exponent);
 
     let tick_size = mantissa_to_price(filter.tick_size, filter.price_exponent, precision);
 
@@ -331,7 +356,7 @@ fn parse_sbe_price_filter(
 fn parse_sbe_lot_size_filter(
     filter: &BinanceLotSizeFilterSbe,
 ) -> anyhow::Result<(Quantity, Option<Quantity>, Option<Quantity>)> {
-    let precision = (-filter.qty_exponent).max(0) as u8;
+    let precision = sbe_mantissa_precision(filter.step_size, filter.qty_exponent);
 
     let step_size = mantissa_to_quantity(filter.step_size, filter.qty_exponent, precision);
 
@@ -1153,6 +1178,92 @@ mod tests {
                     .to_string()
                     .contains("Unsupported bar aggregation")
             );
+        }
+    }
+
+    mod sbe_precision_tests {
+        use super::*;
+        use crate::spot::http::models::{BinanceLotSizeFilterSbe, BinancePriceFilterSbe};
+
+        #[rstest]
+        #[case::precision_0(100_000_000, -8, 0)]
+        #[case::precision_1(10_000_000, -8, 1)]
+        #[case::precision_2(1_000_000, -8, 2)]
+        #[case::precision_3(100_000, -8, 3)]
+        #[case::precision_4(10_000, -8, 4)]
+        #[case::precision_5(1_000, -8, 5)]
+        #[case::precision_6(100, -8, 6)]
+        #[case::precision_7(10, -8, 7)]
+        #[case::precision_8(1, -8, 8)]
+        fn test_sbe_mantissa_precision(
+            #[case] mantissa: i64,
+            #[case] exponent: i8,
+            #[case] expected: u8,
+        ) {
+            let result = sbe_mantissa_precision(mantissa, exponent);
+            assert_eq!(
+                result, expected,
+                "mantissa={mantissa}, exponent={exponent}: expected {expected}, was {result}"
+            );
+        }
+
+        #[rstest]
+        fn test_sbe_mantissa_precision_zero_mantissa() {
+            assert_eq!(sbe_mantissa_precision(0, -8), 0);
+        }
+
+        #[rstest]
+        fn test_sbe_mantissa_precision_positive_exponent() {
+            assert_eq!(sbe_mantissa_precision(1, 0), 0);
+            assert_eq!(sbe_mantissa_precision(5, 2), 0);
+        }
+
+        #[rstest]
+        fn test_parse_sbe_price_filter_ethusdc() {
+            let filter = BinancePriceFilterSbe {
+                price_exponent: -8,
+                min_price: 1_000_000,
+                max_price: 100_000_000_000_000,
+                tick_size: 1_000_000,
+            };
+
+            let (tick_size, max_price, min_price) = parse_sbe_price_filter(&filter).unwrap();
+
+            assert_eq!(tick_size.precision, 2, "tick_size precision");
+            assert_eq!(tick_size.as_f64(), 0.01);
+            assert_eq!(max_price.unwrap().precision, 2);
+            assert_eq!(min_price.unwrap().precision, 2);
+        }
+
+        #[rstest]
+        fn test_parse_sbe_price_filter_shibusdt() {
+            let filter = BinancePriceFilterSbe {
+                price_exponent: -8,
+                min_price: 1,
+                max_price: 100_000_000,
+                tick_size: 1,
+            };
+
+            let (tick_size, _, _) = parse_sbe_price_filter(&filter).unwrap();
+
+            assert_eq!(tick_size.precision, 8);
+            assert_eq!(tick_size.as_f64(), 0.00000001);
+        }
+
+        #[rstest]
+        fn test_parse_sbe_lot_size_filter_ethusdc() {
+            let filter = BinanceLotSizeFilterSbe {
+                qty_exponent: -8,
+                min_qty: 10_000,
+                max_qty: 900_000_000_000,
+                step_size: 10_000,
+            };
+
+            let (step_size, max_qty, min_qty) = parse_sbe_lot_size_filter(&filter).unwrap();
+
+            assert_eq!(step_size.precision, 4, "step_size precision");
+            assert_eq!(min_qty.unwrap().precision, 4);
+            assert_eq!(max_qty.unwrap().precision, 4);
         }
     }
 }
