@@ -56,10 +56,4 @@ This directory defines the shared translation contract for the MakerV3 single-le
    POC_REDIS_DB=1 PORT=5022 python examples/live/poc/nautilus_fluxapi.py
    ```
 
-5. Open `/tokenmm` pages:
-
-   - `/tokenmm/signal`
-   - `/tokenmm/params`
-   - `/tokenmm/balances`
-   - `/tokenmm/trades`
-   - `/tokenmm/alerts`
+5. Open `http://<host>:5022/tokenmm` (single-page home view with Signal/Params/Balances/Trades/Alerts).

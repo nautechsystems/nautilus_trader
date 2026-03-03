@@ -18,7 +18,7 @@ from flask import request
 
 DEFAULT_STRATEGY_ID = "bybit_binance_plumeusdt_makerv3"
 DEFAULT_REDIS_HOST = "127.0.0.1"
-DEFAULT_REDIS_PORT = 6379
+DEFAULT_REDIS_PORT = 6380
 DEFAULT_REDIS_DB = 0
 
 
