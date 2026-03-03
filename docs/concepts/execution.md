@@ -60,6 +60,52 @@ flowchart LR
     engine <--> client
 ```
 
+## Execution fill persistence
+
+`OrderFilled` events are published by the execution engine on the MessageBus topic family
+`events.fills.<instrument_id>`. To persist these fills durably with SQL idempotency, attach the
+`ExecutionFillPersistenceActor` and subscribe to `events.fills.*`.
+
+The persistence actor writes immutable rows into `execution_fill` using idempotency key
+`(trader_id, event_id)` and keeps `trade_id` as a query/index field (not unique). The hot path is
+non-blocking: the MessageBus handler only does `put_nowait` enqueue; DB I/O runs in buffered flushes.
+
+```python
+from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.config import TradingNodeConfig
+
+config = TradingNodeConfig(
+    actors=[
+        ImportableActorConfig(
+            actor_path="nautilus_trader.persistence.fills.actor:ExecutionFillPersistenceActor",
+            config_path="nautilus_trader.persistence.fills.config:ExecutionFillPersistenceActorConfig",
+            config={
+                "component_id": "FILL-DB",
+                "db_path": "/var/lib/nautilus/fills.sqlite",
+                "topic": "events.fills.*",
+                "flush_interval_ms": 250,
+                "max_batch_size": 1000,
+                "max_queue_size": 10000,
+                "on_error": "buffer_until_full_then_fail",
+            },
+        ),
+    ],
+)
+```
+
+For analytics ingestion, you can stream `OrderFilled` in parallel and ingest the resulting feather
+log into ArcticDB offline:
+
+```python
+from nautilus_trader.config import StreamingConfig
+from nautilus_trader.model.events import OrderFilled
+
+streaming = StreamingConfig(
+    catalog_path="/var/lib/nautilus/catalog",
+    include_types=[OrderFilled],
+)
+```
+
 ## Order Management System (OMS)
 
 An order management system (OMS) type refers to the method used for assigning orders to positions and tracking those positions for an instrument.
