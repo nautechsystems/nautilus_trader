@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 
 import pytest
 
@@ -136,6 +137,46 @@ def test_actor_threaded_writer_mode_persists_without_thread_affinity_errors(tmp_
     actor.stop()
 
     assert _row_count(db_path) == 1
+
+
+def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
+    from nautilus_trader.persistence.fills.sqlite import insert_fills as _real_insert_fills
+
+    def _insert_slow(conn, rows):
+        time.sleep(0.05)
+        return _real_insert_fills(conn, rows)
+
+    actor, msgbus, db_path = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+        insert_fills_fn=_insert_slow,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(instrument=instrument)
+
+    actor.start()
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    actor.flush()
+    assert _row_count(db_path) == 1
+    actor.stop()
+
+
+def test_actor_start_failure_does_not_leave_subscription(tmp_path) -> None:
+    connect_calls = {"count": 0}
+
+    def _connect_once_then_fail(path: str):
+        connect_calls["count"] += 1
+        if connect_calls["count"] == 1:
+            return sqlite3.connect(path)
+        raise RuntimeError("writer connect failed")
+
+    actor, msgbus, _ = _make_actor(tmp_path, run_writer_thread=True)
+    actor._connect_fn = _connect_once_then_fail
+
+    with pytest.raises(RuntimeError):
+        actor.start()
+
+    assert msgbus.subscriptions(actor.config.topic) == []
 
 
 def test_actor_enforces_idempotency_and_allows_trade_id_collision(tmp_path) -> None:

@@ -61,6 +61,7 @@ class ExecutionFillPersistenceActor(Actor):
         self._pending_rows: deque[ExecutionFillRow] = deque()
         self._stop_event = threading.Event()
         self._flush_event = threading.Event()
+        self._writer_started = threading.Event()
         self._writer_thread: threading.Thread | None = None
         self._writer_error: RuntimeError | None = None
 
@@ -76,25 +77,48 @@ class ExecutionFillPersistenceActor(Actor):
         self._pending_rows.clear()
         self._stop_event.clear()
         self._flush_event.clear()
+        self._writer_started.clear()
         self._writer_error = None
 
-        self.msgbus.subscribe(topic=self.config.topic, handler=self._on_fill_message)
+        try:
+            if self._run_writer_thread:
+                # Create schema with a short-lived connection in the actor thread.
+                conn = self._connect_fn(self.config.db_path)
+                self._ensure_schema_fn(conn)
+                conn.close()
 
-        if self._run_writer_thread:
-            # Create schema with a short-lived connection in the actor thread.
-            conn = self._connect_fn(self.config.db_path)
-            self._ensure_schema_fn(conn)
-            conn.close()
+                self._writer_thread = threading.Thread(
+                    target=self._writer_loop,
+                    name=f"{self.id}-fills-writer",
+                    daemon=True,
+                )
+                self._writer_thread.start()
 
-            self._writer_thread = threading.Thread(
-                target=self._writer_loop,
-                name=f"{self.id}-fills-writer",
-                daemon=True,
-            )
-            self._writer_thread.start()
-        else:
-            self._conn = self._connect_fn(self.config.db_path)
-            self._ensure_schema_fn(self._conn)
+                startup_timeout = max(1.0, (self.config.flush_interval_ms / 1000.0) * 4.0)
+                if not self._writer_started.wait(timeout=startup_timeout):
+                    self._writer_error = RuntimeError(
+                        "Execution fill writer thread startup timed out",
+                    )
+                    raise self._writer_error
+
+                self._raise_if_writer_failed()
+            else:
+                self._conn = self._connect_fn(self.config.db_path)
+                self._ensure_schema_fn(self._conn)
+
+            # Subscribe only after persistence backend is ready.
+            self.msgbus.subscribe(topic=self.config.topic, handler=self._on_fill_message)
+        except Exception:
+            self._stop_event.set()
+            self._flush_event.set()
+            if self._writer_thread is not None:
+                self._writer_thread.join(timeout=self.config.stop_timeout_ms / 1000.0)
+                self._writer_thread = None
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
+            self._pending_rows.clear()
+            raise
 
     def on_stop(self) -> None:
         if self.msgbus is not None:
@@ -104,12 +128,14 @@ class ExecutionFillPersistenceActor(Actor):
         self._flush_event.set()
 
         if self._writer_thread is not None:
-            self._writer_thread.join(timeout=5.0)
+            self._writer_thread.join(timeout=self.config.stop_timeout_ms / 1000.0)
             if self._writer_thread.is_alive():
-                self._writer_error = RuntimeError(
-                    "Execution fill writer thread did not stop cleanly",
-                )
-                raise self._writer_error
+                msg = "Execution fill writer thread did not stop cleanly"
+                self._writer_error = RuntimeError(msg)
+                if self.config.strict_stop:
+                    raise self._writer_error
+                self.log.error(msg)
+                return
             self._writer_thread = None
 
         if not self._run_writer_thread:
@@ -153,20 +179,28 @@ class ExecutionFillPersistenceActor(Actor):
         In threaded mode this requests an immediate writer flush and waits briefly.
         In synchronous mode this flushes inline (used by unit tests).
         """
-        if self._conn is None:
-            return
+        self._raise_if_writer_failed()
 
         if self._run_writer_thread and self._writer_thread is not None:
+            if not self._writer_started.wait(timeout=max(1.0, (self.config.flush_interval_ms / 1000.0) * 4.0)):
+                raise RuntimeError("Execution fill writer thread is not ready")
+
+            self._raise_if_writer_failed()
             self._flush_event.set()
-            timeout = max(0.050, (self.config.flush_interval_ms / 1000.0) * 4.0)
+            timeout = max(1.0, (self.config.flush_interval_ms / 1000.0) * 10.0)
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
                 if self._writer_error is not None:
                     break
-                if self._queue.empty():
+                if self._queue.unfinished_tasks == 0:
                     break
                 time.sleep(0.001)
             self._raise_if_writer_failed()
+            if self._queue.unfinished_tasks != 0:
+                raise RuntimeError("Execution fill flush timed out before persistence barrier")
+            return
+
+        if self._conn is None:
             return
 
         while self._flush_once():
@@ -181,7 +215,10 @@ class ExecutionFillPersistenceActor(Actor):
         except Exception as exc:
             self._writer_error = RuntimeError("Execution fill writer failed to start")
             self.log.error(f"{self._writer_error}: {exc!r}")
+            self._writer_started.set()
             return
+        else:
+            self._writer_started.set()
 
         while True:
             processed = self._flush_once()
@@ -221,6 +258,7 @@ class ExecutionFillPersistenceActor(Actor):
 
         self.persisted += inserted
         self.deduped += deduped
+        self._mark_batch_done(len(batch))
         return True
 
     def _next_batch(self) -> list[ExecutionFillRow]:
@@ -257,6 +295,7 @@ class ExecutionFillPersistenceActor(Actor):
 
         if self.config.on_error == "log_and_drop":
             self.dropped += len(batch)
+            self._mark_batch_done(len(batch))
             self.log.error(f"Execution fill DB write failed, dropping {len(batch)} rows: {exc!r}")
             return True
 
@@ -272,6 +311,10 @@ class ExecutionFillPersistenceActor(Actor):
         self._writer_error = RuntimeError("Execution fill persistence write failed")
         self.log.error(f"{self._writer_error}: {exc!r}")
         return False
+
+    def _mark_batch_done(self, count: int) -> None:
+        for _ in range(count):
+            self._queue.task_done()
 
     def _on_queue_full(self, exc: queue.Full) -> None:
         if self.config.on_error == "log_and_drop":
