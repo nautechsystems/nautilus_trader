@@ -50,7 +50,7 @@ PARAMS_DEFAULTS: dict[str, Any] = {
     "quote_fail_critical_after_s": 60.0,
     "max_age_ms": 10_000,
     "maker_price_anchor": "reference_leg",
-    "bot_on": True,
+    "bot_on": False,
 }
 
 PARAMS_SCHEMA: dict[str, dict[str, Any]] = {

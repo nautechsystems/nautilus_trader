@@ -124,7 +124,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         binance_instrument_id: InstrumentId
         order_qty: Decimal
         external_strategy_id: str = "bybit_binance_plumeusdt_makerv3"
-        bot_on: bool = True
+        bot_on: bool = False
         qty: Decimal | None = None
         des_qty_global: NonNegativeFloat = 0.0
         max_qty_global: NonNegativeFloat = 20_000.0
