@@ -137,6 +137,12 @@ class ExecutionFillPersistenceActor(Actor):
                 self.log.error(msg)
                 return
             self._writer_thread = None
+            if self.config.strict_stop:
+                self._raise_if_writer_failed()
+                if self._queue.unfinished_tasks != 0:
+                    raise RuntimeError(
+                        "Execution fill writer stopped with unfinished persisted tasks",
+                    )
 
         if not self._run_writer_thread:
             # Final best-effort flush for synchronous mode.
@@ -176,7 +182,10 @@ class ExecutionFillPersistenceActor(Actor):
         """
         Flush buffered rows to the DB.
 
-        In threaded mode this requests an immediate writer flush and waits briefly.
+        In threaded mode this requests an immediate writer flush and waits for
+        queue task accounting to drain (`unfinished_tasks == 0`) for the
+        currently queued work. This assumes ingestion is quiesced for
+        deterministic completion.
         In synchronous mode this flushes inline (used by unit tests).
         """
         self._raise_if_writer_failed()
@@ -187,7 +196,7 @@ class ExecutionFillPersistenceActor(Actor):
 
             self._raise_if_writer_failed()
             self._flush_event.set()
-            timeout = max(1.0, (self.config.flush_interval_ms / 1000.0) * 10.0)
+            timeout = self.config.flush_timeout_ms / 1000.0
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
                 if self._writer_error is not None:
@@ -209,6 +218,7 @@ class ExecutionFillPersistenceActor(Actor):
         self._raise_if_writer_failed()
 
     def _writer_loop(self) -> None:
+        conn: sqlite3.Connection | None = None
         try:
             conn = self._connect_fn(self.config.db_path)
             self._conn = conn
@@ -220,28 +230,35 @@ class ExecutionFillPersistenceActor(Actor):
         else:
             self._writer_started.set()
 
-        while True:
-            processed = self._flush_once()
-
-            if self._writer_error is not None:
-                break
-
-            if self._stop_event.is_set() and self._queue.empty() and not self._pending_rows:
-                break
-
-            if processed:
-                continue
-
-            if self._stop_event.is_set() and (not self._queue.empty() or self._pending_rows):
-                continue
-
-            self._flush_event.wait(timeout=self.config.flush_interval_ms / 1000.0)
-            self._flush_event.clear()
-
         try:
-            conn.close()
+            while True:
+                processed = self._flush_once()
+
+                if self._writer_error is not None:
+                    break
+
+                if self._stop_event.is_set() and self._queue.empty() and not self._pending_rows:
+                    break
+
+                if processed:
+                    continue
+
+                if self._stop_event.is_set() and (not self._queue.empty() or self._pending_rows):
+                    # Avoid tight loop when stopping with backlog and no immediate progress.
+                    self._flush_event.wait(timeout=0.01)
+                    self._flush_event.clear()
+                    continue
+
+                self._flush_event.wait(timeout=self.config.flush_interval_ms / 1000.0)
+                self._flush_event.clear()
+        except Exception as exc:
+            self._writer_error = RuntimeError("Execution fill writer loop crashed")
+            self.log.error(f"{self._writer_error}: {exc!r}")
         finally:
-            self._conn = None
+            try:
+                conn.close()
+            finally:
+                self._conn = None
 
     def _flush_once(self) -> bool:
         if self._conn is None:
@@ -303,6 +320,7 @@ class ExecutionFillPersistenceActor(Actor):
             if self._stop_event.is_set():
                 # During shutdown, avoid hanging forever on a failing DB.
                 self.dropped += len(batch)
+                self._mark_batch_done(len(batch))
             else:
                 self._pending_rows.extendleft(reversed(batch))
             self.log.error(f"Execution fill DB write failed, retaining batch for retry: {exc!r}")

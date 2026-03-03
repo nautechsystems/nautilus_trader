@@ -33,6 +33,7 @@ class ExecutionFillPersistenceActorConfig(ActorConfig, frozen=True):
     flush_interval_ms: PositiveInt = 250
     max_batch_size: PositiveInt = 1000
     flush_time_budget_ms: PositiveInt | None = 10
+    flush_timeout_ms: PositiveInt = 5_000
     max_queue_size: PositiveInt = 10_000
     on_error: ErrorPolicy = "buffer_until_full_then_fail"
     stop_timeout_ms: PositiveInt = 5_000

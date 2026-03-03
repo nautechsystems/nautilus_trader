@@ -67,6 +67,9 @@ def _make_actor(
     on_error: str = "buffer_until_full_then_fail",
     max_queue_size: int = 10_000,
     run_writer_thread: bool = False,
+    flush_timeout_ms: int = 5_000,
+    stop_timeout_ms: int = 5_000,
+    strict_stop: bool = False,
     insert_fills_fn=None,
 ):
     clock = TestClock()
@@ -89,8 +92,11 @@ def _make_actor(
         flush_interval_ms=10,
         max_batch_size=1000,
         flush_time_budget_ms=10,
+        flush_timeout_ms=flush_timeout_ms,
         max_queue_size=max_queue_size,
         on_error=on_error,
+        stop_timeout_ms=stop_timeout_ms,
+        strict_stop=strict_stop,
     )
 
     actor_kwargs = {"run_writer_thread": run_writer_thread}
@@ -177,6 +183,72 @@ def test_actor_start_failure_does_not_leave_subscription(tmp_path) -> None:
         actor.start()
 
     assert msgbus.subscriptions(actor.config.topic) == []
+
+
+def test_actor_shutdown_drop_path_marks_queue_tasks_done(tmp_path) -> None:
+    def _insert_fail(_conn, _rows):
+        raise RuntimeError("db down")
+
+    actor, _, _ = _make_actor(
+        tmp_path,
+        on_error="buffer_until_full_then_fail",
+        run_writer_thread=False,
+        insert_fills_fn=_insert_fail,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+
+    actor.start()
+    actor.on_order_filled(_make_fill(instrument=instrument))
+    actor._stop_event.set()
+    actor.flush()
+    actor.stop()
+
+    assert actor.dropped == 1
+    assert actor._queue.unfinished_tasks == 0
+
+
+def test_actor_threaded_flush_timeout_is_configurable(tmp_path) -> None:
+    from nautilus_trader.persistence.fills.sqlite import insert_fills as _real_insert_fills
+
+    def _insert_slow(conn, rows):
+        time.sleep(0.05)
+        return _real_insert_fills(conn, rows)
+
+    actor, msgbus, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+        flush_timeout_ms=10,
+        insert_fills_fn=_insert_slow,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(instrument=instrument)
+
+    actor.start()
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    with pytest.raises(RuntimeError, match="flush timed out"):
+        actor.flush()
+    actor.stop()
+
+
+def test_actor_strict_stop_raises_for_writer_errors(tmp_path) -> None:
+    def _insert_fail(_conn, _rows):
+        raise RuntimeError("db down")
+
+    actor, _, _ = _make_actor(
+        tmp_path,
+        on_error="fail_fast",
+        run_writer_thread=True,
+        strict_stop=True,
+        insert_fills_fn=_insert_fail,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+
+    actor.start()
+    actor.on_order_filled(_make_fill(instrument=instrument))
+    with pytest.raises(RuntimeError, match="write failed"):
+        actor.flush()
+    with pytest.raises(RuntimeError, match="write failed"):
+        actor.stop()
 
 
 def test_actor_enforces_idempotency_and_allows_trade_id_collision(tmp_path) -> None:
