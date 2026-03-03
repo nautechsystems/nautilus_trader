@@ -1,6 +1,6 @@
 # NautilusTrader 1.224.0 Beta
 
-Released on TBD (UTC).
+Released on 3rd March 2026 (UTC).
 
 ### Enhancements
 - Added matching engine L1 quote-based queue position tracking for backtests
@@ -32,6 +32,9 @@ Released on TBD (UTC).
 ### Security
 - Added `pip-audit` to security audit pipeline
 - Added Docker image cosign signing and SBOM generation
+- Standardized credential zeroization across all adapters (`Ustr` replaced with `Box<str>` for API keys)
+- Standardized secret redaction in `Debug` impls across all adapter credentials
+- Updated `SECURITY.md` with expanded scope, reporting guidelines, and responsible disclosure policy
 - Bumped all eligible GitHub Actions pinned SHAs to latest versions (2-week release policy)
 
 ### Fixes
@@ -85,6 +88,7 @@ Released on TBD (UTC).
 - Added AX Exchange gold perps book imbalance tutorial
 - Added AX Exchange spot FX bars mean reversion tutorial
 - Added BitMEX grid market maker tutorial
+- Added adapter data and execution testing specifications
 - Added order book concepts documentation
 - Improved backtesting mermaid diagram and tutorial formatting
 
