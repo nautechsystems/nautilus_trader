@@ -339,9 +339,9 @@ class ContractsAdapter:
         return _decode_text(exchange).strip().lower()
 
 
-class ChainsawBridge:
+class FluxboardBridge:
     def __init__(self, args: argparse.Namespace) -> None:
-        self._logger = logging.getLogger("chainsaw-bridge")
+        self._logger = logging.getLogger("nautilus-fluxboard-bridge")
         self._redis = redis.Redis(
             host=args.redis_host,
             port=args.redis_port,
@@ -850,7 +850,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
     )
 
-    bridge = ChainsawBridge(args)
+    bridge = FluxboardBridge(args)
     bridge.run()
 
 

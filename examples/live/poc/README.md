@@ -20,13 +20,13 @@ This directory defines the shared translation contract for the MakerV3 single-le
   python examples/live/poc/makerv3_single_leg_node.py
   ```
 
-   Use a dedicated Redis DB (recommended) to avoid sharing with existing Chainsaw services:
+   Use a dedicated Redis DB (recommended) to avoid sharing with existing Fluxboard/Chainsaw services:
 
    ```bash
    POC_REDIS_DB=1 python examples/live/poc/makerv3_single_leg_node.py
    ```
 
-3. Run the Nautilus<->Redis bridge.
+3. Run the Nautilus<->Fluxboard bridge.
 
    ```bash
    python examples/live/poc/chainsaw_bridge.py
