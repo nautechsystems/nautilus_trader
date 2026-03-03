@@ -65,6 +65,7 @@ fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
             Some(Currency::from("USD")),
             None,
             AHashMap::new(),
+            None,
             vec![],
             FillModelAny::default(),
             FeeModelAny::default(),

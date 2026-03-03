@@ -39,6 +39,7 @@ fn create_engine() -> BacktestEngine {
             None,
             None,
             AHashMap::new(),
+            None,
             vec![],
             FillModelAny::default(),
             FeeModelAny::default(),

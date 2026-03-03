@@ -4893,6 +4893,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "cbindgen",
+ "chrono",
+ "chrono-tz",
  "log",
  "nautilus-analysis",
  "nautilus-common",

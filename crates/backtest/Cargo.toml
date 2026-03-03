@@ -72,6 +72,8 @@ nautilus-trading = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 ustr = { workspace = true }

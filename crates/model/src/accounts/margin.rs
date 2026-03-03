@@ -41,7 +41,11 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    accounts::{Account, base::BaseAccount},
+    accounts::{
+        Account,
+        base::BaseAccount,
+        margin_model::{MarginModel, MarginModelAny},
+    },
     enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::{AccountId, InstrumentId},
@@ -60,6 +64,8 @@ pub struct MarginAccount {
     pub leverages: AHashMap<InstrumentId, Decimal>,
     pub margins: AHashMap<InstrumentId, MarginBalance>,
     pub default_leverage: Decimal,
+    #[serde(skip, default = "MarginModelAny::default")]
+    margin_model: MarginModelAny,
 }
 
 impl MarginAccount {
@@ -70,7 +76,17 @@ impl MarginAccount {
             leverages: AHashMap::new(),
             margins: AHashMap::new(),
             default_leverage: Decimal::ONE,
+            margin_model: MarginModelAny::default(),
         }
+    }
+
+    pub fn set_margin_model(&mut self, model: MarginModelAny) {
+        self.margin_model = model;
+    }
+
+    #[must_use]
+    pub const fn margin_model(&self) -> &MarginModelAny {
+        &self.margin_model
     }
 
     /// Sets the default leverage for the account.
@@ -232,14 +248,12 @@ impl MarginAccount {
 
     /// Calculates the initial margin amount for the specified instrument and quantity.
     ///
+    /// Delegates to the configured [`MarginModel`].
+    ///
     /// # Errors
     ///
     /// Returns an error if leverage is not positive, or if the result cannot be represented
     /// as `Money`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `instrument.base_currency()` is `None` for inverse instruments.
     pub fn calculate_initial_margin<T: Instrument>(
         &mut self,
         instrument: &T,
@@ -247,34 +261,23 @@ impl MarginAccount {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        let notional = instrument.calculate_notional_value(quantity, price, use_quote_for_inverse);
         let leverage = self.get_leverage(&instrument.id());
-        if leverage <= Decimal::ZERO {
-            anyhow::bail!("Invalid leverage {leverage} for {}", instrument.id());
-        }
-        let notional_decimal = notional.as_decimal();
-        let adjusted_notional = notional_decimal / leverage;
-        let margin_decimal = adjusted_notional * instrument.margin_init();
-
-        let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
-        let currency = if instrument.is_inverse() && !use_quote_for_inverse {
-            instrument.base_currency().unwrap()
-        } else {
-            instrument.quote_currency()
-        };
-
-        Money::from_decimal(margin_decimal, currency)
+        self.margin_model.calculate_initial_margin(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            use_quote_for_inverse,
+        )
     }
 
     /// Calculates the maintenance margin amount for the specified instrument and quantity.
     ///
+    /// Delegates to the configured [`MarginModel`].
+    ///
     /// # Errors
     ///
-    /// Returns an error if the margin calculation produces a value that cannot be represented as `Money`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `instrument.base_currency()` is `None` for inverse instruments.
+    /// Returns an error if the result cannot be represented as `Money`.
     pub fn calculate_maintenance_margin<T: Instrument>(
         &mut self,
         instrument: &T,
@@ -282,23 +285,14 @@ impl MarginAccount {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        let notional = instrument.calculate_notional_value(quantity, price, use_quote_for_inverse);
         let leverage = self.get_leverage(&instrument.id());
-        if leverage <= Decimal::ZERO {
-            anyhow::bail!("Invalid leverage {leverage} for {}", instrument.id());
-        }
-        let notional_decimal = notional.as_decimal();
-        let adjusted_notional = notional_decimal / leverage;
-        let margin_decimal = adjusted_notional * instrument.margin_maint();
-
-        let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
-        let currency = if instrument.is_inverse() && !use_quote_for_inverse {
-            instrument.base_currency().unwrap()
-        } else {
-            instrument.quote_currency()
-        };
-
-        Money::from_decimal(margin_decimal, currency)
+        self.margin_model.calculate_maintenance_margin(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            use_quote_for_inverse,
+        )
     }
 
     /// Recalculates the account balance for the specified currency based on current margins.

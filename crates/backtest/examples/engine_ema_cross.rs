@@ -95,6 +95,7 @@ fn main() -> anyhow::Result<()> {
         None,            // base_currency
         None,            // default_leverage (defaults to 10x for Margin)
         AHashMap::new(), // per-instrument leverages
+        None,            // margin_model
         vec![],          // simulation modules
         FillModelAny::default(),
         FeeModelAny::default(),

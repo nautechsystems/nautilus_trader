@@ -15,26 +15,51 @@
 
 //! Simulation module trait for extending backtesting with custom venue behaviors.
 
-use nautilus_core::UnixNanos;
-use nautilus_model::data::Data;
+pub mod fx_rollover;
 
-use crate::exchange::SimulatedExchange;
+use ahash::AHashMap;
+pub use fx_rollover::FXRolloverInterestModule;
+use nautilus_common::cache::Cache;
+use nautilus_core::UnixNanos;
+use nautilus_execution::matching_engine::engine::OrderMatchingEngine;
+use nautilus_model::{
+    data::Data,
+    identifiers::{InstrumentId, Venue},
+    instruments::InstrumentAny,
+    types::{Currency, Money},
+};
+
+/// Read-only view of exchange state passed to simulation modules during processing.
+#[derive(Debug)]
+pub struct ExchangeContext<'a> {
+    /// The venue identifier.
+    pub venue: Venue,
+    /// The optional base currency for single-currency accounts.
+    pub base_currency: Option<Currency>,
+    /// All instruments registered on the exchange.
+    pub instruments: &'a AHashMap<InstrumentId, InstrumentAny>,
+    /// All matching engines, providing order book access.
+    pub matching_engines: &'a AHashMap<InstrumentId, OrderMatchingEngine>,
+    /// Read-only cache access for querying positions and other state.
+    pub cache: &'a Cache,
+}
 
 /// Trait for custom simulation modules that extend backtesting functionality.
 ///
-/// The `SimulationModule` trait allows for custom extensions to the backtesting
-/// simulation environment. Implementations can add specialized behavior such as
-/// market makers, price impact models, or other venue-specific simulation logic
-/// that runs alongside the core backtesting engine.
+/// Implementations can add specialized behavior such as rollover interest,
+/// market makers, price impact models, or other venue-specific simulation
+/// logic that runs alongside the core backtesting engine.
+///
+/// Modules use interior mutability (`Cell`/`RefCell`) for state since they
+/// are stored inside `SimulatedExchange` and invoked through shared references.
 pub trait SimulationModule {
-    /// Registers a simulated exchange venue with this module.
-    fn register_venue(&self, exchange: SimulatedExchange);
-
-    /// Pre-processes market data before main simulation processing.
-    fn pre_process(&self, data: Data);
+    /// Pre-processes market data before matching engine processing.
+    fn pre_process(&self, data: &Data);
 
     /// Processes simulation logic at the given timestamp.
-    fn process(&self, ts_now: UnixNanos);
+    ///
+    /// Returns account balance adjustments to be applied by the exchange.
+    fn process(&self, ts_now: UnixNanos, ctx: &ExchangeContext) -> Vec<Money>;
 
     /// Logs diagnostic information about the module's state.
     fn log_diagnostics(&self);

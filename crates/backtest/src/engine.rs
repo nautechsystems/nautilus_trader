@@ -40,7 +40,7 @@ use nautilus_core::{UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, formattin
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel};
 use nautilus_model::{
-    accounts::{Account, AccountAny},
+    accounts::{Account, AccountAny, margin_model::MarginModelAny},
     data::{Data, HasTsInit},
     enums::{AccountType, BookType, OmsType},
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
@@ -300,6 +300,7 @@ impl BacktestEngine {
         base_currency: Option<Currency>,
         default_leverage: Option<Decimal>,
         leverages: AHashMap<InstrumentId, Decimal>,
+        margin_model: Option<MarginModelAny>,
         modules: Vec<Box<dyn SimulationModule>>,
         fill_model: FillModelAny,
         fee_model: FeeModelAny,
@@ -337,6 +338,7 @@ impl BacktestEngine {
             base_currency,
             default_leverage,
             leverages,
+            margin_model,
             modules,
             self.kernel.cache.clone(),
             self.kernel.clock.clone(),
@@ -601,9 +603,10 @@ impl BacktestEngine {
             self.run_started = Some(UnixNanos::from(std::time::SystemTime::now()));
             self.backtest_start = Some(start_ns);
 
-            // Initialize exchange accounts
             for exchange in self.venues.values() {
-                exchange.borrow_mut().initialize_account();
+                let mut ex = exchange.borrow_mut();
+                ex.initialize_account();
+                ex.load_open_orders();
             }
 
             // Re-set clocks after account init
@@ -1132,7 +1135,7 @@ impl BacktestEngine {
         self.settle_venues(ts_now);
 
         for exchange in self.venues.values() {
-            exchange.borrow().process_modules(ts_now);
+            exchange.borrow_mut().process_modules(ts_now);
         }
 
         // Post-settle any commands emitted by modules
@@ -1197,9 +1200,23 @@ impl BacktestEngine {
         log_info!(" BACKTEST PRE-RUN", color = LogColor::Cyan);
         log_info!("=================================================================", color = LogColor::Cyan);
 
+        let cache = self.kernel.cache.borrow();
         for exchange in self.venues.values() {
             let ex = exchange.borrow();
+            log_info!("=================================================================", color = LogColor::Cyan);
             log::info!(" SimulatedVenue {} ({})", ex.id, ex.account_type);
+            log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
+
+            if let Some(account) = cache.account_for_venue(&ex.id) {
+                log::info!("Balances starting:");
+                let account_ref: &dyn Account = match account {
+                    AccountAny::Cash(cash) => cash,
+                    AccountAny::Margin(margin) => margin,
+                };
+                for balance in account_ref.starting_balances().values() {
+                    log::info!("  {balance}");
+                }
+            }
         }
 
         log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);

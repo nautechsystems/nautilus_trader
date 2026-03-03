@@ -126,6 +126,7 @@ impl BacktestNode {
                     venue_config.base_currency(),
                     default_leverage,
                     leverages,
+                    None, // margin_model
                     Vec::new(),
                     FillModelAny::default(),
                     FeeModelAny::default(),
