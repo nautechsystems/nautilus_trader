@@ -125,19 +125,50 @@ if _NAUTILUS_IMPORT_ERROR is None:
         order_qty: Decimal
         external_strategy_id: str = "bybit_binance_plumeusdt_makerv3"
         bot_on: bool = True
+        qty: Decimal | None = None
+        hedge_qty: NonNegativeFloat = 0.0
+        des_qty_global: NonNegativeFloat = 0.0
+        max_qty_global: NonNegativeFloat = 20_000.0
+        max_skew_bps_global: NonNegativeFloat = 0.0
+        des_qty_local: NonNegativeFloat = 0.0
+        max_qty_local: NonNegativeFloat = 0.0
+        max_skew_bps_local: NonNegativeFloat = 0.0
+        linear_offset_bps: NonNegativeFloat = 0.0
         max_age_ms: PositiveInt = 2_000
         bid_edge1: NonNegativeFloat = 0.05
         ask_edge1: NonNegativeFloat = 0.05
+        place_edge1: NonNegativeFloat = 2.0
         distance1: NonNegativeFloat = 0.02
         n_orders1: NonNegativeInt = 1
         bid_edge2: NonNegativeFloat = 0.15
         ask_edge2: NonNegativeFloat = 0.15
+        place_edge2: NonNegativeFloat = 2.0
         distance2: NonNegativeFloat = 0.04
         n_orders2: NonNegativeInt = 1
         bid_edge3: NonNegativeFloat = 0.35
         ask_edge3: NonNegativeFloat = 0.35
+        place_edge3: NonNegativeFloat = 2.0
         distance3: NonNegativeFloat = 0.08
         n_orders3: NonNegativeInt = 1
+        bid_edge_hedge: NonNegativeFloat = 0.0
+        ask_edge_hedge: NonNegativeFloat = 0.0
+        distance_hedge: NonNegativeFloat = 0.0
+        n_orders_hedge: NonNegativeInt = 0
+        place_edge_hedge: NonNegativeFloat = 2.0
+        strategy_take_enabled: bool = False
+        bid_edge_take: NonNegativeFloat = 0.0
+        ask_edge_take: NonNegativeFloat = 0.0
+        take_qty: NonNegativeFloat = 0.0
+        take_cooldown: NonNegativeFloat = 0.0
+        hedge_reduce_only: bool = True
+        hedge_touch_at_max_qty: bool = False
+        quote_fail_critical_after_count: NonNegativeInt = 3
+        quote_fail_critical_after_s: NonNegativeFloat = 60.0
+        maker_price_anchor: str = "reference_leg"
+
+        @property
+        def active_order_qty(self) -> Decimal:
+            return self.qty if self.qty is not None else self.order_qty
 
 
     class MakerV3SingleLegQuoter(Strategy):
@@ -179,7 +210,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self.stop()
                 return
 
-            self._order_qty = self._bybit_instrument.make_qty(self.config.order_qty)
+            try:
+                self._order_qty = self._bybit_instrument.make_qty(self.config.active_order_qty)
+            except ValueError:
+                self._publish_alert(
+                    f"Invalid order quantity configured for {instrument_id}",
+                    level="error",
+                )
+                self.stop()
+                return
             self._price_precision = self._bybit_instrument.price_precision
 
             self._books = {
