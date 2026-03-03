@@ -79,7 +79,7 @@ impl<'a> PostgresCopyHandler<'a> {
             return Ok(());
         }
 
-        let copy_statement = r"
+        let copy_statement = "
             COPY block (
                 chain_id, number, hash, parent_hash, miner, gas_limit, gas_used, timestamp,
                 base_fee_per_gas, blob_gas_used, excess_blob_gas,
@@ -123,7 +123,7 @@ impl<'a> PostgresCopyHandler<'a> {
             return Ok(());
         }
 
-        let copy_statement = r"
+        let copy_statement = "
             COPY token (
                 chain_id, address, name, symbol, decimals
             ) FROM STDIN WITH (FORMAT BINARY)";
@@ -158,7 +158,7 @@ impl<'a> PostgresCopyHandler<'a> {
             return Ok(());
         }
 
-        let copy_statement = r"
+        let copy_statement = "
             COPY pool (
                 chain_id, dex_name, address, pool_identifier, creation_block,
                 token0_chain, token0_address, token1_chain, token1_address,
@@ -194,7 +194,7 @@ impl<'a> PostgresCopyHandler<'a> {
             return Ok(());
         }
 
-        let copy_statement = r"
+        let copy_statement = "
             COPY pool_swap_event (
                 chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
                 log_index, sender, recipient, sqrt_price_x96, liquidity, tick, amount0, amount1,
@@ -270,7 +270,7 @@ impl<'a> PostgresCopyHandler<'a> {
             return Ok(());
         }
 
-        let copy_statement = r"
+        let copy_statement = "
             COPY pool_liquidity_event (
                 chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
                 log_index, event_type, sender, owner, position_liquidity,
@@ -682,7 +682,7 @@ impl<'a> PostgresCopyHandler<'a> {
             return Ok(());
         }
 
-        let copy_statement = r"
+        let copy_statement = "
             COPY pool_collect_event (
                 chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
                 log_index, owner, amount0, amount1, tick_lower, tick_upper

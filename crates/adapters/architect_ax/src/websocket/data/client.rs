@@ -85,6 +85,7 @@ impl SymbolDataTypes {
         if let Some(level) = self.book_level {
             return Some(level);
         }
+
         if self.quotes || self.trades {
             return Some(AxMarketDataLevel::Level1);
         }
@@ -295,6 +296,7 @@ impl AxMdWebSocketClient {
         let ping_handler: PingHandler = Arc::new(move |_payload: Vec<u8>| {});
 
         let mut headers = vec![("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string())];
+
         if let Some(ref token) = self.auth_token {
             headers.push(("Authorization".to_string(), format!("Bearer {token}")));
         }

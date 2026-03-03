@@ -68,11 +68,8 @@ impl FileWriterConfig {
 /// Logging can be configured to filter components and write up to a specific level only
 /// by passing a configuration using the `NAUTILUS_LOG` environment variable.
 ///
-/// # Safety
-///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-/// Initializes logging via Python interface.
 ///
 /// # Errors
 ///
@@ -290,6 +287,7 @@ impl PyLogger {
         if pyo3::PyErr::occurred(py) {
             let err = PyErr::fetch(py);
             let err_str = err.to_string();
+
             if full_msg.is_empty() {
                 full_msg = err_str;
             } else {

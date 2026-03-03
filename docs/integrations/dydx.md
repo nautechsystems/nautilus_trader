@@ -98,7 +98,7 @@ Most users will define a configuration for a live trading node (as below),
 and won't need to work with these lower level components directly.
 :::
 
-:::warning First-time account activation
+:::warning[First-time account activation]
 A dYdX v4 trading account (sub-account 0) is created only after the wallet's first deposit or trade.
 Until then, every gRPC/Indexer query returns `NOT_FOUND`, so `DydxExecutionClient.connect()` fails.
 
@@ -159,7 +159,7 @@ product types.
 
 ## Orders capability
 
-dYdX supports perpetual futures trading with a comprehensive set of order types and execution
+dYdX supports perpetual futures trading with a full set of order types and execution
 features. The Rust adapter automatically classifies orders as short-term or long-term based on
 time-in-force and expiry, so no manual tagging is needed (unlike the legacy Python adapter).
 
@@ -248,7 +248,7 @@ configuration is required.
 | Category        | Placement   | Expiry            | Typical use                                   |
 |-----------------|-------------|-------------------|-----------------------------------------------|
 | Short-term      | In-memory   | Block height      | IOC/FOK, or orders expiring within 20 blocks. |
-| Long-term       | On-chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond ~60 seconds.       |
+| Long-term       | On-chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond the short-term window (~10s at ~0.5s/block). |
 | Conditional     | On-chain    | Timestamp (UTC)   | Stop-loss and take-profit triggers.           |
 
 At the protocol level, **all dYdX orders are limit orders**. The `MARKET` order type
@@ -365,9 +365,9 @@ still be submitted successfully with an alternative ID.
 Short-term orders use Good-Til-Block (GTB) for replay protection. The chain's `ClobDecorator`
 ante handler skips Cosmos SDK sequence checking for short-term messages, so:
 
-- **No semaphore** — broadcasts are fully concurrent
-- **Cached sequence** — no increment or allocation needed
-- **No retry** — if the broadcast fails, it fails immediately
+- **No semaphore**: broadcasts are fully concurrent
+- **Cached sequence**: no increment or allocation needed
+- **No retry**: if the broadcast fails, it fails immediately
 - Benign cancel errors are treated as success (see below)
 
 ### Long-term broadcast
@@ -733,7 +733,7 @@ cross-margin account, but cannot withdraw funds or transfer assets.
 1. In the dYdX web app, navigate to **More → API Trading Keys**
 2. Click **Generate New API Key**
 3. Save the **API Wallet Address** and **Private Key** (shown once, not stored by dYdX)
-4. Click **Authorize API Key** — this registers the key on-chain as an authenticator
+4. Click **Authorize API Key** (this registers the key on-chain as an authenticator)
 5. The key is now active and can be used for trading
 
 See the [dYdX API Trading Keys guide](https://help.dydx.trade/en/articles/267486-api-trading-keys-creating-a-new-key-on-the-front-end) for full details on creating and managing API keys.

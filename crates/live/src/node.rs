@@ -28,7 +28,9 @@ use nautilus_common::{
     component::Component,
     enums::{Environment, LogColor},
     log_info,
-    messages::{DataEvent, ExecutionEvent, data::DataCommand, execution::TradingCommand},
+    messages::{
+        DataEvent, ExecutionEvent, ExecutionReport, data::DataCommand, execution::TradingCommand,
+    },
     timer::TimeEventHandler,
 };
 use nautilus_core::UUID4;
@@ -473,7 +475,7 @@ impl LiveNode {
                         color = LogColor::Blue
                     );
 
-                    // SAFETY: Do not hold the Rc across an await point
+                    // Do not hold the Rc across an await point
                     let exec_engine_rc = self.kernel.exec_engine.clone();
 
                     let result = self
@@ -606,10 +608,15 @@ impl LiveNode {
                         pending.data_cmds.push(cmd);
                     }
                     Some(evt) = exec_evt_rx.recv() => {
-                        // Account and Report events are safe, order events conflict
+                        // Only Account events are safe during startup, Report and
+                        // Order events need ExecEngine borrow_mut which conflicts
+                        // with the borrow held by connect().await
                         match evt {
-                            ExecutionEvent::Account(_) | ExecutionEvent::Report(_) => {
+                            ExecutionEvent::Account(_) => {
                                 AsyncRunner::handle_exec_event(evt);
+                            }
+                            ExecutionEvent::Report(report) => {
+                                pending.exec_reports.push(report);
                             }
                             ExecutionEvent::Order(order_evt) => {
                                 pending.order_evts.push(order_evt);
@@ -645,6 +652,7 @@ impl LiveNode {
             tokio::select! {
                 Some(handler) = time_evt_rx.recv() => {
                     AsyncRunner::handle_time_event(handler);
+
                     if is_shutting_down {
                         log::debug!("Residual time event");
                         residual_events += 1;
@@ -688,6 +696,7 @@ impl LiveNode {
                 () = async {
                     loop {
                         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
                         if stop_handle.should_stop() {
                             log::info!("Received stop signal from handle");
                             return;
@@ -962,16 +971,12 @@ impl LiveNode {
     }
 }
 
-/// Events queued during startup to avoid RefCell borrow conflicts.
-///
-/// During `connect_clients()`, the data_engine and exec_engine are borrowed
-/// across awaits. Processing commands/events that trigger msgbus handlers
-/// would try to borrow the same engines, causing a panic.
 #[derive(Default)]
 struct PendingEvents {
     data_cmds: Vec<DataCommand>,
     data_evts: Vec<DataEvent>,
     exec_cmds: Vec<TradingCommand>,
+    exec_reports: Vec<ExecutionReport>,
     order_evts: Vec<OrderEventAny>,
 }
 
@@ -980,15 +985,17 @@ impl PendingEvents {
         let total = self.data_evts.len()
             + self.data_cmds.len()
             + self.exec_cmds.len()
+            + self.exec_reports.len()
             + self.order_evts.len();
 
         if total > 0 {
             log::debug!(
                 "Processing {total} events/commands queued during startup \
-                 (data_evts={}, data_cmds={}, exec_cmds={}, order_evts={})",
+                 (data_evts={}, data_cmds={}, exec_cmds={}, exec_reports={}, order_evts={})",
                 self.data_evts.len(),
                 self.data_cmds.len(),
                 self.exec_cmds.len(),
+                self.exec_reports.len(),
                 self.order_evts.len()
             );
         }
@@ -998,6 +1005,9 @@ impl PendingEvents {
         }
         for cmd in self.data_cmds.drain(..) {
             AsyncRunner::handle_data_command(cmd);
+        }
+        for report in self.exec_reports.drain(..) {
+            AsyncRunner::handle_exec_event(ExecutionEvent::Report(report));
         }
         for cmd in self.exec_cmds.drain(..) {
             AsyncRunner::handle_exec_command(cmd);

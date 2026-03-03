@@ -623,7 +623,7 @@ pub trait DataActor:
 
         if let Err(e) = self.on_book(book) {
             log_error(&e);
-        };
+        }
     }
 
     /// Handles a received quote.
@@ -2787,7 +2787,7 @@ impl DataActorCore {
     pub fn shutdown_system(&self, reason: Option<String>) {
         self.check_registered();
 
-        // SAFETY: Checked registered before unwrapping trader ID
+        // Checked registered before unwrapping trader ID
         let command = ShutdownSystem::new(
             self.trader_id().unwrap(),
             self.actor_id.inner(),
@@ -3908,6 +3908,7 @@ fn check_timestamps(
     if let Some(start) = start {
         check_predicate_true(start <= now, "start was > now")?;
     }
+
     if let Some(end) = end {
         check_predicate_true(end <= now, "end was > now")?;
     }

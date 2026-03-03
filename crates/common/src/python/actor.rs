@@ -78,8 +78,10 @@ impl ImportableActorConfig {
     #[new]
     fn py_new(actor_path: String, config_path: String, config: Py<PyDict>) -> PyResult<Self> {
         let json_config = Python::attach(|py| -> PyResult<HashMap<String, serde_json::Value>> {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("default", py.eval(pyo3::ffi::c_str!("str"), None, None)?)?;
             let json_str: String = PyModule::import(py, "json")?
-                .call_method("dumps", (config.bind(py),), None)?
+                .call_method("dumps", (config.bind(py),), Some(&kwargs))?
                 .extract()?;
 
             let json_value: serde_json::Value =
@@ -579,8 +581,6 @@ impl PyDataActor {
     }
 
     /// Updates the actor_id in both the core config and the actor_id field.
-    ///
-    /// # Safety
     ///
     /// This method is only exposed for the Python actor to assist with configuration and should
     /// **never** be called post registration. Calling this after registration will cause

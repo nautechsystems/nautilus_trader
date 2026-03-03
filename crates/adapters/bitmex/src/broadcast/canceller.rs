@@ -211,12 +211,12 @@ impl Default for CancelBroadcasterConfig {
             health_check_interval_secs: 30,
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec![
-                r"Order had execInst of ParticipateDoNotInitiate".to_string(),
+                "Order had execInst of ParticipateDoNotInitiate".to_string(),
             ],
             idempotent_success_patterns: vec![
-                r"AlreadyCanceled".to_string(),
-                r"orderID not found".to_string(),
-                r"Unable to cancel order due to existing state".to_string(),
+                "AlreadyCanceled".to_string(),
+                "orderID not found".to_string(),
+                "Unable to cancel order due to existing state".to_string(),
             ],
             proxy_urls: vec![],
         }

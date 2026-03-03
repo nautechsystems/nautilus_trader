@@ -128,7 +128,8 @@ pub fn info_base_weight(req: &crate::http::query::InfoRequest) -> u32 {
         | HyperliquidInfoRequestType::ClearinghouseState
         | HyperliquidInfoRequestType::OrderStatus
         | HyperliquidInfoRequestType::SpotClearinghouseState
-        | HyperliquidInfoRequestType::ExchangeStatus => 2,
+        | HyperliquidInfoRequestType::ExchangeStatus
+        | HyperliquidInfoRequestType::UserFees => 2,
         HyperliquidInfoRequestType::UserRole => 60,
         _ => 20,
     }

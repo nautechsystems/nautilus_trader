@@ -35,6 +35,7 @@ python = [
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-network/python",
+  "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
 ]
@@ -73,6 +74,7 @@ rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
+tabled = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
@@ -93,21 +95,6 @@ criterion = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
 rstest = { workspace = true }
-
-[[bin]]
-name = "hyperliquid-builder-fee-verify"
-path = "bin/builder_fee_verify.rs"
-doc = false
-
-[[bin]]
-name = "hyperliquid-builder-fee-approve"
-path = "bin/builder_fee_approve.rs"
-doc = false
-
-[[bin]]
-name = "hyperliquid-builder-fee-revoke"
-path = "bin/builder_fee_revoke.rs"
-doc = false
 
 [[bin]]
 name = "hyperliquid-http-public"
@@ -137,6 +124,11 @@ doc = false
 [[bin]]
 name = "hyperliquid-capture-test-data"
 path = "bin/capture_test_data.rs"
+doc = false
+
+[[bin]]
+name = "hyperliquid-builder-fee-revoke"
+path = "bin/builder_fee_revoke.rs"
 doc = false
 
 # Run with `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid`.

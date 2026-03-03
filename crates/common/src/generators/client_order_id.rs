@@ -68,6 +68,7 @@ impl ClientOrderIdGenerator {
     pub fn generate(&mut self) -> ClientOrderId {
         let value = if self.use_uuids {
             let mut uuid_value = UUID4::new().to_string();
+
             if !self.use_hyphens {
                 uuid_value = uuid_value.replace('-', "");
             }

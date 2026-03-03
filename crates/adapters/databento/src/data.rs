@@ -43,7 +43,7 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_core::{MUTEX_POISONED, time::AtomicTime};
+use nautilus_core::{MUTEX_POISONED, string::REDACTED, time::AtomicTime};
 use nautilus_model::{
     enums::BarAggregation,
     identifiers::{ClientId, Symbol, Venue},
@@ -83,7 +83,7 @@ pub struct DatabentoDataClientConfig {
 impl Debug for DatabentoDataClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DatabentoDataClientConfig))
-            .field("credential", &"<redacted>")
+            .field("credential", &REDACTED)
             .field("publishers_filepath", &self.publishers_filepath)
             .field("use_exchange_as_venue", &self.use_exchange_as_venue)
             .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)

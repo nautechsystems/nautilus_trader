@@ -37,7 +37,7 @@
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{call_python, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     enums::{OrderSide, OrderType, TimeInForce},
@@ -51,7 +51,7 @@ use nautilus_model::{
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
-    common::enums::DeribitTimeInForce,
+    common::{enums::DeribitTimeInForce, parse::parse_instrument_kind_currency},
     websocket::{
         client::DeribitWebSocketClient,
         enums::DeribitUpdateInterval,
@@ -59,12 +59,12 @@ use crate::{
     },
 };
 
-fn call_python_with_data<F>(callback: &Py<PyAny>, data_converter: F)
+fn call_python_with_data<F>(call_soon: &Py<PyAny>, callback: &Py<PyAny>, data_converter: F)
 where
     F: FnOnce(Python) -> PyResult<Py<PyAny>>,
 {
     Python::attach(|py| match data_converter(py) {
-        Ok(py_obj) => call_python(py, callback, py_obj),
+        Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
         Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     });
 }
@@ -99,6 +99,7 @@ impl DeribitWebSocketClient {
     #[pyo3(name = "with_credentials", signature = (is_testnet, account_id = None))]
     fn py_with_credentials(is_testnet: bool, account_id: Option<AccountId>) -> PyResult<Self> {
         let mut client = Self::with_credentials(is_testnet).map_err(to_pyvalue_err)?;
+
         if let Some(id) = account_id {
             client.set_account_id(id);
         }
@@ -190,9 +191,12 @@ impl DeribitWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
+        loop_: Py<PyAny>,
         instruments: Vec<Py<PyAny>>,
         callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
+
         let mut instruments_any = Vec::new();
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
@@ -216,20 +220,20 @@ impl DeribitWebSocketClient {
                 while let Some(msg) = stream.next().await {
                     match msg {
                         NautilusWsMessage::Instrument(msg) => {
-                            call_python_with_data(&callback, |py| {
+                            call_python_with_data(&call_soon, &callback, |py| {
                                 instrument_any_to_pyobject(py, *msg)
                             });
                         }
                         NautilusWsMessage::Data(msg) => Python::attach(|py| {
                             for data in msg {
                                 let py_obj = data_to_pycapsule(py, data);
-                                call_python(py, &callback, py_obj);
+                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
                             }
                         }),
                         NautilusWsMessage::Deltas(msg) => Python::attach(|py| {
                             let py_obj =
                                 data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(msg)));
-                            call_python(py, &callback, py_obj);
+                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
                         }),
                         NautilusWsMessage::Error(err) => {
                             log::error!("WebSocket error: {err}");
@@ -240,13 +244,23 @@ impl DeribitWebSocketClient {
                         NautilusWsMessage::Authenticated(auth_result) => {
                             log::info!("WebSocket authenticated (scope: {})", auth_result.scope);
                         }
+                        NautilusWsMessage::InstrumentStatus(status) => {
+                            call_python_with_data(&call_soon, &callback, |py| {
+                                status.into_py_any(py)
+                            });
+                        }
                         NautilusWsMessage::Raw(msg) => {
                             log::debug!("Received raw message, skipping: {msg}");
                         }
                         NautilusWsMessage::FundingRates(funding_rates) => Python::attach(|py| {
                             for funding_rate in funding_rates {
                                 match Py::new(py, funding_rate) {
-                                    Ok(py_obj) => call_python(py, &callback, py_obj.into_any()),
+                                    Ok(py_obj) => call_python_threadsafe(
+                                        py,
+                                        &call_soon,
+                                        &callback,
+                                        py_obj.into_any(),
+                                    ),
                                     Err(e) => {
                                         log::error!("Failed to create FundingRateUpdate: {e}");
                                     }
@@ -257,7 +271,12 @@ impl DeribitWebSocketClient {
                         NautilusWsMessage::OrderStatusReports(reports) => Python::attach(|py| {
                             for report in reports {
                                 match Py::new(py, report) {
-                                    Ok(py_obj) => call_python(py, &callback, py_obj.into_any()),
+                                    Ok(py_obj) => call_python_threadsafe(
+                                        py,
+                                        &call_soon,
+                                        &callback,
+                                        py_obj.into_any(),
+                                    ),
                                     Err(e) => {
                                         log::error!("Failed to create OrderStatusReport: {e}");
                                     }
@@ -267,34 +286,39 @@ impl DeribitWebSocketClient {
                         NautilusWsMessage::FillReports(reports) => Python::attach(|py| {
                             for report in reports {
                                 match Py::new(py, report) {
-                                    Ok(py_obj) => call_python(py, &callback, py_obj.into_any()),
+                                    Ok(py_obj) => call_python_threadsafe(
+                                        py,
+                                        &call_soon,
+                                        &callback,
+                                        py_obj.into_any(),
+                                    ),
                                     Err(e) => log::error!("Failed to create FillReport: {e}"),
                                 }
                             }
                         }),
                         NautilusWsMessage::OrderRejected(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderAccepted(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderCanceled(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderExpired(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderUpdated(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderCancelRejected(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderModifyRejected(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::AccountState(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::AuthenticationFailed(reason) => {
                             log::error!("Authentication failed: {reason}");
@@ -663,40 +687,6 @@ impl DeribitWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_instrument_state")]
-    fn py_subscribe_instrument_state<'py>(
-        &self,
-        py: Python<'py>,
-        kind: String,
-        currency: String,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .subscribe_instrument_state(&kind, &currency)
-                .await
-                .map_err(to_pyvalue_err)
-        })
-    }
-
-    #[pyo3(name = "unsubscribe_instrument_state")]
-    fn py_unsubscribe_instrument_state<'py>(
-        &self,
-        py: Python<'py>,
-        kind: String,
-        currency: String,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .unsubscribe_instrument_state(&kind, &currency)
-                .await
-                .map_err(to_pyvalue_err)
-        })
-    }
-
     #[pyo3(name = "subscribe_perpetual_interest_rates")]
     #[pyo3(signature = (instrument_id, interval=None))]
     fn py_subscribe_perpetual_interest_rates<'py>(
@@ -728,6 +718,40 @@ impl DeribitWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .unsubscribe_perpetual_interest_rates_updates(instrument_id, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    #[pyo3(name = "subscribe_instrument_status")]
+    fn py_subscribe_instrument_status<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let (kind, currency) = parse_instrument_kind_currency(&instrument_id);
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_instrument_status(&kind, &currency)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_instrument_status")]
+    fn py_unsubscribe_instrument_status<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let (kind, currency) = parse_instrument_kind_currency(&instrument_id);
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_instrument_status(&kind, &currency)
                 .await
                 .map_err(to_pyvalue_err)
         })

@@ -471,9 +471,11 @@ impl DydxRawHttpClient {
     ) -> Result<super::models::TradesResponse, DydxHttpError> {
         let endpoint = format!("/v4/trades/perpetualMarket/{ticker}");
         let mut query_parts = Vec::new();
+
         if let Some(l) = limit {
             query_parts.push(format!("limit={l}"));
         }
+
         if let Some(height) = starting_before_or_at_height {
             query_parts.push(format!("createdBeforeOrAtHeight={height}"));
         }
@@ -501,13 +503,16 @@ impl DydxRawHttpClient {
     ) -> Result<super::models::CandlesResponse, DydxHttpError> {
         let endpoint = format!("/v4/candles/perpetualMarkets/{ticker}");
         let mut query_parts = vec![format!("resolution={resolution}")];
+
         if let Some(l) = limit {
             query_parts.push(format!("limit={l}"));
         }
+
         if let Some(from) = from_iso {
             let from_str = from.to_rfc3339();
             query_parts.push(format!("fromISO={}", urlencoding::encode(&from_str)));
         }
+
         if let Some(to) = to_iso {
             let to_str = to.to_rfc3339();
             query_parts.push(format!("toISO={}", urlencoding::encode(&to_str)));
@@ -548,9 +553,12 @@ impl DydxRawHttpClient {
             format!("address={address}"),
             format!("subaccountNumber={subaccount_number}"),
         ];
+
         if let Some(m) = market {
             query_parts.push(format!("market={m}"));
+            query_parts.push("marketType=PERPETUAL".to_string());
         }
+
         if let Some(l) = limit {
             query_parts.push(format!("limit={l}"));
         }
@@ -575,9 +583,12 @@ impl DydxRawHttpClient {
             format!("address={address}"),
             format!("subaccountNumber={subaccount_number}"),
         ];
+
         if let Some(m) = market {
             query_parts.push(format!("market={m}"));
+            query_parts.push("marketType=PERPETUAL".to_string());
         }
+
         if let Some(l) = limit {
             query_parts.push(format!("limit={l}"));
         }
@@ -601,6 +612,7 @@ impl DydxRawHttpClient {
             format!("address={address}"),
             format!("subaccountNumber={subaccount_number}"),
         ];
+
         if let Some(l) = limit {
             query_parts.push(format!("limit={l}"));
         }
@@ -1223,6 +1235,7 @@ impl DydxHttpClient {
                     if start.is_some_and(|s| trade.created_at < s) {
                         continue;
                     }
+
                     if end.is_some_and(|e| trade.created_at > e) {
                         continue;
                     }
@@ -1242,6 +1255,7 @@ impl DydxHttpClient {
                 if start.is_some_and(|s| trade.created_at < s) {
                     continue;
                 }
+
                 if end.is_some_and(|e| trade.created_at > e) {
                     continue;
                 }

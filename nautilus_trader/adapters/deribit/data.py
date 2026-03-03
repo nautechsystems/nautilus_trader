@@ -41,6 +41,7 @@ from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
 from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
@@ -50,6 +51,7 @@ from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
@@ -61,6 +63,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
@@ -167,6 +170,7 @@ class DeribitDataClient(LiveMarketDataClient):
         instruments = self.instrument_provider.instruments_pyo3()
 
         await self._ws_client.connect(
+            loop_=self._loop,
             instruments=instruments,
             callback=self._handle_msg,
         )
@@ -242,30 +246,14 @@ class DeribitDataClient(LiveMarketDataClient):
             kind = command.params.get("kind", "any")
             currency = command.params.get("currency", "any")
 
-        self._log.info(f"Subscribing to instrument state changes: {kind}.{currency}")
-        await self._ws_client.subscribe_instrument_state(kind, currency)
+        channel = f"instrument.state.{kind}.{currency}"
+        self._log.info(f"Subscribing to instrument status changes: {channel}")
+        await self._ws_client.subscribe([channel])
 
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
-        symbol = command.instrument_id.symbol.value
-
-        if "PERPETUAL" in symbol:
-            kind = "future"
-        elif symbol.endswith(("-C", "-P")):
-            kind = "option"
-        elif "_" in symbol and "-" not in symbol:
-            kind = "spot"
-        else:
-            kind = "future"  # Futures with expiry dates like "BTC-28MAR25"
-
-        # For instruments like "BTC-PERPETUAL", "BTC-28MAR25", "BTC_USDC"
-        parts = symbol.replace("_", "-").split("-")
-        currency = parts[0] if parts else "any"
-
-        self._log.info(
-            f"Subscribing to instrument state for {command.instrument_id} "
-            f"(channel: instrument.state.{kind}.{currency})",
-        )
-        await self._ws_client.subscribe_instrument_state(kind, currency)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        self._log.info(f"Subscribing to instrument status for {command.instrument_id}")
+        await self._ws_client.subscribe_instrument_status(pyo3_instrument_id)
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
@@ -357,6 +345,10 @@ class DeribitDataClient(LiveMarketDataClient):
         )
         await self._ws_client.subscribe_perpetual_interest_rates(pyo3_instrument_id, interval)
 
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_instrument_status(pyo3_instrument_id)
+
     async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         kind = "any"
         currency = "any"
@@ -365,29 +357,14 @@ class DeribitDataClient(LiveMarketDataClient):
             kind = command.params.get("kind", "any")
             currency = command.params.get("currency", "any")
 
-        self._log.info(f"Unsubscribing from instrument state changes: {kind}.{currency}")
-        await self._ws_client.unsubscribe_instrument_state(kind, currency)
+        channel = f"instrument.state.{kind}.{currency}"
+        self._log.info(f"Unsubscribing from instrument status changes: {channel}")
+        await self._ws_client.unsubscribe([channel])
 
     async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
-        symbol = command.instrument_id.symbol.value
-
-        if "PERPETUAL" in symbol:
-            kind = "future"
-        elif symbol.endswith(("-C", "-P")):
-            kind = "option"
-        elif "_" in symbol and "-" not in symbol:
-            kind = "spot"
-        else:
-            kind = "future"
-
-        parts = symbol.replace("_", "-").split("-")
-        currency = parts[0] if parts else "any"
-
-        self._log.info(
-            f"Unsubscribing from instrument state for {command.instrument_id} "
-            f"(channel: instrument.state.{kind}.{currency})",
-        )
-        await self._ws_client.unsubscribe_instrument_state(kind, currency)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        self._log.info(f"Unsubscribing from instrument status for {command.instrument_id}")
+        await self._ws_client.unsubscribe_instrument_status(pyo3_instrument_id)
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -459,6 +436,10 @@ class DeribitDataClient(LiveMarketDataClient):
             f"(via perpetual channel, interval: {interval_display})",
         )
         await self._ws_client.unsubscribe_perpetual_interest_rates(pyo3_instrument_id, interval)
+
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_instrument_status(pyo3_instrument_id)
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
         if request.start is not None:
@@ -701,6 +682,8 @@ class DeribitDataClient(LiveMarketDataClient):
                 # to `Data` is still owned and managed by Rust.
                 data = capsule_to_data(msg)
                 self._handle_data(data)
+            elif isinstance(msg, nautilus_pyo3.InstrumentStatus):
+                self._handle_data(InstrumentStatus.from_pyo3(msg))
             elif hasattr(msg, "__class__") and "Instrument" in msg.__class__.__name__:
                 self._handle_instrument_update(msg)
             elif hasattr(msg, "__class__") and "FundingRateUpdate" in msg.__class__.__name__:

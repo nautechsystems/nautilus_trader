@@ -789,7 +789,7 @@ pub fn exact_subscriber_count_bars(topic: MStr<Topic>) -> usize {
 
 /// Publishes a message to the topic using runtime type dispatch (Any).
 pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
-    // SAFETY: Take buffer (re-entrancy safe)
+    // Take buffer (re-entrancy safe)
     let mut handlers = ANY_HANDLERS.with_borrow_mut(std::mem::take);
 
     get_message_bus()
@@ -996,7 +996,7 @@ fn publish_typed<T: 'static>(
     fill_fn: impl FnOnce(&mut MessageBus, &mut SmallVec<[TypedHandler<T>; HANDLER_BUFFER_CAP]>),
     message: &T,
 ) {
-    // SAFETY: Take buffer (re-entrancy safe)
+    // Take buffer (re-entrancy safe)
     let mut handlers = tls.with_borrow_mut(std::mem::take);
 
     // Borrow scope ends before dispatch to support re-entrant publishes

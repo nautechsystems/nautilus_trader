@@ -234,7 +234,7 @@ docker-compose up -d postgres
 
 Used services are:
 
-- `postgres`: Postgres database with root user `POSTRES_USER` which defaults to `postgres`, `POSTGRES_PASSWORD` which defaults to `pass` and `POSTGRES_DB` which defaults to `postgres`.
+- `postgres`: Postgres database with root user `POSTGRES_USER` which defaults to `postgres`, `POSTGRES_PASSWORD` which defaults to `pass` and `POSTGRES_DB` which defaults to `postgres`.
 - `redis`: Redis server.
 - `pgadmin`: PgAdmin4 for database management and administration.
 
@@ -283,7 +283,7 @@ The Nautilus CLI command is only supported on UNIX-like systems.
 
 ## Install
 
-You can install the Nautilus CLI using the below Makefile target, which leverages `cargo install` under the hood.
+You can install the Nautilus CLI using the below Makefile target, which uses `cargo install` under the hood.
 This will place the nautilus binary in your system's PATH, assuming Rust's `cargo` is properly configured.
 
 ```bash

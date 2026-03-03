@@ -178,6 +178,7 @@ class OKXDataClient(LiveMarketDataClient):
         instruments = self.instrument_provider.instruments_pyo3()
 
         await self._ws_client.connect(
+            loop_=self._loop,
             instruments=instruments,
             callback=self._handle_msg,
         )
@@ -187,6 +188,7 @@ class OKXDataClient(LiveMarketDataClient):
         self._log.info(f"Connected to public websocket {self._ws_client.url}", LogColor.BLUE)
 
         await self._ws_business_client.connect(
+            loop_=self._loop,
             instruments=instruments,
             callback=self._handle_msg,
         )

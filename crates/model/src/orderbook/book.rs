@@ -19,12 +19,12 @@ use std::fmt::Display;
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 
 use super::{
-    aggregation::pre_process_order, analysis, display::pprint_book, level::BookLevel,
-    own::OwnOrderBook,
+    BookViewError, aggregation::pre_process_order, analysis, display::pprint_book,
+    level::BookLevel, own::OwnOrderBook,
 };
 use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
@@ -201,6 +201,7 @@ impl OrderBook {
 
         // Collect prices to remove for asks (prices <= best_bid)
         let mut ask_prices_to_remove = Vec::new();
+
         if clear_asks {
             for bp in self.asks.levels.keys() {
                 if bp.value <= best_bid {
@@ -213,6 +214,7 @@ impl OrderBook {
 
         // Collect prices to remove for bids (prices >= best_ask)
         let mut bid_prices_to_remove = Vec::new();
+
         if clear_bids {
             for bp in self.bids.levels.keys() {
                 if bp.value >= best_ask {
@@ -397,6 +399,7 @@ impl OrderBook {
 
         // Set F_LAST on clear when book is empty so buffered consumers flush
         let mut clear = OrderBookDelta::clear(self.instrument_id, self.sequence, ts_event, ts_init);
+
         if total_orders == 0 {
             clear.flags |= RecordFlag::F_LAST as u8;
         }
@@ -652,6 +655,101 @@ impl OrderBook {
         public_map
     }
 
+    /// Returns a filtered [`OrderBook`] view with own sizes subtracted from public levels.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self` and `own_book` have different instrument IDs.
+    ///
+    /// [`Self::filtered_view_checked`] for fallible construction.
+    #[must_use]
+    pub fn filtered_view(
+        &self,
+        own_book: Option<&OwnOrderBook>,
+        depth: Option<usize>,
+        status: Option<AHashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        now: Option<u64>,
+    ) -> Self {
+        self.filtered_view_checked(own_book, depth, status, accepted_buffer_ns, now)
+            .expect(FAILED)
+    }
+
+    /// Fallible version of [`Self::filtered_view`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BookViewError::InstrumentMismatch`] if `self` and `own_book` have different
+    /// instrument IDs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `Price::from_decimal` or `Quantity::from_decimal` fails when
+    /// reconstructing filtered levels.
+    pub fn filtered_view_checked(
+        &self,
+        own_book: Option<&OwnOrderBook>,
+        depth: Option<usize>,
+        status: Option<AHashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        now: Option<u64>,
+    ) -> Result<Self, BookViewError> {
+        if let Some(own_book) = own_book
+            && self.instrument_id != own_book.instrument_id
+        {
+            return Err(BookViewError::InstrumentMismatch(
+                self.instrument_id,
+                own_book.instrument_id,
+            ));
+        }
+
+        let bids_map =
+            self.bids_filtered_as_map(depth, own_book, status.clone(), accepted_buffer_ns, now);
+        let asks_map = self.asks_filtered_as_map(depth, own_book, status, accepted_buffer_ns, now);
+
+        let mut filtered_book = Self::new(self.instrument_id, self.book_type);
+        filtered_book.sequence = self.sequence;
+        filtered_book.ts_last = self.ts_last;
+
+        let sequence = self.sequence;
+        let ts_event = self.ts_last;
+
+        let mut order_id = 1_u64;
+        for (price, quantity) in bids_map {
+            if quantity <= Decimal::ZERO {
+                continue;
+            }
+
+            let order = BookOrder::new(
+                OrderSide::Buy,
+                Price::from_decimal(price).expect("Invalid bid price for OrderBook::filtered_view"),
+                Quantity::from_decimal(quantity)
+                    .expect("Invalid bid quantity for OrderBook::filtered_view"),
+                order_id,
+            );
+            order_id += 1;
+            filtered_book.add(order, 0, sequence, ts_event);
+        }
+
+        for (price, quantity) in asks_map {
+            if quantity <= Decimal::ZERO {
+                continue;
+            }
+
+            let order = BookOrder::new(
+                OrderSide::Sell,
+                Price::from_decimal(price).expect("Invalid ask price for OrderBook::filtered_view"),
+                Quantity::from_decimal(quantity)
+                    .expect("Invalid ask quantity for OrderBook::filtered_view"),
+                order_id,
+            );
+            order_id += 1;
+            filtered_book.add(order, 0, sequence, ts_event);
+        }
+
+        Ok(filtered_book)
+    }
+
     /// Groups bid quantities into price buckets, truncating to a maximum depth, excluding own orders.
     ///
     /// With `own_book`, subtracts own order sizes, filtered by `status` if provided.
@@ -773,6 +871,17 @@ impl OrderBook {
         analysis::get_avg_px_for_quantity(qty, levels)
     }
 
+    /// Calculates the worst (last-touched) price to fill the specified quantity.
+    #[must_use]
+    pub fn get_worst_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> Option<Price> {
+        let levels = match order_side.as_specified() {
+            OrderSideSpecified::Buy => &self.asks.levels,
+            OrderSideSpecified::Sell => &self.bids.levels,
+        };
+
+        analysis::get_worst_px_for_quantity(qty, levels)
+    }
+
     /// Calculates average price and quantity for target exposure. Returns (price, quantity, executed_exposure).
     #[must_use]
     pub fn get_avg_px_qty_for_exposure(
@@ -877,6 +986,7 @@ impl OrderBook {
                 self.instrument_id
             );
         }
+
         if ts_event < self.ts_last {
             log::warn!(
                 "Out-of-order update: ts_event {} < {} (instrument_id={})",
@@ -1009,6 +1119,60 @@ impl OrderBook {
             self.asks.remove_order(top_ask.order_id, 0, ts_event);
         }
         self.asks.add(order, 0); // Internal replacement, no F_MBP flags
+    }
+
+    /// Replays `deltas` through a fresh book of the given type and returns
+    /// a [`QuoteTick`] for every best-bid/ask price change.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `deltas` is empty.
+    pub fn deltas_to_quotes(book_type: BookType, deltas: &[OrderBookDelta]) -> Vec<QuoteTick> {
+        assert!(!deltas.is_empty(), "`deltas` must not be empty");
+
+        let instrument_id = deltas[0].instrument_id;
+        let mut book = Self::new(instrument_id, book_type);
+        let mut quotes = Vec::new();
+        let mut last_bid: Option<Price> = None;
+        let mut last_ask: Option<Price> = None;
+
+        for delta in deltas {
+            book.apply_delta(delta).unwrap();
+            let bid = book.best_bid_price();
+            let ask = book.best_ask_price();
+
+            // Reset cached BBO when one side disappears so that a
+            // recovery to the same prices emits a fresh quote
+            if bid.is_none() || ask.is_none() {
+                last_bid = None;
+                last_ask = None;
+            }
+
+            if let (Some(bid_px), Some(ask_px)) = (bid, ask)
+                && (bid != last_bid || ask != last_ask)
+            {
+                last_bid = bid;
+                last_ask = ask;
+                let bid_level = book.bids.top().unwrap();
+                let ask_level = book.asks.top().unwrap();
+                let precision = bid_level.first().unwrap().size.precision;
+                let bid_sz = Quantity::from_raw(bid_level.size_raw(), precision);
+                let ask_sz = Quantity::from_raw(ask_level.size_raw(), precision);
+                let quote = QuoteTick::new(
+                    instrument_id,
+                    bid_px,
+                    ask_px,
+                    bid_sz,
+                    ask_sz,
+                    delta.ts_event,
+                    delta.ts_init,
+                );
+
+                quotes.push(quote);
+            }
+        }
+
+        quotes
     }
 }
 

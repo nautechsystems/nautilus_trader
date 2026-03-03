@@ -143,6 +143,7 @@ impl BinanceFuturesDataClient {
         let http_client = BinanceFuturesHttpClient::new(
             product_type,
             config.environment,
+            clock,
             config.api_key.clone(),
             config.api_secret.clone(),
             config.base_url_http.clone(),
@@ -564,6 +565,7 @@ impl BinanceFuturesDataClient {
                             if buffer.epoch != epoch {
                                 break;
                             }
+
                             if buffer.updates.is_empty() {
                                 buffers.remove(&instrument_id);
                                 break;
@@ -1453,6 +1455,7 @@ impl DataClient for BinanceFuturesDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
@@ -1495,6 +1498,7 @@ impl DataClient for BinanceFuturesDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send bars response: {e}");
                     }

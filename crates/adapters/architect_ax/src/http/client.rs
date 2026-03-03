@@ -28,7 +28,8 @@ use std::{
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
+    AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BookOrder, FundingRateUpdate, TradeTick},
@@ -276,7 +277,7 @@ impl AxRawHttpClient {
     ///
     /// Panics if the internal lock is poisoned (indicates a panic in another thread).
     pub fn set_session_token(&self, token: String) {
-        // SAFETY: Lock poisoning indicates a panic in another thread, which is fatal
+        // Lock poisoning indicates a panic in another thread, which is fatal
         *self.session_token.write().expect("Lock poisoned") = Some(token);
     }
 
@@ -299,7 +300,7 @@ impl AxRawHttpClient {
     }
 
     fn auth_headers(&self) -> Result<HashMap<String, String>, AxHttpError> {
-        // SAFETY: Lock poisoning indicates a panic in another thread, which is fatal
+        // Lock poisoning indicates a panic in another thread, which is fatal
         let guard = self.session_token.read().expect("Lock poisoned");
         let session_token = guard.as_ref().ok_or(AxHttpError::MissingSessionToken)?;
 
@@ -595,9 +596,8 @@ impl AxRawHttpClient {
             return Some((cred.api_key().to_string(), cred.api_secret().to_string()));
         }
 
-        let api_key = std::env::var("AX_API_KEY").ok()?;
-        let api_secret = std::env::var("AX_API_SECRET").ok()?;
-        Some((api_key, api_secret))
+        let cred = Credential::resolve(None, None)?;
+        Some((cred.api_key().to_string(), cred.api_secret().to_string()))
     }
 
     /// Places a new order.
@@ -1053,6 +1053,7 @@ impl AxRawHttpClient {
 pub struct AxHttpClient {
     pub(crate) inner: Arc<AxRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
 }
 
@@ -1062,6 +1063,7 @@ impl Clone for AxHttpClient {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
             cache_initialized: self.cache_initialized.clone(),
+            clock: self.clock,
         }
     }
 }
@@ -1101,6 +1103,7 @@ impl AxHttpClient {
             )?),
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1135,6 +1138,7 @@ impl AxHttpClient {
             )?),
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1169,7 +1173,7 @@ impl AxHttpClient {
 
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     /// Checks if the client is initialized.
@@ -1423,6 +1427,7 @@ impl AxHttpClient {
                     if start.is_some_and(|s| tick.ts_event < s) {
                         continue;
                     }
+
                     if end.is_some_and(|e| tick.ts_event > e) {
                         continue;
                     }

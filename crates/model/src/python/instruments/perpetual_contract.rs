@@ -327,6 +327,7 @@ impl PerpetualContract {
         dict.set_item("margin_maint", self.margin_maint.to_string())?;
         dict.set_item("maker_fee", self.maker_fee.to_string())?;
         dict.set_item("taker_fee", self.taker_fee.to_string())?;
+
         if let Some(ref info_map) = self.info {
             let info_dict = PyDict::new(py);
             for (key, value) in info_map {

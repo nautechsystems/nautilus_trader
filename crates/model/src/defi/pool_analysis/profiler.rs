@@ -120,6 +120,7 @@ impl PoolProfiler {
         assert!(!self.is_initialized, "Pool already initialized");
 
         let calculated_tick = get_tick_at_sqrt_ratio(price_sqrt_ratio_x96);
+
         if let Some(initial_tick) = self.pool.initial_tick {
             assert_eq!(
                 initial_tick, calculated_tick,
@@ -243,6 +244,7 @@ impl PoolProfiler {
     /// Panics if the pool has not been initialized.
     pub fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.check_if_initialized();
+
         if self.check_if_already_processed(swap.block, swap.transaction_index, swap.log_index) {
             return Ok(());
         }
@@ -270,6 +272,7 @@ impl PoolProfiler {
             );
             self.state.current_tick = swap.tick;
         }
+
         if swap.liquidity != self.tick_map.liquidity {
             log::error!(
                 "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {} on block {}",
@@ -459,6 +462,7 @@ impl PoolProfiler {
 
             // Calculate protocol fee if enabled
             let mut step_fee_amount = swap_step_result.fee_amount;
+
             if fee_protocol > 0 {
                 let protocol_fee_delta = swap_step_result.fee_amount / U256::from(fee_protocol);
                 step_fee_amount -= protocol_fee_delta;
@@ -618,6 +622,7 @@ impl PoolProfiler {
         sqrt_price_limit_x96: Option<U160>,
     ) -> anyhow::Result<SwapQuote> {
         self.check_if_initialized();
+
         if amount_specified.is_zero() {
             anyhow::bail!("Cannot quote swap with zero amount");
         }
@@ -780,6 +785,7 @@ impl PoolProfiler {
     /// - Position updates fail.
     pub fn process_mint(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.check_if_initialized();
+
         if self.check_if_already_processed(update.block, update.transaction_index, update.log_index)
         {
             return Ok(());
@@ -913,6 +919,7 @@ impl PoolProfiler {
     /// - Position updates fail.
     pub fn process_burn(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.check_if_initialized();
+
         if self.check_if_already_processed(update.block, update.transaction_index, update.log_index)
         {
             return Ok(());
@@ -1030,6 +1037,7 @@ impl PoolProfiler {
     /// - Pool is not initialized.
     pub fn process_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
         self.check_if_initialized();
+
         if self.check_if_already_processed(
             collect.block,
             collect.transaction_index,
@@ -1039,6 +1047,7 @@ impl PoolProfiler {
         }
         let position_key =
             PoolPosition::get_position_key(&collect.owner, collect.tick_lower, collect.tick_upper);
+
         if let Some(position) = self.positions.get_mut(&position_key) {
             position.collect_fees(collect.amount0, collect.amount1);
         }
@@ -1076,6 +1085,7 @@ impl PoolProfiler {
     /// Panics if the pool has not been initialized.
     pub fn process_flash(&mut self, flash: &PoolFlash) -> anyhow::Result<()> {
         self.check_if_initialized();
+
         if self.check_if_already_processed(flash.block, flash.transaction_index, flash.log_index) {
             return Ok(());
         }
@@ -1280,6 +1290,7 @@ impl PoolProfiler {
         if liquidity_delta < 0 && flipped_lower {
             self.tick_map.clear(tick_lower);
         }
+
         if liquidity_delta < 0 && flipped_upper {
             self.tick_map.clear(tick_upper);
         }

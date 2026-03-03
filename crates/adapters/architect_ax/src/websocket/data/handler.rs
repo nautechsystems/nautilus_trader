@@ -268,7 +268,6 @@ impl FeedHandler {
                         log::debug!("Stop signal received during idle period");
                         return None;
                     }
-                    continue;
                 }
 
                 msg = self.raw_rx.recv() => {
@@ -282,6 +281,7 @@ impl FeedHandler {
 
                     if let Message::Ping(data) = &msg {
                         log::trace!("Received ping frame with {} bytes", data.len());
+
                         if let Some(client) = &self.client
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
@@ -313,6 +313,7 @@ impl FeedHandler {
                 log::debug!("Disconnect command received");
                 self.book_sequences.clear();
                 self.candle_cache.clear();
+
                 if let Some(client) = self.client.take() {
                     client.disconnect().await;
                 }

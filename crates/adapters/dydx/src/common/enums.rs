@@ -17,7 +17,10 @@
 
 use nautilus_model::{
     data::BarSpecification,
-    enums::{BarAggregation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide},
+    enums::{
+        BarAggregation, LiquiditySide, MarketStatusAction, OrderSide, OrderStatus, OrderType,
+        PositionSide,
+    },
 };
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr};
@@ -440,6 +443,19 @@ pub enum DydxMarketStatus {
     Initializing,
     /// Market is in final settlement.
     FinalSettlement,
+}
+
+impl From<DydxMarketStatus> for MarketStatusAction {
+    fn from(value: DydxMarketStatus) -> Self {
+        match value {
+            DydxMarketStatus::Active => Self::Trading,
+            DydxMarketStatus::Paused => Self::Pause,
+            DydxMarketStatus::CancelOnly => Self::Halt,
+            DydxMarketStatus::PostOnly => Self::Quoting,
+            DydxMarketStatus::Initializing => Self::PreOpen,
+            DydxMarketStatus::FinalSettlement => Self::Close,
+        }
+    }
 }
 
 /// dYdX fill type.

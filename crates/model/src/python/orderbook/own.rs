@@ -19,7 +19,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use pyo3::{Python, prelude::*, pyclass::CompareOp};
 use rust_decimal::Decimal;
 
@@ -321,6 +321,12 @@ impl OwnOrderBook {
             accepted_buffer_ns,
             ts_now,
         )
+    }
+
+    #[pyo3(name = "combined_with_opposite")]
+    fn py_combined_with_opposite(&self, opposite: &Self) -> PyResult<Self> {
+        self.combined_with_opposite(opposite)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "audit_open_orders")]

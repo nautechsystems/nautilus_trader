@@ -17,13 +17,13 @@
 //!
 //! Run with: `cargo run -p nautilus-kraken --example kraken-exec-tester`
 //!
-//! Environment variables:
-//! - KRAKEN_API_KEY: Your Kraken API key
-//! - KRAKEN_API_SECRET: Your Kraken API secret
+//! Environment variables (for Spot):
+//! - KRAKEN_SPOT_API_KEY: Your Kraken Spot API key
+//! - KRAKEN_SPOT_API_SECRET: Your Kraken Spot API secret
 
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
-    common::enums::KrakenProductType,
+    common::{credential::KrakenCredential, enums::KrakenProductType},
     config::{KrakenDataClientConfig, KrakenExecClientConfig},
     factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
 };
@@ -42,13 +42,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     // Configuration - Change product_type to switch between trading modes
-    let product_type = KrakenProductType::Spot; // Spot or Futures
+    let product_type = KrakenProductType::Futures; // Spot or Futures
 
     // Symbol and settings based on product type
     let (symbol, order_qty) = match product_type {
         KrakenProductType::Spot => {
-            // Spot uses "BTC/USD" style symbols (XBT is Bitcoin on Kraken)
-            let symbol = "XBT/USD";
+            // Spot symbols are normalized to BTC (from Kraken's XBT)
+            let symbol = "BTC/USD";
             let order_qty = Quantity::from("0.0001"); // Minimum BTC quantity
             (symbol, order_qty)
         }
@@ -68,9 +68,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_name = "KRAKEN-EXEC-TESTER-001".to_string();
     let client_id = ClientId::new("KRAKEN");
 
-    // Read API credentials from environment
-    let api_key = std::env::var("KRAKEN_API_KEY").expect("KRAKEN_API_KEY must be set");
-    let api_secret = std::env::var("KRAKEN_API_SECRET").expect("KRAKEN_API_SECRET must be set");
+    let credential = match product_type {
+        KrakenProductType::Spot => KrakenCredential::resolve_spot(None, None),
+        KrakenProductType::Futures => KrakenCredential::resolve_futures(None, None, false),
+    }
+    .ok_or(
+        "API credentials required (set KRAKEN_SPOT_API_KEY/KRAKEN_SPOT_API_SECRET \
+         or KRAKEN_FUTURES_API_KEY/KRAKEN_FUTURES_API_SECRET)",
+    )?;
+
+    let (api_key, api_secret) = credential.into_parts();
 
     let data_config = KrakenDataClientConfig {
         api_key: Some(api_key.clone()),
@@ -107,6 +114,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_subscribe_trades(true)
     .with_subscribe_quotes(true)
     .with_use_post_only(true)
+    .with_open_position_on_start(order_qty.as_decimal())
+    // .with_tob_offset_ticks(0)
     .with_log_data(false);
 
     // Use UUIDs for unique client order IDs across restarts

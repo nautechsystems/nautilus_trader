@@ -251,6 +251,7 @@ impl DataClient for TardisDataClient {
                     tokio::select! {
                         _ = interval.tick() => {
                             log::trace!("Sending PING");
+
                             if let Err(e) = writer.send(tungstenite::Message::Ping(vec![].into())).await {
                                 log::debug!("Heartbeat send failed: {e}");
                                 break;
@@ -311,7 +312,7 @@ impl DataClient for TardisDataClient {
                         }
                         break;
                     }
-                    Some(Ok(_)) => continue, // Skip ping/pong/binary/frame
+                    Some(Ok(_)) => {} // Skip ping/pong/binary/frame
                     Some(Err(e)) => {
                         log::error!("WebSocket error: {e}");
                         break;

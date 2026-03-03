@@ -18,7 +18,10 @@
 use std::{any::Any, cell::RefCell, fmt::Debug, path::PathBuf, rc::Rc};
 
 use nautilus_common::{cache::Cache, clients::DataClient, clock::Clock};
-use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
+use nautilus_core::{
+    string::REDACTED,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::identifiers::ClientId;
 use nautilus_system::factories::{ClientConfig, DataClientFactory};
 
@@ -30,6 +33,13 @@ use crate::{
 
 /// Configuration for Databento data clients used with `LiveNode`.
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.databento",
+        from_py_object
+    )
+)]
 pub struct DatabentoLiveClientConfig {
     /// Databento API credential.
     credential: Credential,
@@ -44,7 +54,7 @@ pub struct DatabentoLiveClientConfig {
 impl Debug for DatabentoLiveClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DatabentoLiveClientConfig))
-            .field("credential", &"<redacted>")
+            .field("credential", &REDACTED)
             .field("publishers_filepath", &self.publishers_filepath)
             .field("use_exchange_as_venue", &self.use_exchange_as_venue)
             .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
@@ -89,7 +99,14 @@ impl ClientConfig for DatabentoLiveClientConfig {
 }
 
 /// Factory for creating Databento data clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.databento",
+        from_py_object
+    )
+)]
 pub struct DatabentoDataClientFactory;
 
 impl DatabentoDataClientFactory {

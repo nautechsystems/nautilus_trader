@@ -15,7 +15,7 @@
 
 use std::{env, fmt::Debug, time::Duration};
 
-use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT};
+use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, string::REDACTED};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::instruments::InstrumentAny;
 use reqwest::Response;
@@ -53,10 +53,7 @@ impl Debug for TardisHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(TardisHttpClient))
             .field("base_url", &self.base_url)
-            .field(
-                "credential",
-                &self.credential.as_ref().map(|_| "<redacted>"),
-            )
+            .field("credential", &self.credential.as_ref().map(|_| REDACTED))
             .field("normalize_symbols", &self.normalize_symbols)
             .finish()
     }
@@ -148,9 +145,11 @@ impl TardisHttpClient {
         filter: Option<&InstrumentFilter>,
     ) -> Result<Vec<TardisInstrumentInfo>> {
         let mut url = format!("{}/instruments/{exchange}", &self.base_url);
+
         if let Some(symbol) = symbol {
             url.push_str(&format!("/{symbol}"));
         }
+
         if let Some(filter) = filter
             && let Ok(filter_json) = serde_json::to_string(filter)
         {

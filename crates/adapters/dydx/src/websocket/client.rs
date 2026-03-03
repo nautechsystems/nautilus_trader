@@ -496,6 +496,7 @@ impl DydxWebSocketClient {
                 cached_instruments.len()
             );
             let cmd_tx_guard = self.cmd_tx.read().await;
+
             if let Err(e) =
                 cmd_tx_guard.send(HandlerCommand::InitializeInstruments(cached_instruments))
             {

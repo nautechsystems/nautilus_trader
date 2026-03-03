@@ -42,6 +42,7 @@ use std::{env, str::FromStr, time::Duration};
 use nautilus_dydx::{
     common::{
         consts::{DYDX_GRPC_URLS, DYDX_HTTP_URL, DYDX_TESTNET_GRPC_URLS, DYDX_TESTNET_HTTP_URL},
+        credential::credential_env_vars,
         enums::DydxOrderStatus,
     },
     execution::wallet::{Account, Wallet},
@@ -86,20 +87,17 @@ struct Credentials {
     subaccount: u32,
 }
 
-fn load_credentials() -> Result<Credentials, Box<dyn std::error::Error>> {
-    if let Ok(private_key) = env::var("DYDX_PRIVATE_KEY") {
-        log::info!("Loaded credentials from DYDX_PRIVATE_KEY environment variable");
+fn load_credentials(is_testnet: bool) -> Result<Credentials, Box<dyn std::error::Error>> {
+    let (pk_var, _) = credential_env_vars(is_testnet);
+    if let Ok(private_key) = env::var(pk_var) {
+        log::info!("Loaded credentials from {pk_var}");
         return Ok(Credentials {
             private_key,
             subaccount: DEFAULT_SUBACCOUNT,
         });
     }
 
-    Err(
-        "No credentials found. Please set DYDX_PRIVATE_KEY environment variable"
-            .to_string()
-            .into(),
-    )
+    Err(format!("No credentials found. Please set {pk_var}").into())
 }
 
 #[tokio::main]
@@ -153,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Failed to install rustls crypto provider");
 
     // Load credentials
-    let creds = load_credentials()?;
+    let creds = load_credentials(!is_mainnet)?;
     let grpc_urls = if is_mainnet {
         DYDX_GRPC_URLS
     } else {
@@ -379,7 +377,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run_all_edge_case_tests(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let is_mainnet = args.iter().any(|a| a == "--mainnet");
-    let creds = load_credentials()?;
+    let creds = load_credentials(!is_mainnet)?;
     let wallet = Wallet::from_private_key(&creds.private_key)?;
     let mut account = wallet.account_offline()?;
     let wallet_address = account.address.clone();

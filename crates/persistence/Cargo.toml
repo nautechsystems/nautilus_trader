@@ -58,11 +58,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true, features = ["ffi"] }
 nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-serialization = { workspace = true }
+nautilus-serialization = { workspace = true, features = ["arrow"] }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
+arrow-row = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 datafusion = { workspace = true }

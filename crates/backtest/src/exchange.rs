@@ -24,7 +24,10 @@ use std::{
 
 use ahash::AHashMap;
 use nautilus_common::{
-    cache::Cache, clients::ExecutionClient, clock::Clock, messages::execution::TradingCommand,
+    cache::Cache,
+    clients::ExecutionClient,
+    clock::{Clock, TestClock},
+    messages::execution::TradingCommand,
 };
 use nautilus_core::{
     UnixNanos,
@@ -41,7 +44,7 @@ use nautilus_model::{
         Bar, Data, InstrumentClose, InstrumentStatus, OrderBookDelta, OrderBookDeltas,
         OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
-    enums::{AccountType, BookType, OmsType},
+    enums::{AccountType, AggressorSide, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -198,6 +201,7 @@ impl SimulatedExchange {
         if starting_balances.is_empty() {
             anyhow::bail!("Starting balances must be provided")
         }
+
         if base_currency.is_some() && starting_balances.len() > 1 {
             anyhow::bail!("single-currency account has multiple starting currencies")
         }
@@ -515,6 +519,30 @@ impl SimulatedExchange {
             .is_some_and(|inflight| inflight.timestamp <= ts_now)
     }
 
+    /// Iterates all matching engines so newly submitted orders can match
+    /// against the current market state.
+    pub fn iterate_matching_engines(&mut self, ts_now: UnixNanos) {
+        for matching_engine in self.matching_engines.values_mut() {
+            matching_engine.iterate(ts_now, AggressorSide::NoAggressor);
+        }
+    }
+
+    /// Advances the exchange clock to the given timestamp so that any event
+    /// generators (modules, account state) see the correct time even when
+    /// no commands are pending.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is not a [`TestClock`].
+    pub fn set_clock_time(&self, ts_now: UnixNanos) {
+        let mut clock_ref = self.clock.borrow_mut();
+        let test_clock = clock_ref
+            .as_any_mut()
+            .downcast_mut::<TestClock>()
+            .expect("SimulatedExchange requires TestClock");
+        test_clock.set_time(ts_now);
+    }
+
     /// Sends a trading command to the exchange for processing.
     pub fn send(&mut self, command: TradingCommand) {
         if !self.use_message_queue {
@@ -826,7 +854,8 @@ impl SimulatedExchange {
     ///
     /// Panics if popping an inflight command fails during processing.
     pub fn process(&mut self, ts_now: UnixNanos) {
-        // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
+        // Clock is advanced by BacktestEngine::settle_venues before entering
+        // the settlement loop, so we don't set it here.
 
         // Process inflight commands
         while let Some(inflight) = self.inflight_queue.peek() {

@@ -118,6 +118,7 @@ pub fn parse_bar(
         anyhow::anyhow!("Timestamp out of range for candle at {}", candle.started_at)
     })?;
     let mut ts_event = UnixNanos::from(started_at_nanos as u64);
+
     if timestamp_on_close {
         let interval_ns = bar_type
             .spec()
@@ -160,6 +161,7 @@ pub fn validate_ticker_format(ticker: &str) -> anyhow::Result<()> {
     if parts.len() != 2 {
         anyhow::bail!("Invalid ticker format '{ticker}', expected 'BASE-QUOTE' (e.g., 'BTC-USD')");
     }
+
     if parts[0].is_empty() || parts[1].is_empty() {
         anyhow::bail!("Invalid ticker format '{ticker}', base and quote cannot be empty");
     }
@@ -958,6 +960,7 @@ mod tests {
         // 2025-12-08T16:11:00.000Z
         let started_at_ns = 1_765_210_260_000_000_000u64;
         let one_min_ns = 60_000_000_000u64;
+
         if timestamp_on_close {
             assert_eq!(bar.ts_event.as_u64(), started_at_ns + one_min_ns);
         } else {

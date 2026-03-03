@@ -127,6 +127,7 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
         loop {
             interval.tick().await;
+
             if state_clone.disconnect_trigger.load(Ordering::Relaxed) {
                 break;
             }
@@ -196,6 +197,7 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                         };
 
                         let book_msg = load_test_data(book_file);
+
                         if socket
                             .send(Message::Text(book_msg.to_string().into()))
                             .await
@@ -205,6 +207,7 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                         }
 
                         let trade_msg = load_test_data("ws_md_trade.json");
+
                         if socket
                             .send(Message::Text(trade_msg.to_string().into()))
                             .await
@@ -239,6 +242,7 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                         }
 
                         let candle_msg = load_test_data("ws_md_candle.json");
+
                         if socket
                             .send(Message::Text(candle_msg.to_string().into()))
                             .await
@@ -258,6 +262,7 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
             }
             Message::Ping(_) => {
                 state.ping_count.fetch_add(1, Ordering::Relaxed);
+
                 if socket.send(Message::Pong(vec![].into())).await.is_err() {
                     break;
                 }
@@ -334,6 +339,7 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
                             "q": value.get("q").and_then(|v| v.as_i64()).unwrap_or(0),
                             "p": value.get("p").and_then(|v| v.as_str()).unwrap_or("0"),
                         });
+
                         if socket
                             .send(Message::Text(ack.to_string().into()))
                             .await
@@ -349,6 +355,7 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
                             "rid": rid,
                             "oid": value.get("oid").and_then(|v| v.as_str()).unwrap_or(""),
                         });
+
                         if socket
                             .send(Message::Text(ack.to_string().into()))
                             .await
@@ -364,6 +371,7 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
                         if let Some(obj) = response.as_object_mut() {
                             obj.insert("rid".to_string(), json!(rid));
                         }
+
                         if socket
                             .send(Message::Text(response.to_string().into()))
                             .await
@@ -377,6 +385,7 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
             }
             Message::Ping(_) => {
                 state.ping_count.fetch_add(1, Ordering::Relaxed);
+
                 if socket.send(Message::Pong(vec![].into())).await.is_err() {
                     break;
                 }

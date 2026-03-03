@@ -147,6 +147,7 @@ impl FundingRateUpdate {
             "rate".to_string(),
             self.rate.to_string().into_py_any_unwrap(py),
         );
+
         if let Some(next_funding_ns) = self.next_funding_ns {
             dict.insert(
                 "next_funding_ns".to_string(),

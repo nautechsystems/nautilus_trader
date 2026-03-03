@@ -31,7 +31,9 @@ use std::{
 use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_core::{
-    UUID4, UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime,
+    UUID4, UnixNanos,
+    consts::NAUTILUS_USER_AGENT,
+    time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
     data::{Bar, BarType},
@@ -56,23 +58,26 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        builder_fee::{resolve_builder_fee, resolve_builder_fee_batch},
-        consts::{HYPERLIQUID_VENUE, exchange_url, info_url},
+        consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS, exchange_url, info_url},
         credential::{Secrets, VaultAddress},
         enums::{
             HyperliquidBarInterval, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
             HyperliquidProductType,
         },
-        parse::{bar_type_to_interval, order_to_hyperliquid_request_with_asset},
+        parse::{
+            bar_type_to_interval, clamp_price_to_precision, derive_limit_from_trigger,
+            extract_inner_error, normalize_price, order_to_hyperliquid_request_with_asset,
+            round_to_sig_figs, time_in_force_to_hyperliquid_tif,
+        },
     },
     http::{
         error::{Error, Result},
         models::{
             Cloid, HyperliquidCandleSnapshot, HyperliquidExchangeRequest,
-            HyperliquidExchangeResponse, HyperliquidExecAction,
+            HyperliquidExchangeResponse, HyperliquidExecAction, HyperliquidExecBuilderFee,
             HyperliquidExecCancelByCloidRequest, HyperliquidExecCancelOrderRequest,
-            HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
-            HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
+            HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecModifyOrderRequest,
+            HyperliquidExecOrderKind, HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
             HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
             HyperliquidExecTriggerParams, HyperliquidFills, HyperliquidL2Book, HyperliquidMeta,
             HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotMeta,
@@ -360,6 +365,12 @@ impl HyperliquidRawHttpClient {
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
         let request = InfoRequest::clearinghouse_state(user);
+        self.send_info_request(&request).await
+    }
+
+    /// Get user fee schedule and effective rates.
+    pub async fn info_user_fees(&self, user: &str) -> Result<Value> {
+        let request = InfoRequest::user_fees(user);
         self.send_info_request(&request).await
     }
 
@@ -733,6 +744,7 @@ impl HyperliquidRawHttpClient {
 )]
 pub struct HyperliquidHttpClient {
     pub(crate) inner: Arc<HyperliquidRawHttpClient>,
+    clock: &'static AtomicTime,
     instruments: Arc<RwLock<AHashMap<Ustr, InstrumentAny>>>,
     instruments_by_coin: Arc<RwLock<AHashMap<(Ustr, HyperliquidProductType), InstrumentAny>>>,
     /// Mapping from symbol to asset index for order submission.
@@ -740,6 +752,7 @@ pub struct HyperliquidHttpClient {
     /// Mapping from spot fill coin (`@{pair_index}`) to instrument symbol.
     spot_fill_coins: Arc<RwLock<AHashMap<Ustr, Ustr>>>,
     account_id: Option<AccountId>,
+    normalize_prices: bool,
 }
 
 impl Default for HyperliquidHttpClient {
@@ -781,11 +794,13 @@ impl HyperliquidHttpClient {
     fn from_raw(raw_client: HyperliquidRawHttpClient) -> Self {
         Self {
             inner: Arc::new(raw_client),
+            clock: get_atomic_clock_realtime(),
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            normalize_prices: true,
         }
     }
 
@@ -820,11 +835,13 @@ impl HyperliquidHttpClient {
         let raw_client = HyperliquidRawHttpClient::from_env(is_testnet)?;
         Ok(Self {
             inner: Arc::new(raw_client),
+            clock: get_atomic_clock_realtime(),
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            normalize_prices: true,
         })
     }
 
@@ -882,11 +899,13 @@ impl HyperliquidHttpClient {
                 )?;
                 Ok(Self {
                     inner: Arc::new(raw_client),
+                    clock: get_atomic_clock_realtime(),
                     instruments: Arc::new(RwLock::new(AHashMap::new())),
                     instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
                     asset_indices: Arc::new(RwLock::new(AHashMap::new())),
                     spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
                     account_id: None,
+                    normalize_prices: true,
                 })
             }
             None => {
@@ -918,11 +937,13 @@ impl HyperliquidHttpClient {
         )?;
         Ok(Self {
             inner: Arc::new(raw_client),
+            clock: get_atomic_clock_realtime(),
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            normalize_prices: true,
         })
     }
 
@@ -930,6 +951,17 @@ impl HyperliquidHttpClient {
     #[must_use]
     pub fn is_testnet(&self) -> bool {
         self.inner.is_testnet()
+    }
+
+    /// Returns whether order price normalization is enabled.
+    #[must_use]
+    pub fn normalize_prices(&self) -> bool {
+        self.normalize_prices
+    }
+
+    /// Sets whether to normalize order prices to 5 significant figures.
+    pub fn set_normalize_prices(&mut self, value: bool) {
+        self.normalize_prices = value;
     }
 
     /// Gets the user address derived from the private key (if client has credentials).
@@ -1027,6 +1059,7 @@ impl HyperliquidHttpClient {
             {
                 return Some(instrument.clone());
             }
+
             if let Some(instrument) =
                 instruments_by_coin.get(&(*coin, HyperliquidProductType::Spot))
             {
@@ -1040,6 +1073,7 @@ impl HyperliquidHttpClient {
                 .spot_fill_coins
                 .read()
                 .expect("Failed to acquire read lock");
+
             if let Some(symbol) = spot_fill_coins.get(coin) {
                 // Look up by full symbol in instruments map (not instruments_by_coin
                 // which uses raw_symbol)
@@ -1047,6 +1081,7 @@ impl HyperliquidHttpClient {
                     .instruments
                     .read()
                     .expect("Failed to acquire read lock");
+
                 if let Some(instrument) = instruments.get(symbol) {
                     return Some(instrument.clone());
                 }
@@ -1057,8 +1092,7 @@ impl HyperliquidHttpClient {
         if coin.as_str().starts_with("vntls:") {
             log::info!("Creating synthetic instrument for vault token: {coin}");
 
-            let clock = nautilus_core::time::get_atomic_clock_realtime();
-            let ts_event = clock.get_time_ns();
+            let ts_event = self.clock.get_time_ns();
 
             // Create synthetic vault token instrument
             let symbol_str = format!("{coin}-USDC-SPOT");
@@ -1186,7 +1220,8 @@ impl HyperliquidHttpClient {
             );
         }
 
-        Ok(instruments_from_defs_owned(defs))
+        let ts_init = self.clock.get_time_ns();
+        Ok(instruments_from_defs_owned(defs, ts_init))
     }
 
     /// Get asset index for a symbol from the cached map.
@@ -1206,6 +1241,21 @@ impl HyperliquidHttpClient {
             .read()
             .expect("Failed to acquire read lock");
         asset_indices.get(&Ustr::from(symbol)).copied()
+    }
+
+    /// Get the price precision for a cached instrument by symbol.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal read lock cannot be acquired.
+    pub fn get_price_precision(&self, symbol: &str) -> Option<u8> {
+        let instruments = self
+            .instruments
+            .read()
+            .expect("Failed to acquire read lock");
+        instruments
+            .get(&Ustr::from(symbol))
+            .map(|inst| inst.price_precision())
     }
 
     /// Get mapping from spot fill coin identifiers to instrument symbols.
@@ -1290,6 +1340,11 @@ impl HyperliquidHttpClient {
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
         self.inner.info_clearinghouse_state(user).await
+    }
+
+    /// Get user fee schedule and effective rates.
+    pub async fn info_user_fees(&self, user: &str) -> Result<Value> {
+        self.inner.info_user_fees(user).await
     }
 
     /// Get candle/bar data for a coin.
@@ -1396,6 +1451,141 @@ impl HyperliquidHttpClient {
         }
     }
 
+    /// Modify an order on the Hyperliquid exchange.
+    ///
+    /// The HL modify API requires a full replacement order spec plus the
+    /// venue order ID. The caller must provide all order fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the asset index is not found, the venue order ID
+    /// is invalid, or the API returns an error.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn modify_order(
+        &self,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        price: Price,
+        quantity: Quantity,
+        trigger_price: Option<Price>,
+        reduce_only: bool,
+        post_only: bool,
+        time_in_force: TimeInForce,
+        client_order_id: Option<ClientOrderId>,
+    ) -> Result<()> {
+        let symbol = instrument_id.symbol.as_str();
+        let asset_id = self.get_asset_index(symbol).ok_or_else(|| {
+            Error::bad_request(format!(
+                "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
+            ))
+        })?;
+
+        let oid: u64 = venue_order_id
+            .as_str()
+            .parse()
+            .map_err(|_| Error::bad_request("Invalid venue order ID format"))?;
+
+        let is_buy = matches!(order_side, OrderSide::Buy);
+        let decimals = self.get_price_precision(symbol).unwrap_or(2);
+
+        let normalized_price = if self.normalize_prices {
+            normalize_price(price.as_decimal(), decimals).normalize()
+        } else {
+            price.as_decimal().normalize()
+        };
+
+        let size = quantity.as_decimal().normalize();
+        let cloid = client_order_id.map(Cloid::from_client_order_id);
+
+        let kind = match order_type {
+            OrderType::Market => HyperliquidExecOrderKind::Limit {
+                limit: HyperliquidExecLimitParams {
+                    tif: HyperliquidExecTif::Ioc,
+                },
+            },
+            OrderType::Limit => {
+                let tif = time_in_force_to_hyperliquid_tif(time_in_force, post_only)
+                    .map_err(|e| Error::bad_request(format!("{e}")))?;
+                HyperliquidExecOrderKind::Limit {
+                    limit: HyperliquidExecLimitParams { tif },
+                }
+            }
+            OrderType::StopMarket
+            | OrderType::StopLimit
+            | OrderType::MarketIfTouched
+            | OrderType::LimitIfTouched => {
+                if let Some(trig_px) = trigger_price {
+                    let trigger_price_decimal = if self.normalize_prices {
+                        normalize_price(trig_px.as_decimal(), decimals).normalize()
+                    } else {
+                        trig_px.as_decimal().normalize()
+                    };
+                    let tpsl = match order_type {
+                        OrderType::StopMarket | OrderType::StopLimit => HyperliquidExecTpSl::Sl,
+                        _ => HyperliquidExecTpSl::Tp,
+                    };
+                    let is_market = matches!(
+                        order_type,
+                        OrderType::StopMarket | OrderType::MarketIfTouched
+                    );
+                    HyperliquidExecOrderKind::Trigger {
+                        trigger: HyperliquidExecTriggerParams {
+                            is_market,
+                            trigger_px: trigger_price_decimal,
+                            tpsl,
+                        },
+                    }
+                } else {
+                    return Err(Error::bad_request("Trigger orders require a trigger price"));
+                }
+            }
+            _ => {
+                return Err(Error::bad_request(format!(
+                    "Order type {order_type:?} not supported for modify"
+                )));
+            }
+        };
+
+        let order = HyperliquidExecPlaceOrderRequest {
+            asset: asset_id,
+            is_buy,
+            price: normalized_price,
+            size,
+            reduce_only,
+            kind,
+            cloid,
+        };
+
+        let action = HyperliquidExecAction::Modify {
+            modify: HyperliquidExecModifyOrderRequest { oid, order },
+        };
+
+        let response = self.inner.post_action_exec(&action).await?;
+
+        match response {
+            ref r @ HyperliquidExchangeResponse::Status { .. } if r.is_ok() => {
+                if let Some(inner_error) = extract_inner_error(&response) {
+                    Err(Error::bad_request(format!(
+                        "Modify order rejected: {inner_error}",
+                    )))
+                } else {
+                    Ok(())
+                }
+            }
+            HyperliquidExchangeResponse::Status {
+                status,
+                response: error_data,
+            } => Err(Error::bad_request(format!(
+                "Modify order failed: status={status}, error={error_data}"
+            ))),
+            HyperliquidExchangeResponse::Error { error } => {
+                Err(Error::bad_request(format!("Modify order error: {error}")))
+            }
+        }
+    }
+
     /// Request order status reports for a user.
     ///
     /// Fetches open orders via `info_frontend_open_orders` and parses them into OrderStatusReports.
@@ -1424,7 +1614,7 @@ impl HyperliquidHttpClient {
             .map_err(|e| Error::bad_request(format!("Failed to parse orders: {e}")))?;
 
         let mut reports = Vec::new();
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.clock.get_time_ns();
 
         for order_value in orders {
             // Parse the order data
@@ -1493,7 +1683,7 @@ impl HyperliquidHttpClient {
         let fills_response = self.info_user_fills(user).await?;
 
         let mut reports = Vec::new();
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.clock.get_time_ns();
 
         for fill in fills_response {
             // Get instrument from cache or create synthetic for vault tokens
@@ -1550,7 +1740,7 @@ impl HyperliquidHttpClient {
             .clone();
 
         let mut reports = Vec::new();
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.clock.get_time_ns();
 
         for position_value in asset_positions {
             // Extract coin from position data
@@ -1601,7 +1791,7 @@ impl HyperliquidHttpClient {
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let state_response = self.info_clearinghouse_state(user).await?;
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.clock.get_time_ns();
 
         log::trace!("Clearinghouse state response: {state_response}");
 
@@ -1772,6 +1962,7 @@ impl HyperliquidHttpClient {
         );
         Ok(bars)
     }
+
     /// Submits an order to the exchange.
     ///
     /// # Errors
@@ -1800,19 +1991,30 @@ impl HyperliquidHttpClient {
         })?;
 
         let is_buy = matches!(order_side, OrderSide::Buy);
+        let price_precision = self.get_price_precision(symbol).unwrap_or(2);
 
         let price_decimal = match price {
+            Some(px) if self.normalize_prices => {
+                normalize_price(px.as_decimal(), price_precision).normalize()
+            }
             Some(px) => px.as_decimal().normalize(),
-            None => {
-                if matches!(
-                    order_type,
-                    OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched
-                ) {
-                    Decimal::ZERO
-                } else {
-                    return Err(Error::bad_request("Limit orders require a price"));
+            None if matches!(order_type, OrderType::Market) => Decimal::ZERO,
+            None if matches!(
+                order_type,
+                OrderType::StopMarket | OrderType::MarketIfTouched
+            ) =>
+            {
+                match trigger_price {
+                    Some(tp) => {
+                        let derived =
+                            derive_limit_from_trigger(tp.as_decimal().normalize(), is_buy);
+                        let sig_rounded = round_to_sig_figs(derived, 5);
+                        clamp_price_to_precision(sig_rounded, price_precision, is_buy).normalize()
+                    }
+                    None => Decimal::ZERO,
                 }
             }
+            None => return Err(Error::bad_request("Limit orders require a price")),
         };
 
         let size_decimal = quantity.as_decimal().normalize();
@@ -1850,7 +2052,11 @@ impl HyperliquidHttpClient {
             | OrderType::MarketIfTouched
             | OrderType::LimitIfTouched => {
                 if let Some(trig_px) = trigger_price {
-                    let trigger_price_decimal = trig_px.as_decimal().normalize();
+                    let trigger_price_decimal = if self.normalize_prices {
+                        normalize_price(trig_px.as_decimal(), price_precision).normalize()
+                    } else {
+                        trig_px.as_decimal().normalize()
+                    };
 
                     // Determine TP/SL type based on order type
                     // StopMarket/StopLimit are always Sl (protective stops)
@@ -1899,7 +2105,10 @@ impl HyperliquidHttpClient {
         let action = HyperliquidExecAction::Order {
             orders: vec![hyperliquid_order],
             grouping: HyperliquidExecGrouping::Na,
-            builder: resolve_builder_fee(symbol, post_only),
+            builder: Some(HyperliquidExecBuilderFee {
+                address: NAUTILUS_BUILDER_ADDRESS.to_string(),
+                fee_tenths_bp: 0,
+            }),
         };
 
         let response = self.inner.post_action_exec(&action).await?;
@@ -1939,7 +2148,7 @@ impl HyperliquidHttpClient {
                 let account_id = self
                     .account_id
                     .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-                let ts_init = get_atomic_clock_realtime().get_time_ns();
+                let ts_init = self.clock.get_time_ns();
 
                 match order_status {
                     HyperliquidExecOrderStatus::Resting { resting } => self
@@ -2030,8 +2239,7 @@ impl HyperliquidHttpClient {
         account_id: AccountId,
         ts_init: UnixNanos,
     ) -> Result<OrderStatusReport> {
-        let clock = get_atomic_clock_realtime();
-        let ts_accepted = clock.get_time_ns();
+        let ts_accepted = self.clock.get_time_ns();
         let ts_last = ts_accepted;
         let report_id = UUID4::new();
 
@@ -2083,23 +2291,24 @@ impl HyperliquidHttpClient {
                     "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
                 ))
             })?;
-            let request = order_to_hyperliquid_request_with_asset(order, asset)
-                .map_err(|e| Error::bad_request(format!("Failed to convert order: {e}")))?;
+            let price_decimals = self.get_price_precision(symbol).unwrap_or(2);
+            let request = order_to_hyperliquid_request_with_asset(
+                order,
+                asset,
+                price_decimals,
+                self.normalize_prices,
+            )
+            .map_err(|e| Error::bad_request(format!("Failed to convert order: {e}")))?;
             hyperliquid_orders.push(request);
         }
-
-        let order_props: Vec<(String, bool)> = orders
-            .iter()
-            .map(|o| (o.instrument_id().symbol.to_string(), o.is_post_only()))
-            .collect();
-        let batch_refs: Vec<(&str, bool)> =
-            order_props.iter().map(|(s, p)| (s.as_str(), *p)).collect();
-        let builder = resolve_builder_fee_batch(&batch_refs);
 
         let action = HyperliquidExecAction::Order {
             orders: hyperliquid_orders,
             grouping: HyperliquidExecGrouping::Na,
-            builder,
+            builder: Some(HyperliquidExecBuilderFee {
+                address: NAUTILUS_BUILDER_ADDRESS.to_string(),
+                fee_tenths_bp: 0,
+            }),
         };
 
         // Submit to exchange using the typed exec endpoint
@@ -2128,7 +2337,7 @@ impl HyperliquidHttpClient {
                 let account_id = self
                     .account_id
                     .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-                let ts_init = get_atomic_clock_realtime().get_time_ns();
+                let ts_init = self.clock.get_time_ns();
 
                 // Validate we have the same number of statuses as orders submitted
                 if order_response.statuses.len() != orders.len() {

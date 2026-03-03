@@ -611,7 +611,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         end_date_time_str = (
             end_date_time.strftime("%Y%m%d %H:%M:%S %Z") if contract.secType != "CONTFUT" else ""
         )
-        name = (bar_type, end_date_time_str)
+        name = (str(bar_type), end_date_time_str)
 
         if not (request := self._requests.get(name=name)):
             req_id = self._next_req_id()
@@ -1036,7 +1036,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         Return the requested historical data bars.
         """
         if request := self._requests.get(req_id=req_id):
-            bar_type = request.name[0]
+            bar_type = BarType.from_str(request.name[0])
             bar = await self._ib_bar_to_nautilus_bar(
                 bar_type=bar_type,
                 bar=bar,

@@ -75,11 +75,6 @@ use crate::{
 /// - Avoid circular references between Rust and Python memory management.
 /// - Ensure proper Python reference counting under the GIL.
 /// - Allow both Rust and Python garbage collectors to work correctly.
-///
-/// # Safety
-///
-/// This function properly acquires the Python GIL before performing the clone operation,
-/// ensuring thread-safe access to the Python object and correct reference counting.
 #[must_use]
 pub fn clone_py_object(obj: &Py<PyAny>) -> Py<PyAny> {
     Python::attach(|py| obj.clone_ref(py))
@@ -89,6 +84,22 @@ pub fn clone_py_object(obj: &Py<PyAny>) -> Py<PyAny> {
 pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         log::error!("Error calling Python: {e}");
+    }
+}
+
+/// Schedules a Python callback on the event loop thread via `call_soon_threadsafe`.
+///
+/// This must be used instead of [`call_python`] when invoking Python callbacks
+/// from Tokio worker threads, since Python callbacks that enter the kernel
+/// (e.g. via `MessageBus.send`) must run on the asyncio event loop thread.
+pub fn call_python_threadsafe(
+    py: Python,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+    py_obj: Py<PyAny>,
+) {
+    if let Err(e) = call_soon.call1(py, (callback, py_obj)) {
+        log::error!("Error scheduling Python callback on event loop: {e}");
     }
 }
 

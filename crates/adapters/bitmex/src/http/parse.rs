@@ -18,7 +18,7 @@
 use std::str::FromStr;
 
 use dashmap::DashMap;
-use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
+use nautilus_core::{UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType},
@@ -774,14 +774,8 @@ pub fn parse_order_status_report(
         );
     };
     let report_id = UUID4::new();
-    let ts_accepted = order.transact_time.map_or_else(
-        || get_atomic_clock_realtime().get_time_ns(),
-        UnixNanos::from,
-    );
-    let ts_last = order.timestamp.map_or_else(
-        || get_atomic_clock_realtime().get_time_ns(),
-        UnixNanos::from,
-    );
+    let ts_accepted = order.transact_time.map_or(ts_init, UnixNanos::from);
+    let ts_last = order.timestamp.map_or(ts_init, UnixNanos::from);
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -967,10 +961,7 @@ pub fn parse_fill_report(
     let liquidity_side = parse_liquidity_side(&exec.last_liquidity_ind);
     let client_order_id = exec.cl_ord_id.map(ClientOrderId::new);
     let venue_position_id = None; // Not applicable on BitMEX
-    let ts_event = exec.transact_time.map_or_else(
-        || get_atomic_clock_realtime().get_time_ns(),
-        UnixNanos::from,
-    );
+    let ts_event = exec.transact_time.map_or(ts_init, UnixNanos::from);
 
     Ok(FillReport::new(
         account_id,

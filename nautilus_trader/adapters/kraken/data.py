@@ -204,6 +204,7 @@ class KrakenDataClient(LiveMarketDataClient):
         # Connect spot WebSocket if configured
         if self._ws_client_spot is not None:
             await self._ws_client_spot.connect(
+                self._loop,
                 instruments,
                 self._handle_msg,
             )
@@ -214,7 +215,7 @@ class KrakenDataClient(LiveMarketDataClient):
         # Connect futures WebSocket if configured
         if self._ws_client_futures is not None:
             instruments_pyo3 = self.instrument_provider.instruments_pyo3()
-            await self._ws_client_futures.connect(instruments_pyo3, self._handle_msg)
+            await self._ws_client_futures.connect(self._loop, instruments_pyo3, self._handle_msg)
             self._ws_client_futures_connected = True
             self._log.info(
                 f"Connected to futures websocket {self._ws_client_futures.url}",
@@ -552,7 +553,7 @@ class KrakenDataClient(LiveMarketDataClient):
         # Get instruments for price precision lookup
         instruments_pyo3 = self.instrument_provider.instruments_pyo3()
 
-        await self._ws_client_futures.connect(instruments_pyo3, self._handle_msg)
+        await self._ws_client_futures.connect(self._loop, instruments_pyo3, self._handle_msg)
         self._ws_client_futures_connected = True
 
         self._log.info(

@@ -310,6 +310,7 @@ impl DatabentoDataLoader {
                 dbn_stream
                     .advance()
                     .map_err(|e| anyhow::anyhow!("Stream advance error: {e}"))?;
+
                 if let Some(rec) = dbn_stream.get() {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = if let Some(id) = &instrument_id {
@@ -346,6 +347,9 @@ impl DatabentoDataLoader {
 
     /// Loads all instrument definitions from a DBN file.
     ///
+    /// When `skip_on_error` is true, instruments that fail to decode are logged
+    /// as warnings and skipped. When false (default), any decode error is propagated.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading instruments fails.
@@ -353,9 +357,21 @@ impl DatabentoDataLoader {
         &mut self,
         filepath: &Path,
         use_exchange_as_venue: bool,
+        skip_on_error: bool,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
-        self.read_definition_records(filepath, use_exchange_as_venue)?
-            .collect::<Result<Vec<_>, _>>()
+        if skip_on_error {
+            let mut instruments = Vec::new();
+            for result in self.read_definition_records(filepath, use_exchange_as_venue)? {
+                match result {
+                    Ok(instrument) => instruments.push(instrument),
+                    Err(e) => log::warn!("Skipping instrument: {e}"),
+                }
+            }
+            Ok(instruments)
+        } else {
+            self.read_definition_records(filepath, use_exchange_as_venue)?
+                .collect::<Result<Vec<_>, _>>()
+        }
     }
 
     /// Loads order book delta messages from a DBN MBO schema file.
@@ -840,7 +856,7 @@ mod tests {
     #[rstest]
     #[case(test_data_path().join("test_data.definition.dbn.zst"))]
     fn test_load_instruments(mut loader: DatabentoDataLoader, #[case] path: PathBuf) {
-        let instruments = loader.load_instruments(&path, false).unwrap();
+        let instruments = loader.load_instruments(&path, false, false).unwrap();
 
         assert_eq!(instruments.len(), 2);
     }

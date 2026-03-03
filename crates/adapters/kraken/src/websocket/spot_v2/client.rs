@@ -252,8 +252,8 @@ impl KrakenSpotWebSocketClient {
                                                 interval: None,
                                                 event_trigger: None,
                                                 token: Some(token.clone()),
-                                                snap_orders: Some(true),
-                                                snap_trades: Some(true),
+                                                snap_orders: Some(false),
+                                                snap_trades: Some(false),
                                             }),
                                             req_id: Some(req_id),
                                         };
@@ -361,7 +361,6 @@ impl KrakenSpotWebSocketClient {
                             log::error!("Failed to send message (receiver dropped)");
                             break;
                         }
-                        continue;
                     }
                     Some(msg) => {
                         if out_tx.send(msg).is_err() {
@@ -564,6 +563,18 @@ impl KrakenSpotWebSocketClient {
             })
         {
             log::debug!("Failed to send cache client order command to handler: {e}");
+        }
+    }
+
+    /// Caches a truncated cl_ord_id mapping for reverse lookup.
+    pub fn cache_truncated_id(&self, truncated: String, original: ClientOrderId) {
+        if let Ok(cmd_tx) = self.cmd_tx.try_read()
+            && let Err(e) = cmd_tx.send(SpotHandlerCommand::CacheTruncatedId {
+                truncated,
+                original,
+            })
+        {
+            log::debug!("Failed to send cache truncated ID command to handler: {e}");
         }
     }
 

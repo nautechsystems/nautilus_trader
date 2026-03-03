@@ -108,6 +108,7 @@ impl SandboxInner {
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
         if let Some(instrument) = instrument {
             self.ensure_matching_engine(&instrument);
+
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
                 engine.get_engine_mut().process_quote_tick(quote);
             }
@@ -125,6 +126,7 @@ impl SandboxInner {
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
         if let Some(instrument) = instrument {
             self.ensure_matching_engine(&instrument);
+
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
                 engine.get_engine_mut().process_trade_tick(trade);
             }
@@ -142,6 +144,7 @@ impl SandboxInner {
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
         if let Some(instrument) = instrument {
             self.ensure_matching_engine(&instrument);
+
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
                 engine.get_engine_mut().process_bar(bar);
             }
@@ -154,6 +157,7 @@ impl SandboxInner {
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
         if let Some(instrument) = instrument {
             self.ensure_matching_engine(&instrument);
+
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id)
                 && let Err(e) = engine.get_engine_mut().process_order_book_deltas(deltas)
             {
@@ -654,10 +658,12 @@ impl ExecutionClient for SandboxExecutionClient {
 
         // Update matching engine with latest market data from cache
         let cache = self.cache.borrow();
+
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
             if let Some(quote) = cache.quote(&instrument_id) {
                 engine.get_engine_mut().process_quote_tick(quote);
             }
+
             if self.config.trade_execution
                 && let Some(trade) = cache.trade(&instrument_id)
             {
@@ -667,6 +673,7 @@ impl ExecutionClient for SandboxExecutionClient {
         drop(cache);
 
         let account_id = self.core.borrow().account_id;
+
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
             engine
                 .get_engine_mut()
@@ -710,10 +717,12 @@ impl ExecutionClient for SandboxExecutionClient {
 
                 // Update with latest market data
                 let cache = self.cache.borrow();
+
                 if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
                     if let Some(quote) = cache.quote(&instrument_id) {
                         engine.get_engine_mut().process_quote_tick(quote);
                     }
+
                     if self.config.trade_execution
                         && let Some(trade) = cache.trade(&instrument_id)
                     {

@@ -498,10 +498,13 @@ impl OKXHttpClient {
         order_side,
         order_type,
         quantity,
-        trigger_price,
+        trigger_price=None,
         trigger_type=None,
         limit_price=None,
         reduce_only=None,
+        callback_ratio=None,
+        callback_spread=None,
+        activation_price=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_place_algo_order<'py>(
@@ -515,10 +518,13 @@ impl OKXHttpClient {
         order_side: OrderSide,
         order_type: OrderType,
         quantity: Quantity,
-        trigger_price: Price,
+        trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
         limit_price: Option<Price>,
         reduce_only: Option<bool>,
+        callback_ratio: Option<String>,
+        callback_spread: Option<String>,
+        activation_price: Option<Price>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -538,6 +544,9 @@ impl OKXHttpClient {
                     trigger_type,
                     limit_price,
                     reduce_only,
+                    callback_ratio,
+                    callback_spread,
+                    activation_price,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
@@ -548,12 +557,15 @@ impl OKXHttpClient {
                 if let Some(algo_cl_ord_id) = resp.algo_cl_ord_id {
                     dict.set_item("algo_cl_ord_id", algo_cl_ord_id)?;
                 }
+
                 if let Some(s_code) = resp.s_code {
                     dict.set_item("s_code", s_code)?;
                 }
+
                 if let Some(s_msg) = resp.s_msg {
                     dict.set_item("s_msg", s_msg)?;
                 }
+
                 if let Some(req_id) = resp.req_id {
                     dict.set_item("req_id", req_id)?;
                 }
@@ -583,6 +595,63 @@ impl OKXHttpClient {
                 if let Some(s_code) = resp.s_code {
                     dict.set_item("s_code", s_code)?;
                 }
+
+                if let Some(s_msg) = resp.s_msg {
+                    dict.set_item("s_msg", s_msg)?;
+                }
+                Ok(dict.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(name = "amend_algo_order")]
+    #[pyo3(signature = (
+        instrument_id,
+        algo_id,
+        new_trigger_price=None,
+        new_limit_price=None,
+        new_quantity=None,
+        new_callback_ratio=None,
+        new_callback_spread=None,
+        new_activation_price=None,
+    ))]
+    fn py_amend_algo_order<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        algo_id: String,
+        new_trigger_price: Option<Price>,
+        new_limit_price: Option<Price>,
+        new_quantity: Option<Quantity>,
+        new_callback_ratio: Option<String>,
+        new_callback_spread: Option<String>,
+        new_activation_price: Option<Price>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let resp = client
+                .amend_algo_order_with_domain_types(
+                    instrument_id,
+                    algo_id,
+                    new_trigger_price,
+                    new_limit_price,
+                    new_quantity,
+                    new_callback_ratio,
+                    new_callback_spread,
+                    new_activation_price,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let dict = PyDict::new(py);
+                dict.set_item("algo_id", resp.algo_id)?;
+                if let Some(s_code) = resp.s_code {
+                    dict.set_item("s_code", s_code)?;
+                }
+
                 if let Some(s_msg) = resp.s_msg {
                     dict.set_item("s_msg", s_msg)?;
                 }
@@ -630,6 +699,7 @@ impl OKXHttpClient {
                         if let Some(s_code) = resp.s_code {
                             dict.set_item("s_code", s_code).expect("set s_code");
                         }
+
                         if let Some(s_msg) = resp.s_msg {
                             dict.set_item("s_msg", s_msg).expect("set s_msg");
                         }
@@ -638,6 +708,48 @@ impl OKXHttpClient {
                     .collect();
                 let pylist = PyList::new(py, results)?;
                 Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    #[pyo3(name = "cancel_advance_algo_order")]
+    fn py_cancel_advance_algo_order<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        algo_id: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let request = OKXCancelAlgoOrderRequest {
+                inst_id: instrument_id.symbol.to_string(),
+                inst_id_code: None,
+                algo_id: Some(algo_id),
+                algo_cl_ord_id: None,
+            };
+
+            let mut responses = client
+                .cancel_advance_algo_orders(vec![request])
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let resp = responses
+                .pop()
+                .ok_or_else(|| to_pyvalue_err("Empty response"))?;
+
+            Python::attach(|py| {
+                let dict = PyDict::new(py);
+                dict.set_item("algo_id", resp.algo_id)?;
+
+                if let Some(s_code) = resp.s_code {
+                    dict.set_item("s_code", s_code)?;
+                }
+
+                if let Some(s_msg) = resp.s_msg {
+                    dict.set_item("s_msg", s_msg)?;
+                }
+                Ok(dict.into_py_any_unwrap(py))
             })
         })
     }

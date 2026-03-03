@@ -607,8 +607,7 @@ impl RiskEngine {
 
     fn check_order(&self, instrument: InstrumentAny, order: OrderAny) -> bool {
         if order.time_in_force() == TimeInForce::Gtd {
-            // SAFETY: GTD guarantees an expire time
-            let expire_time = order.expire_time().unwrap();
+            let expire_time = order.expire_time().expect("GTD has expire time");
             if expire_time <= self.clock.borrow().timestamp_ns() {
                 self.deny_order(
                     order,
@@ -653,6 +652,7 @@ impl RiskEngine {
             Some(order.quantity()),
             order.is_quote_quantity(),
         );
+
         if let Some(risk_msg) = risk_msg {
             self.deny_order(order, &risk_msg);
             return false; // Denied
@@ -694,6 +694,7 @@ impl RiskEngine {
         };
         let free = cash_account.balance_free(Some(instrument.quote_currency()));
         let allow_borrowing = cash_account.allow_borrowing;
+
         if self.config.debug {
             log::debug!("Free cash: {free:?}");
         }
@@ -779,6 +780,7 @@ impl RiskEngine {
                     } else {
                         // Validate trailing offset type is supported
                         let offset_type = order.trailing_offset_type().unwrap();
+
                         if !matches!(
                             offset_type,
                             TrailingOffsetType::Price
@@ -1020,6 +1022,7 @@ impl RiskEngine {
             if base_currency.is_none() {
                 base_currency = instrument.base_currency();
             }
+
             if order.is_buy() {
                 match cum_notional_buy.as_mut() {
                     Some(cum_notional_buy_val) => {
@@ -1068,6 +1071,7 @@ impl RiskEngine {
                             ));
                         }
                     }
+
                     if self.config.debug {
                         log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
                     }
@@ -1115,6 +1119,7 @@ impl RiskEngine {
                     if self.config.debug {
                         log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
                     }
+
                     if !allow_borrowing
                         && let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
                         && cum_notional_sell.raw > free.raw
@@ -1206,6 +1211,7 @@ impl RiskEngine {
                     let cache = self.cache.borrow();
                     cache.order(&command.client_order_id).cloned()
                 };
+
                 if let Some(order) = order {
                     self.deny_order(order, reason);
                 } else {
@@ -1303,6 +1309,7 @@ impl RiskEngine {
                         let cache = self.cache.borrow();
                         cache.order(&submit_order.client_order_id).cloned()
                     };
+
                     if let Some(order) = order {
                         self.deny_order(order, "TradingState::HALTED");
                     }
@@ -1322,6 +1329,7 @@ impl RiskEngine {
                         let cache = self.cache.borrow();
                         cache.order(&submit_order.client_order_id).cloned()
                     };
+
                     if let Some(order) = order {
                         if order.is_buy() && self.portfolio.is_net_long(&instrument.id()) {
                             self.deny_order(

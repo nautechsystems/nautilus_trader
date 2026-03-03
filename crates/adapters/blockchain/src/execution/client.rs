@@ -85,6 +85,7 @@ impl BlockchainExecutionClient {
 
         // Initialize token universe, so we can fetch them from the blockchain later.
         let mut token_universe = HashSet::new();
+
         if let Some(specified_tokens) = config.tokens {
             for token in specified_tokens {
                 let token_address = validate_address(token.as_str())?;

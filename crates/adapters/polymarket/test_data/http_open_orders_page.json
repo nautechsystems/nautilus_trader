@@ -1,0 +1,39 @@
+{
+  "data": [
+    {
+      "associate_trades": [],
+      "id": "0xaaaa000000000000000000000000000000000000000000000000000000000001",
+      "status": "LIVE",
+      "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+      "original_size": "200.0000",
+      "outcome": "Yes",
+      "maker_address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "owner": "00000000-0000-0000-0000-000000000001",
+      "price": "0.6000",
+      "side": "BUY",
+      "size_matched": "0.0000",
+      "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+      "expiration": null,
+      "order_type": "GTC",
+      "created_at": 1703875200001
+    },
+    {
+      "associate_trades": null,
+      "id": "0xbbbb000000000000000000000000000000000000000000000000000000000002",
+      "status": "LIVE",
+      "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+      "original_size": "150.0000",
+      "outcome": "No",
+      "maker_address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "owner": "00000000-0000-0000-0000-000000000001",
+      "price": "0.4000",
+      "side": "SELL",
+      "size_matched": "50.0000",
+      "asset_id": "52114319501245915516055106046884209969926127482827954674443846427813813222426",
+      "expiration": null,
+      "order_type": "GTD",
+      "created_at": 1703875200002
+    }
+  ],
+  "next_cursor": "LTE="
+}

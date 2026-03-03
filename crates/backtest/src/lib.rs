@@ -67,5 +67,11 @@ pub mod exchange;
 pub mod execution_client;
 pub mod modules;
 
+#[cfg(feature = "streaming")]
+pub mod node;
+
+#[cfg(feature = "python")]
+pub mod python;
+
 #[cfg(feature = "ffi")]
 pub mod ffi;

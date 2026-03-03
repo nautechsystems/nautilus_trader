@@ -157,7 +157,6 @@ async fn stream_from_websocket(
                     | tungstenite::Message::Pong(_)
                     | tungstenite::Message::Ping(_) => {
                         log::trace!("Received {msg:?}");
-                        continue; // Skip and continue to the next message
                     }
                     tungstenite::Message::Close(Some(frame)) => {
                         let reason = frame.reason.to_string();

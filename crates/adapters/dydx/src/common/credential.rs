@@ -37,9 +37,22 @@ use cosmrs::{
     crypto::{PublicKey, secp256k1::SigningKey},
     tx::SignDoc,
 };
-use nautilus_core::env::get_or_env_var_opt;
+use nautilus_core::{env::get_or_env_var_opt, string::REDACTED};
 
 use crate::common::consts::DYDX_BECH32_PREFIX;
+
+/// Returns the environment variable names for credentials,
+/// based on network.
+///
+/// Returns `(private_key_var, wallet_address_var)`.
+#[must_use]
+pub fn credential_env_vars(is_testnet: bool) -> (&'static str, &'static str) {
+    if is_testnet {
+        ("DYDX_TESTNET_PRIVATE_KEY", "DYDX_TESTNET_WALLET_ADDRESS")
+    } else {
+        ("DYDX_PRIVATE_KEY", "DYDX_WALLET_ADDRESS")
+    }
+}
 
 /// dYdX wallet credentials for signing blockchain transactions.
 ///
@@ -63,7 +76,7 @@ impl Debug for DydxCredential {
         f.debug_struct(stringify!(DydxCredential))
             .field("address", &self.address)
             .field("authenticator_ids", &self.authenticator_ids)
-            .field("signing_key", &"<redacted>")
+            .field("signing_key", &REDACTED)
             .finish()
     }
 }
@@ -109,15 +122,10 @@ impl DydxCredential {
     ///
     /// Returns an error if a credential is set but invalid.
     pub fn from_env(is_testnet: bool, authenticator_ids: Vec<u64>) -> anyhow::Result<Option<Self>> {
-        let private_key_env = if is_testnet {
-            "DYDX_TESTNET_PRIVATE_KEY"
-        } else {
-            "DYDX_PRIVATE_KEY"
-        };
+        let (private_key_env, _) = credential_env_vars(is_testnet);
 
-        if let Some(private_key) = std::env::var(private_key_env)
-            .ok()
-            .filter(|s| !s.trim().is_empty())
+        if let Some(private_key) =
+            get_or_env_var_opt(None, private_key_env).filter(|s| !s.trim().is_empty())
         {
             return Ok(Some(Self::from_private_key(
                 &private_key,
@@ -152,14 +160,8 @@ impl DydxCredential {
         }
 
         // 2. Try private key from env var
-        let private_key_env = if is_testnet {
-            "DYDX_TESTNET_PRIVATE_KEY"
-        } else {
-            "DYDX_PRIVATE_KEY"
-        };
-        if let Some(pk) = std::env::var(private_key_env)
-            .ok()
-            .filter(|s| !s.trim().is_empty())
+        let (private_key_env, _) = credential_env_vars(is_testnet);
+        if let Some(pk) = get_or_env_var_opt(None, private_key_env).filter(|s| !s.trim().is_empty())
         {
             return Ok(Some(Self::from_private_key(&pk, authenticator_ids)?));
         }
@@ -232,13 +234,8 @@ impl DydxCredential {
 /// Returns `None` if neither config nor env var provides a wallet address.
 #[must_use]
 pub fn resolve_wallet_address(wallet_address: Option<String>, is_testnet: bool) -> Option<String> {
-    let env_var = if is_testnet {
-        "DYDX_TESTNET_WALLET_ADDRESS"
-    } else {
-        "DYDX_WALLET_ADDRESS"
-    };
-
-    get_or_env_var_opt(wallet_address, env_var).filter(|s| !s.trim().is_empty())
+    let (_, wallet_env_var) = credential_env_vars(is_testnet);
+    get_or_env_var_opt(wallet_address, wallet_env_var).filter(|s| !s.trim().is_empty())
 }
 
 #[cfg(test)]
@@ -307,7 +304,7 @@ mod tests {
 
         let debug_str = format!("{credential:?}");
         // Should contain redacted marker
-        assert!(debug_str.contains("<redacted>"));
+        assert!(debug_str.contains(REDACTED));
         // Should contain the struct name
         assert!(debug_str.contains("DydxCredential"));
         // Should show address

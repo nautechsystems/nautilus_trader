@@ -146,6 +146,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._ts_last_query: dict[ClientOrderId, int] = {}
         self._order_local_activity_ns: dict[ClientOrderId, int] = {}
         self._position_local_activity_ns: dict[InstrumentId, int] = {}
+        self._position_recon_retries: Counter[InstrumentId] = Counter()
         self._recent_fills_cache: dict[TradeId, int] = {}  # TradeId -> timestamp_ns (TTL cache)
         self._inferred_fill_ts: dict[ClientOrderId, int] = {}
         self._fill_application_audit: dict[ClientOrderId, list[tuple[TradeId, str, int]]] = {}
@@ -202,6 +203,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.position_check_interval_secs: float | None = config.position_check_interval_secs
         self.position_check_lookback_mins: int = config.position_check_lookback_mins
         self.position_check_threshold_ms: int = config.position_check_threshold_ms
+        self.position_check_retries: int = config.position_check_retries
         self.reconciliation_startup_delay_secs: float = config.reconciliation_startup_delay_secs
         self.purge_closed_orders_interval_mins = config.purge_closed_orders_interval_mins
         self.purge_closed_orders_buffer_mins = config.purge_closed_orders_buffer_mins
@@ -232,6 +234,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.position_check_interval_secs=}", LogColor.BLUE)
         self._log.info(f"{config.position_check_lookback_mins=}", LogColor.BLUE)
         self._log.info(f"{config.position_check_threshold_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.position_check_retries=}", LogColor.BLUE)
         self._log.info(f"{config.reconciliation_startup_delay_secs=}", LogColor.BLUE)
         self._log.info(f"{config.purge_closed_orders_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.purge_closed_orders_buffer_mins=}", LogColor.BLUE)
@@ -911,6 +914,12 @@ class LiveExecutionEngine(ExecutionEngine):
             venue_positions,
         )
 
+        # Prune retry counters for instruments no longer actively discrepant
+        active_instruments = set(positions_by_instrument) | set(venue_positions)
+        stale = [iid for iid in self._position_recon_retries if iid not in active_instruments]
+        for iid in stale:
+            self._position_recon_retries.pop(iid, None)
+
     async def _query_position_status_reports(self) -> dict[InstrumentId, PositionStatusReport]:
         clients = self._clients.values()
 
@@ -966,6 +975,7 @@ class LiveExecutionEngine(ExecutionEngine):
             )
 
             if not has_discrepancy:
+                self._position_recon_retries.pop(instrument_id, None)
                 continue
 
             last_activity_ts = self._position_local_activity_ns.get(instrument_id)
@@ -977,6 +987,10 @@ class LiveExecutionEngine(ExecutionEngine):
                         f"recent activity within threshold ({self.position_check_threshold_ms}ms)",
                     )
                     continue
+
+            retries = self._position_recon_retries[instrument_id]
+            if retries >= self.position_check_retries:
+                continue
 
             cached_qty = sum(p.signed_decimal_qty() for p in cached_positions)
             venue_qty = venue_report.signed_decimal_qty if venue_report else Decimal(0)
@@ -990,13 +1004,31 @@ class LiveExecutionEngine(ExecutionEngine):
             missing_fills = await self._query_and_find_missing_fills(instrument_id, clients)
             await self._reconcile_missing_fills(missing_fills, instrument_id)
 
-            if not missing_fills and has_discrepancy:
-                self._log.warning(
-                    f"Position discrepancy for {instrument_id} persists but no missing fills found. "
-                    f"Possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
-                    f"venue position error, or internal calculation error.",
-                    LogColor.YELLOW,
-                )
+            # Re-read positions from cache (may have changed during reconciliation)
+            current_positions = self._cache.positions_open(instrument_id=instrument_id)
+            still_discrepant = self._check_position_discrepancy(
+                current_positions,
+                venue_report,
+                instrument_id,
+            )
+            if still_discrepant:
+                self._position_recon_retries[instrument_id] = retries + 1
+                if retries + 1 >= self.position_check_retries:
+                    self._log.error(
+                        f"Position discrepancy for {instrument_id} unresolved after "
+                        f"{self.position_check_retries} attempts "
+                        f"(cached_qty={cached_qty}, venue_qty={venue_qty}); "
+                        f"no further reconciliation attempts will be made",
+                    )
+                elif not missing_fills:
+                    self._log.warning(
+                        f"Position discrepancy for {instrument_id} persists but no missing fills found; "
+                        f"possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
+                        f"venue position error, or internal calculation error",
+                        LogColor.YELLOW,
+                    )
+            else:
+                self._position_recon_retries.pop(instrument_id, None)
 
     def _check_position_discrepancy(
         self,
@@ -1075,7 +1107,9 @@ class LiveExecutionEngine(ExecutionEngine):
                 continue
 
             # Venue has a position but we don't - this is a discrepancy
-            if venue_report.signed_decimal_qty == 0:
+            venue_qty = venue_report.signed_decimal_qty
+            if venue_qty == 0:
+                self._position_recon_retries.pop(instrument_id, None)
                 continue  # Both flat, no discrepancy
 
             # THRESHOLD CHECK
@@ -1089,22 +1123,45 @@ class LiveExecutionEngine(ExecutionEngine):
                     )
                     continue
 
+            retries = self._position_recon_retries[instrument_id]
+            if retries >= self.position_check_retries:
+                continue
+
             self._log.warning(
                 f"Position discrepancy detected for {instrument_id}: "
-                f"cached_qty=0 (flat), venue_qty={venue_report.signed_decimal_qty}. Querying for missing fills...",
+                f"cached_qty=0 (flat), venue_qty={venue_qty}; querying for missing fills...",
                 LogColor.YELLOW,
             )
 
             missing_fills = await self._query_and_find_missing_fills(instrument_id, clients)
             await self._reconcile_missing_fills(missing_fills, instrument_id)
 
-            if not missing_fills:
-                self._log.warning(
-                    f"Position discrepancy for {instrument_id} persists but no missing fills found. "
-                    f"Possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
-                    f"venue position error, or internal calculation error.",
-                    LogColor.YELLOW,
-                )
+            # Re-check using tolerance-aware comparison
+            cached_after = self._cache.positions_open(instrument_id=instrument_id)
+            still_discrepant = self._check_position_discrepancy(
+                cached_after,
+                venue_report,
+                instrument_id,
+            )
+            if still_discrepant:
+                cached_qty_now = sum(p.signed_decimal_qty() for p in cached_after)
+                self._position_recon_retries[instrument_id] = retries + 1
+                if retries + 1 >= self.position_check_retries:
+                    self._log.error(
+                        f"Position discrepancy for {instrument_id} unresolved after "
+                        f"{self.position_check_retries} attempts "
+                        f"(cached_qty={cached_qty_now}, venue_qty={venue_qty}); "
+                        f"no further reconciliation attempts will be made",
+                    )
+                elif not missing_fills:
+                    self._log.warning(
+                        f"Position discrepancy for {instrument_id} persists but no missing fills found; "
+                        f"possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
+                        f"venue position error, or internal calculation error",
+                        LogColor.YELLOW,
+                    )
+            else:
+                self._position_recon_retries.pop(instrument_id, None)
 
     async def _query_and_find_missing_fills(
         self,

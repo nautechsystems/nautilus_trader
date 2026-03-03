@@ -18,12 +18,19 @@
 use nautilus_model::identifiers::{AccountId, TraderId};
 
 use crate::{
-    common::urls::{get_http_base_url, get_ws_url},
+    common::{
+        credential::credential_env_vars,
+        urls::{get_http_base_url, get_ws_url},
+    },
     http::models::DeribitProductType,
 };
 
 /// Configuration for the Deribit data client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+)]
 pub struct DeribitDataClientConfig {
     /// Optional API key for authenticated endpoints.
     pub api_key: Option<String>,
@@ -80,12 +87,7 @@ impl DeribitDataClientConfig {
     /// Returns `true` when API credentials are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        let (key_env, secret_env) = if self.use_testnet {
-            ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
-        } else {
-            ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
-        };
-
+        let (key_env, secret_env) = credential_env_vars(self.use_testnet);
         let has_key = self.api_key.is_some() || std::env::var(key_env).is_ok();
         let has_secret = self.api_secret.is_some() || std::env::var(secret_env).is_ok();
         has_key && has_secret
@@ -110,6 +112,10 @@ impl DeribitDataClientConfig {
 
 /// Configuration for the Deribit execution client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+)]
 pub struct DeribitExecClientConfig {
     /// The trader ID for this client.
     pub trader_id: TraderId,
@@ -170,12 +176,7 @@ impl DeribitExecClientConfig {
     /// Returns `true` when API credentials are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        let (key_env, secret_env) = if self.use_testnet {
-            ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
-        } else {
-            ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
-        };
-
+        let (key_env, secret_env) = credential_env_vars(self.use_testnet);
         let has_key = self.api_key.is_some() || std::env::var(key_env).is_ok();
         let has_secret = self.api_secret.is_some() || std::env::var(secret_env).is_ok();
         has_key && has_secret

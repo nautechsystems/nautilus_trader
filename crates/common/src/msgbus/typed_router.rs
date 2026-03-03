@@ -197,6 +197,7 @@ impl<T: 'static> TopicRouter<T> {
         );
 
         let handler_id = handler.id();
+
         if let Some(idx) = self
             .subscriptions
             .iter()

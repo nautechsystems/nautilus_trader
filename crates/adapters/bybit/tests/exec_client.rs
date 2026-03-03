@@ -332,6 +332,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
                             "op": "pong"
                         });
+
                         if socket
                             .send(Message::Text(pong_response.to_string().into()))
                             .await
@@ -355,6 +356,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 "op": "auth",
                                 "conn_id": "test-conn-id"
                             });
+
                             if socket
                                 .send(Message::Text(auth_response.to_string().into()))
                                 .await
@@ -369,6 +371,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 "op": "auth",
                                 "conn_id": "test-conn-id"
                             });
+
                             if socket
                                 .send(Message::Text(auth_response.to_string().into()))
                                 .await
@@ -398,6 +401,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "req_id": value.get("req_id").and_then(|v| v.as_str()).unwrap_or(""),
                             "op": "subscribe"
                         });
+
                         if socket
                             .send(Message::Text(sub_response.to_string().into()))
                             .await
@@ -415,6 +419,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "req_id": req_id.unwrap_or(""),
                             "op": op.unwrap()
                         });
+
                         if socket
                             .send(Message::Text(response.to_string().into()))
                             .await
@@ -428,6 +433,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             }
             Message::Ping(_) => {
                 state.ping_count.fetch_add(1, Ordering::Relaxed);
+
                 if socket.send(Message::Pong(vec![].into())).await.is_err() {
                     break;
                 }

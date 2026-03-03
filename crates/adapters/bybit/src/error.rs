@@ -241,6 +241,7 @@ impl BybitError {
                     .duration_since(std::time::UNIX_EPOCH)
                     .ok()?
                     .as_millis() as u64;
+
                 if timestamp_ms > now_ms {
                     Some(Duration::from_millis(timestamp_ms - now_ms))
                 } else {

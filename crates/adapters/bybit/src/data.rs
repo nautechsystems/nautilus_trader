@@ -32,7 +32,8 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, DataResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
+            BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
+            InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestFundingRates,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
             SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
             SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
@@ -51,6 +52,7 @@ use nautilus_model::{
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
+    orderbook::book::OrderBook,
 };
 use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -174,19 +176,9 @@ impl BybitDataClient {
         instrument_id: InstrumentId,
     ) -> Option<BybitProductType> {
         let guard = self.instruments.read().expect(MUTEX_POISONED);
-        guard.get(&instrument_id).map(|inst| {
-            // Determine product type based on instrument characteristics
-            let symbol_str = instrument_id.symbol.as_str();
-            if symbol_str.ends_with("-SPOT") || !symbol_str.contains('-') {
-                BybitProductType::Spot
-            } else if symbol_str.ends_with("-OPTION") {
-                BybitProductType::Option
-            } else if inst.is_inverse() {
-                BybitProductType::Inverse
-            } else {
-                BybitProductType::Linear
-            }
-        })
+        guard
+            .get(&instrument_id)
+            .and_then(|_| BybitProductType::from_suffix(instrument_id.symbol.as_str()))
     }
 
     fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
@@ -247,6 +239,7 @@ impl BybitDataClient {
                     {
                         continue;
                     }
+
                     if let Err(e) = data_sender.send(DataEvent::FundingRate(update)) {
                         log::error!("Failed to emit funding rate event: {e}");
                     }
@@ -490,6 +483,7 @@ impl DataClient for BybitDataClient {
         let depth = cmd
             .depth
             .map_or(BYBIT_DEFAULT_ORDERBOOK_DEPTH, |d| d.get() as u32);
+
         if !matches!(depth, 1 | 50 | 200 | 500) {
             anyhow::bail!("invalid depth {depth}; valid values are 1, 50, 200, or 500");
         }
@@ -1065,21 +1059,9 @@ impl DataClient for BybitDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        // Determine product type from symbol
-        let symbol_str = instrument_id.symbol.as_str();
-        let product_type = if symbol_str.ends_with("-SPOT") || !symbol_str.contains('-') {
-            BybitProductType::Spot
-        } else if symbol_str.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else if symbol_str.contains("USD")
-            && !symbol_str.contains("USDT")
-            && !symbol_str.contains("USDC")
-        {
-            BybitProductType::Inverse
-        } else {
-            BybitProductType::Linear
-        };
-        let raw_symbol = extract_raw_symbol(symbol_str).to_string();
+        let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .unwrap_or(BybitProductType::Linear);
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str()).to_string();
 
         get_runtime().spawn(async move {
             match http
@@ -1117,6 +1099,54 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
+    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instrument_id = request.instrument_id;
+        let depth = request.depth.map(|n| n.get() as u32);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params;
+        let clock = self.clock;
+
+        let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .unwrap_or(BybitProductType::Linear);
+
+        get_runtime().spawn(async move {
+            match http
+                .request_orderbook_snapshot(product_type, instrument_id, depth)
+                .await
+                .context("failed to request book snapshot from Bybit")
+            {
+                Ok(deltas) => {
+                    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+                    if let Err(e) = book.apply_deltas(&deltas) {
+                        log::error!("Failed to apply book deltas for {instrument_id}: {e}");
+                        return;
+                    }
+
+                    let response = DataResponse::Book(BookResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        book,
+                        None,
+                        None,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send book snapshot response: {e}");
+                    }
+                }
+                Err(e) => log::error!("Book snapshot request failed for {instrument_id}: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
@@ -1131,20 +1161,8 @@ impl DataClient for BybitDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        // Determine product type from symbol
-        let symbol_str = instrument_id.symbol.as_str();
-        let product_type = if symbol_str.ends_with("-SPOT") || !symbol_str.contains('-') {
-            BybitProductType::Spot
-        } else if symbol_str.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else if symbol_str.contains("USD")
-            && !symbol_str.contains("USDT")
-            && !symbol_str.contains("USDC")
-        {
-            BybitProductType::Inverse
-        } else {
-            BybitProductType::Linear
-        };
+        let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .unwrap_or(BybitProductType::Linear);
 
         get_runtime().spawn(async move {
             match http
@@ -1163,6 +1181,7 @@ impl DataClient for BybitDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
@@ -1188,21 +1207,9 @@ impl DataClient for BybitDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        // Determine product type from symbol
         let instrument_id = bar_type.instrument_id();
-        let symbol_str = instrument_id.symbol.as_str();
-        let product_type = if symbol_str.ends_with("-SPOT") || !symbol_str.contains('-') {
-            BybitProductType::Spot
-        } else if symbol_str.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else if symbol_str.contains("USD")
-            && !symbol_str.contains("USDT")
-            && !symbol_str.contains("USDC")
-        {
-            BybitProductType::Inverse
-        } else {
-            BybitProductType::Linear
-        };
+        let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .unwrap_or(BybitProductType::Linear);
 
         get_runtime().spawn(async move {
             match http
@@ -1221,11 +1228,62 @@ impl DataClient for BybitDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send bars response: {e}");
                     }
                 }
                 Err(e) => log::error!("Bar request failed: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instrument_id = request.instrument_id;
+        let start = request.start;
+        let end = request.end;
+        let limit = request.limit.map(|n| n.get() as u32);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params;
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+
+        let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .unwrap_or(BybitProductType::Linear);
+
+        if product_type == BybitProductType::Spot || product_type == BybitProductType::Option {
+            anyhow::bail!("Funding rates not available for {product_type} instruments");
+        }
+
+        get_runtime().spawn(async move {
+            match http
+                .request_funding_rates(product_type, instrument_id, start, end, limit)
+                .await
+                .context("failed to request funding rates from Bybit")
+            {
+                Ok(funding_rates) => {
+                    let response = DataResponse::FundingRates(FundingRatesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        funding_rates,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send funding rates response: {e}");
+                    }
+                }
+                Err(e) => log::error!("Funding rates request failed for {instrument_id}: {e:?}"),
             }
         });
 

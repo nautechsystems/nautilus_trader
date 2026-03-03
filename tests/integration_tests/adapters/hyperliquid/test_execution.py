@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
@@ -26,15 +27,23 @@ from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
+from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketIfTouchedOrder
+from nautilus_trader.model.orders import OrderList
+from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.hyperliquid.conftest import _create_ws_mock
 
@@ -580,5 +589,566 @@ async def test_cancel_all_orders_no_open_orders(
 
         # Assert - No orders to cancel means no HTTP calls
         http_client.cancel_order.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("side", "trigger_str", "quote_bid", "quote_ask"),
+    [
+        # SELL stop far below current market
+        (OrderSide.SELL, "95000.0", "100000.0", "100001.0"),
+        # BUY stop far above current market
+        (OrderSide.BUY, "105000.0", "100000.0", "100001.0"),
+        # SELL stop close to market
+        (OrderSide.SELL, "99500.0", "100000.0", "100001.0"),
+        # BUY stop close to market
+        (OrderSide.BUY, "100500.0", "100000.0", "100001.0"),
+    ],
+)
+async def test_submit_stop_market_derives_price_from_trigger(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+    side,
+    trigger_str,
+    quote_bid,
+    quote_ask,
+):
+    """
+    Verify limit_px is derived from trigger_price, not the current quote.
+    """
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    quote = QuoteTick(
+        instrument_id=instrument.id,
+        bid_price=Price.from_str(quote_bid),
+        ask_price=Price.from_str(quote_ask),
+        bid_size=Quantity.from_int(1),
+        ask_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+    cache.add_quote_tick(quote)
+
+    order = StopMarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=side,
+        quantity=Quantity.from_str("0.00100"),
+        trigger_price=Price.from_str(trigger_str),
+        trigger_type=TriggerType.LAST_PRICE,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._submit_order(command)
+
+        # Assert
+        http_client.submit_order.assert_awaited_once()
+        call_kwargs = http_client.submit_order.call_args.kwargs
+        submitted_price = Decimal(str(call_kwargs["price"]))
+        trigger_price = Decimal(trigger_str)
+
+        # Hyperliquid constraint: SELL limit_px <= triggerPx, BUY >= triggerPx
+        if side == OrderSide.SELL:
+            assert submitted_price <= trigger_price
+        else:
+            assert submitted_price >= trigger_price
+
+        # Price is derived from trigger (within 1%), not from the distant quote
+        assert abs(submitted_price - trigger_price) / trigger_price < Decimal("0.01")
+
+        # Decimal places must not exceed instrument price_precision
+        price_str = str(submitted_price)
+        if "." in price_str:
+            actual_decimals = len(price_str.split(".")[1])
+        else:
+            actual_decimals = 0
+        assert actual_decimals <= instrument.price_precision
+
+        # Trigger price is forwarded to the HTTP client
+        assert call_kwargs["trigger_price"] is not None
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("side", "trigger_str", "quote_bid", "quote_ask"),
+    [
+        # SELL stop below market (ETH precision=2)
+        (OrderSide.SELL, "2470.00", "2600.00", "2601.00"),
+        # BUY stop above market (ETH precision=2)
+        (OrderSide.BUY, "2750.00", "2600.00", "2601.00"),
+    ],
+)
+async def test_submit_stop_market_eth_derives_price_from_trigger(
+    exec_client_builder,
+    monkeypatch,
+    eth_instrument,
+    cache,
+    side,
+    trigger_str,
+    quote_bid,
+    quote_ask,
+):
+    """
+    Verify trigger-based derivation with ETH (price_precision=2).
+    """
+    # Arrange
+    cache.add_instrument(eth_instrument)
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    quote = QuoteTick(
+        instrument_id=eth_instrument.id,
+        bid_price=Price.from_str(quote_bid),
+        ask_price=Price.from_str(quote_ask),
+        bid_size=Quantity.from_int(1),
+        ask_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+    cache.add_quote_tick(quote)
+
+    order = StopMarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=eth_instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=side,
+        quantity=Quantity.from_str("0.0100"),
+        trigger_price=Price.from_str(trigger_str),
+        trigger_type=TriggerType.LAST_PRICE,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._submit_order(command)
+
+        # Assert
+        http_client.submit_order.assert_awaited_once()
+        call_kwargs = http_client.submit_order.call_args.kwargs
+        submitted_price = Decimal(str(call_kwargs["price"]))
+        trigger_price = Decimal(trigger_str)
+
+        if side == OrderSide.SELL:
+            assert submitted_price <= trigger_price
+        else:
+            assert submitted_price >= trigger_price
+
+        assert abs(submitted_price - trigger_price) / trigger_price < Decimal("0.01")
+
+        # Decimal places must not exceed instrument price_precision
+        price_str = str(submitted_price)
+        if "." in price_str:
+            actual_decimals = len(price_str.split(".")[1])
+        else:
+            actual_decimals = 0
+        assert actual_decimals <= eth_instrument.price_precision
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("side", "trigger_str", "quote_bid", "quote_ask"),
+    [
+        # SELL MIT below current market
+        (OrderSide.SELL, "95000.0", "100000.0", "100001.0"),
+        # BUY MIT above current market
+        (OrderSide.BUY, "105000.0", "100000.0", "100001.0"),
+    ],
+)
+async def test_submit_market_if_touched_derives_price_from_trigger(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+    side,
+    trigger_str,
+    quote_bid,
+    quote_ask,
+):
+    """
+    Verify MarketIfTouched also derives limit_px from trigger_price.
+    """
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    quote = QuoteTick(
+        instrument_id=instrument.id,
+        bid_price=Price.from_str(quote_bid),
+        ask_price=Price.from_str(quote_ask),
+        bid_size=Quantity.from_int(1),
+        ask_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+    cache.add_quote_tick(quote)
+
+    order = MarketIfTouchedOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=side,
+        quantity=Quantity.from_str("0.00100"),
+        trigger_price=Price.from_str(trigger_str),
+        trigger_type=TriggerType.LAST_PRICE,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._submit_order(command)
+
+        # Assert
+        http_client.submit_order.assert_awaited_once()
+        call_kwargs = http_client.submit_order.call_args.kwargs
+        submitted_price = Decimal(str(call_kwargs["price"]))
+        trigger_price = Decimal(trigger_str)
+
+        if side == OrderSide.SELL:
+            assert submitted_price <= trigger_price
+        else:
+            assert submitted_price >= trigger_price
+
+        assert abs(submitted_price - trigger_price) / trigger_price < Decimal("0.01")
+
+        price_str = str(submitted_price)
+        if "." in price_str:
+            actual_decimals = len(price_str.split(".")[1])
+        else:
+            actual_decimals = 0
+        assert actual_decimals <= instrument.price_precision
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_list_calls_batch_path(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    Verify _submit_order_list uses the batch submit_orders path.
+    """
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = StopMarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-BATCH-001"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.00100"),
+        trigger_price=Price.from_str("95000.0"),
+        trigger_type=TriggerType.LAST_PRICE,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    order_list = OrderList(
+        order_list_id=OrderListId("OL-001"),
+        orders=[order],
+    )
+
+    command = SubmitOrderList(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order_list=order_list,
+        position_id=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._submit_order_list(command)
+
+        # Assert - batch path calls submit_orders, not submit_order
+        http_client.submit_orders.assert_awaited_once()
+        http_client.submit_order.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_modify_limit_order(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    cache.add_order(order, None)
+
+    command = ModifyOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        quantity=Quantity.from_str("0.00200"),
+        price=Price.from_str("51000.0"),
+        trigger_price=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        await client._modify_order(command)
+
+        # Assert
+        http_client.modify_order.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_modify_order_rejected_when_not_in_cache(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    command = ModifyOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-UNKNOWN"),
+        venue_order_id=VenueOrderId("12345"),
+        quantity=Quantity.from_str("0.00200"),
+        price=Price.from_str("51000.0"),
+        trigger_price=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        await client._modify_order(command)
+
+        # Assert - rejected, no HTTP call
+        http_client.modify_order.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_modify_order_rejected_when_no_venue_order_id(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    cache.add_order(order, None)
+
+    # No venue_order_id on order or command
+    command = ModifyOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=None,
+        quantity=Quantity.from_str("0.00200"),
+        price=Price.from_str("51000.0"),
+        trigger_price=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        await client._modify_order(command)
+
+        # Assert - rejected, no HTTP call
+        http_client.modify_order.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_modify_stop_market_uses_trigger_price_as_fallback(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    StopMarket has no limit price; trigger_price is used as the price field.
+    """
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = StopMarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-STOP-001"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.00100"),
+        trigger_price=Price.from_str("95000.0"),
+        trigger_type=TriggerType.LAST_PRICE,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    cache.add_order(order, None)
+
+    command = ModifyOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        quantity=Quantity.from_str("0.00200"),
+        price=None,
+        trigger_price=Price.from_str("94000.0"),
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        await client._modify_order(command)
+
+        # Assert
+        http_client.modify_order.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_modify_order_rejection_on_http_error(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    http_client.modify_order.side_effect = Exception("Modify rejected: Invalid order")
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    cache.add_order(order, None)
+
+    command = ModifyOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        quantity=Quantity.from_str("0.00200"),
+        price=Price.from_str("51000.0"),
+        trigger_price=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    try:
+        # Act - should not raise
+        await client._modify_order(command)
+
+        # Assert - rejection handled internally
+        http_client.modify_order.assert_awaited_once()
     finally:
         await client._disconnect()

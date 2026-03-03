@@ -213,7 +213,7 @@ impl DeribitWsChannel {
         }
     }
 
-    /// Formats the instrument state channel for subscription.
+    /// Formats the instrument status channel for subscription.
     ///
     /// Returns the full channel string: `instrument.state.{kind}.{currency}`
     ///

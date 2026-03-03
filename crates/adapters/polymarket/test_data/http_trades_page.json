@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "id": "trade-0x001",
+      "taker_order_id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+      "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+      "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+      "side": "BUY",
+      "size": "10.0000",
+      "fee_rate_bps": "0",
+      "price": "0.5000",
+      "status": "MINED",
+      "match_time": "2024-01-01T00:00:00Z",
+      "last_update": "2024-01-01T00:00:10Z",
+      "outcome": "Yes",
+      "bucket_index": 0,
+      "owner": "00000000-0000-0000-0000-000000000001",
+      "maker_address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "transaction_hash": "0xabc123",
+      "maker_orders": [],
+      "trader_side": "TAKER"
+    }
+  ],
+  "next_cursor": "LTE="
+}

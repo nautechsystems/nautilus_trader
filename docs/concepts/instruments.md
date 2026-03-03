@@ -250,7 +250,7 @@ To understand trading on margin, let’s start with some key terms:
 
 **Leverage** (`leverage`): The ratio that determines how much market exposure you can control relative to your account deposit. For example, with 10× leverage, you can control 10,000 USD worth of positions with 1,000 USD in your account.
 
-**Initial Margin** (`margin_init`): The margin rate required to open a position. It represents the minimum amount of funds that must be available in your account to open new positions. This is only a pre-check — no funds are actually locked.
+**Initial Margin** (`margin_init`): The margin rate required to open a position. It represents the minimum amount of funds that must be available in your account to open new positions. This is only a pre-check; no funds are actually locked.
 
 **Maintenance Margin** (`margin_maint`): The margin rate required to keep a position open. This amount is locked in your account to maintain the position. It is always lower than the initial margin. You can view the total blocked funds (sum of maintenance margins for open positions) using the following in your strategy:
 
@@ -507,10 +507,7 @@ Considerable effort has been made to validate inputs, including the derivation f
 synthetic instruments. Despite this, caution is advised as invalid or erroneous inputs may lead to
 undefined behavior.
 
-:::info
-See the `SyntheticInstrument` [API reference](../api_reference/model/instruments.md#class-syntheticinstrument-1)
-for a detailed understanding of input requirements and potential exceptions.
-:::
+See the [`SyntheticInstrument` API Reference](../api_reference/model/instruments.md#class-syntheticinstrument-1) for input requirements and potential exceptions.
 
 ## Related guides
 

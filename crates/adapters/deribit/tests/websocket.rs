@@ -353,6 +353,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                     }
                                 });
                                 state.test_request_count.fetch_add(1, Ordering::Relaxed);
+
                                 if socket
                                     .send(Message::Text(test_request.to_string().into()))
                                     .await
@@ -378,6 +379,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 },
                                 "testnet": true
                             });
+
                             if socket
                                 .send(Message::Text(error_response.to_string().into()))
                                 .await

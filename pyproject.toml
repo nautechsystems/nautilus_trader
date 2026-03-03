@@ -1,6 +1,6 @@
 [project]
 name = "nautilus_trader"
-version = "1.223.0"
+version = "1.224.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -44,8 +44,8 @@ docs = "https://nautilustrader.io/docs"
 # For now we use the poetry build backend until uv supports custom build scripts
 [build-system]
 requires = [
-  "setuptools>=80",
-  "poetry-core==2.2.1", # Pinned to 2.2.1 for stability
+  "setuptools>=82",
+  "poetry-core==2.3.1", # Pinned to 2.3.1 for stability
   "numpy>=1.26.4",
   "cython==3.2.4", # Pinned to 3.2.4 for stability
 ]
@@ -57,6 +57,7 @@ include = [
   { path = "crates/*", format = "sdist" },
   { path = "Cargo.lock", format = "sdist" },
   { path = "Cargo.toml", format = "sdist" },
+  { path = ".cargo/*", format = "sdist" },
   # Compiled extensions must be included in the wheel distributions
   { path = "nautilus_trader/**/*.so", format = "wheel" },
   { path = "nautilus_trader/**/*.pyd", format = "wheel" },
@@ -90,7 +91,7 @@ dev = [
   "mypy==1.19.1,<2.0.0", # Pinned to 1.19.1 (keep in line with pre-commit)
   "pandas-stubs>=2.3.3,<3.0.0",
   "pre-commit>=4.5.0,<5.0.0",
-  "ruff==0.15.2", # Pinned to 0.15.2 (keep in line with pre-commit)
+  "ruff==0.15.4", # Pinned to 0.15.4 (keep in line with pre-commit)
   "types-pytz>=2025.2,<2026.0",
   "types-toml>=0.10.2,<1.0.0",
 ]
@@ -109,7 +110,7 @@ test = [
 ]
 docs = [
   "numpydoc>=1.10.0,<2.0.0",
-  "linkify-it-py>=2.0.3,<3.0.0",
+  "linkify-it-py>=2.1.0,<3.0.0",
   "myst-parser>=5.0.0,<6.0.0",
   "sphinx-comments>=0.0.3,<1.0.0",
   "sphinx-markdown-builder>=0.6.9,<1.0.0",
@@ -237,7 +238,6 @@ ignore = [
   "FURB110", # if-exp-instead-of-or-operator (ternary is often clearer than or)
   "FURB171", # single-item-membership-test (intentional for clarity)
   "UP042", # Class inherits from both str and Enum (StrEnum pattern used intentionally)
-  "ASYNC240", # async-pathlib (pathlib in async ok for simple checks, refactor later)
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided

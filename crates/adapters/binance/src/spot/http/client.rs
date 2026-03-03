@@ -35,9 +35,7 @@ use std::{collections::HashMap, fmt::Debug, num::NonZeroU32, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
-};
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::AtomicTime};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AggregationSource, BarAggregation, OrderSide, OrderType, TimeInForce},
@@ -243,6 +241,7 @@ impl BinanceRawSpotHttpClient {
             .unwrap_or_default();
 
         let mut headers = HashMap::new();
+
         if signed {
             let cred = self
                 .credential
@@ -296,6 +295,7 @@ impl BinanceRawSpotHttpClient {
         };
 
         let mut url = format!("{}{}{}", self.base_url, SPOT_API_PATH, normalized_path);
+
         if !query.is_empty() {
             url.push('?');
             url.push_str(query);
@@ -376,6 +376,7 @@ impl BinanceRawSpotHttpClient {
         headers.insert("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string());
         headers.insert("Accept".to_string(), "application/sbe".to_string());
         headers.insert("X-MBX-SBE".to_string(), SBE_SCHEMA_HEADER.to_string());
+
         if let Some(cred) = credential {
             headers.insert("X-MBX-APIKEY".to_string(), cred.api_key().to_string());
         }
@@ -712,6 +713,7 @@ impl BinanceRawSpotHttpClient {
         };
 
         let mut url = format!("{}/sapi/v1{}", self.base_url, normalized_path);
+
         if !query.is_empty() {
             url.push('?');
             url.push_str(&query);
@@ -1237,6 +1239,7 @@ impl BinanceRawSpotHttpClient {
 )]
 pub struct BinanceSpotHttpClient {
     inner: Arc<BinanceRawSpotHttpClient>,
+    clock: &'static AtomicTime,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
 }
 
@@ -1244,6 +1247,7 @@ impl Clone for BinanceSpotHttpClient {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            clock: self.clock,
             instruments_cache: self.instruments_cache.clone(),
         }
     }
@@ -1264,8 +1268,10 @@ impl BinanceSpotHttpClient {
     /// # Errors
     ///
     /// Returns an error if the underlying HTTP client cannot be created.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         environment: BinanceEnvironment,
+        clock: &'static AtomicTime,
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url_override: Option<String>,
@@ -1285,6 +1291,7 @@ impl BinanceSpotHttpClient {
 
         Ok(Self {
             inner: Arc::new(inner),
+            clock,
             instruments_cache: Arc::new(DashMap::new()),
         })
     }
@@ -1309,7 +1316,7 @@ impl BinanceSpotHttpClient {
 
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
-        UnixNanos::from(chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64)
+        self.clock.get_time_ns()
     }
 
     /// Retrieves an instrument from the cache.
@@ -1489,7 +1496,7 @@ impl BinanceSpotHttpClient {
         &self,
         account_id: AccountId,
     ) -> anyhow::Result<AccountState> {
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let ts_init = self.clock.get_time_ns();
         let params = AccountInfoParams::default();
         let account_info = self.inner.account(&params).await?;
         Ok(account_info.to_account_state(account_id, ts_init))
@@ -1680,6 +1687,7 @@ impl BinanceSpotHttpClient {
                 | BinanceSpotOrderType::TakeProfitLimit
                 | BinanceSpotOrderType::LimitMaker
         );
+
         if requires_price && price.is_none() {
             anyhow::bail!("{binance_order_type:?} orders require a price");
         }

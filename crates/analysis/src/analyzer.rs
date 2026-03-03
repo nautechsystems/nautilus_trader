@@ -228,7 +228,6 @@ impl PortfolioAnalyzer {
         let currency = match currency {
             Some(c) => c,
             None if self.account_balances.len() == 1 => {
-                // SAFETY: Length is 1, so next() always returns Some
                 self.account_balances.keys().next().expect("len is 1")
             }
             None => return Err("Currency must be specified for multi-currency portfolio"),
@@ -277,7 +276,6 @@ impl PortfolioAnalyzer {
         let currency = match currency {
             Some(c) => c,
             None if self.account_balances.len() == 1 => {
-                // SAFETY: Length is 1, so next() always returns Some
                 self.account_balances.keys().next().expect("len is 1")
             }
             None => return Err("Currency must be specified for multi-currency portfolio"),

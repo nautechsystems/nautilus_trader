@@ -80,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             inst.minimum_order_size
         );
     }
+
     if instruments_response.instruments.len() > 5 {
         log::info!(
             "  ... and {} more",

@@ -103,7 +103,6 @@ impl Quota {
         if replenish_1_per.as_nanos() == 0 {
             None
         } else {
-            // SAFETY: Unwrap is safe because 1 is always non-zero
             #[allow(clippy::missing_panics_doc)]
             Some(Self {
                 max_burst: NonZeroU32::new(1).unwrap(),

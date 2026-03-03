@@ -71,6 +71,7 @@ config_tester = DataTesterConfig(
     instrument_ids=[InstrumentId.from_str(f"{symbol}.{BITMEX}")],
     bar_types=[BarType.from_str(f"{symbol}.{BITMEX}-1-MINUTE-LAST-EXTERNAL")],
     subscribe_instrument=True,
+    subscribe_instrument_status=True,
     # subscribe_quotes=True,
     # subscribe_trades=True,
     # subscribe_mark_prices=True,

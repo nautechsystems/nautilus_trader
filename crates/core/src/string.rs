@@ -15,6 +15,9 @@
 
 //! String manipulation functionality.
 
+/// Placeholder used in `Debug` impls to redact secret fields.
+pub const REDACTED: &str = "<redacted>";
+
 /// Masks an API key by showing only the first and last 4 characters.
 ///
 /// For keys 8 characters or shorter, returns asterisks only.

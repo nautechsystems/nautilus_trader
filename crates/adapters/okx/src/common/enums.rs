@@ -16,13 +16,13 @@
 //! Enumerations mapping OKX concepts onto idiomatic Nautilus variants.
 
 use nautilus_model::enums::{
-    AggressorSide, LiquiditySide, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
-    TriggerType,
+    AggressorSide, LiquiditySide, OptionKind, OrderSide, OrderSideSpecified, OrderStatus,
+    OrderType, PositionSide, TriggerType,
 };
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
-use crate::common::consts::OKX_CONDITIONAL_ORDER_TYPES;
+use crate::common::consts::{OKX_ADVANCE_ALGO_ORDER_TYPES, OKX_CONDITIONAL_ORDER_TYPES};
 
 /// Represents the type of book action.
 #[derive(
@@ -94,12 +94,11 @@ pub enum OKXSide {
     Sell,
 }
 
-impl From<OrderSide> for OKXSide {
-    fn from(value: OrderSide) -> Self {
+impl From<OrderSideSpecified> for OKXSide {
+    fn from(value: OrderSideSpecified) -> Self {
         match value {
-            OrderSide::Buy => Self::Buy,
-            OrderSide::Sell => Self::Sell,
-            _ => panic!("Invalid `OrderSide`"),
+            OrderSideSpecified::Buy => Self::Buy,
+            OrderSideSpecified::Sell => Self::Sell,
         }
     }
 }
@@ -186,7 +185,7 @@ impl From<OrderStatus> for OKXOrderStatus {
             OrderStatus::Accepted => Self::Live,
             OrderStatus::PartiallyFilled => Self::PartiallyFilled,
             OrderStatus::Filled => Self::Filled,
-            _ => panic!("Invalid `OrderStatus`"),
+            _ => panic!("Invalid `OrderStatus` for OKX: {value:?}"),
         }
     }
 }
@@ -356,7 +355,7 @@ impl From<OKXOptionType> for OptionKind {
         match option_type {
             OKXOptionType::Call => Self::Call,
             OKXOptionType::Put => Self::Put,
-            _ => panic!("Invalid `option_type`, was None"),
+            _ => panic!("Invalid `OKXOptionType` for OptionKind: {option_type:?}"),
         }
     }
 }
@@ -579,6 +578,7 @@ pub enum OKXTakeProfitKind {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     PartialEq,
     Eq,
@@ -591,6 +591,7 @@ pub enum OKXTakeProfitKind {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum OKXTriggerType {
+    #[default]
     #[serde(rename = "")]
     None,
     Last,
@@ -813,10 +814,11 @@ impl From<OrderType> for OKXOrderType {
             OrderType::StopMarket
             | OrderType::StopLimit
             | OrderType::MarketIfTouched
-            | OrderType::LimitIfTouched => {
+            | OrderType::LimitIfTouched
+            | OrderType::TrailingStopMarket => {
                 panic!("Conditional order types must use OKXAlgoOrderType")
             }
-            _ => panic!("Invalid `OrderType` cannot be represented on OKX"),
+            _ => panic!("Invalid `OrderType` cannot be represented on OKX: {value:?}"),
         }
     }
 }
@@ -860,6 +862,11 @@ pub fn is_conditional_order(order_type: OrderType) -> bool {
     OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type)
 }
 
+/// Helper to determine if an order type requires the advance algo cancel endpoint.
+pub fn is_advance_algo_order(order_type: OrderType) -> bool {
+    OKX_ADVANCE_ALGO_ORDER_TYPES.contains(&order_type)
+}
+
 /// Converts Nautilus conditional order types to OKX algo order type.
 ///
 /// # Errors
@@ -871,6 +878,7 @@ pub fn conditional_order_to_algo_type(order_type: OrderType) -> anyhow::Result<O
         | OrderType::StopLimit
         | OrderType::MarketIfTouched
         | OrderType::LimitIfTouched => Ok(OKXAlgoOrderType::Trigger),
+        OrderType::TrailingStopMarket => Ok(OKXAlgoOrderType::MoveOrderStop),
         _ => anyhow::bail!("Not a conditional order type: {order_type:?}"),
     }
 }

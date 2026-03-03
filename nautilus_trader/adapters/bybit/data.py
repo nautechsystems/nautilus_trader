@@ -182,7 +182,7 @@ class BybitDataClient(LiveMarketDataClient):
 
         # Connect all websocket clients
         for product_type, ws_client in self._ws_clients.items():
-            await ws_client.connect(callback=self._handle_msg)
+            await ws_client.connect(loop_=self._loop, callback=self._handle_msg)
             await ws_client.wait_until_active(timeout_secs=10.0)
             self._log.info(f"Connected to {product_type.name} websocket", LogColor.BLUE)
 

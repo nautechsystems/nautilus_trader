@@ -68,6 +68,7 @@ pub use crate::{
         enums::{OKXInstrumentType, OKXOrderType, OKXPositionMode, OKXPositionSide, OKXSide},
         models::OKXInstrument,
     },
+    data::OKXDataClient,
     execution::OKXExecutionClient,
     http::{client::OKXHttpClient, error::OKXHttpError},
     websocket::{client::OKXWebSocketClient, error::OKXWsError},

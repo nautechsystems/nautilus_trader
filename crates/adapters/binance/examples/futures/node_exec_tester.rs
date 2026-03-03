@@ -60,10 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         account_id,
         product_types: vec![BinanceProductType::UsdM],
         environment: BinanceEnvironment::Testnet,
-        api_key: None,    // Will use 'BINANCE_FUTURES_TESTNET_API_KEY' env var
-        api_secret: None, // Will use 'BINANCE_FUTURES_TESTNET_API_SECRET' env var
-        base_url_http: None,
-        base_url_ws: None,
+        ..Default::default()
     };
 
     let data_factory = BinanceDataClientFactory::new();

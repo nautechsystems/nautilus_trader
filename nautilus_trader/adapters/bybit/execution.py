@@ -250,7 +250,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._ws_trade_client.set_account_id(self.pyo3_account_id)
 
         # Connect to private WebSocket
-        await self._ws_private_client.connect(callback=self._handle_msg)
+        await self._ws_private_client.connect(loop_=self._loop, callback=self._handle_msg)
 
         # Wait for connection to be established
         await self._ws_private_client.wait_until_active(timeout_secs=10.0)
@@ -269,7 +269,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 LogColor.YELLOW,
             )
         else:
-            await self._ws_trade_client.connect(callback=self._handle_msg)
+            await self._ws_trade_client.connect(loop_=self._loop, callback=self._handle_msg)
             await self._ws_trade_client.wait_until_active(timeout_secs=10.0)
             self._log.info("Connected to trade WebSocket", LogColor.BLUE)
 

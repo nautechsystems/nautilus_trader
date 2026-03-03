@@ -382,6 +382,7 @@ async fn handle_ws_socket(mut socket: WebSocket) {
                     match method {
                         Some("ping") => {
                             let pong = json!({"channel": "pong"});
+
                             if socket
                                 .send(Message::Text(pong.to_string().into()))
                                 .await
@@ -542,7 +543,7 @@ async fn test_data_client_subscribe_trades() {
             let found = loop {
                 match rx.try_recv() {
                     Ok(DataEvent::Data(Data::Trade(_))) => break true,
-                    Ok(_) => continue,
+                    Ok(_) => {}
                     Err(_) => break false,
                 }
             };

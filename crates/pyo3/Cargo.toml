@@ -23,16 +23,17 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
+arrow = ["nautilus-serialization/arrow"]
 cython-compat = []
 defi = ["dep:nautilus-blockchain", "nautilus-blockchain/python"]
 extension-module = [
   "nautilus-analysis/extension-module",
   "nautilus-architect-ax/extension-module",
+  "nautilus-backtest/extension-module",
   "nautilus-binance/extension-module",
   "nautilus-bitmex/extension-module",
   "nautilus-blockchain?/extension-module",
   "nautilus-bybit/extension-module",
-  "nautilus-coinbase-intx/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-cryptography/extension-module",
@@ -47,6 +48,7 @@ extension-module = [
   "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-okx/extension-module",
+  "nautilus-polymarket/extension-module",
   "nautilus-sandbox/extension-module",
   "nautilus-persistence/extension-module",
   "nautilus-serialization/extension-module",
@@ -67,13 +69,13 @@ high-precision = [
   "nautilus-binance/high-precision",
   "nautilus-bitmex/high-precision",
   "nautilus-bybit/high-precision",
-  "nautilus-coinbase-intx/high-precision",
   "nautilus-databento/high-precision",
   "nautilus-deribit/high-precision",
   "nautilus-dydx/high-precision",
   "nautilus-hyperliquid/high-precision",
   "nautilus-kraken/high-precision",
   "nautilus-okx/high-precision",
+  "nautilus-polymarket/high-precision",
   "nautilus-sandbox/high-precision",
   "nautilus-tardis/high-precision",
 ]
@@ -88,6 +90,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-analysis = { workspace = true, features = ["python"] }
+nautilus-backtest = { workspace = true, features = ["python"] }
 nautilus-common = { workspace = true, features = ["python"] }
 nautilus-core = { workspace = true, features = ["python"] }
 nautilus-cryptography = { workspace = true, features = ["python"] }
@@ -110,13 +113,13 @@ nautilus-blockchain = { workspace = true, features = [
   "python",
 ], optional = true }
 nautilus-bybit = { workspace = true, features = ["python"] }
-nautilus-coinbase-intx = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python", "live"] }
 nautilus-deribit = { workspace = true, features = ["python"] }
 nautilus-dydx = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-kraken = { workspace = true, features = ["python"] }
 nautilus-okx = { workspace = true, features = ["python"] }
+nautilus-polymarket = { workspace = true, features = ["python"] }
 nautilus-sandbox = { workspace = true, features = ["python"] }
 nautilus-tardis = { workspace = true, features = ["python", "replay"] }
 

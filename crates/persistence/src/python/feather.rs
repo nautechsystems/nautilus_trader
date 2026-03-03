@@ -250,6 +250,7 @@ impl StreamingFeatherWriterV2 {
                 .block_on(async { writer.write_data(Data::Quote(quote)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write QuoteTick: {e}")));
         }
+
         if let Ok(trade) = data.extract::<TradeTick>(py) {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
@@ -257,6 +258,7 @@ impl StreamingFeatherWriterV2 {
                 .block_on(async { writer.write_data(Data::Trade(trade)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write TradeTick: {e}")));
         }
+
         if let Ok(bar) = data.extract::<Bar>(py) {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
@@ -264,6 +266,7 @@ impl StreamingFeatherWriterV2 {
                 .block_on(async { writer.write_data(Data::Bar(bar)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write Bar: {e}")));
         }
+
         if let Ok(delta) = data.extract::<OrderBookDelta>(py) {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
@@ -271,6 +274,7 @@ impl StreamingFeatherWriterV2 {
                 .block_on(async { writer.write_data(Data::Delta(delta)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDelta: {e}")));
         }
+
         if let Ok(depth) = data.extract::<OrderBookDepth10>(py) {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
@@ -278,6 +282,7 @@ impl StreamingFeatherWriterV2 {
                 .block_on(async { writer.write_data(Data::Depth10(Box::new(depth))).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDepth10: {e}")));
         }
+
         if let Ok(price) = data.extract::<IndexPriceUpdate>(py) {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
@@ -285,6 +290,7 @@ impl StreamingFeatherWriterV2 {
                 .block_on(async { writer.write_data(Data::IndexPriceUpdate(price)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write IndexPriceUpdate: {e}")));
         }
+
         if let Ok(price) = data.extract::<MarkPriceUpdate>(py) {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
@@ -292,6 +298,7 @@ impl StreamingFeatherWriterV2 {
                 .block_on(async { writer.write_data(Data::MarkPriceUpdate(price)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write MarkPriceUpdate: {e}")));
         }
+
         if let Ok(close) = data.extract::<InstrumentClose>(py) {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();

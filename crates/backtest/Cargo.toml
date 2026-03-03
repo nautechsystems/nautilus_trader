@@ -30,6 +30,7 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
+  "nautilus-trading/extension-module",
   "python",
   "pyo3/extension-module",
   "streaming",
@@ -46,6 +47,7 @@ python = [
   "nautilus-core/python",
   "nautilus-execution/python",
   "nautilus-model/python",
+  "nautilus-trading/python",
   "pyo3",
   "streaming",
 ]
@@ -75,6 +77,7 @@ rust_decimal = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 nautilus-indicators = { workspace = true }
@@ -88,9 +91,16 @@ tempfile = { workspace = true }
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
 
-# Run with `cargo run --example ema-cross --package nautilus-backtest --features nautilus-backtest/examples`.
+# Run with `cargo run -p nautilus-backtest --features examples --example engine-ema-cross`
 [[example]]
-name = "ema-cross"
-path = "examples/ema_cross.rs"
+name = "engine-ema-cross"
+path = "examples/engine_ema_cross.rs"
 required-features = ["examples"]
+doc = false
+
+# Run with `cargo run -p nautilus-backtest --features examples,streaming --example node-ema-cross`
+[[example]]
+name = "node-ema-cross"
+path = "examples/node_ema_cross.rs"
+required-features = ["examples", "streaming"]
 doc = false

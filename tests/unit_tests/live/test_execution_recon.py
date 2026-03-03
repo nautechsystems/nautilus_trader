@@ -3755,6 +3755,227 @@ async def test_process_cached_position_discrepancies_with_discrepancy(
     assert query_called  # Should query when discrepancy found
 
 
+@pytest.mark.asyncio
+async def test_position_check_retries_stops_after_max(live_exec_engine, exec_client, cache):
+    # Arrange
+    live_exec_engine.register_client(exec_client)
+    live_exec_engine.position_check_retries = 2
+
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(1000),
+        position_id=PositionId("P-123"),
+    )
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+    cache.add_position(position, OmsType.HEDGING)
+
+    # Venue reports no position (discrepancy)
+    venue_positions = {}
+    positions_by_instrument = {AUDUSD_SIM.id: [position]}
+
+    query_count = 0
+    original_query = live_exec_engine._query_and_find_missing_fills
+
+    async def counting_query(instrument_id, clients):
+        nonlocal query_count
+        query_count += 1
+        return await original_query(instrument_id, clients)
+
+    live_exec_engine._query_and_find_missing_fills = counting_query
+
+    # Act - call retry_limit + 1 times
+    for _ in range(3):
+        await live_exec_engine._process_cached_position_discrepancies(
+            positions_by_instrument,
+            venue_positions,
+        )
+
+    # Assert - should query exactly 2 times (the max), not 3
+    assert query_count == 2
+
+
+@pytest.mark.asyncio
+async def test_position_check_retries_clears_on_resolved(live_exec_engine, exec_client, cache):
+    # Arrange
+    live_exec_engine.register_client(exec_client)
+    live_exec_engine.position_check_retries = 2
+
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(1000),
+        position_id=PositionId("P-124"),
+    )
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+    cache.add_position(position, OmsType.HEDGING)
+
+    venue_positions_mismatch = {}
+    positions_by_instrument = {AUDUSD_SIM.id: [position]}
+
+    # Stub out query to return no fills (discrepancy persists)
+    async def no_fills_query(instrument_id, clients):
+        return []
+
+    live_exec_engine._query_and_find_missing_fills = no_fills_query
+
+    # Act - first call increments retry counter
+    await live_exec_engine._process_cached_position_discrepancies(
+        positions_by_instrument,
+        venue_positions_mismatch,
+    )
+    assert AUDUSD_SIM.id in live_exec_engine._position_recon_retries
+
+    # Now simulate discrepancy resolved (venue matches cache)
+    venue_report_matching = PositionStatusReport(
+        account_id=TestIdStubs.account_id(),
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(1000),
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+
+    await live_exec_engine._process_cached_position_discrepancies(
+        positions_by_instrument,
+        {AUDUSD_SIM.id: venue_report_matching},
+    )
+
+    # Assert - counter should be cleared
+    assert AUDUSD_SIM.id not in live_exec_engine._position_recon_retries
+
+
+@pytest.mark.asyncio
+async def test_position_check_stale_retries_pruned_when_position_closed(
+    live_exec_engine,
+    exec_client,
+    cache,
+):
+    # Arrange - seed a maxed retry counter for an instrument
+    live_exec_engine.register_client(exec_client)
+    live_exec_engine.position_check_retries = 1
+
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    live_exec_engine._position_recon_retries[AUDUSD_SIM.id] = 1  # Already maxed
+
+    # No open positions in cache, no venue reports — instrument disappeared
+    # Stub venue query to return nothing
+    async def empty_reports(cmd):
+        return []
+
+    exec_client.generate_position_status_reports = empty_reports
+
+    # Act
+    await live_exec_engine._check_positions_consistency()
+
+    # Assert - stale counter should have been pruned
+    assert AUDUSD_SIM.id not in live_exec_engine._position_recon_retries
+
+
+@pytest.mark.asyncio
+async def test_venue_reported_position_retries_stop_after_max(
+    live_exec_engine,
+    exec_client,
+    cache,
+):
+    # Arrange
+    live_exec_engine.register_client(exec_client)
+    live_exec_engine.position_check_retries = 2
+
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    # Venue reports a position we don't have locally
+    venue_report = PositionStatusReport(
+        account_id=TestIdStubs.account_id(),
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(500),
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+
+    query_count = 0
+
+    async def counting_query(instrument_id, clients):
+        nonlocal query_count
+        query_count += 1
+        return []
+
+    live_exec_engine._query_and_find_missing_fills = counting_query
+
+    # Act - call retry_limit + 1 times
+    for _ in range(3):
+        await live_exec_engine._process_venue_reported_positions(
+            {},  # No cached positions
+            {AUDUSD_SIM.id: venue_report},
+        )
+
+    # Assert - should query exactly 2 times (the max), not 3
+    assert query_count == 2
+
+
+@pytest.mark.asyncio
+async def test_venue_reported_position_tolerance_does_not_consume_retries(
+    live_exec_engine,
+    exec_client,
+    cache,
+):
+    # Arrange - use instrument with fractional size_precision
+    ethusdt = TestInstrumentProvider.ethusdt_binance()
+    cache.add_instrument(ethusdt)
+    live_exec_engine.register_client(exec_client)
+    live_exec_engine.position_check_retries = 2
+
+    # Create a position with qty slightly different from venue (within tolerance)
+    order = TestExecStubs.market_order(instrument=ethusdt)
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=ethusdt,
+        last_qty=Quantity.from_str("1.00000"),
+        position_id=PositionId("P-TOL-001"),
+    )
+    position = Position(instrument=ethusdt, fill=fill)
+    cache.add_position(position, OmsType.HEDGING)
+
+    # Venue reports qty within single-unit tolerance (diff = 0.00001 = 10^-5)
+    venue_report = PositionStatusReport(
+        account_id=TestIdStubs.account_id(),
+        instrument_id=ethusdt.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_str("1.00001"),
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+
+    async def no_fills_query(instrument_id, clients):
+        return []
+
+    live_exec_engine._query_and_find_missing_fills = no_fills_query
+
+    # Act
+    await live_exec_engine._process_cached_position_discrepancies(
+        {ethusdt.id: [position]},
+        {ethusdt.id: venue_report},
+    )
+
+    # Assert - within tolerance so no retries consumed
+    assert ethusdt.id not in live_exec_engine._position_recon_retries
+
+
 # =============================================================================
 # TESTS FOR _process_venue_reported_positions
 # =============================================================================

@@ -346,7 +346,6 @@ pub trait Order: 'static + Send {
     fn events(&self) -> Vec<&OrderEventAny>;
 
     fn last_event(&self) -> &OrderEventAny {
-        // SAFETY: Order specification guarantees at least one event (OrderInitialized)
         self.events()
             .last()
             .expect("Order invariant violated: no events")
@@ -667,6 +666,7 @@ impl OrderCore {
                 self.client_order_id
             )));
         }
+
         if self.strategy_id != event.strategy_id() {
             return Err(OrderError::Invariant(anyhow::anyhow!(
                 "Event strategy_id {} does not match order strategy_id {}",
@@ -822,6 +822,7 @@ impl OrderCore {
         self.filled_qty = new_filled_qty;
         self.leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
         self.ts_last = event.ts_event;
+
         if self.ts_accepted.is_none() {
             // Set ts_accepted to time of first fill if not previously set
             self.ts_accepted = Some(event.ts_event);

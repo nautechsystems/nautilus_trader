@@ -25,7 +25,7 @@ use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_dydx::{
     common::enums::DydxNetwork,
-    config::{DYDXExecClientConfig, DydxDataClientConfig},
+    config::{DydxDataClientConfig, DydxExecClientConfig},
     factories::{DydxDataClientFactory, DydxExecutionClientFactory},
 };
 use nautilus_live::node::LiveNode;
@@ -35,15 +35,10 @@ use nautilus_model::{
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 
-fn get_env_option(key: &str) -> Option<String> {
-    std::env::var(key).ok().filter(|s| !s.trim().is_empty())
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    // Configuration
     let is_testnet = false;
     let network = if is_testnet {
         DydxNetwork::Testnet
@@ -58,43 +53,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_id = ClientId::new("DYDX");
     let instrument_id = InstrumentId::from("ETH-USD-PERP.DYDX");
 
-    // Load credentials from environment
-    let private_key_env = if is_testnet {
-        "DYDX_TESTNET_PRIVATE_KEY"
-    } else {
-        "DYDX_PRIVATE_KEY"
-    };
-    let private_key = get_env_option(private_key_env);
-    let wallet_address = get_env_option("DYDX_WALLET_ADDRESS");
-
-    if private_key.is_none() && wallet_address.is_none() {
-        return Err(
-            format!("Set {private_key_env} or DYDX_WALLET_ADDRESS environment variable").into(),
-        );
-    }
-
     let data_config = DydxDataClientConfig {
         is_testnet,
         ..Default::default()
     };
 
-    let exec_config = DYDXExecClientConfig {
+    let exec_config = DydxExecClientConfig {
         trader_id,
         account_id,
         network,
-        private_key,
-        wallet_address,
-        subaccount_number: 0,
-        grpc_endpoint: None,
-        grpc_urls: vec![],
-        ws_endpoint: None,
-        http_endpoint: None,
-        authenticator_ids: vec![],
-        http_timeout_secs: Some(30),
-        max_retries: Some(3),
-        retry_delay_initial_ms: Some(1000),
-        retry_delay_max_ms: Some(10000),
-        grpc_rate_limit_per_second: Some(4),
+        ..Default::default()
     };
 
     let data_factory = DydxDataClientFactory::new();

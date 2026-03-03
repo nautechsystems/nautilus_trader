@@ -127,54 +127,71 @@ impl OrderStatusReport {
         if let Some(order_list_id) = order_list_id {
             report = report.with_order_list_id(order_list_id);
         }
+
         if let Some(venue_position_id) = venue_position_id {
             report = report.with_venue_position_id(venue_position_id);
         }
+
         if let Some(linked_order_ids) = linked_order_ids {
             report = report.with_linked_order_ids(linked_order_ids);
         }
+
         if let Some(parent_order_id) = parent_order_id {
             report = report.with_parent_order_id(parent_order_id);
         }
+
         if let Some(contingency_type) = contingency_type {
             report = report.with_contingency_type(contingency_type);
         }
+
         if let Some(expire_time) = expire_time {
             report = report.with_expire_time(expire_time.into());
         }
+
         if let Some(price) = price {
             report = report.with_price(price);
         }
+
         if let Some(trigger_price) = trigger_price {
             report = report.with_trigger_price(trigger_price);
         }
+
         if let Some(trigger_type) = trigger_type {
             report = report.with_trigger_type(trigger_type);
         }
+
         if let Some(limit_offset) = limit_offset {
             report = report.with_limit_offset(limit_offset);
         }
+
         if let Some(trailing_offset) = trailing_offset {
             report = report.with_trailing_offset(trailing_offset);
         }
+
         if let Some(trailing_offset_type) = trailing_offset_type {
             report = report.with_trailing_offset_type(trailing_offset_type);
         }
+
         if let Some(avg_px) = avg_px {
             report.avg_px = Some(avg_px);
         }
+
         if let Some(display_qty) = display_qty {
             report = report.with_display_qty(display_qty);
         }
+
         if post_only {
             report = report.with_post_only(post_only);
         }
+
         if reduce_only {
             report = report.with_reduce_only(reduce_only);
         }
+
         if let Some(cancel_reason) = cancel_reason {
             report = report.with_cancel_reason(cancel_reason);
         }
+
         if let Some(ts_triggered) = ts_triggered {
             report = report.with_ts_triggered(ts_triggered.into());
         }

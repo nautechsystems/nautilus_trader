@@ -18,6 +18,7 @@
 use nautilus_model::identifiers::{AccountId, TraderId};
 
 use crate::common::{
+    credential::credential_env_vars,
     enums::{OKXContractType, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
     urls::{
         get_http_base_url, get_ws_base_url_business, get_ws_base_url_private,
@@ -27,6 +28,10 @@ use crate::common::{
 
 /// Configuration for the OKX data client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
+)]
 pub struct OKXDataClientConfig {
     /// Optional API key for authenticated endpoints.
     pub api_key: Option<String>,
@@ -105,10 +110,10 @@ impl OKXDataClientConfig {
     /// Returns `true` when all API credential fields are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        let has_key = self.api_key.is_some() || std::env::var("OKX_API_KEY").is_ok();
-        let has_secret = self.api_secret.is_some() || std::env::var("OKX_API_SECRET").is_ok();
-        let has_passphrase =
-            self.api_passphrase.is_some() || std::env::var("OKX_API_PASSPHRASE").is_ok();
+        let (key_var, secret_var, passphrase_var) = credential_env_vars();
+        let has_key = self.api_key.is_some() || std::env::var(key_var).is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var(secret_var).is_ok();
+        let has_passphrase = self.api_passphrase.is_some() || std::env::var(passphrase_var).is_ok();
         has_key && has_secret && has_passphrase
     }
 
@@ -145,6 +150,10 @@ impl OKXDataClientConfig {
 
 /// Configuration for the OKX execution client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
+)]
 pub struct OKXExecClientConfig {
     /// The trader ID for the client.
     pub trader_id: TraderId,
@@ -235,10 +244,10 @@ impl OKXExecClientConfig {
     /// Returns `true` when all API credential fields are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        let has_key = self.api_key.is_some() || std::env::var("OKX_API_KEY").is_ok();
-        let has_secret = self.api_secret.is_some() || std::env::var("OKX_API_SECRET").is_ok();
-        let has_passphrase =
-            self.api_passphrase.is_some() || std::env::var("OKX_API_PASSPHRASE").is_ok();
+        let (key_var, secret_var, passphrase_var) = credential_env_vars();
+        let has_key = self.api_key.is_some() || std::env::var(key_var).is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var(secret_var).is_ok();
+        let has_passphrase = self.api_passphrase.is_some() || std::env::var(passphrase_var).is_ok();
         has_key && has_secret && has_passphrase
     }
 

@@ -1857,6 +1857,72 @@ class TestVolumeImbalanceBarAggregator:
         assert len(handler) == 1
         assert handler[0].volume == Quantity.from_int(16)
 
+    @pytest.mark.parametrize("step", [1000, 1500])
+    def test_large_step_no_overflow(self, step):
+        # Arrange
+        handler = []
+        bar_spec = BarSpecification(step, BarAggregation.VOLUME_IMBALANCE, PriceType.LAST)
+        bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+        aggregator = VolumeImbalanceBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+        )
+
+        # Act
+        total_volume = step * 2
+        for i in range(total_volume):
+            tick = TradeTick(
+                instrument_id=AUDUSD_SIM.id,
+                price=Price.from_str("1.00001"),
+                size=Quantity.from_int(1),
+                aggressor_side=AggressorSide.BUYER,
+                trade_id=TradeId(f"overflow-{i}"),
+                ts_event=i,
+                ts_init=i,
+            )
+            aggregator.handle_trade_tick(tick)
+
+        # Assert
+        assert len(handler) == 2
+        assert handler[0].volume == Quantity.from_int(step)
+        assert handler[1].volume == Quantity.from_int(step)
+
+    def test_different_large_steps_produce_different_bar_counts(self):
+        # Arrange
+        total_volume = 3000
+        results = {}
+
+        # Act
+        for step in (1000, 1500):
+            handler = []
+            bar_spec = BarSpecification(step, BarAggregation.VOLUME_IMBALANCE, PriceType.LAST)
+            bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+            aggregator = VolumeImbalanceBarAggregator(
+                AUDUSD_SIM,
+                bar_type,
+                handler.append,
+            )
+
+            for i in range(total_volume):
+                tick = TradeTick(
+                    instrument_id=AUDUSD_SIM.id,
+                    price=Price.from_str("1.00001"),
+                    size=Quantity.from_int(1),
+                    aggressor_side=AggressorSide.BUYER,
+                    trade_id=TradeId(f"diff-{i}"),
+                    ts_event=i,
+                    ts_init=i,
+                )
+                aggregator.handle_trade_tick(tick)
+
+            results[step] = len(handler)
+
+        # Assert
+        assert results[1000] == 3
+        assert results[1500] == 2
+        assert results[1000] != results[1500]
+
 
 class TestVolumeRunsBarAggregator:
     def test_emits_after_consecutive_same_side_volume(self):
@@ -2027,6 +2093,72 @@ class TestVolumeRunsBarAggregator:
         assert len(handler) == 1
         assert handler[0].volume == Quantity.from_int(12)
         assert handler[0].high == Price.from_str("1.00005")
+
+    @pytest.mark.parametrize("step", [1000, 1500])
+    def test_large_step_no_overflow(self, step):
+        # Arrange
+        handler = []
+        bar_spec = BarSpecification(step, BarAggregation.VOLUME_RUNS, PriceType.LAST)
+        bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+        aggregator = VolumeRunsBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+        )
+
+        # Act
+        total_volume = step * 2
+        for i in range(total_volume):
+            tick = TradeTick(
+                instrument_id=AUDUSD_SIM.id,
+                price=Price.from_str("1.00001"),
+                size=Quantity.from_int(1),
+                aggressor_side=AggressorSide.BUYER,
+                trade_id=TradeId(f"overflow-{i}"),
+                ts_event=i,
+                ts_init=i,
+            )
+            aggregator.handle_trade_tick(tick)
+
+        # Assert
+        assert len(handler) == 2
+        assert handler[0].volume == Quantity.from_int(step)
+        assert handler[1].volume == Quantity.from_int(step)
+
+    def test_different_large_steps_produce_different_bar_counts(self):
+        # Arrange
+        total_volume = 3000
+        results = {}
+
+        # Act
+        for step in (1000, 1500):
+            handler = []
+            bar_spec = BarSpecification(step, BarAggregation.VOLUME_RUNS, PriceType.LAST)
+            bar_type = BarType(AUDUSD_SIM.id, bar_spec)
+            aggregator = VolumeRunsBarAggregator(
+                AUDUSD_SIM,
+                bar_type,
+                handler.append,
+            )
+
+            for i in range(total_volume):
+                tick = TradeTick(
+                    instrument_id=AUDUSD_SIM.id,
+                    price=Price.from_str("1.00001"),
+                    size=Quantity.from_int(1),
+                    aggressor_side=AggressorSide.BUYER,
+                    trade_id=TradeId(f"diff-{i}"),
+                    ts_event=i,
+                    ts_init=i,
+                )
+                aggregator.handle_trade_tick(tick)
+
+            results[step] = len(handler)
+
+        # Assert
+        assert results[1000] == 3
+        assert results[1500] == 2
+        assert results[1000] != results[1500]
 
 
 class TestTestValueBarAggregator:

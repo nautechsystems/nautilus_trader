@@ -31,7 +31,9 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [features]
 default = []
+arrow = ["dep:arrow"]
 capnp = ["dep:capnp"]
+sbe = []
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
@@ -49,7 +51,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
-arrow = { workspace = true }
 indexmap = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -59,6 +60,7 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 
+arrow = { workspace = true, optional = true }
 capnp = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 
@@ -81,3 +83,15 @@ required-features = ["capnp"]
 name = "serialization_comparison"
 path = "benches/serialization_comparison.rs"
 harness = false
+
+[[bench]]
+name = "sbe_decoding"
+path = "benches/sbe_decoding.rs"
+harness = false
+required-features = ["sbe"]
+
+[[bench]]
+name = "quote_tick_capnp_vs_sbe"
+path = "benches/quote_tick_capnp_vs_sbe.rs"
+harness = false
+required-features = ["capnp", "sbe"]

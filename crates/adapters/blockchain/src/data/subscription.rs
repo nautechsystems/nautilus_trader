@@ -67,15 +67,19 @@ impl DefiDataSubscriptionManager {
         if let Some(addresses) = self.subscribed_pool_swaps.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
+
         if let Some(addresses) = self.subscribed_pool_mints.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
+
         if let Some(addresses) = self.subscribed_pool_burns.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
+
         if let Some(addresses) = self.subscribed_pool_collects.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
+
         if let Some(addresses) = self.subscribed_pool_flashes.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
@@ -91,15 +95,19 @@ impl DefiDataSubscriptionManager {
         if let Some(swap_event_signature) = self.pool_swap_event_encoded.get(dex) {
             result.push(swap_event_signature.clone());
         }
+
         if let Some(mint_event_signature) = self.pool_mint_event_encoded.get(dex) {
             result.push(mint_event_signature.clone());
         }
+
         if let Some(burn_event_signature) = self.pool_burn_event_encoded.get(dex) {
             result.push(burn_event_signature.clone());
         }
+
         if let Some(collect_event_signature) = self.pool_collect_event_encoded.get(dex) {
             result.push(collect_event_signature.clone());
         }
+
         if let Some(flash_event_signature) = self.pool_flash_event_encoded.get(dex) {
             result.push(flash_event_signature.clone());
         }

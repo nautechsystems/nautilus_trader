@@ -300,6 +300,13 @@ async def test_get_historical_bars(ib_client):
     duration = "5 S"
     ib_client._eclient.reqHistoricalData = Mock()
 
+    ib_client._requests.add_req_id(
+        req_id=998,
+        name=(str(InstrumentId.from_str("AAPL.NASDAQ")), "market_data"),
+        handle=MagicMock(),
+        cancel=ib_client._eclient.cancelAccountSummary,
+    )
+
     # Act
     with patch("asyncio.wait_for"):
         await ib_client.get_historical_bars(

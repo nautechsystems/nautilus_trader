@@ -141,7 +141,7 @@ If both `demo` and `testnet` are set to `True`, demo takes priority.
 
 Bybit offers a flexible combination of trigger types, enabling a broader range of Nautilus orders.
 All the order types listed below can be used as *either* entries or exits, except for trailing stops
-(which utilize a position-related API).
+(which use a position-related API).
 
 ### Order types
 
@@ -589,7 +589,7 @@ config = TradingNodeConfig(
             "api_key": "YOUR_BYBIT_API_KEY",
             "api_secret": "YOUR_BYBIT_API_SECRET",
             "base_url_http": None,  # Override with custom endpoint
-            "product_types": [BybitProductType.LINEAR]
+            "product_types": [BybitProductType.LINEAR],
             "testnet": False,
         },
     },
@@ -598,7 +598,7 @@ config = TradingNodeConfig(
             "api_key": "YOUR_BYBIT_API_KEY",
             "api_secret": "YOUR_BYBIT_API_SECRET",
             "base_url_http": None,  # Override with custom endpoint
-            "product_types": [BybitProductType.LINEAR]
+            "product_types": [BybitProductType.LINEAR],
             "testnet": False,
         },
     },

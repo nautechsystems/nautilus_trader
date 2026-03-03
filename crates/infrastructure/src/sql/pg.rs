@@ -21,6 +21,7 @@ fn validate_sql_identifier(value: &str, label: &str) -> anyhow::Result<()> {
     if value.is_empty() {
         anyhow::bail!("{label} must not be empty");
     }
+
     if !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         anyhow::bail!(
             "{label} contains invalid characters (only alphanumeric and underscore allowed): {value}"

@@ -123,7 +123,7 @@ mod tests {
             Some(Decimal::from_str("-0.001").unwrap()),
             None,
             Some(Ustr::from("O-123")),
-            Default::default(),
+            UUID4::default(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
         )
@@ -140,7 +140,7 @@ mod tests {
             None,
             Some(Money::new(-5.50, Currency::USD())),
             Some(Ustr::from("funding_2024_01_15_08:00")),
-            Default::default(),
+            UUID4::default(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
         )

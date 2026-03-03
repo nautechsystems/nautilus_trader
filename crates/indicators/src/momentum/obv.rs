@@ -109,6 +109,7 @@ impl OnBalanceVolume {
 
         if !self.initialized {
             self.has_inputs = true;
+
             if (self.period == 0 && !self.obv.is_empty()) || self.obv.len() >= self.period {
                 self.initialized = true;
             }

@@ -150,8 +150,6 @@ impl DataBackendSession {
     /// `sql_query`: A custom sql query to retrieve records from file. If no query is provided a default
     /// query "SELECT * FROM <`table_name`>" is run.
     ///
-    /// # Safety
-    ///
     /// The file data must be ordered by the `ts_init` in ascending order for this
     /// to work correctly.
     pub fn add_file<T>(
@@ -331,6 +329,8 @@ impl DataQueryResult {
                 "drop_chunk: null ptr with non-zero len ({len}) - memory corruption"
             );
 
+            // SAFETY: `ptr`, `len`, and `cap` originate from a valid `CVec` and the
+            // assertions above verify the invariants required by `Vec::from_raw_parts`.
             let data: Vec<Data> = unsafe { Vec::from_raw_parts(ptr.cast::<Data>(), len, cap) };
             drop(data);
         }

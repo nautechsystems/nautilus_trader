@@ -121,31 +121,28 @@ async fn test_handler_parses_trade_tick() {
     let stream = client.stream();
     tokio::pin!(stream);
 
-    // Mock server sends book then trade - collect messages
-    let mut found_trade = false;
-    for _ in 0..5 {
-        let result = tokio::time::timeout(Duration::from_millis(500), stream.next()).await;
-        match result {
-            Ok(Some(NautilusDataWsMessage::Data(data_vec))) => {
-                for data in data_vec {
-                    if let Data::Trade(trade) = data {
-                        assert_eq!(trade.instrument_id.symbol.as_str(), "EURUSD-PERP");
-                        assert!(trade.price.as_f64() > 0.0);
-                        assert!(trade.size.as_f64() > 0.0);
-                        found_trade = true;
-                        break;
+    // Mock server sends book then trade - skip non-trade messages
+    let trade = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match stream.next().await {
+                Some(NautilusDataWsMessage::Data(data_vec)) => {
+                    for data in data_vec {
+                        if let Data::Trade(trade) = data {
+                            return trade;
+                        }
                     }
                 }
+                Some(_) => {}
+                None => panic!("Stream closed without receiving a trade"),
             }
-            Ok(Some(_)) => continue,
-            Ok(None) | Err(_) => break,
         }
-        if found_trade {
-            break;
-        }
-    }
+    })
+    .await
+    .expect("Timeout waiting for trade tick");
 
-    assert!(found_trade, "Expected to receive a trade tick");
+    assert_eq!(trade.instrument_id.symbol.as_str(), "EURUSD-PERP");
+    assert!(trade.price.as_f64() > 0.0);
+    assert!(trade.size.as_f64() > 0.0);
     client.close().await;
 }
 
@@ -207,25 +204,23 @@ async fn test_handler_parses_candle_to_bar() {
 
     // Handler only emits bar when candle closes (timestamp changes)
     // Mock server sends two candles, so we should receive one bar
-    let mut found_bar = false;
-    for _ in 0..5 {
-        let result = tokio::time::timeout(Duration::from_millis(500), stream.next()).await;
-        match result {
-            Ok(Some(NautilusDataWsMessage::Bar(bar))) => {
-                assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "EURUSD-PERP");
-                assert!(bar.open.as_f64() > 0.0);
-                assert!(bar.high.as_f64() > 0.0);
-                assert!(bar.low.as_f64() > 0.0);
-                assert!(bar.close.as_f64() > 0.0);
-                found_bar = true;
-                break;
+    let bar = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match stream.next().await {
+                Some(NautilusDataWsMessage::Bar(bar)) => return bar,
+                Some(_) => {}
+                None => panic!("Stream closed without receiving a bar"),
             }
-            Ok(Some(_)) => continue,
-            Ok(None) | Err(_) => break,
         }
-    }
+    })
+    .await
+    .expect("Timeout waiting for bar");
 
-    assert!(found_bar, "Expected to receive a bar");
+    assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "EURUSD-PERP");
+    assert!(bar.open.as_f64() > 0.0);
+    assert!(bar.high.as_f64() > 0.0);
+    assert!(bar.low.as_f64() > 0.0);
+    assert!(bar.close.as_f64() > 0.0);
 
     client.close().await;
 }
@@ -309,7 +304,7 @@ async fn test_data_client_emits_quote_tick_via_channel() {
                 assert!(quote.ask_price.as_f64() > 0.0);
                 break;
             }
-            Ok(Some(DataEvent::Instrument(_))) => continue,
+            Ok(Some(DataEvent::Instrument(_))) => {}
             Ok(Some(other)) => panic!("Expected Quote data event, was {other:?}"),
             Ok(None) => panic!("Channel closed unexpectedly"),
             Err(_) => panic!("Timeout waiting for quote event"),
@@ -367,7 +362,7 @@ async fn test_data_client_emits_trade_tick_via_channel() {
                 found_trade = true;
                 break;
             }
-            Ok(Some(_)) => continue,
+            Ok(Some(_)) => {}
             Ok(None) | Err(_) => break,
         }
     }

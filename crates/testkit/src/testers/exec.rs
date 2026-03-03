@@ -29,7 +29,7 @@ use nautilus_common::{
 use nautilus_core::{Params, UnixNanos, datetime::secs_to_nanos_unchecked};
 use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{BookType, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{BookType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{ClientId, InstrumentId, StrategyId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -96,6 +96,10 @@ pub struct ExecTesterConfig {
     pub stop_trigger_type: TriggerType,
     /// Override time in force for stop orders (None uses GTC/GTD logic).
     pub stop_time_in_force: Option<TimeInForce>,
+    /// Trailing offset for TRAILING_STOP_MARKET orders.
+    pub trailing_offset: Option<Decimal>,
+    /// Trailing offset type (BasisPoints or Price).
+    pub trailing_offset_type: TrailingOffsetType,
     /// Enable bracket orders (entry with TP/SL).
     pub enable_brackets: bool,
     /// Entry order type for bracket orders.
@@ -185,6 +189,8 @@ impl ExecTesterConfig {
             stop_limit_offset_ticks: None,
             stop_trigger_type: TriggerType::Default,
             stop_time_in_force: None,
+            trailing_offset: None,
+            trailing_offset_type: TrailingOffsetType::BasisPoints,
             enable_brackets: false,
             bracket_entry_order_type: OrderType::Limit,
             bracket_offset_ticks: 500,
@@ -397,6 +403,18 @@ impl ExecTesterConfig {
         self.stop_time_in_force = tif;
         self
     }
+
+    #[must_use]
+    pub fn with_trailing_offset(mut self, offset: Decimal) -> Self {
+        self.trailing_offset = Some(offset);
+        self
+    }
+
+    #[must_use]
+    pub fn with_trailing_offset_type(mut self, offset_type: TrailingOffsetType) -> Self {
+        self.trailing_offset_type = offset_type;
+        self
+    }
 }
 
 impl Default for ExecTesterConfig {
@@ -429,6 +447,8 @@ impl Default for ExecTesterConfig {
             stop_limit_offset_ticks: None,
             stop_trigger_type: TriggerType::Default,
             stop_time_in_force: None,
+            trailing_offset: None,
+            trailing_offset_type: TrailingOffsetType::BasisPoints,
             enable_brackets: false,
             bracket_entry_order_type: OrderType::Limit,
             bracket_offset_ticks: 500,
@@ -514,6 +534,7 @@ impl DataActor for ExecTester {
             if self.config.subscribe_quotes {
                 self.subscribe_quotes(instrument_id, client_id, None);
             }
+
             if self.config.subscribe_trades {
                 self.subscribe_trades(instrument_id, client_id, None);
             }
@@ -544,6 +565,7 @@ impl DataActor for ExecTester {
 
         if self.config.cancel_orders_on_stop {
             let strategy_id = StrategyId::from(self.core.actor_id.inner().as_str());
+
             if self.config.use_individual_cancels_on_stop {
                 let cache = self.cache();
                 let open_orders: Vec<OrderAny> = cache
@@ -580,6 +602,7 @@ impl DataActor for ExecTester {
                 .config
                 .close_positions_time_in_force
                 .or(Some(TimeInForce::Gtc));
+
             if let Err(e) = self.close_all_positions(
                 instrument_id,
                 None,
@@ -810,7 +833,9 @@ impl ExecTester {
         let client_id = self.config.client_id;
 
         match &order {
-            OrderAny::StopMarket(_) | OrderAny::MarketIfTouched(_) => {
+            OrderAny::StopMarket(_)
+            | OrderAny::MarketIfTouched(_)
+            | OrderAny::TrailingStopMarket(_) => {
                 self.modify_order(order, None, None, Some(trigger_price), client_id)
             }
             OrderAny::StopLimit(_) | OrderAny::LimitIfTouched(_) => {
@@ -883,6 +908,7 @@ impl ExecTester {
             } else {
                 self.submit_limit_order(OrderSide::Buy, price)
             };
+
             if let Err(e) = result {
                 log::error!("Failed to submit buy order: {e}");
             }
@@ -902,6 +928,7 @@ impl ExecTester {
             } else if self.config.cancel_replace_orders_to_maintain_tob_offset {
                 let order_clone = order.clone();
                 let _ = self.cancel_order(order_clone, client_id);
+
                 if let Err(e) = self.submit_limit_order(OrderSide::Buy, price) {
                     log::error!("Failed to submit replacement buy order: {e}");
                 }
@@ -936,6 +963,7 @@ impl ExecTester {
             } else {
                 self.submit_limit_order(OrderSide::Sell, price)
             };
+
             if let Err(e) = result {
                 log::error!("Failed to submit sell order: {e}");
             }
@@ -955,6 +983,7 @@ impl ExecTester {
             } else if self.config.cancel_replace_orders_to_maintain_tob_offset {
                 let order_clone = order.clone();
                 let _ = self.cancel_order(order_clone, client_id);
+
                 if let Err(e) = self.submit_limit_order(OrderSide::Sell, price) {
                     log::error!("Failed to submit replacement sell order: {e}");
                 }
@@ -990,6 +1019,7 @@ impl ExecTester {
         ) {
             if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
                 let limit_offset = price_increment * limit_offset_ticks as f64;
+
                 if self.config.stop_order_type == OrderType::LimitIfTouched {
                     Some(instrument.make_price(trigger_price.as_f64() - limit_offset))
                 } else {
@@ -1027,6 +1057,7 @@ impl ExecTester {
                 } else if self.config.cancel_replace_stop_orders_to_maintain_offset {
                     let order_clone = order.clone();
                     let _ = self.cancel_order(order_clone, self.config.client_id);
+
                     if let Err(e) =
                         self.submit_stop_order(OrderSide::Buy, trigger_price, limit_price)
                     {
@@ -1065,6 +1096,7 @@ impl ExecTester {
         ) {
             if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
                 let limit_offset = price_increment * limit_offset_ticks as f64;
+
                 if self.config.stop_order_type == OrderType::LimitIfTouched {
                     Some(instrument.make_price(trigger_price.as_f64() + limit_offset))
                 } else {
@@ -1102,6 +1134,7 @@ impl ExecTester {
                 } else if self.config.cancel_replace_stop_orders_to_maintain_offset {
                     let order_clone = order.clone();
                     let _ = self.cancel_order(order_clone, self.config.client_id);
+
                     if let Err(e) =
                         self.submit_stop_order(OrderSide::Sell, trigger_price, limit_price)
                     {
@@ -1282,6 +1315,32 @@ impl ExecTester {
                     None, // reduce_only
                     Some(self.config.use_quote_quantity),
                     self.config.order_display_qty,
+                    self.config.emulation_trigger,
+                    None, // trigger_instrument_id
+                    None, // exec_algorithm_id
+                    None, // exec_algorithm_params
+                    None, // tags
+                    None, // client_order_id
+                )
+            }
+            OrderType::TrailingStopMarket => {
+                let Some(trailing_offset) = self.config.trailing_offset else {
+                    anyhow::bail!("TRAILING_STOP_MARKET order requires trailing_offset config");
+                };
+                factory.trailing_stop_market(
+                    self.config.instrument_id,
+                    order_side,
+                    quantity,
+                    trailing_offset,
+                    Some(self.config.trailing_offset_type),
+                    Some(trigger_price),
+                    None, // trigger_price (activation_price used as trigger)
+                    Some(self.config.stop_trigger_type),
+                    Some(time_in_force),
+                    expire_time,
+                    None, // reduce_only
+                    Some(self.config.use_quote_quantity),
+                    None, // display_qty
                     self.config.emulation_trigger,
                     None, // trigger_instrument_id
                     None, // exec_algorithm_id

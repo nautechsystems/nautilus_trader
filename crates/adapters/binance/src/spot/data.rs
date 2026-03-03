@@ -88,8 +88,11 @@ impl BinanceSpotDataClient {
     ///
     /// Returns an error if the client fails to initialize.
     pub fn new(client_id: ClientId, config: BinanceDataClientConfig) -> anyhow::Result<Self> {
+        let clock = get_atomic_clock_realtime();
+
         let http_client = BinanceSpotHttpClient::new(
             config.environment,
+            clock,
             config.api_key.clone(),
             config.api_secret.clone(),
             config.base_url_http.clone(),
@@ -119,8 +122,6 @@ impl BinanceSpotDataClient {
             creds.as_ref().map(|(_, s)| s.clone()),
             Some(20), // Heartbeat interval
         )?;
-
-        let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
 
         Ok(Self {
@@ -673,6 +674,7 @@ impl DataClient for BinanceSpotDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
@@ -715,6 +717,7 @@ impl DataClient for BinanceSpotDataClient {
                         clock.get_time_ns(),
                         params,
                     ));
+
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send bars response: {e}");
                     }

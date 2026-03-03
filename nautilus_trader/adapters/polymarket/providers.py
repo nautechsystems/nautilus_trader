@@ -205,14 +205,8 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        """
-        Load instruments using Gamma API markets.
-        """
         # Extract unique condition IDs (markets can have multiple tokens/instruments)
         condition_ids = list({get_polymarket_condition_id(inst_id) for inst_id in instrument_ids})
-
-        # Build set of requested token_ids for filtering
-        requested_token_ids = {get_polymarket_token_id(inst_id) for inst_id in instrument_ids}
 
         # Create a copy to avoid mutating the caller's filters
         filters = filters.copy() if filters is not None else {}
@@ -243,9 +237,8 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
             for token_info in normalized_market.get("tokens", []):
                 token_id = token_info["token_id"]
-
-                # Only load if this specific token was requested
-                if requested_token_ids and token_id not in requested_token_ids:
+                if not token_id:
+                    self._log.warning(f"Market {condition_id} had an empty token")
                     continue
 
                 outcome = token_info["outcome"]

@@ -16,7 +16,7 @@
 //! Python bindings for the Binance Spot HTTP client.
 
 use chrono::{DateTime, Utc};
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{python::to_pyvalue_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
@@ -58,6 +58,7 @@ impl BinanceSpotHttpClient {
     ) -> PyResult<Self> {
         Self::new(
             environment,
+            get_atomic_clock_realtime(),
             api_key,
             api_secret,
             base_url,

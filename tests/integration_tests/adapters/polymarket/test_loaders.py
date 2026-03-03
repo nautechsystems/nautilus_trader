@@ -24,7 +24,6 @@ import pytest
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.loaders import PolymarketDataLoader
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 
@@ -60,20 +59,10 @@ def market_details_data():
 
 
 @pytest.fixture
-def orderbook_history_data():
+def trades_data():
     data = pkgutil.get_data(
         "tests.integration_tests.adapters.polymarket.resources.http_responses",
-        "orderbook_history.json",
-    )
-    assert data
-    return msgspec.json.decode(data)
-
-
-@pytest.fixture
-def price_history_data():
-    data = pkgutil.get_data(
-        "tests.integration_tests.adapters.polymarket.resources.http_responses",
-        "price_history.json",
+        "trades.json",
     )
     assert data
     return msgspec.json.decode(data)
@@ -91,8 +80,12 @@ def test_instrument(market_details_data):
 
 
 @pytest.fixture
-def loader(test_instrument):
-    return PolymarketDataLoader(test_instrument)
+def loader(test_instrument, market_details_data):
+    return PolymarketDataLoader(
+        test_instrument,
+        token_id=market_details_data["tokens"][0]["token_id"],
+        condition_id=market_details_data["condition_id"],
+    )
 
 
 @pytest.mark.asyncio
@@ -187,6 +180,7 @@ async def test_from_market_slug_uses_slug_endpoint(
 
     # Assert
     assert loader.token_id == market_details_data["tokens"][0]["token_id"]
+    assert loader.condition_id == market_slug_data["conditionId"]
     assert mock_http_client.get.call_args_list[0].kwargs["url"] == (
         "https://gamma-api.polymarket.com/markets/slug/kamala-harris-divorce-in-2025"
     )
@@ -290,45 +284,60 @@ async def test_fetch_market_details(test_instrument, market_details_data):
 
 
 @pytest.mark.asyncio
-async def test_fetch_orderbook_history(test_instrument, orderbook_history_data):
+async def test_fetch_trades(test_instrument, trades_data):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
     mock_response = Mock()
     mock_response.status = 200
-    mock_response.body = msgspec.json.encode(orderbook_history_data)
+    mock_response.body = msgspec.json.encode(trades_data)
     mock_http_client.get = AsyncMock(return_value=mock_response)
 
-    token_id = "60487116984468020978247225474488676749601001829886755968952521846780452448915"
-    start_ms = 1729000000000
-    end_ms = 1729000180000
-
+    condition_id = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
     loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
 
     # Act
-    snapshots = await loader.fetch_orderbook_history(token_id, start_ms, end_ms)
+    trades = await loader.fetch_trades(condition_id)
 
     # Assert
     mock_http_client.get.assert_called_once()
-    assert len(snapshots) == 3
-    assert snapshots[0]["timestamp"] == "1729000000000"
-    assert len(snapshots[0]["bids"]) == 3
-    assert len(snapshots[0]["asks"]) == 3
+    assert len(trades) == 4
+    assert trades[0]["side"] == "SELL"
+    assert trades[0]["price"] == 0.998
+    assert trades[0]["size"] == 5.4
+    assert trades[0]["timestamp"] == 1729000180
 
 
 @pytest.mark.asyncio
-async def test_fetch_orderbook_history_with_pagination(test_instrument):
+async def test_fetch_trades_with_pagination(test_instrument):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
 
-    # Simulate pagination: total count is 2, each page returns 1 item with limit=1
-    page1_data = {
-        "count": 2,
-        "data": [{"timestamp": "1729000000000", "bids": [], "asks": []}],
-    }
-    page2_data = {
-        "count": 2,
-        "data": [{"timestamp": "1729000060000", "bids": [], "asks": []}],
-    }
+    page1_data = [
+        {
+            "side": "BUY",
+            "asset": "token123",
+            "conditionId": "0xcond",
+            "size": 10.0,
+            "price": 0.5,
+            "timestamp": 1729000060,
+            "transactionHash": "0xhash1",
+            "outcome": "Yes",
+            "outcomeIndex": 0,
+        },
+    ]
+    page2_data = [
+        {
+            "side": "SELL",
+            "asset": "token123",
+            "conditionId": "0xcond",
+            "size": 20.0,
+            "price": 0.6,
+            "timestamp": 1729000000,
+            "transactionHash": "0xhash2",
+            "outcome": "Yes",
+            "outcomeIndex": 0,
+        },
+    ]
 
     mock_response1 = Mock()
     mock_response1.status = 200
@@ -338,129 +347,62 @@ async def test_fetch_orderbook_history_with_pagination(test_instrument):
     mock_response2.status = 200
     mock_response2.body = msgspec.json.encode(page2_data)
 
-    mock_http_client.get = AsyncMock(side_effect=[mock_response1, mock_response2])
+    # Third response is empty to stop pagination
+    mock_response3 = Mock()
+    mock_response3.status = 200
+    mock_response3.body = msgspec.json.encode([])
+
+    mock_http_client.get = AsyncMock(
+        side_effect=[mock_response1, mock_response2, mock_response3],
+    )
 
     loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
 
     # Act - use limit=1 to force pagination
-    snapshots = await loader.fetch_orderbook_history(
-        "token123",
-        1729000000000,
-        1729000120000,
-        limit=1,
-    )
+    trades = await loader.fetch_trades("0xcond", limit=1)
 
     # Assert
-    assert mock_http_client.get.call_count == 2
-    assert len(snapshots) == 2
+    assert mock_http_client.get.call_count == 3
+    assert len(trades) == 2
 
 
-@pytest.mark.asyncio
-async def test_fetch_price_history(test_instrument, price_history_data):
-    # Arrange
-    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
-    mock_response = Mock()
-    mock_response.status = 200
-    mock_response.body = msgspec.json.encode(price_history_data)
-    mock_http_client.get = AsyncMock(return_value=mock_response)
+def test_parse_trades(loader, trades_data):
+    # Act - pass unfiltered data (includes both Yes and No token trades)
+    trades = loader.parse_trades(trades_data)
 
-    token_id = "60487116984468020978247225474488676749601001829886755968952521846780452448915"
-    start_time_ms = 1729000000000
-    end_time_ms = 1729000600000
-
-    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
-
-    # Act
-    history = await loader.fetch_price_history(token_id, start_time_ms, end_time_ms)
-
-    # Assert
-    mock_http_client.get.assert_called_once()
-    assert len(history) == 10
-    assert history[0]["t"] == 1729000000
-    assert history[0]["p"] == 0.51
-
-
-def test_parse_orderbook_snapshots(loader, orderbook_history_data):
-    # Arrange
-    snapshots = orderbook_history_data["data"]
-
-    # Act
-    deltas_list = loader.parse_orderbook_snapshots(snapshots)
-
-    # Assert
-    assert len(deltas_list) == 3
-    for deltas in deltas_list:
-        assert isinstance(deltas, OrderBookDeltas)
-        assert deltas.instrument_id == loader.instrument.id
-        # Each snapshot should have: 1 CLEAR + 3 bids + 3 asks = 7 deltas
-        assert len(deltas.deltas) == 7
-
-
-def test_parse_orderbook_snapshots_uses_instrument_precision(
-    loader,
-    orderbook_history_data,
-):
-    # Arrange
-    snapshots = orderbook_history_data["data"]
-
-    # Act
-    deltas_list = loader.parse_orderbook_snapshots(snapshots)
-
-    # Assert
-    first_deltas = deltas_list[0]
-    # Skip CLEAR delta, check first ADD delta
-    first_order_delta = first_deltas.deltas[1]
-
-    assert first_order_delta.order.price.precision == loader.instrument.price_precision
-    assert first_order_delta.order.size.precision == loader.instrument.size_precision
-
-
-def test_parse_price_history(loader, price_history_data):
-    # Arrange
-    history = price_history_data["history"]
-
-    # Act
-    trades = loader.parse_price_history(history)
-
-    # Assert
-    assert len(trades) == 10
+    # Assert - only Yes token trades parsed (No token filtered out)
+    assert len(trades) == 3
     for trade in trades:
         assert isinstance(trade, TradeTick)
         assert trade.instrument_id == loader.instrument.id
 
 
-def test_parse_price_history_aggressor_side_logic(loader, price_history_data):
-    # Arrange
-    history = price_history_data["history"]
-
+def test_parse_trades_aggressor_side(loader, trades_data):
     # Act
-    trades = loader.parse_price_history(history)
+    trades = loader.parse_trades(trades_data)
 
     # Assert
-    # First trade should have NO_AGGRESSOR (no previous price)
-    assert trades[0].aggressor_side == AggressorSide.NO_AGGRESSOR
-
-    # Second trade: price went from 0.51 to 0.52 (up) -> BUYER
+    assert trades[0].aggressor_side == AggressorSide.SELLER
     assert trades[1].aggressor_side == AggressorSide.BUYER
-
-    # Fourth trade: price went from 0.53 to 0.52 (down) -> SELLER
-    assert trades[3].aggressor_side == AggressorSide.SELLER
+    assert trades[2].aggressor_side == AggressorSide.BUYER
 
 
-def test_parse_price_history_uses_instrument_precision(
-    loader,
-    price_history_data,
-):
-    # Arrange
-    history = price_history_data["history"]
-
+def test_parse_trades_uses_instrument_precision(loader, trades_data):
     # Act
-    trades = loader.parse_price_history(history)
+    trades = loader.parse_trades(trades_data)
 
     # Assert
     first_trade = trades[0]
     assert first_trade.price.precision == loader.instrument.price_precision
     assert first_trade.size.precision == loader.instrument.size_precision
+
+
+def test_parse_trades_uses_transaction_hash_as_trade_id(loader, trades_data):
+    # Act
+    trades = loader.parse_trades(trades_data)
+
+    # Assert - last 36 chars of tx hash used (TradeId max length)
+    assert str(trades[0].trade_id) == trades_data[0]["transactionHash"][-36:]
 
 
 @pytest.fixture
@@ -595,6 +537,7 @@ async def test_from_event_slug(event_data, market_details_data):
     assert len(loaders) == 3
     for loader in loaders:
         assert loader.token_id == market_details_data["tokens"][0]["token_id"]
+        assert loader.condition_id is not None
         assert loader.instrument is not None
 
     # Verify API calls

@@ -15,12 +15,12 @@
 
 //! Example demonstrating live data testing with the BitMEX adapter.
 //!
-//! Run with: `cargo run --example bitmex-data-tester --package nautilus-bitmex`
+//! Credentials are resolved from environment variables automatically when not passed
+//! explicitly in the config (`api_key` / `api_secret` fields):
+//! - Testnet: `BITMEX_TESTNET_API_KEY` / `BITMEX_TESTNET_API_SECRET`
+//! - Mainnet: `BITMEX_API_KEY` / `BITMEX_API_SECRET`
 //!
-//! Environment variables (optional):
-//! - `BITMEX_TESTNET`: Set to `true` to use testnet endpoints.
-//! - `BITMEX_API_KEY`: API key for authenticated data topics.
-//! - `BITMEX_API_SECRET`: API secret for authenticated data topics.
+//! Run with: `cargo run --example bitmex-data-tester --package nautilus-bitmex`
 
 use std::num::NonZeroUsize;
 
@@ -33,30 +33,20 @@ use nautilus_model::{
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
-fn get_env_option(key: &str) -> Option<String> {
-    std::env::var(key).ok().filter(|s| !s.trim().is_empty())
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let use_testnet = std::env::var("BITMEX_TESTNET")
-        .ok()
-        .and_then(|value| value.parse::<bool>().ok())
-        .unwrap_or(false);
+    let use_testnet = true;
 
     let environment = Environment::Live;
     let trader_id = TraderId::test_default();
-    let node_name = "BITMEX-DATA-TESTER-001".to_string();
     let instrument_ids = vec![
         InstrumentId::from("XBTUSD.BITMEX"),
         // InstrumentId::from("ETHUSD.BITMEX"),
     ];
 
     let bitmex_config = BitmexDataClientConfig {
-        api_key: get_env_option("BITMEX_API_KEY"),
-        api_secret: get_env_option("BITMEX_API_SECRET"),
         use_testnet,
         ..Default::default()
     };
@@ -65,7 +55,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_id = ClientId::new("BITMEX");
 
     let mut node = LiveNode::builder(trader_id, environment)?
-        .with_name(node_name)
         .with_delay_post_stop_secs(2)
         .add_data_client(None, Box::new(client_factory), Box::new(bitmex_config))?
         .build()?;
@@ -76,6 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_subscribe_mark_prices(true)
         .with_subscribe_index_prices(true)
         .with_subscribe_funding_rates(true)
+        .with_subscribe_instrument_status(true)
         .with_subscribe_book_at_interval(true)
         .with_book_interval_ms(NonZeroUsize::new(10).expect("10 is non-zero"));
     let tester = DataTester::new(tester_config);

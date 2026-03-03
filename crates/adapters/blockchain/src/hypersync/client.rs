@@ -19,6 +19,7 @@ use ahash::AHashMap;
 use alloy::primitives::Address;
 use futures_util::Stream;
 use hypersync_client::{
+    StreamConfig,
     net_types::{BlockField, BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
@@ -141,7 +142,7 @@ impl HyperSyncClient {
         let cancellation_token = self.cancellation_token.clone();
 
         let _task = get_runtime().spawn(async move {
-            let mut rx = match client.stream(query, Default::default()).await {
+            let mut rx = match client.stream(query, StreamConfig::default()).await {
                 Ok(rx) => rx,
                 Err(e) => {
                     log::error!("Failed to create DEX event stream: {e}");
@@ -176,6 +177,7 @@ impl HyperSyncClient {
                                     }
                                     None => continue,
                                 };
+
                                 if event_signature == swap_event_encoded_signature {
                                     match dex_extended.parse_swap_event_hypersync(log.clone()) {
                                         Ok(swap_event) => {
@@ -189,7 +191,6 @@ impl HyperSyncClient {
                                             log::error!(
                                                 "Failed to parse swap with error '{e:?}' for event: {log:?}",
                                             );
-                                            continue;
                                         }
                                     }
                                 } else if event_signature == mint_event_encoded_signature {
@@ -205,7 +206,6 @@ impl HyperSyncClient {
                                             log::error!(
                                                 "Failed to parse mint with error '{e:?}' for event: {log:?}",
                                             );
-                                            continue;
                                         }
                                     }
                                 } else if event_signature == burn_event_encoded_signature {
@@ -221,12 +221,10 @@ impl HyperSyncClient {
                                             log::error!(
                                                 "Failed to parse burn with error '{e:?}' for event: {log:?}",
                                             );
-                                            continue;
                                         }
                                     }
                                 } else {
                                     log::error!("Unknown event signature: {event_signature}");
-                                    continue;
                                 }
                             }
                         }
@@ -261,7 +259,7 @@ impl HyperSyncClient {
         let mut rx = self
             .client
             .clone()
-            .stream(query, Default::default())
+            .stream(query, StreamConfig::default())
             .await
             .expect("Failed to create stream");
 
@@ -336,7 +334,7 @@ impl HyperSyncClient {
         let mut rx = self
             .client
             .clone()
-            .stream(query, Default::default())
+            .stream(query, StreamConfig::default())
             .await
             .unwrap();
 
@@ -500,6 +498,7 @@ impl HyperSyncClient {
             if let Some(token) = self.blocks_cancellation_token.take() {
                 token.cancel();
             }
+
             if let Err(e) = task.await {
                 log::error!("Error awaiting blocks task during unsubscribe: {e}");
             }

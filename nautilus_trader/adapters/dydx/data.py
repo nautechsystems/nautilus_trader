@@ -65,6 +65,7 @@ from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
@@ -158,6 +159,8 @@ class DydxDataClient(LiveMarketDataClient):
         self._active_mark_price_subs: set[InstrumentId] = set()
         self._active_index_price_subs: set[InstrumentId] = set()
         self._active_funding_rate_subs: set[InstrumentId] = set()
+        self._active_instrument_status_subs: set[InstrumentId] = set()
+        self._last_instrument_statuses: dict[InstrumentId, InstrumentStatus] = {}
 
     @property
     def instrument_provider(self) -> DydxInstrumentProvider:
@@ -171,11 +174,11 @@ class DydxDataClient(LiveMarketDataClient):
         instruments = self.instrument_provider.instruments_pyo3()
 
         await self._ws_client.connect(
+            loop_=self._loop,
             instruments=instruments,
             callback=self._handle_msg,
         )
 
-        # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=30.0)
         self._log.info(f"Connected to WebSocket {self._ws_client.py_url}", LogColor.BLUE)
 
@@ -186,7 +189,6 @@ class DydxDataClient(LiveMarketDataClient):
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
 
-        # Shutdown websocket
         if not self._ws_client.is_closed():
             self._log.debug("Disconnecting WebSocket")
 
@@ -194,7 +196,6 @@ class DydxDataClient(LiveMarketDataClient):
 
             self._log.debug(f"Disconnected from {self._ws_client.py_url}")
 
-        # Cancel any pending futures
         await cancel_tasks_with_timeout(
             self._ws_client_futures,
             self._log,
@@ -203,13 +204,14 @@ class DydxDataClient(LiveMarketDataClient):
 
         self._ws_client_futures.clear()
 
-        # Clear subscription state
         self._active_quote_subs.clear()
         self._active_delta_subs.clear()
         self._active_trade_subs.clear()
         self._active_mark_price_subs.clear()
         self._active_index_price_subs.clear()
         self._active_funding_rate_subs.clear()
+        self._active_instrument_status_subs.clear()
+        self._last_instrument_statuses.clear()
         self._order_books.clear()
         self._last_quotes.clear()
 
@@ -270,6 +272,14 @@ class DydxDataClient(LiveMarketDataClient):
                 self._handle_data(FundingRateUpdate.from_pyo3(capsule))
             return True
 
+        if isinstance(capsule, nautilus_pyo3.InstrumentStatus):
+            instrument_id = InstrumentId.from_str(capsule.instrument_id.value)
+            status = InstrumentStatus.from_pyo3(capsule)
+            self._last_instrument_statuses[instrument_id] = status
+            if instrument_id in self._active_instrument_status_subs:
+                self._handle_data(status)
+            return True
+
         return False
 
     def _handle_dict_message(self, capsule: dict) -> None:
@@ -306,13 +316,11 @@ class DydxDataClient(LiveMarketDataClient):
 
         # Synthesize quote if this instrument has an active quote subscription
         if instrument_id in self._active_quote_subs:
-            # Get or create local order book
             book = self._order_books.get(instrument_id)
             if book is None:
                 book = OrderBook(instrument_id, book_type=BookType.L2_MBP)
                 self._order_books[instrument_id] = book
 
-            # Apply deltas to local order book
             book.apply(deltas)
 
             bid_price = book.best_bid_price()
@@ -367,7 +375,6 @@ class DydxDataClient(LiveMarketDataClient):
             )
             return
 
-        # Track active subscription
         self._active_delta_subs.add(command.instrument_id)
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -378,23 +385,27 @@ class DydxDataClient(LiveMarketDataClient):
         # Quotes are synthesized from orderbook data (top-of-book)
         instrument_id = command.instrument_id
 
-        # Track active quote subscription
         self._active_quote_subs.add(instrument_id)
 
-        # Initialize local order book if needed
         if instrument_id not in self._order_books:
             self._order_books[instrument_id] = OrderBook(instrument_id, book_type=BookType.L2_MBP)
 
-        # Subscribe to orderbook channel (quotes are derived from orderbook deltas)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         await self._ws_client.subscribe_orderbook(pyo3_instrument_id)
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
-        # Track active subscription
         self._active_trade_subs.add(command.instrument_id)
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_trades(pyo3_instrument_id)
+
+    async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+        self._active_mark_price_subs.add(command.instrument_id)
+        # Mark prices come from the markets channel (already subscribed)
+
+    async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+        self._active_index_price_subs.add(command.instrument_id)
+        # Index prices come from the markets channel (already subscribed)
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         bar_type = command.bar_type
@@ -402,39 +413,20 @@ class DydxDataClient(LiveMarketDataClient):
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
         await self._ws_client.subscribe_bars(pyo3_bar_type)
 
-    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
-        # Remove from tracking
-        self._active_delta_subs.discard(command.instrument_id)
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        self._active_funding_rate_subs.add(command.instrument_id)
+        # Funding rates come from the markets channel (already subscribed)
 
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_orderbook(pyo3_instrument_id)
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
+        self._active_instrument_status_subs.add(command.instrument_id)
 
-    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
-        # Quotes are synthesized from orderbook data (top-of-book)
-        instrument_id = command.instrument_id
+        # Replay last known status (initial snapshot arrives before subscription)
+        if status := self._last_instrument_statuses.get(command.instrument_id):
+            self._handle_data(status)
 
-        # Remove from active quote subscriptions
-        self._active_quote_subs.discard(instrument_id)
-
-        # Clean up state
-        self._last_quotes.pop(instrument_id, None)
-
-        # Unsubscribe from orderbook channel
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
-        await self._ws_client.unsubscribe_orderbook(pyo3_instrument_id)
-
-    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        # Remove from tracking
-        self._active_trade_subs.discard(command.instrument_id)
-
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
-
-    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        bar_type = command.bar_type
-
-        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
-        await self._ws_client.unsubscribe_bars(pyo3_bar_type)
+    async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
+        # dYdX does not support instrument close subscriptions (perpetuals only)
+        self._log.warning("Instrument close subscriptions not supported by dYdX")
 
     async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         # Markets channel is always subscribed, no unsubscription needed
@@ -442,6 +434,48 @@ class DydxDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         # Markets channel is always subscribed, no per-instrument unsubscription
+        pass
+
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        self._active_delta_subs.discard(command.instrument_id)
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_orderbook(pyo3_instrument_id)
+
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        instrument_id = command.instrument_id
+        self._active_quote_subs.discard(instrument_id)
+        self._last_quotes.pop(instrument_id, None)
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
+        await self._ws_client.unsubscribe_orderbook(pyo3_instrument_id)
+
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        self._active_trade_subs.discard(command.instrument_id)
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
+
+    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
+        self._active_mark_price_subs.discard(command.instrument_id)
+
+    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
+        self._active_index_price_subs.discard(command.instrument_id)
+
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        bar_type = command.bar_type
+
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
+        await self._ws_client.unsubscribe_bars(pyo3_bar_type)
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        self._active_funding_rate_subs.discard(command.instrument_id)
+
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
+        self._active_instrument_status_subs.discard(command.instrument_id)
+
+    async def _unsubscribe_instrument_close(self, command: UnsubscribeInstrumentClose) -> None:
+        # dYdX does not support instrument close subscriptions
         pass
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
@@ -462,52 +496,6 @@ class DydxDataClient(LiveMarketDataClient):
             data=instruments,
             correlation_id=request.id,
         )
-
-    async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
-        # Track active subscription
-        self._active_mark_price_subs.add(command.instrument_id)
-        # dYdX provides mark prices through the markets channel (already subscribed)
-
-    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
-        # Remove from tracking
-        self._active_mark_price_subs.discard(command.instrument_id)
-        # Mark prices are part of markets channel, no separate unsubscription
-
-    async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
-        # Track active subscription
-        self._active_index_price_subs.add(command.instrument_id)
-        # dYdX provides index prices through the markets channel (already subscribed)
-
-    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
-        # Remove from tracking
-        self._active_index_price_subs.discard(command.instrument_id)
-        # Index prices are part of markets channel, no separate unsubscription
-
-    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
-        # Track active subscription
-        self._active_funding_rate_subs.add(command.instrument_id)
-        # dYdX provides funding rates through the markets channel (already subscribed)
-
-    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
-        # Remove from tracking
-        self._active_funding_rate_subs.discard(command.instrument_id)
-        # Funding rates are part of markets channel, no separate unsubscription
-
-    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
-        # dYdX provides instrument status through the markets channel
-        pass
-
-    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
-        # Instrument status is part of markets channel, no separate unsubscription
-        pass
-
-    async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
-        # dYdX does not support instrument close subscriptions (perpetuals only)
-        self._log.warning("Instrument close subscriptions not supported by dYdX")
-
-    async def _unsubscribe_instrument_close(self, command: UnsubscribeInstrumentClose) -> None:
-        # dYdX does not support instrument close subscriptions
-        pass
 
     async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
         try:

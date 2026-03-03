@@ -116,6 +116,10 @@ pub enum HandlerCommand {
         trader_id: TraderId,
         strategy_id: StrategyId,
     },
+    CacheTruncatedId {
+        truncated: String,
+        original: ClientOrderId,
+    },
 }
 
 impl Debug for HandlerCommand {
@@ -158,6 +162,14 @@ impl Debug for HandlerCommand {
                 .field("client_order_id", client_order_id)
                 .field("instrument_id", instrument_id)
                 .finish(),
+            Self::CacheTruncatedId {
+                truncated,
+                original,
+            } => f
+                .debug_struct(stringify!(CacheTruncatedId))
+                .field("truncated", truncated)
+                .field("original", original)
+                .finish(),
         }
     }
 }
@@ -179,6 +191,7 @@ pub struct FuturesFeedHandler {
     signed_challenge: Option<String>,
     client_order_cache: AHashMap<ClientOrderId, CachedOrderInfo>,
     venue_order_cache: AHashMap<VenueOrderId, ClientOrderId>,
+    truncated_id_map: AHashMap<String, ClientOrderId>,
     pending_challenge_tx: Option<tokio::sync::oneshot::Sender<String>>,
 }
 
@@ -206,6 +219,7 @@ impl FuturesFeedHandler {
             signed_challenge: None,
             client_order_cache: AHashMap::new(),
             venue_order_cache: AHashMap::new(),
+            truncated_id_map: AHashMap::new(),
             pending_challenge_tx: None,
         }
     }
@@ -217,6 +231,13 @@ impl FuturesFeedHandler {
     fn is_subscribed(&self, channel: KrakenFuturesChannel, symbol: &Ustr) -> bool {
         let channel_ustr = Ustr::from(channel.as_ref());
         self.subscriptions.is_subscribed(&channel_ustr, symbol)
+    }
+
+    fn resolve_client_order_id(&self, cli_ord_id: &str) -> ClientOrderId {
+        self.truncated_id_map
+            .get(cli_ord_id)
+            .copied()
+            .unwrap_or_else(|| ClientOrderId::new(cli_ord_id))
     }
 
     fn get_instrument(&self, symbol: &Ustr) -> Option<&InstrumentAny> {
@@ -258,6 +279,7 @@ impl FuturesFeedHandler {
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Disconnect command received");
+
                             if let Some(client) = self.client.take() {
                                 client.disconnect().await;
                             }
@@ -309,12 +331,15 @@ impl FuturesFeedHandler {
                                     strategy_id,
                                 },
                             );
+
                             if let Some(venue_id) = venue_order_id {
                                 self.venue_order_cache.insert(venue_id, client_order_id);
                             }
                         }
+                        HandlerCommand::CacheTruncatedId { truncated, original } => {
+                            self.truncated_id_map.insert(truncated, original);
+                        }
                     }
-                    continue;
                 }
 
                 msg = self.raw_rx.recv() => {
@@ -336,6 +361,7 @@ impl FuturesFeedHandler {
                         Message::Ping(data) => {
                             let len = data.len();
                             log::trace!("Received ping frame with {len} bytes");
+
                             if let Some(client) = &self.client
                                 && let Err(e) = client.send_pong(data.to_vec()).await
                             {
@@ -381,8 +407,6 @@ impl FuturesFeedHandler {
                     if let Some(msg) = self.pending_messages.pop_front() {
                         return Some(msg);
                     }
-
-                    continue;
                 }
             }
         }
@@ -395,6 +419,7 @@ impl FuturesFeedHandler {
             let msg = format!(
                 r#"{{"event":"subscribe","feed":"{feed_str}","product_ids":["{symbol}"]}}"#
             );
+
             if let Err(e) = client.send_text(msg, None).await {
                 log::error!("Failed to send {feed:?} subscribe: {e}");
             }
@@ -408,6 +433,7 @@ impl FuturesFeedHandler {
             let msg = format!(
                 r#"{{"event":"unsubscribe","feed":"{feed_str}","product_ids":["{symbol}"]}}"#
             );
+
             if let Err(e) = client.send_text(msg, None).await {
                 log::error!("Failed to send {feed:?} unsubscribe: {e}");
             }
@@ -698,7 +724,7 @@ impl FuturesFeedHandler {
         };
 
         if !self.is_subscribed(KrakenFuturesChannel::Trades, &trade.product_id) {
-            log::warn!(
+            log::debug!(
                 "Received trade for unsubscribed product: {}",
                 trade.product_id
             );
@@ -762,7 +788,7 @@ impl FuturesFeedHandler {
         let has_quotes = self.is_subscribed(KrakenFuturesChannel::Quotes, &snapshot.product_id);
 
         if !has_book && !has_quotes {
-            log::warn!(
+            log::debug!(
                 "Received book snapshot for unsubscribed product: {}",
                 snapshot.product_id
             );
@@ -895,7 +921,7 @@ impl FuturesFeedHandler {
         let has_quotes = self.is_subscribed(KrakenFuturesChannel::Quotes, &delta.product_id);
 
         if !has_book && !has_quotes {
-            log::warn!(
+            log::debug!(
                 "Received book delta for unsubscribed product: {}",
                 delta.product_id
             );
@@ -1030,7 +1056,7 @@ impl FuturesFeedHandler {
         let (client_order_id, info) = if let Some(cli_ord_id) =
             cancel.cli_ord_id.as_ref().filter(|id| !id.is_empty())
         {
-            let client_order_id_key = ClientOrderId::new(cli_ord_id);
+            let client_order_id_key = self.resolve_client_order_id(cli_ord_id);
             if let Some(info) = self.client_order_cache.get(&client_order_id_key) {
                 (client_order_id_key, info.clone())
             } else if let Some(mapped_cli_ord_id) = self.venue_order_cache.get(&venue_order_id_key)
@@ -1154,13 +1180,11 @@ impl FuturesFeedHandler {
             .cli_ord_id
             .as_ref()
             .filter(|s| !s.is_empty())
-            .map(|s| ClientOrderId::new(s.as_str()));
+            .map(|s| self.resolve_client_order_id(s.as_str()));
 
-        let cached_info = order
-            .cli_ord_id
+        let cached_info = client_order_id
             .as_ref()
-            .filter(|id| !id.is_empty())
-            .and_then(|id| self.client_order_cache.get(&ClientOrderId::new(id)));
+            .and_then(|id| self.client_order_cache.get(id));
 
         // External orders or snapshots fall back to OrderStatusReport for reconciliation
         let Some(info) = cached_info else {
@@ -1303,7 +1327,7 @@ impl FuturesFeedHandler {
             .cli_ord_id
             .as_ref()
             .filter(|s| !s.is_empty())
-            .map(|s| ClientOrderId::new(s.as_str()));
+            .map(|s| self.resolve_client_order_id(s.as_str()));
 
         let filled_qty = if order.filled <= 0.0 {
             Quantity::zero(size_precision)
@@ -1342,16 +1366,15 @@ impl FuturesFeedHandler {
         // Resolve instrument: try message field first, then fall back to cache
         let instrument = if let Some(ref symbol) = fill.instrument {
             self.instruments_cache.get(symbol).cloned()
-        } else if let Some(ref cli_ord_id) = fill.cli_ord_id.as_ref().filter(|id| !id.is_empty()) {
+        } else if let Some(cli_ord_id) = fill.cli_ord_id.as_ref().filter(|id| !id.is_empty()) {
             // Fall back to client order cache
-            self.client_order_cache
-                .get(&ClientOrderId::new(cli_ord_id))
-                .and_then(|info| {
-                    self.instruments_cache
-                        .iter()
-                        .find(|(_, inst)| inst.id() == info.instrument_id)
-                        .map(|(_, inst)| inst.clone())
-                })
+            let resolved = self.resolve_client_order_id(cli_ord_id);
+            self.client_order_cache.get(&resolved).and_then(|info| {
+                self.instruments_cache
+                    .iter()
+                    .find(|(_, inst)| inst.id() == info.instrument_id)
+                    .map(|(_, inst)| inst.clone())
+            })
         } else {
             None
         };
@@ -1391,7 +1414,7 @@ impl FuturesFeedHandler {
             .cli_ord_id
             .as_ref()
             .filter(|s| !s.is_empty())
-            .map(|s| ClientOrderId::new(s.as_str()));
+            .map(|s| self.resolve_client_order_id(s.as_str()));
 
         let commission = Money::new(fill.fee_paid.unwrap_or(0.0), instrument.quote_currency());
 

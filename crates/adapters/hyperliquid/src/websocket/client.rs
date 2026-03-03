@@ -192,6 +192,7 @@ impl HyperliquidWebSocketClient {
             .iter()
             .map(|entry| entry.value().clone())
             .collect();
+
         if !instruments_vec.is_empty()
             && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments_vec))
         {
@@ -249,7 +250,6 @@ impl HyperliquidWebSocketClient {
                     Some(NautilusWsMessage::Reconnected) => {
                         log::info!("WebSocket reconnected");
                         resubscribe_all();
-                        continue;
                     }
                     Some(msg) => {
                         if handler.send(msg).is_err() {
@@ -287,11 +287,13 @@ impl HyperliquidWebSocketClient {
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
         log::info!("Disconnecting Hyperliquid WebSocket");
         self.signal.store(true, Ordering::Relaxed);
+
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
             log::debug!(
                 "Failed to send disconnect command (handler may already be shut down): {e}"
             );
         }
+
         if let Some(handle) = self.task_handle.take() {
             log::debug!("Waiting for task handle to complete");
             let abort_handle = handle.abort_handle();
@@ -400,6 +402,7 @@ impl HyperliquidWebSocketClient {
     pub fn clear_cloid_cache(&self) {
         let count = self.cloid_cache.len();
         self.cloid_cache.clear();
+
         if count > 0 {
             log::debug!("Cleared {count} cloid mappings from cache");
         }

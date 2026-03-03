@@ -157,7 +157,7 @@ class AxDataClient(LiveMarketDataClient):
             self._ws_client.cache_instrument(inst)
             self._http_client.cache_instrument(inst)
 
-        await self._ws_client.connect(self._handle_msg)
+        await self._ws_client.connect(self._loop, self._handle_msg)
         self._log.info("Connected to AX Exchange market data WebSocket", LogColor.BLUE)
 
         if self._update_instruments_interval_mins:

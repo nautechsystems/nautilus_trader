@@ -17,7 +17,7 @@
 
 use derive_builder::Builder;
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas},
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired,
         OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
@@ -49,7 +49,8 @@ pub enum NautilusWsMessage {
     Data(Vec<Data>),
     Deltas(OrderBookDeltas),
     FundingRates(Vec<FundingRateUpdate>),
-    Instrument(Box<InstrumentAny>),
+    Instrument(Box<InstrumentAny>, Option<InstrumentStatus>),
+    InstrumentStatus(InstrumentStatus),
     AccountUpdate(AccountState),
     PositionUpdate(PositionStatusReport),
     OrderAccepted(OrderAccepted),
@@ -823,8 +824,8 @@ pub struct OKXAlgoOrderMsg {
     pub inst_id: Ustr,
     /// Instrument type.
     pub inst_type: OKXInstrumentType,
-    /// Order type (always "trigger" for conditional orders).
-    pub ord_type: OKXOrderType,
+    /// Algo order type (trigger, move_order_stop, oco, iceberg, twap).
+    pub ord_type: OKXAlgoOrderType,
     /// Order state.
     pub state: OKXOrderStatus,
     /// Side.
@@ -836,6 +837,7 @@ pub struct OKXAlgoOrderMsg {
     /// Trigger price.
     pub trigger_px: String,
     /// Trigger price type (last, mark, index).
+    #[serde(default)]
     pub trigger_px_type: OKXTriggerType,
     /// Order price (-1 for market orders).
     pub ord_px: String,
@@ -862,6 +864,15 @@ pub struct OKXAlgoOrderMsg {
     /// Tag.
     #[serde(default)]
     pub tag: String,
+    /// Callback price ratio for trailing stop (e.g. "0.01" for 1%).
+    #[serde(default)]
+    pub callback_ratio: String,
+    /// Callback price spread for trailing stop (absolute distance).
+    #[serde(default)]
+    pub callback_spread: String,
+    /// Activation price for trailing stop.
+    #[serde(default)]
+    pub active_px: String,
 }
 
 /// Parameters for WebSocket place order operation.
@@ -1026,6 +1037,18 @@ pub struct WsPostAlgoOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    /// Callback rate for trailing stop (e.g., "0.01" for 1%).
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_ratio: Option<String>,
+    /// Callback spread for trailing stop (fixed price distance).
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_spread: Option<String>,
+    /// Activation price for trailing stop.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_px: Option<String>,
 }
 
 /// Parameters for WebSocket cancel algo order operation.

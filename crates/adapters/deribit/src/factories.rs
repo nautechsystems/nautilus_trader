@@ -43,7 +43,11 @@ impl ClientConfig for DeribitDataClientConfig {
 }
 
 /// Factory for creating Deribit data clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+)]
 pub struct DeribitDataClientFactory;
 
 impl DeribitDataClientFactory {
@@ -99,7 +103,11 @@ impl ClientConfig for DeribitExecClientConfig {
 }
 
 /// Factory for creating Deribit execution clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+)]
 pub struct DeribitExecutionClientFactory;
 
 impl DeribitExecutionClientFactory {

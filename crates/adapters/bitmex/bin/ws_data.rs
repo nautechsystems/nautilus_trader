@@ -124,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             log::info!("Subscribing to all available data types for {instrument_id}",);
 
             log::info!("- Subscribing to quotes");
+
             if let Err(e) = ws_client.subscribe_quotes(instrument_id).await {
                 log::error!("Failed to subscribe to quotes: {e}");
             } else {
@@ -133,6 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(Duration::from_millis(100)).await;
 
             log::info!("- Subscribing to trades");
+
             if let Err(e) = ws_client.subscribe_trades(instrument_id).await {
                 log::error!("Failed to subscribe to trades: {e}");
             } else {
@@ -142,6 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(Duration::from_millis(100)).await;
 
             log::info!("- Subscribing to order book L2");
+
             if let Err(e) = ws_client.subscribe_book(instrument_id).await {
                 log::error!("Failed to subscribe to order book: {e}");
             } else {
@@ -151,6 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(Duration::from_millis(100)).await;
 
             log::info!("- Subscribing to order book L2_25");
+
             if let Err(e) = ws_client.subscribe_book_25(instrument_id).await {
                 log::error!("Failed to subscribe to order book 25: {e}");
             } else {
@@ -160,6 +164,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(Duration::from_millis(100)).await;
 
             log::info!("- Subscribing to order book depth 10");
+
             if let Err(e) = ws_client.subscribe_book_depth10(instrument_id).await {
                 log::error!("Failed to subscribe to depth 10: {e}");
             } else {

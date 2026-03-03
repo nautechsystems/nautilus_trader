@@ -211,6 +211,7 @@ impl BitmexError {
                     .duration_since(std::time::UNIX_EPOCH)
                     .ok()?
                     .as_secs();
+
                 if timestamp > now {
                     Some(Duration::from_secs(timestamp - now))
                 } else {

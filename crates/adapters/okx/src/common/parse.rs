@@ -21,11 +21,7 @@ pub use nautilus_core::serialization::{
     deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
     deserialize_optional_string_to_u64, deserialize_string_to_u64,
 };
-use nautilus_core::{
-    UUID4,
-    datetime::{NANOSECONDS_IN_MILLISECOND, millis_to_nanos_unchecked},
-    nanos::UnixNanos,
-};
+use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
@@ -41,8 +37,8 @@ use nautilus_model::{
         },
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, LiquiditySide, OptionKind, OrderSide,
-        OrderStatus, OrderType, PositionSide, TimeInForce,
+        AccountType, AggregationSource, AggressorSide, LiquiditySide, MarketStatusAction,
+        OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::AccountState,
     identifiers::{
@@ -52,7 +48,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use ustr::Ustr;
 
@@ -61,8 +57,8 @@ use crate::{
     common::{
         consts::OKX_VENUE,
         enums::{
-            OKXExecType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
-            OKXTargetCurrency, OKXVipLevel,
+            OKXExecType, OKXInstrumentStatus, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
+            OKXPositionSide, OKXSide, OKXTargetCurrency, OKXVipLevel,
         },
         models::OKXInstrument,
     },
@@ -221,6 +217,17 @@ pub fn parse_base_quote_from_symbol(symbol: &str) -> anyhow::Result<(&str, &str)
         anyhow::anyhow!("Invalid symbol format: missing quote currency in '{symbol}'")
     })?;
     Ok((base, quote))
+}
+
+/// Maps an [`OKXInstrumentStatus`] to a Nautilus [`MarketStatusAction`].
+#[must_use]
+pub fn okx_status_to_market_action(status: OKXInstrumentStatus) -> MarketStatusAction {
+    match status {
+        OKXInstrumentStatus::Live => MarketStatusAction::Trading,
+        OKXInstrumentStatus::Suspend => MarketStatusAction::Suspend,
+        OKXInstrumentStatus::Preopen => MarketStatusAction::PreOpen,
+        OKXInstrumentStatus::Test => MarketStatusAction::NotAvailableForTrading,
+    }
 }
 
 /// Parses a Nautilus instrument ID from the given OKX `symbol` value.
@@ -691,7 +698,7 @@ pub fn parse_order_status_report(
     if !order.avg_px.is_empty()
         && let Ok(decimal) = Decimal::from_str(&order.avg_px)
     {
-        report = report.with_avg_px(decimal.to_f64().unwrap_or(0.0))?;
+        report.avg_px = Some(decimal);
     }
 
     if order.ord_type == OKXOrderType::PostOnly {
@@ -1354,17 +1361,35 @@ fn parse_common_instrument_data(
         anyhow::bail!("`lot_sz` is empty for {}", definition.inst_id);
     }
 
-    let size_increment = Quantity::from(&definition.lot_sz);
-    let lot_size = Some(Quantity::from(&definition.lot_sz));
+    let size_increment = Quantity::from_str(&definition.lot_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `lot_sz` '{}' for {}: {e}",
+            definition.lot_sz,
+            definition.inst_id,
+        )
+    })?;
+    let lot_size = Some(size_increment);
     let max_quantity = if definition.max_mkt_sz.is_empty() {
         None
     } else {
-        Some(Quantity::from(&definition.max_mkt_sz))
+        Some(Quantity::from_str(&definition.max_mkt_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `max_mkt_sz` '{}' for {}: {e}",
+                definition.max_mkt_sz,
+                definition.inst_id,
+            )
+        })?)
     };
     let min_quantity = if definition.min_sz.is_empty() {
         None
     } else {
-        Some(Quantity::from(&definition.min_sz))
+        Some(Quantity::from_str(&definition.min_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `min_sz` '{}' for {}: {e}",
+                definition.min_sz,
+                definition.inst_id,
+            )
+        })?)
     };
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
@@ -1553,11 +1578,41 @@ pub fn parse_swap_instrument(
             definition.inst_id
         )
     })?;
-    let size_increment = Quantity::from(&definition.lot_sz);
+
+    if definition.lot_sz.is_empty() {
+        anyhow::bail!("`lot_sz` is empty for {}", definition.inst_id);
+    }
+    let size_increment = Quantity::from_str(&definition.lot_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `lot_sz` '{}' for {}: {e}",
+            definition.lot_sz,
+            definition.inst_id
+        )
+    })?;
     let multiplier = parse_multiplier_product(definition)?;
-    let lot_size = Some(Quantity::from(&definition.lot_sz));
-    let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
-    let min_quantity = Some(Quantity::from(&definition.min_sz));
+    let lot_size = Some(size_increment);
+    let max_quantity = if definition.max_mkt_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.max_mkt_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `max_mkt_sz` '{}' for {}: {e}",
+                definition.max_mkt_sz,
+                definition.inst_id
+            )
+        })?)
+    };
+    let min_quantity = if definition.min_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.min_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `min_sz` '{}' for {}: {e}",
+                definition.min_sz,
+                definition.inst_id
+            )
+        })?)
+    };
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
     let max_price = None; // TBD
@@ -1642,19 +1697,55 @@ pub fn parse_futures_instrument(
     let expiry_time = definition
         .exp_time
         .ok_or_else(|| anyhow::anyhow!("`exp_time` is required for {}", definition.inst_id))?;
-    let activation_ns = UnixNanos::from(millis_to_nanos_unchecked(listing_time as f64));
-    let expiration_ns = UnixNanos::from(millis_to_nanos_unchecked(expiry_time as f64));
+    let activation_ns = parse_millisecond_timestamp(listing_time);
+    let expiration_ns = parse_millisecond_timestamp(expiry_time);
 
     if definition.tick_sz.is_empty() {
         anyhow::bail!("`tick_sz` is empty for {}", definition.inst_id);
     }
 
-    let price_increment = Price::from(definition.tick_sz.clone());
-    let size_increment = Quantity::from(&definition.lot_sz);
+    let price_increment = Price::from_str(&definition.tick_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `tick_sz` '{}' for {}: {e}",
+            definition.tick_sz,
+            definition.inst_id
+        )
+    })?;
+
+    if definition.lot_sz.is_empty() {
+        anyhow::bail!("`lot_sz` is empty for {}", definition.inst_id);
+    }
+    let size_increment = Quantity::from_str(&definition.lot_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `lot_sz` '{}' for {}: {e}",
+            definition.lot_sz,
+            definition.inst_id
+        )
+    })?;
     let multiplier = parse_multiplier_product(definition)?;
-    let lot_size = Some(Quantity::from(&definition.lot_sz));
-    let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
-    let min_quantity = Some(Quantity::from(&definition.min_sz));
+    let lot_size = Some(size_increment);
+    let max_quantity = if definition.max_mkt_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.max_mkt_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `max_mkt_sz` '{}' for {}: {e}",
+                definition.max_mkt_sz,
+                definition.inst_id
+            )
+        })?)
+    };
+    let min_quantity = if definition.min_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.min_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `min_sz` '{}' for {}: {e}",
+                definition.min_sz,
+                definition.inst_id
+            )
+        })?)
+    };
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
     let max_price = None; // TBD
@@ -1721,7 +1812,13 @@ pub fn parse_option_instrument(
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
     let underlying = Currency::get_or_create_crypto_with_context(underlying_str, Some(&context));
     let option_kind: OptionKind = definition.opt_type.into();
-    let strike_price = Price::from(&definition.stk);
+    let strike_price = Price::from_str(&definition.stk).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `stk` '{}' for {}: {e}",
+            definition.stk,
+            definition.inst_id
+        )
+    })?;
     let quote_currency = Currency::get_or_create_crypto_with_context(quote_ccy_str, Some(&context));
     let settlement_currency =
         Currency::get_or_create_crypto_with_context(definition.settle_ccy, Some(&context));
@@ -1738,19 +1835,55 @@ pub fn parse_option_instrument(
     let expiry_time = definition
         .exp_time
         .ok_or_else(|| anyhow::anyhow!("`exp_time` is required for {}", definition.inst_id))?;
-    let activation_ns = UnixNanos::from(millis_to_nanos_unchecked(listing_time as f64));
-    let expiration_ns = UnixNanos::from(millis_to_nanos_unchecked(expiry_time as f64));
+    let activation_ns = parse_millisecond_timestamp(listing_time);
+    let expiration_ns = parse_millisecond_timestamp(expiry_time);
 
     if definition.tick_sz.is_empty() {
         anyhow::bail!("`tick_sz` is empty for {}", definition.inst_id);
     }
 
-    let price_increment = Price::from(definition.tick_sz.clone());
-    let size_increment = Quantity::from(&definition.lot_sz);
+    let price_increment = Price::from_str(&definition.tick_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `tick_sz` '{}' for {}: {e}",
+            definition.tick_sz,
+            definition.inst_id
+        )
+    })?;
+
+    if definition.lot_sz.is_empty() {
+        anyhow::bail!("`lot_sz` is empty for {}", definition.inst_id);
+    }
+    let size_increment = Quantity::from_str(&definition.lot_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `lot_sz` '{}' for {}: {e}",
+            definition.lot_sz,
+            definition.inst_id
+        )
+    })?;
     let multiplier = parse_multiplier_product(definition)?;
-    let lot_size = Quantity::from(&definition.lot_sz);
-    let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
-    let min_quantity = Some(Quantity::from(&definition.min_sz));
+    let lot_size = size_increment;
+    let max_quantity = if definition.max_mkt_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.max_mkt_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `max_mkt_sz` '{}' for {}: {e}",
+                definition.max_mkt_sz,
+                definition.inst_id
+            )
+        })?)
+    };
+    let min_quantity = if definition.min_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.min_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `min_sz` '{}' for {}: {e}",
+                definition.min_sz,
+                definition.inst_id
+            )
+        })?)
+    };
     let max_notional = None;
     let min_notional = None;
     let max_price = None;
@@ -1907,7 +2040,7 @@ pub fn parse_account_state(
     let account_type = AccountType::Margin;
     let is_reported = true;
     let event_id = UUID4::new();
-    let ts_event = UnixNanos::from(millis_to_nanos_unchecked(okx_account.u_time as f64));
+    let ts_event = parse_millisecond_timestamp(okx_account.u_time);
 
     Ok(AccountState::new(
         account_id,

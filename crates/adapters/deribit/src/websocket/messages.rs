@@ -17,7 +17,7 @@
 
 use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas},
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired,
         OrderModifyRejected, OrderRejected, OrderUpdated,
@@ -751,6 +751,8 @@ pub enum NautilusWsMessage {
     OrderUpdated(OrderUpdated),
     /// Account state update from user.portfolio subscription.
     AccountState(AccountState),
+    /// Instrument status change.
+    InstrumentStatus(InstrumentStatus),
     /// Error from venue.
     Error(DeribitWsError),
     /// Unhandled/raw message for debugging.

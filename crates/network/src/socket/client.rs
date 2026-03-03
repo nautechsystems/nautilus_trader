@@ -45,9 +45,7 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::{Error, client::IntoClientRequest, stream::Mode};
 
-use super::{
-    SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand, fix::process_fix_buffer,
-};
+use super::{SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand};
 use crate::{
     backoff::ExponentialBackoff,
     error::SendError,
@@ -339,6 +337,7 @@ impl SocketClientInner {
         match tcp_result {
             Ok(stream) => {
                 log::debug!("TCP connection established to {socket_addr}, proceeding with TLS");
+
                 if let Err(e) = stream.set_nodelay(true) {
                     log::warn!("Failed to enable TCP_NODELAY for socket client: {e:?}");
                 }
@@ -527,27 +526,16 @@ impl SocketClientInner {
                         log::trace!("Received <binary> {bytes} bytes");
                         last_data_time = tokio::time::Instant::now();
 
-                        // Check if buffer contains FIX protocol messages (starts with "8=FIX")
-                        let is_fix = buf.len() >= 5 && buf.starts_with(b"8=FIX");
+                        while let Some((i, _)) = &buf
+                            .windows(suffix.len())
+                            .enumerate()
+                            .find(|(_, pair)| pair.eq(&suffix))
+                        {
+                            let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
+                            data.truncate(data.len() - suffix.len());
 
-                        if is_fix && handler.is_some() {
-                            // FIX protocol processing
                             if let Some(ref handler) = handler {
-                                process_fix_buffer(&mut buf, handler);
-                            }
-                        } else {
-                            // Regular suffix-based message processing
-                            while let Some((i, _)) = &buf
-                                .windows(suffix.len())
-                                .enumerate()
-                                .find(|(_, pair)| pair.eq(&suffix))
-                            {
-                                let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
-                                data.truncate(data.len() - suffix.len());
-
-                                if let Some(ref handler) = handler {
-                                    handler(&data);
-                                }
+                                handler(&data);
                             }
                         }
 
@@ -569,7 +557,6 @@ impl SocketClientInner {
                                 break;
                             }
                         }
-                        continue;
                     }
                 }
             }
@@ -695,7 +682,6 @@ impl SocketClientInner {
                                     );
                                     reconnect_buffer.push_back(data);
                                 }
-                                continue;
                             }
                             WriterCommand::Send(msg) => {
                                 if let Err(e) = active_writer.write_all(&msg).await {
@@ -706,6 +692,7 @@ impl SocketClientInner {
                                         .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
                                     continue;
                                 }
+
                                 if let Err(e) = active_writer.write_all(&suffix).await {
                                     log::error!("Failed to send suffix: {e}");
                                     log::warn!("Writer triggering reconnect");
@@ -713,7 +700,6 @@ impl SocketClientInner {
                                     reconnect_buffer.push_back(msg);
                                     connection_state
                                         .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
-                                    continue;
                                 }
                             }
                         }
@@ -725,7 +711,6 @@ impl SocketClientInner {
                     }
                     Err(_) => {
                         // Timeout - just continue the loop
-                        continue;
                     }
                 }
             }
@@ -767,7 +752,7 @@ impl SocketClientInner {
                             }
                         }
                     }
-                    ConnectionMode::Reconnect => continue,
+                    ConnectionMode::Reconnect => {}
                     ConnectionMode::Disconnect | ConnectionMode::Closed => break,
                 }
             }
@@ -936,6 +921,7 @@ impl SocketClient {
             log_task_stopped("controller");
         } else {
             log::error!("Timeout waiting for controller task to finish");
+
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
                 log_task_aborted("controller");
@@ -967,6 +953,7 @@ impl SocketClient {
                     if self.is_active() {
                         return Ok(());
                     }
+
                     if matches!(
                         self.connection_mode(),
                         ConnectionMode::Disconnect | ConnectionMode::Closed
@@ -1093,6 +1080,7 @@ impl SocketClient {
                                 "Reconnect attempt {} failed: {e}",
                                 inner.reconnect_attempt_count
                             );
+
                             if !duration.is_zero() {
                                 log::warn!("Backing off for {}s...", duration.as_secs_f64());
                             }
@@ -1810,6 +1798,7 @@ mod rust_tests {
                     if n == 0 {
                         break;
                     }
+
                     if sock.write_all(&buf[..n]).await.is_err() {
                         break;
                     }
@@ -1997,6 +1986,7 @@ mod rust_tests {
             let (mut sock, _) = listener.accept().await.unwrap();
             for _ in 0..10 {
                 sleep(Duration::from_millis(200)).await;
+
                 if sock.write_all(b"ping\r\n").await.is_err() {
                     break;
                 }

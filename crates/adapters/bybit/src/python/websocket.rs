@@ -17,7 +17,7 @@
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{call_python, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     enums::{AggregationSource, BarAggregation, OrderSide, OrderType, PriceType, TimeInForce},
@@ -45,6 +45,7 @@ fn validate_bar_type(bar_type: &BarType) -> anyhow::Result<()> {
             spec.price_type
         );
     }
+
     if bar_type.aggregation_source() != AggregationSource::External {
         anyhow::bail!(
             "Invalid bar type: Bybit bars only support EXTERNAL aggregation source, received {}",
@@ -183,8 +184,10 @@ impl BybitWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
+        loop_: Py<PyAny>,
         callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
         let mut client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -201,7 +204,7 @@ impl BybitWebSocketClient {
                             Python::attach(|py| {
                                 for data in data_vec {
                                     let py_obj = data_to_pycapsule(py, data);
-                                    call_python(py, &callback, py_obj);
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                 }
                             });
                         }
@@ -211,71 +214,71 @@ impl BybitWebSocketClient {
                                     py,
                                     Data::Deltas(OrderBookDeltas_API::new(deltas)),
                                 );
-                                call_python(py, &callback, py_obj);
+                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
                             });
                         }
                         NautilusWsMessage::FundingRates(rates) => {
                             for rate in rates {
-                                call_python_with_data(&callback, move |py| {
+                                call_python_with_data(&call_soon, &callback, move |py| {
                                     rate.into_py_any(py).map(|obj| obj.into_bound(py))
                                 });
                             }
                         }
                         NautilusWsMessage::MarkPrices(prices) => {
                             for price in prices {
-                                call_python_with_data(&callback, move |py| {
+                                call_python_with_data(&call_soon, &callback, move |py| {
                                     price.into_py_any(py).map(|obj| obj.into_bound(py))
                                 });
                             }
                         }
                         NautilusWsMessage::IndexPrices(prices) => {
                             for price in prices {
-                                call_python_with_data(&callback, move |py| {
+                                call_python_with_data(&call_soon, &callback, move |py| {
                                     price.into_py_any(py).map(|obj| obj.into_bound(py))
                                 });
                             }
                         }
                         NautilusWsMessage::OrderStatusReports(reports) => {
                             for report in reports {
-                                call_python_with_data(&callback, move |py| {
+                                call_python_with_data(&call_soon, &callback, move |py| {
                                     report.into_py_any(py).map(|obj| obj.into_bound(py))
                                 });
                             }
                         }
                         NautilusWsMessage::FillReports(reports) => {
                             for report in reports {
-                                call_python_with_data(&callback, move |py| {
+                                call_python_with_data(&call_soon, &callback, move |py| {
                                     report.into_py_any(py).map(|obj| obj.into_bound(py))
                                 });
                             }
                         }
                         NautilusWsMessage::PositionStatusReport(report) => {
-                            call_python_with_data(&callback, move |py| {
+                            call_python_with_data(&call_soon, &callback, move |py| {
                                 report.into_py_any(py).map(|obj| obj.into_bound(py))
                             });
                         }
                         NautilusWsMessage::AccountState(state) => {
-                            call_python_with_data(&callback, move |py| {
+                            call_python_with_data(&call_soon, &callback, move |py| {
                                 state.into_py_any(py).map(|obj| obj.into_bound(py))
                             });
                         }
                         NautilusWsMessage::OrderRejected(event) => {
-                            call_python_with_data(&callback, move |py| {
+                            call_python_with_data(&call_soon, &callback, move |py| {
                                 event.into_py_any(py).map(|obj| obj.into_bound(py))
                             });
                         }
                         NautilusWsMessage::OrderCancelRejected(event) => {
-                            call_python_with_data(&callback, move |py| {
+                            call_python_with_data(&call_soon, &callback, move |py| {
                                 event.into_py_any(py).map(|obj| obj.into_bound(py))
                             });
                         }
                         NautilusWsMessage::OrderModifyRejected(event) => {
-                            call_python_with_data(&callback, move |py| {
+                            call_python_with_data(&call_soon, &callback, move |py| {
                                 event.into_py_any(py).map(|obj| obj.into_bound(py))
                             });
                         }
                         NautilusWsMessage::Error(err) => {
-                            call_python_with_data(&callback, move |py| {
+                            call_python_with_data(&call_soon, &callback, move |py| {
                                 err.into_py_any(py).map(|obj| obj.into_bound(py))
                             });
                         }
@@ -911,15 +914,14 @@ impl BybitWebSocketClient {
     }
 }
 
-fn call_python_with_data<F>(callback: &Py<PyAny>, data_fn: F)
+fn call_python_with_data<F>(call_soon: &Py<PyAny>, callback: &Py<PyAny>, data_fn: F)
 where
     F: FnOnce(Python<'_>) -> PyResult<Bound<'_, PyAny>> + Send + 'static,
 {
     Python::attach(|py| match data_fn(py) {
         Ok(data) => {
-            if let Err(e) = callback.call1(py, (data,)) {
-                log::error!("Error calling Python callback: {e}");
-            }
+            let py_obj = data.unbind();
+            call_python_threadsafe(py, call_soon, callback, py_obj);
         }
         Err(e) => {
             log::error!("Error converting data to Python: {e}");

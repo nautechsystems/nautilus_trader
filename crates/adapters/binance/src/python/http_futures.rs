@@ -16,7 +16,10 @@
 //! Python bindings for the Binance Futures HTTP client.
 
 use chrono::{TimeZone, Utc};
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_core::{
+    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+    time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
@@ -66,6 +69,7 @@ impl BinanceFuturesHttpClient {
         Self::new(
             product_type,
             environment,
+            get_atomic_clock_realtime(),
             api_key,
             api_secret,
             base_url,

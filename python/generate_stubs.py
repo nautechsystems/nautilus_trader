@@ -26,12 +26,12 @@ This script can be used as:
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
+from pathlib import Path
 import re
 import subprocess
 import sys
 import tomllib
-from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 

@@ -44,22 +44,25 @@ impl HyperliquidHttpClient {
     /// If no credentials are provided and no environment variables are set,
     /// creates an unauthenticated client for public endpoints only.
     #[new]
-    #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None))]
+    #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None, normalize_prices=true))]
     fn py_new(
         private_key: Option<String>,
         vault_address: Option<String>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
+        normalize_prices: bool,
     ) -> PyResult<Self> {
-        Self::with_credentials(
+        let mut client = Self::with_credentials(
             private_key,
             vault_address,
             is_testnet,
             timeout_secs,
             proxy_url,
         )
-        .map_err(to_pyvalue_err)
+        .map_err(to_pyvalue_err)?;
+        client.set_normalize_prices(normalize_prices);
+        Ok(client)
     }
 
     #[staticmethod]
@@ -296,6 +299,46 @@ impl HyperliquidHttpClient {
         })
     }
 
+    #[pyo3(name = "modify_order")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_modify_order<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        price: Price,
+        quantity: Quantity,
+        trigger_price: Option<Price>,
+        reduce_only: bool,
+        post_only: bool,
+        time_in_force: TimeInForce,
+        client_order_id: Option<ClientOrderId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .modify_order(
+                    instrument_id,
+                    venue_order_id,
+                    order_side,
+                    order_type,
+                    price,
+                    quantity,
+                    trigger_price,
+                    reduce_only,
+                    post_only,
+                    time_in_force,
+                    client_order_id,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "submit_orders")]
     fn py_submit_orders<'py>(
         &self,
@@ -412,6 +455,21 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
+        })
+    }
+
+    /// Queries the user fee schedule and returns the JSON response as a string.
+    #[pyo3(name = "info_user_fees")]
+    fn py_info_user_fees<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let account_address = client.get_account_address().map_err(to_pyvalue_err)?;
+            let json = client
+                .info_user_fees(&account_address)
+                .await
+                .map_err(to_pyvalue_err)?;
+            to_string(&json).map_err(to_pyvalue_err)
         })
     }
 }

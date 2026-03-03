@@ -178,6 +178,7 @@ impl Iterator for DeltaStreamIterator {
                         if self.buffer.is_empty() {
                             return None;
                         }
+
                         if let Some(last_delta) = self.buffer.last_mut() {
                             last_delta.flags = RecordFlag::F_LAST.value();
                         }
@@ -510,6 +511,7 @@ impl Iterator for BatchedDeltasStreamIterator {
         }
 
         self.buffer.clear();
+
         if let Some(Err(e)) = self.fill_pending_batches() {
             return Some(Err(e));
         }
@@ -635,14 +637,17 @@ impl QuoteStreamIterator {
                             max_price_precision =
                                 max_price_precision.max(infer_precision(bid_price_val));
                         }
+
                         if let Some(ask_price_val) = data.ask_price {
                             max_price_precision =
                                 max_price_precision.max(infer_precision(ask_price_val));
                         }
+
                         if let Some(bid_amount_val) = data.bid_amount {
                             max_size_precision =
                                 max_size_precision.max(infer_precision(bid_amount_val));
                         }
+
                         if let Some(ask_amount_val) = data.ask_amount {
                             max_size_precision =
                                 max_size_precision.max(infer_precision(ask_amount_val));
@@ -1166,14 +1171,17 @@ impl Depth10StreamIterator {
                             max_price_precision =
                                 max_price_precision.max(infer_precision(bid_price));
                         }
+
                         if let Some(ask_price) = data.asks_0_price {
                             max_price_precision =
                                 max_price_precision.max(infer_precision(ask_price));
                         }
+
                         if let Some(bid_amount) = data.bids_0_amount {
                             max_size_precision =
                                 max_size_precision.max(infer_precision(bid_amount));
                         }
+
                         if let Some(ask_amount) = data.asks_0_amount {
                             max_size_precision =
                                 max_size_precision.max(infer_precision(ask_amount));
@@ -1186,14 +1194,17 @@ impl Depth10StreamIterator {
                             max_price_precision =
                                 max_price_precision.max(infer_precision(bid_price));
                         }
+
                         if let Some(ask_price) = data.asks_0_price {
                             max_price_precision =
                                 max_price_precision.max(infer_precision(ask_price));
                         }
+
                         if let Some(bid_amount) = data.bids_0_amount {
                             max_size_precision =
                                 max_size_precision.max(infer_precision(bid_amount));
                         }
+
                         if let Some(ask_amount) = data.asks_0_amount {
                             max_size_precision =
                                 max_size_precision.max(infer_precision(ask_amount));

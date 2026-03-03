@@ -25,10 +25,10 @@ use crate::{
     data::{
         BookOrder, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
-    enums::{BookType, OrderSide},
+    enums::{BookType, OrderSide, OrderSideSpecified},
     identifiers::InstrumentId,
-    orderbook::{OrderBook, analysis::book_check_integrity},
-    types::{Price, Quantity},
+    orderbook::{OrderBook, analysis::book_check_integrity, ladder::BookPrice},
+    types::{ERROR_PRICE, Price, Quantity, price::PriceRaw},
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
@@ -217,6 +217,40 @@ pub extern "C" fn orderbook_asks(book: &mut OrderBook_API) -> CVec {
 }
 
 #[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_bids_down_to(
+    book: &mut OrderBook_API,
+    price_raw: PriceRaw,
+    price_prec: u8,
+) -> CVec {
+    let price = Price::from_raw(price_raw, price_prec);
+    let bound = BookPrice::new(price, OrderSideSpecified::Buy);
+    book.bids
+        .levels
+        .range(..=bound)
+        .map(|(_, level)| BookLevel_API::new(level.clone()))
+        .collect::<Vec<BookLevel_API>>()
+        .into()
+}
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_asks_up_to(
+    book: &mut OrderBook_API,
+    price_raw: PriceRaw,
+    price_prec: u8,
+) -> CVec {
+    let price = Price::from_raw(price_raw, price_prec);
+    let bound = BookPrice::new(price, OrderSideSpecified::Sell);
+    book.asks
+        .levels
+        .range(..=bound)
+        .map(|(_, level)| BookLevel_API::new(level.clone()))
+        .collect::<Vec<BookLevel_API>>()
+        .into()
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_has_bid(book: &mut OrderBook_API) -> u8 {
     u8::from(book.has_bid())
 }
@@ -304,6 +338,17 @@ pub extern "C" fn orderbook_get_avg_px_for_quantity(
     order_side: OrderSide,
 ) -> f64 {
     book.get_avg_px_for_quantity(qty, order_side)
+}
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_get_worst_px_for_quantity(
+    book: &mut OrderBook_API,
+    qty: Quantity,
+    order_side: OrderSide,
+) -> Price {
+    book.get_worst_px_for_quantity(qty, order_side)
+        .unwrap_or(ERROR_PRICE)
 }
 
 #[unsafe(no_mangle)]

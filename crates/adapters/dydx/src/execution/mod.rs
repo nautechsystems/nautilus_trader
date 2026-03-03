@@ -81,7 +81,9 @@ use tokio::task::JoinHandle;
 
 use crate::{
     common::{
-        consts::DYDX_VENUE, credential::DydxCredential, instrument_cache::InstrumentCache,
+        consts::DYDX_VENUE,
+        credential::{DydxCredential, credential_env_vars},
+        instrument_cache::InstrumentCache,
         parse::nanos_to_secs_i64,
     },
     config::DydxAdapterConfig,
@@ -271,11 +273,7 @@ impl DydxExecutionClient {
     }
 
     fn resolve_private_key(config: &DydxAdapterConfig) -> anyhow::Result<String> {
-        let private_key_env = if config.is_testnet {
-            "DYDX_TESTNET_PRIVATE_KEY"
-        } else {
-            "DYDX_PRIVATE_KEY"
-        };
+        let (private_key_env, _) = credential_env_vars(config.is_testnet);
 
         // 1. Try private key from config
         if let Some(ref pk) = config.private_key
@@ -470,6 +468,7 @@ impl DydxExecutionClient {
                         // but DON'T send order reports yet — fills must be sent first
                         // to prevent reconciliation from inferring fills at the limit price.
                         let mut pending_order_reports = Vec::new();
+
                         if let Some(ref orders) = data.contents.orders {
                             log::debug!(
                                 "Processing {} orders from SubaccountsChannelData",
@@ -532,6 +531,7 @@ impl DydxExecutionClient {
                         // Phase 2: Send fills FIRST so reconciliation sees them before
                         // the terminal order status (prevents inferred fills at limit price)
                         let mut filled_in_msg: AHashSet<VenueOrderId> = AHashSet::new();
+
                         if let Some(ref fills) = data.contents.fills {
                             for ws_fill in fills {
                                 match parse_ws_fill_report(
@@ -1315,6 +1315,7 @@ impl ExecutionClient for DydxExecutionClient {
                 // Broadcast: short-term orders use cached sequence (no increment),
                 // stateful orders use broadcast_with_retry (proper sequence management)
                 let operation = format!("Submit {order_type_str} order {client_order_id}");
+
                 if order_flags == types::ORDER_FLAG_SHORT_TERM {
                     broadcaster
                         .broadcast_short_term(&tx_manager, vec![msg], &operation)
@@ -1412,6 +1413,7 @@ impl ExecutionClient for DydxExecutionClient {
                     UUID4::new(),
                     cmd.ts_init,
                 );
+
                 if let Err(e) = self.submit_order(&submit_cmd) {
                     log::error!(
                         "Failed to submit order {} from order list: {e}",
@@ -1562,6 +1564,7 @@ impl ExecutionClient for DydxExecutionClient {
 
                         // Broadcast with cached sequence (short-term orders don't consume sequences)
                         let operation = format!("Submit short-term order {client_order_id}");
+
                         if let Err(e) = broadcaster
                             .broadcast_short_term(&tx_manager, vec![msg], &operation)
                             .await
@@ -1631,6 +1634,7 @@ impl ExecutionClient for DydxExecutionClient {
 
                 // Broadcast batch with retry
                 let operation = format!("Submit batch of {} limit orders", msgs.len());
+
                 if let Err(e) = broadcaster
                     .broadcast_with_retry(&tx_manager, msgs, &operation)
                     .await
@@ -2392,7 +2396,6 @@ impl ExecutionClient for DydxExecutionClient {
                 }
                 Err(e) => {
                     log::warn!("Failed to parse order status report: {e}");
-                    continue;
                 }
             }
         }
@@ -2406,6 +2409,7 @@ impl ExecutionClient for DydxExecutionClient {
         if let Some(start) = cmd.start {
             reports.retain(|r| r.ts_last >= start);
         }
+
         if let Some(end) = cmd.end {
             reports.retain(|r| r.ts_last <= end);
         }

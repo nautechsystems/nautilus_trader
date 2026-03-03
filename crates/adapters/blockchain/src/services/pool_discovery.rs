@@ -235,6 +235,7 @@ impl<'a> PoolDiscoveryService<'a> {
                     if self.cache.get_token(&pool.token0).is_none() {
                         token_rpc_buffer.insert(pool.token0);
                     }
+
                     if self.cache.get_token(&pool.token1).is_none() {
                         token_rpc_buffer.insert(pool.token1);
                     }

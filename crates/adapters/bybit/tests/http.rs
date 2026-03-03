@@ -1139,7 +1139,7 @@ async fn test_rate_limiting_returns_error() {
             )
             .await
         {
-            Ok(_) => continue,
+            Ok(_) => {}
             Err(e) => {
                 last_error = Some(e);
                 break;

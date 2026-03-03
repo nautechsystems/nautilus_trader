@@ -16,6 +16,7 @@
 import asyncio
 import functools
 import os
+import traceback
 from collections.abc import Callable
 from collections.abc import Coroutine
 from inspect import iscoroutinefunction
@@ -724,19 +725,17 @@ class InteractiveBrokersClient(
         try:
             while True:
                 handler_task = await self._msg_handler_task_queue.get()
-                await handler_task()
-                # try:
-                #     await handler_task()
-                # except Exception as e:
-                #     exc_type = type(e)
-                #     exc_traceback = e.__traceback__
-                #     stack_trace = traceback.format_exception(exc_type, e, exc_traceback)
-                #     stack_trace_str = "".join(stack_trace)
-                #     task_name = getattr(handler_task, "__name__", str(handler_task))
-                #     self._log.error(
-                #         f"Exception in message handler task '{task_name}': {e!r}\n{stack_trace_str}",
-                #     )
-                #     raise
+                try:
+                    await handler_task()
+                except Exception as e:
+                    exc_type = type(e)
+                    exc_traceback = e.__traceback__
+                    stack_trace = traceback.format_exception(exc_type, e, exc_traceback)
+                    stack_trace_str = "".join(stack_trace)
+                    task_name = getattr(handler_task, "__name__", str(handler_task))
+                    self._log.error(
+                        f"Exception in message handler task '{task_name}': {e!r}\n{stack_trace_str}",
+                    )
                 self._msg_handler_task_queue.task_done()
         except asyncio.CancelledError:
             log_msg = f"Handler task processing was cancelled. (qsize={self._msg_handler_task_queue.qsize()})."

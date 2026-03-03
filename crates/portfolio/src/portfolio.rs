@@ -267,9 +267,11 @@ impl Portfolio {
         msgbus::register_account_state_endpoint(endpoint, update_account_handler.clone());
 
         msgbus::subscribe_quotes("data.quotes.*".into(), update_quote_handler, Some(10));
+
         if config.bar_updates {
             msgbus::subscribe_bars("data.bars.*EXTERNAL".into(), update_bar_handler, Some(10));
         }
+
         if config.use_mark_prices {
             msgbus::subscribe_mark_prices(
                 "data.mark_prices.*".into(),
@@ -395,9 +397,8 @@ impl Portfolio {
             }
 
             // Calculate PnL
-            match self.calculate_unrealized_pnl(&instrument_id) {
-                Some(pnl) => *unrealized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64(),
-                None => continue,
+            if let Some(pnl) = self.calculate_unrealized_pnl(&instrument_id) {
+                *unrealized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
             }
         }
 
@@ -436,9 +437,8 @@ impl Portfolio {
             }
 
             // Calculate PnL
-            match self.calculate_realized_pnl(&instrument_id) {
-                Some(pnl) => *realized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64(),
-                None => continue,
+            if let Some(pnl) = self.calculate_realized_pnl(&instrument_id) {
+                *realized_pnls.entry(pnl.currency).or_insert(0.0) += pnl.as_f64();
             }
         }
 
@@ -874,7 +874,7 @@ impl Portfolio {
                     .unrealized_pnls
                     .insert(instrument_id, calculated_unrealized_pnl);
             } else {
-                log::warn!(
+                log::debug!(
                     "Failed to calculate unrealized PnL for {instrument_id}, marking as pending"
                 );
                 self.inner.borrow_mut().pending_calcs.insert(instrument_id);
@@ -1204,8 +1204,10 @@ impl Portfolio {
                     }
 
                     let mut inner = self.inner.borrow_mut();
+
                     if let Some(sum) = sum_pnl {
                         inner.snapshot_sum_per_position.insert(*position_id, sum);
+
                         if let Some(last) = last_pnl {
                             inner.snapshot_last_per_position.insert(*position_id, last);
                         }
@@ -1309,8 +1311,10 @@ impl Portfolio {
                     }
 
                     let mut inner = self.inner.borrow_mut();
+
                     if let Some(sum) = sum_pnl {
                         inner.snapshot_sum_per_position.insert(*position_id, sum);
+
                         if let Some(last) = last_pnl {
                             inner.snapshot_last_per_position.insert(*position_id, last);
                         }
@@ -1380,6 +1384,7 @@ impl Portfolio {
                         .snapshot_last_per_position
                         .get(position_id)
                         .copied();
+
                     if let Some(last_pnl) = last_pnl {
                         let mut pnl = last_pnl.as_f64();
 
@@ -1414,6 +1419,7 @@ impl Portfolio {
                         .snapshot_sum_per_position
                         .get(position_id)
                         .copied();
+
                     if let Some(sum_pnl) = sum_pnl {
                         let mut pnl = sum_pnl.as_f64();
 
@@ -1486,6 +1492,7 @@ impl Portfolio {
                     .snapshot_sum_per_position
                     .get(position_id)
                     .copied();
+
                 if let Some(sum_pnl) = sum_pnl {
                     let mut pnl = sum_pnl.as_f64();
 
@@ -1900,7 +1907,7 @@ fn update_position(
             .unrealized_pnls
             .insert(event.instrument_id(), calculated_unrealized_pnl);
     } else {
-        log::warn!(
+        log::debug!(
             "Failed to calculate unrealized PnL for {}, marking as pending",
             event.instrument_id()
         );
@@ -1949,6 +1956,7 @@ fn update_position(
             clock.borrow().timestamp_ns(),
         );
         let mut cache_ref = cache.borrow_mut();
+
         if let Some((margin_account, _)) = result {
             cache_ref
                 .update_account(AccountAny::Margin(margin_account))

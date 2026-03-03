@@ -34,6 +34,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use nautilus_common::live::get_runtime;
+use nautilus_core::string::REDACTED;
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
@@ -100,7 +101,7 @@ impl Debug for BinanceSpotWsTradingClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(BinanceSpotWsTradingClient))
             .field("url", &self.url)
-            .field("credential", &"<redacted>")
+            .field("credential", &REDACTED)
             .field("heartbeat", &self.heartbeat)
             .finish_non_exhaustive()
     }

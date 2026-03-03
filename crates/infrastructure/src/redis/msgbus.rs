@@ -488,7 +488,6 @@ pub async fn stream_messages(
                                     }
                                     Err(e) => {
                                         log::error!("{e:?}");
-                                        continue;
                                     }
                                 }
                             }

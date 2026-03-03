@@ -323,6 +323,7 @@ impl KrakenFuturesWebSocketClient {
                                 if let Some(ref cred) = credential_for_reconnect {
                                     // Request fresh challenge for the new connection
                                     let (tx, rx) = tokio::sync::oneshot::channel();
+
                                     if let Err(e) = cmd_tx_for_reconnect.send(
                                         HandlerCommand::RequestChallenge {
                                             api_key: cred.api_key().to_string(),
@@ -440,7 +441,6 @@ impl KrakenFuturesWebSocketClient {
                             log::debug!("Output channel closed: {e}");
                             break;
                         }
-                        continue;
                     }
                     Some(msg) => {
                         if let Err(e) = out_tx.send(msg) {
@@ -849,6 +849,18 @@ impl KrakenFuturesWebSocketClient {
             })
         {
             log::debug!("Failed to cache client order: {e}");
+        }
+    }
+
+    /// Caches a truncated cl_ord_id mapping for reverse lookup.
+    pub fn cache_truncated_id(&self, truncated: String, original: ClientOrderId) {
+        if let Ok(tx) = self.cmd_tx.try_read()
+            && let Err(e) = tx.send(HandlerCommand::CacheTruncatedId {
+                truncated,
+                original,
+            })
+        {
+            log::debug!("Failed to cache truncated ID: {e}");
         }
     }
 

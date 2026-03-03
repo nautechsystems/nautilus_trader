@@ -15,17 +15,26 @@
 
 //! Python bindings from `pyo3`.
 
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_system::{
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    get_global_pyo3_registry,
+};
 use pyo3::prelude::*;
 
 use crate::{
     common::enums::{KrakenEnvironment, KrakenProductType},
+    config::{KrakenDataClientConfig, KrakenExecClientConfig},
+    factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
     http::{KrakenFuturesHttpClient, KrakenSpotHttpClient},
     websocket::{
         futures::client::KrakenFuturesWebSocketClient, spot_v2::client::KrakenSpotWebSocketClient,
     },
 };
 
+pub mod config;
 pub mod enums;
+pub mod factories;
 pub mod http_futures;
 pub mod http_spot;
 pub mod websocket_futures;
@@ -46,6 +55,54 @@ fn py_kraken_product_type_from_symbol(symbol: &str) -> KrakenProductType {
     crate::common::enums::product_type_from_symbol(symbol)
 }
 
+fn extract_kraken_data_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn DataClientFactory>> {
+    match factory.extract::<KrakenDataClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract KrakenDataClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_kraken_exec_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn ExecutionClientFactory>> {
+    match factory.extract::<KrakenExecutionClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract KrakenExecutionClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_kraken_data_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<KrakenDataClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract KrakenDataClientConfig: {e}"
+        ))),
+    }
+}
+
+fn extract_kraken_exec_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<KrakenExecClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract KrakenExecClientConfig: {e}"
+        ))),
+    }
+}
+
 #[pymodule]
 pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KrakenEnvironment>()?;
@@ -54,8 +111,47 @@ pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KrakenFuturesHttpClient>()?;
     m.add_class::<KrakenSpotWebSocketClient>()?;
     m.add_class::<KrakenFuturesWebSocketClient>()?;
-
+    m.add_class::<KrakenDataClientConfig>()?;
+    m.add_class::<KrakenExecClientConfig>()?;
+    m.add_class::<KrakenDataClientFactory>()?;
+    m.add_class::<KrakenExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_kraken_product_type_from_symbol, m)?)?;
+
+    let registry = get_global_pyo3_registry();
+
+    if let Err(e) =
+        registry.register_factory_extractor("KRAKEN".to_string(), extract_kraken_data_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Kraken data factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) =
+        registry.register_exec_factory_extractor("KRAKEN".to_string(), extract_kraken_exec_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Kraken exec factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "KrakenDataClientConfig".to_string(),
+        extract_kraken_data_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Kraken data config extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "KrakenExecClientConfig".to_string(),
+        extract_kraken_exec_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Kraken exec config extractor: {e}"
+        )));
+    }
 
     Ok(())
 }

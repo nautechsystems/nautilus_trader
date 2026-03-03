@@ -231,7 +231,7 @@ class KrakenExecutionClient(LiveExecutionClient):
 
         if self._ws_client_spot is not None:
             instruments_pyo3 = self.kraken_instrument_provider.instruments_pyo3()
-            await self._ws_client_spot.connect(instruments_pyo3, self._handle_msg)
+            await self._ws_client_spot.connect(self._loop, instruments_pyo3, self._handle_msg)
             await self._ws_client_spot.wait_until_active(timeout_secs=10.0)
             self._log.info("Connected to spot WebSocket", LogColor.BLUE)
 
@@ -245,7 +245,7 @@ class KrakenExecutionClient(LiveExecutionClient):
 
         if self._ws_client_futures is not None:
             instruments_pyo3 = self.kraken_instrument_provider.instruments_pyo3()
-            await self._ws_client_futures.connect(instruments_pyo3, self._handle_msg)
+            await self._ws_client_futures.connect(self._loop, instruments_pyo3, self._handle_msg)
             await self._ws_client_futures.wait_until_active(timeout_secs=10.0)
             self._log.info("Connected to futures WebSocket", LogColor.BLUE)
 

@@ -18,7 +18,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.enums import DEFAULT_PRODUCT_TYPES
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.common.providers import InstrumentProvider
@@ -100,8 +99,7 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
             )
             # Store PyO3 instruments for WebSocket client
             self._instruments_pyo3 = pyo3_instruments
-            # Convert PyO3 instruments to Python (Cython) instruments
-            # This is necessary because the data engine expects Python instruments
+
             instruments = instruments_from_pyo3(pyo3_instruments)
             return instruments
         except AttributeError:  # method missing (old wheel?)
@@ -157,43 +155,6 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
             f"Ignoring Hyperliquid instrument {instrument.id.value} (unsupported type {type(instrument).__name__})",
         )
         return None
-
-    async def load_ids_async(
-        self,
-        instrument_ids: list[InstrumentId],
-        filters: dict | None = None,
-    ) -> None:
-        PyCondition.not_none(instrument_ids, "instrument_ids")
-        if not instrument_ids:
-            self._log.debug("No instrument IDs provided; nothing to load")
-            return
-
-        for instrument_id in instrument_ids:
-            PyCondition.equal(
-                instrument_id.venue,
-                HYPERLIQUID_VENUE,
-                "instrument_id.venue",
-                HYPERLIQUID_VENUE.value,
-            )
-
-        # We currently fetch the full catalog (low cost) and rely on filtering afterwards.
-        await self.load_all_async(filters)
-
-        missing = [i for i in instrument_ids if i not in self._instruments]
-        if missing:
-            self._log.warning(
-                "Unable to load %d Hyperliquid instruments: %s",
-                len(missing),
-                ", ".join(i.value for i in missing),
-            )
-
-    async def load_async(
-        self,
-        instrument_id: InstrumentId,
-        filters: dict | None = None,
-    ) -> None:
-        PyCondition.not_none(instrument_id, "instrument_id")
-        await self.load_ids_async([instrument_id], filters)
 
     def _accept_instrument(
         self,

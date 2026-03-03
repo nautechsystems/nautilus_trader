@@ -56,6 +56,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::BYBIT_VENUE,
+        credential::credential_env_vars,
         enums::{
             BybitAccountType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
             BybitTimeInForce,
@@ -95,8 +96,9 @@ impl BybitExecutionClient {
     ///
     /// Returns an error if the client fails to initialize.
     pub fn new(core: ExecutionClientCore, config: BybitExecClientConfig) -> anyhow::Result<Self> {
-        let api_key = get_or_env_var(config.api_key.clone(), "BYBIT_API_KEY")?;
-        let api_secret = get_or_env_var(config.api_secret.clone(), "BYBIT_API_SECRET")?;
+        let (key_var, secret_var) = credential_env_vars(config.environment);
+        let api_key = get_or_env_var(config.api_key.clone(), key_var)?;
+        let api_secret = get_or_env_var(config.api_secret.clone(), secret_var)?;
 
         let http_client = BybitHttpClient::with_credentials(
             api_key.clone(),
@@ -226,17 +228,10 @@ impl BybitExecutionClient {
     }
 
     fn get_product_type_for_instrument(&self, instrument_id: InstrumentId) -> BybitProductType {
-        // Determine product type from instrument symbol
-        let symbol = instrument_id.symbol.as_str();
-        if symbol.ends_with("-SPOT") || (!symbol.contains('-') && !symbol.contains("PERP")) {
-            BybitProductType::Spot
-        } else if symbol.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else if symbol.contains("USD") && !symbol.contains("USDT") && !symbol.contains("USDC") {
-            BybitProductType::Inverse
-        } else {
+        BybitProductType::from_suffix(instrument_id.symbol.as_str()).unwrap_or_else(|| {
+            log::warn!("No product-type suffix on {instrument_id}, defaulting to Linear");
             BybitProductType::Linear
-        }
+        })
     }
 
     fn map_order_type(order_type: OrderType) -> anyhow::Result<BybitOrderType> {
@@ -504,9 +499,11 @@ impl ExecutionClient for BybitExecutionClient {
 
         self.core.set_stopped();
         self.core.set_disconnected();
+
         if let Some(handle) = self.ws_private_stream_handle.take() {
             handle.abort();
         }
+
         if let Some(handle) = self.ws_trade_stream_handle.take() {
             handle.abort();
         }
@@ -535,6 +532,7 @@ impl ExecutionClient for BybitExecutionClient {
             self.emitter.emit_order_denied(&order, &e.to_string());
             return Ok(());
         }
+
         if let Err(e) = Self::map_order_type(order.order_type()) {
             self.emitter.emit_order_denied(&order, &e.to_string());
             return Ok(());
@@ -1055,6 +1053,7 @@ impl ExecutionClient for BybitExecutionClient {
         if let Some(start) = cmd.start {
             reports.retain(|r| r.ts_last >= start);
         }
+
         if let Some(end) = cmd.end {
             reports.retain(|r| r.ts_last <= end);
         }

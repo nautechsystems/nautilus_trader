@@ -464,6 +464,30 @@ pub fn equity_aapl() -> Equity {
     )
 }
 
+/// AAPL equity with ITCH-compatible precision (price_precision=4).
+pub fn equity_aapl_itch() -> Equity {
+    Equity::new(
+        InstrumentId::from("AAPL.XNAS"),
+        Symbol::from("AAPL"),
+        Some(Ustr::from("US0378331005")),
+        Currency::from("USD"),
+        4,
+        Price::from("0.0001"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // FuturesContract
 ////////////////////////////////////////////////////////////////////////////////

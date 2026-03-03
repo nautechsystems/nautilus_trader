@@ -461,6 +461,7 @@ impl DatabentoHistoricalClient {
             if let Some(msg) = record.get::<dbn::MboMsg>() {
                 let (delta, _trade) =
                     decode_mbo_msg(msg, instrument_id, price_precision, None, false)?;
+
                 if let Some(delta) = delta {
                     result.push(delta);
                 }

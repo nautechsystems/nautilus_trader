@@ -31,7 +31,11 @@
 
 use futures_util::StreamExt;
 use nautilus_binance::{
-    common::{enums::BinanceEnvironment, sbe::stream::mantissa_to_f64},
+    common::{
+        credential::resolve_credentials,
+        enums::{BinanceEnvironment, BinanceProductType},
+        sbe::stream::mantissa_to_f64,
+    },
     spot::{
         http::client::BinanceSpotHttpClient,
         websocket::streams::{
@@ -41,26 +45,25 @@ use nautilus_binance::{
         },
     },
 };
+use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::data::Data;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     nautilus_common::logging::ensure_logging_initialized();
 
-    // Read credentials from environment (required for SBE streams)
-    let api_key = std::env::var("BINANCE_API_KEY").ok();
-    let api_secret = std::env::var("BINANCE_API_SECRET").ok();
-
-    if api_key.is_none() || api_secret.is_none() {
-        log::error!("Ed25519 credentials required for Binance SBE streams");
-        log::error!("Set BINANCE_API_KEY and BINANCE_API_SECRET environment variables");
-        anyhow::bail!("Missing required Ed25519 credentials");
-    }
-    log::info!("Using Ed25519 authentication for SBE streams");
+    // Resolve credentials (required for SBE streams)
+    let (api_key, api_secret) = resolve_credentials(
+        None,
+        None,
+        BinanceEnvironment::Mainnet,
+        BinanceProductType::Spot,
+    )?;
 
     log::info!("Fetching instruments from Binance Spot API...");
     let http_client = BinanceSpotHttpClient::new(
         BinanceEnvironment::Mainnet,
+        get_atomic_clock_realtime(),
         None, // api_key (not needed for public endpoints)
         None, // api_secret
         None, // base_url_override
@@ -75,7 +78,9 @@ async fn main() -> anyhow::Result<()> {
     log::info!("Creating Binance Spot WebSocket client...");
     let mut ws_client = BinanceSpotWebSocketClient::new(
         None, // url (default SBE endpoint)
-        api_key, api_secret, None, // heartbeat
+        Some(api_key),
+        Some(api_secret),
+        None, // heartbeat
     )?;
 
     ws_client.cache_instruments(instruments);

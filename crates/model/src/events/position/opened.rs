@@ -126,7 +126,7 @@ mod tests {
             last_px: Price::from("1.0500"),
             currency: Currency::USD(),
             avg_px_open: 1.0500,
-            event_id: Default::default(),
+            event_id: UUID4::default(),
             ts_event: UnixNanos::from(1_000_000_000),
             ts_init: UnixNanos::from(2_000_000_000),
         }
@@ -147,7 +147,7 @@ mod tests {
             Price::from("0.8000"),
             Currency::USD(),
             LiquiditySide::Taker,
-            Default::default(),
+            UUID4::default(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
             false,
@@ -189,7 +189,7 @@ mod tests {
         let instrument = audusd_sim();
         let fill = create_test_order_filled();
         let position = Position::new(&InstrumentAny::CurrencyPair(instrument), fill);
-        let event_id = Default::default();
+        let event_id = UUID4::default();
         let ts_init = UnixNanos::from(3_000_000_000);
 
         let position_opened = PositionOpened::create(&position, &fill, event_id, ts_init);
@@ -237,7 +237,7 @@ mod tests {
     fn test_position_opened_partial_eq() {
         let mut position_opened1 = create_test_position_opened();
         let mut position_opened2 = create_test_position_opened();
-        let event_id = Default::default();
+        let event_id = UUID4::default();
         position_opened1.event_id = event_id;
         position_opened2.event_id = event_id;
 

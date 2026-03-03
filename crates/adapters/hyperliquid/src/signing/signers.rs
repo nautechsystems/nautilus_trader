@@ -193,9 +193,8 @@ mod tests {
 
     use super::*;
     use crate::http::models::{
-        Cloid, HyperliquidExecAction, HyperliquidExecBuilderFee, HyperliquidExecGrouping,
-        HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
-        HyperliquidExecTif,
+        Cloid, HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
+        HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
     };
 
     #[rstest]
@@ -373,121 +372,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_connection_id_matches_python_with_builder_fee() {
-        // Test with builder fee included (what production uses).
-        // Python expected output:
-        // MsgPack bytes (132): 84a474797065a56f72646572a66f72646572739186a16100a162c3a170a53530303030a173a3302e31a172c2a17481a56c696d697481a3746966a3477463a867726f7570696e67a26e61a76275696c64657282a162d92a307839623665326665343132346564336537613662346638356537383630653033323232326234333136a16601
-        // Connection ID: 235d93388ffa044d5fb14a7fe8103a8a29b73d1e2049cd086e7903671a6cfb49
-        // Signing hash: 6f046f4b02e79610b8cf26c73505f8de3ff1d91d6953c5e972fbf198a5311a41
-
-        let private_key = EvmPrivateKey::new(
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-        )
-        .unwrap();
-        let signer = HyperliquidEip712Signer::new(private_key);
-
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
-                asset: 0,
-                is_buy: true,
-                price: dec!(50000),
-                size: dec!(0.1),
-                reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
-                    },
-                },
-                cloid: None,
-            }],
-            grouping: HyperliquidExecGrouping::Na,
-            builder: Some(HyperliquidExecBuilderFee {
-                address: "0x9b6e2fe4124ed3e7a6b4f85e7860e032222b4316".to_string(),
-                fee_tenths_bp: 1,
-            }),
-        };
-
-        // Serialize the typed struct with msgpack
-        let action_bytes = rmp_serde::to_vec_named(&typed_action).unwrap();
-        println!(
-            "Rust typed MsgPack bytes with builder ({}): {}",
-            action_bytes.len(),
-            hex::encode(&action_bytes)
-        );
-
-        // Expected from Python
-        let python_msgpack = hex::decode(
-            "84a474797065a56f72646572a66f72646572739186a16100a162c3a170a53530303030a173a3302e31a172c2a17481a56c696d697481a3746966a3477463a867726f7570696e67a26e61a76275696c64657282a162d92a307839623665326665343132346564336537613662346638356537383630653033323232326234333136a16601",
-        )
-        .unwrap();
-        println!(
-            "Python MsgPack bytes with builder ({}): {}",
-            python_msgpack.len(),
-            hex::encode(&python_msgpack)
-        );
-
-        // Compare msgpack bytes
-        assert_eq!(
-            hex::encode(&action_bytes),
-            hex::encode(&python_msgpack),
-            "MsgPack bytes with builder should match Python"
-        );
-
-        // Test connection_id
-        let action_value = serde_json::to_value(&typed_action).unwrap();
-        let request = SignRequest {
-            action: action_value,
-            action_bytes: Some(action_bytes),
-            time_nonce: TimeNonce::from_millis(1640995200000),
-            action_type: HyperliquidActionType::L1,
-            is_testnet: true,
-            vault_address: None,
-        };
-
-        let connection_id = signer.compute_connection_id(&request).unwrap();
-        println!(
-            "Rust Connection ID with builder: {}",
-            hex::encode(connection_id.as_slice())
-        );
-
-        let expected_connection_id =
-            "235d93388ffa044d5fb14a7fe8103a8a29b73d1e2049cd086e7903671a6cfb49";
-        assert_eq!(
-            hex::encode(connection_id.as_slice()),
-            expected_connection_id,
-            "Connection ID with builder should match Python"
-        );
-
-        // Test signing hash
-        let source = "b".to_string();
-        let agent = Agent {
-            source,
-            connectionId: connection_id,
-        };
-
-        let domain = eip712_domain! {
-            name: "Exchange",
-            version: "1",
-            chain_id: 1337,
-            verifying_contract: Address::ZERO,
-        };
-
-        let signing_hash = agent.eip712_signing_hash(&domain);
-        println!(
-            "Rust EIP-712 signing hash with builder: {}",
-            hex::encode(signing_hash.as_slice())
-        );
-
-        let expected_signing_hash =
-            "6f046f4b02e79610b8cf26c73505f8de3ff1d91d6953c5e972fbf198a5311a41";
-        assert_eq!(
-            hex::encode(signing_hash.as_slice()),
-            expected_signing_hash,
-            "EIP-712 signing hash with builder should match Python"
-        );
-    }
-
-    #[rstest]
     fn test_connection_id_with_cloid() {
         // Test with CLOID included - this is what production actually sends.
         // The key difference: production always includes a cloid field.
@@ -517,10 +401,7 @@ mod tests {
                 cloid: Some(cloid),
             }],
             grouping: HyperliquidExecGrouping::Na,
-            builder: Some(HyperliquidExecBuilderFee {
-                address: "0x9b6e2fe4124ed3e7a6b4f85e7860e032222b4316".to_string(),
-                fee_tenths_bp: 1,
-            }),
+            builder: None,
         };
 
         // Serialize the typed struct with msgpack
@@ -612,10 +493,7 @@ mod tests {
                 cloid: Some(cloid),
             }],
             grouping: HyperliquidExecGrouping::Na,
-            builder: Some(HyperliquidExecBuilderFee {
-                address: "0x9b6e2fe4124ed3e7a6b4f85e7860e032222b4316".to_string(),
-                fee_tenths_bp: 1,
-            }),
+            builder: None,
         };
 
         // Serialize with msgpack

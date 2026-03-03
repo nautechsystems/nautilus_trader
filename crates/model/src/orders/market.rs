@@ -406,7 +406,7 @@ impl Order for MarketOrder {
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
-        };
+        }
 
         self.core.apply(event)?;
 

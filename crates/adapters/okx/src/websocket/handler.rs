@@ -36,16 +36,19 @@ use std::{
     },
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
 use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicTime, UUID4, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
+    data::InstrumentStatus,
     enums::{OrderStatus, OrderType},
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderModifyRejected, OrderRejected,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
+    },
     instruments::{Instrument, InstrumentAny},
     types::{Money, Quantity},
 };
@@ -68,8 +71,9 @@ use super::{
         WsCancelOrderParamsBuilder, WsMassCancelParams, WsPostAlgoOrderParams, WsPostOrderParams,
     },
     parse::{
-        OrderStateSnapshot, ParsedOrderEvent, parse_algo_order_msg, parse_book_msg_vec,
-        parse_order_event, parse_order_msg, parse_ws_message_data,
+        OrderStateSnapshot, ParsedOrderEvent, extract_fees_from_cached_instrument,
+        parse_algo_order_msg, parse_book_msg_vec, parse_order_event, parse_order_msg,
+        parse_ws_message_data,
     },
     subscription::topic_from_websocket_arg,
 };
@@ -77,15 +81,17 @@ use crate::{
     common::{
         consts::{
             OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_POST_ONLY_ERROR_CODE,
-            should_retry_error_code,
+            OKX_VENUE, should_retry_error_code,
         },
         enums::{
-            OKXBookAction, OKXInstrumentType, OKXOrderStatus, OKXSide, OKXTargetCurrency,
-            OKXTradeMode,
+            OKXBookAction, OKXInstrumentStatus, OKXInstrumentType, OKXOrderStatus, OKXSide,
+            OKXTargetCurrency, OKXTradeMode,
         },
+        models::OKXInstrument,
         parse::{
-            determine_order_type, is_market_price, okx_instrument_type, parse_account_state,
-            parse_client_order_id, parse_millisecond_timestamp, parse_position_status_report,
+            determine_order_type, is_market_price, okx_instrument_type,
+            okx_status_to_market_action, parse_account_state, parse_client_order_id,
+            parse_instrument_any, parse_millisecond_timestamp, parse_position_status_report,
             parse_price, parse_quantity,
         },
     },
@@ -200,6 +206,14 @@ pub enum HandlerCommand {
         args: Vec<Value>,
         request_id: String,
     },
+    MapIndexTicker {
+        base_pair: Ustr,
+        original: Ustr,
+    },
+    UnmapIndexTicker {
+        base_pair: Ustr,
+        original: Ustr,
+    },
 }
 
 pub(super) struct OKXWsFeedHandler {
@@ -223,12 +237,13 @@ pub(super) struct OKXWsFeedHandler {
     inst_id_code_cache: Arc<DashMap<Ustr, u64>>,
     emitted_accepted: FifoCache<VenueOrderId, 10_000>,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
+    index_ticker_map: AHashMap<Ustr, AHashSet<Ustr>>,
     fee_cache: AHashMap<Ustr, Money>,
     filled_qty_cache: AHashMap<Ustr, Quantity>,
     order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot>,
     funding_rate_cache: AHashMap<Ustr, (Ustr, u64)>, // Cache (funding_rate, funding_time) by inst_id
     last_account_state: Option<AccountState>,
-    request_id_counter: AtomicU64,
+    request_id_counter: Arc<AtomicU64>,
 }
 
 impl OKXWsFeedHandler {
@@ -245,6 +260,7 @@ impl OKXWsFeedHandler {
         inst_id_code_cache: Arc<DashMap<Ustr, u64>>,
         auth_tracker: AuthTracker,
         subscriptions_state: SubscriptionState,
+        request_id_counter: Arc<AtomicU64>,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -267,12 +283,13 @@ impl OKXWsFeedHandler {
             inst_id_code_cache,
             emitted_accepted: FifoCache::new(),
             instruments_cache: AHashMap::new(),
+            index_ticker_map: AHashMap::new(),
             fee_cache: AHashMap::new(),
             filled_qty_cache: AHashMap::new(),
             order_state_cache: AHashMap::new(),
             funding_rate_cache: AHashMap::new(),
             last_account_state: None,
-            request_id_counter: AtomicU64::new(0),
+            request_id_counter,
         }
     }
 
@@ -491,9 +508,21 @@ impl OKXWsFeedHandler {
                                 log::error!("Failed to handle batch amend orders command: error={e}");
                             }
                         }
+                        HandlerCommand::MapIndexTicker { base_pair, original } => {
+                            self.index_ticker_map
+                                .entry(base_pair)
+                                .or_default()
+                                .insert(original);
+                        }
+                        HandlerCommand::UnmapIndexTicker { base_pair, original } => {
+                            if let Some(set) = self.index_ticker_map.get_mut(&base_pair) {
+                                set.remove(&original);
+                                if set.is_empty() {
+                                    self.index_ticker_map.remove(&base_pair);
+                                }
+                            }
+                        }
                     }
-                    // Continue processing following command
-                    continue;
                 }
 
                 () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
@@ -501,7 +530,6 @@ impl OKXWsFeedHandler {
                         log::debug!("Stop signal received during idle period");
                         return None;
                     }
-                    continue;
                 }
 
                 msg = self.raw_rx.recv() => {
@@ -523,7 +551,6 @@ impl OKXWsFeedHandler {
                     if let Err(e) = self.send_pong().await {
                         log::warn!("Failed to send pong response: error={e}");
                     }
-                    continue;
                 }
                 OKXWsMessage::Login {
                     code, msg, conn_id, ..
@@ -548,13 +575,11 @@ impl OKXWsFeedHandler {
                     };
                     self.pending_messages
                         .push_back(NautilusWsMessage::Error(error));
-                    continue;
                 }
                 OKXWsMessage::BookData { arg, action, data } => {
                     if let Some(msg) = self.handle_book_data(arg, action, data, ts_init) {
                         return Some(msg);
                     }
-                    continue;
                 }
                 OKXWsMessage::OrderResponse {
                     id,
@@ -566,7 +591,6 @@ impl OKXWsFeedHandler {
                     if let Some(msg) = self.handle_order_response(id, op, code, msg, data, ts_init) {
                         return Some(msg);
                     }
-                    continue;
                 }
                 OKXWsMessage::Data { arg, data } => {
                     let OKXWebSocketArg {
@@ -578,23 +602,25 @@ impl OKXWsFeedHandler {
                             if let Some(msg) = self.handle_account_data(data, ts_init) {
                                 return Some(msg);
                             }
-                            continue;
                         }
                         OKXWsChannel::Positions => {
                             self.handle_positions_data(data, ts_init);
-                            continue;
                         }
                         OKXWsChannel::Orders => {
                             if let Some(msg) = self.handle_orders_data(data, ts_init) {
                                 return Some(msg);
                             }
-                            continue;
                         }
-                        OKXWsChannel::OrdersAlgo => {
+                        OKXWsChannel::OrdersAlgo | OKXWsChannel::AlgoAdvance => {
                             if let Some(msg) = self.handle_algo_orders_data(data, ts_init) {
                                 return Some(msg);
                             }
-                            continue;
+                        }
+
+                        OKXWsChannel::Instruments => {
+                            if let Some(msg) = self.handle_instruments_data(data, ts_init) {
+                                return Some(msg);
+                            }
                         }
                         _ => {
                             if let Some(msg) =
@@ -602,7 +628,6 @@ impl OKXWsFeedHandler {
                             {
                                 return Some(msg);
                             }
-                            continue;
                         }
                     }
                 }
@@ -616,6 +641,7 @@ impl OKXWsFeedHandler {
                     return Some(NautilusWsMessage::Error(error));
                 }
                 OKXWsMessage::Reconnected => {
+                    self.drain_pending_requests_on_reconnect();
                     return Some(NautilusWsMessage::Reconnected);
                 }
                 OKXWsMessage::Subscription {
@@ -649,10 +675,8 @@ impl OKXWsFeedHandler {
                             }
                         }
                     }
-
-                    continue;
                 }
-                OKXWsMessage::ChannelConnCount { .. } => continue,
+                OKXWsMessage::ChannelConnCount { .. } => {}
             }
                 }
 
@@ -747,6 +771,30 @@ impl OKXWsFeedHandler {
         true
     }
 
+    fn drain_pending_requests_on_reconnect(&mut self) {
+        // Clear pending requests without emitting rejection events.
+        // Requests may have reached OKX before the disconnect, so emitting
+        // false rejections would cause local state to diverge from venue state.
+        // Reconciliation after reconnect will resolve any ambiguous state.
+        let place_count = self.pending_place_requests.len();
+        let cancel_count = self.pending_cancel_requests.len();
+        let amend_count = self.pending_amend_requests.len();
+        let mass_cancel_count = self.pending_mass_cancel_requests.len();
+
+        if place_count + cancel_count + amend_count + mass_cancel_count > 0 {
+            log::warn!(
+                "Clearing {place_count} place, {cancel_count} cancel, \
+                 {amend_count} amend, {mass_cancel_count} mass-cancel \
+                 pending requests on reconnect (may need reconciliation)"
+            );
+        }
+
+        self.pending_place_requests.clear();
+        self.pending_cancel_requests.clear();
+        self.pending_amend_requests.clear();
+        self.pending_mass_cancel_requests.clear();
+    }
+
     fn register_client_order_aliases(
         &self,
         raw_child: &Option<ClientOrderId>,
@@ -813,6 +861,7 @@ impl OKXWsFeedHandler {
                 if final_id.is_none() {
                     final_id = fill_report.client_order_id;
                 }
+
                 if final_id.is_none()
                     && let Some(child) = raw_child.as_ref()
                     && let Some(mapped) = self.client_id_aliases.get(child)
@@ -840,7 +889,16 @@ impl OKXWsFeedHandler {
                     .get(&order_id)
                     .copied()
                     .unwrap_or_else(|| Money::new(0.0, fill_report.commission.currency));
-                let total_fee = current_fee + fill_report.commission;
+                let total_fee = if current_fee.currency == fill_report.commission.currency {
+                    current_fee + fill_report.commission
+                } else {
+                    log::warn!(
+                        "Fee cache currency mismatch for {order_id}: cached={}, fill={}, resetting cache",
+                        current_fee.currency.code,
+                        fill_report.commission.currency.code,
+                    );
+                    fill_report.commission
+                };
                 self.fee_cache.insert(order_id, total_fee);
 
                 let current_filled_qty = self
@@ -871,6 +929,7 @@ impl OKXWsFeedHandler {
                         self.active_client_orders.remove(&client_order_id);
                         self.client_id_aliases.remove(&client_order_id);
                     }
+
                     if let Some(linked) = &status_report.linked_order_ids {
                         for child in linked {
                             self.client_id_aliases.remove(child);
@@ -1280,7 +1339,13 @@ impl OKXWsFeedHandler {
             return None;
         };
 
-        let inst = self.instruments_cache.get(&inst_id)?;
+        let inst = match self.instruments_cache.get(&inst_id) {
+            Some(inst) => inst,
+            None => {
+                log::warn!("Instrument not in cache for book data: {inst_id}");
+                return None;
+            }
+        };
 
         let instrument_id = inst.id();
         let price_precision = inst.price_precision();
@@ -1440,7 +1505,7 @@ impl OKXWsFeedHandler {
             let previous_state =
                 effective_client_id.and_then(|cid| self.order_state_cache.get(&cid).cloned());
 
-            // SAFETY: order_metadata being Some implies effective_client_id is Some
+            // order_metadata being Some implies effective_client_id is Some
             if let (Some((trader_id, strategy_id, _instrument_id)), Some(canonical_client_id)) =
                 (order_metadata, effective_client_id)
             {
@@ -1632,7 +1697,15 @@ impl OKXWsFeedHandler {
         self.order_state_cache.remove(client_order_id);
         self.active_client_orders.remove(client_order_id);
         self.client_id_aliases.remove(client_order_id);
-        self.client_id_aliases.retain(|_, v| *v != *client_order_id);
+        let stale_keys: Vec<ClientOrderId> = self
+            .client_id_aliases
+            .iter()
+            .filter(|entry| entry.value() == client_order_id)
+            .map(|entry| *entry.key())
+            .collect();
+        for key in stale_keys {
+            self.client_id_aliases.remove(&key);
+        }
 
         self.fee_cache.remove(&venue_order_id.inner());
         self.filled_qty_cache.remove(&venue_order_id.inner());
@@ -1660,12 +1733,13 @@ impl OKXWsFeedHandler {
                 self.register_client_order_aliases(&raw_child, &parent_from_msg);
 
             match parse_algo_order_msg(msg, self.account_id, &self.instruments_cache, ts_init) {
-                Ok(report) => {
+                Ok(Some(report)) => {
                     let adjusted =
                         self.adjust_execution_report(report, &effective_client_id, &raw_child);
                     self.update_caches_with_report(&adjusted);
                     exec_reports.push(adjusted);
                 }
+                Ok(None) => {}
                 Err(e) => {
                     log::error!("Failed to parse algo order message: {e}");
                 }
@@ -1677,6 +1751,84 @@ impl OKXWsFeedHandler {
         } else {
             Some(NautilusWsMessage::ExecutionReports(exec_reports))
         }
+    }
+
+    fn handle_instruments_data(
+        &mut self,
+        data: Value,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let instruments: Vec<OKXInstrument> = match serde_json::from_value(data) {
+            Ok(v) => v,
+            Err(e) => {
+                log::error!("Failed to deserialize instruments array: {e}");
+                return None;
+            }
+        };
+
+        let mut messages: Vec<NautilusWsMessage> = Vec::new();
+
+        for msg in instruments {
+            let inst_id_ustr = Ustr::from(&msg.inst_id);
+            let status_action = okx_status_to_market_action(msg.state);
+            let cached = self.instruments_cache.get(&inst_id_ustr);
+            let (margin_init, margin_maint, maker_fee, taker_fee) = cached.map_or(
+                (None, None, None, None),
+                extract_fees_from_cached_instrument,
+            );
+
+            let instrument_id = cached.map_or_else(
+                || InstrumentId::new(Symbol::new(inst_id_ustr), *OKX_VENUE),
+                |inst| inst.id(),
+            );
+
+            let status = InstrumentStatus::new(
+                instrument_id,
+                status_action,
+                ts_init,
+                ts_init,
+                None,
+                None,
+                Some(matches!(msg.state, OKXInstrumentStatus::Live)),
+                None,
+                None,
+            );
+
+            match parse_instrument_any(
+                &msg,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_init,
+            ) {
+                Ok(Some(inst_any)) => {
+                    self.instruments_cache
+                        .insert(inst_any.symbol().inner(), inst_any.clone());
+                    messages.push(NautilusWsMessage::Instrument(
+                        Box::new(inst_any),
+                        Some(status),
+                    ));
+                }
+                Ok(None) => {
+                    log::warn!("Could not parse instrument {inst_id_ustr}, emitting status only");
+                    messages.push(NautilusWsMessage::InstrumentStatus(status));
+                }
+                Err(e) => {
+                    log::error!("Failed to parse instrument {inst_id_ustr}: {e}");
+                    messages.push(NautilusWsMessage::InstrumentStatus(status));
+                }
+            }
+        }
+
+        let mut iter = messages.into_iter();
+        let first = iter.next();
+
+        for msg in iter {
+            self.pending_messages.push_back(msg);
+        }
+
+        first
     }
 
     fn handle_other_channel_data(
@@ -1691,6 +1843,42 @@ impl OKXWsFeedHandler {
             return None;
         };
 
+        // Index-tickers use base-pair (e.g., BTC-USDT) which may map to multiple
+        // instruments (e.g., BTC-USDT-SWAP and BTC-USDT-250627). Emit one message
+        // per mapped instrument, buffering extras via pending_messages.
+        if channel == OKXWsChannel::IndexTickers {
+            return if let Some(originals) = self.index_ticker_map.get(&inst_id) {
+                let symbols: Vec<Ustr> = originals.iter().copied().collect();
+                let mut first_msg = None;
+
+                for symbol in symbols {
+                    if let Some(msg) =
+                        self.parse_channel_data(&channel, symbol, data.clone(), ts_init)
+                    {
+                        if first_msg.is_none() {
+                            first_msg = Some(msg);
+                        } else {
+                            self.pending_messages.push_back(msg);
+                        }
+                    }
+                }
+
+                first_msg
+            } else {
+                None
+            };
+        }
+
+        self.parse_channel_data(&channel, inst_id, data, ts_init)
+    }
+
+    fn parse_channel_data(
+        &mut self,
+        channel: &OKXWsChannel,
+        inst_id: Ustr,
+        data: Value,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
         let Some(instrument) = self.instruments_cache.get(&inst_id) else {
             log::error!("No instrument for channel {channel:?}, inst_id {inst_id:?}");
             return None;
@@ -1701,7 +1889,7 @@ impl OKXWsFeedHandler {
         let size_precision = instrument.size_precision();
 
         match parse_ws_message_data(
-            &channel,
+            channel,
             data,
             &instrument_id,
             price_precision,
@@ -1711,7 +1899,7 @@ impl OKXWsFeedHandler {
             &self.instruments_cache,
         ) {
             Ok(Some(msg)) => {
-                if let NautilusWsMessage::Instrument(ref inst) = msg {
+                if let NautilusWsMessage::Instrument(ref inst, _) = msg {
                     self.instruments_cache
                         .insert(inst.symbol().inner(), inst.as_ref().clone());
                 }
@@ -1734,6 +1922,7 @@ impl OKXWsFeedHandler {
                     log::trace!("Received pong from OKX");
                     return None;
                 }
+
                 if text == TEXT_PING {
                     log::trace!("Received ping from OKX (text)");
                     return Some(OKXWsMessage::Ping);
@@ -2514,7 +2703,10 @@ fn create_okx_timeout_error(msg: String) -> OKXWsError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, atomic::AtomicBool};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64},
+    };
 
     use dashmap::DashMap;
     use nautilus_model::{
@@ -2558,6 +2750,7 @@ mod tests {
             inst_id_code_cache,
             auth_tracker,
             subscriptions_state,
+            Arc::new(AtomicU64::new(0)),
         );
 
         (handler, out_rx, active_client_orders, client_id_aliases)
@@ -2729,8 +2922,10 @@ mod tests {
     }
 
     mod channel_routing {
+        use ahash::AHashSet;
         use nautilus_core::nanos::UnixNanos;
         use nautilus_model::{
+            enums::MarketStatusAction,
             identifiers::{InstrumentId, Symbol},
             instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
             types::{Currency, Price, Quantity},
@@ -3128,6 +3323,357 @@ mod tests {
         }
 
         #[rstest]
+        fn test_handle_instruments_data_emits_instrument_and_status() {
+            let mut handler = create_handler_with_instruments(vec![create_swap_instrument()]);
+            let json = load_test_json("ws_instruments.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            let OKXWsMessage::Data { data, .. } = msg else {
+                panic!("Expected OKXWsMessage::Data");
+            };
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_instruments_data(data, ts_init);
+
+            assert!(result.is_some());
+            match result.unwrap() {
+                NautilusWsMessage::Instrument(inst, status) => {
+                    assert_eq!(inst.id(), InstrumentId::from("BTC-USDT-SWAP.OKX"));
+                    let status = status.expect("Expected InstrumentStatus");
+                    assert_eq!(status.action, MarketStatusAction::Trading);
+                    assert_eq!(status.is_trading, Some(true));
+                }
+                other => panic!("Expected NautilusWsMessage::Instrument, was {other:?}"),
+            }
+        }
+
+        #[rstest]
+        fn test_handle_instruments_data_status_only_when_parse_fails() {
+            let mut handler = create_handler_with_instruments(vec![]);
+
+            // Valid OKXInstrument JSON but with empty tick/lot sizes to fail parsing
+            let data = serde_json::json!([{
+                "instType": "SWAP",
+                "instId": "UNKNOWN-SWAP",
+                "baseCcy": "",
+                "ctMult": "1",
+                "ctType": "linear",
+                "ctVal": "",
+                "ctValCcy": "",
+                "expTime": "",
+                "instFamily": "",
+                "lever": "",
+                "listTime": "",
+                "lotSz": "",
+                "minSz": "",
+                "optType": "",
+                "quoteCcy": "",
+                "settleCcy": "",
+                "state": "preopen",
+                "stk": "",
+                "tickSz": "",
+                "uly": "",
+                "ruleType": "",
+                "maxLmtSz": "",
+                "maxMktSz": "",
+                "maxLmtAmt": "",
+                "maxMktAmt": "",
+                "maxTwapSz": "",
+                "maxIcebergSz": "",
+                "maxTriggerSz": "",
+                "maxStopSz": ""
+            }]);
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_instruments_data(data, ts_init);
+
+            assert!(result.is_some());
+            match result.unwrap() {
+                NautilusWsMessage::InstrumentStatus(status) => {
+                    assert_eq!(status.action, MarketStatusAction::PreOpen);
+                    assert_eq!(status.is_trading, Some(false));
+                }
+                other => panic!("Expected NautilusWsMessage::InstrumentStatus, was {other:?}"),
+            }
+        }
+
+        #[rstest]
+        fn test_handle_instruments_data_multiple_instruments() {
+            let swap = create_swap_instrument();
+            let spot = create_spot_instrument();
+            let mut handler = create_handler_with_instruments(vec![swap, spot]);
+
+            // Two instruments in data array
+            let data = serde_json::json!([
+                {
+                    "instType": "SWAP",
+                    "instId": "BTC-USDT-SWAP",
+                    "baseCcy": "",
+                    "ctMult": "1",
+                    "ctType": "linear",
+                    "ctVal": "0.01",
+                    "ctValCcy": "BTC",
+                    "expTime": "",
+                    "instFamily": "BTC-USDT",
+                    "lever": "125",
+                    "listTime": "1611916828000",
+                    "lotSz": "1",
+                    "minSz": "1",
+                    "optType": "",
+                    "quoteCcy": "",
+                    "settleCcy": "USDT",
+                    "state": "live",
+                    "stk": "",
+                    "tickSz": "0.1",
+                    "uly": "BTC-USDT",
+                    "ruleType": "normal",
+                    "maxLmtSz": "100000000",
+                    "maxMktSz": "30000",
+                    "maxLmtAmt": "20000000",
+                    "maxMktAmt": "",
+                    "maxTwapSz": "100000000",
+                    "maxIcebergSz": "100000000",
+                    "maxTriggerSz": "100000000",
+                    "maxStopSz": "30000"
+                },
+                {
+                    "instType": "SPOT",
+                    "instId": "BTC-USDT",
+                    "baseCcy": "BTC",
+                    "ctMult": "",
+                    "ctType": "",
+                    "ctVal": "",
+                    "ctValCcy": "",
+                    "expTime": "",
+                    "instFamily": "",
+                    "lever": "",
+                    "listTime": "1733454000000",
+                    "lotSz": "0.00000001",
+                    "minSz": "0.00001",
+                    "optType": "",
+                    "quoteCcy": "USDT",
+                    "settleCcy": "",
+                    "state": "live",
+                    "stk": "",
+                    "tickSz": "0.1",
+                    "uly": "",
+                    "ruleType": "normal",
+                    "maxLmtSz": "9999999999",
+                    "maxMktSz": "1000000",
+                    "maxLmtAmt": "20000000",
+                    "maxMktAmt": "1000000",
+                    "maxTwapSz": "9999999999",
+                    "maxIcebergSz": "9999999999",
+                    "maxTriggerSz": "9999999999",
+                    "maxStopSz": "1000000"
+                }
+            ]);
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_instruments_data(data, ts_init);
+
+            assert!(result.is_some());
+            assert_eq!(handler.pending_messages.len(), 1);
+        }
+
+        #[rstest]
+        fn test_handle_index_tickers_routes_to_mapped_instrument() {
+            let swap = create_swap_instrument();
+            let mut handler = create_handler_with_instruments(vec![swap]);
+
+            // Pre-populate index ticker mapping
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from("BTC-USDT-SWAP"));
+            handler.index_ticker_map.insert(Ustr::from("BTC-USDT"), set);
+
+            let data = serde_json::json!([{
+                "instId": "BTC-USDT",
+                "idxPx": "103895",
+                "high24h": "104985.1",
+                "sodUtc0": "104812.5",
+                "open24h": "103172.7",
+                "low24h": "103008.2",
+                "sodUtc8": "103141.2",
+                "ts": "1746942707815"
+            }]);
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_other_channel_data(
+                OKXWsChannel::IndexTickers,
+                Some(Ustr::from("BTC-USDT")),
+                data,
+                ts_init,
+            );
+
+            assert!(result.is_some());
+            match result.unwrap() {
+                NautilusWsMessage::Data(payloads) => {
+                    assert!(!payloads.is_empty(), "Should produce index price data");
+                }
+                other => panic!("Expected NautilusWsMessage::Data, was {other:?}"),
+            }
+        }
+
+        #[rstest]
+        fn test_handle_index_tickers_no_mapping_returns_none() {
+            let swap = create_swap_instrument();
+            let mut handler = create_handler_with_instruments(vec![swap]);
+
+            let data = serde_json::json!([{
+                "instId": "BTC-USDT",
+                "idxPx": "103895",
+                "high24h": "104985.1",
+                "sodUtc0": "104812.5",
+                "open24h": "103172.7",
+                "low24h": "103008.2",
+                "sodUtc8": "103141.2",
+                "ts": "1746942707815"
+            }]);
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_other_channel_data(
+                OKXWsChannel::IndexTickers,
+                Some(Ustr::from("BTC-USDT")),
+                data,
+                ts_init,
+            );
+
+            assert!(result.is_none());
+        }
+
+        #[rstest]
+        fn test_handle_index_tickers_multi_instrument_fanout() {
+            let swap = create_swap_instrument();
+
+            // Create a futures instrument with the same base pair
+            let futures_id = InstrumentId::from("BTC-USDT-250627.OKX");
+            let futures = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+                futures_id,
+                Symbol::from("BTC-USDT-250627"),
+                Currency::BTC(),
+                Currency::USDT(),
+                Currency::USDT(),
+                false,
+                2,
+                8,
+                Price::from("0.01"),
+                Quantity::from("0.00000001"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ));
+
+            let mut handler = create_handler_with_instruments(vec![swap, futures]);
+
+            // Map base pair to both instruments
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from("BTC-USDT-SWAP"));
+            set.insert(Ustr::from("BTC-USDT-250627"));
+            handler.index_ticker_map.insert(Ustr::from("BTC-USDT"), set);
+
+            let data = serde_json::json!([{
+                "instId": "BTC-USDT",
+                "idxPx": "103895",
+                "high24h": "104985.1",
+                "sodUtc0": "104812.5",
+                "open24h": "103172.7",
+                "low24h": "103008.2",
+                "sodUtc8": "103141.2",
+                "ts": "1746942707815"
+            }]);
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_other_channel_data(
+                OKXWsChannel::IndexTickers,
+                Some(Ustr::from("BTC-USDT")),
+                data,
+                ts_init,
+            );
+
+            assert!(result.is_some());
+            assert_eq!(
+                handler.pending_messages.len(),
+                1,
+                "Second instrument should be buffered in pending_messages"
+            );
+        }
+
+        #[rstest]
+        fn test_map_unmap_index_ticker_commands() {
+            let mut handler = create_handler_with_instruments(vec![]);
+
+            // Map first instrument
+            handler
+                .index_ticker_map
+                .entry(Ustr::from("BTC-USDT"))
+                .or_default()
+                .insert(Ustr::from("BTC-USDT-SWAP"));
+            assert!(
+                handler
+                    .index_ticker_map
+                    .get(&Ustr::from("BTC-USDT"))
+                    .unwrap()
+                    .contains(&Ustr::from("BTC-USDT-SWAP"))
+            );
+
+            // Map second instrument to same base pair
+            handler
+                .index_ticker_map
+                .entry(Ustr::from("BTC-USDT"))
+                .or_default()
+                .insert(Ustr::from("BTC-USDT-250627"));
+            assert_eq!(
+                handler
+                    .index_ticker_map
+                    .get(&Ustr::from("BTC-USDT"))
+                    .unwrap()
+                    .len(),
+                2
+            );
+
+            // Unmap one
+            if let Some(set) = handler.index_ticker_map.get_mut(&Ustr::from("BTC-USDT")) {
+                set.remove(&Ustr::from("BTC-USDT-SWAP"));
+                if set.is_empty() {
+                    handler.index_ticker_map.remove(&Ustr::from("BTC-USDT"));
+                }
+            }
+            assert_eq!(
+                handler
+                    .index_ticker_map
+                    .get(&Ustr::from("BTC-USDT"))
+                    .unwrap()
+                    .len(),
+                1
+            );
+
+            // Unmap last — key should be removed entirely
+            if let Some(set) = handler.index_ticker_map.get_mut(&Ustr::from("BTC-USDT")) {
+                set.remove(&Ustr::from("BTC-USDT-250627"));
+                if set.is_empty() {
+                    handler.index_ticker_map.remove(&Ustr::from("BTC-USDT"));
+                }
+            }
+            assert!(
+                !handler
+                    .index_ticker_map
+                    .contains_key(&Ustr::from("BTC-USDT"))
+            );
+        }
+
+        #[rstest]
         fn test_handle_book_data_missing_instrument() {
             let handler = create_handler_with_instruments(vec![]);
             let json = load_test_json("ws_books_snapshot.json");
@@ -3143,5 +3689,52 @@ mod tests {
             // Should return None when instrument is not in cache
             assert!(result.is_none());
         }
+    }
+
+    #[rstest]
+    fn test_drain_pending_requests_on_reconnect_clears_without_rejections() {
+        let (mut handler, _out_rx, _active, _aliases) = create_test_handler();
+
+        let trader_id = TraderId::new("TRADER-001");
+        let strategy_id = StrategyId::new("STRATEGY-001");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let cancel_client_id = ClientOrderId::new("CANCEL-001");
+        let amend_client_id = ClientOrderId::new("AMEND-001");
+
+        handler.pending_cancel_requests.insert(
+            "cancel-req-1".to_string(),
+            (
+                cancel_client_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                Some(VenueOrderId::new("VENUE-001")),
+            ),
+        );
+
+        handler.pending_amend_requests.insert(
+            "amend-req-1".to_string(),
+            (
+                amend_client_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                Some(VenueOrderId::new("VENUE-002")),
+            ),
+        );
+
+        handler
+            .pending_mass_cancel_requests
+            .insert("mass-req-1".to_string(), instrument_id);
+
+        handler.drain_pending_requests_on_reconnect();
+
+        assert!(handler.pending_place_requests.is_empty());
+        assert!(handler.pending_cancel_requests.is_empty());
+        assert!(handler.pending_amend_requests.is_empty());
+        assert!(handler.pending_mass_cancel_requests.is_empty());
+
+        // No rejection events emitted, reconciliation handles ambiguous state
+        assert!(handler.pending_messages.is_empty());
     }
 }

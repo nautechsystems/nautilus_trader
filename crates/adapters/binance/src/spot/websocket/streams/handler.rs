@@ -157,6 +157,7 @@ impl BinanceSpotWsFeedHandler {
                         let mut iter = messages.into_iter();
                         let first = iter.next();
                         self.pending_messages.extend(iter);
+
                         if let Some(msg) = first {
                             return Some(msg);
                         }

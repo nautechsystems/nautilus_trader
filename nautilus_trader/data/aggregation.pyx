@@ -42,6 +42,7 @@ from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
@@ -702,9 +703,9 @@ cdef class VolumeImbalanceBarAggregator(BarAggregator):
             bar_type=bar_type,
             handler=handler,
         )
-        cdef long long step_value = self.bar_type.spec.step
+        cdef int step_value = self.bar_type.spec.step
         self._imbalance_raw = 0
-        self._raw_step = <long long>(step_value * FIXED_SCALAR)
+        self._raw_step = <PriceRaw>(step_value * FIXED_SCALAR)
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         self._builder.update(price, size, ts_init)
@@ -720,30 +721,31 @@ cdef class VolumeImbalanceBarAggregator(BarAggregator):
             self._apply_update(tick.price, tick.size, tick.ts_init)
             return
 
-        cdef long long side_sign = 1 if side == AggressorSide.BUYER else -1
+        cdef int side_sign = 1 if side == AggressorSide.BUYER else -1
         cdef double size_remaining = float(tick.size)
         cdef double size_chunk
         cdef double needed_qty
-        cdef long long imbalance_abs
-        cdef long long needed
+        cdef PriceRaw imbalance_abs
+        cdef PriceRaw needed
 
         while size_remaining > 0.0:
-            imbalance_abs = abs(self._imbalance_raw)
+            imbalance_abs = -self._imbalance_raw if self._imbalance_raw < 0 else self._imbalance_raw
             needed = self._raw_step - imbalance_abs
             if needed <= 0:
                 needed = 1
 
-            # Convert needed from raw (10^9 scale) to quantity
+            # Convert needed from raw to quantity
             needed_qty = <double>needed / <double>FIXED_SCALAR
             if size_remaining <= needed_qty:
-                self._imbalance_raw += side_sign * <long long>(size_remaining * FIXED_SCALAR)
+                self._imbalance_raw += side_sign * <PriceRaw>(size_remaining * FIXED_SCALAR)
                 self._apply_update(
                     tick.price,
                     Quantity(size_remaining, precision=tick.size.precision),
                     tick.ts_init,
                 )
 
-                if abs(self._imbalance_raw) >= self._raw_step:
+                imbalance_abs = -self._imbalance_raw if self._imbalance_raw < 0 else self._imbalance_raw
+                if imbalance_abs >= self._raw_step:
                     self._build_now_and_send()
                     self._imbalance_raw = 0
                 break
@@ -757,7 +759,8 @@ cdef class VolumeImbalanceBarAggregator(BarAggregator):
             self._imbalance_raw += side_sign * needed
             size_remaining -= size_chunk
 
-            if abs(self._imbalance_raw) >= self._raw_step:
+            imbalance_abs = -self._imbalance_raw if self._imbalance_raw < 0 else self._imbalance_raw
+            if imbalance_abs >= self._raw_step:
                 self._build_now_and_send()
                 self._imbalance_raw = 0
 
@@ -796,11 +799,11 @@ cdef class VolumeRunsBarAggregator(BarAggregator):
             bar_type=bar_type,
             handler=handler,
         )
-        cdef long long step_value = self.bar_type.spec.step
+        cdef int step_value = self.bar_type.spec.step
         self._current_run_side = AggressorSide.NO_AGGRESSOR
         self._has_run_side = False
         self._run_volume_raw = 0
-        self._raw_step = <long long>(step_value * FIXED_SCALAR)
+        self._raw_step = <QuantityRaw>(step_value * FIXED_SCALAR)
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         self._builder.update(price, size, ts_init)
@@ -825,17 +828,17 @@ cdef class VolumeRunsBarAggregator(BarAggregator):
         cdef double size_remaining = float(tick.size)
         cdef double size_chunk
         cdef double needed_qty
-        cdef long long needed
+        cdef QuantityRaw needed
 
         while size_remaining > 0.0:
             needed = self._raw_step - self._run_volume_raw
             if needed <= 0:
                 needed = 1
 
-            # Convert needed from raw (10^9 scale) to quantity
+            # Convert needed from raw to quantity
             needed_qty = <double>needed / <double>FIXED_SCALAR
             if size_remaining <= needed_qty:
-                self._run_volume_raw += <long long>(size_remaining * FIXED_SCALAR)
+                self._run_volume_raw += <QuantityRaw>(size_remaining * FIXED_SCALAR)
                 self._apply_update(
                     tick.price,
                     Quantity(size_remaining, precision=tick.size.precision),

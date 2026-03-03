@@ -193,11 +193,13 @@ impl PyDydxGrpcClient {
             Python::attach(|py| {
                 use pyo3::types::PyDict;
                 let dict = PyDict::new(py);
+
                 if let Some(default_node_info) = info.default_node_info {
                     dict.set_item("network", default_node_info.network)?;
                     dict.set_item("moniker", default_node_info.moniker)?;
                     dict.set_item("version", default_node_info.version)?;
                 }
+
                 if let Some(app_info) = info.application_version {
                     dict.set_item("app_name", app_info.name)?;
                     dict.set_item("app_version", app_info.version)?;

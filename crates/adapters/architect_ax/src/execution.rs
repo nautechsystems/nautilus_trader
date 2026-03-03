@@ -52,7 +52,9 @@ use nautilus_model::{
 use tokio::task::JoinHandle;
 
 use crate::{
-    common::{consts::AX_VENUE, enums::AxOrderSide, parse::quantity_to_contracts},
+    common::{
+        consts::AX_VENUE, credential::Credential, enums::AxOrderSide, parse::quantity_to_contracts,
+    },
     config::AxExecClientConfig,
     http::{client::AxHttpClient, models::PreviewAggressiveLimitOrderRequest},
     websocket::{AxOrdersWsMessage, NautilusExecWsMessage, orders::AxOrdersWebSocketClient},
@@ -115,22 +117,12 @@ impl AxExecutionClient {
     }
 
     async fn authenticate(&self) -> anyhow::Result<String> {
-        let api_key = self
-            .config
-            .api_key
-            .clone()
-            .or_else(|| std::env::var("AX_API_KEY").ok())
-            .context("AX_API_KEY not configured")?;
-
-        let api_secret = self
-            .config
-            .api_secret
-            .clone()
-            .or_else(|| std::env::var("AX_API_SECRET").ok())
-            .context("AX_API_SECRET not configured")?;
+        let credential =
+            Credential::resolve(self.config.api_key.clone(), self.config.api_secret.clone())
+                .context("API credentials not configured")?;
 
         self.http_client
-            .authenticate(&api_key, &api_secret, 3600)
+            .authenticate(credential.api_key(), credential.api_secret(), 3600)
             .await
             .map_err(|e| anyhow::anyhow!("Authentication failed: {e}"))
     }
@@ -431,6 +423,7 @@ impl ExecutionClient for AxExecutionClient {
             None => true,
             Some(handle) => handle.is_finished(),
         };
+
         if should_spawn {
             let stream = self.ws_orders.stream();
             let emitter = self.emitter.clone();
@@ -566,6 +559,7 @@ impl ExecutionClient for AxExecutionClient {
 
         self.core.set_stopped();
         self.core.set_disconnected();
+
         if let Some(handle) = self.ws_stream_handle.take() {
             handle.abort();
         }
@@ -745,6 +739,7 @@ impl ExecutionClient for AxExecutionClient {
         if let Some(start) = cmd.start {
             reports.retain(|r| r.ts_last >= start);
         }
+
         if let Some(end) = cmd.end {
             reports.retain(|r| r.ts_last <= end);
         }
@@ -794,7 +789,7 @@ impl ExecutionClient for AxExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
 
-        let ts_now = get_atomic_clock_realtime().get_time_ns();
+        let ts_now = self.clock.get_time_ns();
 
         let start = lookback_mins.map(|mins| {
             let lookback_ns = mins * 60 * 1_000_000_000;

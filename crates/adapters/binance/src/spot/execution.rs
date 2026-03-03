@@ -94,8 +94,11 @@ impl BinanceSpotExecutionClient {
             product_type,
         )?;
 
+        let clock = get_atomic_clock_realtime();
+
         let http_client = BinanceSpotHttpClient::new(
             config.environment,
+            clock,
             Some(api_key),
             Some(api_secret),
             config.base_url_http.clone(),
@@ -104,8 +107,6 @@ impl BinanceSpotExecutionClient {
             None, // proxy_url
         )
         .context("failed to construct Binance Spot HTTP client")?;
-
-        let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
             clock,
             core.trader_id,

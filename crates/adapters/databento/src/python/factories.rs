@@ -21,15 +21,44 @@ use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime};
 use nautilus_model::identifiers::ClientId;
 use pyo3::prelude::*;
 
-use crate::{data::DatabentoDataClient, factories::DatabentoDataClientFactory};
+use crate::{
+    data::DatabentoDataClient,
+    factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig},
+};
 
-#[cfg(feature = "python")]
+#[pymethods]
+impl DatabentoLiveClientConfig {
+    #[new]
+    #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true))]
+    fn py_new(
+        api_key: String,
+        publishers_filepath: std::path::PathBuf,
+        use_exchange_as_venue: bool,
+        bars_timestamp_on_close: bool,
+    ) -> Self {
+        Self::new(
+            api_key,
+            publishers_filepath,
+            use_exchange_as_venue,
+            bars_timestamp_on_close,
+        )
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
 #[pymethods]
 impl DatabentoDataClientFactory {
-    /// Creates a new [`DatabentoDataClientFactory`] instance.
     #[new]
-    pub fn py_new() -> Self {
+    fn py_new() -> Self {
         Self
+    }
+
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> &str {
+        "DATABENTO"
     }
 
     /// Creates a live data client.
@@ -46,7 +75,7 @@ impl DatabentoDataClientFactory {
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: bool,
     ) -> PyResult<DatabentoDataClient> {
-        DatabentoDataClientFactory::create_live_data_client(
+        Self::create_live_data_client(
             client_id,
             api_key,
             publishers_filepath,

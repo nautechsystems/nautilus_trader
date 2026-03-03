@@ -137,6 +137,11 @@ async fn handle_info(body: axum::body::Bytes) -> Response {
         }))
         .into_response(),
         "userFills" => Json(json!([])).into_response(),
+        "userFees" => Json(json!({
+            "userCrossRate": "0.00045",
+            "userAddRate": "0.00015"
+        }))
+        .into_response(),
         "clearinghouseState" => Json(json!({
             "marginSummary": {
                 "accountValue": "10000.0",
@@ -311,6 +316,7 @@ async fn handle_ws_socket(mut socket: WebSocket) {
                     match method {
                         Some("ping") => {
                             let pong = json!({"channel": "pong"});
+
                             if socket
                                 .send(Message::Text(pong.to_string().into()))
                                 .await
@@ -657,7 +663,7 @@ const TEST_PRIVATE_KEY: &str = "0x1234567890abcdef1234567890abcdef1234567890abcd
 
 fn create_test_exec_config(addr: SocketAddr) -> HyperliquidExecClientConfig {
     HyperliquidExecClientConfig {
-        private_key: TEST_PRIVATE_KEY.to_string(),
+        private_key: Some(TEST_PRIVATE_KEY.to_string()),
         base_url_http: Some(format!("http://{addr}/info")),
         base_url_exchange: Some(format!("http://{addr}/exchange")),
         base_url_ws: Some(format!("ws://{addr}/ws")),

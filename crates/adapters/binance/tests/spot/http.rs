@@ -39,6 +39,7 @@ use nautilus_binance::{
     },
 };
 use nautilus_common::testing::wait_until_async;
+use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
     data::BarType,
     enums::{AggregationSource, OrderSide, OrderType, TimeInForce},
@@ -802,6 +803,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                     if !has_auth_headers(&headers) {
                         return unauthorized_response().into_response();
                     }
+
                     if state.increment_and_check() {
                         return rate_limit_response().into_response();
                     }
@@ -822,6 +824,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -856,6 +859,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -898,6 +902,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -941,6 +946,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -972,6 +978,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -1005,6 +1012,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -1043,6 +1051,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         if !has_auth_headers(&headers) {
                             return unauthorized_response().into_response();
                         }
+
                         if state.increment_and_check() {
                             return rate_limit_response().into_response();
                         }
@@ -1407,6 +1416,7 @@ async fn test_domain_client_request_instruments() {
 
     let client = BinanceSpotHttpClient::new(
         BinanceEnvironment::Mainnet,
+        get_atomic_clock_realtime(),
         None,
         None,
         Some(base_url),
@@ -1591,6 +1601,7 @@ async fn create_domain_client_with_instruments(
 ) -> BinanceSpotHttpClient {
     let client = BinanceSpotHttpClient::new(
         BinanceEnvironment::Mainnet,
+        get_atomic_clock_realtime(),
         api_key,
         api_secret,
         Some(base_url),

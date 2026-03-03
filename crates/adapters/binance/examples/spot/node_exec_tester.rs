@@ -60,12 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exec_config = BinanceExecClientConfig {
         trader_id,
         account_id,
-        product_types: vec![BinanceProductType::Spot],
-        environment: BinanceEnvironment::Mainnet,
-        api_key: None,    // Will use 'BINANCE_API_KEY' env var
-        api_secret: None, // Will use 'BINANCE_API_SECRET' env var
-        base_url_http: None,
-        base_url_ws: None,
+        ..Default::default()
     };
 
     let data_factory = BinanceDataClientFactory::new();

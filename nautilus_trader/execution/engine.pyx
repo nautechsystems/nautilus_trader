@@ -280,6 +280,7 @@ cdef class ExecutionEngine(Component):
         for client in self._clients.values():
             if not client.is_connected:
                 return False
+
         return True
 
     cpdef bint check_disconnected(self):
@@ -296,6 +297,7 @@ cdef class ExecutionEngine(Component):
         for client in self._clients.values():
             if client.is_connected:
                 return False
+
         return True
 
     cpdef bint check_residuals(self):
@@ -368,10 +370,9 @@ cdef class ExecutionEngine(Component):
         """
         Condition.not_none(orders, "orders")
 
-        cdef set[ClientId] client_ids = set()
-        cdef set[Venue] venues = set()
-
         cdef:
+            set[ClientId] client_ids = set()
+            set[Venue] venues = set()
             Order order
             ClientId client_id
             Venue venue
@@ -381,10 +382,10 @@ cdef class ExecutionEngine(Component):
             client_id = self._cache.client_id(order.client_order_id)
             if client_id is None:
                 continue
+
             client_ids.add(client_id)
 
         cdef set[ExecutionClient] clients = set()
-
         for client_id in client_ids:
             clients.add(self._clients[client_id])
 
@@ -450,6 +451,7 @@ cdef class ExecutionEngine(Component):
                     f"Default execution client already registered ("
                     f"{self._default_client.id!r}); use register_default_client to override"
                 )
+
             self._default_client = client
             routing_log = " for default routing"
         # Venue-specific routing
@@ -460,6 +462,7 @@ cdef class ExecutionEngine(Component):
                     f"Execution client for venue {client.venue!r} "
                     f"already registered ({existing.id!r})"
                 )
+
             self._routing_map[client.venue] = client
 
         # Finally register in client registry
@@ -556,6 +559,7 @@ cdef class ExecutionEngine(Component):
                 raise InvalidConfiguration(
                     f"External order claim for {instrument_id} already exists for {existing}",
                 )
+
             # Register strategy to claim external orders for this instrument
             self._external_order_claims[instrument_id] = strategy.id
 
@@ -594,6 +598,7 @@ cdef class ExecutionEngine(Component):
         for venue, mapped_client in self._routing_map.items():
             if mapped_client == client:
                 to_remove.append(venue)
+
         for venue in to_remove:
             del self._routing_map[venue]
 
@@ -801,7 +806,9 @@ cdef class ExecutionEngine(Component):
             for order in self._cache.orders():
                 if order.is_closed_c() or not should_handle_own_book_order(order):
                     continue
+
                 self._add_own_book_order(order)
+
             ts_func_end = int(time.time() * 1000)
             self._log.debug(f"manage_own_order_books processing took {ts_func_end - ts_func_start}ms")
 
@@ -942,14 +949,15 @@ cdef class ExecutionEngine(Component):
             if contingent_order is None:
                 self._log.error(f"Contingency order {client_order_id!r} not found")
                 continue
-            if not contingent_order.is_quote_quantity:
+            elif not contingent_order.is_quote_quantity:
                 continue  # Already base quantity
-            if contingent_order.quantity != original_qty:
+            elif contingent_order.quantity != original_qty:
                 self._log.warning(
                     f"Contingent order quantity {contingent_order.quantity} "
                     f"was not equal to the OTO parent original quantity {original_qty} "
                     f"when setting to base quantity of {base_qty}"
                 )
+
             self._log.info(
                 f"Setting {contingent_order.instrument_id} order quote quantity "
                 f"{contingent_order.quantity} to base quantity {base_qty}",
@@ -976,6 +984,7 @@ cdef class ExecutionEngine(Component):
             topic=self._get_order_events_topic(order.strategy_id),
             msg=denied,
         )
+
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
 
@@ -986,6 +995,7 @@ cdef class ExecutionEngine(Component):
             own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
             self._cache.add_own_order_book(own_book)
             self._log.debug(f"Initialized {own_book!r}", LogColor.MAGENTA)
+
         return own_book
 
     cpdef void _add_own_book_order(self, Order order):
@@ -1015,6 +1025,7 @@ cdef class ExecutionEngine(Component):
                     f"Skipping execution command for external client {command.client_id}: {command}",
                     LogColor.MAGENTA,
                 )
+
             return
 
         cdef ExecutionClient client = self._find_client_for_command(command)
@@ -1132,6 +1143,7 @@ cdef class ExecutionEngine(Component):
             if last_px is None:
                 self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
                 return  # Denied
+
             base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
             self._set_order_base_qty(order, base_qty)
 
@@ -1147,6 +1159,7 @@ cdef class ExecutionEngine(Component):
             if not self._cache.order_exists(order.client_order_id):
                 # Cache order
                 self._cache.add_order(order, command.position_id, command.client_id)
+
                 if self.snapshot_orders:
                     self._create_order_state_snapshot(order)
 
@@ -1175,6 +1188,7 @@ cdef class ExecutionEngine(Component):
                 if last_px is None:
                     for order in command.order_list.orders:
                         self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
+
                     return  # Denied
 
                 base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
@@ -1211,6 +1225,7 @@ cdef class ExecutionEngine(Component):
     cpdef void _handle_event(self, OrderEvent event):
         if self.debug:
             self._log.debug(f"{RECV}{EVT} {event}", LogColor.MAGENTA)
+
         self.event_count += 1
 
         # Fetch Order from cache
@@ -1291,8 +1306,10 @@ cdef class ExecutionEngine(Component):
 
             oms_type = self._determine_oms_type(event)
             self._determine_position_id(event, oms_type, order)
+
             if not self._apply_event_to_order(order, event):
                 return  # Event rejected, skip downstream handling
+
             self._handle_order_fill(order, event, oms_type)
         else:
             self._apply_event_to_order(order, event)
@@ -1325,7 +1342,6 @@ cdef class ExecutionEngine(Component):
     cdef bint _is_leg_fill(self, OrderFilled fill):
         cdef str client_order_id_str = fill.client_order_id.value
         cdef str venue_order_id_str = fill.venue_order_id.value if fill.venue_order_id else ""
-
         if not ("-LEG-" in client_order_id_str or "-LEG-" in venue_order_id_str):
             return False
 
@@ -1364,7 +1380,6 @@ cdef class ExecutionEngine(Component):
 
         # Determine position ID for leg fill without requiring an order in cache
         cdef PositionId position_id
-
         if oms_type == OmsType.HEDGING:
             position_id = self._determine_hedging_position_id(fill)
         elif oms_type == OmsType.NETTING:
@@ -1396,8 +1411,8 @@ cdef class ExecutionEngine(Component):
         )
 
     cpdef OmsType _determine_oms_type(self, OrderFilled fill):
-        cdef ExecutionClient client
         # Check for strategy OMS override
+        cdef ExecutionClient client
         cdef OmsType oms_type = self._oms_overrides.get(fill.strategy_id, OmsType.UNSPECIFIED)
         if oms_type == OmsType.UNSPECIFIED:
             # Use native venue OMS
@@ -1412,7 +1427,6 @@ cdef class ExecutionEngine(Component):
     cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type, Order order=None):
         # Fetch ID from cache
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
-
         if self.debug:
             self._log.debug(
                 f"Determining position ID for {fill.client_order_id!r}, "
@@ -1427,6 +1441,7 @@ cdef class ExecutionEngine(Component):
                     f"cached={position_id!r}, assigned={fill.position_id!r}; "
                     "re-assigning from cache",
                 )
+
             # Assign position ID to fill
             fill.position_id = position_id
 
@@ -1474,6 +1489,7 @@ cdef class ExecutionEngine(Component):
         if fill.position_id is not None:
             if self.debug:
                 self._log.debug(f"Already had a position ID of: {fill.position_id!r}", LogColor.MAGENTA)
+
             # Already assigned
             return fill.position_id
 
@@ -1493,6 +1509,7 @@ cdef class ExecutionEngine(Component):
                 if spawned_order.position_id is not None:
                     if self.debug:
                         self._log.debug(f"Found spawned {spawned_order.position_id!r} for {fill}", LogColor.MAGENTA)
+
                     # Use position ID for execution spawn
                     return spawned_order.position_id
 
@@ -1509,7 +1526,6 @@ cdef class ExecutionEngine(Component):
 
     cdef bint _check_overfill(self, Order order, OrderFilled fill):
         cdef Quantity potential_overfill = order.calculate_overfill_c(fill.last_qty)
-
         if potential_overfill._mem.raw > 0:
             if self.allow_overfills:
                 self._log.warning(
@@ -1535,11 +1551,11 @@ cdef class ExecutionEngine(Component):
             order.apply(event)
         except InvalidStateTrigger as e:
             log_msg = f"InvalidStateTrigger: {e}, did not apply {event}"
-
             if order.status_c() == OrderStatus.ACCEPTED and isinstance(event, OrderAccepted):
                 self._log.debug(log_msg)
             else:
                 self._log.warning(log_msg)
+
             return True  # Continue processing for idempotent state transitions
         except (ValueError, KeyError) as e:
             # ValueError: Protection against invalid IDs
@@ -1554,10 +1570,11 @@ cdef class ExecutionEngine(Component):
                 )
                 self._cache.force_remove_from_own_order_book(order.client_order_id)
             else:
-                own_book = self._cache.own_order_book(order.instrument_id)
                 # Only bypass should_handle check for closed orders (to ensure cleanup)
+                own_book = self._cache.own_order_book(order.instrument_id)
                 if (own_book is not None and order.is_closed_c()) or should_handle_own_book_order(order):
                     self._cache.update_own_order_book(order)
+
             return False  # Event rejected, skip downstream handling
 
         self._cache.update_order(order)
@@ -1594,7 +1611,6 @@ cdef class ExecutionEngine(Component):
             Position position = None
             ClientOrderId client_order_id
             Order contingent_order
-
         if not instrument.is_spread():
             self._handle_position_update(instrument, fill, oms_type)
             position = self._cache.position(fill.position_id)
@@ -1624,7 +1640,6 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type):
         cdef Position position = self._cache.position(fill.position_id)
-
         if position is None or position.is_closed_c():
             self._open_position(instrument, position, fill, oms_type)
         elif self._will_flip_position(position, fill):
@@ -1672,6 +1687,7 @@ cdef class ExecutionEngine(Component):
                     f"Cannot reopen position {position.info()} (oms_type={oms_type_to_str(oms_type)}: "
                     "reopening is only valid for closed positions in NETTING mode"
                 )
+
             # Snapshot closed position if reopening (NETTING mode)
             self._cache.snapshot_position(position)
         else:  # HEDGING

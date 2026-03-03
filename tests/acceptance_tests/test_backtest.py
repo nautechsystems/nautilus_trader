@@ -899,13 +899,13 @@ class TestBacktestAcceptanceTestsMarketMaking:
         self.engine.run()
 
         # Assert
-        assert self.engine.kernel.msgbus.sent_count == 23_689
-        assert self.engine.kernel.msgbus.pub_count == 26_806
+        assert self.engine.kernel.msgbus.sent_count == 23_679
+        assert self.engine.kernel.msgbus.pub_count == 26_797
         assert self.engine.iteration == 8_198
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 3_530
-        assert account.balance_total(GBP) == Money(-19_351.96, GBP)
+        assert account.event_count == 3_526
+        assert account.balance_total(GBP) == Money(-19_351.21, GBP)
 
 
 class StratTestConfig(StrategyConfig):  # type: ignore [misc]
@@ -1771,6 +1771,102 @@ class TestBacktestCommandSettling:
         # All three orders should exist: entry filled, stop + limit open
         assert engine.cache.orders_open_count() == 2
         assert engine.cache.orders_total_count() == 3
+
+        engine.dispose()
+
+    def test_all_same_timestamp_timer_commands_settled(self):
+        """
+        Two timer callbacks at the same timestamp both submit market orders.
+
+        All orders must be settled at the timer's timestamp, not deferred to the next
+        data point.
+
+        """
+
+        # Arrange
+        class DualTimerStrategy(Strategy):
+            def __init__(self):
+                super().__init__()
+                self.instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+                self.orders_submitted = []
+
+            def on_start(self):
+                self.subscribe_quote_ticks(self.instrument_id)
+                timer_time = pd.Timestamp("2020-01-01 00:00:30", tz="UTC")
+                self.clock.set_time_alert(
+                    "timer_a",
+                    timer_time,
+                    self._on_timer_a,
+                )
+                self.clock.set_time_alert(
+                    "timer_b",
+                    timer_time,
+                    self._on_timer_b,
+                )
+
+            def _on_timer_a(self, event):
+                order = self.order_factory.market(
+                    instrument_id=self.instrument_id,
+                    order_side=OrderSide.BUY,
+                    quantity=Quantity.from_int(100_000),
+                )
+                self.orders_submitted.append(order)
+                self.submit_order(order)
+
+            def _on_timer_b(self, event):
+                order = self.order_factory.market(
+                    instrument_id=self.instrument_id,
+                    order_side=OrderSide.SELL,
+                    quantity=Quantity.from_int(100_000),
+                )
+                self.orders_submitted.append(order)
+                self.submit_order(order)
+
+        config = BacktestEngineConfig(
+            logging=LoggingConfig(bypass_logging=True),
+        )
+        engine = BacktestEngine(config=config)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+        )
+
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+        engine.add_instrument(instrument)
+
+        # Data spans timer time so the timer fires between data points
+        timestamps = pd.date_range(start="2020-01-01", periods=3, freq="1min")
+        quotes = []
+        for ts in timestamps:
+            quote = QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str("0.70000"),
+                ask_price=Price.from_str("0.70002"),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=pd.Timestamp(ts).value,
+                ts_init=pd.Timestamp(ts).value,
+            )
+            quotes.append(quote)
+
+        engine.add_data(quotes)
+        strategy = DualTimerStrategy()
+        engine.add_strategy(strategy)
+
+        # Act
+        engine.run()
+
+        # Assert - both orders submitted and filled
+        assert len(strategy.orders_submitted) == 2
+
+        timer_ts = pd.Timestamp("2020-01-01 00:00:30", tz="UTC").value
+        for order in strategy.orders_submitted:
+            cached = engine.cache.order(order.client_order_id)
+            assert cached.is_closed
+            assert cached.ts_last == timer_ts
 
         engine.dispose()
 

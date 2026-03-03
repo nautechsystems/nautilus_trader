@@ -16,7 +16,7 @@
 //! Binance Futures HTTP response models.
 
 use anyhow::Context;
-use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
@@ -840,7 +840,7 @@ pub struct BinanceLeverageResponse {
 #[serde(rename_all = "camelCase")]
 pub struct BinanceCancelAllOrdersResponse {
     /// Response code (200 = success).
-    pub code: i32,
+    pub code: String,
     /// Response message.
     pub msg: String,
 }
@@ -933,11 +933,11 @@ impl BinanceFuturesOrder {
         account_id: AccountId,
         instrument_id: InstrumentId,
         size_precision: u8,
+        ts_init: UnixNanos,
     ) -> anyhow::Result<OrderStatusReport> {
-        let ts_now = get_atomic_clock_realtime().get_time_ns();
         let ts_event = self
             .update_time
-            .map_or(ts_now, |t| UnixNanos::from((t * 1_000_000) as u64));
+            .map_or(ts_init, |t| UnixNanos::from((t * 1_000_000) as u64));
 
         let client_order_id = ClientOrderId::new(&self.client_order_id);
         let venue_order_id = VenueOrderId::new(self.order_id.to_string());
@@ -967,7 +967,7 @@ impl BinanceFuturesOrder {
             Quantity::new(filled_qty.to_string().parse()?, size_precision),
             ts_event,
             ts_event,
-            ts_now,
+            ts_init,
             Some(UUID4::new()),
         ))
     }
@@ -1042,8 +1042,8 @@ impl BinanceUserTrade {
         instrument_id: InstrumentId,
         price_precision: u8,
         size_precision: u8,
+        ts_init: UnixNanos,
     ) -> anyhow::Result<FillReport> {
-        let ts_now = get_atomic_clock_realtime().get_time_ns();
         let ts_event = UnixNanos::from((self.time * 1_000_000) as u64);
 
         let venue_order_id = VenueOrderId::new(self.order_id.to_string());
@@ -1089,7 +1089,7 @@ impl BinanceUserTrade {
             None, // client_order_id
             None, // venue_position_id
             ts_event,
-            ts_now,
+            ts_init,
             Some(UUID4::new()),
         ))
     }
@@ -1143,7 +1143,7 @@ pub struct BinanceFuturesAlgoOrder {
     /// Algo type (currently only `Conditional` is supported).
     pub algo_type: BinanceAlgoType,
     /// Order type (STOP_MARKET, STOP, TAKE_PROFIT, TAKE_PROFIT_MARKET, TRAILING_STOP_MARKET).
-    #[serde(rename = "type")]
+    #[serde(rename = "orderType", alias = "type")]
     pub order_type: BinanceFuturesOrderType,
     /// Trading symbol.
     pub symbol: Ustr,
@@ -1216,12 +1216,12 @@ impl BinanceFuturesAlgoOrder {
         account_id: AccountId,
         instrument_id: InstrumentId,
         size_precision: u8,
+        ts_init: UnixNanos,
     ) -> anyhow::Result<OrderStatusReport> {
-        let ts_now = get_atomic_clock_realtime().get_time_ns();
         let ts_event = self
             .update_time
             .or(self.create_time)
-            .map_or(ts_now, |t| UnixNanos::from((t * 1_000_000) as u64));
+            .map_or(ts_init, |t| UnixNanos::from((t * 1_000_000) as u64));
 
         let client_order_id = ClientOrderId::new(&self.client_algo_id);
         let venue_order_id = self.actual_order_id.as_ref().map_or_else(
@@ -1265,7 +1265,7 @@ impl BinanceFuturesAlgoOrder {
             Quantity::new(filled_qty.to_string().parse()?, size_precision),
             ts_event,
             ts_event,
-            ts_now,
+            ts_init,
             Some(UUID4::new()),
         ))
     }
@@ -1306,7 +1306,7 @@ pub struct BinanceFuturesAlgoOrderCancelResponse {
     /// Client algo order ID.
     pub client_algo_id: String,
     /// Response code (200 for success).
-    pub code: i32,
+    pub code: String,
     /// Response message.
     pub msg: String,
 }
@@ -1631,7 +1631,7 @@ mod tests {
         let json = r#"{
             "algoId": 123456789,
             "clientAlgoId": "test-algo-order-1",
-            "code": 200,
+            "code": "200",
             "msg": "success"
         }"#;
 
@@ -1640,7 +1640,7 @@ mod tests {
 
         assert_eq!(response.algo_id, 123456789);
         assert_eq!(response.client_algo_id, "test-algo-order-1");
-        assert_eq!(response.code, 200);
+        assert_eq!(response.code, "200");
         assert_eq!(response.msg, "success");
     }
 }

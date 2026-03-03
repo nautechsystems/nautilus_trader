@@ -136,6 +136,7 @@ impl AuthTracker {
     /// a timeout), since the server has confirmed authentication.
     pub fn succeed(&self) {
         self.authenticated.store(true, Ordering::Release);
+
         if let Ok(mut guard) = self.tx.lock()
             && let Some(sender) = guard.take()
         {
@@ -154,6 +155,7 @@ impl AuthTracker {
     pub fn fail(&self, error: impl Into<String>) {
         self.authenticated.store(false, Ordering::Release);
         let message = error.into();
+
         if let Ok(mut guard) = self.tx.lock()
             && let Some(sender) = guard.take()
         {

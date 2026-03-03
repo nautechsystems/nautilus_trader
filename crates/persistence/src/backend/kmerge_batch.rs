@@ -86,14 +86,12 @@ where
 {
     fn new_from_iter(mut iter: I) -> Option<Self> {
         loop {
-            match iter.next() {
-                Some(mut batch) => match batch.next() {
-                    Some(item) => {
-                        break Some(Self { item, batch, iter });
-                    }
-                    None => continue,
-                },
-                None => break None,
+            let Some(mut batch) = iter.next() else {
+                break None;
+            };
+
+            if let Some(item) = batch.next() {
+                break Some(Self { item, batch, iter });
             }
         }
     }
@@ -150,22 +148,18 @@ where
                     // Otherwise get the next batch and the element from it
                     // Unless the underlying iterator is exhausted
                     None => loop {
-                        if let Some(mut batch) = heap_elem.iter.next() {
-                            match batch.next() {
-                                Some(mut item) => {
-                                    heap_elem.batch = batch;
-                                    std::mem::swap(&mut item, &mut heap_elem.item);
-                                    break Some(item);
-                                }
-                                // Get next batch from iterator
-                                None => continue,
-                            }
-                        } else {
+                        let Some(mut batch) = heap_elem.iter.next() else {
                             let ElementBatchIter {
                                 item,
                                 batch: _,
                                 iter: _,
                             } = PeekMut::pop(heap_elem);
+                            break Some(item);
+                        };
+
+                        if let Some(mut item) = batch.next() {
+                            heap_elem.batch = batch;
+                            std::mem::swap(&mut item, &mut heap_elem.item);
                             break Some(item);
                         }
                     },

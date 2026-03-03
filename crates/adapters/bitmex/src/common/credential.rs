@@ -20,9 +20,22 @@
 use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
-use nautilus_core::string::mask_api_key;
-use ustr::Ustr;
+use nautilus_core::{
+    env::resolve_env_var_pair,
+    string::{REDACTED, mask_api_key},
+};
 use zeroize::ZeroizeOnDrop;
+
+/// Returns the environment variable names for API credentials,
+/// based on the network.
+#[must_use]
+pub fn credential_env_vars(testnet: bool) -> (&'static str, &'static str) {
+    if testnet {
+        ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
+    } else {
+        ("BITMEX_API_KEY", "BITMEX_API_SECRET")
+    }
+}
 
 /// BitMEX API credentials for signing requests.
 ///
@@ -30,8 +43,7 @@ use zeroize::ZeroizeOnDrop;
 /// Secrets are automatically zeroized on drop for security.
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct Credential {
-    #[zeroize(skip)]
-    pub api_key: Ustr,
+    api_key: Box<str>,
     api_secret: Box<[u8]>,
 }
 
@@ -39,7 +51,7 @@ impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
-            .field("api_secret", &"<redacted>")
+            .field("api_secret", &REDACTED)
             .finish()
     }
 }
@@ -48,12 +60,28 @@ impl Credential {
     /// Creates a new [`Credential`] instance.
     #[must_use]
     pub fn new(api_key: String, api_secret: String) -> Self {
-        let boxed: Box<[u8]> = api_secret.into_bytes().into_boxed_slice();
-
         Self {
-            api_key: api_key.into(),
-            api_secret: boxed,
+            api_key: api_key.into_boxed_str(),
+            api_secret: api_secret.into_bytes().into_boxed_slice(),
         }
+    }
+
+    /// Resolves credentials from provided values or environment variables.
+    #[must_use]
+    pub fn resolve(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        testnet: bool,
+    ) -> Option<Self> {
+        let (key_var, secret_var) = credential_env_vars(testnet);
+        let (k, s) = resolve_env_var_pair(api_key, api_secret, key_var, secret_var)?;
+        Some(Self::new(k, s))
+    }
+
+    /// Returns the API key.
+    #[must_use]
+    pub fn api_key(&self) -> &str {
+        &self.api_key
     }
 
     /// Signs a request message according to the BitMEX authentication scheme.
@@ -71,7 +99,7 @@ impl Credential {
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn api_key_masked(&self) -> String {
-        mask_api_key(self.api_key.as_str())
+        mask_api_key(&self.api_key)
     }
 }
 
@@ -140,5 +168,29 @@ mod tests {
             !dbg_out.contains(&secret_bytes_dbg),
             "Debug output must not contain raw secret bytes"
         );
+    }
+
+    #[rstest]
+    fn test_resolve_with_both_args() {
+        let result = Credential::resolve(
+            Some("my_key".to_string()),
+            Some("my_secret".to_string()),
+            false,
+        );
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().api_key(), "my_key");
+    }
+
+    #[rstest]
+    fn test_resolve_with_no_args_no_env() {
+        let (key_var, secret_var) = credential_env_vars(false);
+        if std::env::var(key_var).is_ok() || std::env::var(secret_var).is_ok() {
+            return;
+        }
+
+        let result = Credential::resolve(None, None, false);
+
+        assert!(result.is_none());
     }
 }

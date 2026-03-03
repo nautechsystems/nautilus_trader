@@ -366,6 +366,22 @@ class BetfairResponses:
         return BetfairResponses.load("betting_place_order_success.json")
 
     @staticmethod
+    def betting_place_order_batch_success():
+        return BetfairResponses.load("betting_place_order_batch_success.json")
+
+    @staticmethod
+    def betting_place_order_batch_partial_failure():
+        return BetfairResponses.load("betting_place_order_batch_partial_failure.json")
+
+    @staticmethod
+    def betting_cancel_orders_batch_success():
+        return BetfairResponses.load("betting_cancel_orders_batch_success.json")
+
+    @staticmethod
+    def betting_cancel_orders_batch_partial_failure():
+        return BetfairResponses.load("betting_cancel_orders_batch_partial_failure.json")
+
+    @staticmethod
     def betting_place_orders_old():
         return BetfairResponses.load("betting_place_orders_old.json")
 

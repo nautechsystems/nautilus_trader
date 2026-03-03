@@ -15,6 +15,8 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod config;
+
 use pyo3::prelude::*;
 
 /// Loaded as `nautilus_pyo3.sandbox`.

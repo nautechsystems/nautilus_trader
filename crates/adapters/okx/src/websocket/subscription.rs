@@ -36,6 +36,7 @@ fn topic_from_parts(
 
     if let Some(inst_id) = inst_id {
         let inst_id = inst_id.as_str();
+
         if let Some(bar) = bar {
             format!("{base}:{inst_id}:{}", bar.as_str())
         } else {

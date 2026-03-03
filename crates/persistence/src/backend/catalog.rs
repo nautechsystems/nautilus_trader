@@ -363,7 +363,7 @@ impl ParquetDataCatalog {
 
         for d in data.iter().cloned() {
             match d {
-                Data::Deltas(_) => continue,
+                Data::Deltas(_) => {}
                 Data::Delta(d) => {
                     deltas.push(d);
                 }
@@ -490,6 +490,7 @@ impl ParquetDataCatalog {
 
         let file_exists =
             self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
+
         if file_exists {
             log::info!("File {path:?} already exists, skipping write");
             return Ok(path);
@@ -629,6 +630,7 @@ impl ParquetDataCatalog {
 
             let file_exists = self
                 .execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
+
             if file_exists {
                 log::info!("Instrument file {path:?} already exists, skipping write");
                 paths.push(path);
@@ -725,17 +727,12 @@ impl ParquetDataCatalog {
                     // Extract instrument_id from directory path (last component)
                     let path_parts: Vec<&str> = dir_path.split('/').collect();
                     if let Some(instrument_id_dir) = path_parts.last() {
-                        // Decode percent-encoded dir name from object store
-                        // (e.g. "%5ESPX.CBOE" → "^SPX.CBOE")
-                        let decoded_dir = urlencoding::decode(instrument_id_dir)
-                            .unwrap_or(Cow::Borrowed(instrument_id_dir));
-
                         // Apply filter if provided
                         if let Some(ref ids) = instrument_ids
                             && !ids
                                 .iter()
                                 .map(|id| urisafe_instrument_id(id))
-                                .any(|x| x.as_str() == decoded_dir.as_ref())
+                                .any(|x| x.as_str() == urisafe_instrument_id(instrument_id_dir))
                         {
                             continue;
                         }
@@ -747,8 +744,7 @@ impl ParquetDataCatalog {
 
         // Read each instrument file (written as Parquet). Use the builder's schema for
         // metadata (Arrow restores it from ARROW:schema); batch.schema() has metadata stripped.
-        // Use to_object_path_parsed so paths from list() (already percent-encoded) are not
-        // double-encoded by Path::from (e.g. ^SPX.CBOE stored as %5ESPX.CBOE).
+        // Use to_object_path_parsed so paths from list() are not re-encoded by Path::from.
         for dir_path in instrument_dirs {
             let file_path = format!("{dir_path}/instrument.parquet");
             let object_path = self.to_object_path_parsed(&file_path)?;
@@ -2054,6 +2050,7 @@ impl ParquetDataCatalog {
         // For bars, fall back to partial matching when the exact directory
         // doesn't exist (callers may pass an instrument_id like "EUR/USD.SIM"
         // but bars are stored under bar_type dirs like "EURUSD.SIM-1-MINUTE-...")
+
         if !intervals.is_empty() || data_cls != "bars" || identifier.is_none() {
             return Ok(intervals);
         }
@@ -2419,6 +2416,7 @@ impl ParquetDataCatalog {
 
             // List all entries in the directory
             let mut directories = Vec::new();
+
             if let Ok(entries) = std::fs::read_dir(&directory) {
                 for entry in entries.flatten() {
                     if let Ok(file_type) = entry.file_type()
@@ -2738,6 +2736,7 @@ impl ParquetDataCatalog {
             }
 
             let mut directories = Vec::new();
+
             if let Ok(entries) = std::fs::read_dir(&directory) {
                 for entry in entries.flatten() {
                     if let Ok(file_type) = entry.file_type()
@@ -3127,6 +3126,7 @@ impl ParquetDataCatalog {
                 "quotes" => {
                     let mut data: Vec<QuoteTick> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3135,6 +3135,7 @@ impl ParquetDataCatalog {
                 "trades" => {
                     let mut data: Vec<TradeTick> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3143,6 +3144,7 @@ impl ParquetDataCatalog {
                 "order_book_deltas" => {
                     let mut data: Vec<OrderBookDelta> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3151,6 +3153,7 @@ impl ParquetDataCatalog {
                 "order_book_depths" => {
                     let mut data: Vec<OrderBookDepth10> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3163,6 +3166,7 @@ impl ParquetDataCatalog {
                             use_ts_event_for_ts_init,
                             convert_bar_type,
                         )?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3171,6 +3175,7 @@ impl ParquetDataCatalog {
                 "index_prices" => {
                     let mut data: Vec<IndexPriceUpdate> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3179,6 +3184,7 @@ impl ParquetDataCatalog {
                 "mark_prices" => {
                     let mut data: Vec<MarkPriceUpdate> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3187,6 +3193,7 @@ impl ParquetDataCatalog {
                 "instrument_closes" => {
                     let mut data: Vec<InstrumentClose> =
                         self.convert_record_batches_to_data(batches, use_ts_event_for_ts_init)?;
+
                     if !is_monotonically_increasing_by_init(&data) {
                         data.sort_by_key(|d| d.ts_init);
                     }
@@ -3384,10 +3391,11 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
     Ok(iso8601_to_unix_nanos(iso_timestamp.to_string())?.into())
 }
 
-/// Converts an instrument ID to a URI-safe format by removing forward slashes.
+/// Converts an instrument ID to a URI-safe format by removing forward slashes
+/// and replacing carets with underscores.
 ///
 /// Some instrument IDs contain forward slashes (e.g., "BTC/USD") which are not
-/// suitable for use in file paths. This function removes these characters to
+/// suitable for use in file paths. This function transforms these characters to
 /// create a safe directory name.
 ///
 /// # Parameters
@@ -3396,7 +3404,7 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
 ///
 /// # Returns
 ///
-/// A URI-safe version of the instrument ID with forward slashes removed.
+/// A URI-safe version of the instrument ID with forward slashes removed and carets replaced.
 ///
 /// # Examples
 ///
@@ -3404,9 +3412,10 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
 /// # use nautilus_persistence::backend::catalog::urisafe_instrument_id;
 /// assert_eq!(urisafe_instrument_id("BTC/USD"), "BTCUSD");
 /// assert_eq!(urisafe_instrument_id("EUR-USD"), "EUR-USD");
+/// assert_eq!(urisafe_instrument_id("^SPX.CBOE"), "_SPX.CBOE");
 /// ```
-pub(crate) fn urisafe_instrument_id(instrument_id: &str) -> String {
-    instrument_id.replace('/', "")
+pub fn urisafe_instrument_id(instrument_id: &str) -> String {
+    instrument_id.replace('/', "").replace('^', "_")
 }
 
 // Extract the instrument ID portion from a bar type directory name.
@@ -3534,6 +3543,7 @@ pub fn make_object_store_path(base_path: &str, components: &[&str]) -> String {
             .replace('\\', "/")
             .trim_end_matches('/')
             .to_string();
+
         if !normalized_base.is_empty() {
             parts.push(normalized_base);
         }
@@ -3545,6 +3555,7 @@ pub fn make_object_store_path(base_path: &str, components: &[&str]) -> String {
             .trim_start_matches('/')
             .trim_end_matches('/')
             .to_string();
+
         if !normalized_component.is_empty() {
             parts.push(normalized_component);
         }
@@ -3574,6 +3585,7 @@ pub fn make_object_store_path_owned(base_path: &str, components: Vec<String>) ->
             .replace('\\', "/")
             .trim_end_matches('/')
             .to_string();
+
         if !normalized_base.is_empty() {
             parts.push(normalized_base);
         }
@@ -3585,6 +3597,7 @@ pub fn make_object_store_path_owned(base_path: &str, components: Vec<String>) ->
             .trim_start_matches('/')
             .trim_end_matches('/')
             .to_string();
+
         if !normalized_component.is_empty() {
             parts.push(normalized_component);
         }

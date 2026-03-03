@@ -25,7 +25,7 @@ Each report returns a pandas DataFrame with specific columns and indexing for ea
 
 ### Orders report
 
-Generates a comprehensive view of all orders:
+Generates a full view of all orders:
 
 ```python
 # Using Trader helper method (recommended)
@@ -117,7 +117,7 @@ See `OrderFilled.to_dict()` for the complete field list.
 
 ### Positions report
 
-Comprehensive position analysis including snapshots:
+Position analysis including snapshots:
 
 ```python
 # Using Trader helper method (recommended)
@@ -267,7 +267,7 @@ total_pnls = [Money(amount, currency) for currency, amount in pnl_by_currency.it
 
 ## Backtest post-run analysis
 
-After a backtest completes, comprehensive analysis is available through various reports
+After a backtest completes, analysis is available through various reports
 and the portfolio analyzer.
 
 ### Accessing backtest results
@@ -289,7 +289,7 @@ snapshots = engine.cache.position_snapshots()
 
 ### Portfolio statistics
 
-The portfolio analyzer provides comprehensive performance metrics:
+The portfolio analyzer provides performance metrics:
 
 ```python
 # Access portfolio analyzer
@@ -386,7 +386,7 @@ import pandas as pd
 # Run the backtest
 engine.run(start=start_time, end=end_time)
 
-# Collect comprehensive results
+# Collect results
 positions_closed = engine.cache.positions_closed()
 stats_pnls = engine.portfolio.analyzer.get_performance_stats_pnls()
 stats_returns = engine.portfolio.analyzer.get_performance_stats_returns()
@@ -418,12 +418,12 @@ The `ReportProvider` works with several system components:
 
 - **Cache**: Source of all trading data (orders, positions, accounts) for reports.
 - **Portfolio**: Uses reports for performance analysis and metrics calculation.
-- **BacktestEngine**: Leverages reports for post-run analysis and visualization.
-- **Position snapshots**: Critical for accurate PnL reporting in `NETTING` OMS.
+- **BacktestEngine**: Uses reports for post-run analysis and visualization.
+- **Position snapshots**: Required for accurate PnL reporting in `NETTING` OMS.
 
 ## Summary
 
-The `ReportProvider` class offers a comprehensive suite of analytical reports for evaluating
+The `ReportProvider` class offers a suite of analytical reports for evaluating
 trading performance. These reports transform raw trading data into structured DataFrames,
 enabling detailed analysis of orders, fills, positions, and account states. Understanding
 how to generate and interpret these reports is essential for strategy development,

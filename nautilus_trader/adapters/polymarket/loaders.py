@@ -27,14 +27,9 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_HTTP
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import BinaryOption
 
@@ -45,7 +40,8 @@ class PolymarketDataLoader:
 
     This loader fetches data from:
     - Polymarket Gamma API (market and event information)
-    - Polymarket CLOB API (market details, price/trade history, and orderbook history)
+    - Polymarket CLOB API (market details)
+    - Polymarket Data API (historical trades)
 
     If no `http_client` is provided, the loader creates one with a default rate limit
     of 100 requests per minute, matching Polymarket's public endpoint limit.
@@ -56,6 +52,8 @@ class PolymarketDataLoader:
         The binary option instrument to load data for.
     token_id : str, optional
         The Polymarket token ID for this instrument.
+    condition_id : str, optional
+        The Polymarket condition ID for this instrument's market.
     http_client : nautilus_pyo3.HttpClient, optional
         The HTTP client to use for requests. If not provided, a new client will be created.
 
@@ -65,10 +63,12 @@ class PolymarketDataLoader:
         self,
         instrument: BinaryOption,
         token_id: str | None = None,
+        condition_id: str | None = None,
         http_client: nautilus_pyo3.HttpClient | None = None,
     ) -> None:
         self._instrument = instrument
         self._token_id = token_id
+        self._condition_id = condition_id
         self._http_client = http_client or self._create_http_client()
 
     @staticmethod
@@ -212,7 +212,12 @@ class PolymarketDataLoader:
             outcome=outcome,
         )
 
-        return cls(instrument=instrument, token_id=token_id, http_client=client)
+        return cls(
+            instrument=instrument,
+            token_id=token_id,
+            condition_id=condition_id,
+            http_client=client,
+        )
 
     @classmethod
     async def from_event_slug(
@@ -283,7 +288,14 @@ class PolymarketDataLoader:
                 outcome=outcome,
             )
 
-            loaders.append(cls(instrument=instrument, token_id=token_id, http_client=client))
+            loaders.append(
+                cls(
+                    instrument=instrument,
+                    token_id=token_id,
+                    condition_id=condition_id,
+                    http_client=client,
+                ),
+            )
 
         return loaders
 
@@ -392,90 +404,48 @@ class PolymarketDataLoader:
         """
         return self._token_id
 
-    async def load_orderbook_snapshots(
-        self,
-        start: pd.Timestamp,
-        end: pd.Timestamp,
-        limit: int = 500,
-    ) -> list[OrderBookDeltas]:
+    @property
+    def condition_id(self) -> str | None:
         """
-        Load orderbook snapshots for the loader's instrument.
-
-        This is a convenience method that fetches and parses orderbook history
-        using the loader's stored token_id.
-
-        Parameters
-        ----------
-        start : pd.Timestamp
-            Start time for query window.
-        end : pd.Timestamp
-            End time for query window.
-        limit : int, default 500
-            Number of snapshots per request (max 500).
-
-        Returns
-        -------
-        list[OrderBookDeltas]
-            Parsed orderbook deltas ready for backtesting.
-
-        Raises
-        ------
-        ValueError
-            If token_id was not provided during initialization.
-
+        Return the condition ID for this loader.
         """
-        if self._token_id is None:
-            raise ValueError(
-                "token_id is required for this method. "
-                "Use from_market_slug() to create a loader with token_id, "
-                "or pass token_id to __init__()",
-            )
-
-        # Convert timestamps to milliseconds for the API
-        start_time_ms = int(start.timestamp() * 1000)
-        end_time_ms = int(end.timestamp() * 1000)
-
-        snapshots = await self.fetch_orderbook_history(
-            token_id=self._token_id,
-            start_time_ms=start_time_ms,
-            end_time_ms=end_time_ms,
-            limit=limit,
-        )
-
-        return self.parse_orderbook_snapshots(snapshots)
+        return self._condition_id
 
     async def load_trades(
         self,
-        start: pd.Timestamp,
-        end: pd.Timestamp,
-        fidelity: int = 1,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[TradeTick]:
         """
-        Load synthetic trade ticks from price history for the loader's instrument.
+        Load trade ticks from the Polymarket Data API.
 
-        This is a convenience method that fetches and parses price history
-        using the loader's stored token_id.
+        This is a convenience method that fetches and parses historical trades
+        using the loader's stored condition_id and token_id.
 
         Parameters
         ----------
-        start : pd.Timestamp
-            Start time for range.
-        end : pd.Timestamp
-            End time for range.
-        fidelity : int, default 1
-            Data resolution in minutes.
+        start : pd.Timestamp, optional
+            Start time filter (client-side). If ``None``, no lower bound.
+        end : pd.Timestamp, optional
+            End time filter (client-side). If ``None``, no upper bound.
 
         Returns
         -------
         list[TradeTick]
-            Parsed trade ticks ready for backtesting.
+            Parsed trade ticks sorted chronologically, ready for backtesting.
 
         Raises
         ------
         ValueError
-            If token_id was not provided during initialization.
+            If condition_id or token_id was not provided during initialization.
 
         """
+        if self._condition_id is None:
+            raise ValueError(
+                "condition_id is required for this method. "
+                "Use from_market_slug() to create a loader with condition_id, "
+                "or pass condition_id to __init__()",
+            )
         if self._token_id is None:
             raise ValueError(
                 "token_id is required for this method. "
@@ -483,18 +453,24 @@ class PolymarketDataLoader:
                 "or pass token_id to __init__()",
             )
 
-        # Convert timestamps to milliseconds for the API
-        start_time_ms = int(start.timestamp() * 1000)
-        end_time_ms = int(end.timestamp() * 1000)
+        raw_trades = await self.fetch_trades(condition_id=self._condition_id)
 
-        history = await self.fetch_price_history(
-            token_id=self._token_id,
-            start_time_ms=start_time_ms,
-            end_time_ms=end_time_ms,
-            fidelity=fidelity,
-        )
+        # Filter by token_id (API returns trades for all tokens in the condition)
+        token_trades = [t for t in raw_trades if t["asset"] == self._token_id]
 
-        return self.parse_price_history(history)
+        # Filter by time range (client-side, API has no time params)
+        start_ts = int(start.timestamp()) if start is not None else None
+        end_ts = int(end.timestamp()) if end is not None else None
+
+        if start_ts is not None:
+            token_trades = [t for t in token_trades if t["timestamp"] >= start_ts]
+        if end_ts is not None:
+            token_trades = [t for t in token_trades if t["timestamp"] <= end_ts]
+
+        # Sort chronologically (API returns newest first)
+        token_trades.sort(key=lambda t: t["timestamp"])
+
+        return self.parse_trades(token_trades)
 
     async def fetch_event_by_slug(self, slug: str) -> dict[str, Any]:
         """
@@ -709,263 +685,121 @@ class PolymarketDataLoader:
         """
         return await self._fetch_market_details(condition_id, self._http_client)
 
-    async def fetch_orderbook_history(
+    async def fetch_trades(
         self,
-        token_id: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int = 500,
+        condition_id: str,
+        limit: int = 10_000,
     ) -> list[dict[str, Any]]:
         """
-        Fetch orderbook history from Polymarket CLOB API.
+        Fetch trades from the Polymarket Data API.
 
         Parameters
         ----------
-        token_id : str
-            The Polymarket asset/token identifier.
-        start_time_ms : int
-            Unix timestamp in milliseconds for query window start.
-        end_time_ms : int
-            Unix timestamp in milliseconds for query window end.
-        limit : int, default 500
-            Number of snapshots per request (max 500).
+        condition_id : str
+            The market condition ID.
+        limit : int, default 10_000
+            Number of trades per request (max 10,000).
 
         Returns
         -------
         list[dict[str, Any]]
-            List of orderbook snapshot dictionaries.
+            List of trade dictionaries (newest first).
 
         Notes
         -----
         This method automatically handles pagination using offset-based requests.
+        The API caps offset at 10,000, so a maximum of ~20,000 trades can be
+        fetched per condition.
 
         """
-        PyCondition.valid_string(token_id, "token_id")
+        PyCondition.valid_string(condition_id, "condition_id")
 
-        all_snapshots = []
+        all_trades: list[dict[str, Any]] = []
         offset = 0
+        page_limit = min(limit, 10_000)
 
         while True:
-            params = {
-                "asset_id": token_id,
-                "startTs": start_time_ms,
-                "endTs": end_time_ms,
-                "limit": limit,
+            params: dict[str, Any] = {
+                "market": condition_id,
+                "limit": page_limit,
                 "offset": offset,
             }
 
             response = await self._http_client.get(
-                url="https://clob.polymarket.com/orderbook-history",
+                url="https://data-api.polymarket.com/trades",
                 params=params,
             )
 
             if response.status != 200:
                 raise RuntimeError(
-                    f"HTTP request failed with status {response.status}: {response.body.decode('utf-8')}",
+                    f"HTTP request failed with status {response.status}: "
+                    f"{response.body.decode('utf-8')}",
                 )
 
             data = msgspec.json.decode(response.body)
 
-            snapshots = data.get("data", [])
-            all_snapshots.extend(snapshots)
-
-            total_count = data.get("count", 0)
-            offset += len(snapshots)
-
-            if offset >= total_count or len(snapshots) < limit:
+            if not data:
                 break
 
-        return all_snapshots
+            all_trades.extend(data)
+            offset += len(data)
 
-    async def fetch_price_history(
+            if len(data) < page_limit or offset > 10_000:
+                break
+
+        return all_trades
+
+    def parse_trades(
         self,
-        token_id: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        fidelity: int = 1,
-    ) -> list[dict[str, Any]]:
-        """
-        Fetch price history from Polymarket CLOB API.
-
-        Parameters
-        ----------
-        token_id : str
-            The market/token identifier.
-        start_time_ms : int
-            Unix timestamp in milliseconds for range start.
-        end_time_ms : int
-            Unix timestamp in milliseconds for range end.
-        fidelity : int, default 1
-            Data resolution in minutes.
-
-        Returns
-        -------
-        list[dict[str, Any]]
-            List of price history points with 't' (timestamp) and 'p' (price).
-
-        """
-        PyCondition.valid_string(token_id, "token_id")
-
-        # Convert milliseconds to seconds for the CLOB API
-        start_time_s = start_time_ms // 1000
-        end_time_s = end_time_ms // 1000
-
-        params = {
-            "market": token_id,
-            "startTs": str(start_time_s),
-            "endTs": str(end_time_s),
-            "fidelity": str(fidelity),
-        }
-        response = await self._http_client.get(
-            url="https://clob.polymarket.com/prices-history",
-            params=params,
-        )
-
-        if response.status != 200:
-            raise RuntimeError(
-                f"HTTP request failed with status {response.status}: {response.body.decode('utf-8')}",
-            )
-
-        data = msgspec.json.decode(response.body)
-
-        return data.get("history", [])
-
-    def parse_orderbook_snapshots(
-        self,
-        snapshots: list[dict],
-    ) -> list[OrderBookDeltas]:
-        """
-        Parse orderbook snapshots into OrderBookDeltas.
-
-        Parameters
-        ----------
-        snapshots : list[dict]
-            Raw orderbook snapshots from Polymarket CLOB API.
-
-        Returns
-        -------
-        list[OrderBookDeltas]
-            List of OrderBookDeltas for backtesting.
-
-        """
-        all_deltas: list[OrderBookDeltas] = []
-        instrument_id = self._instrument.id
-        make_price = self._instrument.make_price
-        make_qty = self._instrument.make_qty
-
-        # Skip zero-size entries as they represent no liquidity
-        for snapshot in snapshots:
-            ts_event = millis_to_nanos(int(snapshot["timestamp"]))
-
-            deltas = [
-                OrderBookDelta.clear(
-                    instrument_id=instrument_id,
-                    ts_event=ts_event,
-                    ts_init=ts_event,
-                    sequence=0,
-                ),
-            ]
-
-            for bid in snapshot.get("bids", []):
-                size_val = float(bid["size"])
-                if size_val <= 0:
-                    continue
-
-                order = BookOrder(
-                    side=OrderSide.BUY,
-                    price=make_price(float(bid["price"])),
-                    size=make_qty(size_val),
-                    order_id=0,
-                )
-                deltas.append(
-                    OrderBookDelta(
-                        instrument_id=instrument_id,
-                        action=BookAction.ADD,
-                        order=order,
-                        flags=0,
-                        sequence=0,
-                        ts_event=ts_event,
-                        ts_init=ts_event,
-                    ),
-                )
-
-            for ask in snapshot.get("asks", []):
-                size_val = float(ask["size"])
-                if size_val <= 0:
-                    continue
-
-                order = BookOrder(
-                    side=OrderSide.SELL,
-                    price=make_price(float(ask["price"])),
-                    size=make_qty(size_val),
-                    order_id=0,
-                )
-                deltas.append(
-                    OrderBookDelta(
-                        instrument_id=instrument_id,
-                        action=BookAction.ADD,
-                        order=order,
-                        flags=0,
-                        sequence=0,
-                        ts_event=ts_event,
-                        ts_init=ts_event,
-                    ),
-                )
-
-            if deltas:
-                all_deltas.append(OrderBookDeltas(instrument_id=instrument_id, deltas=deltas))
-
-        return all_deltas
-
-    def parse_price_history(
-        self,
-        history: list[dict],
+        trades_data: list[dict],
     ) -> list[TradeTick]:
         """
-        Parse price history into TradeTicks.
+        Parse trade data into TradeTicks.
 
         Parameters
         ----------
-        history : list[dict]
-            Raw price history from CLOB API.
+        trades_data : list[dict]
+            Raw trade data from the Polymarket Data API.
 
         Returns
         -------
         list[TradeTick]
-            List of synthetic TradeTicks for backtesting.
-
-        Notes
-        -----
-        Price history doesn't include actual trade information, so we synthesize
-        trades from price points for demonstration purposes.
+            List of TradeTicks for backtesting.
 
         """
+        if self._token_id is None:
+            raise ValueError(
+                "token_id is required to parse trades. "
+                "Use from_market_slug() to create a loader with token_id, "
+                "or pass token_id to __init__()",
+            )
+
         trades: list[TradeTick] = []
+        instrument_id = self._instrument.id
+        make_price = self._instrument.make_price
+        make_qty = self._instrument.make_qty
+        token_id = self._token_id
 
-        for i, point in enumerate(history):
-            timestamp = point["t"]  # Unix timestamp
-            price_value = point["p"]
+        for trade_data in trades_data:
+            # Skip trades for other tokens in the same condition
+            if trade_data.get("asset") != token_id:
+                continue
+            ts_event = secs_to_nanos(trade_data["timestamp"])
 
-            ts_event = millis_to_nanos(int(timestamp * 1000))
-
-            price = self._instrument.make_price(price_value)
-            size = self._instrument.make_qty(1.0)
-
-            # Determine aggressor side from price movement
-            aggressor_side = AggressorSide.NO_AGGRESSOR
-            if i > 0:
-                prev_price = history[i - 1]["p"]
-                if price_value > prev_price:
-                    aggressor_side = AggressorSide.BUYER
-                elif price_value < prev_price:
-                    aggressor_side = AggressorSide.SELLER
+            side_str = trade_data["side"]
+            if side_str == "BUY":
+                aggressor_side = AggressorSide.BUYER
+            elif side_str == "SELL":
+                aggressor_side = AggressorSide.SELLER
+            else:
+                aggressor_side = AggressorSide.NO_AGGRESSOR
 
             trade = TradeTick(
-                instrument_id=self._instrument.id,
-                price=price,
-                size=size,
+                instrument_id=instrument_id,
+                price=make_price(trade_data["price"]),
+                size=make_qty(trade_data["size"]),
                 aggressor_side=aggressor_side,
-                trade_id=TradeId(str(i)),
+                trade_id=TradeId(trade_data["transactionHash"][-36:]),
                 ts_event=ts_event,
                 ts_init=ts_event,
             )

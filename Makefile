@@ -79,9 +79,9 @@ endif
 # Can be disabled: make cargo-test-core DEFI=false
 DEFI ?= true
 ifeq ($(DEFI),true)
-BASE_FEATURES := ffi,python,high-precision,defi,examples
+BASE_FEATURES := arrow,ffi,python,high-precision,streaming,defi,examples
 else
-BASE_FEATURES := ffi,python,high-precision,examples
+BASE_FEATURES := arrow,ffi,python,high-precision,streaming,examples
 endif
 
 # Combine base features with extra features
@@ -118,15 +118,17 @@ RESET  := \033[0m
 .PHONY: install-deps
 install-deps:  #-- Install Python dependencies only (no package build)
 	$(info $(M) Installing Python dependencies...)
-	$Q uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
+	$Q uv sync --active --all-groups --all-extras --inexact --no-install-package nautilus_trader
 
 .PHONY: install
+install: install-deps
 install: export BUILD_MODE=release
 install:  #-- Install in release mode with all dependencies and extras
 	$(info $(M) Installing NautilusTrader in release mode...)
 	$Q uv sync --active --all-groups --all-extras --inexact
 
 .PHONY: install-debug
+install-debug: install-deps
 install-debug: export BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
 	$(info $(M) Installing NautilusTrader in debug mode...)
@@ -135,12 +137,14 @@ install-debug:  #-- Install in debug mode for development
 #== Build
 
 .PHONY: build
+build: install-deps
 build: export BUILD_MODE=release
 build: export CARGO_TARGET_DIR=$(TARGET_DIR)
 build:  #-- Build the package in release mode
 	uv run --active --no-sync build.py
 
 .PHONY: build-debug
+build-debug: install-deps
 build-debug: export BUILD_MODE=debug
 build-debug: export CARGO_TARGET_DIR=$(TARGET_DIR)
 build-debug:  #-- Build the package in debug mode (recommended for development)
@@ -315,7 +319,7 @@ install-tools:  #-- Install required development tools (Rust tools from Cargo.to
 #== Security
 
 .PHONY: security-audit
-security-audit: check-audit-installed check-deny-installed check-vet-installed check-osv-scanner-installed  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, osv-scanner)
+security-audit: check-audit-installed check-deny-installed check-vet-installed check-osv-scanner-installed  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, pip-audit, osv-scanner)
 	$(info $(M) Running security audit...)
 	@printf "$(CYAN)Running cargo audit...$(RESET)\n"
 	cargo audit --color never
@@ -323,6 +327,8 @@ security-audit: check-audit-installed check-deny-installed check-vet-installed c
 	cargo deny --all-features check advisories licenses sources bans
 	@printf "\n$(CYAN)Running cargo vet (supply chain audit)...$(RESET)\n"
 	cargo vet --locked
+	@printf "\n$(CYAN)Running pip-audit (Python dependencies)...$(RESET)\n"
+	uv export --no-hashes --frozen | uv run --no-project --with pip-audit -- pip-audit --disable-pip --no-deps -r /dev/stdin
 	@printf "\n$(CYAN)Running osv-scanner (Cargo.lock + uv.lock)...$(RESET)\n"
 	osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=uv.lock
 
@@ -514,7 +520,7 @@ cargo-test-core-debug:  #-- Run Rust tests for core crates (debug profile)
 cargo-test-lib: export RUST_BACKTRACE=1
 cargo-test-lib: check-nextest-installed
 cargo-test-lib:  #-- Run Rust library tests only with high precision
-	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,defi,stubs" $(FAIL_FAST_FLAG) --cargo-profile nextest
+	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,streaming,defi,stubs" $(FAIL_FAST_FLAG) --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: export RUST_BACKTRACE=1
@@ -526,7 +532,7 @@ cargo-test-standard-precision:  #-- Run Rust tests with standard precision (debu
 cargo-test-debug: export RUST_BACKTRACE=1
 cargo-test-debug: check-nextest-installed
 cargo-test-debug:  #-- Run Rust tests with high precision (debug profile)
-	cargo nextest run --workspace --features "ffi,python,high-precision,defi" $(FAIL_FAST_FLAG)
+	cargo nextest run --workspace --features "ffi,python,high-precision,streaming,defi" $(FAIL_FAST_FLAG)
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest-installed check-llvm-cov-installed
@@ -653,6 +659,18 @@ pytest:  #-- Run Python tests with pytest in parallel with immediate failure rep
 .PHONY: test-performance
 test-performance:  #-- Run performance tests with codspeed benchmarking
 	uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
+
+#== v2 (python/)
+
+.PHONY: build-debug-v2
+build-debug-v2:  #-- Build the v2 Python package in debug mode (fast incremental builds)
+	$(info $(M) Building v2 extension in debug mode...)
+	$Q cd python && uv run maturin develop
+
+.PHONY: pytest-v2
+pytest-v2:  #-- Run v2 Python tests
+	$(info $(M) Running v2 Python tests...)
+	$Q cd python && uv run --no-sync pytest tests/ -v
 
 #== CLI Tools
 

@@ -53,7 +53,7 @@ or pull requests to add margin trading functionality are welcome.
 To provide complete API functionality to traders, the integration includes several
 custom data types:
 
-- `BinanceTicker`: Represents data returned for Binance 24-hour ticker subscriptions, including comprehensive price and statistical information.
+- `BinanceTicker`: Represents data returned for Binance 24-hour ticker subscriptions, including price and statistical information.
 - `BinanceBar`: Represents data for historical requests or real-time subscriptions to Binance bars, with additional volume metrics.
 - `BinanceFuturesMarkPriceUpdate`: Represents mark price updates for Binance Futures subscriptions.
 
@@ -235,7 +235,7 @@ When an order is submitted with `price_match`, the following sequence of events 
 4. **OrderUpdated event**: If the Binance-accepted price differs from the original reference price, Nautilus immediately generates an `OrderUpdated` event with the actual working price.
 5. **Price synchronization**: The order's limit price in the Nautilus cache is now synchronized with the actual price accepted by Binance.
 
-This ensures that the order price in your system accurately reflects what Binance has accepted, which is critical for position management, risk calculations, and strategy logic.
+This ensures that the order price in your system accurately reflects what Binance has accepted, which is important for position management, risk calculations, and strategy logic.
 
 #### Example
 
@@ -384,7 +384,7 @@ The WebSocket API (used for user data streams) shares the same weight quota as t
 
 The adapter uses token bucket rate limiters to approximate Binance's interval-based limits. This reduces the risk of quota violations while maintaining throughput for normal operations.
 
-For endpoints with dynamic weight (e.g., `/klines` scales with the `limit` parameter), the adapter draws a single token per call. Large history requests may need manual pacing—monitor the `X-MBX-USED-WEIGHT-*` response headers to track actual usage.
+For endpoints with dynamic weight (e.g., `/klines` scales with the `limit` parameter), the adapter draws a single token per call. Large history requests may need manual pacing. Monitor the `X-MBX-USED-WEIGHT-*` response headers to track actual usage.
 
 :::warning
 Binance returns HTTP 429 when you exceed the allowed weight. Repeated violations trigger temporary IP bans (escalating from 2 minutes to 3 days for repeat offenders).
@@ -425,7 +425,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `venue`                              | `BINANCE` | Venue identifier used when registering the client. |
 | `api_key`                            | `None`    | Binance API key; loaded from environment variables when omitted. |
 | `api_secret`                         | `None`    | Binance API secret; loaded from environment variables when omitted. |
-| `key_type`                           | `HMAC`    | **Deprecated**: key type is now auto-detected from the API secret format. Only needed to force `RSA` (data clients only — RSA is not supported for execution). |
+| `key_type`                           | `HMAC`    | **Deprecated**: key type is now auto-detected from the API secret format. Only needed to force `RSA` (data clients only, RSA is not supported for execution). |
 | `account_type`                       | `SPOT`    | Account type for order placement (spot, margin, USDT futures, coin futures). |
 | `base_url_http`                      | `None`    | Override for the HTTP REST base URL. |
 | `base_url_ws`                        | `None`    | Override for the WebSocket API base URL. |
@@ -502,7 +502,7 @@ node.build()
 ### Key types
 
 Binance supports three API key types: **Ed25519**, **HMAC-SHA256**, and **RSA**.
-The adapter auto-detects the key type from your API secret format — no configuration needed.
+The adapter auto-detects the key type from your API secret format, so no configuration is needed.
 
 **Ed25519 is strongly recommended** for all API access. Binance recommends Ed25519 for
 its superior performance and security, and a future version of NautilusTrader will
@@ -511,8 +511,8 @@ require Ed25519 exclusively.
 | Key Type | Data Clients | Execution Clients | Status |
 |----------|--------------|-------------------|--------|
 | Ed25519  | ✓            | ✓                 | **Recommended** |
-| HMAC     | ✓            | ✓                 | Deprecated — will be removed in a future version. |
-| RSA      | ✓            | -                 | Deprecated — not supported for execution. |
+| HMAC     | ✓            | ✓                 | Deprecated, will be removed in a future version. |
+| RSA      | ✓            | -                 | Deprecated, not supported for execution. |
 
 :::tip
 **We strongly recommend switching to Ed25519 keys now.** Generate an Ed25519 keypair and register
@@ -520,8 +520,10 @@ it with Binance. See [Generating Ed25519 keys](#generating-ed25519-keys) below f
 :::
 
 :::note
-Ed25519 keys must be provided in base64-encoded ASN.1/DER format (PEM file contents).
+Ed25519 keys must be provided in unencrypted PEM format (base64-encoded ASN.1/DER).
 The implementation automatically extracts the 32-byte seed from the DER structure.
+Encrypted (password-protected) PEM keys are not supported. If your key is encrypted,
+decrypt it first: `openssl pkey -in encrypted.pem -out decrypted.pem`
 :::
 
 #### Generating Ed25519 keys
@@ -574,10 +576,11 @@ execution clients, but Ed25519 offers better performance and will become the onl
 key type in a future version. See [Key types](#key-types) for details.
 :::
 
-:::note
-The `BINANCE_ED25519_*` and `BINANCE_*_ED25519_*` environment variables are deprecated and will
-be removed in a future version. Migrate to using Ed25519 keys in the standard
-`BINANCE_API_KEY`/`BINANCE_API_SECRET` variables.
+:::warning
+The `BINANCE_ED25519_*` and `BINANCE_*_ED25519_*` environment variables have been removed
+for Spot/Margin. For Futures, they are deprecated with a warning and will be removed in a
+future version. Rename them to the standard `BINANCE_API_KEY`/`BINANCE_API_SECRET` variables
+(Ed25519 keys are now auto-detected).
 :::
 
 When starting the trading node, you'll receive immediate confirmation of whether your

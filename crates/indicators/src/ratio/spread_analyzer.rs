@@ -71,6 +71,7 @@ impl Indicator for SpreadAnalyzer {
         // Check initialization
         if !self.initialized {
             self.has_inputs = true;
+
             if self.spreads.len() == self.capacity {
                 self.initialized = true;
             }

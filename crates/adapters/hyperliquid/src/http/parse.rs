@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
-use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{
         CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
@@ -325,10 +325,10 @@ pub fn instruments_from_defs(
 
 /// Convert owned definitions into Nautilus instruments, consuming the input vector.
 #[must_use]
-pub fn instruments_from_defs_owned(defs: Vec<HyperliquidInstrumentDef>) -> Vec<InstrumentAny> {
-    let clock = get_atomic_clock_realtime();
-    let ts_init = clock.get_time_ns();
-
+pub fn instruments_from_defs_owned(
+    defs: Vec<HyperliquidInstrumentDef>,
+    ts_init: UnixNanos,
+) -> Vec<InstrumentAny> {
     defs.into_iter()
         .filter_map(|def| create_instrument_from_def(&def, ts_init))
         .collect()

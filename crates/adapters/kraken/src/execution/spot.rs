@@ -15,14 +15,19 @@
 
 //! Kraken Spot execution client implementation.
 
-use std::{future::Future, sync::Mutex};
+use std::{
+    future::Future,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use anyhow::Context;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::get_runtime,
+    live::{get_runtime, runner::get_exec_event_sender},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -47,7 +52,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::consts::KRAKEN_VENUE,
+    common::{consts::KRAKEN_VENUE, parse::truncate_cl_ord_id},
     config::KrakenExecClientConfig,
     http::KrakenSpotHttpClient,
     websocket::spot_v2::{client::KrakenSpotWebSocketClient, messages::NautilusWsMessage},
@@ -86,7 +91,9 @@ impl KrakenSpotExecutionClient {
 
         let cancellation_token = CancellationToken::new();
 
-        let http = KrakenSpotHttpClient::new(
+        let http = KrakenSpotHttpClient::with_credentials(
+            config.api_key.clone(),
+            config.api_secret.clone(),
             config.environment,
             config.base_url.clone(),
             config.timeout_secs,
@@ -183,6 +190,12 @@ impl KrakenSpotExecutionClient {
 
         self.ws
             .cache_client_order(client_order_id, instrument_id, trader_id, strategy_id);
+
+        let kraken_cl_ord_id = truncate_cl_ord_id(&client_order_id);
+        if kraken_cl_ord_id != client_order_id.as_str() {
+            self.ws
+                .cache_truncated_id(kraken_cl_ord_id, client_order_id);
+        }
 
         let http = self.http.clone();
         let emitter = self.emitter.clone();
@@ -347,6 +360,35 @@ impl KrakenSpotExecutionClient {
         Ok(())
     }
 
+    /// Polls the cache until the account is registered or timeout is reached.
+    async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
+        let account_id = self.core.account_id;
+
+        if self.core.cache().account(&account_id).is_some() {
+            log::info!("Account {account_id} registered");
+            return Ok(());
+        }
+
+        let start = Instant::now();
+        let timeout = Duration::from_secs_f64(timeout_secs);
+        let interval = Duration::from_millis(10);
+
+        loop {
+            tokio::time::sleep(interval).await;
+
+            if self.core.cache().account(&account_id).is_some() {
+                log::info!("Account {account_id} registered");
+                return Ok(());
+            }
+
+            if start.elapsed() >= timeout {
+                anyhow::bail!(
+                    "Timeout waiting for account {account_id} to be registered after {timeout_secs}s"
+                );
+            }
+        }
+    }
+
     fn handle_ws_message(msg: NautilusWsMessage, emitter: &ExecutionEventEmitter) {
         match msg {
             NautilusWsMessage::OrderRejected(event) => {
@@ -422,6 +464,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             return Ok(());
         }
 
+        self.emitter.set_sender(get_exec_event_sender());
         self.core.set_started();
 
         log::info!(
@@ -450,6 +493,17 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             return Ok(());
         }
 
+        if !self.core.instruments_initialized() {
+            let instruments = self
+                .http
+                .request_instruments(None)
+                .await
+                .context("Failed to load Kraken spot instruments")?;
+            log::info!("Loaded {} Spot instruments", instruments.len());
+            self.http.cache_instruments(instruments);
+            self.core.set_instruments_initialized();
+        }
+
         self.ws
             .connect()
             .await
@@ -466,12 +520,41 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
         self.ws.set_account_id(self.core.account_id);
 
-        self.ws
-            .subscribe_executions(true, true)
+        // Request initial account state and await registration before spawning
+        // the message handler. Report events from execution snapshots conflict
+        // with ExecEngine borrows during startup, so account registration must
+        // complete first.
+        let account_state = self
+            .http
+            .request_account_state(self.core.account_id)
             .await
-            .context("Failed to subscribe to executions")?;
+            .context("Failed to request Kraken account state")?;
+
+        if !account_state.balances.is_empty() {
+            log::info!(
+                "Received account state with {} balance(s)",
+                account_state.balances.len()
+            );
+        }
+
+        self.emitter.send_account_state(account_state);
+        self.await_account_registered(30.0).await?;
 
         self.spawn_message_handler()?;
+
+        // Always cache to WS handler (reconnect spawns a fresh handler)
+        let instruments: Vec<_> = self
+            .http
+            .instruments_cache
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        self.ws.cache_instruments(instruments);
+
+        self.ws
+            .subscribe_executions(false, false)
+            .await
+            .context("Failed to subscribe to executions")?;
 
         log::info!("Spot WebSocket authenticated and subscribed to executions");
 
@@ -515,13 +598,16 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .request_order_status_reports(account_id, None, None, None, false)
             .await?;
 
-        // Note: cmd.venue_order_id is typed as Option<ClientOrderId> in the message struct
+        // Match by venue_order_id or client_order_id (comparing truncated form
+        // since Kraken stores the truncated cl_ord_id for long IDs)
         Ok(reports.into_iter().find(|r| {
             cmd.venue_order_id
                 .is_some_and(|id| r.venue_order_id.as_str() == id.as_str())
-                || cmd
-                    .client_order_id
-                    .is_some_and(|id| r.client_order_id == Some(id))
+                || cmd.client_order_id.is_some_and(|id| {
+                    r.client_order_id
+                        .as_ref()
+                        .is_some_and(|r_id| r_id.as_str() == truncate_cl_ord_id(&id))
+                })
         }))
     }
 
@@ -536,8 +622,10 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         );
 
         let account_id = self.core.account_id;
+        let start = cmd.start.map(DateTime::<Utc>::from);
+        let end = cmd.end.map(DateTime::<Utc>::from);
         self.http
-            .request_order_status_reports(account_id, cmd.instrument_id, None, None, cmd.open_only)
+            .request_order_status_reports(account_id, cmd.instrument_id, start, end, cmd.open_only)
             .await
     }
 
@@ -551,8 +639,10 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         );
 
         let account_id = self.core.account_id;
+        let start = cmd.start.map(DateTime::<Utc>::from);
+        let end = cmd.end.map(DateTime::<Utc>::from);
         self.http
-            .request_fill_reports(account_id, cmd.instrument_id, None, None)
+            .request_fill_reports(account_id, cmd.instrument_id, start, end)
             .await
     }
 
@@ -573,18 +663,20 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
     async fn generate_mass_status(
         &self,
-        _lookback_mins: Option<u64>,
+        lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        log::debug!("Generating mass status");
+        log::debug!("Generating mass status: lookback_mins={lookback_mins:?}");
+
+        let start = lookback_mins.map(|mins| Utc::now() - Duration::from_secs(mins * 60));
 
         let account_id = self.core.account_id;
         let order_reports = self
             .http
-            .request_order_status_reports(account_id, None, None, None, true)
+            .request_order_status_reports(account_id, None, start, None, true)
             .await?;
         let fill_reports = self
             .http
-            .request_fill_reports(account_id, None, None, None)
+            .request_fill_reports(account_id, None, start, None)
             .await?;
         let position_reports = self
             .http
@@ -830,6 +922,9 @@ mod tests {
 
     #[rstest]
     fn test_spot_exec_client_start_stop() {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::set_exec_event_sender(sender);
+
         let config = KrakenExecClientConfig {
             product_type: KrakenProductType::Spot,
             api_key: "test_key".to_string(),

@@ -176,6 +176,7 @@ impl BarBuilder {
             if price > self.high.unwrap() {
                 self.high = Some(price);
             }
+
             if price < self.low.unwrap() {
                 self.low = Some(price);
             }
@@ -206,6 +207,7 @@ impl BarBuilder {
             if bar.high > self.high.unwrap() {
                 self.high = Some(bar.high);
             }
+
             if bar.low < self.low.unwrap() {
                 self.low = Some(bar.low);
             }
@@ -258,7 +260,7 @@ impl BarBuilder {
             self.high = Some(close);
         }
 
-        // SAFETY: The open was checked, so we can assume all prices are Some
+        // The open was checked, so we can assume all prices are Some
         let bar = Bar::new(
             self.bar_type,
             self.open.unwrap(),
@@ -1130,6 +1132,7 @@ impl BarAggregator for ValueImbalanceBarAggregator {
         let mut size_remaining = trade.size.as_f64();
         while size_remaining > 0.0 {
             let value_remaining = price_f64 * size_remaining;
+
             if self.imbalance_value == 0.0 || self.imbalance_value.signum() == side_sign {
                 let needed = self.step_value - self.imbalance_value.abs();
                 if value_remaining <= needed {
@@ -4291,5 +4294,169 @@ mod tests {
         for bar in handler_guard.iter() {
             assert_eq!(bar.volume, Quantity::from(1));
         }
+    }
+
+    #[rstest]
+    #[case(1000_u64)]
+    #[case(1500_u64)]
+    fn test_volume_imbalance_bar_aggregator_large_step_no_overflow(
+        equity_aapl: Equity,
+        #[case] step: u64,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(
+            step as usize,
+            BarAggregation::VolumeImbalance,
+            PriceType::Last,
+        );
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = VolumeImbalanceBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let trade = TradeTick {
+            size: Quantity::from(step * 2),
+            aggressor_side: AggressorSide::Buyer,
+            ..TradeTick::default()
+        };
+
+        aggregator.handle_trade(trade);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 2);
+        for bar in handler_guard.iter() {
+            assert_eq!(bar.volume.as_f64(), step as f64);
+        }
+    }
+
+    #[rstest]
+    fn test_volume_imbalance_bar_aggregator_different_large_steps_produce_different_bar_counts(
+        equity_aapl: Equity,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let total_volume = 3000_u64;
+        let mut results = Vec::new();
+
+        for step in [1000_usize, 1500] {
+            let bar_spec =
+                BarSpecification::new(step, BarAggregation::VolumeImbalance, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let handler = Arc::new(Mutex::new(Vec::new()));
+            let handler_clone = Arc::clone(&handler);
+
+            let mut aggregator = VolumeImbalanceBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                move |bar: Bar| {
+                    let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                    handler_guard.push(bar);
+                },
+            );
+
+            let trade = TradeTick {
+                size: Quantity::from(total_volume),
+                aggressor_side: AggressorSide::Buyer,
+                ..TradeTick::default()
+            };
+
+            aggregator.handle_trade(trade);
+
+            let handler_guard = handler.lock().expect(MUTEX_POISONED);
+            results.push(handler_guard.len());
+        }
+
+        assert_eq!(results[0], 3); // 3000 / 1000
+        assert_eq!(results[1], 2); // 3000 / 1500
+        assert_ne!(results[0], results[1]);
+    }
+
+    #[rstest]
+    #[case(1000_u64)]
+    #[case(1500_u64)]
+    fn test_volume_runs_bar_aggregator_large_step_no_overflow(
+        equity_aapl: Equity,
+        #[case] step: u64,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec =
+            BarSpecification::new(step as usize, BarAggregation::VolumeRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = VolumeRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let trade = TradeTick {
+            size: Quantity::from(step * 2),
+            aggressor_side: AggressorSide::Buyer,
+            ..TradeTick::default()
+        };
+
+        aggregator.handle_trade(trade);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 2);
+        for bar in handler_guard.iter() {
+            assert_eq!(bar.volume.as_f64(), step as f64);
+        }
+    }
+
+    #[rstest]
+    fn test_volume_runs_bar_aggregator_different_large_steps_produce_different_bar_counts(
+        equity_aapl: Equity,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let total_volume = 3000_u64;
+        let mut results = Vec::new();
+
+        for step in [1000_usize, 1500] {
+            let bar_spec = BarSpecification::new(step, BarAggregation::VolumeRuns, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let handler = Arc::new(Mutex::new(Vec::new()));
+            let handler_clone = Arc::clone(&handler);
+
+            let mut aggregator = VolumeRunsBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                move |bar: Bar| {
+                    let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                    handler_guard.push(bar);
+                },
+            );
+
+            let trade = TradeTick {
+                size: Quantity::from(total_volume),
+                aggressor_side: AggressorSide::Buyer,
+                ..TradeTick::default()
+            };
+
+            aggregator.handle_trade(trade);
+
+            let handler_guard = handler.lock().expect(MUTEX_POISONED);
+            results.push(handler_guard.len());
+        }
+
+        assert_eq!(results[0], 3); // 3000 / 1000
+        assert_eq!(results[1], 2); // 3000 / 1500
+        assert_ne!(results[0], results[1]);
     }
 }

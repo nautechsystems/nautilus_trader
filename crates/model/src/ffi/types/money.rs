@@ -19,7 +19,6 @@ use crate::types::{Currency, Money, money::MoneyRaw};
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
-    // SAFETY: Assumes `amount` is properly validated
     Money::new(amount, currency)
 }
 

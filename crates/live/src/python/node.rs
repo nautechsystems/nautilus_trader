@@ -21,6 +21,7 @@ use nautilus_common::{
     actor::data_actor::{DataActorConfig, ImportableActorConfig},
     enums::Environment,
     live::get_runtime,
+    logging::logger::LoggerConfig,
     python::actor::PyDataActor,
 };
 use nautilus_core::{
@@ -172,8 +173,9 @@ impl LiveNode {
         })
         .map_err(|e| to_pyruntime_err(format!("Failed to import Python class: {e}")))?;
 
-        // Create default DataActorConfig for Rust PyDataActor
-        // Inherited config attributes will be extracted and wired in after Python actor creation
+        // Create default DataActorConfig for Rust PyDataActor.
+        // Inherited config attributes extracted and wired after
+        // Python actor creation
         let basic_data_actor_config = DataActorConfig::default();
 
         log::debug!("Created basic DataActorConfig for Rust: {basic_data_actor_config:?}");
@@ -225,18 +227,10 @@ impl LiveNode {
 
                 // Try multiple approaches to create the config instance
                 let config_instance = {
-                    // First, try calling the config class with **kwargs (this works if the dataclass handles string conversion)
+                    // Try calling config class with **kwargs first
                     match config_class.call((), Some(&py_dict)) {
                         Ok(instance) => {
                             log::debug!("Successfully created config instance with kwargs");
-
-                            // Manually call __post_init__ if it exists
-                            if let Err(e) = instance.call_method0("__post_init__") {
-                                log::error!("Failed to call __post_init__ on config instance: {e}");
-                                anyhow::bail!("__post_init__ failed: {e}");
-                            }
-                            log::debug!("Successfully called __post_init__ on config instance");
-
                             instance
                         },
                         Err(kwargs_err) => {
@@ -247,22 +241,21 @@ impl LiveNode {
                                 Ok(instance) => {
                                     log::debug!("Created default config instance, setting attributes");
                                     for (key, value) in &config.config {
-                                        // Convert serde_json::Value to Python object
                                         let json_str = serde_json::to_string(value)
                                             .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
                                         let py_value = PyModule::import(py, "json")?
                                             .call_method("loads", (json_str,), None)?;
+
                                         if let Err(setattr_err) = instance.setattr(key, py_value) {
                                             log::warn!("Failed to set attribute {key}: {setattr_err}");
                                         }
                                     }
 
-                                    // Manually call __post_init__ if it exists
-                                    if let Err(e) = instance.call_method0("__post_init__") {
-                                        log::error!("Failed to call __post_init__ on config instance: {e}");
-                                        anyhow::bail!("__post_init__ failed: {e}");
+                                    // Only call __post_init__ if it exists (setattr path
+                                    // needs it, kwargs path already triggered it via __init__)
+                                    if instance.hasattr("__post_init__")? {
+                                        instance.call_method0("__post_init__")?;
                                     }
-                                    log::debug!("Called __post_init__ on config instance");
 
                                     instance
                                 },
@@ -320,7 +313,7 @@ impl LiveNode {
                         let actor_id_val = if let Ok(actor_id_val) = actor_id.extract::<ActorId>() {
                             actor_id_val
                         } else if let Ok(actor_id_str) = actor_id.extract::<String>() {
-                            ActorId::from(actor_id_str.as_str())
+                            ActorId::new_checked(&actor_id_str)?
                         } else {
                             log::warn!("Failed to extract actor_id as ActorId or String");
                             anyhow::bail!("Invalid `actor_id` type");
@@ -395,7 +388,6 @@ impl LiveNode {
         Ok(())
     }
 
-    /// Returns a string representation of the node.
     fn __repr__(&self) -> String {
         format!(
             "LiveNode(trader_id={}, environment={:?}, running={})",
@@ -416,7 +408,6 @@ pub struct LiveNodeBuilderPy {
 
 #[pymethods]
 impl LiveNodeBuilderPy {
-    /// Sets the instance ID for the node.
     #[pyo3(name = "with_instance_id")]
     fn py_with_instance_id(&self, instance_id: UUID4) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
@@ -430,7 +421,6 @@ impl LiveNodeBuilderPy {
         }
     }
 
-    /// Sets whether to load state on startup.
     #[pyo3(name = "with_load_state")]
     fn py_with_load_state(&self, load_state: bool) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
@@ -444,7 +434,6 @@ impl LiveNodeBuilderPy {
         }
     }
 
-    /// Sets whether to save state on shutdown.
     #[pyo3(name = "with_save_state")]
     fn py_with_save_state(&self, save_state: bool) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
@@ -458,7 +447,123 @@ impl LiveNodeBuilderPy {
         }
     }
 
-    /// Adds a data client with factory and configuration.
+    #[pyo3(name = "with_timeout_connection")]
+    fn py_with_timeout_connection(&self, timeout_secs: u64) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_timeout_connection(timeout_secs));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_timeout_reconciliation")]
+    fn py_with_timeout_reconciliation(&self, timeout_secs: u64) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_timeout_reconciliation(timeout_secs));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_timeout_portfolio")]
+    fn py_with_timeout_portfolio(&self, timeout_secs: u64) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_timeout_portfolio(timeout_secs));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_timeout_disconnection_secs")]
+    fn py_with_timeout_disconnection_secs(&self, timeout_secs: u64) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_timeout_disconnection_secs(timeout_secs));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_delay_post_stop_secs")]
+    fn py_with_delay_post_stop_secs(&self, delay_secs: u64) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_delay_post_stop_secs(delay_secs));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_delay_shutdown_secs")]
+    fn py_with_delay_shutdown_secs(&self, delay_secs: u64) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_delay_shutdown_secs(delay_secs));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_reconciliation")]
+    fn py_with_reconciliation(&self, reconciliation: bool) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_reconciliation(reconciliation));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_reconciliation_lookback_mins")]
+    fn py_with_reconciliation_lookback_mins(&self, mins: u32) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_reconciliation_lookback_mins(mins));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_logging")]
+    fn py_with_logging(&self, logging: LoggerConfig) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_logging(logging));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
     #[pyo3(name = "add_data_client")]
     fn py_add_data_client(
         &self,
@@ -498,7 +603,42 @@ impl LiveNodeBuilderPy {
         }
     }
 
-    /// Builds the node.
+    #[pyo3(name = "add_exec_client")]
+    fn py_add_exec_client(
+        &self,
+        name: Option<String>,
+        factory: Py<PyAny>,
+        config: Py<PyAny>,
+    ) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            Python::attach(|py| -> PyResult<Self> {
+                let registry = get_global_pyo3_registry();
+
+                let boxed_factory = registry.extract_exec_factory(py, factory.clone_ref(py))?;
+                let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
+
+                let factory_name = factory
+                    .getattr(py, "name")?
+                    .call0(py)?
+                    .extract::<String>(py)?;
+                let client_name = name.unwrap_or(factory_name);
+
+                match builder.add_exec_client(Some(client_name), boxed_factory, boxed_config) {
+                    Ok(updated_builder) => {
+                        *inner_ref = Some(updated_builder);
+                        Ok(Self {
+                            inner: self.inner.clone(),
+                        })
+                    }
+                    Err(e) => Err(to_pyruntime_err(format!("Failed to add exec client: {e}"))),
+                }
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
     #[pyo3(name = "build")]
     fn py_build(&self) -> PyResult<LiveNode> {
         let mut inner_ref = self.inner.borrow_mut();
@@ -512,7 +652,6 @@ impl LiveNodeBuilderPy {
         }
     }
 
-    /// Returns a string representation of the builder.
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }

@@ -17,7 +17,7 @@
 
 use std::fmt::Display;
 
-use nautilus_model::enums::TimeInForce;
+use nautilus_model::enums::{MarketStatusAction, TimeInForce};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display as StrumDisplay, EnumIter, EnumString};
 
@@ -171,6 +171,18 @@ impl Display for DeribitInstrumentState {
     }
 }
 
+impl From<DeribitInstrumentState> for MarketStatusAction {
+    fn from(state: DeribitInstrumentState) -> Self {
+        match state {
+            DeribitInstrumentState::Created => Self::PreOpen,
+            DeribitInstrumentState::Started => Self::Trading,
+            DeribitInstrumentState::Settled => Self::Close,
+            DeribitInstrumentState::Closed => Self::Close,
+            DeribitInstrumentState::Terminated => Self::NotAvailableForTrading,
+        }
+    }
+}
+
 /// Deribit time in force values for order execution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -215,5 +227,28 @@ impl TryFrom<TimeInForce> for DeribitTimeInForce {
                 "TimeInForce::{tif} is not supported on Deribit (valid: GTC, IOC, FOK, GTD)"
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(DeribitInstrumentState::Created, MarketStatusAction::PreOpen)]
+    #[case(DeribitInstrumentState::Started, MarketStatusAction::Trading)]
+    #[case(DeribitInstrumentState::Settled, MarketStatusAction::Close)]
+    #[case(DeribitInstrumentState::Closed, MarketStatusAction::Close)]
+    #[case(
+        DeribitInstrumentState::Terminated,
+        MarketStatusAction::NotAvailableForTrading
+    )]
+    fn test_deribit_instrument_state_to_market_status_action(
+        #[case] state: DeribitInstrumentState,
+        #[case] expected: MarketStatusAction,
+    ) {
+        assert_eq!(MarketStatusAction::from(state), expected);
     }
 }

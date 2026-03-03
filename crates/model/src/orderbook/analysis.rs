@@ -111,6 +111,41 @@ pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, BookL
     }
 }
 
+/// Calculates the worst (last-touched) price while filling a specified quantity
+/// from order book levels.
+///
+/// For buy-side traversal this is the highest ask touched; for sell-side traversal
+/// this is the lowest bid touched. Returns `None` when no quantity can be matched.
+#[must_use]
+pub fn get_worst_px_for_quantity(
+    qty: Quantity,
+    levels: &BTreeMap<BookPrice, BookLevel>,
+) -> Option<Price> {
+    let mut cumulative_size_raw: QuantityRaw = 0;
+    let mut worst_price: Option<Price> = None;
+
+    for (book_price, level) in levels {
+        let size_this_level = level.size_raw().min(qty.raw - cumulative_size_raw);
+
+        if size_this_level == 0 {
+            continue;
+        }
+
+        cumulative_size_raw += size_this_level;
+        worst_price = Some(book_price.value);
+
+        if cumulative_size_raw >= qty.raw {
+            break;
+        }
+    }
+
+    if cumulative_size_raw == 0 {
+        None
+    } else {
+        worst_price
+    }
+}
+
 /// Calculates the estimated average price for a specified exposure from a set of
 /// order book levels.
 #[must_use]
@@ -176,6 +211,7 @@ pub fn book_check_integrity(book: &OrderBook) -> Result<(), BookIntegrityError> 
                     book.bids.len(),
                 ));
             }
+
             if book.asks.len() > 1 {
                 return Err(BookIntegrityError::TooManyLevels(
                     OrderSide::Sell,
@@ -205,7 +241,7 @@ pub fn book_check_integrity(book: &OrderBook) -> Result<(), BookIntegrityError> 
             }
         }
         BookType::L3_MBO => {}
-    };
+    }
 
     if let (Some(top_bid_level), Some(top_ask_level)) = (book.bids.top(), book.asks.top()) {
         let best_bid = top_bid_level.price;

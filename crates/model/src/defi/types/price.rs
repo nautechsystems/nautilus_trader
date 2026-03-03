@@ -64,7 +64,7 @@ impl Price {
 
         assert!(self.raw >= 0, "Failed to convert negative price to wei");
 
-        // SAFETY: We've checked that raw is non-negative, so casting to u128 is safe
+        // We've checked that raw is non-negative, so casting to u128 is safe
         U256::from(self.raw as u128)
     }
 }

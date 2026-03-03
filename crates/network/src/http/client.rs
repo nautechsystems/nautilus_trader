@@ -356,6 +356,7 @@ impl InnerHttpClient {
         for (header_key, header_value) in &headers {
             let key = HeaderName::from_bytes(header_key.as_bytes())
                 .map_err(|e| HttpClientError::from(format!("Invalid header name: {e}")))?;
+
             if let Some(old_value) = header_map.insert(
                 key.clone(),
                 header_value
@@ -430,7 +431,7 @@ impl Default for InnerHttpClient {
         let client = reqwest::Client::new();
         Self {
             client,
-            header_keys: Default::default(),
+            header_keys: Arc::default(),
         }
     }
 }

@@ -157,6 +157,7 @@ pub fn derive_contract_decimal_and_increment(
 
     let mut contract_decimal = Decimal::from_str(&contract_size.to_string())
         .map_err(|_| anyhow::anyhow!("Invalid contract size {contract_size}"))?;
+
     if contract_decimal.scale() > max_scale {
         contract_decimal = contract_decimal
             .round_dp_with_strategy(max_scale, RoundingStrategy::MidpointAwayFromZero);

@@ -26,7 +26,9 @@ use std::{
 use ahash::AHashSet;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use nautilus_core::{datetime::nanos_to_millis, nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    AtomicTime, datetime::nanos_to_millis, nanos::UnixNanos, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AggregationSource, BarAggregation},
@@ -752,6 +754,7 @@ impl DeribitRawHttpClient {
 pub struct DeribitHttpClient {
     pub(crate) inner: Arc<DeribitRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    clock: &'static AtomicTime,
     cache_initialized: AtomicBool,
 }
 
@@ -768,6 +771,7 @@ impl Clone for DeribitHttpClient {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
             cache_initialized,
+            clock: self.clock,
         }
     }
 }
@@ -806,6 +810,7 @@ impl DeribitHttpClient {
             inner: raw_client,
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: AtomicBool::new(false),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -848,6 +853,7 @@ impl DeribitHttpClient {
             inner: raw_client,
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: AtomicBool::new(false),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1135,6 +1141,7 @@ impl DeribitHttpClient {
         let supported_resolutions = [
             "1", "3", "5", "10", "15", "30", "60", "120", "180", "360", "720", "1D",
         ];
+
         if !supported_resolutions.contains(&resolution.as_str()) {
             anyhow::bail!(
                 "Deribit does not support resolution '{resolution}'. Supported: {supported_resolutions:?}"
@@ -1276,7 +1283,7 @@ impl DeribitHttpClient {
 
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     /// Caches instruments for later retrieval.
@@ -1377,6 +1384,7 @@ impl DeribitHttpClient {
                 instrument_name: instrument_name.clone(),
                 r#type: None,
             };
+
             if let Some(orders) = self
                 .inner
                 .get_open_orders_by_instrument(open_params)
@@ -1551,6 +1559,7 @@ impl DeribitHttpClient {
                 let Some(last_trade) = data.trades.last() else {
                     break;
                 };
+
                 if !data.has_more {
                     break;
                 }
@@ -1595,6 +1604,7 @@ impl DeribitHttpClient {
                     let Some(last_trade) = data.trades.last() else {
                         break;
                     };
+
                     if !data.has_more {
                         break;
                     }
@@ -1638,6 +1648,7 @@ impl DeribitHttpClient {
             currency: DeribitCurrency::ANY,
             kind: None,
         };
+
         if let Some(positions) = self.inner.get_positions(params).await?.result {
             for position in &positions {
                 // Skip flat positions (size == 0)

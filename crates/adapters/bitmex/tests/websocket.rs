@@ -323,6 +323,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                             .lock()
                                             .await
                                             .push((topic.to_string(), false));
+
                                         if socket
                                             .send(Message::Text(
                                                 serde_json::to_string(&response).unwrap().into(),
@@ -538,6 +539,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     // Handle ping
                     else if data.get("op") == Some(&json!("ping")) {
                         let pong = json!({"op": "pong"});
+
                         if socket
                             .send(Message::Text(serde_json::to_string(&pong).unwrap().into()))
                             .await
@@ -1752,7 +1754,6 @@ async fn test_heartbeat_timeout_reconnection() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(client.is_active());
 
-    // SAFETY: Heartbeat configuration doesn't break connection
     // TODO: Add server flag to suppress pong responses and test actual heartbeat timeout
 
     // Wait a bit longer to see if heartbeat causes any issues

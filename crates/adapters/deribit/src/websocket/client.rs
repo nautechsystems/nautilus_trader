@@ -163,6 +163,7 @@ impl DeribitWebSocketClient {
         // Resolve credential from config or environment variables (if env_fallback is true)
         let credential =
             Credential::resolve_with_env_fallback(api_key, api_secret, is_testnet, env_fallback)?;
+
         if credential.is_some() {
             log::info!("Credentials loaded (testnet={is_testnet})");
         } else {
@@ -485,6 +486,7 @@ impl DeribitWebSocketClient {
         // Replay cached instruments
         let instruments: Vec<InstrumentAny> =
             self.instruments_cache.iter().map(|r| r.clone()).collect();
+
         if !instruments.is_empty() {
             log::debug!(
                 "Sending {} cached instruments to handler",
@@ -688,6 +690,7 @@ impl DeribitWebSocketClient {
             while !handle.is_finished() && tokio::time::Instant::now() < deadline {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
+
             if !handle.is_finished() {
                 handle.abort();
             }
@@ -1103,14 +1106,14 @@ impl DeribitWebSocketClient {
         self.send_unsubscribe(vec![channel]).await
     }
 
-    /// Subscribes to instrument state changes for lifecycle notifications.
+    /// Subscribes to instrument status changes for lifecycle notifications.
     ///
     /// Channel format: `instrument.state.{kind}.{currency}`
     ///
     /// # Errors
     ///
     /// Returns an error if subscription fails.
-    pub async fn subscribe_instrument_state(
+    pub async fn subscribe_instrument_status(
         &self,
         kind: &str,
         currency: &str,
@@ -1119,12 +1122,12 @@ impl DeribitWebSocketClient {
         self.send_subscribe(vec![channel]).await
     }
 
-    /// Unsubscribes from instrument state changes.
+    /// Unsubscribes from instrument status changes.
     ///
     /// # Errors
     ///
     /// Returns an error if unsubscription fails.
-    pub async fn unsubscribe_instrument_state(
+    pub async fn unsubscribe_instrument_status(
         &self,
         kind: &str,
         currency: &str,

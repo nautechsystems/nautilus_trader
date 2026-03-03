@@ -213,6 +213,7 @@ impl AsyncRunner {
             Self::handle_data_event(evt);
             count += 1;
         }
+
         if count > 0 {
             log::debug!("Drained {count} pending data events");
         }
@@ -281,6 +282,9 @@ impl AsyncRunner {
             }
             DataEvent::FundingRate(funding_rate) => {
                 msgbus::send_any(MessagingSwitchboard::data_engine_process(), &funding_rate);
+            }
+            DataEvent::InstrumentStatus(status) => {
+                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &status);
             }
             #[cfg(feature = "defi")]
             DataEvent::DeFi(data) => {

@@ -35,6 +35,7 @@ python = [
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-network/python",
+  "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
 ]
@@ -83,6 +84,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true, features = ["examples"] }
 
 axum = { workspace = true }
 criterion = { workspace = true }
@@ -105,16 +107,23 @@ name = "bitmex-ws-exec"
 path = "bin/ws_exec.rs"
 doc = false
 
-# Run with `cargo run --example bitmex-data-tester --package nautilus-bitmex`.
+# Run with `cargo run --example bitmex-data-tester --package nautilus-bitmex`
 [[example]]
 name = "bitmex-data-tester"
 path = "examples/node_data_tester.rs"
 required-features = []
 doc = false
 
-# Run with `cargo run --example bitmex-exec-tester --package nautilus-bitmex`.
+# Run with `cargo run --example bitmex-exec-tester --package nautilus-bitmex`
 [[example]]
 name = "bitmex-exec-tester"
 path = "examples/node_exec_tester.rs"
+required-features = []
+doc = false
+
+# Run with `cargo run --example bitmex-grid-mm --package nautilus-bitmex`
+[[example]]
+name = "bitmex-grid-mm"
+path = "examples/node_grid_mm.rs"
 required-features = []
 doc = false

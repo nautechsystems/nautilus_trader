@@ -45,7 +45,7 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-network = { workspace = true }
 nautilus-portfolio = { workspace = true }
-nautilus-serialization = { workspace = true }
+nautilus-serialization = { workspace = true, features = ["arrow"] }
 nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }

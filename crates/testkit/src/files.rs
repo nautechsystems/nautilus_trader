@@ -88,7 +88,7 @@ where
 
         match op() {
             Ok(v) => return Ok(v),
-            Err(e) if attempt < config.max_retries && should_retry(&e) => continue,
+            Err(e) if attempt < config.max_retries && should_retry(&e) => {}
             Err(e) => return Err(e),
         }
     }
@@ -189,6 +189,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
 
         if let Some(checksums_file) = checksums {
             let _guard = lock_large_checksums()?;
+
             if verify_sha256_checksum(filepath, checksums_file)? {
                 println!("Checksum verified");
                 return Ok(());
@@ -221,6 +222,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
     // Verify checksum after download, retry once on mismatch (corrupt download)
     if let Some(checksums_file) = checksums {
         let _guard = lock_large_checksums()?;
+
         if !verify_sha256_checksum(filepath, checksums_file)? {
             let actual = calculate_sha256(filepath)?;
             println!("Checksum mismatch after download (got {actual}), retrying...");
@@ -230,6 +232,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
             download_file(filepath, url, timeout_secs, retry_config)?;
 
             let _guard = lock_large_checksums()?;
+
             if !verify_sha256_checksum(filepath, checksums_file)? {
                 let actual = calculate_sha256(filepath)?;
                 remove_file(filepath)?;

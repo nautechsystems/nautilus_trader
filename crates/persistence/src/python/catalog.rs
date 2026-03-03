@@ -63,17 +63,17 @@ impl ParquetDataCatalogV2 {
             // For GZIP, LZO, BROTLI, LZ4, ZSTD we need to use the default level
             // since we can't pass the level parameter through PyO3
             2 => {
-                let level = Default::default();
+                let level = parquet::basic::GzipLevel::default();
                 parquet::basic::Compression::GZIP(level)
             }
             3 => parquet::basic::Compression::LZO,
             4 => {
-                let level = Default::default();
+                let level = parquet::basic::BrotliLevel::default();
                 parquet::basic::Compression::BROTLI(level)
             }
             5 => parquet::basic::Compression::LZ4,
             6 => {
-                let level = Default::default();
+                let level = parquet::basic::ZstdLevel::default();
                 parquet::basic::Compression::ZSTD(level)
             }
             _ => parquet::basic::Compression::SNAPPY,
@@ -388,19 +388,21 @@ impl ParquetDataCatalogV2 {
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
     /// - `ensure_contiguous_files`: Optional flag to ensure files are contiguous
-    #[pyo3(signature = (start=None, end=None, ensure_contiguous_files=None))]
+    /// - `deduplicate`: Optional flag to deduplicate rows when combining files
+    #[pyo3(signature = (start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
     pub fn consolidate_catalog(
         &self,
         start: Option<u64>,
         end: Option<u64>,
         ensure_contiguous_files: Option<bool>,
+        deduplicate: Option<bool>,
     ) -> PyResult<()> {
         // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
         self.inner
-            .consolidate_catalog(start_nanos, end_nanos, ensure_contiguous_files)
+            .consolidate_catalog(start_nanos, end_nanos, ensure_contiguous_files, deduplicate)
             .map_err(|e| PyIOError::new_err(format!("Failed to consolidate catalog: {e}")))
     }
 
@@ -413,7 +415,8 @@ impl ParquetDataCatalogV2 {
     /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
     /// - `ensure_contiguous_files`: Optional flag to ensure files are contiguous
-    #[pyo3(signature = (type_name, instrument_id=None, start=None, end=None, ensure_contiguous_files=None))]
+    /// - `deduplicate`: Optional flag to deduplicate rows when combining files
+    #[pyo3(signature = (type_name, instrument_id=None, start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
     pub fn consolidate_data(
         &self,
         type_name: &str,
@@ -421,6 +424,7 @@ impl ParquetDataCatalogV2 {
         start: Option<u64>,
         end: Option<u64>,
         ensure_contiguous_files: Option<bool>,
+        deduplicate: Option<bool>,
     ) -> PyResult<()> {
         // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
@@ -433,6 +437,7 @@ impl ParquetDataCatalogV2 {
                 start_nanos,
                 end_nanos,
                 ensure_contiguous_files,
+                deduplicate,
             )
             .map_err(|e| PyIOError::new_err(format!("Failed to consolidate data: {e}")))
     }

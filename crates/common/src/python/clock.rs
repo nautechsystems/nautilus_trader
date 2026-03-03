@@ -121,6 +121,7 @@ impl PyClock {
         let interval_ns_i64 = interval
             .num_nanoseconds()
             .ok_or_else(|| to_pyvalue_err("Interval too large"))?;
+
         if interval_ns_i64 <= 0 {
             return Err(to_pyvalue_err("Interval must be positive"));
         }

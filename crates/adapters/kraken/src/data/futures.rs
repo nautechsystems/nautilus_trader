@@ -32,12 +32,18 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, DataResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
+            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
+            SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
+};
+use nautilus_core::{
+    datetime::datetime_to_unix_nanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
@@ -61,6 +67,7 @@ use crate::{
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct KrakenFuturesDataClient {
+    clock: &'static AtomicTime,
     client_id: ClientId,
     config: KrakenDataClientConfig,
     http: KrakenFuturesHttpClient,
@@ -94,6 +101,7 @@ impl KrakenFuturesDataClient {
         );
 
         Ok(Self {
+            clock: get_atomic_clock_realtime(),
             client_id,
             config,
             http,
@@ -358,6 +366,16 @@ impl DataClient for KrakenFuturesDataClient {
         Ok(())
     }
 
+    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+        log::debug!("subscribe_instruments: Kraken instruments are fetched via HTTP on connect");
+        Ok(())
+    }
+
+    fn subscribe_instrument(&mut self, _cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+        log::debug!("subscribe_instrument: Kraken instruments are fetched via HTTP on connect");
+        Ok(())
+    }
+
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let depth = cmd.depth;
@@ -580,6 +598,202 @@ impl DataClient for KrakenFuturesDataClient {
     }
 
     fn unsubscribe_bars(&mut self, _cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
+        let http = self.http.clone();
+        let sender = self.data_sender.clone();
+        let instruments_cache = self.instruments.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let venue = *KRAKEN_VENUE;
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+        let params = request.params;
+        let clock = self.clock;
+
+        get_runtime().spawn(async move {
+            match http.request_instruments().await {
+                Ok(instruments) => {
+                    if let Ok(mut guard) = instruments_cache.write() {
+                        for instrument in &instruments {
+                            guard.insert(instrument.id(), instrument.clone());
+                        }
+                    }
+                    http.cache_instruments(instruments.clone());
+
+                    let response = DataResponse::Instruments(InstrumentsResponse::new(
+                        request_id,
+                        client_id,
+                        venue,
+                        instruments,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send instruments response: {e}");
+                    }
+                }
+                Err(e) => log::error!("Instruments request failed: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+        let http = self.http.clone();
+        let sender = self.data_sender.clone();
+        let instruments = self.instruments.clone();
+        let instrument_id = request.instrument_id;
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+        let params = request.params;
+        let clock = self.clock;
+
+        get_runtime().spawn(async move {
+            {
+                if let Ok(guard) = instruments.read()
+                    && let Some(instrument) = guard.get(&instrument_id)
+                {
+                    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                        request_id,
+                        client_id,
+                        instrument.id(),
+                        instrument.clone(),
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    )));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send instrument response: {e}");
+                    }
+                    return;
+                }
+            }
+
+            match http.request_instruments().await {
+                Ok(all_instruments) => {
+                    if let Ok(mut guard) = instruments.write() {
+                        for instrument in &all_instruments {
+                            guard.insert(instrument.id(), instrument.clone());
+                        }
+                    }
+                    http.cache_instruments(all_instruments.clone());
+
+                    let instrument = all_instruments
+                        .into_iter()
+                        .find(|i| i.id() == instrument_id);
+
+                    if let Some(instrument) = instrument {
+                        let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                            request_id,
+                            client_id,
+                            instrument.id(),
+                            instrument,
+                            start_nanos,
+                            end_nanos,
+                            clock.get_time_ns(),
+                            params,
+                        )));
+
+                        if let Err(e) = sender.send(DataEvent::Response(response)) {
+                            log::error!("Failed to send instrument response: {e}");
+                        }
+                    } else {
+                        log::error!("Instrument not found: {instrument_id}");
+                    }
+                }
+                Err(e) => log::error!("Instrument request failed: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
+        let http = self.http.clone();
+        let sender = self.data_sender.clone();
+        let instrument_id = request.instrument_id;
+        let start = request.start;
+        let end = request.end;
+        let limit = request.limit.map(|n| n.get() as u64);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params;
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+
+        get_runtime().spawn(async move {
+            match http.request_trades(instrument_id, start, end, limit).await {
+                Ok(trades) => {
+                    let response = DataResponse::Trades(TradesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        trades,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send trades response: {e}");
+                    }
+                }
+                Err(e) => log::error!("Trades request failed: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+        let http = self.http.clone();
+        let sender = self.data_sender.clone();
+        let bar_type = request.bar_type;
+        let start = request.start;
+        let end = request.end;
+        let limit = request.limit.map(|n| n.get() as u64);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params;
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+
+        get_runtime().spawn(async move {
+            match http.request_bars(bar_type, start, end, limit).await {
+                Ok(bars) => {
+                    let response = DataResponse::Bars(BarsResponse::new(
+                        request_id,
+                        client_id,
+                        bar_type,
+                        bars,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send bars response: {e}");
+                    }
+                }
+                Err(e) => log::error!("Bars request failed: {e:?}"),
+            }
+        });
+
         Ok(())
     }
 }

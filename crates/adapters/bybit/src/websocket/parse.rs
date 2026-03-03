@@ -157,6 +157,7 @@ pub fn parse_orderbook_deltas(
 
         processed += 1;
         let mut flags = RecordFlag::F_MBP as u8;
+
         if processed == total_levels {
             flags |= RecordFlag::F_LAST as u8;
         }
@@ -503,6 +504,7 @@ pub fn parse_ws_kline_bar(
     let volume = parse_quantity_with_precision(&kline.volume, size_precision, "kline.volume")?;
 
     let mut ts_event = parse_millis_i64(kline.start, "kline.start")?;
+
     if timestamp_on_close {
         let interval_ns = bar_type
             .spec()

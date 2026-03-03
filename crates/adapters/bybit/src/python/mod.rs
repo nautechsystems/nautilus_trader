@@ -15,21 +15,31 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod config;
 pub mod enums;
+pub mod factories;
 pub mod http;
 pub mod params;
 pub mod types;
 pub mod urls;
 pub mod websocket;
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::enums::BarAggregation;
+use nautilus_system::{
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    get_global_pyo3_registry,
+};
 use pyo3::prelude::*;
 
-use crate::common::{
-    consts::BYBIT_NAUTILUS_BROKER_ID,
-    parse::{bar_spec_to_bybit_interval, extract_raw_symbol},
-    symbol::BybitSymbol,
+use crate::{
+    common::{
+        consts::BYBIT_NAUTILUS_BROKER_ID,
+        parse::{bar_spec_to_bybit_interval, extract_raw_symbol},
+        symbol::BybitSymbol,
+    },
+    config::{BybitDataClientConfig, BybitExecClientConfig},
+    factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
 
 /// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
@@ -78,6 +88,48 @@ fn py_bybit_product_type_from_symbol(
     Ok(bybit_symbol.product_type())
 }
 
+fn extract_bybit_data_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn DataClientFactory>> {
+    match factory.extract::<BybitDataClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract BybitDataClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_bybit_exec_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn ExecutionClientFactory>> {
+    match factory.extract::<BybitExecutionClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract BybitExecutionClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_bybit_data_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<BybitDataClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract BybitDataClientConfig: {e}"
+        ))),
+    }
+}
+
+fn extract_bybit_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<BybitExecClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract BybitExecClientConfig: {e}"
+        ))),
+    }
+}
+
 /// Loaded as `nautilus_pyo3.bybit`.
 ///
 /// # Errors
@@ -119,6 +171,10 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<params::BybitWsAmendOrderParams>()?;
     m.add_class::<params::BybitWsCancelOrderParams>()?;
     m.add_class::<params::BybitTickersParams>()?;
+    m.add_class::<BybitDataClientConfig>()?;
+    m.add_class::<BybitExecClientConfig>()?;
+    m.add_class::<BybitDataClientFactory>()?;
+    m.add_class::<BybitExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(urls::py_get_bybit_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_bybit_ws_url_public, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_bybit_ws_url_private, m)?)?;
@@ -126,5 +182,42 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_bybit_extract_raw_symbol, m)?)?;
     m.add_function(wrap_pyfunction!(py_bybit_bar_spec_to_interval, m)?)?;
     m.add_function(wrap_pyfunction!(py_bybit_product_type_from_symbol, m)?)?;
+
+    let registry = get_global_pyo3_registry();
+
+    if let Err(e) =
+        registry.register_factory_extractor("BYBIT".to_string(), extract_bybit_data_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Bybit data factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry
+        .register_exec_factory_extractor("BYBIT".to_string(), extract_bybit_exec_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Bybit exec factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "BybitDataClientConfig".to_string(),
+        extract_bybit_data_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Bybit data config extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "BybitExecClientConfig".to_string(),
+        extract_bybit_exec_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Bybit exec config extractor: {e}"
+        )));
+    }
+
     Ok(())
 }

@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use nautilus_model::{
-    data::{Data, funding::FundingRateUpdate},
+    data::{Data, InstrumentStatus, funding::FundingRateUpdate},
     events::{AccountState, OrderUpdated},
     instruments::InstrumentAny,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -98,6 +98,7 @@ pub struct BitmexSubscription {
 pub enum NautilusWsMessage {
     Data(Vec<Data>),
     Instruments(Vec<InstrumentAny>),
+    InstrumentStatus(InstrumentStatus),
     OrderStatusReports(Vec<OrderStatusReport>),
     OrderUpdated(Box<OrderUpdated>),
     OrderUpdates(Vec<OrderUpdated>),

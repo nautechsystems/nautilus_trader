@@ -532,8 +532,6 @@ cdef extern from "../includes/common.h":
 
     # Drops a `TimeEventHandler_API`, releasing any Python callback reference.
     #
-    # # Safety
-    #
     # The handler must be valid and not previously dropped.
     void time_event_handler_drop(TimeEventHandler_t handler);
 

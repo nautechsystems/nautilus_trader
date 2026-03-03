@@ -1,0 +1,17 @@
+{
+  "associate_trades": null,
+  "id": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "status": "MATCHED",
+  "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+  "original_size": "50.0000",
+  "outcome": "No",
+  "maker_address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "owner": "00000000-0000-0000-0000-000000000001",
+  "price": "0.5000",
+  "side": "SELL",
+  "size_matched": "50.0000",
+  "asset_id": "52114319501245915516055106046884209969926127482827954674443846427813813222426",
+  "expiration": "1735689600",
+  "order_type": "FOK",
+  "created_at": 1703875201000
+}

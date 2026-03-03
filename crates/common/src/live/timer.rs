@@ -210,7 +210,7 @@ impl LiveTimer {
             let mut timer = tokio::time::interval_at(start, Duration::from_nanos(interval_ns));
 
             loop {
-                // SAFETY: `timer.tick` is cancellation safe, if the cancel branch completes
+                // `timer.tick` is cancellation safe, if the cancel branch completes
                 // first then no tick has been consumed (no event was ready).
                 timer.tick().await;
                 let now_ns = clock.get_time_ns();
@@ -262,6 +262,7 @@ impl LiveTimer {
     /// The timer will not generate a final event.
     pub fn cancel(&mut self) {
         log::debug!("Cancel timer '{}'", self.name);
+
         if let Some(ref handle) = self.task_handle {
             handle.abort();
         }

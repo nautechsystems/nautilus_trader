@@ -66,7 +66,7 @@ pub use nautilus_core::serialization::{
     serialize_vec_decimal_as_str,
 };
 use nautilus_model::{
-    data::bar::BarType,
+    data::{bar::BarType, quote::QuoteTick},
     enums::{AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, Symbol, TradeId, Venue},
     orders::{Order, any::OrderAny},
@@ -81,9 +81,10 @@ use crate::{
     },
     http::models::{
         Cloid, CrossMarginSummary, HyperliquidExchangeResponse,
-        HyperliquidExecCancelByCloidRequest, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
-        HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
-        HyperliquidExecTriggerParams, RESPONSE_STATUS_OK,
+        HyperliquidExecCancelByCloidRequest, HyperliquidExecCancelStatus,
+        HyperliquidExecLimitParams, HyperliquidExecModifyStatus, HyperliquidExecOrderKind,
+        HyperliquidExecOrderStatus, HyperliquidExecPlaceOrderRequest, HyperliquidExecResponseData,
+        HyperliquidExecTif, HyperliquidExecTpSl, HyperliquidExecTriggerParams, RESPONSE_STATUS_OK,
     },
     websocket::messages::TrailingOffsetType,
 };
@@ -351,6 +352,8 @@ pub fn bar_type_to_interval(bar_type: &BarType) -> anyhow::Result<HyperliquidBar
 pub fn order_to_hyperliquid_request_with_asset(
     order: &OrderAny,
     asset: u32,
+    price_decimals: u8,
+    should_normalize_prices: bool,
 ) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
     let is_buy = matches!(order.order_side(), OrderSide::Buy);
     let reduce_only = order.is_reduce_only();
@@ -359,30 +362,34 @@ pub fn order_to_hyperliquid_request_with_asset(
 
     // Normalize decimals to strip trailing zeros, matching the server's
     // canonical form used for EIP-712 signing hash verification.
-    let price_decimal = match order.price() {
-        Some(price) => Decimal::from_str_exact(&price.to_string())
-            .with_context(|| format!("Failed to convert price to decimal: {price}"))?
-            .normalize(),
-        None => {
-            if matches!(
-                order_type,
-                OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched
-            ) {
-                Decimal::ZERO
-            } else {
-                anyhow::bail!("Limit orders require a price")
-            }
+    let price_decimal = if let Some(price) = order.price() {
+        let raw = price.as_decimal();
+
+        if should_normalize_prices {
+            normalize_price(raw, price_decimals).normalize()
+        } else {
+            raw.normalize()
         }
+    } else if matches!(order_type, OrderType::Market) {
+        Decimal::ZERO
+    } else if matches!(
+        order_type,
+        OrderType::StopMarket | OrderType::MarketIfTouched
+    ) {
+        match order.trigger_price() {
+            Some(tp) => {
+                let base = tp.as_decimal().normalize();
+                let derived = derive_limit_from_trigger(base, is_buy);
+                let sig_rounded = round_to_sig_figs(derived, 5);
+                clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize()
+            }
+            None => Decimal::ZERO,
+        }
+    } else {
+        anyhow::bail!("Limit orders require a price")
     };
 
-    let size_decimal = Decimal::from_str_exact(&order.quantity().to_string())
-        .with_context(|| {
-            format!(
-                "Failed to convert quantity to decimal: {}",
-                order.quantity()
-            )
-        })?
-        .normalize();
+    let size_decimal = order.quantity().as_decimal().normalize();
 
     // Determine order kind based on order type
     let kind = match order_type {
@@ -400,11 +407,12 @@ pub fn order_to_hyperliquid_request_with_asset(
         }
         OrderType::StopMarket => {
             if let Some(trigger_price) = order.trigger_price() {
-                let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
-                    .with_context(|| {
-                        format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?
-                    .normalize();
+                let raw = trigger_price.as_decimal();
+                let trigger_price_decimal = if should_normalize_prices {
+                    normalize_price(raw, price_decimals).normalize()
+                } else {
+                    raw.normalize()
+                };
                 let tpsl = determine_tpsl_type(order_type, order_side, trigger_price_decimal, None);
                 HyperliquidExecOrderKind::Trigger {
                     trigger: HyperliquidExecTriggerParams {
@@ -419,11 +427,12 @@ pub fn order_to_hyperliquid_request_with_asset(
         }
         OrderType::StopLimit => {
             if let Some(trigger_price) = order.trigger_price() {
-                let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
-                    .with_context(|| {
-                        format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?
-                    .normalize();
+                let raw = trigger_price.as_decimal();
+                let trigger_price_decimal = if should_normalize_prices {
+                    normalize_price(raw, price_decimals).normalize()
+                } else {
+                    raw.normalize()
+                };
                 let tpsl = determine_tpsl_type(order_type, order_side, trigger_price_decimal, None);
                 HyperliquidExecOrderKind::Trigger {
                     trigger: HyperliquidExecTriggerParams {
@@ -438,11 +447,12 @@ pub fn order_to_hyperliquid_request_with_asset(
         }
         OrderType::MarketIfTouched => {
             if let Some(trigger_price) = order.trigger_price() {
-                let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
-                    .with_context(|| {
-                        format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?
-                    .normalize();
+                let raw = trigger_price.as_decimal();
+                let trigger_price_decimal = if should_normalize_prices {
+                    normalize_price(raw, price_decimals).normalize()
+                } else {
+                    raw.normalize()
+                };
                 HyperliquidExecOrderKind::Trigger {
                     trigger: HyperliquidExecTriggerParams {
                         is_market: true,
@@ -456,11 +466,12 @@ pub fn order_to_hyperliquid_request_with_asset(
         }
         OrderType::LimitIfTouched => {
             if let Some(trigger_price) = order.trigger_price() {
-                let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
-                    .with_context(|| {
-                        format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?
-                    .normalize();
+                let raw = trigger_price.as_decimal();
+                let trigger_price_decimal = if should_normalize_prices {
+                    normalize_price(raw, price_decimals).normalize()
+                } else {
+                    raw.normalize()
+                };
                 HyperliquidExecOrderKind::Trigger {
                     trigger: HyperliquidExecTriggerParams {
                         is_market: false,
@@ -475,7 +486,6 @@ pub fn order_to_hyperliquid_request_with_asset(
         _ => anyhow::bail!("Unsupported order type for Hyperliquid: {order_type:?}"),
     };
 
-    // Convert client order ID to CLOID by hashing
     let cloid = Some(Cloid::from_client_order_id(order.client_order_id()));
 
     Ok(HyperliquidExecPlaceOrderRequest {
@@ -489,6 +499,53 @@ pub fn order_to_hyperliquid_request_with_asset(
     })
 }
 
+/// Derives a market order limit price from a quote with 0.5% slippage.
+///
+/// Uses the ask price for buys and the bid price for sells, applies
+/// slippage, rounds to 5 significant figures, and clamps to the
+/// instrument's price precision.
+pub fn derive_market_order_price(quote: &QuoteTick, is_buy: bool, price_decimals: u8) -> Decimal {
+    let base = if is_buy {
+        quote.ask_price.as_decimal()
+    } else {
+        quote.bid_price.as_decimal()
+    };
+    let derived = derive_limit_from_trigger(base, is_buy);
+    let sig_rounded = round_to_sig_figs(derived, 5);
+    clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize()
+}
+
+/// Derives a limit price from a trigger price with slippage.
+///
+/// Hyperliquid requires that the limit price satisfies:
+/// - SELL stops: `limit_px <= trigger_px`
+/// - BUY stops: `limit_px >= trigger_px`
+///
+/// Applies 0.5% slippage in the appropriate direction.
+pub fn derive_limit_from_trigger(trigger_price: Decimal, is_buy: bool) -> Decimal {
+    let slippage = Decimal::new(5, 3); // 0.5%
+    let price = if is_buy {
+        trigger_price * (Decimal::ONE + slippage)
+    } else {
+        trigger_price * (Decimal::ONE - slippage)
+    };
+
+    // Strip trailing zeros for EIP-712 signing hash verification
+    price.normalize()
+}
+
+/// Clamp a price to the instrument's decimal precision,
+/// rounding in the direction that preserves the slippage buffer.
+pub fn clamp_price_to_precision(price: Decimal, decimals: u8, is_buy: bool) -> Decimal {
+    let scale = Decimal::from(10_u64.pow(decimals as u32));
+
+    if is_buy {
+        (price * scale).ceil() / scale
+    } else {
+        (price * scale).floor() / scale
+    }
+}
+
 /// Converts a client order ID to a Hyperliquid cancel request using a pre-resolved asset index.
 pub fn client_order_id_to_cancel_request_with_asset(
     client_order_id: &str,
@@ -496,6 +553,70 @@ pub fn client_order_id_to_cancel_request_with_asset(
 ) -> HyperliquidExecCancelByCloidRequest {
     let cloid = Cloid::from_client_order_id(ClientOrderId::from(client_order_id));
     HyperliquidExecCancelByCloidRequest { asset, cloid }
+}
+
+/// Extracts per-item error from a successful Hyperliquid exchange response.
+///
+/// When the top-level status is "ok", individual items in the `statuses`
+/// array may still contain errors. Returns the first error found, or
+/// `None` if all items succeeded or the response cannot be parsed.
+pub fn extract_inner_error(response: &HyperliquidExchangeResponse) -> Option<String> {
+    let HyperliquidExchangeResponse::Status { response, .. } = response else {
+        return None;
+    };
+    let data: HyperliquidExecResponseData = serde_json::from_value(response.clone()).ok()?;
+    match data {
+        HyperliquidExecResponseData::Order { data } => {
+            for status in &data.statuses {
+                if let HyperliquidExecOrderStatus::Error { error } = status {
+                    return Some(error.clone());
+                }
+            }
+            None
+        }
+        HyperliquidExecResponseData::Cancel { data } => {
+            for status in &data.statuses {
+                if let HyperliquidExecCancelStatus::Error { error } = status {
+                    return Some(error.clone());
+                }
+            }
+            None
+        }
+        HyperliquidExecResponseData::Modify { data } => {
+            for status in &data.statuses {
+                if let HyperliquidExecModifyStatus::Error { error } = status {
+                    return Some(error.clone());
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Extracts per-item errors from a successful batch response.
+///
+/// Returns a `Vec` with one `Option<String>` per item in the `statuses`
+/// array: `Some(error)` for failed items, `None` for successful ones.
+/// Returns an empty vec if the response cannot be parsed.
+pub fn extract_inner_errors(response: &HyperliquidExchangeResponse) -> Vec<Option<String>> {
+    let HyperliquidExchangeResponse::Status { response, .. } = response else {
+        return Vec::new();
+    };
+    let Ok(data) = serde_json::from_value::<HyperliquidExecResponseData>(response.clone()) else {
+        return Vec::new();
+    };
+    match data {
+        HyperliquidExecResponseData::Order { data } => data
+            .statuses
+            .into_iter()
+            .map(|s| match s {
+                HyperliquidExecOrderStatus::Error { error } => Some(error),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// Extracts error message from a Hyperliquid exchange response.
@@ -681,6 +802,12 @@ pub fn parse_account_balances_and_margins(
 mod tests {
     use std::str::FromStr;
 
+    use nautilus_model::{
+        enums::{OrderSide, TimeInForce, TriggerType},
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
+        orders::{OrderAny, StopMarketOrder},
+        types::{Price, Quantity},
+    };
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -1000,5 +1127,427 @@ mod tests {
         // Empty string
         let result = parse_trigger_price("");
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case(dec!(0), true, dec!(0))] // Zero
+    #[case(dec!(0), false, dec!(0))] // Zero
+    #[case(dec!(0.001), true, dec!(0.001005))] // Small price BUY
+    #[case(dec!(0.001), false, dec!(0.000995))] // Small price SELL
+    #[case(dec!(100), true, dec!(100.5))] // Round price BUY
+    #[case(dec!(100), false, dec!(99.5))] // Round price SELL
+    #[case(dec!(2470), true, dec!(2482.35))] // ETH-like BUY
+    #[case(dec!(2470), false, dec!(2457.65))] // ETH-like SELL
+    #[case(dec!(104567.3), true, dec!(105090.1365))] // BTC-like BUY
+    #[case(dec!(104567.3), false, dec!(104044.4635))] // BTC-like SELL
+    fn test_derive_limit_from_trigger(
+        #[case] trigger_price: Decimal,
+        #[case] is_buy: bool,
+        #[case] expected: Decimal,
+    ) {
+        let result = derive_limit_from_trigger(trigger_price, is_buy);
+        assert_eq!(result, expected);
+
+        // Verify invariant: BUY limit >= trigger, SELL limit <= trigger
+        if is_buy {
+            assert!(result >= trigger_price);
+        } else {
+            assert!(result <= trigger_price);
+        }
+    }
+
+    #[rstest]
+    // BUY rounds up (ceil)
+    #[case(dec!(2457.65), 2, true, dec!(2457.65))] // Already at precision
+    #[case(dec!(2457.65), 1, true, dec!(2457.7))] // Ceil to 1dp
+    #[case(dec!(2457.65), 0, true, dec!(2458))] // Ceil to integer
+    // SELL rounds down (floor)
+    #[case(dec!(2457.65), 2, false, dec!(2457.65))] // Already at precision
+    #[case(dec!(2457.65), 1, false, dec!(2457.6))] // Floor to 1dp
+    #[case(dec!(2457.65), 0, false, dec!(2457))] // Floor to integer
+    // High precision (no-op)
+    #[case(dec!(0.4975), 4, true, dec!(0.4975))]
+    #[case(dec!(0.4975), 4, false, dec!(0.4975))]
+    // Precision forces clamping on small values
+    #[case(dec!(0.4975), 2, true, dec!(0.50))]
+    #[case(dec!(0.4975), 2, false, dec!(0.49))]
+    fn test_clamp_price_to_precision(
+        #[case] price: Decimal,
+        #[case] decimals: u8,
+        #[case] is_buy: bool,
+        #[case] expected: Decimal,
+    ) {
+        assert_eq!(clamp_price_to_precision(price, decimals, is_buy), expected);
+    }
+
+    fn stop_market_order(side: OrderSide, trigger_price: &str) -> OrderAny {
+        OrderAny::StopMarket(StopMarketOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"),
+            ClientOrderId::from("O-001"),
+            side,
+            Quantity::from(1),
+            Price::from(trigger_price),
+            TriggerType::LastPrice,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Default::default(),
+            Default::default(),
+        ))
+    }
+
+    #[rstest]
+    // ETH-like (precision=2): clamping is a no-op
+    #[case(OrderSide::Sell, "2470.00", 2)]
+    #[case(OrderSide::Buy, "2470.00", 2)]
+    // BTC-like (precision=1): clamping is a no-op
+    #[case(OrderSide::Sell, "104567.3", 1)]
+    #[case(OrderSide::Buy, "104567.3", 1)]
+    // Low-price token (precision=4): clamping is a no-op
+    #[case(OrderSide::Sell, "0.50", 4)]
+    #[case(OrderSide::Buy, "0.50", 4)]
+    // Clamping materially changes: ETH trigger at precision=1
+    // SELL: 2470 * 0.995 = 2457.65 → sig5 = 2457.6 → floor(1dp) = 2457.6
+    // BUY:  2470 * 1.005 = 2482.35 → sig5 = 2482.4 → ceil(1dp) = 2482.4
+    #[case(OrderSide::Sell, "2470.00", 1)]
+    #[case(OrderSide::Buy, "2470.00", 1)]
+    // Clamping materially changes: precision=0 forces integer
+    // SELL: 2470 * 0.995 = 2457.65 → sig5 = 2457.6 → floor(0dp) = 2457
+    // BUY:  2470 * 1.005 = 2482.35 → sig5 = 2482.4 → ceil(0dp) = 2483
+    #[case(OrderSide::Sell, "2470.00", 0)]
+    #[case(OrderSide::Buy, "2470.00", 0)]
+    fn test_order_to_request_stop_market_derives_limit_from_trigger(
+        #[case] side: OrderSide,
+        #[case] trigger_str: &str,
+        #[case] price_decimals: u8,
+    ) {
+        let order = stop_market_order(side, trigger_str);
+        let request =
+            order_to_hyperliquid_request_with_asset(&order, 0, price_decimals, true).unwrap();
+        let trigger = Decimal::from_str(trigger_str).unwrap();
+        let is_buy = matches!(side, OrderSide::Buy);
+
+        // Price must satisfy Hyperliquid's directional constraint
+        if is_buy {
+            assert!(
+                request.price >= trigger,
+                "BUY limit {} must be >= trigger {trigger}",
+                request.price,
+            );
+            assert!(request.is_buy);
+        } else {
+            assert!(
+                request.price <= trigger,
+                "SELL limit {} must be <= trigger {trigger}",
+                request.price,
+            );
+            assert!(!request.is_buy);
+        }
+
+        // Price must equal the full pipeline: derive → sig figs → clamp → normalize
+        let derived = derive_limit_from_trigger(trigger, is_buy);
+        let sig_rounded = round_to_sig_figs(derived, 5);
+        let expected = clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize();
+        assert_eq!(request.price, expected);
+
+        // Decimal places must not exceed instrument precision
+        let price_str = request.price.to_string();
+        let actual_decimals = price_str
+            .find('.')
+            .map_or(0, |dot| price_str.len() - dot - 1);
+        assert!(
+            actual_decimals <= price_decimals as usize,
+            "Price {price_str} has {actual_decimals} decimals, max allowed {price_decimals}",
+        );
+
+        // Decimal trailing zeros must be stripped (canonical form)
+        if price_str.contains('.') {
+            assert!(
+                !price_str.ends_with('0'),
+                "Price {price_str} has decimal trailing zeros",
+            );
+        }
+
+        let expected_trigger = normalize_price(trigger, price_decimals).normalize();
+        assert_eq!(
+            request.kind,
+            HyperliquidExecOrderKind::Trigger {
+                trigger: HyperliquidExecTriggerParams {
+                    is_market: true,
+                    trigger_px: expected_trigger,
+                    tpsl: HyperliquidExecTpSl::Sl,
+                },
+            },
+        );
+    }
+
+    fn ok_response(inner: serde_json::Value) -> HyperliquidExchangeResponse {
+        HyperliquidExchangeResponse::Status {
+            status: "ok".to_string(),
+            response: inner,
+        }
+    }
+
+    #[rstest]
+    fn test_extract_inner_error_order_with_error() {
+        let response = ok_response(serde_json::json!({
+            "type": "order",
+            "data": {"statuses": [{"error": "Order has invalid price."}]}
+        }));
+        assert_eq!(
+            extract_inner_error(&response),
+            Some("Order has invalid price.".to_string()),
+        );
+    }
+
+    #[rstest]
+    fn test_extract_inner_error_order_resting() {
+        let response = ok_response(serde_json::json!({
+            "type": "order",
+            "data": {"statuses": [{"resting": {"oid": 12345}}]}
+        }));
+        assert_eq!(extract_inner_error(&response), None);
+    }
+
+    #[rstest]
+    fn test_extract_inner_error_order_filled() {
+        let response = ok_response(serde_json::json!({
+            "type": "order",
+            "data": {"statuses": [{"filled": {"totalSz": "0.01", "avgPx": "2470.0", "oid": 99}}]}
+        }));
+        assert_eq!(extract_inner_error(&response), None);
+    }
+
+    #[rstest]
+    fn test_extract_inner_error_cancel_error() {
+        let response = ok_response(serde_json::json!({
+            "type": "cancel",
+            "data": {"statuses": [{"error": "Order not found"}]}
+        }));
+        assert_eq!(
+            extract_inner_error(&response),
+            Some("Order not found".to_string()),
+        );
+    }
+
+    #[rstest]
+    fn test_extract_inner_error_cancel_success() {
+        let response = ok_response(serde_json::json!({
+            "type": "cancel",
+            "data": {"statuses": ["success"]}
+        }));
+        assert_eq!(extract_inner_error(&response), None);
+    }
+
+    #[rstest]
+    fn test_extract_inner_error_modify_error() {
+        let response = ok_response(serde_json::json!({
+            "type": "modify",
+            "data": {"statuses": [{"error": "Invalid modify"}]}
+        }));
+        assert_eq!(
+            extract_inner_error(&response),
+            Some("Invalid modify".to_string()),
+        );
+    }
+
+    #[rstest]
+    fn test_extract_inner_error_modify_success() {
+        let response = ok_response(serde_json::json!({
+            "type": "modify",
+            "data": {"statuses": ["success"]}
+        }));
+        assert_eq!(extract_inner_error(&response), None);
+    }
+
+    #[rstest]
+    fn test_extract_inner_error_non_status_response() {
+        let response = HyperliquidExchangeResponse::Error {
+            error: "top-level error".to_string(),
+        };
+        assert_eq!(extract_inner_error(&response), None);
+    }
+
+    #[rstest]
+    fn test_extract_inner_error_unparsable_response() {
+        let response = ok_response(serde_json::json!({"unknown": "data"}));
+        assert_eq!(extract_inner_error(&response), None);
+    }
+
+    #[rstest]
+    fn test_extract_inner_error_returns_first_error_in_batch() {
+        let response = ok_response(serde_json::json!({
+            "type": "order",
+            "data": {"statuses": [
+                {"resting": {"oid": 1}},
+                {"error": "Second failed"},
+                {"error": "Third failed"},
+            ]}
+        }));
+        assert_eq!(
+            extract_inner_error(&response),
+            Some("Second failed".to_string()),
+        );
+    }
+
+    #[rstest]
+    fn test_extract_inner_errors_mixed_batch() {
+        let response = ok_response(serde_json::json!({
+            "type": "order",
+            "data": {"statuses": [
+                {"resting": {"oid": 1}},
+                {"error": "Failed order"},
+                {"filled": {"totalSz": "0.01", "avgPx": "100.0", "oid": 2}},
+            ]}
+        }));
+        let errors = extract_inner_errors(&response);
+        assert_eq!(errors.len(), 3);
+        assert_eq!(errors[0], None);
+        assert_eq!(errors[1], Some("Failed order".to_string()));
+        assert_eq!(errors[2], None);
+    }
+
+    #[rstest]
+    fn test_extract_inner_errors_all_success() {
+        let response = ok_response(serde_json::json!({
+            "type": "order",
+            "data": {"statuses": [
+                {"resting": {"oid": 1}},
+                {"resting": {"oid": 2}},
+            ]}
+        }));
+        let errors = extract_inner_errors(&response);
+        assert_eq!(errors.len(), 2);
+        assert!(errors.iter().all(|e| e.is_none()));
+    }
+
+    #[rstest]
+    fn test_extract_inner_errors_non_order_response() {
+        let response = ok_response(serde_json::json!({
+            "type": "cancel",
+            "data": {"statuses": ["success"]}
+        }));
+        let errors = extract_inner_errors(&response);
+        assert!(errors.is_empty());
+    }
+
+    #[rstest]
+    fn test_extract_inner_errors_unparsable() {
+        let response = ok_response(serde_json::json!({"foo": "bar"}));
+        let errors = extract_inner_errors(&response);
+        assert!(errors.is_empty());
+    }
+
+    fn count_sig_figs(s: &str) -> usize {
+        let s = s.trim_start_matches('-');
+        if s.contains('.') {
+            // Decimal: all digits excluding leading zeros are significant
+            let digits: String = s.replace('.', "");
+            digits.trim_start_matches('0').len()
+        } else {
+            // Integer: trailing zeros are place-holders, not significant
+            let s = s.trim_start_matches('0');
+            s.trim_end_matches('0').len()
+        }
+    }
+
+    fn make_quote(bid: &str, ask: &str) -> QuoteTick {
+        QuoteTick::new(
+            InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"),
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            Default::default(),
+            Default::default(),
+        )
+    }
+
+    #[rstest]
+    // BUY uses ask, SELL uses bid
+    // Pipeline: base → +/-0.5% slippage → round 5 sig figs → clamp → normalize
+    //
+    // ETH-like (precision=2)
+    // BUY: ask=2470 → 2470*1.005=2482.35 → sig5=2482.4 → clamp(2,ceil)=2482.40 → 2482.4
+    #[case("2460.00", "2470.00", true, 2, "2482.4")]
+    // SELL: bid=2460 → 2460*0.995=2447.70 → sig5=2447.7 → clamp(2,floor)=2447.70 → 2447.7
+    #[case("2460.00", "2470.00", false, 2, "2447.7")]
+    //
+    // BTC-like (precision=1)
+    // BUY: ask=104567.3 → 104567.3*1.005=105090.1365 → sig5=105090 → clamp(1,ceil)=105090 → 105090
+    #[case("104500.0", "104567.3", true, 1, "105090")]
+    // SELL: bid=104500.0 → 104500*0.995=103977.5 → sig5=103980 → clamp(1,floor)=103980 → 103980
+    #[case("104500.0", "104567.3", false, 1, "103980")]
+    //
+    // Low-price token (precision=4)
+    // BUY: ask=0.5000 → 0.5*1.005=0.5025 → sig5=0.50250 → clamp(4,ceil)=0.5025 → 0.5025
+    #[case("0.4900", "0.5000", true, 4, "0.5025")]
+    // SELL: bid=0.49 → 0.49*0.995=0.48755 → sig5=0.48755 → clamp(4,floor)=0.4875 → 0.4875
+    #[case("0.4900", "0.5000", false, 4, "0.4875")]
+    //
+    // High-price low-precision (precision=0)
+    // BUY: ask=50000 → 50000*1.005=50250 → sig5=50250 → clamp(0,ceil)=50250 → 50250
+    #[case("49900", "50000", true, 0, "50250")]
+    // SELL: bid=49900 → 49900*0.995=49650.5 → sig5=49650 → clamp(0,floor)=49650 → 49650
+    #[case("49900", "50000", false, 0, "49650")]
+    //
+    // Very small price (precision=6)
+    // BUY: ask=0.001234 → 0.001234*1.005=0.0012402 → sig5=0.0012402 → clamp(6,ceil)=0.001241
+    #[case("0.001200", "0.001234", true, 6, "0.001241")]
+    // SELL: bid=0.0012 → 0.0012*0.995=0.001194 → sig5=0.001194 → clamp(6,floor)=0.001194
+    #[case("0.001200", "0.001234", false, 6, "0.001194")]
+    fn test_derive_market_order_price(
+        #[case] bid: &str,
+        #[case] ask: &str,
+        #[case] is_buy: bool,
+        #[case] price_decimals: u8,
+        #[case] expected: &str,
+    ) {
+        let quote = make_quote(bid, ask);
+        let result = derive_market_order_price(&quote, is_buy, price_decimals);
+        let expected_dec = Decimal::from_str(expected).unwrap();
+        assert_eq!(result, expected_dec);
+
+        // Verify the result matches the full pipeline manually
+        let base = if is_buy {
+            quote.ask_price.as_decimal()
+        } else {
+            quote.bid_price.as_decimal()
+        };
+        let derived = derive_limit_from_trigger(base, is_buy);
+        let sig_rounded = round_to_sig_figs(derived, 5);
+        let pipeline = clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize();
+        assert_eq!(result, pipeline);
+
+        // Must not have trailing zeros after decimal point
+        let s = result.to_string();
+        if s.contains('.') {
+            assert!(!s.ends_with('0'), "Price {s} has trailing zeros");
+        }
+
+        // Sig figs must not exceed 5
+        let sig_count = count_sig_figs(&s);
+        assert!(sig_count <= 5, "Price {s} has {sig_count} sig figs, max 5",);
+
+        // Decimal places must not exceed instrument precision
+        let actual_decimals = s.find('.').map_or(0, |dot| s.len() - dot - 1);
+        assert!(
+            actual_decimals <= price_decimals as usize,
+            "Price {s} has {actual_decimals} decimals, max {price_decimals}",
+        );
     }
 }

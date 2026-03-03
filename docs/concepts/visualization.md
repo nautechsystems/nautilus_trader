@@ -2,7 +2,7 @@
 
 NautilusTrader provides interactive HTML tearsheets for analyzing backtest results through
 an extensible visualization system built on Plotly. The system emphasizes configurability
-and extensibility, allowing you to generate comprehensive performance reports with minimal
+and extensibility, allowing you to generate performance reports with minimal
 code while maintaining the flexibility to add custom charts and themes.
 
 ## Overview
@@ -33,7 +33,7 @@ uv pip install "plotly>=6.3.1"
 
 ## Tearsheets
 
-A tearsheet is a comprehensive performance report that combines multiple charts and
+A tearsheet is a performance report that combines multiple charts and
 statistics into a single interactive visualization. Tearsheets are generated after
 completing a backtest run and provide immediate visual feedback on strategy performance.
 
@@ -124,7 +124,7 @@ All charts are registered in the chart registry and are configured via chart obj
 
 ### Run information table
 
-The `run_info` chart displays critical metadata about the backtest run:
+The `run_info` chart displays key metadata about the backtest run:
 
 - Run ID, start time, finish time
 - Backtest period (start/end dates)
@@ -136,7 +136,7 @@ This table appears in the top-left position by default.
 
 ### Performance statistics table
 
-The `stats_table` chart displays comprehensive performance metrics organized into sections:
+The `stats_table` chart displays performance metrics organized into sections:
 
 - **PnL Statistics** (per currency): Total PnL, win rate, profit factor, etc.
 - **Returns Statistics**: Sharpe ratio, Sortino ratio, max drawdown, etc.

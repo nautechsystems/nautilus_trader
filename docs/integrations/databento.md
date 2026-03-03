@@ -103,7 +103,7 @@ The following Databento schemas are supported by NautilusTrader:
 :::tip
 **Consolidated schemas** (CMBP_1, CBBO_1S, CBBO_1M, TCBBO) aggregate data across multiple venues,
 providing a unified view of the market. These are particularly useful for cross-venue analysis and
-when you need a comprehensive market picture.
+when you need a complete market picture.
 :::
 
 :::info

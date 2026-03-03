@@ -234,7 +234,7 @@ impl Default for SubmitBroadcasterConfig {
             max_requests_per_minute: Some(120),
             health_check_interval_secs: 30,
             health_check_timeout_secs: 5,
-            expected_reject_patterns: vec![r"Duplicate clOrdID".to_string()],
+            expected_reject_patterns: vec!["Duplicate clOrdID".to_string()],
             proxy_urls: vec![],
         }
     }
@@ -1699,6 +1699,7 @@ mod tests {
                 // (with concurrent execution, first success aborts others)
                 Box::pin(async move {
                     barrier.wait().await;
+
                     if should_succeed {
                         Ok(create_test_report("ORDER-1"))
                     } else {

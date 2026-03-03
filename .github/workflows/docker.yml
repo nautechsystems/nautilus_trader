@@ -28,7 +28,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -66,7 +66,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -82,7 +82,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -284,7 +284,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -322,7 +322,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -333,7 +333,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -393,6 +393,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      id-token: write
     needs: build-docker-images-nautilus-trader
     steps:
       - name: Download digests
@@ -408,7 +409,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -430,18 +431,36 @@ jobs:
             type=raw,value=latest,enable=${{ steps.branch-name.outputs.current_branch == 'master' }}
 
       - name: Create manifest list and push
+        id: push
         working-directory: /tmp/digests/nautilus_trader
         shell: bash
         run: |
           mapfile -t tags < <(jq -cr '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           mapfile -t digests < <(printf 'ghcr.io/${{ github.repository_owner }}/nautilus_trader@sha256:%s\n' *)
           docker buildx imagetools create "${tags[@]}" "${digests[@]}"
+          TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
+          IMAGE="ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAG"
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
         run: |
-          TAGS=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
           docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAGS"
+            "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+      - name: Sign image with cosign
+        run: |
+          cosign sign --yes \
+            "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
+
+      - name: Generate and attach SBOM
+        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
+          output-file: sbom.spdx.json
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
@@ -462,7 +481,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -500,7 +519,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -511,7 +530,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -582,6 +601,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      id-token: write
     needs: build-docker-images-jupyterlab
     steps:
       - name: Download digests
@@ -597,7 +617,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -619,15 +639,33 @@ jobs:
             type=raw,value=latest,enable=${{ steps.branch-name.outputs.current_branch == 'master' }}
 
       - name: Create manifest list and push
+        id: push
         working-directory: /tmp/digests/jupyterlab
         shell: bash
         run: |
           mapfile -t tags < <(jq -cr '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           mapfile -t digests < <(printf 'ghcr.io/${{ github.repository_owner }}/jupyterlab@sha256:%s\n' *)
           docker buildx imagetools create "${tags[@]}" "${digests[@]}"
+          TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
+          IMAGE="ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAG"
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
         run: |
-          TAGS=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
           docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAGS"
+            "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+      - name: Sign image with cosign
+        run: |
+          cosign sign --yes \
+            "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
+
+      - name: Generate and attach SBOM
+        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
+          output-file: sbom.spdx.json

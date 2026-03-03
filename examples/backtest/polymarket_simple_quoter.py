@@ -22,8 +22,7 @@ You can find active markets at: https://polymarket.com
 
 Data sources:
 - Markets API: https://gamma-api.polymarket.com/markets
-- Order book history: https://clob.polymarket.com/orderbook-history
-- Trades/Prices: https://clob.polymarket.com/prices-history
+- Trades: https://data-api.polymarket.com/trades
 
 """
 
@@ -36,11 +35,11 @@ from nautilus_trader.adapters.polymarket import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket import PolymarketDataLoader
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnly
+from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnlyConfig
 from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
@@ -56,7 +55,6 @@ MARKET_SLUG = "gta-vi-released-before-june-2026"
 
 async def run_backtest(
     market_slug: str,
-    lookback_hours: int = 24,
 ) -> None:
     """
     Run a backtest using historical Polymarket data.
@@ -65,8 +63,6 @@ async def run_backtest(
     ----------
     market_slug : str
         The Polymarket market slug.
-    lookback_hours : int
-        How many hours of historical data to fetch.
 
     """
     # Create loader by market slug (automatically fetches and parses instrument)
@@ -77,30 +73,13 @@ async def run_backtest(
     print(f"Instrument ID: {instrument.id}")
     print(f"Outcome: {instrument.outcome}\n")
 
-    # Calculate time range for historical data (last N hours)
-    end = pd.Timestamp.now(tz="UTC")
-    start = end - pd.Timedelta(hours=lookback_hours)
-
-    print(f"Fetching data from {start} to {end}")
-
-    # Load historical data using convenience methods
-    print("Loading orderbook snapshots...")
-
-    deltas = await loader.load_orderbook_snapshots(
-        start=start,
-        end=end,
-    )
-    print(f"Loaded {len(deltas)} OrderBookDeltas")
-
+    # Load historical trades from the Polymarket Data API
     print("Loading trade ticks...")
-    trades = await loader.load_trades(
-        start=start,
-        end=end,
-    )
+    trades = await loader.load_trades()
     print(f"Loaded {len(trades)} TradeTicks")
 
-    if not deltas and not trades:
-        raise ValueError("No historical data available for the specified time range")
+    if not trades:
+        raise ValueError("No historical data available for the specified market")
 
     # Configure backtest engine
     config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
@@ -113,26 +92,23 @@ async def run_backtest(
         account_type=AccountType.CASH,
         base_currency=USDC_POS,
         starting_balances=[Money(10_000, USDC_POS)],
-        book_type=BookType.L2_MBP,
     )
 
-    # Add instrument
+    # Add instrument and data
     engine.add_instrument(instrument)
+    engine.add_data(trades)
 
-    # Add data
-    if deltas:
-        engine.add_data(deltas)
-    if trades:
-        engine.add_data(trades)
-
-    # Configure strategy
-    strategy_config = OrderBookImbalanceConfig(
+    # Configure strategy (tick bars aggregated from trade ticks)
+    bar_type = BarType.from_str(f"{instrument.id}-100-TICK-LAST-INTERNAL")
+    strategy_config = EMACrossLongOnlyConfig(
         instrument_id=instrument.id,
-        max_trade_size=Decimal(20),
-        min_seconds_between_triggers=1.0,
+        bar_type=bar_type,
+        trade_size=Decimal(20),
+        fast_ema_period=10,
+        slow_ema_period=20,
     )
 
-    strategy = OrderBookImbalance(config=strategy_config)
+    strategy = EMACrossLongOnly(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     print("\nStarting backtest...")
@@ -165,7 +141,6 @@ if __name__ == "__main__":
         asyncio.run(
             run_backtest(
                 market_slug=MARKET_SLUG,
-                lookback_hours=24,  # Fetch last 24 hours of data
             ),
         )
     except Exception as e:

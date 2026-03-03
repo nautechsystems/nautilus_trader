@@ -195,9 +195,7 @@ pub fn get_actor(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Actor>>> {
 /// - Panics if no actor with the specified `id` is found in the registry.
 /// - Panics if the stored actor is not of type `T`.
 ///
-/// # Safety
-///
-/// While this function is not marked `unsafe`, aliasing constraints apply:
+/// Aliasing constraints apply:
 ///
 /// - **Aliasing**: The caller should ensure no other mutable references to the same
 ///   actor exist simultaneously. The callback-based message handling pattern in this
@@ -231,10 +229,7 @@ pub fn get_actor_unchecked<T: Actor>(id: &Ustr) -> ActorRef<T> {
 ///
 /// Returns `None` if the actor is not found or the type doesn't match.
 ///
-/// # Safety
-///
-/// See [`get_actor_unchecked`] for safety requirements. The same aliasing
-/// and thread-safety constraints apply.
+/// See [`get_actor_unchecked`] for aliasing and thread-safety constraints.
 #[must_use]
 pub fn try_get_actor_unchecked<T: Actor>(id: &Ustr) -> Option<ActorRef<T>> {
     let registry = get_actor_registry();

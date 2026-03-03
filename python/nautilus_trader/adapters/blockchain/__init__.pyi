@@ -2,9 +2,10 @@
 # ruff: noqa: D401
 
 import builtins
+import typing
+
 from nautilus_trader import infrastructure
 from nautilus_trader import model
-import typing
 
 __all__ = [
     "BlockchainDataClientConfig",

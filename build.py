@@ -102,6 +102,10 @@ if IS_WINDOWS:
     RUST_LIB_PFX = ""
     RUST_STATIC_LIB_EXT = "lib"
     RUST_DYLIB_EXT = "dll"
+    # Rust target is typically x86_64-pc-windows-msvc; C deps (ring, zstd-sys, aws-Lc-sys) need MSVC's cl.exe, not cc/g++/clang.
+    # Unset CC/CXX compilers so the build uses the default MSVC toolchain.
+    os.environ.pop("CC", None)
+    os.environ.pop("CXX", None)
 elif IS_MACOS:
     RUST_LIB_PFX = "lib"
     RUST_STATIC_LIB_EXT = "a"
@@ -138,6 +142,7 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 def _set_feature_flags() -> list[str]:
     feature_list = [
+        "arrow",
         "cython-compat",
         "extension-module",
         "ffi",

@@ -26,6 +26,7 @@ use cosmrs::{
     crypto::{PublicKey, secp256k1::SigningKey},
     tx,
 };
+use nautilus_core::string::REDACTED;
 
 /// Account prefix for dYdX addresses.
 ///
@@ -55,7 +56,7 @@ pub struct Wallet {
 impl Debug for Wallet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Wallet))
-            .field("private_key_bytes", &"<redacted>")
+            .field("private_key_bytes", &REDACTED)
             .field("address", &self.address)
             .finish()
     }
@@ -156,7 +157,7 @@ impl Debug for Account {
         f.debug_struct(stringify!(Account))
             .field("address", &self.address)
             .field("account_id", &self.account_id)
-            .field("key", &"<redacted>")
+            .field("key", &REDACTED)
             .field("account_number", &self.account_number)
             .field("sequence_number", &self.sequence_number)
             .finish()

@@ -131,6 +131,7 @@ pub async fn write_batches_to_object_store(
     let mut props_builder = WriterProperties::builder()
         .set_compression(compression.unwrap_or(parquet::basic::Compression::SNAPPY))
         .set_max_row_group_size(max_row_group_size.unwrap_or(5000));
+
     if let Some(kv) = key_value_metadata {
         props_builder = props_builder.set_key_value_metadata(Some(kv));
     }
@@ -148,6 +149,56 @@ pub async fn write_batches_to_object_store(
     Ok(())
 }
 
+/// Deduplicates a slice of `RecordBatch` items, removing rows that are identical across all columns.
+///
+/// Rows are compared by encoding each row to a canonical byte sequence using Arrow's row format.
+/// Only the first occurrence of each unique row is retained; the relative order of unique rows
+/// is preserved.
+///
+/// # Errors
+///
+/// Returns an error if the row converter cannot be constructed or if the `take` kernel fails.
+fn deduplicate_record_batches(batches: &[RecordBatch]) -> anyhow::Result<Vec<RecordBatch>> {
+    if batches.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let schema = batches[0].schema();
+
+    let fields: Vec<arrow_row::SortField> = schema
+        .fields()
+        .iter()
+        .map(|f| arrow_row::SortField::new(f.data_type().clone()))
+        .collect();
+
+    let converter = arrow_row::RowConverter::new(fields)?;
+    let mut seen: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
+    let mut result: Vec<RecordBatch> = Vec::new();
+
+    for batch in batches {
+        let rows = converter.convert_columns(batch.columns())?;
+        let mut indices: Vec<u32> = Vec::new();
+
+        for (i, row) in rows.iter().enumerate() {
+            if seen.insert(row.as_ref().to_vec()) {
+                indices.push(i as u32);
+            }
+        }
+
+        if !indices.is_empty() {
+            let index_array = arrow::array::UInt32Array::from(indices);
+            let deduped_columns: Vec<arrow::array::ArrayRef> = batch
+                .columns()
+                .iter()
+                .map(|col| arrow::compute::take(col.as_ref(), &index_array, None))
+                .collect::<Result<_, _>>()?;
+            result.push(RecordBatch::try_new(schema.clone(), deduped_columns)?);
+        }
+    }
+
+    Ok(result)
+}
+
 /// Combines multiple Parquet files using object store with storage options
 ///
 /// # Errors
@@ -159,6 +210,7 @@ pub async fn combine_parquet_files(
     storage_options: Option<AHashMap<String, String>>,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
+    deduplicate: Option<bool>,
 ) -> anyhow::Result<()> {
     if file_paths.len() <= 1 {
         return Ok(());
@@ -192,6 +244,7 @@ pub async fn combine_parquet_files(
         &new_object_path,
         compression,
         max_row_group_size,
+        deduplicate,
     )
     .await
 }
@@ -207,17 +260,29 @@ pub async fn combine_parquet_files_from_object_store(
     new_file_path: &ObjectPath,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
+    deduplicate: Option<bool>,
 ) -> anyhow::Result<()> {
     if file_paths.len() <= 1 {
         return Ok(());
     }
 
     let mut all_batches: Vec<RecordBatch> = Vec::new();
+    let mut schema_with_metadata: Option<Arc<arrow::datatypes::Schema>> = None;
 
     // Read all files from object store
     for path in &file_paths {
         let data = object_store.get(path).await?.bytes().await?;
         let builder = ParquetRecordBatchReaderBuilder::try_new(data)?;
+
+        // Capture the schema from the first file's builder; it includes the Arrow
+        // schema-level metadata (e.g. bar_type, instrument_id) restored from the
+        // Parquet ARROW:schema key_value_metadata entry.  Individual RecordBatch
+        // objects returned by the reader have this metadata stripped, so we need
+        // to preserve it separately and re-apply it when writing the combined file.
+        if schema_with_metadata.is_none() {
+            schema_with_metadata = Some(builder.schema().clone());
+        }
+
         let mut reader = builder.build()?;
 
         for batch in reader.by_ref() {
@@ -225,9 +290,29 @@ pub async fn combine_parquet_files_from_object_store(
         }
     }
 
+    // Re-apply the preserved schema metadata to all collected batches so that
+    // write_batches_to_object_store (which uses batches[0].schema()) can encode
+    // the correct Arrow schema metadata into the combined output file.
+    if let Some(schema) = &schema_with_metadata {
+        all_batches = all_batches
+            .into_iter()
+            .map(|b| {
+                RecordBatch::try_new(schema.clone(), b.columns().to_vec())
+                    .expect("schema re-application failed")
+            })
+            .collect();
+    }
+
+    // Deduplicate rows if requested
+    let batches_to_write = if deduplicate.unwrap_or(false) {
+        deduplicate_record_batches(&all_batches)?
+    } else {
+        all_batches
+    };
+
     // Write combined batches to new location
     write_batches_to_object_store(
-        &all_batches,
+        &batches_to_write,
         object_store.clone(),
         new_file_path,
         compression,

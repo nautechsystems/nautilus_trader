@@ -28,16 +28,13 @@ highest level, with the aim of supporting mission-critical, trading system backt
 
 ## Feature flags
 
-This crate provides feature flags to control source code inclusion during compilation,
-depending on the intended use case, i.e. whether to provide Python bindings
-for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
-or as part of a Rust only build.
+This crate provides feature flags to control source code inclusion during compilation:
 
 - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 - `streaming`: Enables `persistence` dependency for streaming configuration.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `streaming`).
 - `defi`: Enables DeFi (Decentralized Finance) support.
-- `extension-module`: Builds the crate as a Python extension module.
+- `extension-module`: Builds as a Python extension module.
 
 ## Documentation
 
@@ -46,7 +43,6 @@ See [the docs](https://docs.rs/nautilus-live) for more detailed usage.
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
-Contributions to the project are welcome and require the completion of a standard [Contributor License Agreement (CLA)](https://github.com/nautechsystems/nautilus_trader/blob/develop/CLA.md).
 
 ---
 
@@ -54,6 +50,8 @@ NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
 For more information, visit <https://nautilustrader.io>.
 
-<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
+Use of this software is subject to the [Disclaimer](https://nautilustrader.io/legal/disclaimer/).
+
+<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="300" height="auto"/>
 
 © 2015-2026 Nautech Systems Pty Ltd. All rights reserved.

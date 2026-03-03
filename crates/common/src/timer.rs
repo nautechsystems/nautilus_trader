@@ -63,10 +63,6 @@ pub struct TimeEvent {
 
 impl TimeEvent {
     /// Creates a new [`TimeEvent`] instance.
-    ///
-    /// # Safety
-    ///
-    /// Assumes `name` is a valid string.
     #[must_use]
     pub const fn new(name: Ustr, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {

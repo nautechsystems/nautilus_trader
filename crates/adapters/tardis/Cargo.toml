@@ -36,6 +36,7 @@ python = [
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-serialization/python",
+  "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
   "replay",
@@ -52,7 +53,7 @@ nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-cryptography = { workspace = true }
 nautilus-model = { workspace = true, features = ["python"] }
-nautilus-serialization = { workspace = true }
+nautilus-serialization = { workspace = true, features = ["arrow"] }
 nautilus-system = { workspace = true }
 
 ahash = { workspace = true }

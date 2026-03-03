@@ -2,14 +2,15 @@
 
 ## Introduction
 
-This developer guide provides specifications and instructions on how to develop an integration adapter for the NautilusTrader platform.
-Adapters provide connectivity to trading venues and data providers—translating raw venue APIs into Nautilus’s unified interface and normalized domain model.
+This developer guide provides specifications for how to build an integration adapter for the NautilusTrader platform.
+
+Adapters connect to trading venues and data providers, translating their native APIs into the platform’s unified interface and normalized domain model.
 
 ## Structure of an adapter
 
 NautilusTrader adapters follow a layered architecture pattern with:
 
-- **Rust core** for networking clients and performance-critical operations.
+- **Rust core** for networking clients and performance-sensitive operations.
 - **Python layer** for integrating Rust clients into the platform's data and execution engines.
 
 ### Rust core (`crates/adapters/your_adapter/`)
@@ -93,8 +94,8 @@ nautilus_trader/adapters/your_adapter/
 
 ## Adapter implementation sequence
 
-This section outlines the recommended order for implementing an adapter. The sequence follows a dependency-driven approach where each phase builds upon the previous ones.
-Adapters use a Rust-first architecture—implement the Rust core before any Python layer.
+Follow this dependency-driven order when building an adapter. Each phase
+builds on the previous one. Implement the Rust core before any Python layer.
 
 ### Phase 1: Rust core infrastructure
 
@@ -116,7 +117,7 @@ Build the low-level networking and parsing foundation.
 
 ### Phase 2: Instrument definitions
 
-Instruments are the foundation—both data and execution clients depend on them.
+Instruments are the foundation: both data and execution clients depend on them.
 
 | Step | Component                  | Description                                                                                  |
 |------|----------------------------|----------------------------------------------------------------------------------------------|
@@ -218,6 +219,24 @@ to these defaults when unset.
 Expose typed config structs in `src/config.rs` so Python callers toggle venue-specific behaviour
 (see how OKX wires demo URLs, retries, and channel flags).
 Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
+
+All config structs (data and execution) must implement `Default`. This enables the
+`..Default::default()` pattern in examples and tests, keeping only the fields that differ
+from defaults visible:
+
+```rust
+let exec_config = VenueExecClientConfig {
+    trader_id,
+    account_id,
+    environment: VenueEnvironment::Testnet,
+    ..Default::default()
+};
+```
+
+Default values should use sensible production defaults: credentials as `None` (resolved
+from environment at runtime), mainnet URLs, standard timeouts. For `trader_id` and
+`account_id`, use placeholder values like `TraderId::from("TRADER-001")` and
+`AccountId::from("VENUE-001")`.
 
 ### Error taxonomy (`common/error.rs`)
 
@@ -348,9 +367,67 @@ pub fn create_instrument(
 Use this pattern when the same venue data structures are parsed in multiple places (HTTP responses,
 WebSocket updates, historical data).
 
+### Connection lifecycle (`connect`)
+
+Both data and execution clients follow a strict initialization order during `connect()` to prevent
+race conditions with reconciliation and strategy startup. The platform waits for all clients to
+signal connected before running reconciliation or starting strategies, so all initialization must
+complete within `connect()`.
+
+#### Data client
+
+1. **Fetch instruments via REST** - call `bootstrap_instruments()` or equivalent.
+2. **Cache locally** - populate the client's internal instrument map and HTTP client cache.
+3. **Emit to data engine** - send each instrument as `DataEvent::Instrument` via `data_sender`.
+   These events are queued during startup and processed before reconciliation runs.
+4. **Cache to WebSocket** - call `ws.cache_instruments()` so the handler can parse messages.
+5. **Connect WebSocket** - establish the streaming connection.
+
+```rust
+async fn connect(&mut self) -> anyhow::Result<()> {
+    let instruments = self.bootstrap_instruments().await?;
+    ws.cache_instruments(instruments);
+    ws.connect().await?;
+    ws.wait_until_active(10.0).await?;
+    // ...
+}
+```
+
+#### Execution client
+
+1. **Initialize instruments** - fetch via REST if not already cached. Cache to HTTP, WebSocket,
+   and broadcaster clients.
+2. **Connect WebSocket** - establish the private streaming connection.
+3. **Subscribe to channels** - orders, executions, positions, wallet/margin.
+4. **Start WebSocket stream handler** - begin processing incoming messages.
+5. **Fetch account state** - request account state via REST and emit via `emitter.send_account_state()`.
+6. **Await account registered** - poll the cache until the account is registered (30s timeout).
+   This ensures the portfolio can process orders during reconciliation.
+7. **Signal connected** - call `self.core.set_connected()`.
+
+```rust
+async fn connect(&mut self) -> anyhow::Result<()> {
+    self.ensure_instruments_initialized_async().await?;
+
+    self.ws_client.connect().await?;
+    self.ws_client.wait_until_active(10.0).await?;
+    // ... subscribe channels, start stream ...
+
+    self.refresh_account_state().await?;
+    self.await_account_registered(30.0).await?;
+
+    self.core.set_connected();
+    Ok(())
+}
+```
+
+The `await_account_registered` method polls `self.core.cache().account(&account_id)` at 10ms
+intervals until the account appears or the timeout expires.
+
 ## HTTP client patterns
 
-Adapters use a standardized two-layer HTTP client architecture to separate low-level API operations from high-level domain logic while enabling efficient cloning for Python bindings.
+Adapters use a two-layer HTTP client architecture: a raw client for low-level API operations and a domain
+client for high-level logic. The split also enables efficient cloning for Python bindings.
 
 ### Client structure
 
@@ -382,14 +459,23 @@ pub struct MyHttpClient {
 
 **Key points**:
 
-- **Raw client** (`MyRawHttpClient`) contains low-level HTTP methods named to match venue endpoints as closely as possible (e.g., `get_instruments`, `get_balance`, `place_order`). These methods take venue-specific query objects and return venue-specific response types.
-- **Domain client** (`MyHttpClient`) wraps the raw client in an `Arc` for efficient cloning (required for Python bindings). It provides high-level methods that accept Nautilus domain types (e.g., `InstrumentId`, `ClientOrderId`) and return domain objects. It may cache instruments or other venue metadata.
-- Use `nautilus_network::http::HttpClient` instead of `reqwest::Client` directly - this provides rate limiting, retry logic, and consistent error handling.
-- Both clients are exposed to Python, but the domain client is the primary interface for most use cases.
+- **Raw client** (`MyRawHttpClient`) contains low-level HTTP methods named to match venue endpoints
+  (e.g., `get_instruments`, `get_balance`, `place_order`). These methods take venue-specific query
+  objects and return venue-specific response types.
+- **Domain client** (`MyHttpClient`) wraps the raw client in an `Arc` for efficient cloning (required
+  for Python bindings). It provides high-level methods that accept Nautilus domain types
+  (e.g., `InstrumentId`, `ClientOrderId`) and return domain objects. It may also cache instruments
+  or other venue metadata.
+- Use `nautilus_network::http::HttpClient` instead of `reqwest::Client` directly for rate limiting,
+  retry logic, and consistent error handling.
+- Both clients are exposed to Python, but the domain client is the primary interface.
 
 ### Parser functions
 
-Parser functions convert venue-specific data structures into Nautilus domain objects. These belong in `common/parse.rs` for cross-cutting conversions (instruments, trades, bars) or `http/parse.rs` for REST-specific transformations. Each parser takes venue data plus context (account IDs, timestamps, instrument references) and returns a Nautilus domain type wrapped in `Result`.
+Parser functions convert venue-specific data structures into Nautilus domain objects. Place them in
+`common/parse.rs` for cross-cutting conversions (instruments, trades, bars) or `http/parse.rs` for
+REST-specific transformations. Each parser takes venue data plus context (account IDs, timestamps,
+instrument references) and returns a Nautilus domain type wrapped in `Result`.
 
 **Standard patterns:**
 
@@ -403,7 +489,8 @@ Place parsing helpers (`parse_price_with_precision`, `parse_timestamp`) in the s
 
 ### Method naming and organization
 
-The raw client contains low-level API methods that closely match venue endpoints, taking venue-specific query parameter types and returning venue response types. The domain client wraps the raw client and provides high-level methods that accept Nautilus domain types.
+The raw client mirrors venue endpoints with venue-specific parameter and response types. The domain
+client wraps it and exposes high-level methods that accept Nautilus domain types.
 
 **Naming conventions:**
 
@@ -461,9 +548,49 @@ Keep signing logic in a `Credential` struct under `common/credential.rs`:
 
 For WebSocket authentication, the handler constructs login messages using the same `Credential::sign()` method with a WebSocket-specific timestamp format.
 
+### Credential module structure
+
+Each adapter's `common/credential.rs` must provide two things:
+
+1. **`credential_env_vars()` free function**: returns environment variable names as a tuple.
+2. **`Credential::resolve()` method**: resolves credentials from config values or environment
+   variables using `resolve_env_var_pair` from `nautilus_core::env`.
+
+Config structs are DTOs and must not contain credential resolution logic. All resolution
+belongs in `credential.rs`.
+
+**Standard layout:**
+
+```rust
+use nautilus_core::env::resolve_env_var_pair;
+
+/// Returns the environment variable names for API credentials.
+pub fn credential_env_vars(is_testnet: bool) -> (&'static str, &'static str) {
+    if is_testnet {
+        ("{VENUE}_TESTNET_API_KEY", "{VENUE}_TESTNET_API_SECRET")
+    } else {
+        ("{VENUE}_API_KEY", "{VENUE}_API_SECRET")
+    }
+}
+
+impl Credential {
+    /// Resolves credentials from provided values or environment variables.
+    pub fn resolve(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        is_testnet: bool,
+    ) -> Option<Self> {
+        let (key_var, secret_var) = credential_env_vars(is_testnet);
+        let (k, s) = resolve_env_var_pair(api_key, api_secret, key_var, secret_var)?;
+        Some(Self::new(k, s))
+    }
+}
+```
+
 ### Environment variable conventions
 
-Adapters support loading API credentials from environment variables when not provided directly. This enables secure credential management without hardcoding secrets.
+Adapters load API credentials from environment variables when not provided directly, avoiding
+hardcoded secrets.
 
 **Naming conventions:**
 
@@ -476,60 +603,16 @@ Adapters support loading API credentials from environment variables when not pro
 Some venues require additional credentials:
 
 - OKX: `OKX_API_PASSPHRASE`
-- Coinbase INTX: `COINBASE_INTX_API_PASSPHRASE`, `COINBASE_INTX_PORTFOLIO_ID`
-
-**Implementation pattern:**
-
-Use `nautilus_core::env::get_or_env_var_opt` for optional credential resolution (returns `None` if missing) or `get_or_env_var` when credentials are required (returns error if missing):
-
-```rust
-use nautilus_core::env::get_or_env_var_opt;
-
-let (api_key_env, api_secret_env) = if testnet {
-    ("{VENUE}_TESTNET_API_KEY", "{VENUE}_TESTNET_API_SECRET")
-} else {
-    ("{VENUE}_API_KEY", "{VENUE}_API_SECRET")
-};
-
-let key = get_or_env_var_opt(api_key, api_key_env);
-let secret = get_or_env_var_opt(api_secret, api_secret_env);
-```
 
 **Key principles:**
 
+- Environment variable names must be centralized in `credential_env_vars()`, never
+  duplicated as string literals across files.
 - Environment variable resolution should happen in core Rust code, not Python bindings.
-- Use `get_or_env_var_opt` for optional credentials (public-only clients).
+- Use `get_or_env_var_opt` for optional credentials (returns `None` if missing).
 - Use `get_or_env_var` when credentials are required (returns error if missing).
-- Document supported environment variables in adapter README files.
-
-**Credential resolver helper:**
-
-Encapsulate environment-based credential resolution in a helper function when the logic involves
-multiple environments or fallback behavior:
-
-```rust
-use nautilus_core::env::get_or_env_var_opt;
-
-fn resolve_credential(
-    api_key: Option<&str>,
-    api_secret: Option<&str>,
-    is_testnet: bool,
-) -> Option<Credential> {
-    let (key_env, secret_env) = if is_testnet {
-        ("{VENUE}_TESTNET_API_KEY", "{VENUE}_TESTNET_API_SECRET")
-    } else {
-        ("{VENUE}_API_KEY", "{VENUE}_API_SECRET")
-    };
-
-    let key = get_or_env_var_opt(api_key, key_env)?;
-    let secret = get_or_env_var_opt(api_secret, secret_env)?;
-
-    Some(Credential::new(key, secret))
-}
-```
-
-This pattern returns `None` when credentials are unavailable, suitable for optional authentication.
-For clients that require credentials, use `get_or_env_var` which returns an error if missing.
+- Invalid credentials (e.g. malformed keys) must fail fast with an error, never silently
+  degrade to unauthenticated mode.
 
 ### Error handling and retry logic
 
@@ -574,7 +657,8 @@ self.send_with_retry(payload, Some(vec![OKX_RATE_LIMIT_KEY_ORDER.to_string()])).
 
 ## WebSocket client patterns
 
-WebSocket clients handle real-time streaming data and require careful management of connection state, authentication, subscriptions, and reconnection logic.
+WebSocket clients handle real-time streaming data. They manage connection state, authentication,
+subscriptions, and reconnection logic.
 
 ### Client structure
 
@@ -600,7 +684,9 @@ pub struct MyWebSocketClient {
 - **`ArcSwap`**: Enables atomic pointer replacement via `.store()` without replacing the outer Arc.
 - **Inner `Arc<AtomicU8>`**: The actual connection state from `WebSocketClient::connection_mode_atomic()`.
 
-Initialize with a placeholder atomic (`ConnectionMode::Closed`), then in `connect()` call `.store(client.connection_mode_atomic())` to atomically swap to the underlying client's state. All clones see updates instantly through lock-free `.load()` calls in `is_active()`.
+Initialize with a placeholder atomic (`ConnectionMode::Closed`), then in `connect()` call
+`.store(client.connection_mode_atomic())` to atomically swap to the real client's state.
+All clones see updates instantly through lock-free `.load()` calls in `is_active()`.
 
 The underlying `WebSocketClient` sends a `RECONNECTED` sentinel message when reconnection completes, triggering resubscription logic in the handler.
 
@@ -659,7 +745,11 @@ Authentication state is managed through events:
 - Client receives event → updates local auth state → proceeds with subscriptions.
 - `AuthTracker` may be shared via `Arc` for state queries, but handler returns events directly (no blocking).
 
-**Note**: The `Authenticated` message is consumed in the client's spawn loop for reconnection flow coordination and is not forwarded to downstream consumers (data/execution clients). Downstream consumers can query authentication state via `AuthTracker` if needed. The execution client's `Authenticated` handler only logs at debug level with no critical logic depending on this event.
+**Note**: The `Authenticated` message is consumed in the client's spawn loop for reconnection
+flow coordination and is not forwarded to downstream consumers (data/execution clients).
+Downstream consumers can query authentication state via `AuthTracker` if needed. The execution
+client's `Authenticated` handler only logs at debug level with no important logic depending
+on this event.
 
 ### Subscription management
 
@@ -779,7 +869,9 @@ WebSocket clients that cache instruments use a **dual-tier pattern** for perform
 - `HandlerCommand::InitializeInstruments(Vec<InstrumentAny>)` replays cache on connect.
 - `HandlerCommand::UpdateInstrument(InstrumentAny)` syncs individual updates post-connection.
 
-**Critical implementation detail:** When `cache_instrument()` is called after connection, it must send an `UpdateInstrument` command to the inner handler. Otherwise, instruments added dynamically (e.g., from WebSocket updates) won't be available for parsing market data.
+**Important:** When `cache_instrument()` is called after connection, it must send an
+`UpdateInstrument` command to the inner handler. Otherwise, instruments added dynamically
+(e.g., from WebSocket updates) won't be available for parsing market data.
 
 ### Handler configuration constants
 
@@ -801,11 +893,14 @@ Define two message enums for the transformation pipeline:
 
 2. **`NautilusWsMessage`**: Normalized domain messages emitted to the client (data, deltas, order events, errors, `Reconnected`, `Authenticated`). Include a `Raw(serde_json::Value)` variant for unhandled channels during development.
 
-The handler parses incoming JSON into `{Venue}WsMessage`, transforms to `NautilusWsMessage`, and sends via `out_tx`. The client receives from `out_rx` and routes to data/execution callbacks.
+The handler parses incoming JSON into `{Venue}WsMessage`, transforms it to `NautilusWsMessage`,
+and sends via `out_tx`. The client receives from `out_rx` and routes to data/execution callbacks.
 
 #### Message type naming convention
 
-Types prefixed with `Nautilus` contain only Nautilus domain types (normalized data ready for the trading system). Types prefixed with the venue name (e.g., `Binance`, `Deribit`) contain raw exchange-specific types that require further processing.
+Types prefixed with `Nautilus` contain only Nautilus domain types (normalized data ready for the
+trading system). Types prefixed with the venue name (e.g., `Binance`, `Deribit`) contain raw
+exchange-specific types that require further processing.
 
 **Top-level output enum:**
 
@@ -941,11 +1036,14 @@ let handler = FeedHandler::new(
 );
 ```
 
-Channel names reflect the data transformation stage, not the destination. Use `raw_*` only for raw WebSocket frames (`Message`), `msg_*` for venue-specific message types, and `out_*` for Nautilus domain messages.
+Channel names reflect the data transformation stage, not the destination. Use `raw_*` only for raw
+WebSocket frames (`Message`), `msg_*` for venue-specific message types, and `out_*` for Nautilus
+domain messages.
 
 ### Backpressure strategy
 
-WebSocket channels on latency-critical paths are intentionally **unbounded**. The platform is latency-first and prefers an explicit crash (OOM) over delaying or dropping data under pressure.
+WebSocket channels on latency-sensitive paths are intentionally **unbounded**. The platform
+prioritizes latency and prefers an explicit crash (OOM) over delaying or dropping data.
 
 :::note
 Do not add bounded channels, buffering limits, or backpressure unless the latency requirement changes.
@@ -994,7 +1092,9 @@ pub struct FeedHandler {
 }
 ```
 
-The handler exclusively owns `WebSocketClient` without locks. The client sends commands via `cmd_tx` (wrapped in `RwLock` to allow reconnection channel replacement) and receives events via `out_rx`. Use a `send_cmd()` helper to standardize command sending.
+The handler exclusively owns `WebSocketClient` without locks. The client sends commands via
+`cmd_tx` (wrapped in `RwLock` to allow reconnection channel replacement) and receives events
+via `out_rx`. Use a `send_cmd()` helper to standardize command sending.
 
 #### Type naming: `{Venue}Ws{TypeSuffix}`
 
@@ -1022,7 +1122,8 @@ pub struct HyperliquidWsRequest { ... }
 
 **Tokio channel qualification:**
 
-Always fully qualify tokio channel types as `tokio::sync::mpsc::` to avoid ambiguity with similarly-named types from other crates. Never import `mpsc` directly at module level.
+Always fully qualify tokio channel types as `tokio::sync::mpsc::` to avoid ambiguity with
+similarly-named types from other crates. Never import `mpsc` directly at module level.
 
 ```rust
 // Correct
@@ -1082,10 +1183,10 @@ crates/adapters/your_adapter/
 
 | File                 | Purpose                                                                                                                   |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------|
-| `tests/data_client.rs` | Integration tests for the data client—validates data subscriptions, historical data requests, and market data parsing.    |
-| `tests/exec_client.rs` | Integration tests for the execution client—validates order submission, modification, cancellation, and execution reports. |
-| `tests/http.rs`      | Low-level HTTP client tests—validates request signing, error handling, and response parsing against mock Axum servers.    |
-| `tests/websocket.rs` | WebSocket client tests—validates connection lifecycle, authentication, subscriptions, and message routing.                |
+| `tests/data_client.rs` | Integration tests for the data client. Validates data subscriptions, historical data requests, and market data parsing.    |
+| `tests/exec_client.rs` | Integration tests for the execution client. Validates order submission, modification, cancellation, and execution reports. |
+| `tests/http.rs`      | Low-level HTTP client tests. Validates request signing, error handling, and response parsing against mock Axum servers.    |
+| `tests/websocket.rs` | WebSocket client tests. Validates connection lifecycle, authentication, subscriptions, and message routing.                |
 
 **Guidelines:**
 
@@ -1127,11 +1228,12 @@ Integration tests belong in the `tests/` directory and exercise the public API a
 - Execution client order submission, modification, and cancellation flows.
 - Error handling and retry behavior with simulated failures.
 
-At a minimum, review existing adapter test suites for reference patterns and ensure every adapter proves the same core behaviours.
+At a minimum, review existing adapter test suites for reference patterns and verify every adapter
+proves the same core behaviours.
 
 ##### HTTP client integration coverage
 
-- **Happy paths** – fetch a representative public resource (e.g., instruments or mark price) and ensure the
+- **Happy paths** – fetch a representative public resource (e.g., instruments or mark price) and verify the
   response is converted into Nautilus domain models.
 - **Credential guard** – call a private endpoint without credentials and assert a structured error; repeat with
   credentials to prove success.
@@ -1148,7 +1250,7 @@ At a minimum, review existing adapter test suites for reference patterns and ens
 - **Ping/Pong** – prove both text-based and control-frame pings trigger immediate pong responses.
 - **Subscription lifecycle** – assert subscription requests/acks are emitted for public and private channels, and that
   unsubscribe calls remove entries from the cached subscription sets.
-- **Reconnect behaviour** – simulate a disconnect and ensure the client re-authenticates, restores public channels,
+- **Reconnect behaviour** – simulate a disconnect and verify the client re-authenticates, restores public channels,
   and skips private channels that were explicitly unsubscribed pre-disconnect.
 - **Message routing** – feed representative data/ack/error payloads through the socket and assert they arrive on the
   public stream as the correct `NautilusWsMessage` variant.
@@ -1157,8 +1259,10 @@ At a minimum, review existing adapter test suites for reference patterns and ens
 
 **CI robustness:**
 
-- Never use bare `tokio::time::sleep()` with arbitrary durations—tests become flaky under CI load and slower than necessary.
-- Use the `wait_until_async` test helper to poll for conditions with timeout. This makes tests both faster (returns immediately when condition is met) and more robust (explicit timeout instead of hoping a sleep duration is long enough).
+- Never use bare `tokio::time::sleep()` with arbitrary durations. Tests become flaky under CI load and slower than necessary.
+- Use the `wait_until_async` test helper to poll for conditions with timeout. Tests return
+  immediately when the condition is met and fail deterministically on timeout rather than
+  relying on arbitrary sleep durations.
 - Prefer event-driven assertions with shared state (for example, collect `subscription_events`, track pending/confirmed topics, wait for `connection_count` transitions).
 - Use adapter-specific helpers to gate on explicit signals such as "auth confirmed" or "reconnection finished" so suites remain deterministic under load.
 
@@ -1222,10 +1326,10 @@ tests/integration_tests/adapters/your_adapter/
 
 | File                | Purpose                                                                                                            |
 |---------------------|--------------------------------------------------------------------------------------------------------------------|
-| `test_data.py`      | Tests for `LiveDataClient` and `LiveMarketDataClient`—validates subscriptions, data parsing, and message handling. |
-| `test_execution.py` | Tests for `LiveExecutionClient`—validates order submission, modification, cancellation, and execution reports.     |
-| `test_providers.py` | Tests for `InstrumentProvider`—validates instrument loading, filtering, and caching behavior.                      |
-| `test_factories.py` | Tests for factory functions—validates client instantiation and configuration wiring.                               |
+| `test_data.py`      | Tests for `LiveDataClient` and `LiveMarketDataClient`. Validates subscriptions, data parsing, and message handling. |
+| `test_execution.py` | Tests for `LiveExecutionClient`. Validates order submission, modification, cancellation, and execution reports.     |
+| `test_providers.py` | Tests for `InstrumentProvider`. Validates instrument loading, filtering, and caching behavior.                      |
+| `test_factories.py` | Tests for factory functions. Validates client instantiation and configuration wiring.                               |
 
 **Guidelines:**
 
@@ -1237,8 +1341,8 @@ tests/integration_tests/adapters/your_adapter/
 
 ## Documentation
 
-All adapter documentation—module-level docs, doc comments, and inline comments—should follow the [Documentation Style Guide](docs.md).
-Consistent documentation helps maintainers and users understand adapter behavior without reading implementation details.
+All adapter documentation (module-level docs, doc comments, and inline comments) should follow the
+[Documentation Style Guide](docs.md).
 
 ### Rust documentation requirements
 
@@ -1246,9 +1350,9 @@ Every Rust module, struct, and public method must have documentation comments.
 Use third-person declarative voice (e.g., "Returns the account ID" not "Return the account ID").
 
 - **Modules**: Use `//!` doc comments at the top of each file (after the license header) to describe the module's purpose.
-- **Structs**: Use `///` doc comments above struct definitions. Keep descriptions concise—one sentence is often sufficient.
+- **Structs**: Use `///` doc comments above struct definitions. Keep descriptions concise; one sentence is often sufficient.
 - **Public methods**: Every `pub fn` and `pub async fn` must have a `///` doc comment describing what the method does.
-  Do not document individual parameters in a separate `# Arguments` section—the type signatures and names should be self-explanatory.
+  Do not document individual parameters in a separate `# Arguments` section. The type signatures and names should be self-explanatory.
   Parameters may be mentioned in the description when behavior is complex or non-obvious.
 
 **What NOT to document**:
@@ -1256,13 +1360,13 @@ Use third-person declarative voice (e.g., "Returns the account ID" not "Return t
 - Private methods and fields (unless complex logic warrants it).
 - Individual parameters/arguments (use descriptive names instead).
 - Implementation details that are obvious from the code.
-- Files in the `python/` module (PyO3 bindings)—documentation conventions are TBD (*may* use numpydoc specification).
+- Files in the `python/` module (PyO3 bindings). Documentation conventions are TBD (*may* use numpydoc specification).
 
 ---
 
 ## Python adapter layer
 
-Below is a step-by-step guide to building an adapter for a new data provider using the provided template.
+Step-by-step guide to building the Python layer of an adapter using the provided template.
 
 ### Method ordering convention
 
@@ -1273,14 +1377,12 @@ When implementing adapter classes, group methods by category in this order:
 3. **Unsubscribe handlers**: `_unsubscribe`, `_unsubscribe_*`
 4. **Request handlers**: `_request`, `_request_*`
 
-This convention improves readability by keeping related functionality together rather than
-interleaving subscribe/unsubscribe pairs.
+This keeps related functionality together rather than interleaving subscribe/unsubscribe pairs.
 
 ### InstrumentProvider
 
-The `InstrumentProvider` supplies instrument definitions available on the venue. This
-includes loading all available instruments, specific instruments by ID, and applying filters to the
-instrument list.
+The `InstrumentProvider` loads instrument definitions from the venue: all instruments, specific
+instruments by ID, or a filtered subset.
 
 ```python
 from nautilus_trader.common.providers import InstrumentProvider
@@ -1308,9 +1410,8 @@ class TemplateInstrumentProvider(InstrumentProvider):
 
 ### DataClient
 
-The `LiveDataClient` handles the subscription and management of data feeds that are not specifically
-related to market data. This might include news feeds, custom data streams, or other data sources
-that enhance trading strategies but do not directly represent market activity.
+The `LiveDataClient` handles data feeds that are not market data: news feeds, custom data streams,
+or other non-market sources.
 
 ```python
 from nautilus_trader.data.messages import RequestData
@@ -1349,9 +1450,8 @@ class TemplateLiveDataClient(LiveDataClient):
 
 ### MarketDataClient
 
-The `MarketDataClient` handles market-specific data such as order books, top-of-book quotes and trades,
-and instrument status updates. It focuses on providing historical and real-time market data that is essential for
-trading operations.
+The `MarketDataClient` handles market-specific data: order books, top-of-book quotes and trades,
+instrument status updates, and historical data requests.
 
 ```python
 from nautilus_trader.data.messages import RequestBars
@@ -1602,15 +1702,14 @@ last_add_delta = OrderBookDelta(
 ```
 
 :::warning
-A missing `F_LAST` is a silent bug — no error is raised, but subscribers
+A missing `F_LAST` is a silent bug: no error is raised, but subscribers
 never receive the data when buffering is enabled.
 :::
 
 ### ExecutionClient
 
-The `ExecutionClient` is responsible for order management, including submission, modification, and
-cancellation of orders. It is a crucial component of the adapter that interacts with the venue
-trading system to manage and execute trades.
+The `ExecutionClient` manages order submission, modification, and cancellation against the venue
+trading system.
 
 ```python
 from nautilus_trader.execution.messages import BatchCancelOrders
@@ -1706,9 +1805,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
 ### Configuration
 
-The configuration file defines settings specific to the adapter, such as API keys and connection
-details. These settings are essential for initializing and managing the adapter’s connection to the
-data provider.
+Configuration classes hold adapter-specific settings like API keys and connection details.
 
 ```python
 from nautilus_trader.config import LiveDataClientConfig
@@ -1739,11 +1836,12 @@ class TemplateExecClientConfig(LiveExecClientConfig):
 
 ## Common test scenarios
 
-Exercise adapters across every venue behaviour they claim to support. Incorporate these scenarios into the Rust and Python suites.
+Exercise adapters across every venue behaviour they claim to support. Incorporate these scenarios
+into the Rust and Python suites.
 
 ### Product coverage
 
-Ensure each supported product family is tested.
+Test each supported product family.
 
 - Spot instruments
 - Derivatives (perpetuals, futures, swaps)
@@ -1757,2460 +1855,18 @@ Ensure each supported product family is tested.
 
 ### State management
 
-- Start sessions with existing open orders to ensure the adapter reconciles state on connect before issuing new commands.
+- Start sessions with existing open orders to verify the adapter reconciles state on connect before
+  issuing new commands.
 - Seed preloaded positions and confirm position snapshots, valuation, and PnL agree with the venue prior to trading.
 
 ---
 
-## Data Testing Spec
+## Data testing spec
 
-This section defines a rigorous test matrix for validating adapter data
-functionality using the `DataTester` actor. Both Python
-(`nautilus_trader.test_kit.strategies.tester_data`) and Rust
-(`nautilus_testkit::testers`) provide the `DataTester`. Each test case is
-identified by a prefixed ID (e.g. TC-D01) and grouped by functionality.
-
-Each adapter must pass the subset of tests matching its supported data types.
-Test groups are ordered from least derived to most derived data: instruments
-and raw book data first, then quotes, trades, bars, and derivatives data.
-An adapter that passes groups 1–4 is considered baseline data compliant.
-
-Document adapter-specific data behavior (custom channels, throttling,
-snapshot semantics, etc.) in the adapter's own guide, not here.
-
-### Prerequisites
-
-Before running data tests:
-
-- Sandbox/testnet account with valid API credentials.
-- Target instrument available and loadable via the instrument provider.
-- Environment variables set: `{VENUE}_API_KEY`, `{VENUE}_API_SECRET` (or sandbox variants).
-
-**Python node setup** (reference: `examples/live/{adapter}/{adapter}_data_tester.py`):
-
-```python
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.test_kit.strategies.tester_data import DataTester, DataTesterConfig
-
-node = TradingNode(config=config_node)
-tester = DataTester(config=config_tester)
-node.trader.add_actor(tester)
-# Register adapter factories, build, and run
-```
-
-**Rust node setup** (reference: `crates/adapters/{adapter}/examples/node_data_tester.rs`):
-
-```rust
-use nautilus_testkit::testers::{DataTester, DataTesterConfig};
-
-let tester_config = DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_quotes(true);
-let tester = DataTester::new(tester_config);
-node.add_actor(tester)?;
-node.run().await?;
-```
-
-### Test groups
-
-Each group begins with a summary table, followed by detailed test cards.
-Test IDs use spaced numbering to allow insertion without renumbering.
+See the full [Data Testing Spec](spec_data_testing.md) for the `DataTester` test matrix.
 
 ---
 
-### Group 1: Instruments
+## Execution testing spec
 
-Verify instrument loading and subscription before testing market data streams.
-
-| TC      | Name                        | Description                                          | Skip when            |
-|---------|-----------------------------|------------------------------------------------------|----------------------|
-| TC-D01  | Request instruments         | Load all instruments for a venue.                    | Never.               |
-| TC-D02  | Subscribe instrument        | Subscribe to instrument updates.                     | No instrument sub.   |
-| TC-D03  | Load specific instrument    | Load a single instrument by ID.                      | Never.               |
-
-#### TC-D01: Request instruments
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected.                                                     |
-| **Action**         | DataTester requests all instruments for the venue on start.            |
-| **Event sequence** | `on_instruments` callback receives instrument list.                    |
-| **Pass criteria**  | At least one instrument received; each has valid symbol, price precision, and size increment. |
-| **Skip when**      | Never.                                                                 |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    request_instruments=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_request_instruments(true)
-```
-
-#### TC-D02: Subscribe instrument
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester subscribes to instrument updates.                           |
-| **Event sequence** | `on_instrument` callback receives instrument.                          |
-| **Pass criteria**  | Instrument received with correct `instrument_id`, valid fields.        |
-| **Skip when**      | Adapter does not support instrument subscriptions.                     |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_instrument=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_instrument(true)
-```
-
-#### TC-D03: Load specific instrument
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected.                                                     |
-| **Action**         | Load a specific instrument by `InstrumentId` via the instrument provider. |
-| **Event sequence** | Instrument available in cache after load.                              |
-| **Pass criteria**  | Instrument loaded with correct ID, price precision, size increment, and trading rules. |
-| **Skip when**      | Never.                                                                 |
-
-**Considerations:**
-
-- This tests the instrument provider's `load` / `load_async` method directly.
-- Verify the instrument is cached and available via `self.cache.instrument(instrument_id)`.
-
----
-
-### Group 2: Order book
-
-Test order book subscription modes and snapshot requests.
-
-| TC      | Name                           | Description                                        | Skip when              |
-|---------|--------------------------------|----------------------------------------------------|------------------------|
-| TC-D10  | Subscribe book deltas          | Stream `OrderBookDeltas` updates.                  | No book support.       |
-| TC-D11  | Subscribe book at interval     | Periodic `OrderBook` snapshots.                    | No book support.       |
-| TC-D12  | Subscribe book depth           | `OrderBookDepth10` snapshots.                      | No book depth.         |
-| TC-D13  | Request book snapshot          | One-time book snapshot request.                    | No book snapshot.      |
-| TC-D14  | Managed book from deltas       | Build local book from delta stream.                | No book support.       |
-| TC-D15  | Request historical book deltas | Historical book deltas request.                    | No historical deltas.  |
-
-#### TC-D10: Subscribe book deltas
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester subscribes to order book deltas.                            |
-| **Event sequence** | `OrderBookDeltas` events received in `on_order_book_deltas`.           |
-| **Pass criteria**  | Deltas received with valid instrument ID; at least one delta contains bid/ask updates. |
-| **Skip when**      | Adapter does not support order book data.                              |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_book_deltas=True,
-    book_type=BookType.L2_MBP,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_book_deltas(true)
-    .with_book_type(BookType::L2_MBP)
-```
-
-#### TC-D11: Subscribe book at interval
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester subscribes to periodic order book snapshots.                |
-| **Event sequence** | `OrderBook` events received in `on_order_book` at configured interval. |
-| **Pass criteria**  | Book snapshots received with bid/ask levels; updates arrive at approximately the configured interval. |
-| **Skip when**      | Adapter does not support order book data.                              |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_book_at_interval=True,
-    book_type=BookType.L2_MBP,
-    book_depth=10,
-    book_interval_ms=1000,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_book_at_interval(true)
-    .with_book_type(BookType::L2_MBP)
-    .with_book_depth(Some(NonZeroUsize::new(10).unwrap()))
-    .with_book_interval_ms(NonZeroUsize::new(1000).unwrap())
-```
-
-#### TC-D12: Subscribe book depth
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester subscribes to `OrderBookDepth10` snapshots.                 |
-| **Event sequence** | `OrderBookDepth10` events received in `on_order_book_depth`.           |
-| **Pass criteria**  | Depth snapshots received with up to 10 bid/ask levels; prices are correctly ordered. |
-| **Skip when**      | Adapter does not support book depth subscriptions.                     |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_book_depth=True,
-    book_type=BookType.L2_MBP,
-    book_depth=10,
-)
-```
-
-**Rust config:** Not yet supported — book depth subscription is TODO in the Rust `DataTester`.
-
-#### TC-D13: Request book snapshot
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester requests a one-time order book snapshot.                    |
-| **Event sequence** | Book snapshot received via historical data callback.                   |
-| **Pass criteria**  | Snapshot contains bid/ask levels with valid prices and sizes.          |
-| **Skip when**      | Adapter does not support book snapshot requests.                       |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    request_book_snapshot=True,
-    book_depth=10,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_request_book_snapshot(true)
-    .with_book_depth(Some(NonZeroUsize::new(10).unwrap()))
-```
-
-#### TC-D14: Managed book from deltas
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, book deltas streaming.           |
-| **Action**         | DataTester subscribes to deltas with `manage_book=True`; builds local order book from the delta stream. |
-| **Event sequence** | `OrderBookDeltas` applied to local `OrderBook`; book logged with configured depth. |
-| **Pass criteria**  | Local book builds correctly from deltas; bid levels descend, ask levels ascend; book is not empty after initial snapshot. |
-| **Skip when**      | Adapter does not support order book data.                              |
-
-**Considerations:**
-
-- The managed book applies each delta to an `OrderBook` instance maintained by the actor.
-- Use `book_levels_to_print` to control logging verbosity.
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_book_deltas=True,
-    manage_book=True,
-    book_type=BookType.L2_MBP,
-    book_levels_to_print=10,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_book_deltas(true)
-    .with_manage_book(true)
-    .with_book_type(BookType::L2_MBP)
-```
-
-#### TC-D15: Request historical book deltas
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester requests historical order book deltas.                      |
-| **Event sequence** | Historical deltas received via callback.                               |
-| **Pass criteria**  | Deltas received with valid timestamps and book actions.                |
-| **Skip when**      | Adapter does not support historical book delta requests.               |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    request_book_deltas=True,
-)
-```
-
-**Rust config:** Not yet supported — historical book delta requests are TODO in the Rust `DataTester`.
-
----
-
-### Group 3: Quotes
-
-Test quote tick subscriptions and historical requests.
-
-| TC      | Name                      | Description                                     | Skip when              |
-|---------|---------------------------|-------------------------------------------------|------------------------|
-| TC-D20  | Subscribe quotes          | Verify `QuoteTick` events flow after start.     | Never.                 |
-| TC-D21  | Request historical quotes | Request historical quote ticks.                 | No historical quotes.  |
-
-#### TC-D20: Subscribe quotes
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester subscribes to quotes on start.                              |
-| **Event sequence** | `QuoteTick` events received in `on_quote_tick`.                        |
-| **Pass criteria**  | At least one `QuoteTick` received with valid bid/ask prices and sizes; bid < ask. |
-| **Skip when**      | Never.                                                                 |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_quotes=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_quotes(true)
-```
-
-#### TC-D21: Request historical quotes
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester requests historical quote ticks.                            |
-| **Event sequence** | Historical quotes received via `on_historical_data` callback.          |
-| **Pass criteria**  | Quotes received with valid timestamps, bid/ask prices and sizes.       |
-| **Skip when**      | Adapter does not support historical quote requests.                    |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    request_quotes=True,
-    requests_start_delta=pd.Timedelta(hours=1),
-)
-```
-
----
-
-### Group 4: Trades
-
-Test trade tick subscriptions and historical requests.
-
-| TC     | Name                      | Description                                     | Skip when              |
-|--------|---------------------------|-------------------------------------------------|------------------------|
-| TC-D30 | Subscribe trades          | Verify `TradeTick` events flow after start.     | Never.                 |
-| TC-D31 | Request historical trades | Request historical trade ticks.                 | No historical trades.  |
-
-#### TC-D30: Subscribe trades
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester subscribes to trades on start.                              |
-| **Event sequence** | `TradeTick` events received in `on_trade_tick`.                        |
-| **Pass criteria**  | At least one `TradeTick` received with valid price, size, and aggressor side. |
-| **Skip when**      | Never.                                                                 |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_trades=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_trades(true)
-```
-
-#### TC-D31: Request historical trades
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester requests historical trade ticks.                            |
-| **Event sequence** | Historical trades received via `on_historical_data` callback.          |
-| **Pass criteria**  | Trades received with valid timestamps, prices, sizes, and trade IDs.   |
-| **Skip when**      | Adapter does not support historical trade requests.                    |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    request_trades=True,
-    requests_start_delta=pd.Timedelta(hours=1),
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_request_trades(true)
-```
-
----
-
-### Group 5: Bars
-
-Test bar subscriptions and historical requests.
-
-| TC      | Name                    | Description                                       | Skip when           |
-|---------|-------------------------|---------------------------------------------------|---------------------|
-| TC-D40  | Subscribe bars          | Verify `Bar` events flow after start.             | No bar support.     |
-| TC-D41  | Request historical bars | Request historical OHLCV bars.                    | No historical bars. |
-
-#### TC-D40: Subscribe bars
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, bar type configured.             |
-| **Action**         | DataTester subscribes to bars for a configured `BarType`.              |
-| **Event sequence** | `Bar` events received in `on_bar`.                                     |
-| **Pass criteria**  | At least one `Bar` received with valid OHLCV values; high >= low, high >= open, high >= close. |
-| **Skip when**      | Adapter does not support bar subscriptions.                            |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    bar_types=[BarType.from_str("BTCUSDT-PERP.VENUE-1-MINUTE-LAST-EXTERNAL")],
-    subscribe_bars=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_bar_types(vec![bar_type])
-    .with_subscribe_bars(true)
-```
-
-#### TC-D41: Request historical bars
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, bar type configured.             |
-| **Action**         | DataTester requests historical bars for a configured `BarType`.        |
-| **Event sequence** | Historical bars received via callback.                                 |
-| **Pass criteria**  | Bars received with valid OHLCV values and ascending timestamps.        |
-| **Skip when**      | Adapter does not support historical bar requests.                      |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    bar_types=[BarType.from_str("BTCUSDT-PERP.VENUE-1-MINUTE-LAST-EXTERNAL")],
-    request_bars=True,
-    requests_start_delta=pd.Timedelta(hours=1),
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_bar_types(vec![bar_type])
-    .with_request_bars(true)
-```
-
----
-
-### Group 6: Derivatives data
-
-Test derivatives-specific data streams: mark prices, index prices, and funding rates.
-
-| TC     | Name                             | Description                                 | Skip when             |
-|--------|----------------------------------|---------------------------------------------|-----------------------|
-| TC-D50 | Subscribe mark prices            | `MarkPriceUpdate` events.                   | Not a derivative.     |
-| TC-D51 | Subscribe index prices           | `IndexPriceUpdate` events.                  | Not a derivative.     |
-| TC-D52 | Subscribe funding rates          | `FundingRateUpdate` events.                 | Not a perpetual.      |
-| TC-D53 | Request historical funding rates | Historical funding rate data.               | Not a perpetual.      |
-
-#### TC-D50: Subscribe mark prices
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, derivative instrument loaded.                       |
-| **Action**         | DataTester subscribes to mark price updates.                           |
-| **Event sequence** | `MarkPriceUpdate` events received in `on_mark_price`.                  |
-| **Pass criteria**  | At least one `MarkPriceUpdate` received with valid instrument ID and mark price. |
-| **Skip when**      | Instrument is not a derivative, or adapter does not provide mark prices. |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_mark_prices=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_mark_prices(true)
-```
-
-#### TC-D51: Subscribe index prices
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, derivative instrument loaded.                       |
-| **Action**         | DataTester subscribes to index price updates.                          |
-| **Event sequence** | `IndexPriceUpdate` events received in `on_index_price`.                |
-| **Pass criteria**  | At least one `IndexPriceUpdate` received with valid instrument ID and index price. |
-| **Skip when**      | Instrument is not a derivative, or adapter does not provide index prices. |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_index_prices=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_index_prices(true)
-```
-
-#### TC-D52: Subscribe funding rates
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, perpetual instrument loaded.                        |
-| **Action**         | DataTester subscribes to funding rate updates.                         |
-| **Event sequence** | `FundingRateUpdate` events received in `on_funding_rate`.              |
-| **Pass criteria**  | At least one `FundingRateUpdate` received with valid instrument ID and rate. |
-| **Skip when**      | Instrument is not a perpetual, or adapter does not provide funding rates. |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_funding_rates=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_funding_rates(true)
-```
-
-#### TC-D53: Request historical funding rates
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, perpetual instrument loaded.                        |
-| **Action**         | DataTester requests historical funding rates (default 7-day lookback). |
-| **Event sequence** | Historical funding rates received via callback.                        |
-| **Pass criteria**  | Funding rates received with valid timestamps and rate values.          |
-| **Skip when**      | Instrument is not a perpetual, or adapter does not support historical funding rate requests. |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    request_funding_rates=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_request_funding_rates(true)
-```
-
----
-
-### Group 7: Instrument status
-
-Test instrument status and close event subscriptions.
-
-| TC     | Name                        | Description                                    | Skip when             |
-|--------|-----------------------------|------------------------------------------------|-----------------------|
-| TC-D60 | Subscribe instrument status | `InstrumentStatus` events.                     | No status support.    |
-| TC-D61 | Subscribe instrument close  | `InstrumentClose` events.                      | No close support.     |
-
-#### TC-D60: Subscribe instrument status
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester subscribes to instrument status updates.                    |
-| **Event sequence** | `InstrumentStatus` events received in `on_instrument_status`.          |
-| **Pass criteria**  | Status events received with valid `MarketStatusAction` (e.g. `Trading`). |
-| **Skip when**      | Adapter does not support instrument status subscriptions.              |
-
-**Considerations:**
-
-- Status events may only fire on state changes (e.g. trading halt → resume).
-- During normal trading hours, a `Trading` status may be received on subscribe.
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_instrument_status=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_instrument_status(true)
-```
-
-#### TC-D61: Subscribe instrument close
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester subscribes to instrument close events.                      |
-| **Event sequence** | `InstrumentClose` events received in `on_instrument_close`.            |
-| **Pass criteria**  | Close event received with valid close price and close type.            |
-| **Skip when**      | Adapter does not support instrument close subscriptions.               |
-
-**Considerations:**
-
-- Close events typically fire at end-of-session for traditional markets.
-- May not fire for 24/7 crypto venues unless the adapter synthesizes a daily close.
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_instrument_close=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_instrument_close(true)
-```
-
----
-
-### Group 8: Lifecycle
-
-Test actor lifecycle behavior: unsubscribe handling and custom parameters.
-
-| TC     | Name                    | Description                                        | Skip when            |
-|--------|-------------------------|----------------------------------------------------|----------------------|
-| TC-D70 | Unsubscribe on stop     | Unsubscribe from data feeds on actor stop.         | No unsub support.    |
-| TC-D71 | Custom subscribe params | Adapter-specific subscription parameters.          | N/A.                 |
-| TC-D72 | Custom request params   | Adapter-specific request parameters.               | N/A.                 |
-
-#### TC-D70: Unsubscribe on stop
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Active data subscriptions (quotes, trades, book).                      |
-| **Action**         | Stop the actor with `can_unsubscribe=True` (default).                  |
-| **Event sequence** | Data subscriptions removed; no further data events received.           |
-| **Pass criteria**  | Clean unsubscribe; no errors in logs; no data events after stop.       |
-| **Skip when**      | Adapter does not support unsubscribe.                                  |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    subscribe_quotes=True,
-    subscribe_trades=True,
-    can_unsubscribe=True,
-)
-```
-
-**Rust config:**
-
-```rust
-DataTesterConfig::new(client_id, vec![instrument_id])
-    .with_subscribe_quotes(true)
-    .with_subscribe_trades(true)
-    .with_can_unsubscribe(true)
-```
-
-#### TC-D71: Custom subscribe params
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, adapter accepts additional subscription parameters. |
-| **Action**         | Subscribe with `subscribe_params` dict containing adapter-specific parameters. |
-| **Event sequence** | Subscription established with custom parameters applied.               |
-| **Pass criteria**  | Data flows with adapter-specific parameters in effect.                 |
-| **Skip when**      | N/A (adapter-specific).                                                |
-
-**Considerations:**
-
-- The `subscribe_params` dict is opaque to the DataTester and passed through to the adapter.
-- Consult the adapter's guide for supported parameters.
-
-#### TC-D72: Custom request params
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, adapter accepts additional request parameters.      |
-| **Action**         | Request data with `request_params` dict containing adapter-specific parameters. |
-| **Event sequence** | Request fulfilled with custom parameters applied.                      |
-| **Pass criteria**  | Historical data received with adapter-specific parameters in effect.   |
-| **Skip when**      | N/A (adapter-specific).                                                |
-
-**Considerations:**
-
-- The `request_params` dict is opaque to the DataTester and passed through to the adapter.
-- Consult the adapter's guide for supported parameters.
-
----
-
-### DataTester configuration reference
-
-Quick reference for all `DataTesterConfig` parameters. Defaults shown are for the Python config. Note: Rust `DataTesterConfig::new` sets `manage_book=true`, while Python defaults it to `False`.
-
-| Parameter                    | Type              | Default         | Affects groups |
-|------------------------------|-------------------|-----------------|----------------|
-| `instrument_ids`             | list[InstrumentId]| *required*      | All            |
-| `client_id`                  | ClientId?         | None            | All            |
-| `bar_types`                  | list[BarType]?    | None            | 5              |
-| `subscribe_book_deltas`      | bool              | False           | 2              |
-| `subscribe_book_depth`       | bool              | False           | 2              |
-| `subscribe_book_at_interval` | bool              | False           | 2              |
-| `subscribe_quotes`           | bool              | False           | 3              |
-| `subscribe_trades`           | bool              | False           | 4              |
-| `subscribe_mark_prices`      | bool              | False           | 6              |
-| `subscribe_index_prices`     | bool              | False           | 6              |
-| `subscribe_funding_rates`    | bool              | False           | 6              |
-| `subscribe_bars`             | bool              | False           | 5              |
-| `subscribe_instrument`       | bool              | False           | 1              |
-| `subscribe_instrument_status`| bool              | False           | 7              |
-| `subscribe_instrument_close` | bool              | False           | 7              |
-| `subscribe_params`           | dict?             | None            | 8              |
-| `can_unsubscribe`            | bool              | True            | 8              |
-| `request_instruments`        | bool              | False           | 1              |
-| `request_book_snapshot`      | bool              | False           | 2              |
-| `request_book_deltas`        | bool              | False           | 2              |
-| `request_quotes`             | bool              | False           | 3              |
-| `request_trades`             | bool              | False           | 4              |
-| `request_bars`               | bool              | False           | 5              |
-| `request_funding_rates`      | bool              | False           | 6              |
-| `request_params`             | dict?             | None            | 8              |
-| `requests_start_delta`       | Timedelta?        | 1 hour          | 3, 4, 5        |
-| `book_type`                  | BookType          | L2_MBP          | 2              |
-| `book_depth`                 | PositiveInt?      | None            | 2              |
-| `book_interval_ms`           | PositiveInt       | 1000            | 2              |
-| `book_levels_to_print`       | PositiveInt       | 10              | 2              |
-| `manage_book`                | bool              | False           | 2              |
-| `use_pyo3_book`              | bool              | False           | 2              |
-| `log_data`                   | bool              | True            | All            |
-
----
-
-## Execution Testing Spec
-
-This section defines a rigorous test matrix for validating adapter execution
-functionality using the `ExecTester` strategy. Both Python
-(`nautilus_trader.test_kit.strategies.tester_exec`) and Rust
-(`nautilus_testkit::testers`) provide the `ExecTester`. Each test case is
-identified by a prefixed ID (e.g. TC-E01) and grouped by functionality.
-
-Each adapter must pass the subset of tests matching its supported capabilities.
-Tests progress from simple (single market order) to complex (brackets,
-modification chains, rejection handling). An adapter that passes groups 1–5 is
-considered baseline compliant. Data connectivity should be verified first using
-the data testing spec above.
-
-Document adapter-specific behavior (how a venue simulates market orders,
-handles TIF options, etc.) in the adapter's own guide, not here. Each adapter
-guide should include a capability matrix showing which order types, time-in-force
-options, actions, and flags it supports.
-
-### Prerequisites
-
-Before running execution tests:
-
-- Sandbox/testnet account with valid API credentials.
-- Account funded with sufficient margin for the test instrument and quantities.
-- Target instrument available and loadable via the instrument provider.
-- Environment variables set: `{VENUE}_API_KEY`, `{VENUE}_API_SECRET` (or sandbox variants).
-- Risk engine bypassed (`LiveRiskEngineConfig(bypass=True)`) to avoid interference.
-- Reconciliation enabled to verify state consistency.
-
-**Python node setup** (reference: `examples/live/{adapter}/{adapter}_exec_tester.py`):
-
-```python
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.test_kit.strategies.tester_exec import ExecTester, ExecTesterConfig
-
-node = TradingNode(config=config_node)
-strategy = ExecTester(config=config_tester)
-node.trader.add_strategy(strategy)
-# Register adapter factories, build, and run
-```
-
-**Rust node setup** (reference: `crates/adapters/{adapter}/examples/node_exec_tester.rs`):
-
-```rust
-use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
-
-let tester_config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, order_qty);
-let tester = ExecTester::new(tester_config);
-node.add_strategy(tester)?;
-node.run().await?;
-```
-
-### Test groups
-
-Each group begins with a summary table, followed by detailed test cards.
-Test IDs use spaced numbering to allow insertion without renumbering.
-
----
-
-### Group 1: Market orders
-
-Test market order submission and fills. Market orders should execute immediately.
-
-| TC     | Name                          | Description                                         | Skip when           |
-|--------|-------------------------------|-----------------------------------------------------|---------------------|
-| TC-E01 | Market BUY - submit and fill  | Open long position via market buy.                  | No market orders.   |
-| TC-E02 | Market SELL - submit and fill | Open short position via market sell.                | No market orders.   |
-| TC-E03 | Market order with IOC TIF     | Market order explicitly using IOC time in force.    | No IOC.             |
-| TC-E04 | Market order with FOK TIF     | Market order explicitly using FOK time in force.    | No FOK.             |
-| TC-E05 | Market order with quote qty   | Market order using quote currency quantity.         | No quote quantity.  |
-| TC-E06 | Close position via market     | Close an open position with a market order on stop. | No market orders.   |
-
-#### TC-E01: Market BUY - submit and fill
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing, no open position. |
-| **Action**         | ExecTester opens a long position via `open_position_on_start_qty`.     |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria**  | Position opened with side=LONG, quantity matches config, fill price within market range, `AccountState` updated. |
-| **Skip when**      | Adapter does not support market orders.                                |
-
-**Considerations:**
-
-- Some adapters simulate market orders as aggressive limit IOC orders (check adapter guide).
-- The event sequence from the strategy's perspective should be identical regardless of the venue mechanism.
-- Fill price should be within the recent bid/ask spread.
-- Partial fills are valid; verify the cumulative filled quantity matches the order quantity.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    open_position_on_start_qty=Decimal("0.01"),
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-```
-
-#### TC-E02: Market SELL - submit and fill
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing, no open position. |
-| **Action**         | ExecTester opens a short position via negative `open_position_on_start_qty`. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria**  | Position opened with side=SHORT, quantity matches config, fill price within market range. |
-| **Skip when**      | Adapter does not support market orders or short selling.               |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    open_position_on_start_qty=Decimal("-0.01"),
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(-1, 2)))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-```
-
-#### TC-E03: Market order with IOC TIF
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.             |
-| **Action**         | Open position with `open_position_time_in_force=IOC`.                  |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria**  | Same as TC-E01; the IOC TIF is explicitly set on the order.            |
-| **Skip when**      | No IOC support.                                                        |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    open_position_on_start_qty=Decimal("0.01"),
-    open_position_time_in_force=TimeInForce.IOC,
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false);
-config.open_position_time_in_force = TimeInForce::Ioc;
-```
-
-#### TC-E04: Market order with FOK TIF
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.             |
-| **Action**         | Open position with `open_position_time_in_force=FOK`.                  |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria**  | Same as TC-E01; the FOK TIF is explicitly set on the order.            |
-| **Skip when**      | No FOK support.                                                        |
-
-**Considerations:**
-
-- FOK requires the entire quantity to be fillable immediately or the order is canceled.
-- Use small test quantities to ensure sufficient book depth for a complete fill.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    open_position_on_start_qty=Decimal("0.01"),
-    open_position_time_in_force=TimeInForce.FOK,
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false);
-config.open_position_time_in_force = TimeInForce::Fok;
-```
-
-#### TC-E05: Market order with quote quantity
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, adapter supports quote quantity. |
-| **Action**         | Open position with `use_quote_quantity=True`, quantity in quote currency. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria**  | Order submitted with quote currency quantity; fill quantity is in base currency. |
-| **Skip when**      | Adapter does not support quote quantity orders.                        |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("100.0"),  # Quote currency amount
-    open_position_on_start_qty=Decimal("100.0"),
-    use_quote_quantity=True,
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("100"))
-    .with_open_position_on_start(Some(Decimal::from(100)))
-    .with_use_quote_quantity(true)
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-```
-
-#### TC-E06: Close position via market order on stop
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open position from TC-E01 or TC-E02.                                   |
-| **Action**         | Stop the strategy; ExecTester closes position via market order.        |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled` (closing order). |
-| **Pass criteria**  | Position closed (net quantity = 0), no open orders remaining.          |
-| **Skip when**      | Adapter does not support market orders.                                |
-
-**Considerations:**
-
-- This test naturally follows TC-E01 or TC-E02 as part of the same session.
-- `close_positions_on_stop=True` is the default.
-- The closing order should be on the opposite side of the position.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    open_position_on_start_qty=Decimal("0.01"),
-    close_positions_on_stop=True,
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_close_positions_on_stop(true)
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-```
-
----
-
-### Group 2: Limit orders
-
-Test limit order submission, acceptance, and behavior across time-in-force options.
-
-| TC     | Name                       | Description                                      | Skip when          |
-|--------|----------------------------|--------------------------------------------------|--------------------|
-| TC-E10 | Limit BUY GTC              | Place GTC limit buy below TOB, verify accepted.  | Never.             |
-| TC-E11 | Limit SELL GTC             | Place GTC limit sell above TOB, verify accepted. | Never.             |
-| TC-E12 | Limit BUY and SELL pair    | Both sides simultaneously, verify both accepted. | Never.             |
-| TC-E13 | Limit IOC aggressive fill  | Limit IOC at aggressive price, expect fill.      | No IOC.            |
-| TC-E14 | Limit IOC passive no fill  | Limit IOC away from market, expect cancel.       | No IOC.            |
-| TC-E15 | Limit FOK fill             | Limit FOK at aggressive price, expect fill.      | No FOK.            |
-| TC-E16 | Limit FOK no fill          | Limit FOK away from market, expect cancel.       | No FOK.            |
-| TC-E17 | Limit GTD                  | Limit with expiry time, verify accepted.         | No GTD.            |
-| TC-E18 | Limit GTD expiry           | Wait for GTD expiry, verify `OrderExpired`.      | No GTD.            |
-| TC-E19 | Limit DAY                  | Limit with DAY TIF, verify accepted.             | No DAY.            |
-
-#### TC-E10: Limit BUY GTC - submit and accept
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places a limit buy at `best_bid - tob_offset_ticks`.        |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Order is open on the venue with correct price, quantity, side=BUY, TIF=GTC. |
-| **Skip when**      | Never.                                                                 |
-
-**Considerations:**
-
-- The `tob_offset_ticks` (default 500) places the order well away from the market to avoid accidental fills.
-- Verify the order appears in the cache with `OrderStatus.ACCEPTED`.
-- The order should remain open until explicitly canceled.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=True,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false)
-```
-
-#### TC-E11: Limit SELL GTC - submit and accept
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places a limit sell at `best_ask + tob_offset_ticks`.       |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Order is open on the venue with correct price, quantity, side=SELL, TIF=GTC. |
-| **Skip when**      | Never.                                                                 |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=False,
-    enable_limit_sells=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(true)
-```
-
-#### TC-E12: Limit BUY and SELL pair
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places both a limit buy and limit sell.                     |
-| **Event sequence** | Two independent sequences: each `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
-| **Pass criteria**  | Both orders open on venue, buy below bid, sell above ask.              |
-| **Skip when**      | Never.                                                                 |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=True,
-    enable_limit_sells=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(true)
-```
-
-#### TC-E13: Limit IOC aggressive fill
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Submit a limit buy IOC at or above the best ask (aggressive price).    |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria**  | Order fills immediately; position opened.                              |
-| **Skip when**      | Adapter does not support IOC TIF.                                      |
-
-**Considerations:**
-
-- This test requires manual order creation or adapter-specific configuration, as ExecTester's default limit order placement uses GTC TIF.
-- IOC orders that don't fill immediately are canceled by the venue.
-
-#### TC-E14: Limit IOC passive - no fill
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Submit a limit buy IOC well below the market (passive price).          |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderCanceled`. |
-| **Pass criteria**  | Order is immediately canceled by venue with no fill.                   |
-| **Skip when**      | Adapter does not support IOC TIF.                                      |
-
-**Considerations:**
-
-- The venue should cancel the unfilled IOC order; verify `OrderCanceled` event (not `OrderExpired`).
-
-#### TC-E15: Limit FOK fill
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing, sufficient book depth. |
-| **Action**         | Submit a limit buy FOK at aggressive price with quantity within top-of-book depth. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria**  | Order fills completely in a single fill event.                         |
-| **Skip when**      | Adapter does not support FOK TIF.                                      |
-
-**Considerations:**
-
-- FOK requires the entire quantity to be fillable; test with small quantities to ensure book depth is sufficient.
-
-#### TC-E16: Limit FOK no fill
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Submit a limit buy FOK at passive price (well below market).           |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderCanceled`. |
-| **Pass criteria**  | Order is immediately canceled by venue with no fill.                   |
-| **Skip when**      | Adapter does not support FOK TIF.                                      |
-
-#### TC-E17: Limit GTD - submit and accept
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Place limit buy with `order_expire_time_delta_mins` set (e.g., 60 minutes). |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Order accepted with GTD TIF and correct expiry timestamp.              |
-| **Skip when**      | Adapter does not support GTD TIF.                                      |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    order_expire_time_delta_mins=60,
-    enable_limit_buys=True,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false);
-config.order_expire_time_delta_mins = Some(60);
-```
-
-#### TC-E18: Limit GTD expiry
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTD limit order from TC-E17 (or use a very short expiry).         |
-| **Action**         | Wait for the GTD expiry time to elapse.                                |
-| **Event sequence** | `OrderExpired`.                                                        |
-| **Pass criteria**  | Order transitions to expired status; `OrderExpired` event received.    |
-| **Skip when**      | Adapter does not support GTD TIF.                                      |
-
-**Considerations:**
-
-- Use a short `order_expire_time_delta_mins` (e.g., 1–2 minutes) to avoid long waits.
-- Some venues may report expiry as a cancel; verify the adapter maps this to `OrderExpired`.
-
-#### TC-E19: Limit DAY - submit and accept
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, market is in trading hours.      |
-| **Action**         | Submit limit buy with DAY TIF.                                         |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Order accepted with DAY TIF; will be automatically canceled at end of trading day. |
-| **Skip when**      | Adapter does not support DAY TIF.                                      |
-
-**Considerations:**
-
-- DAY orders may behave differently on 24/7 crypto venues vs traditional markets.
-- Verify behavior when submitted outside trading hours (if applicable).
-
----
-
-### Group 3: Stop and conditional orders
-
-Test stop and conditional order types. These orders rest on the venue until a trigger condition is met.
-
-| TC     | Name                   | Description                                           | Skip when           |
-|--------|------------------------|-------------------------------------------------------|---------------------|
-| TC-E20 | StopMarket BUY         | Stop buy above ask, verify accepted.                  | No `STOP_MARKET`.   |
-| TC-E21 | StopMarket SELL        | Stop sell below bid, verify accepted.                 | No `STOP_MARKET`.   |
-| TC-E22 | StopLimit BUY          | Stop-limit buy with trigger + limit price.            | No `STOP_LIMIT`.    |
-| TC-E23 | StopLimit SELL         | Stop-limit sell with trigger + limit price.           | No `STOP_LIMIT`.    |
-| TC-E24 | MarketIfTouched BUY    | MIT buy below bid.                                    | No `MIT`.           |
-| TC-E25 | MarketIfTouched SELL   | MIT sell above ask.                                   | No `MIT`.           |
-| TC-E26 | LimitIfTouched BUY     | LIT buy with trigger + limit price.                   | No `LIT`.           |
-| TC-E27 | LimitIfTouched SELL    | LIT sell with trigger + limit price.                  | No `LIT`.           |
-
-#### TC-E20: StopMarket BUY
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places a stop-market buy above the current ask.             |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=BUY.  |
-| **Skip when**      | Adapter does not support `StopMarket` orders.                          |
-
-**Considerations:**
-
-- The trigger price should be above the current ask by `stop_offset_ticks`.
-- The order should NOT trigger immediately (trigger price is above market).
-- Verifying trigger and fill requires the market to move, which may not happen during the test.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-    enable_stop_buys=True,
-    enable_stop_sells=False,
-    stop_order_type=OrderType.STOP_MARKET,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-    .with_enable_stop_buys(true)
-    .with_enable_stop_sells(false)
-    .with_stop_order_type(OrderType::StopMarket)
-```
-
-#### TC-E21: StopMarket SELL
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places a stop-market sell below the current bid.            |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=SELL. |
-| **Skip when**      | Adapter does not support `StopMarket` orders.                          |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-    enable_stop_buys=False,
-    enable_stop_sells=True,
-    stop_order_type=OrderType.STOP_MARKET,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-    .with_enable_stop_buys(false)
-    .with_enable_stop_sells(true)
-    .with_stop_order_type(OrderType::StopMarket)
-```
-
-#### TC-E22: StopLimit BUY
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places a stop-limit buy with trigger price above ask and limit offset. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Stop-limit order accepted with correct trigger price, limit price, and side=BUY. |
-| **Skip when**      | Adapter does not support `StopLimit` orders.                           |
-
-**Considerations:**
-
-- Requires `stop_limit_offset_ticks` to be set for the limit price offset from the trigger price.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-    enable_stop_buys=True,
-    enable_stop_sells=False,
-    stop_order_type=OrderType.STOP_LIMIT,
-    stop_limit_offset_ticks=50,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-    .with_enable_stop_buys(true)
-    .with_enable_stop_sells(false)
-    .with_stop_order_type(OrderType::StopLimit);
-config.stop_limit_offset_ticks = Some(50);
-```
-
-#### TC-E23: StopLimit SELL
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places a stop-limit sell with trigger price below bid.      |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Stop-limit order accepted with correct trigger price, limit price, and side=SELL. |
-| **Skip when**      | Adapter does not support `StopLimit` orders.                           |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-    enable_stop_buys=False,
-    enable_stop_sells=True,
-    stop_order_type=OrderType.STOP_LIMIT,
-    stop_limit_offset_ticks=50,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-    .with_enable_stop_buys(false)
-    .with_enable_stop_sells(true)
-    .with_stop_order_type(OrderType::StopLimit);
-config.stop_limit_offset_ticks = Some(50);
-```
-
-#### TC-E24: MarketIfTouched BUY
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Place MIT buy with trigger below current bid (buy on dip).             |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | MIT order accepted on venue with correct trigger price.                |
-| **Skip when**      | Adapter does not support `MarketIfTouched` orders.                     |
-
-#### TC-E25: MarketIfTouched SELL
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Place MIT sell with trigger above current ask (sell on rally).         |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | MIT order accepted on venue with correct trigger price.                |
-| **Skip when**      | Adapter does not support `MarketIfTouched` orders.                     |
-
-#### TC-E26: LimitIfTouched BUY
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Place LIT buy with trigger below bid and limit price offset.           |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | LIT order accepted with correct trigger price and limit price.         |
-| **Skip when**      | Adapter does not support `LimitIfTouched` orders.                      |
-
-#### TC-E27: LimitIfTouched SELL
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | Place LIT sell with trigger above ask and limit price offset.          |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | LIT order accepted with correct trigger price and limit price.         |
-| **Skip when**      | Adapter does not support `LimitIfTouched` orders.                      |
-
----
-
-### Group 4: Order modification
-
-Test order modification (amend) and cancel-replace workflows.
-
-| TC    | Name                         | Description                                         | Skip when                   |
-|-------|------------------------------|-----------------------------------------------------|-----------------------------|
-| TC-E30 | Modify limit BUY price       | Amend open limit buy to new price.                  | No modify support.          |
-| TC-E31 | Modify limit SELL price      | Amend open limit sell to new price.                 | No modify support.          |
-| TC-E32 | Cancel-replace limit BUY     | Cancel and resubmit limit buy at new price.         | Never.                      |
-| TC-E33 | Cancel-replace limit SELL    | Cancel and resubmit limit sell at new price.        | Never.                      |
-| TC-E34 | Modify stop trigger price    | Amend stop order trigger price.                     | No modify or no stop.       |
-| TC-E35 | Cancel-replace stop order    | Cancel and resubmit stop at new trigger price.      | No stop orders.             |
-| TC-E36 | Modify rejected              | Modify on unsupported adapter.                      | Adapter supports modify.    |
-
-#### TC-E30: Modify limit BUY price
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTC limit buy from TC-E10.                                        |
-| **Action**         | ExecTester modifies limit buy to a new price as market moves (`modify_orders_to_maintain_tob_offset=True`). |
-| **Event sequence** | `OrderPendingUpdate` → `OrderUpdated`.                                 |
-| **Pass criteria**  | Order price updated on venue; `OrderUpdated` event contains new price. |
-| **Skip when**      | Adapter does not support order modification.                           |
-
-**Considerations:**
-
-- Requires market movement to trigger the ExecTester's order maintenance logic.
-- The modify is triggered when the order price drifts from the target TOB offset.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=True,
-    enable_limit_sells=False,
-    modify_orders_to_maintain_tob_offset=True,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false);
-config.modify_orders_to_maintain_tob_offset = true;
-```
-
-#### TC-E31: Modify limit SELL price
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTC limit sell from TC-E11.                                       |
-| **Action**         | ExecTester modifies limit sell to new price as market moves.           |
-| **Event sequence** | `OrderPendingUpdate` → `OrderUpdated`.                                 |
-| **Pass criteria**  | Order price updated on venue; `OrderUpdated` event contains new price. |
-| **Skip when**      | Adapter does not support order modification.                           |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=False,
-    enable_limit_sells=True,
-    modify_orders_to_maintain_tob_offset=True,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(true);
-config.modify_orders_to_maintain_tob_offset = true;
-```
-
-#### TC-E32: Cancel-replace limit BUY
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTC limit buy.                                                    |
-| **Action**         | ExecTester cancels and resubmits limit buy at new price as market moves. |
-| **Event sequence** | `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
-| **Pass criteria**  | Original order canceled, new order accepted at updated price.          |
-| **Skip when**      | Never (cancel-replace is always available).                            |
-
-**Considerations:**
-
-- This is the universal alternative when the adapter does not support native modify.
-- Two distinct orders in the cache: the canceled original and the new replacement.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=True,
-    enable_limit_sells=False,
-    cancel_replace_orders_to_maintain_tob_offset=True,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false);
-config.cancel_replace_orders_to_maintain_tob_offset = true;
-```
-
-#### TC-E33: Cancel-replace limit SELL
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTC limit sell.                                                   |
-| **Action**         | ExecTester cancels and resubmits limit sell at new price.              |
-| **Event sequence** | `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
-| **Pass criteria**  | Original order canceled, new order accepted at updated price.          |
-| **Skip when**      | Never.                                                                 |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=False,
-    enable_limit_sells=True,
-    cancel_replace_orders_to_maintain_tob_offset=True,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(true);
-config.cancel_replace_orders_to_maintain_tob_offset = true;
-```
-
-#### TC-E34: Modify stop trigger price
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open stop order from TC-E20 or TC-E22.                                 |
-| **Action**         | ExecTester modifies stop trigger price as market moves (`modify_stop_orders_to_maintain_offset=True`). |
-| **Event sequence** | `OrderPendingUpdate` → `OrderUpdated`.                                 |
-| **Pass criteria**  | Stop order trigger price updated on venue.                             |
-| **Skip when**      | Adapter does not support modify, or no stop order support.             |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_stop_buys=True,
-    modify_stop_orders_to_maintain_offset=True,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_stop_buys(true);
-config.modify_stop_orders_to_maintain_offset = true;
-```
-
-#### TC-E35: Cancel-replace stop order
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open stop order.                                                       |
-| **Action**         | ExecTester cancels and resubmits stop at new trigger price.            |
-| **Event sequence** | `OrderPendingCancel` → `OrderCanceled` → `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
-| **Pass criteria**  | Original stop canceled, new stop accepted at updated trigger price.    |
-| **Skip when**      | No stop order support.                                                 |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_stop_buys=True,
-    cancel_replace_stop_orders_to_maintain_offset=True,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_stop_buys(true);
-config.cancel_replace_stop_orders_to_maintain_offset = true;
-```
-
-#### TC-E36: Modify rejected
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open limit order, adapter does NOT support modify.                     |
-| **Action**         | Attempt to modify the order (programmatically, not via ExecTester auto-maintain). |
-| **Event sequence** | `OrderModifyRejected`.                                                 |
-| **Pass criteria**  | Modify attempt results in `OrderModifyRejected` event with reason; original order remains unchanged. |
-| **Skip when**      | Adapter supports order modification.                                   |
-
-**Considerations:**
-
-- This tests the adapter's rejection path, not the ExecTester's cancel-replace logic.
-- The rejection reason should indicate that modification is not supported.
-
----
-
-### Group 5: Order cancellation
-
-Test order cancellation workflows.
-
-| TC    | Name                       | Description                                          | Skip when            |
-|-------|----------------------------|------------------------------------------------------|----------------------|
-| TC-E40 | Cancel single limit order  | Cancel an open limit order.                          | Never.               |
-| TC-E41 | Cancel all on stop         | Strategy stop cancels all open orders (default).     | Never.               |
-| TC-E42 | Individual cancels on stop | Cancel orders one-by-one on stop.                    | Never.               |
-| TC-E43 | Batch cancel on stop       | Cancel orders via batch API on stop.                 | No batch cancel.     |
-| TC-E44 | Cancel already-canceled    | Cancel a non-open order.                             | Never.               |
-
-#### TC-E40: Cancel single limit order
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open GTC limit order from TC-E10 or TC-E11.                            |
-| **Action**         | Stop the strategy; ExecTester cancels the open limit order.            |
-| **Event sequence** | `OrderPendingCancel` → `OrderCanceled`.                                |
-| **Pass criteria**  | Order status transitions to CANCELED; no open orders remaining.        |
-| **Skip when**      | Never.                                                                 |
-
-**Considerations:**
-
-- `cancel_orders_on_stop=True` (default) triggers cancellation when the strategy stops.
-- Verify the `OrderCanceled` event contains the correct `venue_order_id`.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=True,
-    enable_limit_sells=False,
-    cancel_orders_on_stop=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false)
-    .with_cancel_orders_on_stop(true)
-```
-
-#### TC-E41: Cancel all on stop
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Multiple open orders (limit buy + limit sell from TC-E12).             |
-| **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default).         |
-| **Event sequence** | For each order: `OrderPendingCancel` → `OrderCanceled`.                |
-| **Pass criteria**  | All open orders canceled; no open orders remaining.                    |
-| **Skip when**      | Never.                                                                 |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=True,
-    enable_limit_sells=True,
-    cancel_orders_on_stop=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(true)
-    .with_cancel_orders_on_stop(true)
-```
-
-#### TC-E42: Individual cancels on stop
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Multiple open orders.                                                  |
-| **Action**         | Stop with `use_individual_cancels_on_stop=True`.                       |
-| **Event sequence** | Individual `OrderPendingCancel` → `OrderCanceled` for each order.      |
-| **Pass criteria**  | Each order canceled individually; all orders reach CANCELED status.    |
-| **Skip when**      | Never.                                                                 |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=True,
-    enable_limit_sells=True,
-    use_individual_cancels_on_stop=True,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(true);
-config.use_individual_cancels_on_stop = true;
-```
-
-#### TC-E43: Batch cancel on stop
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Multiple open orders, adapter supports batch cancel.                   |
-| **Action**         | Stop with `use_batch_cancel_on_stop=True`.                             |
-| **Event sequence** | Batch `OrderPendingCancel` → `OrderCanceled` for all orders.           |
-| **Pass criteria**  | All orders canceled via single batch request; all reach CANCELED status. |
-| **Skip when**      | Adapter does not support batch cancel.                                 |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=True,
-    enable_limit_sells=True,
-    use_batch_cancel_on_stop=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(true)
-    .with_use_batch_cancel_on_stop(true)
-```
-
-#### TC-E44: Cancel already-canceled order
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | A previously canceled order (from TC-E40).                             |
-| **Action**         | Attempt to cancel the same order again.                                |
-| **Event sequence** | `OrderCancelRejected`.                                                 |
-| **Pass criteria**  | Cancel attempt is rejected; `OrderCancelRejected` event received with reason. |
-| **Skip when**      | Never.                                                                 |
-
-**Considerations:**
-
-- This tests the adapter's error handling for invalid cancel requests.
-- The rejection reason should indicate the order is not in a cancelable state.
-
----
-
-### Group 6: Bracket orders
-
-Test bracket order submission (entry + take-profit + stop-loss).
-
-| TC    | Name                          | Description                                       | Skip when            |
-|-------|-------------------------------|---------------------------------------------------|----------------------|
-| TC-E50 | Bracket BUY                   | Entry limit buy + TP limit sell + SL stop sell.   | No bracket support.  |
-| TC-E51 | Bracket SELL                  | Entry limit sell + TP limit buy + SL stop buy.    | No bracket support.  |
-| TC-E52 | Bracket entry fill activates  | Verify TP/SL become active after entry fill.      | No bracket support.  |
-| TC-E53 | Bracket with post-only entry  | Entry order uses post-only flag.                  | No bracket or PO.    |
-
-#### TC-E50: Bracket BUY
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester submits a bracket order: limit buy entry + take-profit sell + stop-loss sell. |
-| **Event sequence** | Entry: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`; TP and SL: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`. |
-| **Pass criteria**  | Three orders created and accepted: entry below bid, TP above ask, SL below entry. |
-| **Skip when**      | Adapter does not support bracket orders.                               |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_brackets=True,
-    bracket_entry_order_type=OrderType.LIMIT,
-    bracket_offset_ticks=500,
-    enable_limit_buys=True,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_brackets(true)
-    .with_bracket_entry_order_type(OrderType::Limit)
-    .with_bracket_offset_ticks(500)
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false)
-```
-
-#### TC-E51: Bracket SELL
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester submits bracket: limit sell entry + TP buy + SL buy.        |
-| **Event sequence** | Same pattern as TC-E50 but for sell side.                              |
-| **Pass criteria**  | Three orders created and accepted on sell side.                        |
-| **Skip when**      | Adapter does not support bracket orders.                               |
-
-#### TC-E52: Bracket entry fill activates TP/SL
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Bracket order from TC-E50 where entry order fills.                     |
-| **Action**         | Entry order fills; verify contingent TP and SL orders activate.        |
-| **Event sequence** | Entry: `OrderFilled`; TP and SL transition from contingent to active.  |
-| **Pass criteria**  | After entry fill, TP and SL orders are live on the venue.              |
-| **Skip when**      | Adapter does not support bracket orders.                               |
-
-**Considerations:**
-
-- This requires the entry order to actually fill, which may need aggressive pricing.
-- The TP/SL activation mechanism varies by venue (some activate immediately, some are OCA groups).
-
-#### TC-E53: Bracket with post-only entry
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter supports brackets and post-only.                               |
-| **Action**         | Submit bracket with `use_post_only=True` (applied to entry and TP).    |
-| **Event sequence** | Same as TC-E50 with post-only flag on entry.                           |
-| **Pass criteria**  | Entry and TP orders accepted as post-only (maker); SL is not post-only. |
-| **Skip when**      | No bracket support or no post-only support.                            |
-
----
-
-### Group 7: Order flags
-
-Test order-level flags and special parameters.
-
-| TC    | Name                 | Description                                            | Skip when            |
-|-------|----------------------|--------------------------------------------------------|----------------------|
-| TC-E60 | PostOnly accepted    | Limit with post-only, placed away from TOB.            | No post-only.        |
-| TC-E61 | ReduceOnly on close  | Close position with reduce-only flag.                  | No reduce-only.      |
-| TC-E62 | Display quantity     | Iceberg order with visible quantity < total.           | No display quantity.  |
-| TC-E63 | Custom order params  | Adapter-specific params via `order_params`.            | N/A.                 |
-
-#### TC-E60: PostOnly accepted
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places limit buy with `use_post_only=True` at passive price. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Order accepted as a maker order; post-only flag acknowledged by venue. |
-| **Skip when**      | Adapter does not support post-only flag.                               |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=True,
-    enable_limit_sells=False,
-    use_post_only=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false)
-    .with_use_post_only(true)
-```
-
-#### TC-E61: ReduceOnly on close
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open position (from TC-E01).                                           |
-| **Action**         | Stop strategy with `reduce_only_on_stop=True`; closing order uses reduce-only flag. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled` (with reduce-only). |
-| **Pass criteria**  | Closing order has reduce-only flag; position fully closed.             |
-| **Skip when**      | Adapter does not support reduce-only flag.                             |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    open_position_on_start_qty=Decimal("0.01"),
-    reduce_only_on_stop=True,
-    close_positions_on_stop=True,
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_close_positions_on_stop(true)
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-```
-
-#### TC-E62: Display quantity (iceberg)
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, adapter supports display quantity.                  |
-| **Action**         | Place limit order with `order_display_qty` < `order_qty`.              |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Order accepted with display quantity set; only display qty visible on the book. |
-| **Skip when**      | Adapter does not support display quantity / iceberg orders.            |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("1.0"),
-    order_display_qty=Decimal("0.1"),
-    enable_limit_buys=True,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("1.0"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false);
-config.order_display_qty = Some(Quantity::from("0.1"));
-```
-
-#### TC-E63: Custom order params
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, adapter accepts additional parameters.              |
-| **Action**         | Place order with `order_params` dict containing adapter-specific parameters. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted`.               |
-| **Pass criteria**  | Order accepted; adapter-specific parameters passed through to venue.   |
-| **Skip when**      | N/A (adapter-specific).                                                |
-
-**Considerations:**
-
-- The `order_params` dict is opaque to the ExecTester and passed through to the adapter.
-- Consult the adapter's guide for supported parameters.
-
----
-
-### Group 8: Rejection handling
-
-Test that the adapter correctly handles and reports order rejections.
-
-| TC    | Name                    | Description                                          | Skip when               |
-|-------|-------------------------|------------------------------------------------------|-------------------------|
-| TC-E70 | PostOnly rejection      | Post-only order that would cross the spread.         | No post-only.           |
-| TC-E71 | ReduceOnly rejection    | Reduce-only order with no position to reduce.        | No reduce-only.         |
-| TC-E72 | Unsupported order type  | Submit order type not supported by adapter.           | Never.                  |
-| TC-E73 | Unsupported TIF         | Submit order with unsupported time in force.          | Never.                  |
-
-#### TC-E70: PostOnly rejection
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester places post-only order on the wrong side of the book (`test_reject_post_only=True`), causing it to cross the spread. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderRejected`.               |
-| **Pass criteria**  | Order rejected by venue; `OrderRejected` event received with reason indicating post-only violation. |
-| **Skip when**      | Adapter does not support post-only flag.                               |
-
-**Considerations:**
-
-- The ExecTester's `test_reject_post_only` mode intentionally prices the order to cross.
-- Some venues may partially fill instead of rejecting; behavior is venue-specific.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    enable_limit_buys=True,
-    enable_limit_sells=False,
-    use_post_only=True,
-    test_reject_post_only=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false)
-    .with_use_post_only(true)
-    .with_test_reject_post_only(true)
-```
-
-#### TC-E71: ReduceOnly rejection
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, no open position for the instrument.                |
-| **Action**         | ExecTester opens a market position with `reduce_only=True` via `test_reject_reduce_only=True` and `open_position_on_start_qty`, when no position exists to reduce. |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderRejected`.               |
-| **Pass criteria**  | Order rejected; `OrderRejected` event with reason indicating reduce-only violation. |
-| **Skip when**      | Adapter does not support reduce-only flag.                             |
-
-**Considerations:**
-
-- The `test_reject_reduce_only` flag only applies to the opening market order submitted via `open_position_on_start_qty`.
-- Ensure no prior position exists for the instrument before running this test.
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    open_position_on_start_qty=Decimal("0.01"),
-    test_reject_reduce_only=True,
-    enable_limit_buys=False,
-    enable_limit_sells=False,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_test_reject_reduce_only(true)
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-```
-
-#### TC-E72: Unsupported order type
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, order type not in adapter's supported set.          |
-| **Action**         | Submit an order type the adapter does not support.                     |
-| **Event sequence** | `OrderDenied` (pre-submission rejection by adapter).                   |
-| **Pass criteria**  | Order denied before reaching venue; `OrderDenied` event with reason.   |
-| **Skip when**      | Never (every adapter has unsupported order types to test).             |
-
-**Considerations:**
-
-- `OrderDenied` occurs at the adapter level before the order reaches the venue.
-- This differs from `OrderRejected` which comes from the venue.
-- Test by configuring a stop order type that the adapter does not support.
-
-#### TC-E73: Unsupported TIF
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, TIF not in adapter's supported set.                 |
-| **Action**         | Submit an order with a TIF the adapter does not support.               |
-| **Event sequence** | `OrderDenied` (pre-submission rejection by adapter).                   |
-| **Pass criteria**  | Order denied before reaching venue; `OrderDenied` event with reason.   |
-| **Skip when**      | Never (every adapter has unsupported TIF options to test).             |
-
-**Considerations:**
-
-- Similar to TC-E72 but for time-in-force options.
-- Test with TIF values from the Nautilus enum that the adapter does not map.
-
----
-
-### Group 9: Lifecycle (start/stop)
-
-Test strategy lifecycle behavior and state management on start and stop.
-
-| TC    | Name                        | Description                                            | Skip when            |
-|-------|-----------------------------|--------------------------------------------------------|----------------------|
-| TC-E80 | Open position on start      | Open a position immediately when strategy starts.      | No market orders.    |
-| TC-E81 | Cancel orders on stop       | Cancel all open orders when strategy stops.             | Never.               |
-| TC-E82 | Close positions on stop     | Close open positions when strategy stops.               | No market orders.    |
-| TC-E83 | Unsubscribe on stop         | Unsubscribe from data feeds on strategy stop.           | No unsub support.    |
-| TC-E84 | Reconcile open orders       | Reconcile existing open orders from a prior session.    | Never.               |
-| TC-E85 | Reconcile filled orders     | Reconcile previously filled orders from a prior session.| Never.               |
-| TC-E86 | Reconcile open long         | Reconcile existing open long position.                  | Never.               |
-| TC-E87 | Reconcile open short        | Reconcile existing open short position.                 | Never.               |
-
-#### TC-E80: Open position on start
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Adapter connected, instrument loaded, no existing position.            |
-| **Action**         | Strategy starts with `open_position_on_start_qty` set.                 |
-| **Event sequence** | `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria**  | Position opened on start; market order submitted and filled before limit order maintenance begins. |
-| **Skip when**      | Adapter does not support market orders.                                |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    open_position_on_start_qty=Decimal("0.01"),
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-```
-
-#### TC-E81: Cancel orders on stop
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open limit orders from the strategy session.                           |
-| **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default).         |
-| **Event sequence** | For each open order: `OrderPendingCancel` → `OrderCanceled`.           |
-| **Pass criteria**  | All strategy-owned open orders canceled on stop.                       |
-| **Skip when**      | Never.                                                                 |
-
-#### TC-E82: Close positions on stop
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Open position from the strategy session.                               |
-| **Action**         | Stop the strategy with `close_positions_on_stop=True` (default).       |
-| **Event sequence** | Closing order: `OrderInitialized` → `OrderSubmitted` → `OrderAccepted` → `OrderFilled`. |
-| **Pass criteria**  | All strategy-owned positions closed; net position = 0.                 |
-| **Skip when**      | Adapter does not support market orders.                                |
-
-#### TC-E83: Unsubscribe on stop
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | Active data subscriptions (quotes, trades, book).                      |
-| **Action**         | Stop the strategy with `can_unsubscribe=True` (default).               |
-| **Event sequence** | Data subscriptions removed.                                            |
-| **Pass criteria**  | No further data events received after stop; clean disconnection.       |
-| **Skip when**      | Adapter does not support unsubscribe.                                  |
-
-**Python config:**
-
-```python
-ExecTesterConfig(
-    instrument_id=instrument_id,
-    order_qty=Decimal("0.01"),
-    can_unsubscribe=True,
-)
-```
-
-**Rust config:**
-
-```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_can_unsubscribe(true)
-```
-
-#### TC-E84: Reconcile open orders
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | One or more open limit orders on the venue from a prior session.       |
-| **Action**         | Start the node with `reconciliation=True`.                             |
-| **Event sequence** | `OrderStatusReport` generated for each open order.                     |
-| **Pass criteria**  | Each open order is loaded into the cache with correct `venue_order_id`, status=ACCEPTED, price, quantity, side, and order type. |
-| **Skip when**      | Never.                                                                 |
-
-**Considerations:**
-
-- Leave limit orders open from a prior test session (do not cancel on stop).
-- Use `external_order_claims` to claim the instrument so the adapter reconciles orders for it.
-- Verify that the reconciled order count matches the venue-reported count.
-
-#### TC-E85: Reconcile filled orders
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | One or more filled orders on the venue from a prior session.           |
-| **Action**         | Start the node with `reconciliation=True`.                             |
-| **Event sequence** | `FillReport` generated for each historical fill.                       |
-| **Pass criteria**  | Each filled order is loaded into the cache with correct `venue_order_id`, status=FILLED, fill price, fill quantity, and commission. |
-| **Skip when**      | Never.                                                                 |
-
-**Considerations:**
-
-- Requires orders that filled in a prior session.
-- Verify fill price, quantity, and commission match the venue's reported values.
-- Some adapters may only report fills within a lookback window.
-
-#### TC-E86: Reconcile open long position
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | An open long position on the venue from a prior session.               |
-| **Action**         | Start the node with `reconciliation=True`.                             |
-| **Event sequence** | `PositionStatusReport` generated for the long position.                |
-| **Pass criteria**  | Position loaded into cache with correct instrument, side=LONG, quantity, and entry price matching the venue. |
-| **Skip when**      | Never.                                                                 |
-
-**Considerations:**
-
-- Open a long position in a prior session and stop the strategy without closing it
-  (`close_positions_on_stop=False`).
-- Verify the reconciled position quantity and average entry price match the venue.
-- After reconciliation, the strategy should be able to manage or close this position.
-
-#### TC-E87: Reconcile open short position
-
-| Field              | Value                                                                  |
-|--------------------|------------------------------------------------------------------------|
-| **Prerequisite**   | An open short position on the venue from a prior session.              |
-| **Action**         | Start the node with `reconciliation=True`.                             |
-| **Event sequence** | `PositionStatusReport` generated for the short position.               |
-| **Pass criteria**  | Position loaded into cache with correct instrument, side=SHORT, quantity, and entry price matching the venue. |
-| **Skip when**      | Never.                                                                 |
-
-**Considerations:**
-
-- Open a short position in a prior session and stop the strategy without closing it
-  (`close_positions_on_stop=False`).
-- Verify the reconciled position quantity and average entry price match the venue.
-- After reconciliation, the strategy should be able to manage or close this position.
-
----
-
-### ExecTester configuration reference
-
-Quick reference for all `ExecTesterConfig` parameters. Defaults shown are for the Python config; Rust builder uses equivalent defaults.
-
-| Parameter                                       | Type              | Default         | Affects groups |
-|-------------------------------------------------|-------------------|-----------------|----------------|
-| `instrument_id`                                 | InstrumentId      | *required*      | All            |
-| `order_qty`                                     | Decimal           | *required*      | All            |
-| `order_display_qty`                             | Decimal?          | None            | 2, 7           |
-| `order_expire_time_delta_mins`                  | PositiveInt?      | None            | 2              |
-| `order_params`                                  | dict?             | None            | 7              |
-| `client_id`                                     | ClientId?         | None            | All            |
-| `subscribe_quotes`                              | bool              | True            | —              |
-| `subscribe_trades`                              | bool              | True            | —              |
-| `subscribe_book`                                | bool              | False           | —              |
-| `book_type`                                     | BookType          | L2_MBP          | —              |
-| `book_depth`                                    | PositiveInt?      | None            | —              |
-| `book_interval_ms`                              | PositiveInt       | 1000            | —              |
-| `book_levels_to_print`                          | PositiveInt       | 10              | —              |
-| `open_position_on_start_qty`                    | Decimal?          | None            | 1, 9           |
-| `open_position_time_in_force`                   | TimeInForce       | GTC             | 1              |
-| `enable_limit_buys`                             | bool              | True            | 2, 4, 5, 6     |
-| `enable_limit_sells`                            | bool              | True            | 2, 4, 5, 6     |
-| `enable_stop_buys`                              | bool              | False           | 3, 4           |
-| `enable_stop_sells`                             | bool              | False           | 3, 4           |
-| `limit_time_in_force`                           | TimeInForce?      | None            | 2, 6           |
-| `tob_offset_ticks`                              | PositiveInt       | 500             | 2, 4           |
-| `stop_order_type`                               | OrderType         | STOP_MARKET     | 3              |
-| `stop_offset_ticks`                             | PositiveInt       | 100             | 3              |
-| `stop_limit_offset_ticks`                       | PositiveInt?      | None            | 3              |
-| `stop_time_in_force`                            | TimeInForce?      | None            | 3              |
-| `stop_trigger_type`                             | TriggerType?      | None            | 3              |
-| `enable_brackets`                               | bool              | False           | 6              |
-| `bracket_entry_order_type`                      | OrderType         | LIMIT           | 6              |
-| `bracket_offset_ticks`                          | PositiveInt       | 500             | 6              |
-| `modify_orders_to_maintain_tob_offset`          | bool              | False           | 4              |
-| `modify_stop_orders_to_maintain_offset`         | bool              | False           | 4              |
-| `cancel_replace_orders_to_maintain_tob_offset`  | bool              | False           | 4              |
-| `cancel_replace_stop_orders_to_maintain_offset` | bool              | False           | 4              |
-| `use_post_only`                                 | bool              | False           | 2, 6, 7, 8     |
-| `use_quote_quantity`                            | bool              | False           | 1, 7           |
-| `emulation_trigger`                             | TriggerType?      | None            | 2, 3           |
-| `cancel_orders_on_stop`                         | bool              | True            | 5, 9           |
-| `close_positions_on_stop`                       | bool              | True            | 9              |
-| `close_positions_time_in_force`                 | TimeInForce?      | None            | 9              |
-| `reduce_only_on_stop`                           | bool              | True            | 7, 9           |
-| `use_individual_cancels_on_stop`                | bool              | False           | 5              |
-| `use_batch_cancel_on_stop`                      | bool              | False           | 5              |
-| `dry_run`                                       | bool              | False           | —              |
-| `log_data`                                      | bool              | True            | —              |
-| `test_reject_post_only`                         | bool              | False           | 8              |
-| `test_reject_reduce_only`                       | bool              | False           | 8              |
-| `can_unsubscribe`                               | bool              | True            | 9              |
+See the full [Execution Testing Spec](spec_exec_testing.md) for the `ExecTester` test matrix.

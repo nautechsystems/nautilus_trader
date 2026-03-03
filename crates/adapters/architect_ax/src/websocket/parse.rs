@@ -135,14 +135,17 @@ pub(crate) fn parse_order_message(raw: &str) -> Result<AxWsRawMessage, serde_jso
             return serde_json::from_value(value)
                 .map(|r| AxWsRawMessage::Response(AxWsOrderResponse::OpenOrders(r)));
         }
+
         if res.get("oid").is_some() {
             return serde_json::from_value(value)
                 .map(|r| AxWsRawMessage::Response(AxWsOrderResponse::PlaceOrder(r)));
         }
+
         if res.get("cxl_rx").is_some() {
             return serde_json::from_value(value)
                 .map(|r| AxWsRawMessage::Response(AxWsOrderResponse::CancelOrder(r)));
         }
+
         if res.get("li").is_some() {
             return serde_json::from_value(value)
                 .map(|r| AxWsRawMessage::Response(AxWsOrderResponse::List(r)));

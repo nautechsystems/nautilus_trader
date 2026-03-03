@@ -47,7 +47,7 @@ Batches multiple contract calls into a single RPC request using Multicall3 (`0xc
 
 ### ERC20
 
-Inherits from `BaseContract` to leverage Multicall3 for efficient batch operations. Fetches token metadata with robust handling for non-standard implementations.
+Inherits from `BaseContract` to use Multicall3 for efficient batch operations. Fetches token metadata, handling non-standard implementations.
 
 **Methods:**
 

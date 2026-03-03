@@ -463,6 +463,9 @@ pub struct DydxMarketTradingUpdate {
     /// Next funding rate for the market.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_funding_rate: Option<String>,
+    /// Oracle price (present in initial subscription snapshot).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oracle_price: Option<String>,
 }
 
 /// Market message contents.
@@ -497,16 +500,22 @@ pub struct DydxWsMarketSubscribed {
     pub contents: Value,
 }
 
-/// Contents of v4_markets channel_data message (simple format).
+/// Contents of v4_markets messages (both subscription snapshots and channel_data updates).
+///
+/// Initial subscription responses use `markets` with full market objects.
+/// Subsequent `channel_data` updates use `oraclePrices` and `trading` with partial deltas.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DydxMarketsContents {
-    /// Oracle prices by market symbol.
+    /// Oracle prices by market symbol (channel_data updates).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oracle_prices: Option<HashMap<String, DydxOraclePriceMarket>>,
-    /// Trading data by market symbol (contains funding rates).
+    /// Trading data by market symbol (channel_data updates).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trading: Option<HashMap<String, DydxMarketTradingUpdate>>,
+    /// Full market data by market symbol (initial subscription snapshot).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub markets: Option<HashMap<String, DydxMarketTradingUpdate>>,
 }
 
 /// Trade message from v4_trades channel.

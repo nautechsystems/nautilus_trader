@@ -13,17 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `Portfolio` facilitates the management of trading operations.
-
-The intended use case is for a single ``Portfolio`` instance per running system,
-a fleet of trading strategies will organize around a portfolio with the help
-of the `Trader`` class.
-
-The portfolio can satisfy queries for account information, margin balances,
-total risk exposures and total net positions.
-"""
-
 import pickle
 from collections import defaultdict
 from decimal import Decimal

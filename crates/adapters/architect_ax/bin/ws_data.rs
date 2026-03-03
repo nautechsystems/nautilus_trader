@@ -33,7 +33,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use nautilus_architect_ax::{
-    common::enums::AxEnvironment,
+    common::{credential::Credential, enums::AxEnvironment},
     http::{client::AxRawHttpClient, parse::parse_perp_instrument},
     websocket::{NautilusDataWsMessage, data::AxMdWebSocketClient},
 };
@@ -44,9 +44,8 @@ use rust_decimal::Decimal;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
-    let api_key = std::env::var("AX_API_KEY").expect("AX_API_KEY environment variable required");
-    let api_secret =
-        std::env::var("AX_API_SECRET").expect("AX_API_SECRET environment variable required");
+    let credential = Credential::resolve(None, None)
+        .ok_or("AX_API_KEY and AX_API_SECRET environment variables required")?;
 
     let environment = if std::env::var("AX_IS_SANDBOX")
         .ok()
@@ -81,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "Connectivity OK - got {} instruments",
                 response.instruments.len()
             );
+
             if let Some(first) = response.instruments.first() {
                 log::debug!("First instrument: {:?}", first.symbol);
             }
@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let auth_response = http_client
-        .authenticate(&api_key, &api_secret, 3600)
+        .authenticate(credential.api_key(), credential.api_secret(), 3600)
         .await
         .map_err(|e| format!("Authentication failed: {e:?}"))?;
     log::info!("Authenticated successfully");

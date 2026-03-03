@@ -85,14 +85,16 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_instruments")]
+    #[pyo3(signature = (filepath, use_exchange_as_venue, skip_on_error=false))]
     fn py_load_instruments(
         &mut self,
         py: Python,
         filepath: PathBuf,
         use_exchange_as_venue: bool,
+        skip_on_error: bool,
     ) -> PyResult<Py<PyAny>> {
         let iter = self
-            .load_instruments(&filepath, use_exchange_as_venue)
+            .load_instruments(&filepath, use_exchange_as_venue, skip_on_error)
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
@@ -503,9 +505,7 @@ fn exhaust_data_iter_to_pycapsule(
                 data.push(item1);
                 data.push(item2);
             }
-            Ok((None, None)) => {
-                continue;
-            }
+            Ok((None, None)) => {}
             Err(e) => return Err(e),
         }
     }

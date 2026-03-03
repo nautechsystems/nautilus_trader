@@ -28,37 +28,38 @@ FN_NAME_RE='fn[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)'
 DOC_RE='^[[:space:]]*///'
 PANIC_BODY_RE='\.(unwrap|expect)\(|panic!\(|assert!|assert_eq!|assert_ne!|unreachable!\(|todo!\(|unimplemented!\('
 
-# =============================================================================
-# Process each file that has either `# Panics` or `# Errors` docs
-# =============================================================================
-
-while IFS= read -r file; do
-  [[ -z "$file" ]] && continue
-
-  # Read file into array once (0-indexed, lines[0] = line 1)
+# Helper: read file into lines array (0-indexed, lines[0] = line 1)
+read_file_lines() {
   if type mapfile &> /dev/null; then
-    mapfile -t lines < "$file"
+    mapfile -t lines < "$1"
   else
     lines=()
     while IFS= read -r _line || [[ -n "$_line" ]]; do
       lines+=("$_line")
-    done < "$file"
+    done < "$1"
   fi
   total=${#lines[@]}
+}
 
-  # Collect line numbers for # Panics and # Errors in this file
-  panics_lines=()
-  errors_lines=()
-  for ((i = 0; i < total; i++)); do
-    case "${lines[i]}" in
-      *'/// # Panics'*) panics_lines+=($((i + 1))) ;;
-      *'/// # Errors'*) errors_lines+=($((i + 1))) ;;
-    esac
-  done
+# =============================================================================
+# Use rg to find all files and line numbers with `# Panics` or `# Errors`
+# =============================================================================
 
-  # --- Check `# Panics` docs ---
-  for line_num in ${panics_lines[@]+"${panics_lines[@]}"}; do
-    idx=$((line_num - 1))
+current_file=""
+
+while IFS=: read -r file line_num match; do
+  [[ -z "$file" ]] && continue
+
+  # Load file into array only when we encounter a new file
+  if [[ "$file" != "$current_file" ]]; then
+    current_file="$file"
+    read_file_lines "$file"
+  fi
+
+  idx=$((line_num - 1))
+
+  if [[ "$match" == *'# Panics'* ]]; then
+    # --- Check `# Panics` docs ---
 
     # Check for suppression above the doc block
     suppressed=false
@@ -80,7 +81,6 @@ while IFS= read -r file; do
     for ((j = idx + 1; j <= idx + 4 && j < total; j++)); do
       lower="$(printf '%s' "${lines[j]}" | tr '[:upper:]' '[:lower:]')"
       if [[ "$lower" == *'does not panic'* ]] || [[ "$lower" == *'will never panic'* ]]; then
-        # Find fn name for context
         fn_context="<unknown>"
         for ((k = idx + 1; k < total && k <= idx + 15; k++)); do
           if [[ "${lines[k]}" =~ $FN_NAME_RE ]]; then
@@ -165,11 +165,9 @@ while IFS= read -r file; do
       echo
       VIOLATIONS=$((VIOLATIONS + 1))
     fi
-  done
 
-  # --- Check `# Errors` docs ---
-  for line_num in ${errors_lines[@]+"${errors_lines[@]}"}; do
-    idx=$((line_num - 1))
+  else
+    # --- Check `# Errors` docs ---
 
     # Check for suppression above the doc block
     suppressed=false
@@ -218,9 +216,9 @@ while IFS= read -r file; do
       echo
       VIOLATIONS=$((VIOLATIONS + 1))
     fi
-  done
+  fi
 
-done < <(rg -l '/// # (Panics|Errors)' crates --type rust 2> /dev/null || true)
+done < <(rg -n '/// # (Panics|Errors)' crates --type rust --sort path 2> /dev/null || true)
 
 if [ $VIOLATIONS -gt 0 ]; then
   echo -e "${RED}Found $VIOLATIONS documentation convention violation(s)${NC}"

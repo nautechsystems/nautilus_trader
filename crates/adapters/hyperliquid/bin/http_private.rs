@@ -34,6 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         || args.get(2).is_some_and(|s| s == "conditional");
 
     log::info!("Starting Hyperliquid HTTP private example");
+
     if testnet {
         log::info!(
             "Testnet parameter provided - ensure HYPERLIQUID_TESTNET_PK environment variable is set"
@@ -41,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         log::info!("Mainnet mode - ensure HYPERLIQUID_PK environment variable is set");
     }
+
     if test_conditional {
         log::info!("Conditional orders test mode enabled");
     }
@@ -199,14 +201,14 @@ async fn test_conditional_orders(
     log::info!("");
     log::info!("Example code:");
     log::info!(
-        r#"
+        "
     let action = HyperliquidExecAction::Order {{
         orders: vec![stop_market_buy],
         grouping: HyperliquidExecGrouping::Na,
         builder: None,
     }};
     let response = client.post_action(&action).await?;
-    "#
+    "
     );
 
     // Display the JSON serialization to show the exact API format

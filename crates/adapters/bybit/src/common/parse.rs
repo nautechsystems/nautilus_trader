@@ -46,6 +46,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
+        consts::{BYBIT_BASE_COIN, BYBIT_QUOTE_COIN},
         enums::{
             BybitContractType, BybitKlineInterval, BybitOptionType, BybitOrderSide,
             BybitOrderStatus, BybitOrderType, BybitPositionSide, BybitProductType,
@@ -75,13 +76,7 @@ pub fn extract_raw_symbol(symbol: &str) -> &str {
 #[must_use]
 pub fn make_bybit_symbol<S: AsRef<str>>(raw_symbol: S, product_type: BybitProductType) -> Ustr {
     let raw = raw_symbol.as_ref();
-    let suffix = match product_type {
-        BybitProductType::Spot => "-SPOT",
-        BybitProductType::Linear => "-LINEAR",
-        BybitProductType::Inverse => "-INVERSE",
-        BybitProductType::Option => "-OPTION",
-    };
-    Ustr::from(&format!("{raw}{suffix}"))
+    Ustr::from(&format!("{raw}{}", product_type.suffix()))
 }
 
 /// Converts a Bybit kline interval string to a Nautilus bar aggregation and step.
@@ -631,6 +626,7 @@ pub fn parse_orderbook(
     let mut deltas = Vec::with_capacity(total_levels + 1);
 
     let mut clear = OrderBookDelta::clear(instrument_id, sequence, ts_event, ts_init);
+
     if total_levels == 0 {
         clear.flags |= RecordFlag::F_LAST as u8;
     }
@@ -643,6 +639,7 @@ pub fn parse_orderbook(
 
         processed += 1;
         let mut flags = RecordFlag::F_MBP as u8;
+
         if processed == total_levels {
             flags |= RecordFlag::F_LAST as u8;
         }
@@ -708,6 +705,7 @@ pub fn parse_kline_bar(
     let volume = parse_quantity_with_precision(&kline.volume, size_precision, "kline.volume")?;
 
     let mut ts_event = parse_millis_timestamp(&kline.start, "kline.start")?;
+
     if timestamp_on_close {
         let interval_ns = bar_type
             .spec()
@@ -1221,6 +1219,85 @@ pub fn parse_order_status_report(
     }
 
     Ok(report)
+}
+
+/// Returns the `marketUnit` parameter for spot market orders.
+#[must_use]
+pub fn spot_market_unit(
+    product_type: BybitProductType,
+    order_type: BybitOrderType,
+    is_quote_quantity: bool,
+) -> Option<String> {
+    if product_type == BybitProductType::Spot && order_type == BybitOrderType::Market {
+        if is_quote_quantity {
+            Some(BYBIT_QUOTE_COIN.to_string())
+        } else {
+            Some(BYBIT_BASE_COIN.to_string())
+        }
+    } else {
+        None
+    }
+}
+
+/// Returns the `isLeverage` parameter (spot-only).
+#[must_use]
+pub fn spot_leverage(product_type: BybitProductType, is_leverage: bool) -> Option<i32> {
+    if product_type == BybitProductType::Spot {
+        Some(i32::from(is_leverage))
+    } else {
+        None
+    }
+}
+
+/// Returns the trigger direction for stop and MIT orders.
+#[must_use]
+pub fn trigger_direction(
+    order_type: OrderType,
+    order_side: OrderSide,
+    is_stop_order: bool,
+) -> Option<BybitTriggerDirection> {
+    if !is_stop_order {
+        return None;
+    }
+    match (order_type, order_side) {
+        (OrderType::StopMarket | OrderType::StopLimit, OrderSide::Buy) => {
+            Some(BybitTriggerDirection::RisesTo)
+        }
+        (OrderType::StopMarket | OrderType::StopLimit, OrderSide::Sell) => {
+            Some(BybitTriggerDirection::FallsTo)
+        }
+        (OrderType::MarketIfTouched | OrderType::LimitIfTouched, OrderSide::Buy) => {
+            Some(BybitTriggerDirection::FallsTo)
+        }
+        (OrderType::MarketIfTouched | OrderType::LimitIfTouched, OrderSide::Sell) => {
+            Some(BybitTriggerDirection::RisesTo)
+        }
+        _ => None,
+    }
+}
+
+/// Maps Nautilus time-in-force to Bybit's TIF.
+///
+/// Returns `Err(tif)` with the unsupported value for caller-specific error wrapping.
+pub fn map_time_in_force(
+    order_type: BybitOrderType,
+    time_in_force: Option<TimeInForce>,
+    post_only: Option<bool>,
+) -> Result<Option<BybitTimeInForce>, TimeInForce> {
+    if order_type == BybitOrderType::Market {
+        return Ok(None);
+    }
+
+    if post_only == Some(true) {
+        return Ok(Some(BybitTimeInForce::PostOnly));
+    }
+    match time_in_force {
+        Some(TimeInForce::Gtc) => Ok(Some(BybitTimeInForce::Gtc)),
+        Some(TimeInForce::Ioc) => Ok(Some(BybitTimeInForce::Ioc)),
+        Some(TimeInForce::Fok) => Ok(Some(BybitTimeInForce::Fok)),
+        Some(tif) => Err(tif),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]

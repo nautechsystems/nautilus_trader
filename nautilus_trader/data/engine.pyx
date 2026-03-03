@@ -3348,7 +3348,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_spread_quote(self, Data quote):
         # We send the quote to a simulated exchanged so it can be processed for execution first
         # before being processed by the data engine, similarly to the logic in the backtest engine
-        self._msgbus.send(endpoint=f"SimulatedExchange.spread_quote.{quote.instrument_id.venue}", msg=quote)
+        self._msgbus.send(endpoint=f"SimulatedExchange.process_new_quote.{quote.instrument_id.venue}", msg=quote)
         self.process(quote)
 
     cpdef void _dispose_spread_quote_aggregator(self, InstrumentId spread_instrument_id, bint historical = False, UUID4 request_id = None):

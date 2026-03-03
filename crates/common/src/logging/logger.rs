@@ -229,6 +229,7 @@ impl Log for Logger {
                 component,
                 message: format!("{}", record.args()),
             };
+
             if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
                 eprintln!("Error sending log event (receiver closed): {line}");
             }

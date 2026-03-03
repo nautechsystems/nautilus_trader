@@ -153,6 +153,10 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     position_check_threshold_ms : NonNegativeInt, default 5_000
         The minimum elapsed time (milliseconds) since the position's last local activity before
         the position check acts on discrepancies. This prevents race conditions with in-flight fills.
+    position_check_retries : NonNegativeInt, default 3
+        The maximum number of reconciliation attempts for a position discrepancy
+        before the engine stops retrying for that instrument. Once exceeded, an
+        error is logged and the discrepancy is no longer actively reconciled.
     reconciliation_startup_delay_secs : PositiveFloat, default 10.0
         The additional delay (seconds) applied AFTER startup reconciliation
         completes before starting the continuous reconciliation loop. This provides time
@@ -213,6 +217,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     position_check_interval_secs: PositiveFloat | None = None
     position_check_lookback_mins: PositiveInt = 60
     position_check_threshold_ms: NonNegativeInt = 5_000
+    position_check_retries: NonNegativeInt = 3
     reconciliation_startup_delay_secs: PositiveFloat = 10.0
     purge_closed_orders_interval_mins: PositiveInt | None = None
     purge_closed_orders_buffer_mins: NonNegativeInt | None = None

@@ -20,7 +20,7 @@ pub use core::StrategyCore;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ahash::AHashSet;
-pub use config::StrategyConfig;
+pub use config::{ImportableStrategyConfig, StrategyConfig};
 use nautilus_common::{
     actor::DataActor,
     component::Component,
@@ -127,6 +127,7 @@ pub trait Strategy: DataActor {
         let is_market_exit_order = order
             .tags()
             .is_some_and(|tags| tags.contains(&market_exit_tag));
+
         if core.is_exiting && !order.is_reduce_only() && !is_market_exit_order {
             self.deny_order(&order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
             return Ok(());
@@ -225,6 +226,7 @@ pub trait Strategy: DataActor {
                         order.client_order_id()
                     );
                 }
+
                 if cache.order_exists(&order.client_order_id()) {
                     anyhow::bail!(
                         "Order in list denied: duplicate {}",
@@ -337,6 +339,7 @@ pub trait Strategy: DataActor {
                         order.client_order_id()
                     );
                 }
+
                 if cache.order_exists(&order.client_order_id()) {
                     anyhow::bail!(
                         "Order in list denied: duplicate {}",
@@ -953,6 +956,7 @@ pub trait Strategy: DataActor {
                     | OrderEventAny::CancelRejected(_)
                     | OrderEventAny::ModifyRejected(_)
             );
+
             if is_warning {
                 log::warn!("{id} {RECV}{EVT} {event}");
             } else if core.config.log_events {
@@ -1250,6 +1254,7 @@ pub trait Strategy: DataActor {
             if let Err(e) = self.cancel_all_orders(instrument_id, None, None) {
                 log::error!("Error canceling orders for {instrument_id}: {e}");
             }
+
             if let Err(e) = self.close_all_positions(
                 instrument_id,
                 None,
@@ -1411,6 +1416,7 @@ pub trait Strategy: DataActor {
 
         if should_stop {
             log::info!("{strategy_id} Market exit complete, stopping strategy");
+
             if let Err(e) = Component::stop(self) {
                 log::error!("{strategy_id} Failed to stop: {e}");
             }
@@ -1841,9 +1847,9 @@ mod tests {
             client_order_id: ClientOrderId::from("O-001"),
             account_id: AccountId::from("ACC-001"),
             reason: "Test rejection".into(),
-            event_id: Default::default(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
+            event_id: UUID4::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
             reconciliation: 0,
             due_post_only: 0,
         });
@@ -1868,14 +1874,14 @@ mod tests {
             entry: OrderSide::Buy,
             side: PositionSide::Long,
             signed_qty: 1.0,
-            quantity: Default::default(),
-            last_qty: Default::default(),
-            last_px: Default::default(),
+            quantity: Quantity::default(),
+            last_qty: Quantity::default(),
+            last_px: Price::default(),
             currency: Currency::from("USD"),
             avg_px_open: 0.0,
-            event_id: Default::default(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
+            event_id: UUID4::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
         });
 
         strategy.handle_position_event(event);
@@ -1887,20 +1893,20 @@ mod tests {
     fn test_strategy_default_handlers_do_not_panic() {
         let mut strategy = create_test_strategy();
 
-        strategy.on_order_initialized(Default::default());
-        strategy.on_order_denied(Default::default());
-        strategy.on_order_emulated(Default::default());
-        strategy.on_order_released(Default::default());
-        strategy.on_order_submitted(Default::default());
-        strategy.on_order_rejected(Default::default());
-        let _ = DataActor::on_order_canceled(&mut strategy, &Default::default());
-        strategy.on_order_expired(Default::default());
-        strategy.on_order_triggered(Default::default());
-        strategy.on_order_pending_update(Default::default());
-        strategy.on_order_pending_cancel(Default::default());
-        strategy.on_order_modify_rejected(Default::default());
-        strategy.on_order_cancel_rejected(Default::default());
-        strategy.on_order_updated(Default::default());
+        strategy.on_order_initialized(OrderInitialized::default());
+        strategy.on_order_denied(OrderDenied::default());
+        strategy.on_order_emulated(OrderEmulated::default());
+        strategy.on_order_released(OrderReleased::default());
+        strategy.on_order_submitted(OrderSubmitted::default());
+        strategy.on_order_rejected(OrderRejected::default());
+        let _ = DataActor::on_order_canceled(&mut strategy, &OrderCanceled::default());
+        strategy.on_order_expired(OrderExpired::default());
+        strategy.on_order_triggered(OrderTriggered::default());
+        strategy.on_order_pending_update(OrderPendingUpdate::default());
+        strategy.on_order_pending_cancel(OrderPendingCancel::default());
+        strategy.on_order_modify_rejected(OrderModifyRejected::default());
+        strategy.on_order_cancel_rejected(OrderCancelRejected::default());
+        strategy.on_order_updated(OrderUpdated::default());
     }
 
     // -- GTD EXPIRY TESTS ----------------------------------------------------------------------------
@@ -1976,13 +1982,13 @@ mod tests {
             position_id: None,
             order_side: OrderSide::Buy,
             order_type: OrderType::Market,
-            last_qty: Default::default(),
-            last_px: Default::default(),
+            last_qty: Quantity::default(),
+            last_px: Price::default(),
             currency: Currency::from("USD"),
             liquidity_side: LiquiditySide::Taker,
-            event_id: Default::default(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
+            event_id: UUID4::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
             reconciliation: false,
             commission: None,
         });
@@ -2007,11 +2013,11 @@ mod tests {
             strategy_id: StrategyId::from("TEST-001"),
             instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
             client_order_id,
-            venue_order_id: Default::default(),
+            venue_order_id: Option::default(),
             account_id: Some(AccountId::from("ACC-001")),
-            event_id: Default::default(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
+            event_id: UUID4::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
             reconciliation: 0,
         });
         strategy.handle_order_event(event);
@@ -2037,9 +2043,9 @@ mod tests {
             client_order_id,
             account_id: AccountId::from("ACC-001"),
             reason: "Test rejection".into(),
-            event_id: Default::default(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
+            event_id: UUID4::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
             reconciliation: 0,
             due_post_only: 0,
         });
@@ -2064,11 +2070,11 @@ mod tests {
             strategy_id: StrategyId::from("TEST-001"),
             instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
             client_order_id,
-            venue_order_id: Default::default(),
+            venue_order_id: Option::default(),
             account_id: Some(AccountId::from("ACC-001")),
-            event_id: Default::default(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
+            event_id: UUID4::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
             reconciliation: 0,
         });
         strategy.handle_order_event(event);
@@ -2472,8 +2478,8 @@ mod tests {
         let event = TimeEvent::new(
             Ustr::from("MARKET_EXIT_CHECK:TEST-001"),
             UUID4::new(),
-            Default::default(),
-            Default::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
         );
         strategy.check_market_exit(event);
 
@@ -2501,8 +2507,8 @@ mod tests {
         let event = TimeEvent::new(
             Ustr::from("MARKET_EXIT_CHECK:TEST-001"),
             UUID4::new(),
-            Default::default(),
-            Default::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
         );
         strategy.check_market_exit(event);
 
@@ -2521,8 +2527,8 @@ mod tests {
         let event = TimeEvent::new(
             Ustr::from("MARKET_EXIT_CHECK:TEST-001"),
             UUID4::new(),
-            Default::default(),
-            Default::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
         );
         strategy.check_market_exit(event);
 

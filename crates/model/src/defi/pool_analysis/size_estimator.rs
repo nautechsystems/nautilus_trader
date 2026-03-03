@@ -222,6 +222,7 @@ fn binary_search_for_size(
     if impact_bps == 0 {
         anyhow::bail!("Impact must be greater than zero");
     }
+
     if impact_bps > 10000 {
         anyhow::bail!("Impact cannot exceed 100% (10000 bps)");
     }
@@ -275,6 +276,7 @@ fn binary_search_for_size(
             // This indicates we're approaching the upper bound
             let range = high - low;
             let threshold = range / U256::from(5); // 20% of range
+
             if config.enable_adaptive_bounds
                 && high - mid <= threshold
                 && expansions < config.max_bound_expansions

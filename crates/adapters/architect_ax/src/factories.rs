@@ -30,7 +30,10 @@ use nautilus_model::{
 use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
-    common::consts::{AX_VENUE, AX_WS_PUBLIC_URL, AX_WS_SANDBOX_PUBLIC_URL},
+    common::{
+        consts::{AX_VENUE, AX_WS_PUBLIC_URL, AX_WS_SANDBOX_PUBLIC_URL},
+        credential::Credential,
+    },
     config::{AxDataClientConfig, AxExecClientConfig},
     data::AxDataClient,
     execution::AxExecutionClient,
@@ -89,21 +92,13 @@ impl DataClientFactory for AxDataClientFactory {
         let client_id = ClientId::from(name);
 
         let http_client = if ax_config.has_api_credentials() {
-            let api_key = ax_config
-                .api_key
-                .clone()
-                .or_else(|| std::env::var("AX_API_KEY").ok())
-                .ok_or_else(|| anyhow::anyhow!("AX_API_KEY not configured"))?;
-
-            let api_secret = ax_config
-                .api_secret
-                .clone()
-                .or_else(|| std::env::var("AX_API_SECRET").ok())
-                .ok_or_else(|| anyhow::anyhow!("AX_API_SECRET not configured"))?;
+            let credential =
+                Credential::resolve(ax_config.api_key.clone(), ax_config.api_secret.clone())
+                    .ok_or_else(|| anyhow::anyhow!("API credentials not configured"))?;
 
             AxHttpClient::with_credentials(
-                api_key,
-                api_secret,
+                credential.api_key().to_string(),
+                credential.api_secret().to_string(),
                 Some(ax_config.http_base_url()),
                 None, // orders_base_url
                 ax_config.http_timeout_secs,

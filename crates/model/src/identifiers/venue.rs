@@ -114,7 +114,6 @@ impl Venue {
 
     #[must_use]
     pub fn synthetic() -> Self {
-        // SAFETY: Unwrap safe as using known synthetic venue constant
         Self::new(SYNTHETIC_VENUE)
     }
 
@@ -184,11 +183,13 @@ pub fn validate_blockchain_venue(venue_part: &str) -> anyhow::Result<()> {
         if chain_name.is_empty() || dex_id.is_empty() {
             anyhow::bail!("invalid blockchain venue '{venue_part}': expected format 'Chain:DexId'");
         }
+
         if Chain::from_chain_name(chain_name).is_none() {
             anyhow::bail!(
                 "invalid blockchain venue '{venue_part}': chain '{chain_name}' not recognized"
             );
         }
+
         if DexType::from_dex_name(dex_id).is_none() {
             anyhow::bail!("invalid blockchain venue '{venue_part}': dex '{dex_id}' not recognized");
         }

@@ -207,6 +207,10 @@ impl Default for DydxAdapterConfig {
 
 /// Configuration for the dYdX data client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
+)]
 pub struct DydxDataClientConfig {
     /// Base URL for the HTTP API.
     pub base_url_http: Option<String>,
@@ -246,7 +250,11 @@ impl Default for DydxDataClientConfig {
 
 /// Configuration for the dYdX execution client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DYDXExecClientConfig {
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
+)]
+pub struct DydxExecClientConfig {
     /// The trader ID for the client.
     pub trader_id: TraderId,
     /// The account ID for the client.
@@ -294,7 +302,30 @@ pub struct DYDXExecClientConfig {
     pub grpc_rate_limit_per_second: Option<u32>,
 }
 
-impl DYDXExecClientConfig {
+impl Default for DydxExecClientConfig {
+    fn default() -> Self {
+        Self {
+            trader_id: TraderId::from("TRADER-001"),
+            account_id: AccountId::from("DYDX-001"),
+            network: DydxNetwork::default(),
+            grpc_endpoint: None,
+            grpc_urls: Vec::new(),
+            ws_endpoint: None,
+            http_endpoint: None,
+            private_key: None,
+            wallet_address: None,
+            subaccount_number: 0,
+            authenticator_ids: Vec::new(),
+            http_timeout_secs: None,
+            max_retries: None,
+            retry_delay_initial_ms: None,
+            retry_delay_max_ms: None,
+            grpc_rate_limit_per_second: default_grpc_rate_limit_per_second(),
+        }
+    }
+}
+
+impl DydxExecClientConfig {
     /// Returns the gRPC URLs to use, with fallback support.
     ///
     /// Returns `grpc_urls` if non-empty, otherwise uses `grpc_endpoint` if provided,
@@ -304,6 +335,7 @@ impl DYDXExecClientConfig {
         if !self.grpc_urls.is_empty() {
             return self.grpc_urls.clone();
         }
+
         if let Some(ref endpoint) = self.grpc_endpoint {
             return vec![endpoint.clone()];
         }

@@ -1234,8 +1234,6 @@ cdef extern from "../includes/model.h":
 
     # Creates a new [`OrderBookDeltas_API`] instance from a `CVec` of `OrderBookDelta`.
     #
-    # # Safety
-    #
     # - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects.
     # - This function clones the data pointed to by `deltas` into Rust-managed memory, then forgets the original `Vec` to prevent Rust from auto-deallocating it.
     # - The caller is responsible for managing the memory of `deltas` (including its deallocation) to avoid memory leaks.
@@ -2103,6 +2101,10 @@ cdef extern from "../includes/model.h":
 
     CVec orderbook_asks(OrderBook_API *book);
 
+    CVec orderbook_bids_down_to(OrderBook_API *book, PriceRaw price_raw, uint8_t price_prec);
+
+    CVec orderbook_asks_up_to(OrderBook_API *book, PriceRaw price_raw, uint8_t price_prec);
+
     uint8_t orderbook_has_bid(OrderBook_API *book);
 
     uint8_t orderbook_has_ask(OrderBook_API *book);
@@ -2140,6 +2142,10 @@ cdef extern from "../includes/model.h":
     double orderbook_get_avg_px_for_quantity(OrderBook_API *book,
                                              Quantity_t qty,
                                              OrderSide order_side);
+
+    Price_t orderbook_get_worst_px_for_quantity(OrderBook_API *book,
+                                                Quantity_t qty,
+                                                OrderSide order_side);
 
     double orderbook_get_quantity_for_price(OrderBook_API *book,
                                             Price_t price,

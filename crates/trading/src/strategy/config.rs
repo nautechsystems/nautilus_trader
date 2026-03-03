@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use nautilus_core::serialization::{default_false, default_true};
 use nautilus_model::{
     enums::{OmsType, TimeInForce},
@@ -94,6 +96,21 @@ const fn default_market_exit_max_attempts() -> u64 {
 
 const fn default_market_exit_time_in_force() -> TimeInForce {
     TimeInForce::Gtc
+}
+
+/// Configuration for creating strategies from importable paths.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
+)]
+pub struct ImportableStrategyConfig {
+    /// The fully qualified name of the Strategy class.
+    pub strategy_path: String,
+    /// The fully qualified name of the Strategy config class.
+    pub config_path: String,
+    /// The strategy configuration as a dictionary.
+    pub config: HashMap<String, serde_json::Value>,
 }
 
 impl Default for StrategyConfig {

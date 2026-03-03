@@ -879,6 +879,7 @@ mod tests {
             for key in keys {
                 cache.insert(key, key);
             }
+
             if cache.is_empty() {
                 prop_assert_eq!(cache.len(), 0);
             } else {

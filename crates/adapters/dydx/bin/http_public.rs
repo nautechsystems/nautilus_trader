@@ -86,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         instruments.len(),
         elapsed.as_secs_f64()
     );
+
     if show_summary {
         print_instrument_summary(&instruments);
         return Ok(());
@@ -96,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for inst in instruments.iter().take(5) {
             log::info!("   - {} ({})", inst.id().symbol, inst.instrument_class());
         }
+
         if instruments.len() > 5 {
             log::info!("   ... and {} more", instruments.len() - 5);
         }
@@ -288,6 +290,7 @@ fn print_instrument_summary(instruments: &[InstrumentAny]) {
     for (base, count) in bases.iter().take(20) {
         log::info!("  {base:10} : {count:4} instruments");
     }
+
     if bases.len() > 20 {
         log::info!("  ... and {} more base assets", bases.len() - 20);
     }
@@ -303,6 +306,7 @@ fn print_instrument_summary(instruments: &[InstrumentAny]) {
             inst.size_precision()
         );
     }
+
     if instruments.len() > 5 {
         log::info!("  ... and {} more", instruments.len() - 5);
     }

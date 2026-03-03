@@ -137,10 +137,10 @@ node = TradingNode(config=config_node)
 
 # Configure your execution tester
 # Note: dYdX v4 does NOT support:
-#   - Batch submit/modify/cancel
+#   - Batch submit/modify
 #   - OCO, iceberg, or bracket orders (emulated only)
 #   - Trailing stop orders
-#   - MKT_IF_TOUCHED, LMT_IF_TOUCHED (only STOP_MARKET, STOP_LIMIT)
+#   - Order modification
 config_tester = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],

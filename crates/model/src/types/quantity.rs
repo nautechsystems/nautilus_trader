@@ -217,6 +217,7 @@ impl Quantity {
             raw == QUANTITY_UNDEF || raw <= QUANTITY_RAW_MAX,
             "`raw` value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX} for Quantity"
         );
+
         if raw == QUANTITY_UNDEF {
             assert!(
                 precision == 0,
@@ -347,7 +348,7 @@ impl Quantity {
         let precision_diff = FIXED_PRECISION.saturating_sub(self.precision);
         let rescaled_raw = self.raw / QuantityRaw::pow(10, u32::from(precision_diff));
 
-        // SAFETY: The raw value is guaranteed to be within i128 range after scaling
+        // The raw value is guaranteed to be within i128 range after scaling
         // because our quantity constraints ensure the maximum raw value times the scaling
         // factor cannot exceed i128::MAX (high-precision) or i64::MAX (standard-precision).
         #[allow(clippy::useless_conversion)]

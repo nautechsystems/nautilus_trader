@@ -545,6 +545,7 @@ impl WebSocketClientInner {
                     Ok(Some(Ok(Message::Binary(data)))) => {
                         log::trace!("Received message <binary> {} bytes", data.len());
                         last_data_time = tokio::time::Instant::now();
+
                         if let Some(ref handler) = message_handler {
                             handler(Message::Binary(data));
                         }
@@ -552,6 +553,7 @@ impl WebSocketClientInner {
                     Ok(Some(Ok(Message::Text(data)))) => {
                         log::trace!("Received message: {data}");
                         last_data_time = tokio::time::Instant::now();
+
                         if let Some(ref handler) = message_handler {
                             handler(Message::Text(data));
                         }
@@ -559,6 +561,7 @@ impl WebSocketClientInner {
                     Ok(Some(Ok(Message::Ping(ping_data)))) => {
                         log::trace!("Received ping: {ping_data:?}");
                         last_data_time = tokio::time::Instant::now();
+
                         if let Some(ref handler) = ping_handler {
                             handler(ping_data.to_vec());
                         }
@@ -591,7 +594,6 @@ impl WebSocketClientInner {
                                 break;
                             }
                         }
-                        continue;
                     }
                 }
             }
@@ -754,7 +756,6 @@ impl WebSocketClientInner {
                     }
                     Err(_) => {
                         // Timeout - just continue the loop
-                        continue;
                     }
                 }
             }
@@ -799,7 +800,7 @@ impl WebSocketClientInner {
                             }
                         }
                     }
-                    ConnectionMode::Reconnect => continue,
+                    ConnectionMode::Reconnect => {}
                     ConnectionMode::Disconnect | ConnectionMode::Closed => break,
                 }
             }
@@ -1074,6 +1075,7 @@ impl WebSocketClient {
                     if self.is_active() {
                         return Ok(());
                     }
+
                     if matches!(
                         self.connection_mode(),
                         ConnectionMode::Disconnect | ConnectionMode::Closed
@@ -1116,6 +1118,7 @@ impl WebSocketClient {
             log::debug!("Controller task finished");
         } else {
             log::error!("Timeout waiting for controller task to finish");
+
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
                 log_task_aborted("controller");
@@ -1321,6 +1324,7 @@ impl WebSocketClient {
                                 "Reconnect attempt {} failed: {e}",
                                 inner.reconnection_attempt_count
                             );
+
                             if !duration.is_zero() {
                                 log::warn!("Backing off for {}s...", duration.as_secs_f64());
                             }
@@ -2551,6 +2555,7 @@ mod rust_tests {
             let mut ws = accept_async(stream).await.unwrap();
             for _ in 0..10 {
                 sleep(Duration::from_millis(200)).await;
+
                 if ws
                     .send(tokio_tungstenite::tungstenite::Message::Text("ping".into()))
                     .await

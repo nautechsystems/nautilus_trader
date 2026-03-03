@@ -54,6 +54,7 @@ async fn main() {
         if let Some(msg) = record.get::<TradeMsg>() {
             println!("{msg:#?}");
         }
+
         if let Some(msg) = record.get::<MboMsg>() {
             println!(
                 "Received delta: {} {} flags={}",

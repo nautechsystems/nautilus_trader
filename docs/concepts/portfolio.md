@@ -1,6 +1,6 @@
 # Portfolio
 
-The Portfolio serves as the central hub for managing and tracking all positions across active strategies for the trading node or backtest.
+The Portfolio is the central hub for managing and tracking all positions across active strategies for the trading node or backtest.
 It consolidates position data from multiple instruments, providing a unified view of your holdings, risk exposure, and overall performance.
 Explore this section to understand how NautilusTrader aggregates and updates portfolio state to support effective trading and risk management.
 
@@ -147,13 +147,11 @@ stat = WinRate()
 engine.portfolio.analyzer.register_statistic(stat)
 ```
 
-:::info
-See the `PortfolioAnalyzer` [API Reference](../api_reference/analysis.md#class-portfolioanalyzer) for details on available methods.
-:::
+See the [`PortfolioAnalyzer` API Reference](../api_reference/analysis.md#class-portfolioanalyzer) for all available methods.
 
 :::tip
-Ensure your statistic is robust to degenerate inputs such as ``None``, empty series, or insufficient data.
-Return ``None`` for unknown/incalculable values, or a reasonable default like ``0.0`` when semantically appropriate (e.g., win rate with no trades).
+Ensure your statistic is robust to degenerate inputs such as `None`, empty series, or insufficient data.
+Return `None` for unknown/incalculable values, or a reasonable default like `0.0` when semantically appropriate (e.g., win rate with no trades).
 :::
 
 ## Backtest analysis

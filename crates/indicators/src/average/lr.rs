@@ -134,6 +134,7 @@ impl LinearRegression {
         let _ = self.inputs.push_back(close);
 
         self.has_inputs = true;
+
         if self.inputs.len() < self.period {
             return;
         }

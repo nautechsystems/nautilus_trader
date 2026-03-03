@@ -18,7 +18,7 @@
 use std::fmt::Debug;
 
 use databento::historical::DateTimeRange;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, string::REDACTED};
 use time::OffsetDateTime;
 use zeroize::ZeroizeOnDrop;
 
@@ -34,7 +34,7 @@ pub struct Credential {
 impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
-            .field("api_key", &"<redacted>")
+            .field("api_key", &REDACTED)
             .finish()
     }
 }
@@ -58,8 +58,7 @@ impl Credential {
     /// having been created from a String.
     #[must_use]
     pub fn api_key(&self) -> &str {
-        // SAFETY: The API key is always valid UTF-8 since it was created from a String
-        std::str::from_utf8(&self.api_key).unwrap()
+        std::str::from_utf8(&self.api_key).expect("API key is valid UTF-8")
     }
 
     /// Returns a masked version of the API key for logging purposes.
@@ -120,7 +119,7 @@ mod tests {
     fn test_credential_debug_redaction() {
         let credential = Credential::new("test_api_key");
         let debug_str = format!("{credential:?}");
-        assert!(debug_str.contains("<redacted>"));
+        assert!(debug_str.contains(REDACTED));
         assert!(!debug_str.contains("test_api_key"));
     }
 }

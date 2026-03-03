@@ -409,7 +409,6 @@ pub fn book_depth10_to_arrow_record_batch_bytes(
     }
 
     // Take first element and extract metadata
-    // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
     let metadata = first.metadata();
     OrderBookDepth10::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
@@ -431,7 +430,6 @@ pub fn quotes_to_arrow_record_batch_bytes(
     }
 
     // Take first element and extract metadata
-    // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
     let metadata = first.metadata();
     QuoteTick::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
@@ -453,7 +451,6 @@ pub fn trades_to_arrow_record_batch_bytes(
     }
 
     // Take first element and extract metadata
-    // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
     let metadata = first.metadata();
     TradeTick::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
@@ -473,7 +470,6 @@ pub fn bars_to_arrow_record_batch_bytes(data: Vec<Bar>) -> Result<RecordBatch, E
     }
 
     // Take first element and extract metadata
-    // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
     let metadata = first.metadata();
     Bar::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
@@ -495,7 +491,6 @@ pub fn mark_prices_to_arrow_record_batch_bytes(
     }
 
     // Take first element and extract metadata
-    // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
     let metadata = first.metadata();
     MarkPriceUpdate::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
@@ -517,7 +512,6 @@ pub fn index_prices_to_arrow_record_batch_bytes(
     }
 
     // Take first element and extract metadata
-    // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
     let metadata = first.metadata();
     IndexPriceUpdate::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
@@ -539,7 +533,6 @@ pub fn instrument_closes_to_arrow_record_batch_bytes(
     }
 
     // Take first element and extract metadata
-    // SAFETY: Unwrap safe as already checked that `data` not empty
     let first = data.first().unwrap();
     let metadata = first.metadata();
     InstrumentClose::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
