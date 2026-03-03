@@ -119,6 +119,26 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
+def _safe_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value in (0, 0.0):
+            return False
+        if value in (1, 1.0):
+            return True
+    text = _decode(value).strip().lower()
+    if not text:
+        return None
+    if text in {"1", "true", "t", "yes", "y", "on", "enabled"}:
+        return True
+    if text in {"0", "false", "f", "no", "n", "off", "disabled"}:
+        return False
+    return None
+
+
 def _as_list(value: Any) -> list[Any]:
     if value is None:
         return []
@@ -127,6 +147,95 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, tuple):
         return list(value)
     return [value]
+
+
+def _param_key(strategy_id: str, name: str) -> str:
+    return f"strategy.{strategy_id}.{name}"
+
+
+def _coerce_param_value(name: str, value: Any, schema_type: str) -> Any:
+    if schema_type == "boolean":
+        result = _safe_bool(value)
+        if result is None:
+            raise ValueError(f"Invalid boolean value for param '{name}': {value!r}")
+        return result
+    if schema_type == "integer":
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid integer value for param '{name}': {value!r}")
+    if schema_type == "number":
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid number value for param '{name}': {value!r}")
+    return _decode(value)
+
+
+def _param_value_to_redis(value: Any) -> str:
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    return str(value)
+
+
+def _load_param_value(
+    redis_client: redis.Redis,
+    strategy_id: str,
+    name: str,
+    schema_type: str,
+) -> Any | None:
+    raw = redis_client.get(_param_key(strategy_id, name))
+    if raw is None:
+        return None
+    loaded = _load_json(raw)
+    value = _decode(raw) if loaded is None else loaded
+    return _coerce_param_value(name, value, schema_type)
+
+
+def _load_params(redis_client: redis.Redis, strategy_id: str) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    for name, schema in PARAMS_SCHEMA.items():
+        schema_type = str(schema.get("type", "number"))
+        value = _load_param_value(redis_client, strategy_id, name, schema_type)
+        if value is None:
+            value = PARAMS_DEFAULTS.get(name)
+        params[name] = value
+    return params
+
+
+def _read_params_request_payload() -> dict[str, Any]:
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return {}
+    if isinstance(payload.get("params"), dict):
+        return payload["params"]
+    return {key: value for key, value in payload.items() if key != "source"}
+
+
+def _build_params_payload(redis_client: redis.Redis, strategy_id: str) -> dict[str, Any]:
+    return {
+        "strategy_id": strategy_id,
+        "params": _load_params(redis_client, strategy_id),
+        "schema": PARAMS_SCHEMA,
+    }
+
+
+def _apply_params_update(redis_client: redis.Redis, strategy_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    if not updates:
+        params = _load_params(redis_client, strategy_id)
+        return {"updated": [], "params": params}
+
+    updated: list[str] = []
+    for key, value in updates.items():
+        schema = PARAMS_SCHEMA.get(key)
+        if schema is None:
+            raise ValueError(f"Unknown parameter '{key}' for strategy '{strategy_id}'")
+        schema_type = str(schema.get("type", "number"))
+        coerced = _coerce_param_value(key, value, schema_type)
+        redis_client.set(_param_key(strategy_id, key), _param_value_to_redis(coerced))
+        updated.append(key)
+
+    return {"updated": sorted(updated), "params": _load_params(redis_client, strategy_id)}
 
 
 def _load_contracts_module() -> Any | None:
@@ -365,6 +474,11 @@ BASE_HTML_TEMPLATE = """<!doctype html>
       .ok { color: #86efac; }
       .warn { color: #facc15; }
       .err { color: #f87171; }
+      .toolbar { margin-top: 8px; }
+      .toolbar button { padding: 6px 10px; border: 1px solid #294066; border-radius: 8px; background: #1d2f50; color: #d8e2ff; cursor: pointer; }
+      .toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .sub { color: #9aaecf; margin-top: 8px; }
+      .section { margin-top: 12px; }
       pre { max-height: 280px; overflow: auto; white-space: pre-wrap; }
     </style>
   </head>
@@ -375,19 +489,13 @@ BASE_HTML_TEMPLATE = """<!doctype html>
       <div id=\"status\" class=\"status mono\">loading</div>
       <div class=\"card\" id=\"content\"></div>
     </div>
-    <script>
+  <script>
       const ROUTE = window.location.pathname;
       const STRATEGY = new URLSearchParams(window.location.search).get('strategy') || '__DEFAULT_STRATEGY__';
-      const ENDPOINTS = {
-        '/tokenmm': '/api/v1/signals',
-        '/tokenmm/signal': '/api/v1/signals',
-        '/tokenmm/params': '/api/v1/params',
-        '/tokenmm/balances': '/api/v1/balances',
-        '/tokenmm/trades': '/api/v1/trades',
-        '/tokenmm/alerts': '/api/v1/alerts',
-      };
+      const STRATEGY_QUERY = `strategy=${encodeURIComponent(STRATEGY)}`;
 
       const pages = [
+        ['/tokenmm', 'Home'],
         ['/tokenmm/signal', 'Signal'],
         ['/tokenmm/params', 'Params'],
         ['/tokenmm/balances', 'Balances'],
@@ -403,66 +511,235 @@ BASE_HTML_TEMPLATE = """<!doctype html>
         }
         return new Date(v).toISOString();
       };
+      const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => {
+        const map = {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '\"': '&quot;',
+          "'": '&#39;',
+        };
+        return map[char];
+      });
+      const apiGet = async (path) => {
+        const response = await fetch(`${path}?${STRATEGY_QUERY}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      };
 
       const renderMenu = () => {
         const links = pages.map(([href, label]) => {
-          const active = ROUTE.startsWith(href) ? 'active' : '';
+          const active = href === '/tokenmm' ? (ROUTE === '/tokenmm' || ROUTE === '/' ? 'active' : '') : ROUTE === href ? 'active' : '';
           return `<a href=\"${href}?strategy=${STRATEGY}\" class=\"${active}\">${label}</a>`;
         }).join('');
         document.getElementById('menu').innerHTML = links;
       };
 
-      const renderSignal = async () => {
-        const data = await (await fetch('/api/v1/signals')).json();
-        const strategy = (data?.data?.strategies || [])[0] || {};
-        const legs = Object.entries(strategy.legs || {}).map(([name, row]) => `<tr><td>${name}</td><td>${row.exchange}</td><td>${fmt(row.bid)}</td><td>${fmt(row.ask)}</td><td>${fmt(row.mid)}</td><td>${fmt(row.age_ms)} ms</td></tr>`).join('');
-        const fv = strategy.fv_row || {};
-        document.getElementById('content').innerHTML = `
-          <div class=\"mono\">strategy=${strategy.id || '-'} blocked=${strategy.blocked}</div>
-          <h3>Market BBO</h3>
-          <table><thead><tr><th>Leg</th><th>Exchange</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Age</th></tr></thead><tbody>${legs || '<tr><td colspan=\"6\">No data</td></tr>'}</tbody></table>
-          <h3>Last FV</h3>
-          <pre class=\"mono\">${JSON.stringify(fv, null, 2)}</pre>
-          <h3>State</h3>
-          <pre class=\"mono\">${JSON.stringify(strategy.state || {}, null, 2)}</pre>
+      const renderSignalPanel = (strategy, fvRow, legs) => {
+        const rows = Object.entries(legs || {}).map(
+          ([name, row]) =>
+            `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(row.exchange)}</td><td>${escapeHtml(row.bid)}</td><td>${escapeHtml(row.ask)}</td><td>${escapeHtml(row.mid)}</td><td>${escapeHtml(row.age_ms)} ms</td></tr>`,
+        ).join('');
+        return `
+          <div class=\"section card\">
+            <h3>Signal</h3>
+            <div class=\"mono\">strategy=${escapeHtml(strategy.id || '-')} blocked=${escapeHtml(strategy.blocked)} managed_orders=${escapeHtml(strategy.managed_orders || 0)} bot_state=${escapeHtml(strategy.tradeable ? 'on' : 'off')}</div>
+            <h4>Market BBO</h4>
+            <table><thead><tr><th>Leg</th><th>Exchange</th><th>Bid</th><th>Ask</th><th>Mid</th><th>Age</th></tr></thead><tbody>${rows || '<tr><td colspan=\"6\">No data</td></tr>'}</tbody></table>
+            <h4>Last FV</h4>
+            <pre class=\"mono\">${escapeHtml(JSON.stringify(fvRow || {}, null, 2))}</pre>
+            <h4>State</h4>
+            <pre class=\"mono\">${escapeHtml(JSON.stringify(strategy.state || {}, null, 2))}</pre>
+          </div>
         `;
       };
 
-      const renderParams = async () => {
-        const data = await (await fetch('/api/v1/params')).json();
-        const row = (data?.data?.strategies || [])[0] || {};
-        const params = row.params || {};
-        const schema = row.schema || {};
-        const body = Object.entries(params).map(([name, value]) => {
+      const renderTable = (headerHtml, bodyHtml) => {
+        const columns = (headerHtml.match(/<th>/g) || []).length || 6;
+        return `<table><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml || `<tr><td colspan=\"${columns}\">No rows</td></tr>`}</tbody></table>`;
+      };
+
+      const renderParamsSection = ({params, schema, prefix, title}) => {
+        const rows = Object.entries(params || {}).map(([name, value]) => {
           const meta = schema[name] || {};
-          return `<tr><td>${name}</td><td>${fmt(value)}</td><td>${meta.type || '-'}</td><td>${meta.description || '-'}</td></tr>`;
+          const type = meta.type || 'number';
+          if (type === 'boolean') {
+            return `<tr><td>${escapeHtml(name)}</td><td><label><input type=\"checkbox\" name=\"${escapeHtml(name)}\" data-param=\"${escapeHtml(name)}\" data-type=\"boolean\" ${value ? 'checked' : ''} /></label></td><td>${escapeHtml(meta.type || '')}</td><td>${escapeHtml(meta.description || '-')}</td></tr>`;
+          }
+          const step = type === 'integer' ? '1' : 'any';
+          return `<tr><td>${escapeHtml(name)}</td><td><input type=\"number\" name=\"${escapeHtml(name)}\" data-param=\"${escapeHtml(name)}\" data-type=\"${escapeHtml(type)}\" value=\"${escapeHtml(value)}\" step=\"${escapeHtml(step)}\" /></td><td>${escapeHtml(meta.type || '')}</td><td>${escapeHtml(meta.description || '-')}</td></tr>`;
         }).join('');
-        document.getElementById('content').innerHTML = `<table><thead><tr><th>Param</th><th>Value</th><th>Type</th><th>Description</th></tr></thead><tbody>${body}</tbody></table>`;
+        return `
+          <div class=\"section card\">
+            <h3>${escapeHtml(title || 'Params')}</h3>
+            <form id=\"${prefix}-params-form\">
+              <table><thead><tr><th>Param</th><th>Value</th><th>Type</th><th>Description</th></tr></thead><tbody>${rows || '<tr><td colspan=\"4\">No params</td></tr>'}</tbody></table>
+              <div class=\"toolbar\"><button type=\"submit\">Save params</button></div>
+            </form>
+            <div id=\"${prefix}-params-status\" class=\"status mono\"></div>
+          </div>
+        `;
+      };
+
+      const postParams = async (event, options) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const status = document.getElementById(`${options.prefix}-params-status`);
+        const updates = {};
+        const errors = [];
+        const fields = form.querySelectorAll('input[data-param]');
+        for (const field of fields) {
+          const name = field.getAttribute('data-param');
+          const type = field.getAttribute('data-type') || 'number';
+          if (!name) {
+            continue;
+          }
+          if (type === 'boolean') {
+            updates[name] = !!field.checked;
+            continue;
+          }
+          const raw = field.value;
+          if (raw === '') {
+            errors.push(`${name}: required`);
+            continue;
+          }
+          const parsed = type === 'integer' ? Number.parseInt(raw, 10) : Number.parseFloat(raw);
+          if (!Number.isFinite(parsed)) {
+            errors.push(`${name}: invalid number`);
+            continue;
+          }
+          updates[name] = parsed;
+        }
+        if (errors.length) {
+          status.innerHTML = `<span class=\"err\">invalid params: ${escapeHtml(errors.join(', '))}</span>`;
+          return;
+        }
+        const btn = form.querySelector('button[type=\"submit\"]');
+        if (btn) {
+          btn.disabled = true;
+        }
+        status.innerHTML = '<span class=\"warn\">saving...</span>';
+        try {
+          const response = await fetch(`/api/v1/params?${STRATEGY_QUERY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ params: updates, source: 'ui' }),
+          });
+          const payload = await response.json();
+          if (!response.ok || payload?.ok === false) {
+            status.innerHTML = `<span class=\"err\">save failed: ${escapeHtml(payload?.error || `HTTP ${response.status}`)}</span>`;
+          } else {
+            status.innerHTML = '<span class=\"ok\">saved</span>';
+            if (typeof options.refresh === 'function') {
+              await options.refresh();
+            }
+          }
+        } catch (error) {
+          status.innerHTML = `<span class=\"err\">save failed: ${escapeHtml(String(error))}</span>`;
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+          }
+        }
+      };
+
+      const renderSignal = async () => {
+        const data = await apiGet('/api/v1/signals');
+        const strategy = (data?.data?.strategies || [])[0] || {};
+        document.getElementById('content').innerHTML = renderSignalPanel(strategy, strategy.fv_row || {}, strategy.legs || {});
+      };
+
+      const renderParams = async () => {
+        const data = await apiGet('/api/v1/params');
+        const row = (data?.data?.strategies || [])[0] || {};
+        document.getElementById('content').innerHTML = renderParamsSection({
+          params: row.params || {},
+          schema: row.schema || {},
+          prefix: 'params',
+          title: 'Parameters',
+        });
+        document
+          .getElementById('params-params-form')
+          .addEventListener('submit', (event) => {
+            postParams(event, {
+              prefix: 'params',
+              refresh: async () => {
+                await renderParams();
+              },
+            });
+          });
+      };
+
+      const renderHome = async () => {
+        const [signalData, paramsData, balancesData, tradesData, alertsData] = await Promise.all([
+          apiGet('/api/v1/signals'),
+          apiGet('/api/v1/params'),
+          apiGet('/api/v1/balances'),
+          apiGet('/api/v1/trades'),
+          apiGet('/api/v1/alerts'),
+        ]);
+
+        const strategy = (signalData?.data?.strategies || [])[0] || {};
+        const row = (paramsData?.data?.strategies || [])[0] || {};
+        const balances = balancesData?.data?.rows || [];
+        const trades = tradesData?.data?.rows || [];
+        const alerts = alertsData?.data?.rows || [];
+
+        const balanceRows = balances.map((entry) => `<tr><td>${escapeHtml(entry.strategy_id)}</td><td>${escapeHtml(entry.exchange || entry.venue || '')}</td><td>${escapeHtml(entry.base || entry.coin || '')}</td><td>${escapeHtml(entry.free)}</td><td>${escapeHtml(entry.locked)}</td><td>${escapeHtml(entry.total)}</td></tr>`).join('');
+        const tradeRows = trades.map((entry) => `<tr><td>${fmtTs(entry.ts_ms)}</td><td>${escapeHtml(entry.side || entry.order_side)}</td><td>${escapeHtml(entry.qty)}</td><td>${escapeHtml(entry.price)}</td><td>${escapeHtml(entry.symbol || entry.coin)}</td><td>${escapeHtml(entry.venue || entry.exchange)}</td></tr>`).join('');
+        const alertRows = alerts.map((entry) => `<tr><td>${fmtTs(entry.ts_ms)}</td><td>${escapeHtml(entry.level)}</td><td>${escapeHtml(entry.message || entry.event || entry.text)}</td><td>${escapeHtml(entry.reason)}</td></tr>`).join('');
+
+        document.getElementById('content').innerHTML = `
+          ${renderSignalPanel(strategy, strategy.fv_row || {}, strategy.legs || {})}
+          ${renderParamsSection({
+            params: row.params || {},
+            schema: row.schema || {},
+            prefix: 'home',
+            title: 'Params',
+          })}
+          <div class=\"section card\"><h3>Balances</h3>${renderTable('<th>strategy_id</th><th>exchange</th><th>asset</th><th>free</th><th>locked</th><th>total</th>', balanceRows)}</div>
+          <div class=\"section card\"><h3>Trades</h3>${renderTable('<th>time</th><th>side</th><th>qty</th><th>price</th><th>symbol</th><th>venue</th>', tradeRows)}</div>
+          <div class=\"section card\"><h3>Alerts</h3>${renderTable('<th>time</th><th>level</th><th>message</th><th>reason</th>', alertRows)}</div>
+        `;
+        document
+          .getElementById('home-params-form')
+          .addEventListener('submit', (event) => {
+            postParams(event, {
+              prefix: 'home',
+              refresh: async () => {
+                await renderHome();
+              },
+            });
+          });
       };
 
       const renderBalances = async () => {
-        const data = await (await fetch('/api/v1/balances')).json();
+        const data = await apiGet('/api/v1/balances');
         const rows = data?.data?.rows || [];
         const body = rows.map((row) => `<tr><td>${fmt(row.strategy_id)}</td><td>${fmt(row.exchange || row.venue || '')}</td><td>${fmt(row.base || row.coin || '')}</td><td>${fmt(row.free)}</td><td>${fmt(row.locked)}</td><td>${fmt(row.total)}</td></tr>`).join('');
-        document.getElementById('content').innerHTML = `<table><thead><tr><th>strategy_id</th><th>exchange</th><th>asset</th><th>free</th><th>locked</th><th>total</th></tr></thead><tbody>${body || '<tr><td colspan=\"6\">No balances</td></tr>'}</tbody></table>`;
+        document.getElementById('content').innerHTML = `<div class=\"section card\"><h3>Balances</h3>${renderTable('<th>strategy_id</th><th>exchange</th><th>asset</th><th>free</th><th>locked</th><th>total</th>', body)}</div>`;
       };
 
       const renderTrades = async () => {
-        const data = await (await fetch('/api/v1/trades')).json();
+        const data = await apiGet('/api/v1/trades');
         const rows = data?.data?.rows || [];
         const body = rows.map((row) => `<tr><td>${fmtTs(row.ts_ms)}</td><td>${fmt(row.side || row.order_side)}</td><td>${fmt(row.qty)}</td><td>${fmt(row.price)}</td><td>${fmt(row.symbol || row.coin)}</td><td>${fmt(row.venue || row.exchange)}</td></tr>`).join('');
-        document.getElementById('content').innerHTML = `<table><thead><tr><th>time</th><th>side</th><th>qty</th><th>price</th><th>symbol</th><th>venue</th></tr></thead><tbody>${body || '<tr><td colspan=\"6\">No trades</td></tr>'}</tbody></table>`;
+        document.getElementById('content').innerHTML = `<div class=\"section card\"><h3>Trades</h3>${renderTable('<th>time</th><th>side</th><th>qty</th><th>price</th><th>symbol</th><th>venue</th>', body)}</div>`;
       };
 
       const renderAlerts = async () => {
-        const data = await (await fetch('/api/v1/alerts')).json();
+        const data = await apiGet('/api/v1/alerts');
         const rows = data?.data?.rows || [];
         const body = rows.map((row) => `<tr><td>${fmtTs(row.ts_ms)}</td><td>${fmt(row.level)}</td><td>${fmt(row.message || row.event || row.text)}</td><td>${fmt(row.reason)}</td></tr>`).join('');
-        document.getElementById('content').innerHTML = `<table><thead><tr><th>time</th><th>level</th><th>message</th><th>reason</th></tr></thead><tbody>${body || '<tr><td colspan=\"4\">No alerts</td></tr>'}</tbody></table>`;
+        document.getElementById('content').innerHTML = `<div class=\"section card\"><h3>Alerts</h3>${renderTable('<th>time</th><th>level</th><th>message</th><th>reason</th>', body)}</div>`;
       };
 
       const renderMap = {
         '/tokenmm/signal': renderSignal,
+        '/tokenmm': renderHome,
+        '/': renderHome,
         '/tokenmm/params': renderParams,
         '/tokenmm/balances': renderBalances,
         '/tokenmm/trades': renderTrades,
@@ -470,12 +747,12 @@ BASE_HTML_TEMPLATE = """<!doctype html>
       };
 
       const render = async () => {
-        const target = ROUTE === '/tokenmm' ? '/tokenmm/signal' : ROUTE;
+        const target = (ROUTE === '/tokenmm' || ROUTE === '/') ? '/tokenmm' : ROUTE;
         const fn = renderMap[target] || renderSignal;
         try {
-          const health = await (await fetch('/api/v1/healthz')).json();
+        const health = await (await fetch('/api/v1/healthz')).json();
           const ok = health?.ok ? 'ok' : 'error';
-          document.getElementById('status').innerHTML = `${ok} redis=${health?.data?.redis_available ? 'up' : 'down'} strategy=${STRATEGY}`;
+          document.getElementById('status').innerHTML = `${ok} redis=${health?.data?.redis_available ? 'up' : 'down'} strategy=${escapeHtml(STRATEGY)}`;
           await fn();
         } catch (err) {
           document.getElementById('status').innerHTML = `<span class=\"err\">dashboard error</span> ${err}`;
@@ -567,14 +844,24 @@ def build_app() -> Flask:
     @app.get("/api/v1/params")
     def api_params() -> Any:
         sid = request.args.get("strategy") or DEFAULT_STRATEGY_ID
+        payload = {"strategies": [_build_params_payload(redis_client, sid)]}
+        return jsonify({"ok": True, "data": payload, "error": None}), 200
+
+    @app.post("/api/v1/params")
+    def api_params_update() -> Any:
+        sid = request.args.get("strategy") or DEFAULT_STRATEGY_ID
+        updates = _read_params_request_payload()
+        if not updates:
+            return jsonify({"ok": False, "data": None, "error": "missing_payload"}), 400
+        try:
+            result = _apply_params_update(redis_client, sid, updates)
+        except ValueError as exc:
+            return jsonify({"ok": False, "data": None, "error": str(exc)}), 400
         payload = {
-            "strategies": [
-                {
-                    "strategy_id": sid,
-                    "params": PARAMS_DEFAULTS,
-                    "schema": PARAMS_SCHEMA,
-                },
-            ],
+            "strategy_id": sid,
+            "updated": result["updated"],
+            "params": result["params"],
+            "schema": PARAMS_SCHEMA,
         }
         return jsonify({"ok": True, "data": payload, "error": None}), 200
 
@@ -595,12 +882,31 @@ def build_app() -> Flask:
     @app.get("/api/v1/strategies/<string:strategy_id>/parameters")
     def api_strategy_parameters(strategy_id: str) -> Any:
         sid = strategy_id or DEFAULT_STRATEGY_ID
+        payload = {
+            "strategy_id": sid,
+            "params": _load_params(redis_client, sid),
+            "schema": PARAMS_SCHEMA,
+        }
+        return jsonify({"ok": True, "data": payload, "error": None}), 200
+
+    @app.post("/api/v1/strategies/<string:strategy_id>/parameters")
+    @app.patch("/api/v1/strategies/<string:strategy_id>/parameters")
+    def api_strategy_parameters_update(strategy_id: str) -> Any:
+        sid = strategy_id or DEFAULT_STRATEGY_ID
+        updates = _read_params_request_payload()
+        if not updates:
+            return jsonify({"ok": False, "data": None, "error": "missing_payload"}), 400
+        try:
+            result = _apply_params_update(redis_client, sid, updates)
+        except ValueError as exc:
+            return jsonify({"ok": False, "data": None, "error": str(exc)}), 400
         return jsonify(
             {
                 "ok": True,
                 "data": {
                     "strategy_id": sid,
-                    "params": PARAMS_DEFAULTS,
+                    "updated": result["updated"],
+                    "params": result["params"],
                     "schema": PARAMS_SCHEMA,
                 },
                 "error": None,
