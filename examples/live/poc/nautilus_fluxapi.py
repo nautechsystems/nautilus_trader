@@ -13,6 +13,7 @@ from typing import Any
 import redis
 from flask import Flask
 from flask import jsonify
+from flask import Response
 from flask import request
 
 DEFAULT_STRATEGY_ID = "bybit_binance_plumeusdt_makerv3"
@@ -767,8 +768,16 @@ def build_app() -> Flask:
     @app.get("/tokenmm/balances")
     @app.get("/tokenmm/trades")
     @app.get("/tokenmm/alerts")
-    def tokenmm() -> str:
-        return BASE_HTML_TEMPLATE
+    def tokenmm() -> Response:
+        return Response(
+            BASE_HTML_TEMPLATE,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+            mimetype="text/html",
+        )
 
     @app.get("/api/v1/healthz")
     def health() -> Any:
