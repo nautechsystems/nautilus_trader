@@ -23,7 +23,6 @@ DEFAULT_REDIS_DB = 0
 
 
 PARAMS_DEFAULTS: dict[str, Any] = {
-    "bot_on": True,
     "qty": 1_000.0,
     "des_qty_global": 0.0,
     "max_qty_global": 20_000.0,
@@ -51,10 +50,10 @@ PARAMS_DEFAULTS: dict[str, Any] = {
     "quote_fail_critical_after_s": 60.0,
     "max_age_ms": 10_000,
     "maker_price_anchor": "reference_leg",
+    "bot_on": True,
 }
 
 PARAMS_SCHEMA: dict[str, dict[str, Any]] = {
-    "bot_on": {"type": "boolean", "description": "Enable quote publishing and management."},
     "qty": {"type": "number", "description": "Target base quantity per quote/hedge cycle (mapped from qty)."},
     "des_qty_global": {"type": "number", "description": "Global desired inventory target in base units."},
     "max_qty_global": {"type": "number", "description": "Global hard inventory cap in base units."},
@@ -82,7 +81,39 @@ PARAMS_SCHEMA: dict[str, dict[str, Any]] = {
     "quote_fail_critical_after_s": {"type": "number", "description": "Critical quote-fail escalation time window in seconds."},
     "max_age_ms": {"type": "integer", "description": "Replace managed orders older than this age."},
     "maker_price_anchor": {"type": "string", "description": "Fair-value anchor strategy."},
+    "bot_on": {"type": "boolean", "description": "Enable quote publishing and management."},
 }
+
+PARAMS_ORDER: tuple[str, ...] = (
+    "qty",
+    "des_qty_global",
+    "max_qty_global",
+    "max_skew_bps_global",
+    "des_qty_local",
+    "max_qty_local",
+    "max_skew_bps_local",
+    "linear_offset_bps",
+    "n_orders1",
+    "distance1",
+    "bid_edge1",
+    "ask_edge1",
+    "place_edge1",
+    "n_orders2",
+    "distance2",
+    "bid_edge2",
+    "ask_edge2",
+    "place_edge2",
+    "n_orders3",
+    "distance3",
+    "bid_edge3",
+    "ask_edge3",
+    "place_edge3",
+    "quote_fail_critical_after_count",
+    "quote_fail_critical_after_s",
+    "max_age_ms",
+    "maker_price_anchor",
+    "bot_on",
+)
 
 
 @dataclass(frozen=True)
@@ -223,13 +254,33 @@ def _load_param_value(
 
 def _load_params(redis_client: redis.Redis, strategy_id: str) -> dict[str, Any]:
     params: dict[str, Any] = {}
+    for name in PARAMS_ORDER:
+        schema = PARAMS_SCHEMA.get(name, {})
+        schema_type = str(schema.get("type", "number"))
+        value = _load_param_value(redis_client, strategy_id, name, schema_type)
+        if value is None:
+            value = PARAMS_DEFAULTS.get(name)
+        params[name] = value
     for name, schema in PARAMS_SCHEMA.items():
+        if name in params:
+            continue
         schema_type = str(schema.get("type", "number"))
         value = _load_param_value(redis_client, strategy_id, name, schema_type)
         if value is None:
             value = PARAMS_DEFAULTS.get(name)
         params[name] = value
     return params
+
+
+def _ordered_schema() -> dict[str, dict[str, Any]]:
+    schema: dict[str, dict[str, Any]] = {}
+    for key in PARAMS_ORDER:
+        if key in PARAMS_SCHEMA:
+            schema[key] = PARAMS_SCHEMA[key]
+    for key, value in PARAMS_SCHEMA.items():
+        if key not in schema:
+            schema[key] = value
+    return schema
 
 
 def _read_params_request_payload() -> dict[str, Any]:
@@ -245,7 +296,7 @@ def _build_params_payload(redis_client: redis.Redis, strategy_id: str) -> dict[s
     return {
         "strategy_id": strategy_id,
         "params": _load_params(redis_client, strategy_id),
-        "schema": PARAMS_SCHEMA,
+        "schema": _ordered_schema(),
     }
 
 
@@ -719,6 +770,8 @@ BASE_HTML_TEMPLATE = """<!doctype html>
 
 def build_app() -> Flask:
     app = Flask(__name__)
+    app.config["JSON_SORT_KEYS"] = False
+    app.json.sort_keys = False
 
     redis_host = os.getenv("POC_REDIS_HOST", DEFAULT_REDIS_HOST)
     redis_port = int(os.getenv("POC_REDIS_PORT", str(DEFAULT_REDIS_PORT)))
@@ -796,7 +849,7 @@ def build_app() -> Flask:
 
     @app.get("/api/v1/param-schema")
     def api_param_schema() -> Any:
-        return jsonify({"ok": True, "data": {"schema": PARAMS_SCHEMA}, "error": None}), 200
+        return jsonify({"ok": True, "data": {"schema": _ordered_schema()}, "error": None}), 200
 
     @app.get("/api/v1/params")
     def api_params() -> Any:
@@ -818,7 +871,7 @@ def build_app() -> Flask:
             "strategy_id": sid,
             "updated": result["updated"],
             "params": result["params"],
-            "schema": PARAMS_SCHEMA,
+            "schema": _ordered_schema(),
         }
         return jsonify({"ok": True, "data": payload, "error": None}), 200
 
@@ -842,7 +895,7 @@ def build_app() -> Flask:
         payload = {
             "strategy_id": sid,
             "params": _load_params(redis_client, sid),
-            "schema": PARAMS_SCHEMA,
+            "schema": _ordered_schema(),
         }
         return jsonify({"ok": True, "data": payload, "error": None}), 200
 
@@ -864,7 +917,7 @@ def build_app() -> Flask:
                     "strategy_id": sid,
                     "updated": result["updated"],
                     "params": result["params"],
-                    "schema": PARAMS_SCHEMA,
+                    "schema": _ordered_schema(),
                 },
                 "error": None,
             },
