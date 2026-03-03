@@ -25,7 +25,7 @@ use crate::{
 
 /// Complete snapshot of a liquidity pool's state at a specific point in time.
 ///
-/// `PoolSnapshot` provides a comprehensive, self-contained representation of a pool's
+/// `PoolSnapshot` provides a self-contained representation of a pool's
 /// entire state, bundling together the global state variables, all liquidity positions,
 /// and the complete tick distribution.
 #[cfg_attr(

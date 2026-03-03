@@ -15,7 +15,7 @@
 
 //! Parquet data catalog for efficient storage and retrieval of financial market data.
 //!
-//! This module provides a comprehensive data catalog implementation that uses Apache Parquet
+//! This module provides a data catalog implementation that uses Apache Parquet
 //! format for storing financial market data with object store backends. The catalog supports
 //! various data types including quotes, trades, bars, order book data, and other market events.
 //!
@@ -100,7 +100,7 @@ use crate::parquet::{read_parquet_from_object_store, write_batches_to_object_sto
 
 /// A high-performance data catalog for storing and retrieving financial market data using Apache Parquet format.
 ///
-/// The `ParquetDataCatalog` provides a comprehensive solution for managing large volumes of financial
+/// The `ParquetDataCatalog` provides a solution for managing large volumes of financial
 /// market data with efficient storage, querying, and consolidation capabilities. It supports various
 /// object store backends including local filesystems, AWS S3, and other cloud storage providers.
 ///

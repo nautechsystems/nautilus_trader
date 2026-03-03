@@ -223,7 +223,7 @@ of a necessary initialization ID and timestamp, and abstracts away parameters wh
 apply to the order type being created, or are only needed to specify more advanced execution instructions.
 
 This leaves the factory with simpler order creation methods to work with, all the
-examples will leverage an `OrderFactory` from within a `Strategy` context.
+examples use an `OrderFactory` from within a `Strategy` context.
 
 See the [`OrderFactory` API Reference](../api_reference/common.md#class-orderfactory) for further details.
 

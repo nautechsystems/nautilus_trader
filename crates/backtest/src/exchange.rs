@@ -93,7 +93,7 @@ impl PartialOrd for InflightCommand {
 
 /// Simulated exchange venue for realistic trading execution during backtesting.
 ///
-/// The `SimulatedExchange` provides a comprehensive simulation of a trading venue,
+/// The `SimulatedExchange` provides a simulation of a trading venue,
 /// including order matching engines, account management, and realistic execution
 /// models. It maintains order books, processes market data, and executes trades
 /// with configurable latency and fill models to accurately simulate real market

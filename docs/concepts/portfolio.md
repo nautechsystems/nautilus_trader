@@ -73,7 +73,7 @@ the method type:
   Omit instruments that fail conversion but return results for successful conversions.
 
 :::warning
-Ensure exchange rate data is available when using `target_currency` for cross-currency
+Exchange rate data must be available when using `target_currency` for cross-currency
 aggregation.
 :::
 
@@ -150,7 +150,7 @@ engine.portfolio.analyzer.register_statistic(stat)
 See the [`PortfolioAnalyzer` API Reference](../api_reference/analysis.md#class-portfolioanalyzer) for all available methods.
 
 :::tip
-Ensure your statistic is robust to degenerate inputs such as `None`, empty series, or insufficient data.
+Your statistic should handle degenerate inputs such as `None`, empty series, or insufficient data.
 Return `None` for unknown/incalculable values, or a reasonable default like `0.0` when semantically appropriate (e.g., win rate with no trades).
 :::
 

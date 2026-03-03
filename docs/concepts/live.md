@@ -2,7 +2,7 @@
 
 NautilusTrader enables traders to deploy their backtested strategies in a real-time
 trading environment with no code changes. This transition from backtesting to live trading
-is a core feature of the platform, ensuring consistency and reliability.
+is a core feature of the platform.
 
 **Live trading involves real financial risk and requires a careful, risk-managed approach.
 Before deploying to production, ensure you thoroughly understand all aspects of system configuration,
@@ -169,9 +169,6 @@ config = TradingNodeConfig(
 
 The `LiveExecEngineConfig` sets up the live execution engine, managing order processing, execution events, and reconciliation with trading venues.
 The following outlines the main configuration options.
-
-By configuring these parameters thoughtfully, you can ensure that your trading system operates efficiently,
-handles orders correctly, and remains resilient in the face of potential issues, such as lost events or conflicting data/information.
 
 For full details see the `LiveExecEngineConfig` [API Reference](../api_reference/config#class-liveexecengineconfig).
 

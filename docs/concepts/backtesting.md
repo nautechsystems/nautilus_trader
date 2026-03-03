@@ -24,7 +24,7 @@ Consider using the **low-level** API when:
 Consider using the **high-level** API when:
 
 - Your data stream exceeds available memory, requiring streaming data in batches.
-- You want to leverage the performance and convenience of the `ParquetDataCatalog` for storing data in the Nautilus-specific Parquet format.
+- You want the performance and convenience of the `ParquetDataCatalog` for storing data in the Nautilus-specific Parquet format.
 - You value the flexibility and functionality of passing configuration objects to define and manage multiple backtest runs across various engines simultaneously.
 
 ## Low-level API

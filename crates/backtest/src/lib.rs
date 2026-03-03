@@ -15,7 +15,7 @@
 
 //! Backtest engine for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The `nautilus-backtest` crate provides a comprehensive event-driven backtesting framework that allows
+//! The `nautilus-backtest` crate provides an event-driven backtesting framework that allows
 //! quantitative traders to test and validate trading strategies on historical data with high
 //! fidelity market simulation. The system replicates real market conditions including:
 //!
@@ -23,8 +23,8 @@
 //! - Market data replay with configurable latency and fill models.
 //! - Order matching engines with realistic execution simulation.
 //! - Multi-venue and multi-asset backtesting capabilities.
-//! - Comprehensive configuration and state management.
-//! - Integration with live trading systems for seamless deployment.
+//! - Configuration and state management.
+//! - Integration with live trading systems for direct deployment.
 //!
 //! # Platform
 //!

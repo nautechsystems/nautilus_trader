@@ -263,9 +263,7 @@ Under the hood, when a backing database (or any other compatible technology) is 
 all outgoing messages are first serialized, then transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a separate thread (implemented in Rust).
 In this separate thread, the message is written to its final destination, which is presently Redis streams.
 
-This design is primarily driven by performance considerations. By offloading the I/O operations to a separate thread,
-we ensure that the main thread remains unblocked and can continue its tasks without being hindered by the potentially
-time-consuming operations involved in interacting with a database or client.
+This design is primarily driven by performance considerations. Offloading I/O to a separate thread keeps the main thread unblocked.
 
 ### Serialization
 

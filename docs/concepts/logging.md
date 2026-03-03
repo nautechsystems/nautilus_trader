@@ -275,14 +275,13 @@ If `log_components_only=True` (or `log_components_only` is present in the spec s
 
 ### Log Colors
 
-ANSI color codes are used to enhance the readability of logs when viewed in a terminal.
-These color codes can make it easier to distinguish different parts of log messages.
+ANSI color codes improve log readability in terminals.
 In environments that do not support ANSI color rendering (such as some cloud environments or text editors),
 these color codes may not be appropriate as they can appear as raw text.
 
 To accommodate for such scenarios, the `LoggingConfig.log_colors` option can be set to `false`.
-Disabling `log_colors` will prevent the addition of ANSI color codes to the log messages, ensuring
-compatibility across different environments where color rendering is not supported.
+Disabling `log_colors` will prevent the addition of ANSI color codes to the log messages,
+which avoids raw escape codes in environments without color support.
 
 ## Using a logger directly
 

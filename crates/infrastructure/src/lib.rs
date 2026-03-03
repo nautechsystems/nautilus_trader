@@ -20,10 +20,10 @@
 //! enterprise-grade data persistence and messaging capabilities:
 //!
 //! - **Redis integration**: Cache database and message bus implementations using Redis.
-//! - **PostgreSQL integration**: SQL-based cache database with comprehensive data models.
-//! - **Connection management**: Robust connection handling with retry logic and health monitoring.
+//! - **PostgreSQL integration**: SQL-based cache database with full data models.
+//! - **Connection management**: Connection handling with retry logic and health monitoring.
 //! - **Serialization options**: Support for JSON and MessagePack encoding formats.
-//! - **Python bindings**: PyO3 integration for seamless Python interoperability.
+//! - **Python bindings**: PyO3 integration for Python interoperability.
 //!
 //! The crate supports multiple database backends through feature flags, allowing users to choose
 //! the appropriate infrastructure components for their specific deployment requirements and scale.

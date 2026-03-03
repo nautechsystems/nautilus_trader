@@ -43,7 +43,7 @@ pub type Statistic = Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>;
 /// Analyzes portfolio performance and calculates various statistics.
 ///
 /// The `PortfolioAnalyzer` tracks account balances, positions, and realized PnLs
-/// to provide comprehensive portfolio analysis including returns, PnL calculations,
+/// to provide portfolio analysis including returns, PnL calculations,
 /// and customizable statistics.
 #[repr(C)]
 #[derive(Debug)]

@@ -16,7 +16,7 @@
 use nautilus_network::http::{HttpClientError, ReqwestError, StatusCode};
 use thiserror::Error;
 
-/// Comprehensive error type for Hyperliquid operations
+/// Error type for Hyperliquid operations
 #[derive(Debug, Error)]
 pub enum Error {
     /// Transport layer errors (network, connection issues)

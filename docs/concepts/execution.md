@@ -107,8 +107,7 @@ it will default to `UNSPECIFIED`. This means the `ExecutionEngine` will not over
 and the OMS type will follow the venue's OMS type.
 
 :::tip
-When configuring a backtest, you can specify the `oms_type` for the venue. To enhance backtest
-accuracy, it is recommended to match this with the actual OMS type used by the venue in practice.
+When configuring a backtest, you can specify the `oms_type` for the venue. For accuracy, match this with the OMS type used by the venue.
 :::
 
 ## Risk engine

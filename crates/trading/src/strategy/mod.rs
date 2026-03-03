@@ -52,7 +52,7 @@ use ustr::Ustr;
 /// Core trait for implementing trading strategies in NautilusTrader.
 ///
 /// Strategies are specialized [`DataActor`]s that combine data ingestion capabilities with
-/// comprehensive order and position management functionality. By implementing this trait,
+/// order and position management functionality. By implementing this trait,
 /// custom strategies gain access to the full trading execution stack including order
 /// submission, modification, cancellation, and position management.
 ///

@@ -361,7 +361,7 @@ impl RedisCacheDatabase {
         }
     }
 
-    /// Delete the given order from the database with comprehensive index cleanup.
+    /// Delete the given order from the database with full index cleanup.
     ///
     /// # Errors
     ///
@@ -409,7 +409,7 @@ impl RedisCacheDatabase {
         Ok(())
     }
 
-    /// Delete the given position from the database with comprehensive index cleanup.
+    /// Delete the given position from the database with full index cleanup.
     ///
     /// # Errors
     ///

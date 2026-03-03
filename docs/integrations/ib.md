@@ -153,7 +153,7 @@ The adapter supports trading across all major asset classes available through In
 
 The `InteractiveBrokersClient` is the central component of the IB adapter, overseeing a range of functions. These include establishing and maintaining connections, handling API errors, executing trades, and gathering various types of data such as market data, contract/instrument data, and account details.
 
-To ensure efficient management of these diverse responsibilities, the `InteractiveBrokersClient` is divided into several specialized mixin classes. This modular approach enhances manageability and clarity.
+The `InteractiveBrokersClient` is divided into specialized mixin classes, each handling a specific responsibility.
 
 ### Client architecture
 
@@ -204,7 +204,7 @@ The client uses a mixin-based architecture where each mixin handles a specific a
 ### Key features
 
 - **Asynchronous operation**: All operations are fully asynchronous using Python's asyncio.
-- **Robust error handling**: Error categorization and handling.
+- **Error handling**: Error categorization and handling.
 - **Connection resilience**: Automatic reconnection with configurable retry logic.
 - **Message processing**: Efficient message queue processing for high-throughput scenarios.
 - **State management**: Proper state tracking for connections, subscriptions, and requests.

@@ -15,7 +15,7 @@
 
 //! Retry classification for the BitMEX adapter.
 //!
-//! This module provides a comprehensive error taxonomy that distinguishes between
+//! This module provides an error taxonomy that distinguishes between
 //! retryable, non-retryable, and fatal errors, with proper context preservation
 //! for debugging and operational monitoring.
 

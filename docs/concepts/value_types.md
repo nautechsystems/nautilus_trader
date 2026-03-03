@@ -2,7 +2,7 @@
 
 NautilusTrader provides specialized value types for representing core trading concepts:
 `Price`, `Quantity`, and `Money`. These types use fixed-point arithmetic internally
-to ensure highly performant and deterministic calculations across different platforms
+for performant, deterministic calculations across different platforms
 and environments.
 
 ## Overview

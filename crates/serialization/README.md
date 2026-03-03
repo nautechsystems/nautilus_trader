@@ -8,7 +8,7 @@
 
 Data serialization and format conversion for [NautilusTrader](http://nautilustrader.io).
 
-The `nautilus-serialization` crate provides comprehensive data serialization capabilities for converting
+The `nautilus-serialization` crate provides data serialization capabilities for converting
 trading data between different formats including Apache Arrow, Parquet, and Cap'n Proto.
 This enables efficient data storage, retrieval, and interoperability across different systems:
 
@@ -16,7 +16,7 @@ This enables efficient data storage, retrieval, and interoperability across diff
 - **Parquet file operations**: High-performance columnar storage for historical data analysis.
 - **Record batch processing**: Efficient batch operations for time-series data.
 - **Schema management**: Type-safe schema definitions with metadata preservation.
-- **Cross-format conversion**: Seamless data interchange between Arrow, Parquet, and native types.
+- **Cross-format conversion**: Data interchange between Arrow, Parquet, and native types.
 - **Cap'n Proto serialization**: Zero-copy, schema-based serialization for efficient data interchange.
 - **SBE decode utilities**: Zero-copy cursor, shared decode errors, and generic var/group decoders for SBE parsers.
 

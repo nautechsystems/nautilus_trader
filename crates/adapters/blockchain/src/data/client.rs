@@ -41,7 +41,7 @@ use crate::{
     rpc::{BlockchainRpcClient, types::BlockchainMessage},
 };
 
-/// A comprehensive client for interacting with blockchain data from multiple sources.
+/// A client for interacting with blockchain data from multiple sources.
 ///
 /// The `BlockchainDataClient` serves as a facade that coordinates between different blockchain
 /// data providers, caching mechanisms, and contract interactions. It provides a unified interface

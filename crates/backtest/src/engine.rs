@@ -201,7 +201,7 @@ impl BacktestResult {
 /// - Multi-venue and multi-asset support.
 /// - Realistic order matching and execution simulation.
 /// - Strategy and portfolio performance analysis.
-/// - Seamless transition from backtesting to live trading.
+/// - Transition from backtesting to live trading.
 pub struct BacktestEngine {
     instance_id: UUID4,
     config: BacktestEngineConfig,

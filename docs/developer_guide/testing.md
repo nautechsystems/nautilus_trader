@@ -27,7 +27,7 @@ We use [`proptest`](https://altsysrq.github.io/proptest-book/intro.html) in Rust
 
 ## Fuzzing
 
-Fuzzing introduces unstructured or malicious data to the system to ensure it fails gracefully.
+Fuzzing introduces unstructured or malicious data to the system to verify it fails gracefully.
 
 - **Use cases:** Network boundaries, exchange data parsers (JSON, FIX, WebSocket feeds), and complex state machines.
 - **Goal:** The system returns a `Result::Err` and never panics, hangs, or leaks memory when encountering malformed data.
@@ -132,7 +132,7 @@ Typical examples include:
 - Asserting the final condition check of an if-else block when impossible to test (as above).
 
 Such tests are expensive to maintain because they must track refactors while providing little value.
-Ensure concrete implementations of abstract methods remain fully covered.
+Keep concrete implementations of abstract methods fully covered.
 Remove `pragma: no cover` when it no longer applies and restrict its use to the cases above.
 
 ## Debugging Rust tests

@@ -830,7 +830,7 @@ impl BlockchainDataClientCore {
 
     /// Synchronizes all pools and their tokens for a specific DEX within the given block range.
     ///
-    /// This method performs a comprehensive sync of:
+    /// This method performs a full sync of:
     /// 1. Pool creation events from the DEX factory
     /// 2. Token metadata for all tokens in discovered pools
     /// 3. Pool entities with proper token associations

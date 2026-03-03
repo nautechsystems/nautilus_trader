@@ -585,7 +585,7 @@ of the Nautilus core, currently in development.
 
 ### Fixed-point precision and raw values
 
-NautilusTrader uses fixed-point arithmetic for `Price` and `Quantity` types to ensure precise financial calculations without floating-point errors. Understanding how raw values work is essential when creating data or working with catalogs.
+NautilusTrader uses fixed-point arithmetic for `Price` and `Quantity` types for precise financial calculations without floating-point errors. Understanding how raw values work is essential when creating data or working with catalogs.
 
 #### Raw value requirements
 
@@ -1233,7 +1233,7 @@ catalog.query(
 
 ### Catalog operations
 
-The catalog provides several operation functions for maintaining and organizing data files. These operations help optimize storage, improve query performance, and ensure data integrity.
+The catalog provides several operation functions for maintaining and organizing data files. These operations help optimize storage, improve query performance, and maintain data integrity.
 
 #### Reset file names
 
@@ -1828,7 +1828,7 @@ GreeksTestData(
 
 #### Custom data type stub
 
-To enhance development convenience and improve code suggestions in your IDE, you can create a `.pyi`
+For better IDE code suggestions, you can create a `.pyi`
 stub file with the proper constructor signature for your custom data types as well as type hints for attributes.
 This is particularly useful when the constructor is dynamically generated at runtime, as it allows the IDE to recognize
 and provide suggestions for the class's methods and attributes.

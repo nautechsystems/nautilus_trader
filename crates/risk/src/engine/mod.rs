@@ -55,7 +55,7 @@ type ModifyOrderFn = Box<dyn Fn(ModifyOrder)>;
 
 /// Central risk management engine that validates and controls trading operations.
 ///
-/// The `RiskEngine` provides comprehensive pre-trade risk checks including order validation,
+/// The `RiskEngine` provides pre-trade risk checks including order validation,
 /// balance verification, position sizing limits, and trading state management. It acts as
 /// a gateway between strategy orders and execution, ensuring all trades comply with
 /// defined risk parameters and regulatory constraints.

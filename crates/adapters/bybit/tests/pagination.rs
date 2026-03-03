@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Comprehensive pagination tests for Bybit adapter.
+//! Pagination tests for Bybit adapter.
 //!
 //! This test suite covers pagination for:
 //! 1. Market Data (bars/klines) - chronological ordering, multi-page fetching

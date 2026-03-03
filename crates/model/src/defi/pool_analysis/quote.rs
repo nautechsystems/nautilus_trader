@@ -28,7 +28,7 @@ use crate::{
     identifiers::InstrumentId,
 };
 
-/// Comprehensive swap quote containing profiling metrics for a hypothetical swap.
+/// Swap quote containing profiling metrics for a hypothetical swap.
 ///
 /// This structure provides detailed analysis of what would happen if a swap were executed,
 /// including price impact, fees, slippage, and execution details, without actually
@@ -69,7 +69,7 @@ pub struct SwapQuote {
 
 impl SwapQuote {
     #[allow(clippy::too_many_arguments)]
-    /// Creates a [`SwapQuote`] instance with comprehensive swap simulation results.
+    /// Creates a [`SwapQuote`] instance with swap simulation results.
     ///
     /// The `trade_info` field is initialized to `None` and must be populated by calling
     /// [`calculate_trade_info()`](Self::calculate_trade_info) or will be lazily computed

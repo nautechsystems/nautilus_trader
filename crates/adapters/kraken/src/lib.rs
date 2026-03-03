@@ -23,7 +23,7 @@
 //! - REST API v2 client for market data and account operations.
 //! - WebSocket v2 client for real-time data feeds.
 //! - Support for Spot and Futures markets.
-//! - Comprehensive instrument, ticker, trade, orderbook, and OHLC data.
+//! - Instrument, ticker, trade, orderbook, and OHLC data.
 //! - Prepared for execution support (orders, positions, balances).
 //!
 //! # API Documentation
@@ -39,7 +39,7 @@
 //! or as part of a Rust only build.
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds as a Python extension module (used with `python`).
+//! - `extension-module`: Builds as a Python extension module.
 //!
 //! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
 

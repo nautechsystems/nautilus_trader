@@ -51,7 +51,7 @@ impl Default for EstimationConfig {
 
 /// Detailed result of a size-for-impact search.
 ///
-/// Contains comprehensive diagnostics about the binary search process including
+/// Contains diagnostics about the binary search process including
 /// convergence information, iterations taken, bounds used, and final accuracy.
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -347,7 +347,7 @@ pub fn size_for_impact_bps(
 
 /// Finds the maximum trade size with detailed search diagnostics.
 ///
-/// This is the detailed version of [`size_for_impact_bps`] that returns comprehensive
+/// This is the detailed version of [`size_for_impact_bps`] that returns detailed
 /// information about the search process including convergence metrics, iterations,
 /// bounds used, and timing information.
 ///
