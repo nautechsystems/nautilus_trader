@@ -20,6 +20,12 @@ This directory defines the shared translation contract for the MakerV3 single-le
   python examples/live/poc/makerv3_single_leg_node.py
   ```
 
+   Start with execution disabled by default (`POC_ENABLE_EXEC=0`). Enable live quoting only after your Bybit API keys are configured in your environment (how the Bybit adapter resolves credentials):
+
+   ```bash
+   POC_ENABLE_EXEC=1 python examples/live/poc/makerv3_single_leg_node.py
+   ```
+
    Use a dedicated Redis DB (recommended) to avoid sharing with existing Fluxboard/Chainsaw services:
 
    ```bash
