@@ -85,13 +85,20 @@ config = TradingNodeConfig(
                 "topic": "events.fills.*",
                 "flush_interval_ms": 250,
                 "max_batch_size": 1000,
+                "flush_time_budget_ms": 10,
+                "flush_timeout_ms": 5000,
                 "max_queue_size": 10000,
                 "on_error": "buffer_until_full_then_fail",
+                "stop_timeout_ms": 5000,
+                "strict_stop": False,
             },
         ),
     ],
 )
 ```
+
+In threaded mode, `flush()` is a drain barrier for currently queued work. For deterministic
+completion, call it when ingestion is quiesced (or after stopping upstream publishers).
 
 For analytics ingestion, you can stream `OrderFilled` in parallel and ingest the resulting feather
 log into ArcticDB offline:
@@ -105,6 +112,9 @@ streaming = StreamingConfig(
     include_types=[OrderFilled],
 )
 ```
+
+When ingesting streamed fills into downstream stores, deduplicate on `(trader_id, event_id)` to
+preserve idempotency across retries/replays.
 
 ## Order Management System (OMS)
 

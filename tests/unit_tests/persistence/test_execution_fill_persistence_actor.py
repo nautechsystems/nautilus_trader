@@ -353,3 +353,22 @@ def test_actor_db_down_log_and_drop_drops_rows(tmp_path) -> None:
 
     assert actor.dropped == 1
     assert _row_count(db_path) == 0
+
+
+def test_actor_queue_full_log_and_drop_drops_without_raising(tmp_path) -> None:
+    actor, _, db_path = _make_actor(
+        tmp_path,
+        on_error="log_and_drop",
+        max_queue_size=1,
+        run_writer_thread=False,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+
+    actor.start()
+    actor.on_order_filled(_make_fill(instrument=instrument, ts_event=1))
+    actor.on_order_filled(_make_fill(instrument=instrument, ts_event=2))  # Drops on full queue
+    actor.flush()
+    actor.stop()
+
+    assert actor.dropped == 1
+    assert _row_count(db_path) == 1
