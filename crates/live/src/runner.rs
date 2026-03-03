@@ -286,6 +286,9 @@ impl AsyncRunner {
             DataEvent::InstrumentStatus(status) => {
                 msgbus::send_any(MessagingSwitchboard::data_engine_process(), &status);
             }
+            DataEvent::OptionGreeks(greeks) => {
+                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &greeks);
+            }
             #[cfg(feature = "defi")]
             DataEvent::DeFi(data) => {
                 msgbus::send_defi_data(MessagingSwitchboard::data_engine_process_defi_data(), data);

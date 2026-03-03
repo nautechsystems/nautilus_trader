@@ -60,6 +60,7 @@
 pub mod aggregation;
 pub mod client;
 pub mod engine;
+pub mod option_chains;
 
 #[cfg(feature = "defi")]
 pub mod defi;

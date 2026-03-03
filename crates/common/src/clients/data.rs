@@ -20,14 +20,15 @@ use nautilus_model::identifiers::{ClientId, Venue};
 
 use super::log_not_implemented;
 use crate::messages::data::{
-    RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
-    RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
-    SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates,
-    SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-    SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-    UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
-    UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
-    UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes,
+    RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestForwardPrices,
+    RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+    SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData,
+    SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+    SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks,
+    SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
+    UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+    UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+    UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
     UnsubscribeTrades,
 };
 #[cfg(feature = "defi")]
@@ -243,6 +244,16 @@ pub trait DataClient {
         Ok(())
     }
 
+    /// Subscribes to exchange-provided option greeks for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription operation fails.
+    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
     #[cfg(feature = "defi")]
     /// Subscribes to blocks for a specified blockchain.
     ///
@@ -454,6 +465,16 @@ pub trait DataClient {
         Ok(())
     }
 
+    /// Unsubscribes from exchange-provided option greeks for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe operation fails.
+    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
     #[cfg(feature = "defi")]
     /// Unsubscribes from blocks for a specified blockchain.
     ///
@@ -595,6 +616,16 @@ pub trait DataClient {
     ///
     /// Returns an error if the trades request fails.
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        log_not_implemented(&request);
+        Ok(())
+    }
+
+    /// Requests forward/underlying prices for derivatives instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the forward prices request fails.
+    fn request_forward_prices(&self, request: RequestForwardPrices) -> anyhow::Result<()> {
         log_not_implemented(&request);
         Ok(())
     }

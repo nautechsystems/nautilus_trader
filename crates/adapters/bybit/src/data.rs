@@ -25,6 +25,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
+use dashmap::DashSet;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
@@ -32,13 +33,14 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
-            InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestFundingRates,
-            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
-            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, DataResponse, ForwardPricesResponse, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
+            RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeMarkPrices,
+            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -48,12 +50,13 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API},
+    data::{Data, ForwardPrice, OrderBookDeltas_API},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::book::OrderBook,
 };
+use rust_decimal::Decimal;
 use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
 
@@ -62,6 +65,7 @@ use crate::{
         consts::{BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_VENUE},
         enums::BybitProductType,
         parse::extract_raw_symbol,
+        symbol::BybitSymbol,
     },
     config::BybitDataClientConfig,
     http::client::BybitHttpClient,
@@ -83,6 +87,7 @@ pub struct BybitDataClient {
     book_depths: Arc<RwLock<AHashMap<InstrumentId, u32>>>,
     quote_depths: Arc<RwLock<AHashMap<InstrumentId, u32>>>,
     ticker_subs: Arc<RwLock<AHashMap<InstrumentId, AHashSet<&'static str>>>>,
+    option_greeks_subs: Arc<DashSet<InstrumentId>>,
     clock: &'static AtomicTime,
 }
 
@@ -154,6 +159,7 @@ impl BybitDataClient {
             book_depths: Arc::new(RwLock::new(AHashMap::new())),
             quote_depths: Arc::new(RwLock::new(AHashMap::new())),
             ticker_subs: Arc::new(RwLock::new(AHashMap::new())),
+            option_greeks_subs: Arc::new(DashSet::new()),
             clock,
         })
     }
@@ -267,6 +273,11 @@ impl BybitDataClient {
                     }
                 }
             }
+            NautilusWsMessage::OptionGreeks(greeks) => {
+                if let Err(e) = data_sender.send(DataEvent::OptionGreeks(greeks)) {
+                    log::error!("Failed to send option greeks: {e}");
+                }
+            }
             NautilusWsMessage::OrderStatusReports(_)
             | NautilusWsMessage::FillReports(_)
             | NautilusWsMessage::PositionStatusReport(_)
@@ -338,6 +349,7 @@ impl DataClient for BybitDataClient {
         self.book_depths.write().expect(MUTEX_POISONED).clear();
         self.quote_depths.write().expect(MUTEX_POISONED).clear();
         self.ticker_subs.write().expect(MUTEX_POISONED).clear();
+        self.option_greeks_subs.clear();
         Ok(())
     }
 
@@ -385,6 +397,9 @@ impl DataClient for BybitDataClient {
         }
 
         for ws_client in &mut self.ws_clients {
+            // Share option greeks subscription set with each WS client
+            ws_client.set_option_greeks_subs(self.option_greeks_subs.clone());
+
             // Cache instruments before connecting so parser has price/size precision
             let instruments: Vec<_> = self
                 .instruments
@@ -462,6 +477,7 @@ impl DataClient for BybitDataClient {
         self.book_depths.write().expect(MUTEX_POISONED).clear();
         self.quote_depths.write().expect(MUTEX_POISONED).clear();
         self.ticker_subs.write().expect(MUTEX_POISONED).clear();
+        self.option_greeks_subs.clear();
         self.is_connected.store(false, Ordering::Release);
         log::info!("Disconnected: client_id={}", self.client_id);
         Ok(())
@@ -990,6 +1006,81 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
+    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        self.option_greeks_subs.insert(instrument_id);
+
+        let should_subscribe = {
+            let mut subs = self.ticker_subs.write().expect(MUTEX_POISONED);
+            let entry = subs.entry(instrument_id).or_default();
+            let first = entry.is_empty();
+            entry.insert("option_greeks");
+            first
+        };
+
+        if should_subscribe {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Option);
+
+            let ws = self
+                .get_ws_client_for_product(product_type)
+                .context("no WebSocket client for product type")?
+                .clone();
+
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_ticker(instrument_id)
+                        .await
+                        .context("ticker subscription for option greeks")
+                },
+                "option greeks subscription",
+            );
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        self.option_greeks_subs.remove(&instrument_id);
+
+        let should_unsubscribe = {
+            let mut subs = self.ticker_subs.write().expect(MUTEX_POISONED);
+            if let Some(entry) = subs.get_mut(&instrument_id) {
+                entry.remove("option_greeks");
+                if entry.is_empty() {
+                    subs.remove(&instrument_id);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+
+        if should_unsubscribe {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Option);
+
+            let ws = self
+                .get_ws_client_for_product(product_type)
+                .context("no WebSocket client for product type")?
+                .clone();
+
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_ticker(instrument_id)
+                        .await
+                        .context("ticker unsubscribe for option greeks")
+                },
+                "option greeks unsubscribe",
+            );
+        }
+        Ok(())
+    }
+
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
@@ -1284,6 +1375,128 @@ impl DataClient for BybitDataClient {
                     }
                 }
                 Err(e) => log::error!("Funding rates request failed for {instrument_id}: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_forward_prices(&self, request: RequestForwardPrices) -> anyhow::Result<()> {
+        let underlying = request.underlying.to_string();
+        let instrument_id = request.instrument_id;
+        let http_client = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let request_id = request.request_id;
+        let client_id = self.client_id();
+        let params = request.params;
+        let clock = self.clock;
+        let venue = *BYBIT_VENUE;
+
+        get_runtime().spawn(async move {
+            let result = if let Some(inst_id) = instrument_id {
+                // Single-instrument path: fetch ticker for one symbol
+                let raw_symbol = extract_raw_symbol(inst_id.symbol.as_str()).to_string();
+                log::info!(
+                    "Requesting forward price for {underlying} (single instrument: {raw_symbol})"
+                );
+
+                let params = crate::http::query::BybitTickersParams {
+                    category: BybitProductType::Option,
+                    symbol: Some(raw_symbol.clone()),
+                    base_coin: None,
+                    exp_date: None,
+                };
+                match http_client.request_option_tickers_raw_with_params(&params).await {
+                    Ok(tickers) => {
+                        let ts = clock.get_time_ns();
+                        let forward_prices: Vec<ForwardPrice> = tickers
+                            .into_iter()
+                            .filter_map(|t| {
+                                let up: Decimal = t.underlying_price.parse().ok()?;
+                                if up.is_zero() {
+                                    return None;
+                                }
+                                Some(ForwardPrice::new(inst_id, up, None, ts, ts))
+                            })
+                            .collect();
+
+                        log::info!(
+                            "Fetched {} forward price for {underlying} (single instrument: {raw_symbol})",
+                            forward_prices.len(),
+                        );
+                        Ok((forward_prices, ts))
+                    }
+                    Err(e) => Err(e),
+                }
+            } else {
+                // Bulk path: fetch all option tickers
+                log::info!("Requesting option forward prices for base_coin={underlying} (bulk)");
+
+                match http_client.request_option_tickers_raw(&underlying).await {
+                    Ok(tickers) => {
+                        let ts = clock.get_time_ns();
+
+                        // Deduplicate: all options at the same expiry share the same
+                        // forward price. Extract expiry prefix (e.g. "BTC-28FEB26" from
+                        // "BTC-28FEB26-65000-C") and keep only one entry per expiry.
+                        let mut seen_expiries = std::collections::HashSet::new();
+                        let forward_prices: Vec<ForwardPrice> = tickers
+                            .into_iter()
+                            .filter_map(|t| {
+                                let up: Decimal = t.underlying_price.parse().ok()?;
+                                if up.is_zero() {
+                                    return None;
+                                }
+                                let parts: Vec<&str> = t.symbol.splitn(3, '-').collect();
+                                let expiry_key = if parts.len() >= 2 {
+                                    format!("{}-{}", parts[0], parts[1])
+                                } else {
+                                    t.symbol.to_string()
+                                };
+
+                                if !seen_expiries.insert(expiry_key) {
+                                    return None;
+                                }
+                                Some(ForwardPrice::new(
+                                    BybitSymbol::new(format!("{}-OPTION", t.symbol))
+                                        .map(|s| s.to_instrument_id())
+                                        .ok()?,
+                                    up,
+                                    None,
+                                    ts,
+                                    ts,
+                                ))
+                            })
+                            .collect();
+
+                        log::info!(
+                            "Fetched {} forward prices (per-expiry) for {underlying}",
+                            forward_prices.len(),
+                        );
+                        Ok((forward_prices, ts))
+                    }
+                    Err(e) => Err(e),
+                }
+            };
+
+            match result {
+                Ok((forward_prices, ts)) => {
+                    let response = DataResponse::ForwardPrices(ForwardPricesResponse::new(
+                        request_id,
+                        client_id,
+                        venue,
+                        forward_prices,
+                        ts,
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send forward prices response: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Forward prices request failed for {underlying}: {e:?}");
+                }
             }
         });
 

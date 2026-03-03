@@ -37,10 +37,11 @@ use nautilus_model::{
         Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose,
+        option_chain::{AtmSource, OptionChainSlice, OptionGreeks, StrikeRange},
     },
     enums::BookType,
     events::order::{any::OrderEventAny, canceled::OrderCanceled, filled::OrderFilled},
-    identifiers::{ActorId, ClientId, ComponentId, InstrumentId, TraderId, Venue},
+    identifiers::{ActorId, ClientId, ComponentId, InstrumentId, OptionSeriesId, TraderId, Venue},
     instruments::InstrumentAny,
     orderbook::OrderBook,
 };
@@ -72,11 +73,13 @@ use crate::{
             SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
             SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
             SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
-            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
         system::ShutdownSystem,
     },
@@ -86,8 +89,9 @@ use crate::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
             get_custom_topic, get_funding_rate_topic, get_index_price_topic,
             get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
-            get_instruments_topic, get_mark_price_topic, get_order_cancels_topic,
-            get_order_fills_topic, get_quotes_topic, get_trades_topic,
+            get_instruments_topic, get_mark_price_topic, get_option_chain_topic,
+            get_option_greeks_topic, get_order_cancels_topic, get_order_fills_topic,
+            get_quotes_topic, get_trades_topic,
         },
     },
     signal::Signal,
@@ -362,6 +366,26 @@ pub trait DataActor:
     /// Returns an error if handling the funding rate update fails.
     #[allow(unused_variables)]
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving exchange-provided option greeks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the option greeks fails.
+    #[allow(unused_variables)]
+    fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving an option chain slice snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the option chain slice fails.
+    #[allow(unused_variables)]
+    fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -706,6 +730,34 @@ pub trait DataActor:
         }
 
         if let Err(e) = self.on_funding_rate(funding_rate) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received option greeks update.
+    fn handle_option_greeks(&mut self, greeks: &OptionGreeks) {
+        log_received(&greeks);
+
+        if self.not_running() {
+            log_not_running(&greeks);
+            return;
+        }
+
+        if let Err(e) = self.on_option_greeks(greeks) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received option chain slice snapshot.
+    fn handle_option_chain(&mut self, slice: &OptionChainSlice) {
+        log_received(&slice);
+
+        if self.not_running() {
+            log_not_running(&slice);
+            return;
+        }
+
+        if let Err(e) = self.on_option_chain(slice) {
             log_error(&e);
         }
     }
@@ -1219,6 +1271,32 @@ pub trait DataActor:
         );
     }
 
+    /// Subscribe to streaming [`OptionGreeks`] data for the `instrument_id`.
+    fn subscribe_option_greeks(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_option_greeks_topic(instrument_id);
+
+        let handler = TypedHandler::from(move |option_greeks: &OptionGreeks| {
+            get_actor_unchecked::<Self>(&actor_id).handle_option_greeks(option_greeks);
+        });
+
+        DataActorCore::subscribe_option_greeks(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
+    }
+
     /// Subscribe to streaming [`InstrumentStatus`] data for the `instrument_id`.
     fn subscribe_instrument_status(
         &mut self,
@@ -1268,6 +1346,40 @@ pub trait DataActor:
             instrument_id,
             client_id,
             params,
+        );
+    }
+
+    /// Subscribe to streaming [`OptionChainSlice`] snapshots for the option `series_id`.
+    ///
+    /// If `atm_source` is `None`, the `DataEngine` will auto-resolve it by searching
+    /// the cache for a `CryptoPerpetual` on the same venue with the same underlying
+    /// and defaulting to `AtmSource::IndexPrice`.
+    fn subscribe_option_chain(
+        &mut self,
+        series_id: OptionSeriesId,
+        strike_range: StrikeRange,
+        atm_source: Option<AtmSource>,
+        snapshot_interval_ms: Option<u64>,
+        client_id: Option<ClientId>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_option_chain_topic(series_id);
+
+        let handler = TypedHandler::from(move |slice: &OptionChainSlice| {
+            get_actor_unchecked::<Self>(&actor_id).handle_option_chain(slice);
+        });
+
+        DataActorCore::subscribe_option_chain(
+            self,
+            topic,
+            handler,
+            series_id,
+            strike_range,
+            atm_source,
+            snapshot_interval_ms,
+            client_id,
         );
     }
 
@@ -1585,6 +1697,18 @@ pub trait DataActor:
         DataActorCore::unsubscribe_funding_rates(self, instrument_id, client_id, params);
     }
 
+    /// Unsubscribe from streaming [`OptionGreeks`] data for the `instrument_id`.
+    fn unsubscribe_option_greeks(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_option_greeks(self, instrument_id, client_id, params);
+    }
+
     /// Unsubscribe from streaming [`InstrumentStatus`] data for the `instrument_id`.
     fn unsubscribe_instrument_status(
         &mut self,
@@ -1607,6 +1731,14 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_instrument_close(self, instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`OptionChainSlice`] snapshots for the option `series_id`.
+    fn unsubscribe_option_chain(&mut self, series_id: OptionSeriesId, client_id: Option<ClientId>)
+    where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_option_chain(self, series_id, client_id);
     }
 
     /// Unsubscribe from [`OrderFilled`] events for the `instrument_id`.
@@ -2054,6 +2186,8 @@ pub struct DataActorCore {
     mark_price_handlers: AHashMap<MStr<Topic>, TypedHandler<MarkPriceUpdate>>,
     index_price_handlers: AHashMap<MStr<Topic>, TypedHandler<IndexPriceUpdate>>,
     funding_rate_handlers: AHashMap<MStr<Topic>, TypedHandler<FundingRateUpdate>>,
+    option_greeks_handlers: AHashMap<MStr<Topic>, TypedHandler<OptionGreeks>>,
+    option_chain_handlers: AHashMap<MStr<Topic>, TypedHandler<OptionChainSlice>>,
     order_event_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderEventAny>>,
     #[cfg(feature = "defi")]
     block_handlers: AHashMap<MStr<Topic>, TypedHandler<Block>>,
@@ -2393,6 +2527,51 @@ impl DataActorCore {
         }
     }
 
+    pub(crate) fn add_option_greeks_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<OptionGreeks>,
+    ) {
+        if self.option_greeks_handlers.contains_key(&topic) {
+            log::warn!(
+                "Actor {} attempted duplicate option greeks subscription to '{topic}'",
+                self.actor_id
+            );
+            return;
+        }
+        self.option_greeks_handlers.insert(topic, handler.clone());
+        msgbus::subscribe_option_greeks(topic.into(), handler, None);
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn remove_option_greeks_subscription(&mut self, topic: MStr<Topic>) {
+        if let Some(handler) = self.option_greeks_handlers.remove(&topic) {
+            msgbus::unsubscribe_option_greeks(topic.into(), &handler);
+        }
+    }
+
+    pub(crate) fn add_option_chain_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<OptionChainSlice>,
+    ) {
+        if self.option_chain_handlers.contains_key(&topic) {
+            log::warn!(
+                "Actor {} attempted duplicate option chain subscription to '{topic}'",
+                self.actor_id
+            );
+            return;
+        }
+        self.option_chain_handlers.insert(topic, handler.clone());
+        msgbus::subscribe_option_chain(topic.into(), handler, None);
+    }
+
+    pub(crate) fn remove_option_chain_subscription(&mut self, topic: MStr<Topic>) {
+        if let Some(handler) = self.option_chain_handlers.remove(&topic) {
+            msgbus::unsubscribe_option_chain(topic.into(), &handler);
+        }
+    }
+
     #[cfg(feature = "defi")]
     pub(crate) fn add_block_subscription(
         &mut self,
@@ -2566,6 +2745,8 @@ impl DataActorCore {
             mark_price_handlers: AHashMap::new(),
             index_price_handlers: AHashMap::new(),
             funding_rate_handlers: AHashMap::new(),
+            option_greeks_handlers: AHashMap::new(),
+            option_chain_handlers: AHashMap::new(),
             order_event_handlers: AHashMap::new(),
             #[cfg(feature = "defi")]
             block_handlers: AHashMap::new(),
@@ -3117,6 +3298,32 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
+    /// Helper method for registering option greeks subscriptions from the trait.
+    pub fn subscribe_option_greeks(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<OptionGreeks>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) {
+        self.check_registered();
+
+        self.add_option_greeks_subscription(topic, handler);
+
+        let command = SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            correlation_id: None,
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
     /// Helper method for registering instrument status subscriptions from the trait.
     pub fn subscribe_instrument_status(
         &mut self,
@@ -3165,6 +3372,36 @@ impl DataActorCore {
             correlation_id: None,
             params,
         });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Helper method for subscribing to option chain snapshots from the trait.
+    #[allow(clippy::too_many_arguments)]
+    pub fn subscribe_option_chain(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<OptionChainSlice>,
+        series_id: OptionSeriesId,
+        strike_range: StrikeRange,
+        atm_source: Option<AtmSource>,
+        snapshot_interval_ms: Option<u64>,
+        client_id: Option<ClientId>,
+    ) {
+        self.check_registered();
+
+        self.add_option_chain_subscription(topic, handler);
+
+        let command = SubscribeCommand::OptionChain(SubscribeOptionChain::new(
+            series_id,
+            strike_range,
+            atm_source,
+            snapshot_interval_ms,
+            UUID4::new(),
+            self.timestamp_ns(),
+            client_id,
+            Some(series_id.venue),
+        ));
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
@@ -3468,6 +3705,31 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
+    /// Helper method for unsubscribing from option greeks.
+    pub fn unsubscribe_option_greeks(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) {
+        self.check_registered();
+
+        let topic = get_option_greeks_topic(instrument_id);
+        self.remove_option_greeks_subscription(topic);
+
+        let command = UnsubscribeCommand::OptionGreeks(UnsubscribeOptionGreeks {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            correlation_id: None,
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
     /// Helper method for unsubscribing from instrument status.
     pub fn unsubscribe_instrument_status(
         &mut self,
@@ -3514,6 +3776,28 @@ impl DataActorCore {
             correlation_id: None,
             params,
         });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Helper method for unsubscribing from option chain snapshots.
+    pub fn unsubscribe_option_chain(
+        &mut self,
+        series_id: OptionSeriesId,
+        client_id: Option<ClientId>,
+    ) {
+        self.check_registered();
+
+        let topic = get_option_chain_topic(series_id);
+        self.remove_option_chain_subscription(topic);
+
+        let command = UnsubscribeCommand::OptionChain(UnsubscribeOptionChain::new(
+            series_id,
+            UUID4::new(),
+            self.timestamp_ns(),
+            client_id,
+            Some(series_id.venue),
+        ));
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }

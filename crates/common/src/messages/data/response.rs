@@ -17,7 +17,7 @@ use std::{any::Any, sync::Arc};
 
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
-    data::{Bar, BarType, DataType, FundingRateUpdate, QuoteTick, TradeTick},
+    data::{Bar, BarType, DataType, ForwardPrice, FundingRateUpdate, QuoteTick, TradeTick},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::InstrumentAny,
     orderbook::OrderBook,
@@ -323,6 +323,37 @@ impl FundingRatesResponse {
             data,
             start,
             end,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ForwardPricesResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub venue: Venue,
+    pub data: Vec<ForwardPrice>,
+    pub ts_init: UnixNanos,
+    pub params: Option<Params>,
+}
+
+impl ForwardPricesResponse {
+    /// Creates a new [`ForwardPricesResponse`] instance.
+    pub fn new(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        venue: Venue,
+        data: Vec<ForwardPrice>,
+        ts_init: UnixNanos,
+        params: Option<Params>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            venue,
+            data,
             ts_init,
             params,
         }

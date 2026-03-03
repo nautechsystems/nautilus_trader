@@ -50,7 +50,7 @@ use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
         Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate, QuoteTick,
-        TradeTick, YieldCurveData,
+        TradeTick, YieldCurveData, option_chain::OptionGreeks,
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
@@ -93,6 +93,7 @@ pub struct Cache {
     funding_rates: AHashMap<InstrumentId, VecDeque<FundingRateUpdate>>,
     bars: AHashMap<BarType, VecDeque<Bar>>,
     greeks: AHashMap<InstrumentId, GreeksData>,
+    option_greeks: AHashMap<InstrumentId, OptionGreeks>,
     yield_curves: AHashMap<String, YieldCurveData>,
     accounts: AHashMap<AccountId, AccountAny>,
     orders: AHashMap<ClientOrderId, OrderAny>,
@@ -122,6 +123,7 @@ impl Debug for Cache {
             .field("funding_rates", &self.funding_rates)
             .field("bars", &self.bars)
             .field("greeks", &self.greeks)
+            .field("option_greeks", &self.option_greeks)
             .field("yield_curves", &self.yield_curves)
             .field("accounts", &self.accounts)
             .field("orders", &self.orders)
@@ -167,6 +169,7 @@ impl Cache {
             funding_rates: AHashMap::new(),
             bars: AHashMap::new(),
             greeks: AHashMap::new(),
+            option_greeks: AHashMap::new(),
             yield_curves: AHashMap::new(),
             accounts: AHashMap::new(),
             orders: AHashMap::new(),
@@ -1604,6 +1607,18 @@ impl Cache {
     /// Gets the greeks data for the `instrument_id`.
     pub fn greeks(&self, instrument_id: &InstrumentId) -> Option<GreeksData> {
         self.greeks.get(instrument_id).cloned()
+    }
+
+    /// Adds exchange-provided option greeks to the cache.
+    pub fn add_option_greeks(&mut self, greeks: OptionGreeks) {
+        log::debug!("Adding `OptionGreeks` {}", greeks.instrument_id);
+        self.option_greeks.insert(greeks.instrument_id, greeks);
+    }
+
+    /// Gets a reference to the exchange-provided option greeks for the `instrument_id`.
+    #[must_use]
+    pub fn option_greeks(&self, instrument_id: &InstrumentId) -> Option<&OptionGreeks> {
+        self.option_greeks.get(instrument_id)
     }
 
     /// Adds the `yield_curve` data to the cache.
