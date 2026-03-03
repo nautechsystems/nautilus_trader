@@ -752,6 +752,10 @@ pub struct HyperliquidHttpClient {
     /// Mapping from spot fill coin (`@{pair_index}`) to instrument symbol.
     spot_fill_coins: Arc<RwLock<AHashMap<Ustr, Ustr>>>,
     account_id: Option<AccountId>,
+    /// Optional override address for queries (agent wallet / API sub-key support).
+    /// When set, used for balance queries, position reports, and WS subscriptions
+    /// instead of the address derived from the private key.
+    account_address: Option<String>,
     normalize_prices: bool,
 }
 
@@ -800,6 +804,7 @@ impl HyperliquidHttpClient {
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            account_address: None,
             normalize_prices: true,
         }
     }
@@ -841,6 +846,7 @@ impl HyperliquidHttpClient {
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            account_address: None,
             normalize_prices: true,
         })
     }
@@ -860,6 +866,7 @@ impl HyperliquidHttpClient {
     pub fn with_credentials(
         private_key: Option<String>,
         vault_address: Option<String>,
+        account_address: Option<String>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
@@ -888,6 +895,12 @@ impl HyperliquidHttpClient {
             None => env::var(vault_env_var).ok(),
         };
 
+        // Resolve account address: explicit value -> env var -> None
+        let resolved_account_address = match account_address {
+            Some(addr) => Some(addr),
+            None => env::var("HYPERLIQUID_ACCOUNT_ADDRESS").ok(),
+        };
+
         match resolved_pk {
             Some(pk) => {
                 let raw_client = HyperliquidRawHttpClient::from_credentials(
@@ -905,6 +918,7 @@ impl HyperliquidHttpClient {
                     asset_indices: Arc::new(RwLock::new(AHashMap::new())),
                     spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
                     account_id: None,
+                    account_address: resolved_account_address,
                     normalize_prices: true,
                 })
             }
@@ -943,6 +957,7 @@ impl HyperliquidHttpClient {
             asset_indices: Arc::new(RwLock::new(AHashMap::new())),
             spot_fill_coins: Arc::new(RwLock::new(AHashMap::new())),
             account_id: None,
+            account_address: None,
             normalize_prices: true,
         })
     }
@@ -973,14 +988,23 @@ impl HyperliquidHttpClient {
         self.inner.get_user_address()
     }
 
-    /// Gets the account address for queries: vault address if configured,
-    /// otherwise the user (EOA) address.
+    /// Gets the account address for queries: account_address if configured
+    /// (agent wallet), then vault address, otherwise the user (EOA) address.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the client has no signer configured.
+    /// Returns [`Error::Auth`] if the client has no signer configured and
+    /// no account_address override is set.
     pub fn get_account_address(&self) -> Result<String> {
+        if let Some(addr) = &self.account_address {
+            return Ok(addr.clone());
+        }
         self.inner.get_account_address()
+    }
+
+    /// Sets the account address override for queries (agent wallet support).
+    pub fn set_account_address(&mut self, address: Option<String>) {
+        self.account_address = address;
     }
 
     /// Caches a single instrument.

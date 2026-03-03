@@ -91,6 +91,22 @@ class TestHyperliquidExecClientConfig:
         # Assert
         assert config.vault_address == "0xabcdef1234567890abcdef1234567890abcdef12"
 
+    def test_default_has_no_account_address(self):
+        # Arrange & Act
+        config = HyperliquidExecClientConfig()
+
+        # Assert
+        assert config.account_address is None
+
+    def test_with_account_address(self):
+        # Arrange & Act
+        config = HyperliquidExecClientConfig(
+            account_address="0xabcdef1234567890abcdef1234567890abcdef12",
+        )
+
+        # Assert
+        assert config.account_address == "0xabcdef1234567890abcdef1234567890abcdef12"
+
     def test_testnet_config(self):
         # Arrange & Act
         config = HyperliquidExecClientConfig(testnet=True)
