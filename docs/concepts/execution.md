@@ -116,6 +116,118 @@ streaming = StreamingConfig(
 When ingesting streamed fills into downstream stores, deduplicate on `(trader_id, event_id)` to
 preserve idempotency across retries/replays.
 
+## Order action persistence
+
+`OrderEvent` lifecycle events are published by the execution engine on the MessageBus topic family
+`events.order.<strategy_id>`. To persist selected order lifecycle events durably with SQL
+idempotency, attach the `OrderActionPersistenceActor` and subscribe to `events.order.*`.
+
+The persistence actor writes immutable rows into `order_action` using idempotency key
+`(trader_id, event_id)`. The hot path is non-blocking: the MessageBus handler normalizes each
+event and only does `put_nowait` enqueue; DB I/O runs in buffered flushes.
+
+```python
+from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.config import TradingNodeConfig
+
+config = TradingNodeConfig(
+    actors=[
+        ImportableActorConfig(
+            actor_path="nautilus_trader.persistence.orders.actor:OrderActionPersistenceActor",
+            config_path="nautilus_trader.persistence.orders.config:OrderActionPersistenceActorConfig",
+            config={
+                "component_id": "ORDER-ACTION-DB",
+                "db_path": "/var/lib/nautilus/orders.sqlite",
+                "topic": "events.order.*",
+                "event_types": [
+                    "OrderInitialized",
+                    "OrderSubmitted",
+                    "OrderAccepted",
+                    "OrderRejected",
+                    "OrderPendingCancel",
+                    "OrderCanceled",
+                    "OrderCancelRejected",
+                ],
+                "flush_interval_ms": 250,
+                "max_batch_size": 1000,
+                "flush_time_budget_ms": 10,
+                "flush_timeout_ms": 5000,
+                "max_queue_size": 10000,
+                "on_error": "buffer_until_full_then_fail",
+                "stop_timeout_ms": 5000,
+                "strict_stop": False,
+            },
+        ),
+    ],
+)
+```
+
+For Tasks 2-4 MVP scope, `OrderActionIntent` (cancel-intent stream persistence) is deferred to a
+follow-up task. In this phase, cancel strategy intent metadata is not persisted as a separate
+intent stream.
+
+Topic and stream notes:
+
+- Internal MessageBus subscriptions support wildcard topics, so `events.order.*` works in-process.
+- Redis stream consumers cannot listen with wildcard stream names. For external streaming, prefer
+  `stream_per_topic=False` and filter by `topic.startswith("events.order.")` in the consumer.
+
+Example queries (`order_action`):
+
+```sql
+-- CANCEL actions rejected in a recent window (`action_state` usage).
+SELECT
+  strategy_id,
+  client_order_id,
+  event_type,
+  action_state,
+  rejection_reason,
+  ts_event
+FROM order_action
+WHERE strategy_id = :strategy_id
+  AND action_type = 'CANCEL'
+  AND action_state = 'REJECTED'
+  AND ts_event >= :window_start_ns
+ORDER BY ts_event DESC;
+```
+
+```sql
+-- PLACE lifecycle by `action_state`.
+SELECT
+  client_order_id,
+  MAX(CASE WHEN action_state = 'SUBMITTED' THEN ts_event END) AS ts_submitted,
+  MAX(CASE WHEN action_state = 'ACCEPTED' THEN ts_event END) AS ts_accepted,
+  MAX(CASE WHEN action_state = 'REJECTED' THEN rejection_reason END) AS rejection_reason
+FROM order_action
+WHERE strategy_id = :strategy_id
+  AND action_type = 'PLACE'
+GROUP BY client_order_id
+ORDER BY ts_submitted DESC;
+```
+
+```sql
+-- Join order actions to fills (default setup uses separate DB files).
+ATTACH DATABASE '/var/lib/nautilus/orders.sqlite' AS orders;
+ATTACH DATABASE '/var/lib/nautilus/fills.sqlite' AS fills;
+
+SELECT
+  oa.client_order_id,
+  oa.action_state,
+  oa.event_type,
+  oa.ts_event AS order_ts_event,
+  ef.trade_id,
+  ef.last_qty,
+  ef.last_px,
+  ef.ts_event AS fill_ts_event
+FROM orders.order_action oa
+LEFT JOIN fills.execution_fill ef
+  ON ef.trader_id = oa.trader_id
+ AND ef.client_order_id = oa.client_order_id
+WHERE oa.strategy_id = :strategy_id
+  AND oa.action_type = 'PLACE'
+ORDER BY oa.ts_event DESC, ef.ts_event DESC;
+```
+
 ## Order Management System (OMS)
 
 An order management system (OMS) type refers to the method used for assigning orders to positions and tracking those positions for an instrument.
