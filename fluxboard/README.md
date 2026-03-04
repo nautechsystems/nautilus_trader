@@ -80,16 +80,14 @@ Available test suites:
 
 ## Project Structure
 
-Fluxboard uses a mostly flat top-level layout with supporting folders:
+Fluxboard is a Vite + React app kept under `fluxboard/`.
 
-- **Config:** `package.json`, `vite.config.ts`, `tsconfig.json`, `tailwind.config.ts`
-- **Types:** `types.ts` - API schemas
-- **Utils:** `utils.ts` - Deduplication, formatting
-- **Infrastructure:** `api.ts`, `sockets.ts`, `stores.ts`
-- **Components:** `Nav.tsx`, `Table.tsx`
-- **Routes:** `Params.tsx`, `Trades.tsx`, `MarketData.tsx`, `FV.tsx`
-- **App:** `main.tsx`, `App.tsx`
-- **Tests:** `smoke.spec.ts`, `test-helpers.ts`
+- **Entry/router:** `main.tsx`
+- **App shell:** `App.tsx`, `Nav.tsx`, `Title.tsx`
+- **Pages/surfaces:** top-level `*.tsx` pages (Dashboard/Signal/Params/Balances/Trades/Alerts/etc.)
+- **Shared code:** `components/`, `config/`, `hooks/`, `lib/`, `stores/`, `utils/`
+- **Tests:** `__tests__/`, `tests/`, `e2e/` (+ `*.test.tsx`)
+- **Docs:** `docs/` (UI standards + TokenMM contracts/runbook)
 
 ## Features
 
@@ -148,9 +146,9 @@ Matches legacy exactly:
 - Timestamps: rendered exactly as delivered by API
 
 ### Visual
-- Zebra striping: `odd:bg-neutral-900`
-- Side colors: buy=`text-emerald-400`, sell=`text-red-400`
-- Compact density: `text-xs`, `p-2` padding
+
+See `fluxboard/docs/ui-standards.md` for the tokenized styling primitives (colors, spacing, typography).
+New UI work should prefer tokens/theme variables over raw Tailwind color/spacing utilities.
 
 ## Socket Configuration
 

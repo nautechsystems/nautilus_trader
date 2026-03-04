@@ -27,6 +27,8 @@ TokenMM routes:
 | `/tokenmm/balances` | required | Balances page |
 | `/tokenmm/trades` | required | Trades page |
 | `/tokenmm/alerts` | required | Alerts page |
+| `/tokenm` | compat | Legacy alias; redirects to `/tokenmm` |
+| `/tokenm/*` | compat | Legacy alias; redirects to `/tokenmm/*` |
 | `/tokenmm/order-view` | ui-forbidden | SPA deep-link may resolve at HTTP layer, but TokenMM UI route/nav must not expose order-view |
 
 Order-view is excluded everywhere:

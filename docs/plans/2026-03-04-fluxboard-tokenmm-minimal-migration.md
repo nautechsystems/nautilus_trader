@@ -548,7 +548,7 @@ assert_engineio_open "http://127.0.0.1:5173/socket.io/?EIO=4&transport=polling&t
 # Option B (prod-like): `run_api.py --serve-fluxboard --host 127.0.0.1 --port 5022`
 assert_http_200_html "http://127.0.0.1:5022/tokenmm"
 assert_http_200_html "http://127.0.0.1:5022/tokenmm/alerts"
-assert_http_200_html "http://127.0.0.1:5022/tokenmm/order-view"
+assert_http_200_html "http://127.0.0.1:5022/tokenmm/trades"
 assert_engineio_open "http://127.0.0.1:5022/socket.io/?EIO=4&transport=polling&t=$(date +%s%N)"
 ```
 
@@ -611,7 +611,7 @@ Recommended next migration steps:
 | Item | Status | Notes |
 | --- | --- | --- |
 | AuthZ/AuthN | Needs follow-up | Add explicit auth for param mutation and Socket.IO profile subscription before any non-local exposure. |
-| Emitter lifecycle | Needs follow-up | Stop/idle emitter when no active profiles exist; avoid background polling when idle. |
+| Emitter lifecycle | Needs follow-up | Hardening needed in `nautilus_trader/flux/api/socketio.py`: stop/idle when no active profiles exist; avoid background polling when idle; maintain explicit active-profile refcounts (no room scans); add per-profile error logging + backoff; keep per-tick work bounded. |
 | Trades/alerts pagination | Needs follow-up | Avoid full in-memory hydration to compute totals; use bounded windowing + `XLEN` where possible. |
 | REST vs Socket scoping | Needs follow-up | If profile-based REST scoping is required, implement explicit profile allowlist mapping and test parity. |
 | CI smoke gate | Needs follow-up | Add `scripts/fluxboard/tokenmm_smoke.sh` and wire into CI as an opt-in/required gate. |

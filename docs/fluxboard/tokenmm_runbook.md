@@ -2,7 +2,7 @@
 
 # TokenMM Serving Runbook
 
-This runbook covers the two supported serving modes for Task 7.
+This runbook covers the two supported serving modes for the TokenMM Fluxboard surface.
 
 ## Prerequisites
 
@@ -25,6 +25,7 @@ pnpm --dir fluxboard install --frozen-lockfile
 - Vite preview default: `127.0.0.1:4173`.
 - Socket.IO path: `/socket.io`.
 - TokenMM app base path in prod-like mode: `/tokenmm/`.
+- Legacy alias routes: `/tokenm` and `/tokenm/*` redirect to `/tokenmm` for backward compatibility.
 
 Frontend variables (set in `fluxboard/.env`, template: `fluxboard/.env.example`):
 
@@ -52,7 +53,7 @@ python examples/live/makerv3_single_leg/run_api.py --host 127.0.0.1 --port 5022
 pnpm --dir fluxboard dev
 ```
 4. Open:
-- `http://127.0.0.1:5173/tokenmm`
+- `http://127.0.0.1:5173/tokenmm` (alias: `/tokenm`)
 
 Expected behavior:
 - `/api/*` and `/socket.io` requests from Vite are proxied to FluxAPI.
@@ -73,7 +74,7 @@ Env equivalent:
 FLUXBOARD_SERVE_DIST=1 python examples/live/makerv3_single_leg/run_api.py --host 127.0.0.1 --port 5022
 ```
 3. Open:
-- `http://127.0.0.1:5022/tokenmm`
+- `http://127.0.0.1:5022/tokenmm` (alias: `/tokenm`)
 - `http://127.0.0.1:5022/tokenmm/alerts` (deep-link SPA fallback)
 
 Expected behavior:

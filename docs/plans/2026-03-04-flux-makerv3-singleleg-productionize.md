@@ -66,6 +66,7 @@ Major surfaces added/changed:
 7. `scripts/ci/check-flux-leakage.sh` + CI/pre-commit wiring (`.github/workflows/build.yml`, `.pre-commit-config.yaml`)
 8. `examples/live/makerv3_single_leg/*` (thin runners + config + README) and deprecated wrappers under `examples/live/poc/*`
 9. Unit test coverage under `tests/unit_tests/flux/*` and `tests/unit_tests/examples/*`
+10. `fluxboard/*` (Fluxboard Vite app) + `docs/fluxboard/*` (TokenMM contracts + runbook) + `docs/plans/2026-03-04-fluxboard-tokenmm-minimal-migration.md`
 
 Production gaps identified in review (high-level) and status:
 
@@ -74,6 +75,7 @@ Production gaps identified in review (high-level) and status:
 3. Redis schema not versioned / multi-strategy contamination risk: resolved via `flux:v1` + strict strategy scoping (Tasks 1-4).
 4. Unbounded Redis growth paths: resolved via bounded retention defaults + docs (Tasks 2, 4).
 5. Strategy hot-path I/O and incomplete lifecycle reconciliation: resolved for production readiness baseline (Task 6); further modularization/refactor is tracked separately.
+6. Socket.IO emitter lifecycle/perf/observability gaps for Fluxboard realtime: pending hardening (tracked in TokenMM plan open actions; primary code: `nautilus_trader/flux/api/socketio.py`).
 
 ## Target module layout (proposed)
 
@@ -182,6 +184,8 @@ Phase 8: Docs and cleanup
 - [x] Task 8: Clean PR artifacts and enforce “no POC/chainsaw leakage”
 - [x] Task 9: Follow-up gate (bridge offsets, API legs keying, CI plotly check, config uniqueness, bridge runner scope hardening)
 - [x] Task 10: Non-overlap follow-up wave (CI/pre-commit gate wiring, redis-schema allowlist enforcement, API localhost defaults, plotly test guard)
+- [x] Task 11: Fluxboard TokenMM migration (Fluxboard app + TokenMM contracts/runbook + compat; tracked in `docs/plans/2026-03-04-fluxboard-tokenmm-minimal-migration.md`)
+- [ ] Task 12: Socket.IO emitter lifecycle/perf hardening (idle when no profiles, avoid room scans, per-profile backoff/logging, bounded emission)
 
 ### Follow-up gate tracker (P0 + P1)
 

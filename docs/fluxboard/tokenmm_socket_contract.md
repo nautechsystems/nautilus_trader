@@ -29,6 +29,7 @@ Explicitly excluded:
 6. Client emits `set_profile` after connect.
 7. Server normalizes profile and joins `profile:<normalized_profile>` room.
 8. Profile normalization is strict: `tokenm` and `tokenmm` both normalize to `tokenmm`.
+9. Fluxboard also supports `/tokenm` and `/tokenm/*` route aliases, which map to the same normalized profile.
 
 JavaScript client example:
 
