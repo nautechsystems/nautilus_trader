@@ -189,7 +189,7 @@ Phase 8: Docs and cleanup
 
 ### Task 12 progress log
 
-- [2026-03-04 09:58 UTC] Task 12: Implemented `FluxSocketEmitter` active-profile refcount bookkeeping (connect/disconnect/set_profile hooks), event-driven idle loop wakeups, per-profile error isolation with bounded backoff+logging, and zero-ref profile state cleanup; added lifecycle/error-isolation tests in `tests/unit_tests/flux/api/test_socketio_tokenmm.py` / evidence: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/unit_tests/flux/api/test_socketio_tokenmm.py --confcutdir=tests/unit_tests/flux/api` (15 passed) / SHA: pending commit (`uncommitted`).
+- [2026-03-04 09:58 UTC] Task 12: Implemented `FluxSocketEmitter` active-profile refcount bookkeeping (connect/disconnect/set_profile hooks), event-driven idle loop wakeups, per-profile error isolation with bounded backoff+logging, and zero-ref profile state cleanup; added lifecycle/error-isolation tests in `tests/unit_tests/flux/api/test_socketio_tokenmm.py` / evidence: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/unit_tests/flux/api/test_socketio_tokenmm.py --confcutdir=tests/unit_tests/flux/api` (15 passed) / SHA: `ec1625a45`.
 
 ### Follow-up gate tracker (P0 + P1)
 
