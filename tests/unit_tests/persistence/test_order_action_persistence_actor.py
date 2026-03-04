@@ -385,6 +385,7 @@ def test_actor_strict_stop_timeout_allows_replacement_actor_restart_after_cleanu
 
 
 def test_writer_startup_timeout_uses_flush_timeout_when_it_is_largest_budget() -> None:
+    # Intentional white-box contract test to avoid sleep-based timing flake.
     config = OrderActionPersistenceActorConfig(
         component_id="ORDER-ACTION-DB",
         db_path="orders.sqlite",

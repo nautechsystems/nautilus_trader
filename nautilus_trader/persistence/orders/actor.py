@@ -47,6 +47,12 @@ _ACTION_MAP: dict[str, tuple[str, str]] = {
 
 
 def _writer_startup_timeout_seconds(config: OrderActionPersistenceActorConfig) -> float:
+    """
+    Return a conservative writer-start readiness timeout in seconds.
+
+    Protects actor startup/flush readiness checks against slow connection
+    initialization by honoring flush/stop budgets in addition to interval cadence.
+    """
     return max(
         1.0,
         config.flush_timeout_ms / 1000.0,
@@ -413,7 +419,7 @@ class OrderActionPersistenceActor(Actor):
         self._raise_if_writer_failed()
 
         if self._run_writer_thread and self._writer_thread is not None:
-            if not self._writer_started.wait(timeout=max(1.0, (self.config.flush_interval_ms / 1000.0) * 4.0)):
+            if not self._writer_started.wait(timeout=_writer_startup_timeout_seconds(self.config)):
                 raise RuntimeError("Order action writer thread is not ready")
 
             self._raise_if_writer_failed()
