@@ -6,56 +6,57 @@ from pathlib import Path
 import pytest
 
 try:
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         build_ladder_targets,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         build_ladder_place_cancel_levels,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         build_ladder_place_cancel_levels_from_bps,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         _bps_to_price_offset,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         _clamp_post_only_price,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         _decimal_to_json_str,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         _did_bot_turn_off,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         _parse_bool_text,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         _coerce_runtime_param_value,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         _should_publish_market_bbo,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         _nudge_unique_price,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         _round_price_to_tick,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         _serialize_account_payload,
         _serialize_position_payload,
     )
-    from nautilus_trader.examples.strategies.makerv3_single_leg_quoter import (
+    from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import (
         plan_side_rebalance_actions,
     )
 except ModuleNotFoundError:
     module_path = (
         Path(__file__).resolve().parents[4]
         / "nautilus_trader"
-        / "examples"
+        / "flux"
         / "strategies"
-        / "makerv3_single_leg_quoter.py"
+        / "makerv3"
+        / "single_leg_quoter.py"
     )
     spec = spec_from_file_location("makerv3_single_leg_quoter", module_path)
     module = module_from_spec(spec)
