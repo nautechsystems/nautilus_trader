@@ -391,3 +391,221 @@ def test_create_app_rejects_duplicate_contract_catalog_entries_after_normalizati
             params_schema=params_schema,
             params_defaults=params_defaults,
         )
+
+
+def test_params_profile_fanout_returns_multiple_tokenmm_strategies(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys_secondary = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(
+        keys_secondary.params_hash_key(),
+        {
+            "qty": "2.5",
+            "bot_on": "0",
+            "max_age_ms": "5000",
+        },
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows = body["data"]
+    assert isinstance(rows, list)
+    by_id = {row["strategy_id"]: row for row in rows}
+    assert set(by_id) == {flux_config.identity.strategy_id, "strategy_02"}
+    assert by_id["strategy_02"]["params"]["qty"] == 2.5
+
+
+def test_trades_endpoint_applies_supported_filters_and_sort(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "signal_id": "sig_a",
+                "row_id": "t-1",
+                "seq": 1,
+                "ts_ms": 1_000,
+                "coin": "AAA",
+                "exchange": "venue_a",
+                "side": "buy",
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "signal_id": "sig_b",
+                "row_id": "t-2",
+                "seq": 2,
+                "ts_ms": 2_000,
+                "coin": "BBB",
+                "exchange": "venue_b",
+                "side": "sell",
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "signal_id": "sig_c",
+                "row_id": "t-3",
+                "seq": 3,
+                "ts_ms": 3_000,
+                "coin": "AAA",
+                "exchange": "venue_b",
+                "side": "buy",
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        coin_response = client.get("/api/v1/trades", query_string={"coin": "AAA"})
+        coin_body = coin_response.get_json()
+        exchange_response = client.get("/api/v1/trades", query_string={"exchange": "venue_b"})
+        exchange_body = exchange_response.get_json()
+        side_response = client.get("/api/v1/trades", query_string={"side": "buy"})
+        side_body = side_response.get_json()
+        signal_response = client.get("/api/v1/trades", query_string={"signal_id": "sig_b"})
+        signal_body = signal_response.get_json()
+        sort_asc_response = client.get("/api/v1/trades", query_string={"sort": "asc"})
+        sort_asc_body = sort_asc_response.get_json()
+        sort_desc_response = client.get("/api/v1/trades", query_string={"sort": "desc"})
+        sort_desc_body = sort_desc_response.get_json()
+
+    assert coin_response.status_code == 200
+    assert [row["row_id"] for row in coin_body["data"]["rows"]] == ["t-3", "t-1"]
+    assert all(row["coin"] == "AAA" for row in coin_body["data"]["rows"])
+
+    assert exchange_response.status_code == 200
+    assert [row["row_id"] for row in exchange_body["data"]["rows"]] == ["t-3", "t-2"]
+    assert all(row["exchange"] == "venue_b" for row in exchange_body["data"]["rows"])
+
+    assert side_response.status_code == 200
+    assert [row["row_id"] for row in side_body["data"]["rows"]] == ["t-3", "t-1"]
+    assert all(row["side"] == "buy" for row in side_body["data"]["rows"])
+
+    assert signal_response.status_code == 200
+    assert [row["row_id"] for row in signal_body["data"]["rows"]] == ["t-2"]
+    assert all(row["signal_id"] == "sig_b" for row in signal_body["data"]["rows"])
+
+    assert sort_asc_response.status_code == 200
+    assert [row["row_id"] for row in sort_asc_body["data"]["rows"]] == ["t-1", "t-2", "t-3"]
+    assert sort_asc_body["data"]["sort"] == "ts_ms_asc"
+
+    assert sort_desc_response.status_code == 200
+    assert [row["row_id"] for row in sort_desc_body["data"]["rows"]] == ["t-3", "t-2", "t-1"]
+    assert sort_desc_body["data"]["sort"] == "ts_ms_desc"
+
+
+def test_trades_response_reports_effective_limit_when_requested_limit_exceeds_cap(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": f"t-{seq}",
+                "seq": seq,
+                "ts_ms": seq * 1_000,
+            }
+            for seq in range(1, 6)
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/trades", query_string={"limit": 999})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["requested_limit"] == 999
+    assert body["data"]["effective_limit"] == 200
+    assert body["data"]["max_limit"] == 200
+    assert body["data"]["limit"] == 200
+    assert len(body["data"]["rows"]) == 5
+
+
+def test_balances_response_totals_are_authoritative_even_when_rows_are_truncated(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {"strategy_id": flux_config.identity.strategy_id, "row_id": "b-1", "mv_raw": 10.0},
+            {"strategy_id": flux_config.identity.strategy_id, "row_id": "b-2", "mv_raw": 20.0},
+            {"strategy_id": flux_config.identity.strategy_id, "row_id": "b-3", "mv_raw": 30.0},
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"limit": 2})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert len(body["data"]["rows"]) == 2
+    assert body["data"]["count"] == 3
+    assert body["data"]["total"] == 3
+    assert body["data"]["totals"]["mv_raw"] == 60.0
+    assert body["data"]["totals"]["mv_display"] == "$60.00"

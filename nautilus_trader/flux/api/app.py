@@ -298,6 +298,53 @@ class FluxApiStore:
         except ValueError as exc:
             raise ParamsStoreValidationError(str(exc)) from exc
 
+    def discover_strategy_ids_from_params(self, *, limit: int = 200) -> list[str]:
+        max_items = max(1, min(2_000, int(limit)))
+        key_prefix = f"{self._config.identity.namespace}:{self._config.identity.schema_version}:params:"
+        out: list[str] = []
+        seen: set[str] = set()
+
+        def _append_from_key(raw_key: Any) -> None:
+            if len(out) >= max_items:
+                return
+            key = decode_text(raw_key).strip()
+            if not key.startswith(key_prefix):
+                return
+            strategy_text = key[len(key_prefix) :].strip()
+            if not strategy_text:
+                return
+            try:
+                strategy_id = validate_identifier_part(strategy_text, "strategy_id")
+            except ValueError:
+                return
+            if strategy_id in seen:
+                return
+            seen.add(strategy_id)
+            out.append(strategy_id)
+
+        keys_fn = getattr(self._redis, "keys", None)
+        if callable(keys_fn):
+            try:
+                for raw_key in keys_fn(f"{key_prefix}*"):
+                    _append_from_key(raw_key)
+                    if len(out) >= max_items:
+                        break
+            except Exception:  # noqa: BLE001
+                pass
+
+        hashes = getattr(self._redis, "hashes", None)
+        if isinstance(hashes, dict):
+            for raw_key in hashes.keys():
+                _append_from_key(raw_key)
+                if len(out) >= max_items:
+                    break
+
+        default_strategy_id = self._config.identity.strategy_id
+        if default_strategy_id not in seen and len(out) < max_items:
+            out.append(default_strategy_id)
+
+        return sorted(out)
+
     def update_params(self, strategy_id: str, updates: Mapping[str, Any]) -> dict[str, Any]:
         manager = self._params_manager(strategy_id)
         if not updates:
@@ -514,6 +561,53 @@ def _clamp_offset(value: Any, *, default: int = 0) -> int:
     return max(0, out)
 
 
+def _coerce_finite_float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        out = float(value)
+        return out if math.isfinite(out) else None
+    text = decode_text(value).strip()
+    if not text:
+        return None
+    try:
+        out = float(text)
+    except ValueError:
+        return None
+    return out if math.isfinite(out) else None
+
+
+def _format_money_display(value: float) -> str:
+    return f"{'-$' if value < 0 else '$'}{abs(value):.2f}"
+
+
+def _balances_totals(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    total_mv = 0.0
+    for row in rows:
+        mv = _coerce_finite_float(
+            row.get("mv_raw")
+            or row.get("mv")
+            or row.get("notional")
+            or row.get("notional_quote")
+            or row.get("notional_usd"),
+        )
+        if mv is not None:
+            total_mv += mv
+    return {
+        "mv_raw": total_mv,
+        "mv_display": _format_money_display(total_mv),
+    }
+
+
+def _normalize_trade_side(value: Any) -> str:
+    side = decode_text(value).strip().lower()
+    if side in {"1", "buy", "bid"}:
+        return "buy"
+    if side in {"2", "sell", "ask"}:
+        return "sell"
+    return side
+
+
 def _extract_last_seq(rows: Sequence[Mapping[str, Any]], *, fallback: int = 0) -> int:
     best = fallback
     for row in rows:
@@ -627,13 +721,53 @@ def create_flux_api_app(
     app.config["JSON_SORT_KEYS"] = False
     app.json.sort_keys = False
 
-    profile_strategy_map = {
-        "tokenmm": default_strategy_id,
+    profile_strategy_map: dict[str, str | list[str]] = {
+        "tokenmm": [default_strategy_id],
     }
 
-    def _strategy_for_profile(profile: str) -> str | None:
+    def _coerce_strategy_ids(raw_value: Any) -> list[str]:
+        values: list[Any]
+        if isinstance(raw_value, str):
+            values = [raw_value]
+        elif isinstance(raw_value, Sequence) and not isinstance(raw_value, bytes):
+            values = list(raw_value)
+        else:
+            return []
+        out: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            text = decode_text(value).strip()
+            if not text:
+                continue
+            try:
+                strategy_id = validate_identifier_part(text, "strategy_id")
+            except ValueError:
+                continue
+            if strategy_id in seen:
+                continue
+            seen.add(strategy_id)
+            out.append(strategy_id)
+        return out
+
+    def _strategy_ids_for_profile(profile: str) -> list[str]:
         normalized = normalize_profile(profile)
-        return profile_strategy_map.get(normalized)
+        mapped_ids = _coerce_strategy_ids(profile_strategy_map.get(normalized))
+        if normalized != "tokenmm":
+            return mapped_ids
+        discovered_ids = store.discover_strategy_ids_from_params(limit=200)
+        if not mapped_ids:
+            return discovered_ids
+        seen = set(mapped_ids)
+        for strategy_id in discovered_ids:
+            if strategy_id in seen:
+                continue
+            seen.add(strategy_id)
+            mapped_ids.append(strategy_id)
+        return mapped_ids
+
+    def _strategy_for_profile(profile: str) -> str | None:
+        strategy_ids = _strategy_ids_for_profile(profile)
+        return strategy_ids[0] if strategy_ids else None
 
     create_flux_socket_server(
         app,
@@ -780,18 +914,34 @@ def create_flux_api_app(
 
     @app.get("/api/v1/params")
     def api_params() -> Response:
-        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
-        try:
-            params = store.load_params(strategy_id)
-        except ParamsStoreValidationError as exc:
-            return _error(
-                status=500,
-                code="params_store_invalid",
-                message=str(exc),
-                details={"strategy_id": strategy_id},
+        requested_strategy = decode_text(request.args.get("strategy")).strip()
+        if requested_strategy:
+            strategy_ids = [_resolve_strategy_id(requested_strategy, field_name="strategy")]
+        else:
+            profile = decode_text(request.args.get("profile")).strip()
+            strategy_ids = _strategy_ids_for_profile(profile) if profile else []
+            if not strategy_ids:
+                strategy_ids = [default_strategy_id]
+
+        payloads: list[dict[str, Any]] = []
+        for strategy_id in strategy_ids:
+            try:
+                params = store.load_params(strategy_id)
+            except ParamsStoreValidationError as exc:
+                return _error(
+                    status=500,
+                    code="params_store_invalid",
+                    message=str(exc),
+                    details={"strategy_id": strategy_id},
+                )
+            payloads.append(
+                build_params_payload(
+                    strategy_id=strategy_id,
+                    params=params,
+                    schema=_ordered_params_schema(schema),
+                ),
             )
-        payload = build_params_payload(strategy_id=strategy_id, params=params, schema=_ordered_params_schema(schema))
-        return _ok(data=[payload])
+        return _ok(data=payloads)
 
     @app.post("/api/v1/params")
     @app.patch("/api/v1/params")
@@ -1017,10 +1167,14 @@ def create_flux_api_app(
         strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         rows = store.load_balances_rows(strategy_id)
+        total_rows = len(rows)
         return _ok(
             data={
                 "rows": rows[:limit],
-                "count": len(rows),
+                "count": total_rows,
+                "total": total_rows,
+                "limit": limit,
+                "totals": _balances_totals(rows),
                 "server_ts_ms": now_ms(),
             },
         )
@@ -1028,20 +1182,69 @@ def create_flux_api_app(
     @app.get("/api/v1/trades")
     def api_trades() -> Response:
         strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
-        limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
+        requested_limit_raw = request.args.get("limit")
+        requested_limit = safe_int(requested_limit_raw)
+        limit = _clamp_limit(requested_limit_raw, default=50, minimum=1, maximum=200)
         offset = _clamp_offset(request.args.get("offset"), default=0)
-        all_rows = store.load_all_trades_rows(strategy_id)
-        total = len(all_rows)
-        rows = all_rows[offset : offset + limit]
+        coin_filter = decode_text(request.args.get("coin")).strip().upper()
+        exchange_filter = decode_text(request.args.get("exchange")).strip().lower()
+        side_filter = _normalize_trade_side(request.args.get("side"))
+        signal_id_filter = decode_text(request.args.get("signal_id")).strip()
+        sort_raw = decode_text(request.args.get("sort")).strip().lower()
+        sort_ascending = sort_raw in {"asc", "ts_ms_asc"}
+        sort_label = "ts_ms_asc" if sort_ascending else "ts_ms_desc"
+        has_filters = bool(coin_filter or exchange_filter or side_filter or signal_id_filter)
+
+        if has_filters or sort_ascending:
+            scan_limit = max(200, min(2_000, max(limit + offset, limit * 4)))
+            source_rows = store.load_trades_rows(
+                strategy_id,
+                limit=scan_limit,
+                since_ms=None,
+                since_seq=None,
+                scan_limit=scan_limit,
+            )
+        else:
+            source_rows = store.load_all_trades_rows(strategy_id)
+
+        filtered_rows: list[dict[str, Any]] = []
+        for row in source_rows:
+            coin = decode_text(row.get("coin") or row.get("asset")).strip().upper()
+            if coin_filter and coin != coin_filter:
+                continue
+            exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
+            if exchange_filter and exchange != exchange_filter:
+                continue
+            side = _normalize_trade_side(row.get("side"))
+            if side_filter and side != side_filter:
+                continue
+            signal_id = decode_text(row.get("signal_id") or row.get("strategy_id")).strip()
+            if signal_id_filter and signal_id != signal_id_filter:
+                continue
+            filtered_rows.append(row)
+
+        filtered_rows.sort(
+            key=lambda item: (
+                coerce_ts_ms(item.get("ts_ms") or item.get("ts") or item.get("timestamp")) or 0,
+                safe_int(item.get("seq")) or 0,
+            ),
+            reverse=not sort_ascending,
+        )
+
+        total = len(filtered_rows)
+        rows = filtered_rows[offset : offset + limit]
         has_more = (offset + len(rows)) < total
         payload: dict[str, Any] = {
             "rows": rows,
             "total": total,
             "limit": limit,
+            "requested_limit": int(requested_limit if requested_limit is not None else limit),
+            "effective_limit": limit,
+            "max_limit": 200,
             "offset": offset,
             "has_more": has_more,
-            "last_seq": _extract_last_seq(all_rows, fallback=0),
-            "sort": "ts_ms_desc",
+            "last_seq": _extract_last_seq(filtered_rows, fallback=0),
+            "sort": sort_label,
         }
         if has_more:
             payload["next_offset"] = offset + len(rows)
