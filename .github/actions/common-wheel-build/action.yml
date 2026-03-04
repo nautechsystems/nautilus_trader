@@ -101,3 +101,7 @@ runs:
       run: |
         uv sync --all-groups --all-extras --no-install-package nautilus_trader
         uv pip install dist/*.whl
+
+    - name: Verify Plotly availability
+      shell: bash
+      run: uv run --no-sync python -c "import plotly.graph_objects as go"
