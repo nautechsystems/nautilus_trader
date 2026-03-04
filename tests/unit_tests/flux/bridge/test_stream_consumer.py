@@ -93,17 +93,26 @@ def test_parser_defaults_environment_for_runner_ergonomics() -> None:
 
 
 class _RunLoopRedis:
-    def __init__(self, stream_key: str, entry_id: str, fields: dict[Any, Any]) -> None:
+    def __init__(
+        self,
+        stream_key: str,
+        entry_id: str,
+        fields: dict[Any, Any],
+        entries: list[tuple[str, dict[Any, Any]]] | None = None,
+    ) -> None:
         self._stream_key = stream_key
-        self._entry_id = entry_id
-        self._fields = fields
+        self._entries = entries or [(entry_id, fields)]
 
     def xread(self, *, streams: dict[str, str], count: int, block: int) -> list[tuple[bytes, list[tuple[bytes, dict[Any, Any]]]]]:
         _ = streams, count, block
+        encoded_entries = [
+            (entry_id.encode(), fields)
+            for entry_id, fields in self._entries
+        ]
         return [
             (
                 self._stream_key.encode(),
-                [(self._entry_id.encode(), self._fields)],
+                encoded_entries,
             ),
         ]
 
@@ -114,10 +123,16 @@ def _build_run_consumer(
     stream_key: str = "flux:v1:in:stream:paper:strategy_01:event",
     entry_id: str = "1700000001000-0",
     fields: dict[Any, Any] | None = None,
+    entries: list[tuple[str, dict[Any, Any]]] | None = None,
 ) -> tuple[FluxBridgeStreamConsumer, str, str]:
     raw_fields = fields or {"payload": json.dumps({"event": "refresh", "ts_event": "1700000010"})}
     consumer = FluxBridgeStreamConsumer(
-        redis_client=_RunLoopRedis(stream_key=stream_key, entry_id=entry_id, fields=raw_fields),  # type: ignore[arg-type]
+        redis_client=_RunLoopRedis(  # type: ignore[arg-type]
+            stream_key=stream_key,
+            entry_id=entry_id,
+            fields=raw_fields,
+            entries=entries,
+        ),
         environment="paper",
         handlers={"event": handler},
         topics=["event"],
@@ -188,3 +203,36 @@ def test_run_advances_stream_offset_after_successful_write() -> None:
     consumer.run()
 
     assert consumer._stream_ids[stream_key] == entry_id  # noqa: SLF001
+
+
+def test_run_stops_processing_stream_batch_after_first_decode_failure() -> None:
+    handled_entry_ids: list[str] = []
+
+    def _handler(payload, context):  # noqa: ANN001, ANN202
+        _ = payload
+        handled_entry_ids.append(context.entry_id)
+        return []
+
+    first_entry_id = "1700000001000-0"
+    second_entry_id = "1700000001001-0"
+    first_fields = {"payload": json.dumps({"event": "refresh", "ts_event": "1700000010"})}
+    second_fields = {"payload": json.dumps({"event": "refresh", "ts_event": "1700000011"})}
+    consumer, stream_key, _entry_id = _build_run_consumer(
+        handler=_handler,
+        entry_id=first_entry_id,
+        fields=first_fields,
+        entries=[(first_entry_id, first_fields), (second_entry_id, second_fields)],
+    )
+    decode_entry = consumer._decode_entry  # noqa: SLF001
+
+    def _decode_fail_first(*, stream_key: str, entry_id: str, fields: dict[Any, Any]):  # noqa: ARG001
+        if entry_id == first_entry_id:
+            consumer._running = False  # noqa: SLF001
+            raise ValueError("decode failed")
+        return decode_entry(stream_key=stream_key, entry_id=entry_id, fields=fields)
+
+    consumer._decode_entry = _decode_fail_first  # type: ignore[method-assign]  # noqa: SLF001
+    consumer.run()
+
+    assert handled_entry_ids == []
+    assert consumer._stream_ids[stream_key] == "$"  # noqa: SLF001

@@ -6,7 +6,7 @@ schema_version = "v1"
 
 [identity]
 strategy_id = "makerv3_single_leg"
-strategy_instance_id = "makerv3_single_leg_001"
+strategy_instance_id = "makerv3_single_leg"
 trader_id = "MAKER-PAPER-001"
 external_strategy_id = "makerv3_single_leg"
 

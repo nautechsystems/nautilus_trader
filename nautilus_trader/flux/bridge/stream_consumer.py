@@ -399,21 +399,33 @@ class FluxBridgeStreamConsumer:
                             entry_id=entry_id,
                             fields=fields,
                         )
-                    except ValueError as exc:
+                    except Exception as exc:  # noqa: BLE001
                         self._logger.error(
                             "Rejected stream entry stream=%s id=%s err=%s",
                             stream_key,
                             entry_id,
                             exc,
                         )
-                        continue
+                        break
                     if decoded is None:
-                        continue
+                        self._logger.error(
+                            "Rejected stream entry stream=%s id=%s err=%s",
+                            stream_key,
+                            entry_id,
+                            "decode returned no payload",
+                        )
+                        break
                     payload, context = decoded
 
                     handler = self._handlers.get(context.topic)
                     if handler is None:
-                        continue
+                        self._logger.error(
+                            "Rejected stream entry stream=%s id=%s err=%s",
+                            stream_key,
+                            entry_id,
+                            f"missing handler for topic={context.topic}",
+                        )
+                        break
 
                     try:
                         ops = handler(payload, context)
@@ -425,7 +437,7 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             exc,
                         )
-                        continue
+                        break
 
                     try:
                         self._apply_write_ops(ops)
@@ -437,7 +449,7 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             exc,
                         )
-                        continue
+                        break
 
                     self._stream_ids[stream_key] = entry_id
 
