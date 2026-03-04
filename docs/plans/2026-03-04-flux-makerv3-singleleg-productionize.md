@@ -174,6 +174,26 @@ Phase 8: Docs and cleanup
 - [x] Task 6: Strategy productionization (core safety/perf work)
 - [x] Task 7: Replace POC runners with thin examples
 - [x] Task 8: Clean PR artifacts and enforce “no POC/chainsaw leakage”
+- [x] Task 9: Follow-up gate (bridge offsets, API legs keying, CI plotly check, config uniqueness, bridge runner scope hardening)
+
+### Follow-up gate tracker (P0 + P1)
+
+- [x] P0: Bridge offset semantics hardened (advance offsets only after decode+handler+write success; no advance on decode/handler/write failures; broad write failure catch)
+- [x] P0: API `legs` map keyed by `contract_id = "{exchange}:{symbol}"` (exchange lower + symbol upper), preserving `exchange`/`symbol` fields in row payloads
+- [x] P1: Added explicit Plotly availability verification in wheel build action (`uv run --no-sync python -c "import plotly.graph_objects as go"`)
+- [x] P1: Enforced `strategy_instance_id == strategy_id` in `FluxIdentityConfig` without changing `FluxRedisKeys` format
+- [x] P1: Bridge runner wildcard hardening (`--all-strategies`, mutual exclusion with `--strategy-id`, fail-fast strategy scope validation)
+
+### Follow-up verification checklist
+
+```bash
+scripts/ci/check-flux-leakage.sh
+rg -n "\bpoc\b|POC_|maker_poc|\bchainsaw\b" -S nautilus_trader docs examples
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit_tests/flux/common -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit_tests/flux/bridge -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit_tests/flux/api -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit_tests/examples -q
+```
 
 ---
 
@@ -525,6 +545,7 @@ python -m pytest tests/unit_tests -q
 7. API contract is factory-based (`FluxConfig` + injected Redis client), with centralized envelopes (`api_version`, `request_id`, `timestamp_ms`) and explicit health/readiness schema checks.
 8. Production strategy implementation lives under `nautilus_trader/flux/strategies/makerv3/` with two-leg staleness gating, lifecycle reconciliation, and quote-failure circuit breaker fail-stop semantics.
 9. Production leakage policy is enforced via `scripts/ci/check-flux-leakage.sh`, which fails on POC/chainsaw naming in production Flux paths and on absolute host paths in durable Flux docs.
+10. Follow-up gate policy keeps Redis key format unchanged while enforcing config-level identity uniqueness (`strategy_instance_id == strategy_id`) and explicitly forbids edits under `nautilus_trader/flux/strategies/*` in this wave to avoid worker-collision risk.
 
 ## Progress log
 
@@ -536,3 +557,8 @@ python -m pytest tests/unit_tests -q
 6. 2026-03-04T02:13:41Z | Task 6 - Strategy productionization safety/perf refactor | SHAs: `811339f6e4023296e5e11498c7fab28c259dfdd0`, `13295ccf0b91b74012a42276e92e164854b89231` | Notes: Added production strategy module under `nautilus_trader/flux/strategies/makerv3/`, implemented two-leg staleness gating + cancel, quote-failure circuit breaker fail-stop, lifecycle reconciliation for reject/cancel/expire, and stronger cancel-on-stop tracking semantics with new strategy-level tests; Task 6 spec review ✅ and code-quality review ✅.
 7. 2026-03-04T02:26:03Z | Task 7 - Replace POC runners with thin examples | SHAs: `6758d180f09eb607ee198667d23082c8b4e39ea2` | Notes: Added `examples/live/makerv3_single_leg/*` (node/bridge/api runners + README + config), converted `examples/live/poc/*` runners into thin deprecated wrappers, removed unsafe secret bootstrap patterns, and kept run modes explicit; Task 7 spec review ✅ and code-quality review ✅.
 8. 2026-03-04T03:04:17Z | Task 8 - PR cleanup + no POC/chainsaw leakage enforcement | SHAs: `aa57547d5`, `689ec0b39`, `67d2fa1b9`, `32a2dcd97`, `c50489073`, `7ea168551` | Notes: Renamed production bus payload type to `FluxBusPayload`, removed POC envelope compatibility from bridge, added durable Flux docs (`params.md`, `bridge.md`, `api.md`), replaced archived prototype plan doc with durable pointer, preserved `/.worktrees/` and `.run/` ignores, and hardened `scripts/ci/check-flux-leakage.sh` through spec/quality fix loops (case-insensitive leakage terms, `POC_*`/`*_poc` detection, generalized host-path checks, and URL-safe Windows path matching); Task 8 spec review ✅ and code-quality review ✅.
+9. 2026-03-04T03:08:07Z | Task 9 (P0) - Bridge offset semantics hardening | SHAs: `fb4f99e3b` | Notes: Moved offset advancement to post-write success only, retained offsets on decode/handler/write failure paths, broadened write exception catch in run loop, and added run-loop regression tests for offset behavior.
+10. 2026-03-04T03:11:57Z | Task 9 (P0) - API legs contract_id keying fix | SHAs: `a90941dab` | Notes: Added contract-id-based legs keying (`{exchange}:{symbol}` normalization), removed same-exchange symbol collision path, and added regression tests for same-exchange multi-symbol contracts.
+11. 2026-03-04T03:12:00Z | Task 9 (P1) - Plotly CI import gate | SHAs: `f2ada0c7f` | Notes: Added explicit `plotly.graph_objects` import verification step to common wheel-build action.
+12. 2026-03-04T03:12:04Z | Task 9 (P1) - Identity uniqueness policy | SHAs: `5182a4e65` | Notes: Enforced `strategy_instance_id == strategy_id` in `FluxIdentityConfig`, updated common config/key tests, and documented no-schema-change uniqueness policy.
+13. 2026-03-04T03:12:09Z | Task 9 (P1) - Bridge runner wildcard hardening | SHAs: `176f0685c` | Notes: Added `--all-strategies` support with strict scope validation (mutual exclusion with `--strategy-id`, fail-fast when scope missing) plus runner unit tests and README updates.
