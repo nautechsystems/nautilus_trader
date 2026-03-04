@@ -46,6 +46,15 @@ _ACTION_MAP: dict[str, tuple[str, str]] = {
 }
 
 
+def _writer_startup_timeout_seconds(config: OrderActionPersistenceActorConfig) -> float:
+    return max(
+        1.0,
+        config.flush_timeout_ms / 1000.0,
+        config.stop_timeout_ms / 1000.0,
+        (config.flush_interval_ms / 1000.0) * 4.0,
+    )
+
+
 def _current_ts_ingest_ns(clock: object | None) -> int:
     if clock is None:
         return time.time_ns()
@@ -283,12 +292,7 @@ class OrderActionPersistenceActor(Actor):
                 )
                 self._writer_thread.start()
 
-                startup_timeout = max(
-                    1.0,
-                    self.config.flush_timeout_ms / 1000.0,
-                    self.config.stop_timeout_ms / 1000.0,
-                    (self.config.flush_interval_ms / 1000.0) * 4.0,
-                )
+                startup_timeout = _writer_startup_timeout_seconds(self.config)
                 if not self._writer_started.wait(timeout=startup_timeout):
                     self._writer_error = RuntimeError("Order action writer thread startup timed out")
                     raise self._writer_error

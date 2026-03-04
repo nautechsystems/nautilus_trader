@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-import time
 
 import pytest
 
@@ -25,6 +24,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.persistence.orders.actor import OrderActionPersistenceActor
 from nautilus_trader.persistence.orders.actor import _current_ts_ingest_ns
+from nautilus_trader.persistence.orders.actor import _writer_startup_timeout_seconds
 from nautilus_trader.persistence.orders.actor import order_event_to_row
 from nautilus_trader.persistence.orders.config import OrderActionPersistenceActorConfig
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -384,22 +384,18 @@ def test_actor_strict_stop_timeout_allows_replacement_actor_restart_after_cleanu
     assert _row_count(db_path) == 2
 
 
-def test_actor_startup_timeout_uses_flush_timeout_budget(tmp_path) -> None:
-    from nautilus_trader.persistence.orders.sqlite import connect as _real_connect
-
-    def _slow_connect(path: str):
-        time.sleep(1.1)
-        return _real_connect(path)
-
-    actor, _, _, _ = _make_actor(
-        tmp_path,
-        run_writer_thread=True,
+def test_writer_startup_timeout_uses_flush_timeout_when_it_is_largest_budget() -> None:
+    config = OrderActionPersistenceActorConfig(
+        component_id="ORDER-ACTION-DB",
+        db_path="orders.sqlite",
+        flush_interval_ms=10,
         flush_timeout_ms=2_000,
-        connect_fn=_slow_connect,
+        stop_timeout_ms=500,
     )
 
-    actor.start()
-    actor.stop()
+    timeout = _writer_startup_timeout_seconds(config)
+
+    assert timeout == 2.0
 
 
 def test_actor_strict_stop_timeout_with_backlog_larger_than_batch_drains_and_completes_cleanup(
