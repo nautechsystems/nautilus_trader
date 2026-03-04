@@ -14,8 +14,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.flux.bridge.stream_consumer import main
+from __future__ import annotations
+
+import sys
+
+
+DEPRECATION_MESSAGE = (
+    "examples/live/poc/chainsaw_bridge.py is deprecated and no longer supported.\n"
+    "Use examples/live/makerv3_single_leg/run_bridge.py instead."
+)
+
+
+def main() -> int:
+    print(DEPRECATION_MESSAGE, file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
