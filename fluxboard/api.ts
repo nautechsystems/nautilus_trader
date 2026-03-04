@@ -350,11 +350,15 @@ function normalizeParamDef(
   key: string,
   rawDef: unknown,
   deprecated = false,
+  opts?: { preferKeyLabel?: boolean },
 ): ParamDef {
   const source = rawDef && typeof rawDef === 'object' ? (rawDef as Record<string, unknown>) : {};
   const type = normalizeParamType(key, source.type);
   const description = String(source.description ?? source.label ?? key).trim() || key;
-  const label = String(source.label ?? source.description ?? key).trim() || key;
+  const preferKeyLabel = opts?.preferKeyLabel === true;
+  const label = preferKeyLabel
+    ? key
+    : (String(source.label ?? source.description ?? key).trim() || key);
   const options = normalizeParamOptions(key, source.type, source.options);
   const step = toFiniteOptionalNumber(source.step);
   const minValue = toFiniteOptionalNumber(source.min_value ?? source.minimum);
@@ -391,6 +395,13 @@ function normalizeParamDef(
 }
 
 function normalizeParamSchemaPayload(payload: unknown): ParamSchema {
+  return normalizeParamSchemaPayloadWithOptions(payload, {});
+}
+
+function normalizeParamSchemaPayloadWithOptions(
+  payload: unknown,
+  options: { preferKeyLabel?: boolean },
+): ParamSchema {
   const data = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
   const paramsRaw =
     data.params && typeof data.params === 'object'
@@ -403,11 +414,11 @@ function normalizeParamSchemaPayload(payload: unknown): ParamSchema {
 
   const params: Record<string, ParamDef> = {};
   for (const [key, rawDef] of Object.entries(paramsRaw)) {
-    params[key] = normalizeParamDef(key, rawDef, false);
+    params[key] = normalizeParamDef(key, rawDef, false, options);
   }
   const deprecated: Record<string, ParamDef> = {};
   for (const [key, rawDef] of Object.entries(deprecatedRaw)) {
-    deprecated[key] = normalizeParamDef(key, rawDef, true);
+    deprecated[key] = normalizeParamDef(key, rawDef, true, options);
   }
   return { params, deprecated };
 }
@@ -1461,7 +1472,11 @@ export const api = {
       `/api/v1/param-schema${qs.toString() ? `?${qs.toString()}` : ''}`
     );
     const payload = unwrapFluxEnvelope(response);
-    return normalizeParamSchemaPayload(payload);
+    const activeProfile = getActivePathProfile();
+    return normalizeParamSchemaPayloadWithOptions(payload, {
+      // TokenMM operators need compact param-key headers to keep the grid readable.
+      preferKeyLabel: activeProfile === 'tokenmm',
+    });
   },
 
   // Get all strategy parameters in bulk

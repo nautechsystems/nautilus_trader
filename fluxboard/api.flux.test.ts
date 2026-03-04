@@ -225,13 +225,13 @@ describe('profile-scoped read APIs', () => {
     const schema = await api.getParamSchema();
     expect(schema.params.bot_on).toMatchObject({
       key: 'bot_on',
-      label: 'Enable quote publishing and management.',
+      label: 'bot_on',
       type: 'select',
       options: [['0', 'Off (0)'], ['1', 'On (1)']],
     });
     expect(schema.params.qty).toMatchObject({
       key: 'qty',
-      label: 'Target base quantity per quote/hedge cycle.',
+      label: 'qty',
       type: 'float',
       min_value: 0,
       max_value: 1000,
