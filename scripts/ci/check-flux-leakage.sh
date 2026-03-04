@@ -12,7 +12,7 @@ PRODUCTION_PATHS=(
 )
 
 RG_FLAGS=(-n -S -i)
-BANNED_PATTERN='\bchainsaw\b|maker[_:.\\-]?poc|pocbuspayload|\bpoc\b'
+BANNED_PATTERN='\bchainsaw\b|maker[_:.\\-]?poc|pocbuspayload|\bpoc\b|\bpoc_[a-z0-9_]+\b|\b[a-z0-9_]+_poc\b'
 
 if rg "${RG_FLAGS[@]}" "$BANNED_PATTERN" "${PRODUCTION_PATHS[@]}"; then
   echo "[flux-leakage] Found forbidden POC/chainsaw naming in production Flux paths." >&2
@@ -26,7 +26,7 @@ DURABLE_DOCS=(
   docs/flux/api.md
 )
 
-ABSOLUTE_PATH_PATTERN='/home/ubuntu|/Users/|[A-Za-z]:\\'
+ABSOLUTE_PATH_PATTERN='/home/[^/[:space:]]+|/Users/[^/[:space:]]+|[A-Za-z]:[\\/]'
 
 if rg "${RG_FLAGS[@]}" "$ABSOLUTE_PATH_PATTERN" "${DURABLE_DOCS[@]}"; then
   echo "[flux-leakage] Found absolute host paths in durable Flux docs." >&2
