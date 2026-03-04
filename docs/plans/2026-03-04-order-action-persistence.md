@@ -249,11 +249,12 @@ Tracking:
 
 1. Strategy-side reason tagging framework is tracked in GitHub issue `clickconfirm/nautilus-trader#7`.
 
-### Cancel intent fallback (CANCEL path)
+### Cancel intent follow-up (CANCEL path, non-MVP)
 
-Because cancel lifecycle events do not carry strategy tags/info today, persist strategy cancel intent separately.
+MVP scope lock for Tasks 2-4: do **not** implement cancel-intent stream persistence in this phase.
+Because cancel lifecycle events do not carry strategy tags/info today, persist strategy cancel intent separately as Task 5 follow-up work.
 
-Recommended minimal approach:
+Follow-up approach (Task 5):
 
 1. Emit a custom internal event `OrderActionIntent` on `events.order_intent.<strategy_id>`.
 1. Persist it append-only with the same idempotency key (`(trader_id, event_id)`), either:
@@ -357,21 +358,23 @@ Legend: `TODO` | `DOING` | `DONE` | `BLOCKED`
 
 ### Task 1: Lock MVP scope + mapping
 
+Status: decisions are locked and this task is complete; this section is retained as the implementation record.
+
 **Files:**
 1. Modify: `docs/plans/2026-03-04-order-action-persistence.md`
 
 **Step 1: Confirm event set**
 
-Decide whether MVP includes:
+Locked decision (completed): MVP includes:
 1. `OrderInitialized` (recommended)
 1. `OrderAccepted` (recommended)
 1. `OrderRejected` (recommended)
 
-Update the “Recommended MVP event set” section accordingly.
+Updated in the “Locked MVP event set” section.
 
 **Step 2: Finalize `action_state` mapping**
 
-Lock the mapping table and ensure enum values match the schema documentation.
+Completed: mapping table and enum values are locked and aligned with schema documentation.
 
 ---
 
