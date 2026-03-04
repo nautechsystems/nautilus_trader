@@ -34,11 +34,11 @@ def _consumer() -> FluxBridgeStreamConsumer:
     )
 
 
-def test_decode_entry_unwraps_maker_poc_bus_payload_and_extracts_topic() -> None:
+def test_decode_entry_unwraps_flux_bus_payload_and_extracts_topic() -> None:
     consumer = _consumer()
     wrapped_payload = {
-        "type": "nautilus_trader.common.events.MakerPocBusPayload",
-        "topic": "maker_poc.trade",
+        "type": "nautilus_trader.flux.events.FluxBusPayload",
+        "topic": "flux.strategy.trade",
         "payload": {"trade_id": "t-1", "ts_event": "1700000001"},
     }
     fields = {"payload": json.dumps(wrapped_payload)}

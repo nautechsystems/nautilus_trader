@@ -118,7 +118,7 @@ class FluxBridgeStreamConsumer:
             return "", payload
 
         payload_type = self._normalize_topic_name(payload.get("type"))
-        if "MakerPocBusPayload" not in payload_type and not payload_type.endswith("PocBusPayload"):
+        if "FluxBusPayload" not in payload_type:
             return "", payload
 
         topic = self._normalize_topic_name(payload.get("topic"))

@@ -27,7 +27,7 @@ except Exception:  # pragma: no cover - fallback test environments
 if register_serializable_type is not None:
 
     @dataclass(frozen=True, slots=True)
-    class MakerPocBusPayload:
+    class FluxBusPayload:
         topic: str
         payload: str
         ts_event: int = 0
@@ -35,7 +35,7 @@ if register_serializable_type is not None:
 
         def to_dict(self) -> dict[str, Any]:
             return {
-                "type": "MakerPocBusPayload",
+                "type": "FluxBusPayload",
                 "topic": self.topic,
                 "payload": self.payload,
                 "ts_event": self.ts_event,
@@ -43,7 +43,7 @@ if register_serializable_type is not None:
             }
 
         @classmethod
-        def from_dict(cls, data: dict[str, Any]) -> "MakerPocBusPayload":
+        def from_dict(cls, data: dict[str, Any]) -> "FluxBusPayload":
             return cls(
                 topic=data.get("topic", ""),
                 payload=data.get("payload", ""),
@@ -51,9 +51,9 @@ if register_serializable_type is not None:
                 ts_init=int(data.get("ts_init", 0)),
             )
 
-    register_serializable_type(MakerPocBusPayload, MakerPocBusPayload.to_dict, MakerPocBusPayload.from_dict)
+    register_serializable_type(FluxBusPayload, FluxBusPayload.to_dict, FluxBusPayload.from_dict)
 else:  # pragma: no cover - fallback test environments
-    MakerPocBusPayload = None
+    FluxBusPayload = None
 
 
 def _to_json_safe(payload: Any) -> str:
@@ -2009,13 +2009,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def _publish_json(self, topic: str, payload: dict[str, Any]) -> None:
             payload_json = _to_json_safe(payload)
-            if MakerPocBusPayload is None:
+            if FluxBusPayload is None:
                 self.msgbus.publish(topic=topic, msg=payload_json)
                 return
 
             self.msgbus.publish(
                 topic=topic,
-                msg=MakerPocBusPayload(topic=topic, payload=payload_json),
+                msg=FluxBusPayload(topic=topic, payload=payload_json),
             )
 
 
