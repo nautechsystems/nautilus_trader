@@ -5,10 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "makerv3"
-strategy_instance_id = "makerv3"
+strategy_id = "bybit_binance_plumeusdt_makerv3"
+strategy_instance_id = "bybit_binance_plumeusdt_makerv3"
 trader_id = "MAKER-PAPER-001"
-external_strategy_id = "makerv3"
+external_strategy_id = "bybit_binance_plumeusdt_makerv3"
 
 [redis]
 host = "127.0.0.1"
