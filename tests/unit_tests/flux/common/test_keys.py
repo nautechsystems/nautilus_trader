@@ -29,6 +29,13 @@ class TestFluxRedisKeys:
         assert keys.events() == "flux:v1:events:maker_v3_01"
         assert keys.trades_stream() == "flux:v1:trades:stream:maker_v3_01"
         assert keys.alerts() == "flux:v1:alerts:maker_v3_01"
+        assert keys.fv_stream() == "flux:v1:fv:stream:maker_v3_01"
+        assert keys.balances_snapshot() == "flux:v1:balances:snapshot:maker_v3_01"
+        assert keys.balances_rows() == "flux:v1:balances:rows:maker_v3_01"
+        assert (
+            keys.market_last(exchange="bybit", base="PLUME", quote="USDT")
+            == "flux:v1:market:last:maker_v3_01:bybit:PLUME_USDT"
+        )
         assert keys.params_hash_key() == "flux:v1:params:maker_v3_01"
 
     def test_builds_namespace_scoped_keys_from_identity(self) -> None:

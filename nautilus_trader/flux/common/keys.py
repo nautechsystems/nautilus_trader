@@ -20,6 +20,7 @@ from nautilus_trader.flux.common.config import FLUX_SCHEMA_VERSION
 from nautilus_trader.flux.common.config import FluxIdentityConfig
 from nautilus_trader.flux.common.config import validate_identifier_part
 from nautilus_trader.flux.common.config import validate_schema_version
+from nautilus_trader.flux.common.config import validate_symbol_part
 
 
 class FluxRedisKeys:
@@ -70,6 +71,21 @@ class FluxRedisKeys:
 
     def alerts(self) -> str:
         return f"{self.prefix}:alerts:{self._strategy_id}"
+
+    def fv_stream(self) -> str:
+        return f"{self.prefix}:fv:stream:{self._strategy_id}"
+
+    def balances_snapshot(self) -> str:
+        return f"{self.prefix}:balances:snapshot:{self._strategy_id}"
+
+    def balances_rows(self) -> str:
+        return f"{self.prefix}:balances:rows:{self._strategy_id}"
+
+    def market_last(self, exchange: str, base: str, quote: str) -> str:
+        safe_exchange = validate_identifier_part(exchange, "exchange").lower()
+        safe_base = validate_symbol_part(base, "base").upper()
+        safe_quote = validate_symbol_part(quote, "quote").upper()
+        return f"{self.prefix}:market:last:{self._strategy_id}:{safe_exchange}:{safe_base}_{safe_quote}"
 
     def params_hash_key(self) -> str:
         return f"{self.prefix}:params:{self._strategy_id}"

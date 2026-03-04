@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
@@ -13,9 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Flux bridge stream consumer and modular topic handlers.
+"""
 
+from nautilus_trader.flux.bridge.stream_consumer import FluxBridgeStreamConsumer
+from nautilus_trader.flux.bridge.stream_consumer import build_parser
 from nautilus_trader.flux.bridge.stream_consumer import main
 
 
-if __name__ == "__main__":
-    main()
+__all__ = ["FluxBridgeStreamConsumer", "build_parser", "main"]
