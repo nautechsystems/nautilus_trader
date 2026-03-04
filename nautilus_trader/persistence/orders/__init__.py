@@ -16,6 +16,10 @@
 Order action persistence package.
 """
 
+from nautilus_trader.persistence.orders.actor import OrderActionPersistenceActor
+from nautilus_trader.persistence.orders.actor import order_event_to_row
+from nautilus_trader.persistence.orders.config import DEFAULT_ORDER_ACTION_EVENT_TYPES
+from nautilus_trader.persistence.orders.config import OrderActionPersistenceActorConfig
 from nautilus_trader.persistence.orders.schema import INSERT_ORDER_ACTION_SQL
 from nautilus_trader.persistence.orders.schema import ORDER_ACTION_SCHEMA_SQL
 from nautilus_trader.persistence.orders.sqlite import OrderActionRow
@@ -24,10 +28,14 @@ from nautilus_trader.persistence.orders.sqlite import ensure_schema
 from nautilus_trader.persistence.orders.sqlite import insert_many
 
 __all__ = [
+    "DEFAULT_ORDER_ACTION_EVENT_TYPES",
     "INSERT_ORDER_ACTION_SQL",
+    "OrderActionPersistenceActor",
+    "OrderActionPersistenceActorConfig",
     "ORDER_ACTION_SCHEMA_SQL",
     "OrderActionRow",
     "connect",
     "ensure_schema",
     "insert_many",
+    "order_event_to_row",
 ]
