@@ -168,7 +168,7 @@ Phase 8: Docs and cleanup
 
 - [x] Task 1: Create Flux package skeleton (`FluxRedisKeys` + `FluxConfig` + unit tests)
 - [x] Task 2: Decide and document Redis schema (`flux:v1`)
-- [ ] Task 3: Extract parameter subsystem and remove hot-path polling
+- [x] Task 3: Extract parameter subsystem and remove hot-path polling
 - [ ] Task 4: Bridge hardening and handler modularization
 - [ ] Task 5: Flux API refactor into app factory + batched Redis reads
 - [ ] Task 6: Strategy productionization (core safety/perf work)
@@ -520,8 +520,10 @@ python -m pytest tests/unit_tests -q
 2. Config contract starts with explicit typed config structs in `nautilus_trader/flux/common/config.py`; unsupported schema versions fail fast at construction time.
 3. Retention defaults are mandatory for high-churn streams; `docs/flux/redis_schema.md` is the single source of truth for numeric defaults and allowed tuning ranges.
 4. Migration policy is hard cutover: one clean production build with `flux:v1:*` reads/writes only and no runtime legacy-read path.
+5. Runtime parameter ingestion is centralized in `FluxParamsManager` and runs on timer-driven refresh paths; market-data callbacks must read in-memory params only.
 
 ## Progress log
 
 1. 2026-03-04T00:47:15Z | Task 1 - Flux package skeleton (`FluxRedisKeys` + `FluxConfig` + tests) | SHAs: `8570583d3`, `11249bc3b61a` | Notes: Implemented with TDD and review loops; added strict schema/version and Redis validation; Task 1 spec review ✅ and code-quality review ✅.
 2. 2026-03-04T00:54:07Z | Task 2 - Redis schema decision + durable documentation | SHAs: `919df6857876f3ca64559936491a92797408e076`, `d916df85b` | Notes: Added `docs/flux/redis_schema.md` with canonical keys/channels, retention policy, `ts_ms` contract, and explicit one-time legacy mapping under hard cutover policy (no runtime legacy reads); Task 2 spec review ✅ and code-quality review ✅.
+3. 2026-03-04T01:18:14Z | Task 3 - Params subsystem extraction + hot-path polling removal | SHAs: `915772bd9160e5dcf2981b67a99f58f443b72653`, `6bf0fbc70084cb79f4c15af99e3f197bb2c4695d` | Notes: Added `FluxParamsManager` (`HMGET` load, strict unknown-key rejection, update+publish), moved strategy param refresh to timer path, removed market-data callback network polling, and switched API params read/write path to `flux:v1` hash/channel semantics; Task 3 spec review ✅ and code-quality review ✅.
