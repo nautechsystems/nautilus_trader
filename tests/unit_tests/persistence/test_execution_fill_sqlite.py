@@ -100,3 +100,16 @@ def test_fill_to_row_falls_back_to_empty_info_json_on_encode_error() -> None:
     assert row[INFO_JSON_INDEX] == "{}"
     assert counter["count"] == 1
 
+
+def test_fill_to_row_maps_core_fields_from_event_attributes() -> None:
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(instrument=instrument, ts_event=321)
+
+    row = fill_to_row(fill)
+
+    assert row[0] == fill.trader_id.value
+    assert row[1] == fill.id.value
+    assert row[5] == fill.trade_id.value
+    assert row[8] == (fill.position_id.value if fill.position_id else None)
+    assert row[16] == 321
+    assert row[17] == fill.ts_init

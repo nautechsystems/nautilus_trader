@@ -83,6 +83,7 @@ def _make_actor(
     on_error: str = "buffer_until_full_then_fail",
     insert_many_fn=None,
     connect_fn=None,
+    max_queue_size: int = 10_000,
 ):
     clock = TestClock()
     msgbus = MessageBus(
@@ -105,7 +106,7 @@ def _make_actor(
         "max_batch_size": max_batch_size,
         "flush_time_budget_ms": 10,
         "flush_timeout_ms": flush_timeout_ms,
-        "max_queue_size": 10_000,
+        "max_queue_size": max_queue_size,
         "on_error": on_error,
         "stop_timeout_ms": stop_timeout_ms,
         "strict_stop": strict_stop,
@@ -253,6 +254,24 @@ def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
     assert flush_errors == []
     assert _row_count(db_path) == 1
     actor.stop()
+
+
+def test_actor_ignores_order_filled_events_on_order_topic(tmp_path) -> None:
+    actor, msgbus, db_path, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=False,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+    fill = TestEventStubs.order_filled(order=order, instrument=instrument, ts_event=203)
+
+    actor.start()
+    msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=fill)
+    actor.flush()
+    actor.stop()
+
+    assert _row_count(db_path) == 0
+    assert actor.filtered == 1
 
 
 def test_actor_non_strict_stop_timeout_sets_error_and_releases_refs_after_writer_finishes(
@@ -478,6 +497,27 @@ def test_actor_db_down_log_and_drop_drops_rows(tmp_path) -> None:
     assert actor.db_write_errors == 1
     assert _row_count(db_path) == 0
     assert actor._queue.unfinished_tasks == 0
+
+
+def test_actor_queue_full_raises_under_default_error_policy(tmp_path) -> None:
+    actor, _, _, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=False,
+        max_batch_size=1000,
+        max_queue_size=1,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+    accepted1 = TestEventStubs.order_accepted(order=order, ts_event=901)
+    accepted2 = TestEventStubs.order_accepted(order=order, ts_event=902)
+
+    actor.start()
+    actor.on_order_event(accepted1)
+    with pytest.raises(RuntimeError, match="queue is full"):
+        actor.on_order_event(accepted2)
+    actor.stop()
+
+    assert actor._writer_error is not None
 
 
 def test_actor_db_down_fail_fast_raises_and_sets_writer_error(tmp_path) -> None:

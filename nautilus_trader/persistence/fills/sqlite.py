@@ -22,6 +22,9 @@ from typing import Any
 import msgspec
 
 from nautilus_trader.common.config import msgspec_encoding_hook
+from nautilus_trader.model.enums import liquidity_side_to_str
+from nautilus_trader.model.enums import order_side_to_str
+from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.persistence.fills.schema import EXECUTION_FILL_SCHEMA_SQL
 from nautilus_trader.persistence.fills.schema import INSERT_EXECUTION_FILL_SQL
@@ -114,29 +117,28 @@ def fill_to_row(
     tuple
 
     """
-    data = OrderFilled.to_dict(fill)
     info_json = _encode_info_json(fill.info, on_info_encode_error=on_info_encode_error)
 
     return (
-        data["trader_id"],
-        data["event_id"],
-        data["strategy_id"],
-        data["account_id"],
-        data["instrument_id"],
-        data["trade_id"],
-        data["client_order_id"],
-        data["venue_order_id"],
-        data["position_id"],
-        data["order_side"],
-        data["order_type"],
-        data["last_qty"],
-        data["last_px"],
-        data["currency"],
-        data["commission"],
-        data["liquidity_side"],
-        int(data["ts_event"]),
-        int(data["ts_init"]),
-        int(bool(data["reconciliation"])),
+        fill.trader_id.value,
+        fill.id.value,
+        fill.strategy_id.value,
+        fill.account_id.value,
+        fill.instrument_id.value,
+        fill.trade_id.value,
+        fill.client_order_id.value,
+        fill.venue_order_id.value,
+        fill.position_id.value if fill.position_id else None,
+        order_side_to_str(fill.order_side),
+        order_type_to_str(fill.order_type),
+        str(fill.last_qty),
+        str(fill.last_px),
+        fill.currency.code,
+        str(fill.commission),
+        liquidity_side_to_str(fill.liquidity_side),
+        int(fill.ts_event),
+        int(fill.ts_init),
+        int(bool(fill.reconciliation)),
         info_json,
     )
 
