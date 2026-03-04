@@ -567,7 +567,7 @@ def build_ladder_place_cancel_levels_from_bps(
     """
     Build 3-band ladder from anchor bid/ask and bps inputs.
 
-    This mirrors Chainsaw MakerV3 pricing:
+    This mirrors Flux MakerV3 single-leg pricing:
       - cancel prices are edge offsets from anchor bid/ask in bps
       - place prices apply additional place_edge bps (less aggressive)
       - ladder spacing uses anchor mid and distance bps

@@ -72,7 +72,7 @@ All endpoints are strategy-scoped; when the strategy query/path argument is omit
 
 1. Invalid or unknown parameter updates return explicit API validation errors.
 2. Invalid stored hashes (for example unknown keys) surface as `params_store_invalid` and are not auto-healed by the API.
-3. No legacy keyspace (`maker_poc*`) read/write path exists in production modules.
+3. No legacy keyspace read/write path exists in production modules.
 
 ## Verification
 
