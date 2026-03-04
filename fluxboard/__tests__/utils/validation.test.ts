@@ -143,6 +143,16 @@ describe('validateParam - bot_on (select type)', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('accepts boolean values from typed Flux payloads', () => {
+    expect(validateParam('bot_on', true, mockParamDefs.bot_on).valid).toBe(true);
+    expect(validateParam('bot_on', false, mockParamDefs.bot_on).valid).toBe(true);
+  });
+
+  it('accepts numeric boolean values from typed Flux payloads', () => {
+    expect(validateParam('bot_on', 1, mockParamDefs.bot_on).valid).toBe(true);
+    expect(validateParam('bot_on', 0, mockParamDefs.bot_on).valid).toBe(true);
+  });
+
   it('rejects "2"', () => {
     const result = validateParam('bot_on', '2', mockParamDefs.bot_on);
     expect(result.valid).toBe(false);

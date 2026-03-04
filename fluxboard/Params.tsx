@@ -2046,14 +2046,14 @@ export default function Params({
 
         // Search parameter values
         const params = paramValues.get(s.strategy_id);
-        if (params) {
-          // Search through all parameter values
-          for (const [key, value] of Object.entries(params)) {
-            if (value && value.toLowerCase().includes(query)) return true;
+          if (params) {
+            // Search through all parameter values
+            for (const [key, value] of Object.entries(params)) {
+              if (String(value ?? '').toLowerCase().includes(query)) return true;
 
-            // Also search parameter labels (user-friendly names)
-            if (schema) {
-              const paramDef = schema.params[key];
+              // Also search parameter labels (user-friendly names)
+              if (schema) {
+                const paramDef = schema.params[key];
               if (paramDef && paramDef.label.toLowerCase().includes(query)) return true;
             }
           }

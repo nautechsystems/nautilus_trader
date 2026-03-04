@@ -884,6 +884,17 @@ export default function Trades({
           typeof normalizedMsg?.version === 'number' && Number.isFinite(normalizedMsg.version)
             ? normalizedMsg.version
             : undefined;
+        const parsedPrice = coerceFiniteNumber(normalizedMsg?.price);
+        const parsedQty = coerceFiniteNumber(normalizedMsg?.qty);
+        const derivedMv =
+          parsedPrice !== undefined && parsedQty !== undefined
+            ? parsedPrice * parsedQty
+            : undefined;
+        const rawMv = coerceFiniteNumber(normalizedMsg?.mv ?? normalizedMsg?.notional);
+        const normalizedMv =
+          (rawMv === undefined || rawMv === 0) && derivedMv !== undefined && derivedMv !== 0
+            ? derivedMv
+            : rawMv;
         event = {
           op: 'upsert',
           row_id: rowId,
@@ -896,7 +907,7 @@ export default function Trades({
           side: normalizedMsg?.side,
           price: normalizedMsg?.price,
           qty: normalizedMsg?.qty,
-          mv: normalizedMsg?.mv ?? normalizedMsg?.notional,
+          mv: normalizedMv,
           fee: normalizedMsg?.fee,
           exec_id: normalizedMsg?.exch_id,
           trade_id: normalizedMsg?.trade_id,

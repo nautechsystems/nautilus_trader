@@ -179,4 +179,137 @@ describe('profile-scoped read APIs', () => {
       update_ts_ms: 1772623962721,
     });
   });
+
+  it('prefers canonical strategy_id over stale id field in signal payloads', async () => {
+    setPathname('/tokenmm/signal');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        strategies: [
+          {
+            id: 'legacy-name',
+            strategy_id: 'makerv3',
+            meta: { strategy_id: 'makerv3', class: 'maker_v3' },
+            state: { bot_on: false },
+          },
+        ],
+      },
+    });
+
+    const result = await api.getSignals();
+    expect(result.strategies).toHaveLength(1);
+    expect(result.strategies[0].id).toBe('makerv3');
+  });
+
+  it('normalizes minimal Flux params schema into ParamDef fields used by Params UI', async () => {
+    setPathname('/tokenmm/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        params: {
+          bot_on: {
+            type: 'boolean',
+            description: 'Enable quote publishing and management.',
+          },
+          qty: {
+            type: 'number',
+            description: 'Target base quantity per quote/hedge cycle.',
+            minimum: 0,
+            maximum: 1000,
+          },
+        },
+        deprecated: {},
+      },
+    });
+
+    const schema = await api.getParamSchema();
+    expect(schema.params.bot_on).toMatchObject({
+      key: 'bot_on',
+      label: 'Enable quote publishing and management.',
+      type: 'select',
+      options: [['0', 'Off (0)'], ['1', 'On (1)']],
+    });
+    expect(schema.params.qty).toMatchObject({
+      key: 'qty',
+      label: 'Target base quantity per quote/hedge cycle.',
+      type: 'float',
+      min_value: 0,
+      max_value: 1000,
+    });
+  });
+
+  it('normalizes typed params payload values to string map used by Params editor', async () => {
+    setPathname('/tokenmm/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: [
+        {
+          strategy_id: 'makerv3',
+          params: {
+            bot_on: false,
+            qty: 1000,
+            max_age_ms: 10000,
+          },
+        },
+      ],
+    });
+
+    const rows = await api.getParams();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].params).toMatchObject({
+      bot_on: '0',
+      qty: '1000',
+      max_age_ms: '10000',
+    });
+  });
+
+  it('derives trade mv from price*qty when incoming notional/mv is zero', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            trade_id: 'trade-1',
+            ts_ms: 1772623943812,
+            strategy_id: 'makerv3',
+            instrument_id: 'PLUMEUSDT-LINEAR.BYBIT',
+            side: '1',
+            price: '2',
+            qty: '3',
+            mv: 0,
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      },
+    });
+
+    const result = await api.getTrades(1, 50, { sort: 'ts_desc' });
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]?.mv).toBe(6);
+  });
+
+  it('normalizes tokenmm flat balances rows and prefers base_currency over UNKNOWN asset', async () => {
+    setPathname('/tokenmm/balances');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            exchange: 'bybit',
+            asset: 'UNKNOWN',
+            base_currency: 'PLUME',
+            total: '10',
+            ts_ms: 1700000000000,
+          },
+        ],
+        total: 1,
+      },
+    });
+
+    const payload = await api.getBalances();
+    expect(payload.rows).toHaveLength(1);
+    expect(payload.rows[0]?.children[0]?.coin).toBe('PLUME');
+  });
 });

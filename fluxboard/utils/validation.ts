@@ -65,14 +65,24 @@ export function validateParam(
  */
 function validateSelect(
   key: string,
-  value: string,
+  value: unknown,
   paramDef: ParamDef
 ): ValidationResult {
   const valueStr = String(value);
 
   // For bot_on, only accept "0" or "1"
   if (key === 'bot_on') {
-    if (valueStr !== '0' && valueStr !== '1') {
+    const normalized =
+      typeof value === 'boolean'
+        ? (value ? '1' : '0')
+        : typeof value === 'number'
+          ? (value === 0 ? '0' : value === 1 ? '1' : null)
+          : (valueStr.trim().toLowerCase() === 'true'
+              ? '1'
+              : valueStr.trim().toLowerCase() === 'false'
+                ? '0'
+                : valueStr);
+    if (normalized !== '0' && normalized !== '1') {
       return {
         valid: false,
         error: `${key} must be "0" (Off) or "1" (On), got "${valueStr}"`

@@ -38,6 +38,9 @@ import type {
   SignalStrategiesPayload,
   OrderViewSnapshot,
   OrderViewLeg,
+  ParamDef,
+  ParamSchema,
+  ParamsResponse,
 } from './types';
 
 export type RunPnLReportOptions = {
@@ -162,7 +165,16 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
     const canonical = normalizeCoinHint(row);
     const parentId = `${canonical}_LOGICAL`;
     const venue = String(row.exchange ?? row.venue ?? 'unknown').trim().toLowerCase() || 'unknown';
-    const childCoin = toUpperToken(row.coin ?? row.asset ?? canonical, canonical);
+    const childCoin = (() => {
+      const preferred = toUpperToken(
+        row.coin ?? row.base_currency ?? row.base ?? row.asset ?? canonical,
+        canonical,
+      );
+      if (preferred === 'UNKNOWN' && canonical !== 'UNKNOWN') {
+        return canonical;
+      }
+      return preferred;
+    })();
     const qtyRaw = toFiniteNumber(
       row.total ?? row.quantity ?? row.signed_qty ?? row.qty ?? row.free,
       0,
@@ -285,9 +297,133 @@ function normalizeTradingFlag(value: unknown): string | undefined {
   if (typeof value === 'string') {
     const trimmed = value.trim();
     if (!trimmed) return undefined;
-    return trimmed;
+    const lower = trimmed.toLowerCase();
+    if (lower === '1' || lower === 'true' || lower === 't' || lower === 'yes' || lower === 'y' || lower === 'on' || lower === 'enabled') {
+      return '1';
+    }
+    if (lower === '0' || lower === 'false' || lower === 'f' || lower === 'no' || lower === 'n' || lower === 'off' || lower === 'disabled') {
+      return '0';
+    }
+    return undefined;
   }
   return undefined;
+}
+
+function normalizeParamType(key: string, rawType: unknown): ParamDef['type'] {
+  const normalized = String(rawType ?? '').trim().toLowerCase();
+  if (normalized === 'boolean' || normalized === 'bool') {
+    return key === 'bot_on' ? 'select' : 'bool';
+  }
+  if (normalized === 'integer' || normalized === 'int') return 'int';
+  if (normalized === 'number' || normalized === 'float' || normalized === 'double' || normalized === 'decimal') return 'float';
+  if (normalized === 'select' || normalized === 'enum') return 'select';
+  return key === 'bot_on' ? 'select' : 'float';
+}
+
+function normalizeParamOptions(
+  key: string,
+  rawType: unknown,
+  rawOptions: unknown,
+): [string, string][] | null {
+  if (Array.isArray(rawOptions) && rawOptions.length > 0) {
+    const normalized = rawOptions
+      .map((option) => {
+        if (Array.isArray(option) && option.length >= 2) {
+          return [String(option[0]), String(option[1])] as [string, string];
+        }
+        const text = String(option ?? '').trim();
+        if (!text) return null;
+        return [text, text] as [string, string];
+      })
+      .filter((option): option is [string, string] => Array.isArray(option));
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  const typeText = String(rawType ?? '').trim().toLowerCase();
+  if (key === 'bot_on' || typeText === 'boolean' || typeText === 'bool') {
+    return [['0', 'Off (0)'], ['1', 'On (1)']];
+  }
+  return null;
+}
+
+function normalizeParamDef(
+  key: string,
+  rawDef: unknown,
+  deprecated = false,
+): ParamDef {
+  const source = rawDef && typeof rawDef === 'object' ? (rawDef as Record<string, unknown>) : {};
+  const type = normalizeParamType(key, source.type);
+  const description = String(source.description ?? source.label ?? key).trim() || key;
+  const label = String(source.label ?? source.description ?? key).trim() || key;
+  const options = normalizeParamOptions(key, source.type, source.options);
+  const step = toFiniteOptionalNumber(source.step);
+  const minValue = toFiniteOptionalNumber(source.min_value ?? source.minimum);
+  const maxValue = toFiniteOptionalNumber(source.max_value ?? source.maximum);
+  const appliesTo = Array.isArray(source.applies_to)
+    ? source.applies_to.map((value) => String(value ?? '').trim()).filter(Boolean)
+    : undefined;
+  let defaultValue = source.default;
+  if (defaultValue === undefined || defaultValue === null) {
+    if (key === 'bot_on') {
+      defaultValue = '0';
+    } else if (type === 'int' || type === 'float') {
+      defaultValue = '';
+    }
+  } else if (key === 'bot_on') {
+    defaultValue = normalizeTradingFlag(defaultValue) ?? defaultValue;
+  }
+
+  return {
+    key,
+    label,
+    description,
+    type,
+    default: defaultValue,
+    min_value: minValue,
+    max_value: maxValue,
+    step: step ?? null,
+    options,
+    unit: source.unit == null ? null : String(source.unit),
+    deprecated: Boolean(source.deprecated ?? deprecated),
+    replacement: source.replacement == null ? null : String(source.replacement),
+    applies_to: appliesTo,
+  };
+}
+
+function normalizeParamSchemaPayload(payload: unknown): ParamSchema {
+  const data = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const paramsRaw =
+    data.params && typeof data.params === 'object'
+      ? (data.params as Record<string, unknown>)
+      : {};
+  const deprecatedRaw =
+    data.deprecated && typeof data.deprecated === 'object'
+      ? (data.deprecated as Record<string, unknown>)
+      : {};
+
+  const params: Record<string, ParamDef> = {};
+  for (const [key, rawDef] of Object.entries(paramsRaw)) {
+    params[key] = normalizeParamDef(key, rawDef, false);
+  }
+  const deprecated: Record<string, ParamDef> = {};
+  for (const [key, rawDef] of Object.entries(deprecatedRaw)) {
+    deprecated[key] = normalizeParamDef(key, rawDef, true);
+  }
+  return { params, deprecated };
+}
+
+function normalizeParamsMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (value == null) continue;
+    if (key === 'bot_on') {
+      out[key] = normalizeTradingFlag(value) ?? String(value);
+      continue;
+    }
+    out[key] = String(value);
+  }
+  return out;
 }
 
 function deriveCoinFromSymbol(rawSymbol: unknown): string | undefined {
@@ -350,14 +486,18 @@ function normalizeLegacySignalLeg(contractId: string, candidate: unknown): Recor
 function normalizeSignalStrategyCandidate(candidate: unknown): SignalStrategy | null {
   if (!candidate || typeof candidate !== 'object') return null;
   const raw = candidate as Record<string, unknown>;
-  const id = String(raw.id ?? raw.strategy_id ?? '').trim();
+  const meta = raw.meta && typeof raw.meta === 'object' ? (raw.meta as Record<string, unknown>) : {};
+  const id = String(raw.strategy_id ?? raw.id ?? meta.strategy_id ?? '').trim();
   if (!id) return null;
 
   const state = raw.state && typeof raw.state === 'object' ? (raw.state as Record<string, unknown>) : {};
   const paramsRaw = raw.params && typeof raw.params === 'object' ? (raw.params as Record<string, unknown>) : {};
   const params: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(paramsRaw)) {
-    const normalizedValue = normalizeTradingFlag(value) ?? (value == null ? undefined : String(value));
+    const normalizedValue =
+      key === 'bot_on'
+        ? (normalizeTradingFlag(value) ?? (value == null ? undefined : String(value)))
+        : (value == null ? undefined : String(value));
     params[key] = normalizedValue;
   }
   if (params.bot_on === undefined) {
@@ -427,12 +567,16 @@ function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed
   const price = toFiniteOptionalNumber(row.price);
   const qty = toFiniteOptionalNumber(row.qty);
   const derivedNotional = (price !== undefined && qty !== undefined) ? price * qty : undefined;
-  const notional =
+  const reportedNotional = toFiniteOptionalNumber(
     row.mv ??
     row.notional ??
     row.notional_quote ??
-    row.notional_usd ??
-    derivedNotional;
+    row.notional_usd,
+  );
+  let notional = reportedNotional;
+  if ((notional === undefined || notional === 0) && derivedNotional !== undefined && derivedNotional !== 0) {
+    notional = derivedNotional;
+  }
   const coin = String(
     row.coin ??
       row.asset ??
@@ -1313,20 +1457,32 @@ export const api = {
   getParamSchema: async () => {
     const qs = new URLSearchParams();
     appendProfileQuery(qs);
-    const response = await fetchJSON<FluxEnvelope<import('./types').ParamSchema>>(
+    const response = await fetchJSON<FluxEnvelope<ParamSchema>>(
       `/api/v1/param-schema${qs.toString() ? `?${qs.toString()}` : ''}`
     );
-    return unwrapFluxEnvelope(response);
+    const payload = unwrapFluxEnvelope(response);
+    return normalizeParamSchemaPayload(payload);
   },
 
   // Get all strategy parameters in bulk
   getParams: async () => {
     const qs = new URLSearchParams();
     appendProfileQuery(qs);
-    const response = await fetchJSON<FluxEnvelope<import('./types').ParamsResponse[]>>(
+    const response = await fetchJSON<FluxEnvelope<ParamsResponse[]>>(
       `/api/v1/params${qs.toString() ? `?${qs.toString()}` : ''}`
     );
-    return unwrapFluxEnvelope(response) || [];
+    const rows = unwrapFluxEnvelope(response) || [];
+    if (!Array.isArray(rows)) return [];
+    return rows.map((row) => {
+      const candidate = row as Record<string, unknown>;
+      const strategyId = String(candidate.strategy_id ?? '').trim();
+      const params = normalizeParamsMap(candidate.params);
+      return {
+        ...(row as ParamsResponse),
+        strategy_id: strategyId,
+        params,
+      };
+    }).filter((row) => Boolean(row.strategy_id));
   },
 
   // Bulk update multiple strategies
