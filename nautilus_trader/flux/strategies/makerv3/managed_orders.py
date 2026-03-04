@@ -147,8 +147,6 @@ def cancel_managed_quotes(
 
     if force and reason in {"on_stop", "quote_fail_circuit_breaker"}:
         tracked_ids.clear()
-    elif not managed_orders:
-        tracked_ids.clear()
 
     return CancelManagedQuotesResult(
         should_cancel=True,

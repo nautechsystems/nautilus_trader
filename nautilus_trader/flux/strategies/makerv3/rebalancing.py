@@ -5,6 +5,11 @@ from __future__ import annotations
 from decimal import Decimal
 
 
+def _require_finite_decimal(value: Decimal, name: str) -> None:
+    if not value.is_finite():
+        raise ValueError(f"{name} must be finite")
+
+
 def plan_side_rebalance_actions(
     *,
     side: str,
@@ -19,6 +24,13 @@ def plan_side_rebalance_actions(
         raise ValueError(f"Unsupported side: {side!r}")
     if len(active_prices) != len(active_stale):
         raise ValueError("active_prices and active_stale length mismatch")
+
+    for idx, price in enumerate(active_prices):
+        _require_finite_decimal(price, f"active_prices[{idx}]")
+    for idx, (target_px, cancel_px, match_tol) in enumerate(desired_levels):
+        _require_finite_decimal(target_px, f"desired_levels[{idx}].target_px")
+        _require_finite_decimal(cancel_px, f"desired_levels[{idx}].cancel_px")
+        _require_finite_decimal(match_tol, f"desired_levels[{idx}].match_tol")
 
     max_levels = len(desired_levels)
     cancels: set[int] = set()

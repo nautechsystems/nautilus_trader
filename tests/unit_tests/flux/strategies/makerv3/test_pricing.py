@@ -19,17 +19,40 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.flux.strategies.makerv3.pricing import apply_inventory_skew_to_edges
 from nautilus_trader.flux.strategies.makerv3.pricing import bps_to_price_offset
 from nautilus_trader.flux.strategies.makerv3.pricing import build_ladder_place_cancel_levels_from_bps
 from nautilus_trader.flux.strategies.makerv3.pricing import clamp_post_only_price
 from nautilus_trader.flux.strategies.makerv3.pricing import nudge_unique_price
 from nautilus_trader.flux.strategies.makerv3.pricing import round_price_to_tick
+from nautilus_trader.flux.strategies.makerv3.pricing import to_decimal
 
 
 def test_bps_to_price_offset_uses_1e4_denominator() -> None:
     offset = bps_to_price_offset(Decimal("0.0094"), Decimal("10"))
     assert offset == Decimal("0.0000094")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        Decimal("NaN"),
+        Decimal("sNaN"),
+        Decimal("Infinity"),
+        Decimal("-Infinity"),
+        "NaN",
+        "Infinity",
+        "-Infinity",
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+    ],
+)
+def test_to_decimal_rejects_non_finite_values(value: object) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        to_decimal(value)  # type: ignore[arg-type]
 
 
 def test_round_price_to_tick_supports_out_and_in_modes() -> None:

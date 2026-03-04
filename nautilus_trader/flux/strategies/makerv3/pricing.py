@@ -14,7 +14,10 @@ EDGE_VALIDATION_RULE = "All edge inputs (bid/ask/place) must be non-negative."
 
 def to_decimal(value: Decimal | float | str) -> Decimal:
     """Convert a numeric-like value to `Decimal`."""
-    return value if isinstance(value, Decimal) else Decimal(str(value))
+    parsed = value if isinstance(value, Decimal) else Decimal(str(value))
+    if not parsed.is_finite():
+        raise ValueError(f"Non-finite decimal value: {value!r}")
+    return parsed
 
 
 def to_decimal_or_none(value: Any) -> Decimal | None:

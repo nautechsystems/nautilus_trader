@@ -60,6 +60,10 @@ The strategy has been split into focused modules:
 ## Additional hardening completed during review
 
 - Guarded instrument-wide cancel-all exceptions without aborting cancel flows.
+- Timer now enforces stale market-data blocks/cancels even when deltas go silent (feed stall protection).
+- Managed-order tracking is no longer cleared on transient empty cache snapshots (prevents orphaned open orders).
+- Pricing and rebalancing helpers now reject non-finite numerics (NaN/Infinity) early.
+- Restart safety: `on_start` resets failure/blocked latches and rejects identical maker/reference instrument IDs.
 - Made runtime `qty` application atomic and reject non-positive updates to avoid stale effective qty.
 - Aligned params manager factory defaults with in-strategy runtime defaults to prevent first-refresh drift.
 - Tightened public module/class/function docstring coverage on new MakerV3 strategy modules and exports.
@@ -69,6 +73,7 @@ The strategy has been split into focused modules:
 All commands below were run with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`.
 
 - `pytest tests/unit_tests/flux/strategies/makerv3 -q` → `63 passed`
+- `pytest tests/unit_tests/flux/strategies/makerv3 -q` → `83 passed`
 - `pytest tests/unit_tests/examples/strategies/test_makerv3_single_leg_quoter.py -q` → `4 passed`
 - `pytest tests/unit_tests/flux/common/test_params.py -q` → `18 passed`
 - `pytest tests/unit_tests/flux/params -q` → `25 passed`

@@ -455,7 +455,7 @@ The tracing subscriber can only be initialized once per process. When using `use
 
 ## Flux MakerV3 quote-cycle events
 
-`flux.strategy.event` now includes structured `quote_cycle` events for `makerv3` with a stable envelope:
+`flux.makerv3.event` includes structured `quote_cycle` events for MakerV3 with a stable envelope:
 
 - `run_id`: Strategy run/session identity.
 - `quote_cycle_id`: Monotonic quote-loop ID inside a run.
@@ -471,7 +471,7 @@ Current `reason_code` values:
 
 For blocked cycles, payloads include transition metadata (`from_state`, `to_state`, `blocked_transition`) and managed-order counts for operator triage.
 
-`flux.strategy.alert` emissions are reserved for actionable conditions and de-noised via transition/cooldown gating (for example, repeated blocked market-data loops do not emit repeated alerts until a meaningful transition occurs).
+`flux.makerv3.alert` emissions are reserved for actionable conditions and de-noised via transition/cooldown gating (for example, repeated blocked market-data loops do not emit repeated alerts until a meaningful transition occurs).
 
 ## Platform-specific considerations
 

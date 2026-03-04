@@ -8,15 +8,17 @@ from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
+from nautilus_trader.flux.strategies.makerv3 import failures as failures_mod
 from nautilus_trader.flux.strategies.makerv3 import market_data as market_data_mod
 from nautilus_trader.flux.strategies.makerv3 import managed_orders as managed_orders_mod
 from nautilus_trader.flux.strategies.makerv3 import publisher as publisher_mod
 from nautilus_trader.flux.strategies.makerv3 import pricing as pricing_mod
 from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from nautilus_trader.flux.strategies.makerv3 import runtime_params as runtime_params_mod
-from nautilus_trader.flux.strategies.makerv3.constants import ALERT_COOLDOWN_QUOTE_FAIL_CIRCUIT_BREAKER_MS
-from nautilus_trader.flux.strategies.makerv3.constants import ALERT_KEY_QUOTE_FAIL_CIRCUIT_BREAKER
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_NAME
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_FV
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_TRADE
 from nautilus_trader.flux.strategies.makerv3.wire import build_quote_cycle_envelope
@@ -173,6 +175,21 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def on_start(self) -> None:
             """Start subscriptions, timers, and initial strategy publications."""
+            self._runtime_params_failed = False
+            self._quote_failure_circuit_open = False
+            self._quote_failures_ns.clear()
+            self._last_stale_cancel_ns = 0
+            self._last_state_name = None
+            self._state_is_blocked = False
+            self._last_actionable_alert_ns.clear()
+            self._last_actionable_alert_transition.clear()
+            if self.config.maker_instrument_id == self.config.reference_instrument_id:
+                self._publish_alert(
+                    "maker_instrument_id and reference_instrument_id must be distinct",
+                    level="error",
+                )
+                self.stop()
+                return
             self._last_bot_on = self._runtime_bool("bot_on")
             start_ns = int(self.clock.timestamp_ns())
             self._run_id = f"{self._strategy_identity}:{start_ns // 1_000_000}"
@@ -286,10 +303,81 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._cancel_managed_quotes("bot_off_flip", force=True)
                 self._publish_state("bot_off")
             self._last_bot_on = bot_on_now
+            if bot_on_now:
+                self._enforce_stale_market_data(now_ns=now_ns)
 
         def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
             """Process market deltas and trigger quote-cycle refresh when eligible."""
             market_data_mod.on_order_book_deltas(self, deltas)
+
+        def _enforce_stale_market_data(self, *, now_ns: int) -> None:
+            """Enforce stale market-data quote blocks even when deltas go silent."""
+            if self._quote_failure_circuit_open:
+                return
+
+            tracked = self._tracked_managed_order_count()
+            if tracked <= 0 and not self._managed_orders():
+                return
+            cooldown_ns = self.STALE_CANCEL_COOLDOWN_MS * 1_000_000
+            cooldown_due = self._last_stale_cancel_ns <= 0 or now_ns - self._last_stale_cancel_ns >= cooldown_ns
+            blocked_transition = not bool(getattr(self, "_state_is_blocked", False))
+            if not blocked_transition and not cooldown_due:
+                return
+
+            max_age_ms = self._runtime_int("max_age_ms")
+            max_age_ns = max_age_ms * 1_000_000
+
+            maker_ts_ns = int(self._last_bbo_ts_ns.get(self.config.maker_instrument_id, 0) or 0)
+            if maker_ts_ns <= 0:
+                self._handle_stale_quote_block(
+                    now_ns=now_ns,
+                    state="blocked_maker_md",
+                    cancel_reason="maker_md_stale",
+                    reason_code=REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE,
+                    quote_cycle_id=self._next_quote_cycle_id(now_ns=now_ns),
+                    warning_message=(
+                        "Quoting blocked (maker book unavailable) "
+                        f"strategy_id={self._external_strategy_id}"
+                    ),
+                )
+                return
+            maker_age_ns = now_ns - maker_ts_ns
+            if maker_age_ns >= max_age_ns:
+                age_ms = int(maker_age_ns / 1_000_000)
+                self._handle_stale_quote_block(
+                    now_ns=now_ns,
+                    state="blocked_maker_md",
+                    cancel_reason="maker_md_stale",
+                    reason_code=REASON_BLOCKED_MAKER_MD_STALE,
+                    quote_cycle_id=self._next_quote_cycle_id(now_ns=now_ns),
+                    warning_message=(
+                        "Quoting blocked (maker data stale) "
+                        f"strategy_id={self._external_strategy_id} "
+                        f"age_ms={age_ms} max_age_ms={max_age_ms}"
+                    ),
+                )
+                return
+
+            reference_ts_ns = int(self._last_bbo_ts_ns.get(self.config.reference_instrument_id, 0) or 0)
+            reference_age_ns = now_ns - reference_ts_ns if reference_ts_ns > 0 else None
+            if reference_age_ns is None or reference_age_ns >= max_age_ns:
+                age_ms = (
+                    int(reference_age_ns / 1_000_000)
+                    if reference_age_ns is not None
+                    else None
+                )
+                self._handle_stale_quote_block(
+                    now_ns=now_ns,
+                    state="blocked_reference_md",
+                    cancel_reason="reference_md_stale",
+                    reason_code=REASON_BLOCKED_REFERENCE_MD_STALE,
+                    quote_cycle_id=self._next_quote_cycle_id(now_ns=now_ns),
+                    warning_message=(
+                        "Quoting blocked (reference data stale) "
+                        f"strategy_id={self._external_strategy_id} "
+                        f"age_ms={age_ms} max_age_ms={max_age_ms}"
+                    ),
+                )
 
         def _effective_bot_on(self) -> bool:
             return runtime_params_mod.effective_bot_on(self)
@@ -370,81 +458,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             runtime_params_mod.fail_fast_runtime_params(self, context=context, exc=exc)
 
         def _handle_quote_failure(self, *, now_ns: int, exc: Exception, context: str) -> None:
-            if not hasattr(self, "_quote_failure_circuit_open"):
-                self._quote_failure_circuit_open = False
-            if not hasattr(self, "_quote_failures_ns"):
-                self._quote_failures_ns = []
-
-            def _safe(effect: Any) -> None:
-                try:
-                    effect()
-                except Exception:
-                    pass
-
-            count_threshold = max(0, self._runtime_int("quote_fail_critical_after_count"))
-            window_seconds = max(Decimal("0"), self._runtime_decimal("quote_fail_critical_after_s"))
-            window_ns = int(window_seconds * Decimal("1_000_000_000"))
-            self._quote_failures_ns.append(now_ns)
-            if window_ns > 0:
-                cutoff_ns = now_ns - window_ns
-                self._quote_failures_ns = [ts_ns for ts_ns in self._quote_failures_ns if ts_ns >= cutoff_ns]
-            elif count_threshold > 0:
-                self._quote_failures_ns = self._quote_failures_ns[-count_threshold:]
-
-            failure_count = len(self._quote_failures_ns)
-            _safe(
-                lambda: self._publish_event(
-                    "quote_refresh_failed",
-                    context=context,
-                    failure_count=failure_count,
-                    threshold=count_threshold,
-                    error_type=type(exc).__name__,
-                    error_message=str(exc),
-                ),
-            )
-            _safe(
-                lambda: self.log.error(
-                    f"Quote refresh failure strategy_id={self._external_strategy_id} context={context} "
-                    f"count={failure_count} threshold={count_threshold} err={type(exc).__name__}: {exc}",
-                ),
-            )
-            self._last_requote_ns = now_ns
-            if count_threshold <= 0 or failure_count < count_threshold:
-                return
-
-            self._quote_failure_circuit_open = True
-            try:
-                _safe(lambda: self._cancel_managed_quotes("quote_fail_circuit_breaker", force=True))
-                _safe(lambda: self._publish_state("blocked_quote_failures"))
-                _safe(
-                    lambda: self._publish_actionable_alert(
-                        alert_key=ALERT_KEY_QUOTE_FAIL_CIRCUIT_BREAKER,
-                        message=(
-                            "quote_fail_circuit_breaker triggered "
-                            f"count={failure_count} threshold={count_threshold} window_s={window_seconds}"
-                        ),
-                        level="error",
-                        reason_code=ALERT_KEY_QUOTE_FAIL_CIRCUIT_BREAKER,
-                        cooldown_ms=ALERT_COOLDOWN_QUOTE_FAIL_CIRCUIT_BREAKER_MS,
-                        transition="circuit_breaker_closed->open",
-                        now_ns=now_ns,
-                    ),
-                )
-                _safe(
-                    lambda: self._publish_event(
-                        "quote_fail_circuit_breaker",
-                        failure_count=failure_count,
-                        threshold=count_threshold,
-                        window_s=str(window_seconds),
-                    ),
-                )
-                _safe(
-                    lambda: self.log.error(
-                        f"Quote failure circuit breaker triggered strategy_id={self._external_strategy_id}",
-                    ),
-                )
-            finally:
-                _safe(self.stop)
+            failures_mod.handle_quote_failure(self, now_ns=now_ns, exc=exc, context=context)
 
         def on_order_filled(self, event: OrderFilled) -> None:
             """Handle order fill events and reconcile managed order tracking."""

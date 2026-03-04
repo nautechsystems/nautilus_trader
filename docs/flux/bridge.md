@@ -71,7 +71,7 @@ All persisted rows include correlation fields:
 `examples/live/makerv3_single_leg/run_bridge.py` is the thin wrapper that wires:
 
 1. Mode-gated environment selection (`paper/testnet/live`, explicit `--confirm-live` required for `live`).
-2. Topic aliasing from `flux.strategy.*` to handler suffix topics.
+2. Topic aliasing from `flux.makerv3.*` to handler suffix topics (and also supports suffix topics directly via `--topic state`, etc).
 3. Redis connection and consumer startup.
 
 ## Verification

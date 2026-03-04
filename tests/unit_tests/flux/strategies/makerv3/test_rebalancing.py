@@ -71,3 +71,25 @@ def test_plan_side_rebalance_actions_rejects_invalid_inputs() -> None:
             active_stale=[],
             desired_levels=[],
         )
+
+
+@pytest.mark.parametrize("bad", [Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")])
+def test_plan_side_rebalance_actions_rejects_non_finite_active_prices(bad: Decimal) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        plan_side_rebalance_actions(
+            side="buy",
+            active_prices=[bad],
+            active_stale=[False],
+            desired_levels=[(Decimal("1"), Decimal("2"), Decimal("0"))],
+        )
+
+
+@pytest.mark.parametrize("bad", [Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")])
+def test_plan_side_rebalance_actions_rejects_non_finite_desired_levels(bad: Decimal) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        plan_side_rebalance_actions(
+            side="buy",
+            active_prices=[Decimal("1")],
+            active_stale=[False],
+            desired_levels=[(bad, Decimal("2"), Decimal("0"))],
+        )

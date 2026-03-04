@@ -151,6 +151,23 @@ def test_cancel_managed_quotes_clears_tracked_ids_on_forced_stop() -> None:
     assert tracked_ids == set()
 
 
+def test_cancel_managed_quotes_does_not_clear_tracked_ids_on_empty_cache() -> None:
+    tracked_ids = {"CLIENT-1"}
+
+    cancel_managed_quotes(
+        reason="stale",
+        force=False,
+        tracked_ids=tracked_ids,
+        managed_orders=[],
+        maker_instrument_id="MAKER.SIM",
+        cancel_order=lambda _order: None,
+        cancel_all_orders=lambda _instrument_id: None,
+        cancel_all_instrument_orders=False,
+    )
+
+    assert tracked_ids == {"CLIENT-1"}
+
+
 def test_cancellation_safety_invariant_is_explicit() -> None:
     assert "only strategy-managed orders" in CANCELLATION_SAFETY_INVARIANT.lower()
     assert "explicit opt-in" in CANCELLATION_SAFETY_INVARIANT.lower()

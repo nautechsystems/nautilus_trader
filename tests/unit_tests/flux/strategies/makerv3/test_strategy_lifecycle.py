@@ -27,7 +27,7 @@ def test_cancel_managed_quotes_idempotency_with_tracked_ids_and_cache_visibility
 
     assert canceled_orders == ["RESTING-1"]
     assert canceled_all == []
-    assert [name for name, _ in events] == ["quotes_canceled", "quotes_canceled"]
+    assert [name for name, _ in events] == ["quotes_canceled", "quotes_canceled", "quotes_canceled"]
     assert events[0][1]["cancel_attempts"] == 1
     assert events[0][1]["cancel_exceptions"] == 0
     assert events[0][1]["cancel_success"] == 1
@@ -36,7 +36,11 @@ def test_cancel_managed_quotes_idempotency_with_tracked_ids_and_cache_visibility
     assert events[1][1]["cancel_exceptions"] == 0
     assert events[1][1]["cancel_success"] == 0
     assert events[1][1]["cancel_all_instrument"] is False
-    assert strategy._managed_client_order_ids == set()
+    assert events[2][1]["cancel_attempts"] == 0
+    assert events[2][1]["cancel_exceptions"] == 0
+    assert events[2][1]["cancel_success"] == 0
+    assert events[2][1]["cancel_all_instrument"] is False
+    assert strategy._managed_client_order_ids == {"RESTING-1"}
 
 
 def test_cancel_managed_quotes_escape_hatch_can_cancel_all_instrument_orders(strategy_factory) -> None:
@@ -58,6 +62,50 @@ def test_cancel_managed_quotes_escape_hatch_can_cancel_all_instrument_orders(str
     assert canceled_all == [str(strategy.config.maker_instrument_id)]
     assert [name for name, _ in events] == ["quotes_canceled"]
     assert events[0][1]["cancel_all_instrument"] is True
+
+
+def test_on_start_resets_restart_latches(strategy_factory) -> None:
+    maker_id = strategy_factory().config.maker_instrument_id
+    strategy = strategy_factory(reference_instrument_id=maker_id)
+    strategy._runtime_params_failed = True
+    strategy._quote_failure_circuit_open = True
+    strategy._quote_failures_ns = [1, 2]
+    strategy._last_stale_cancel_ns = 123
+    strategy._last_state_name = "blocked_reference_md"
+    strategy._state_is_blocked = True
+    strategy._last_actionable_alert_ns = {"alert": 1}
+    strategy._last_actionable_alert_transition = {"alert": "old->new"}
+
+    strategy._publish_alert = lambda *_args, **_kwargs: None
+    stopped: list[bool] = []
+    strategy.stop = lambda: stopped.append(True)
+
+    strategy.on_start()
+
+    assert stopped == [True]
+    assert strategy._runtime_params_failed is False
+    assert strategy._quote_failure_circuit_open is False
+    assert strategy._quote_failures_ns == []
+    assert strategy._last_stale_cancel_ns == 0
+    assert strategy._last_state_name is None
+    assert strategy._state_is_blocked is False
+    assert strategy._last_actionable_alert_ns == {}
+    assert strategy._last_actionable_alert_transition == {}
+
+
+def test_on_start_rejects_duplicate_instrument_ids(strategy_factory) -> None:
+    maker_id = strategy_factory().config.maker_instrument_id
+    strategy = strategy_factory(reference_instrument_id=maker_id)
+    published: list[str] = []
+    strategy._publish_alert = lambda message, **_kwargs: published.append(str(message))
+    stopped: list[bool] = []
+    strategy.stop = lambda: stopped.append(True)
+
+    strategy.on_start()
+
+    assert stopped == [True]
+    assert published
+    assert "distinct" in published[-1].lower()
 
 
 def test_cancel_managed_quotes_records_cancel_all_exception_fields(strategy_factory) -> None:
@@ -175,6 +223,28 @@ def test_publish_state_resets_stale_cancel_cooldown_when_leaving_blocked(clocked
     assert strategy._last_stale_cancel_ns == 0
 
 
+def test_timer_enforces_stale_market_data_blocks_when_feed_goes_silent(clocked_strategy_factory) -> None:
+    strategy = clocked_strategy_factory([500_000_000])
+    strategy._refresh_runtime_params = lambda **_kwargs: None
+    strategy._effective_bot_on = lambda: True
+    strategy._managed_client_order_ids = {"RESTING-1"}
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 100_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 100_000_000
+
+    canceled: list[str] = []
+    states: list[str] = []
+    strategy._managed_orders = lambda: [SimpleNamespace(client_order_id="RESTING-1")]
+    strategy._cancel_managed_quotes = lambda reason, **_kwargs: canceled.append(reason)
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_quote_cycle_event = lambda **_kwargs: None
+    strategy._publish_actionable_alert = lambda **_kwargs: None
+
+    strategy.on_time_event(SimpleNamespace(name=strategy._params_timer_name))
+
+    assert canceled == ["maker_md_stale"]
+    assert states[-1] == "blocked_maker_md"
+
+
 def test_lifecycle_handlers_reconcile_local_managed_order_state(strategy_factory) -> None:
     strategy = strategy_factory()
     strategy._managed_client_order_ids = {"A", "B", "C"}
@@ -288,4 +358,3 @@ def test_cancel_managed_quotes_honors_cancel_all_escape_hatch_without_local_stat
     assert events[0][1]["cancel_all_instrument"] is True
     assert events[0][1]["cancel_attempts"] == 0
     assert events[0][1]["tracked_count"] == 0
-

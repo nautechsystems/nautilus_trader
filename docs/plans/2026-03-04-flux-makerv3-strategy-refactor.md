@@ -6,7 +6,7 @@
 
 **Goal:** Productionize the `makerv3` quoting strategy currently implemented as a monolith in `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` by making it modular, safe (order lifecycle + cancellation), config-driven, and operationally observable. Standardize naming so the canonical strategy is `makerv3` (not `single_leg_quoter`) and remove legacy `poc` naming from production interfaces.
 
-**Architecture:** Thin `MakerV3Strategy` orchestrator plus pure modules for pricing/ladder math, rebalancing planning, managed-order reconciliation, runtime params registry, and wire/event payloads. Lock behavior with invariants tests first, then perform a staged refactor with compatibility shims to avoid breaking imports/topics.
+**Architecture:** Thin `MakerV3Strategy` orchestrator plus pure modules for pricing/ladder math, rebalancing planning, managed-order reconciliation, runtime params registry, and wire/event payloads. Lock behavior with invariants tests first, then perform a staged refactor (canonical `flux.makerv3.*` topics; no compatibility shims in the final production surface).
 
 **Tech Stack:** Nautilus Trader Strategy API, Python, Nautilus MessageBus, Redis-backed Flux params subsystem, Pytest.
 
@@ -132,13 +132,11 @@ Optional shared modules under `nautilus_trader/flux/common/`:
 3. Payload schema: `MakerV3BusPayload`
 4. Topics: `flux.makerv3.*` (e.g., `flux.makerv3.state`, `flux.makerv3.event`, `flux.makerv3.alert`)
 
-**Compatibility (recommended to reduce breakage)**
+**Compatibility (removed for this build)**
 
-1. Keep `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` temporarily as:
-   - a thin re-export shim with deprecation warning; no logic.
-2. Publish to both topic namespaces during a transition window:
-   - publish to `flux.makerv3.*` and (optionally) also to existing `flux.strategy.*` until consumers migrate.
-3. Keep old class/config names as aliases (deprecated) to avoid breaking existing imports/tests; remove in a later cleanup pass.
+1. Legacy module `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` is removed (no legacy/compat).
+2. Canonical strategy topics are `flux.makerv3.*` only.
+3. No deprecated class/config aliases remain in production surfaces.
 
 ---
 
@@ -187,7 +185,7 @@ Phase 4: Modularization + rename
 - [x] Extract managed order tracking into `managed_orders.py`
 - [x] Extract wire/payload builders into `wire.py`
 - [x] Introduce `strategy.py` and migrate canonical class naming
-- [x] Convert `single_leg_quoter.py` into compatibility shim (or remove once consumers updated)
+- [x] Remove `single_leg_quoter.py` completely (no legacy/compat)
 - [x] Convert example strategy file into a thin wrapper (no duplicated logic)
 
 Phase 5: Tests and docs
@@ -209,7 +207,7 @@ Progress log:
 - 2026-03-04: Task 8 completed (added structured quote-cycle envelope/events with `run_id` + `quote_cycle_id` + `reason_code`, introduced `constants.py` + `wire.py` for event schema/builders, and added cooldown/transition-gated actionable alerts with logging docs updates; strategy unit tests and makerv3 strategy suite remain green).
 - 2026-03-04: Approved quality hardening deviation after Task 8 review: fixed `cancel_all_instrument_orders` escape-hatch behavior when local order state is empty, made runtime `qty` updates atomic/reject non-positive values to avoid stale effective quantity, aligned params-manager factory defaults with strategy runtime defaults to prevent first-refresh drift, and widened `_publish_json` typing to support list payloads.
 - 2026-03-04: Task 9 completed (extracted pricing/rebalancing/inventory/managed-orders modules, moved unit tests to module-level imports under `tests/unit_tests/flux/strategies/makerv3/`, and made cancellation safety invariant explicit in `managed_orders.py`; makerv3 strategy suite remained green).
-- 2026-03-04: Task 10 completed (introduced canonical `strategy.py` surface with `MakerV3Strategy`/`MakerV3StrategyConfig`, converted `single_leg_quoter.py` to a compatibility shim, switched canonical topics to `flux.makerv3.*`, and enabled transitional dual-topic publish).
+- 2026-03-04: Task 10 completed (introduced canonical `strategy.py` surface with `MakerV3Strategy`/`MakerV3StrategyConfig`, switched canonical topics to `flux.makerv3.*` only, and removed compatibility surfaces per user request).
 - 2026-03-04: Task 11 completed (replaced `nautilus_trader/examples/strategies/makerv3_single_leg_quoter.py` with a thin wrapper aliasing canonical strategy/config and removed duplicated example strategy logic; example strategy unit test now validates wrapper surface).
 - 2026-03-04: User-approved workflow deviation for Task 11: executed directly without spec/code-quality subagent review loop.
 - 2026-03-04: External-review summary published at `docs/reviews/2026-03-04-flux-makerv3-strategy-refactor-external-review-summary.md`.
@@ -384,7 +382,7 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 1. Move pure helpers first (pricing + rebalancing) with unit tests.
 2. Move inventory logic with dedicated unit tests and caching semantics.
 3. Move managed-order tracking/cancel helpers; keep cancellation safety invariant explicit in this module.
-4. Shrink `single_leg_quoter.py` to an orchestrator that calls module functions.
+4. Remove `single_leg_quoter.py` once canonical modular surfaces are in place (no legacy/compat).
 
 **Verify:**
 
@@ -397,15 +395,15 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 - Create: `nautilus_trader/flux/strategies/makerv3/strategy.py`
 - Modify: `nautilus_trader/flux/strategies/makerv3/__init__.py`
 - Modify: `nautilus_trader/flux/strategies/__init__.py`
-- Modify: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` (compat shim or delete)
+- Delete: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` (no legacy/compat)
 - Modify: tests to import `MakerV3Strategy` from canonical module
 
 **Steps:**
 
 1. Introduce `MakerV3Strategy` and `MakerV3StrategyConfig` in `strategy.py`.
 2. Update exports so canonical import is `nautilus_trader.flux.strategies.makerv3.MakerV3Strategy`.
-3. Convert `single_leg_quoter.py` into a compatibility shim (or remove if all callsites updated).
-4. Update topic constants to `flux.makerv3.*` and implement any transitional publish if needed.
+3. Remove `single_leg_quoter.py` completely (no legacy/compat).
+4. Update topic constants to `flux.makerv3.*` only (no dual publish).
 
 **Verify:**
 
