@@ -6,7 +6,7 @@ Code location: `nautilus_trader/flux/strategies/makerv3/`.
 
 ## Overview
 
-MakerV3 is a single-leg quoting strategy which places and maintains a ladder of post-only maker orders on a configured
+MakerV3 is a single-instrument quoting strategy which places and maintains a ladder of post-only maker orders on a configured
 maker instrument, using a reference instrument for fair-value anchoring. The strategy is config-driven and supports
 bounded runtime parameter updates via the Flux params subsystem.
 
@@ -90,4 +90,3 @@ Quote-cycle events use an envelope with:
    - Ensure reference feed is not intermittently stale (would cause repeated block episodes).
 4. **Runtime params not taking effect**
    - Confirm a params manager is wired (manager instance or factory) and strategy identity matches Redis keyspace.
-

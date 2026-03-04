@@ -5,10 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "makerv3_single_leg"
-strategy_instance_id = "makerv3_single_leg"
+strategy_id = "makerv3"
+strategy_instance_id = "makerv3"
 trader_id = "MAKER-PAPER-001"
-external_strategy_id = "makerv3_single_leg"
+external_strategy_id = "makerv3"
 
 [redis]
 host = "127.0.0.1"
@@ -51,8 +51,7 @@ api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
 account_type = "SPOT"
 
-[strategy]
-strategy_id = "MAKERV3-SINGLELEG-001"
+strategy_id = "MAKERV3-001"
 order_qty = "1000"
 qty = "1000"
 bot_on = false

@@ -9,8 +9,8 @@ This runbook covers the two supported serving modes for the TokenMM Fluxboard su
 1. Start Redis and the MakerV3 node/bridge stack if you need live data:
 ```bash
 redis-server
-python examples/live/makerv3_single_leg/run_node.py
-python examples/live/makerv3_single_leg/run_bridge.py
+python examples/live/makerv3/run_node.py
+python examples/live/makerv3/run_bridge.py
 ```
 2. Install frontend dependencies once:
 ```bash
@@ -46,7 +46,7 @@ cp fluxboard/.env.example fluxboard/.env
 ```
 2. Run FluxAPI:
 ```bash
-python examples/live/makerv3_single_leg/run_api.py --host 127.0.0.1 --port 5022
+python examples/live/makerv3/run_api.py --host 127.0.0.1 --port 5022
 ```
 3. Run Vite dev server:
 ```bash
@@ -67,11 +67,11 @@ pnpm --dir fluxboard build
 ```
 2. Run FluxAPI with static serving opt-in:
 ```bash
-python examples/live/makerv3_single_leg/run_api.py --serve-fluxboard --host 127.0.0.1 --port 5022
+python examples/live/makerv3/run_api.py --serve-fluxboard --host 127.0.0.1 --port 5022
 ```
 Env equivalent:
 ```bash
-FLUXBOARD_SERVE_DIST=1 python examples/live/makerv3_single_leg/run_api.py --host 127.0.0.1 --port 5022
+FLUXBOARD_SERVE_DIST=1 python examples/live/makerv3/run_api.py --host 127.0.0.1 --port 5022
 ```
 3. Open:
 - `http://127.0.0.1:5022/tokenmm` (alias: `/tokenm`)

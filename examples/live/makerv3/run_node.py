@@ -52,7 +52,7 @@ from nautilus_trader.model.identifiers import TraderId
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("config") / "makerv3_single_leg.toml"
+DEFAULT_CONFIG_PATH = Path(__file__).with_name("config") / "makerv3.toml"
 
 
 def _optional_text(value: Any) -> str | None:
@@ -78,7 +78,7 @@ def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run MakerV3 single-leg TradingNode using flux production modules.")
+    parser = argparse.ArgumentParser(description="Run MakerV3 trading node using flux production modules.")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
@@ -112,11 +112,20 @@ def _resolve_secret(section: dict[str, Any], *, value_key: str, env_key: str) ->
 
 
 def _enum_member(enum_type: Any, raw_value: Any, *, field_name: str) -> Any:
+    if isinstance(raw_value, enum_type):
+        return raw_value
+
     name = str(raw_value).strip().upper()
+    if not name:
+        raise ValueError(f"Missing {field_name}")
+
     try:
         return enum_type[name]
-    except KeyError as exc:
-        raise ValueError(f"Invalid {field_name} {raw_value!r}") from exc
+    except (KeyError, TypeError) as exc:
+        try:
+            return getattr(enum_type, name)
+        except AttributeError:
+            raise ValueError(f"Invalid {field_name} {raw_value!r}") from exc
 
 
 def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: bool) -> TradingNode:
@@ -129,7 +138,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     binance_cfg = _table(node_cfg, "binance")
     strategy_cfg = _table(config, "strategy")
 
-    strategy_id = _optional_text(identity.get("strategy_id")) or "makerv3_single_leg"
+    strategy_id = _optional_text(identity.get("strategy_id")) or "makerv3"
     external_strategy_id = _optional_text(identity.get("external_strategy_id")) or strategy_id
     trader_id = _optional_text(identity.get("trader_id")) or "MAKER-PAPER-001"
     namespace = _optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE
@@ -232,7 +241,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
 
     strategy = MakerV3Strategy(
         config=MakerV3StrategyConfig(
-            strategy_id=str(strategy_cfg.get("strategy_id", "MAKERV3-SINGLELEG-001")),
+            strategy_id=str(strategy_cfg.get("strategy_id", "MAKERV3-001")),
             maker_instrument_id=maker_instrument_id,
             reference_instrument_id=reference_instrument_id,
             external_strategy_id=external_strategy_id,

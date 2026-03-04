@@ -38,7 +38,7 @@ from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_TRADE
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("config") / "makerv3_single_leg.toml"
+DEFAULT_CONFIG_PATH = Path(__file__).with_name("config") / "makerv3.toml"
 
 
 FULL_TO_SUFFIX_TOPICS: dict[str, str] = {
@@ -75,7 +75,7 @@ def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Flux bridge consumer for MakerV3 single-leg.")
+    parser = argparse.ArgumentParser(description="Run Flux bridge consumer for MakerV3.")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")

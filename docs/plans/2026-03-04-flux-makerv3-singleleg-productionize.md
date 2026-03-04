@@ -64,7 +64,7 @@ Major surfaces added/changed:
 5. `nautilus_trader/flux/strategies/makerv3/*` (production strategy; further refactor tracked separately)
 6. `docs/flux/*` (durable schema/params/bridge/api docs; schema includes allowlisted legacy mapping)
 7. `scripts/ci/check-flux-leakage.sh` + CI/pre-commit wiring (`.github/workflows/build.yml`, `.pre-commit-config.yaml`)
-8. `examples/live/makerv3_single_leg/*` (thin runners + config + README) and deprecated wrappers under `examples/live/poc/*`
+8. `examples/live/makerv3/*` (thin runners + config + README) and deprecated wrappers under `examples/live/poc/*`
 9. Unit test coverage under `tests/unit_tests/flux/*` and `tests/unit_tests/examples/*`
 10. `fluxboard/*` (Fluxboard Vite app) + `docs/fluxboard/*` (TokenMM contracts + runbook) + `docs/plans/2026-03-04-fluxboard-tokenmm-minimal-migration.md`
 
@@ -88,7 +88,7 @@ Proposed layout:
 3. `nautilus_trader/flux/bridge/`
 4. `nautilus_trader/flux/api/`
 5. `nautilus_trader/flux/strategies/makerv3/`
-6. `examples/live/makerv3_single_leg/` (thin wrappers only)
+6. `examples/live/makerv3/` (thin wrappers only)
 
 ## Redis schema (decision required)
 
@@ -326,7 +326,7 @@ pytest tests/unit_tests -q
 
 **Files:**
 
-- Move: `nautilus_trader/examples/strategies/makerv3_single_leg_quoter.py` -> `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
+- Move: `nautilus_trader/examples/strategies/makerv3.py` -> `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
 - Modify: tests to target new module path and add strategy-level tests
 
 **Steps (must-hit safety items):**
@@ -349,10 +349,10 @@ pytest tests/unit_tests/examples/strategies -q
 
 **Files:**
 
-- Create: `examples/live/makerv3_single_leg/README.md`
-- Create: `examples/live/makerv3_single_leg/run_node.py`
-- Create: `examples/live/makerv3_single_leg/run_bridge.py`
-- Create: `examples/live/makerv3_single_leg/run_api.py`
+- Create: `examples/live/makerv3/README.md`
+- Create: `examples/live/makerv3/run_node.py`
+- Create: `examples/live/makerv3/run_bridge.py`
+- Create: `examples/live/makerv3/run_api.py`
 - Delete or deprecate: `examples/live/poc/*`
 
 **Steps:**
@@ -486,7 +486,7 @@ Validation rules:
 
 Example config (TOML) path to create:
 
-1. `examples/live/makerv3_single_leg/config/makerv3_single_leg.toml`
+1. `examples/live/makerv3/config/makerv3.toml`
 
 ### API hardening (refactor boundaries)
 
@@ -581,7 +581,7 @@ python -m pytest tests/unit_tests -q
 4. 2026-03-04T01:33:29Z | Task 4 - Bridge modularization + schema hardening | SHAs: `1ee44e2be39cce1688d886a5f66f8265252ebcbe`, `7c53ac9bf983689a872519a7cef2aa98dab06f8a` | Notes: Moved bridge ingestion into `nautilus_trader/flux/bridge/*` with topic handlers + consumer, replaced monolithic runner with thin wrapper, enforced strategy-scoped `flux:v1` outputs with bounded stream retention, normalized `ts_ms`, and added consumer boundary tests; Task 4 spec review ✅ and code-quality review ✅.
 5. 2026-03-04T01:52:58Z | Task 5 - API package refactor + envelope/readiness hardening | SHAs: `7b9c2deb8425171b956e5887cb9246ca7bd0d54d`, `8d93d0d5f2241e2678d3b1380f0d445f6c6fe345` | Notes: Moved API logic into `nautilus_trader/flux/api/*` with DI app factory, store/payload separation, batched feed reads, schema-based readiness/health endpoints, explicit validation/error envelopes, and thin example runner wiring; Task 5 spec review ✅ and code-quality review ✅.
 6. 2026-03-04T02:13:41Z | Task 6 - Strategy productionization safety/perf refactor | SHAs: `811339f6e4023296e5e11498c7fab28c259dfdd0`, `13295ccf0b91b74012a42276e92e164854b89231` | Notes: Added production strategy module under `nautilus_trader/flux/strategies/makerv3/`, implemented two-leg staleness gating + cancel, quote-failure circuit breaker fail-stop, lifecycle reconciliation for reject/cancel/expire, and stronger cancel-on-stop tracking semantics with new strategy-level tests; Task 6 spec review ✅ and code-quality review ✅.
-7. 2026-03-04T02:26:03Z | Task 7 - Replace POC runners with thin examples | SHAs: `6758d180f09eb607ee198667d23082c8b4e39ea2` | Notes: Added `examples/live/makerv3_single_leg/*` (node/bridge/api runners + README + config), converted `examples/live/poc/*` runners into thin deprecated wrappers, removed unsafe secret bootstrap patterns, and kept run modes explicit; Task 7 spec review ✅ and code-quality review ✅.
+7. 2026-03-04T02:26:03Z | Task 7 - Replace POC runners with thin examples | SHAs: `6758d180f09eb607ee198667d23082c8b4e39ea2` | Notes: Added `examples/live/makerv3/*` (node/bridge/api runners + README + config), converted `examples/live/poc/*` runners into thin deprecated wrappers, removed unsafe secret bootstrap patterns, and kept run modes explicit; Task 7 spec review ✅ and code-quality review ✅.
 8. 2026-03-04T03:04:17Z | Task 8 - PR cleanup + no POC/chainsaw leakage enforcement | SHAs: `aa57547d5`, `689ec0b39`, `67d2fa1b9`, `32a2dcd97`, `c50489073`, `7ea168551` | Notes: Renamed production bus payload type to `FluxBusPayload`, removed POC envelope compatibility from bridge, added durable Flux docs (`params.md`, `bridge.md`, `api.md`), replaced archived prototype plan doc with durable pointer, preserved `/.worktrees/` and `.run/` ignores, and hardened `scripts/ci/check-flux-leakage.sh` through spec/quality fix loops (case-insensitive leakage terms, `POC_*`/`*_poc` detection, generalized host-path checks, and URL-safe Windows path matching); Task 8 spec review ✅ and code-quality review ✅.
 9. 2026-03-04T03:08:07Z | Task 9 (P0) - Bridge offset semantics hardening | SHAs: `fb4f99e3b` | Notes: Moved offset advancement to post-write success only, retained offsets on decode/handler/write failure paths, broadened write exception catch in run loop, and added run-loop regression tests for offset behavior.
 10. 2026-03-04T03:11:57Z | Task 9 (P0) - API legs contract_id keying fix | SHAs: `a90941dab` | Notes: Added contract-id-based legs keying (`{exchange}:{symbol}` normalization), removed same-exchange symbol collision path, and added regression tests for same-exchange multi-symbol contracts.

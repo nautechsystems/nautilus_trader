@@ -68,7 +68,7 @@ All persisted rows include correlation fields:
 
 ## Runner notes
 
-`examples/live/makerv3_single_leg/run_bridge.py` is the thin wrapper that wires:
+`examples/live/makerv3/run_bridge.py` is the thin wrapper that wires:
 
 1. Mode-gated environment selection (`paper/testnet/live`, explicit `--confirm-live` required for `live`).
 2. Topic aliasing from `flux.makerv3.*` to handler suffix topics (and also supports suffix topics directly via `--topic state`, etc).

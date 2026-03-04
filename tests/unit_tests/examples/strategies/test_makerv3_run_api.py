@@ -17,10 +17,10 @@ from __future__ import annotations
 
 from argparse import Namespace
 
-from examples.live.makerv3_single_leg.run_api import DEFAULT_CONFIG_PATH
-from examples.live.makerv3_single_leg.run_api import _build_flux_config
-from examples.live.makerv3_single_leg.run_api import _load_config
-from examples.live.makerv3_single_leg.run_api import _resolve_bind_host
+from examples.live.makerv3.run_api import DEFAULT_CONFIG_PATH
+from examples.live.makerv3.run_api import _build_flux_config
+from examples.live.makerv3.run_api import _load_config
+from examples.live.makerv3.run_api import _resolve_bind_host
 
 
 def test_default_config_builds_flux_config_with_strategy_identity_uniqueness() -> None:

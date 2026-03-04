@@ -19,7 +19,7 @@ from argparse import Namespace
 
 import pytest
 
-from examples.live.makerv3_single_leg.run_bridge import _resolve_strategy_scope
+from examples.live.makerv3.run_bridge import _resolve_strategy_scope
 
 
 def test_resolve_strategy_scope_prefers_cli_strategy_id() -> None:

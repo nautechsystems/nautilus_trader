@@ -1,13 +1,13 @@
-# MakerV3 Single-Leg (Flux Production Wrappers)
+# MakerV3 (Flux Production Wrappers)
 
 This directory contains thin runner wrappers for the production Flux modules under `nautilus_trader/flux`.
 
 ## What changed
 
 - New runners:
-  - `examples/live/makerv3_single_leg/run_node.py`
-  - `examples/live/makerv3_single_leg/run_bridge.py`
-  - `examples/live/makerv3_single_leg/run_api.py`
+  - `examples/live/makerv3/run_node.py`
+  - `examples/live/makerv3/run_bridge.py`
+  - `examples/live/makerv3/run_api.py`
 - Deprecated old POC runner entrypoints under `examples/live/poc/*`.
 
 ## Safety defaults
@@ -23,7 +23,7 @@ This directory contains thin runner wrappers for the production Flux modules und
 
 Default config file:
 
-- `examples/live/makerv3_single_leg/config/makerv3_single_leg.toml`
+- `examples/live/makerv3/config/makerv3.toml`
 
 Review and update this file before running.
 
@@ -55,13 +55,13 @@ redis-server
 2. Start the Nautilus node (safe default `paper` mode).
 
 ```bash
-python examples/live/makerv3_single_leg/run_node.py
+python examples/live/makerv3/run_node.py
 ```
 
 3. Start the Flux bridge.
 
 ```bash
-python examples/live/makerv3_single_leg/run_bridge.py
+python examples/live/makerv3/run_bridge.py
 ```
 
 Bridge strategy scope behavior:
@@ -74,17 +74,17 @@ Bridge strategy scope behavior:
 4. Start the Flux API.
 
 ```bash
-python examples/live/makerv3_single_leg/run_api.py
+python examples/live/makerv3/run_api.py
 ```
 
 By default, `run_api.py` binds to `127.0.0.1` unless you explicitly override host via:
 - CLI: `--host ...`
-- config: `[api].host` in `makerv3_single_leg.toml`
+- config: `[api].host` in `makerv3.toml`
 
 Expose externally only when intentional, for example:
 
 ```bash
-python examples/live/makerv3_single_leg/run_api.py --host 0.0.0.0
+python examples/live/makerv3/run_api.py --host 0.0.0.0
 ```
 
 ## TokenMM serving modes
@@ -95,7 +95,7 @@ Run FluxAPI and Vite in separate terminals:
 
 ```bash
 # Terminal 1 (FluxAPI)
-python examples/live/makerv3_single_leg/run_api.py --host 127.0.0.1 --port 5022
+python examples/live/makerv3/run_api.py --host 127.0.0.1 --port 5022
 
 # Terminal 2 (Fluxboard dev server)
 cp fluxboard/.env.example fluxboard/.env
@@ -114,13 +114,13 @@ Build Fluxboard, then run the API with static serving enabled:
 
 ```bash
 pnpm --dir fluxboard build
-python examples/live/makerv3_single_leg/run_api.py --serve-fluxboard --host 127.0.0.1 --port 5022
+python examples/live/makerv3/run_api.py --serve-fluxboard --host 127.0.0.1 --port 5022
 ```
 
 Equivalent env opt-in:
 
 ```bash
-FLUXBOARD_SERVE_DIST=1 python examples/live/makerv3_single_leg/run_api.py --host 127.0.0.1 --port 5022
+FLUXBOARD_SERVE_DIST=1 python examples/live/makerv3/run_api.py --host 127.0.0.1 --port 5022
 ```
 
 `FLUXBOARD_SERVE_DIST`/`FLUXBOARD_DIST` are backend runner env vars (set in shell for `run_api.py`), not Vite-only vars.
@@ -135,9 +135,9 @@ Security and behavior:
 ## Live mode (explicit confirmation required)
 
 ```bash
-python examples/live/makerv3_single_leg/run_node.py --mode live --confirm-live
-python examples/live/makerv3_single_leg/run_bridge.py --mode live --confirm-live
-python examples/live/makerv3_single_leg/run_api.py --mode live --confirm-live
+python examples/live/makerv3/run_node.py --mode live --confirm-live
+python examples/live/makerv3/run_bridge.py --mode live --confirm-live
+python examples/live/makerv3/run_api.py --mode live --confirm-live
 ```
 
 Without `--confirm-live`, each runner fails fast in `live` mode.

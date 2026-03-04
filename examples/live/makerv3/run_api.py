@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 import os
 from pathlib import Path
 from typing import Any
@@ -39,7 +38,7 @@ from nautilus_trader.flux.common.config import FluxVenuesConfig
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("config") / "makerv3_single_leg.toml"
+DEFAULT_CONFIG_PATH = Path(__file__).with_name("config") / "makerv3.toml"
 DEFAULT_TOKENMM_BASE_PATH = "/tokenmm"
 DEFAULT_FLUXBOARD_DIST = Path(__file__).resolve().parents[3] / "fluxboard" / "dist"
 
@@ -67,7 +66,7 @@ def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Flux API app for MakerV3 single-leg.")
+    parser = argparse.ArgumentParser(description="Run Flux API app for MakerV3.")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
@@ -141,7 +140,7 @@ def _build_flux_config(config: dict[str, Any], *, mode: str, confirm_live: bool)
     redis_cfg = _table(config, "redis")
     venues = _table(config, "venues")
 
-    strategy_id = _optional_text(identity.get("strategy_id")) or "makerv3_single_leg"
+    strategy_id = _optional_text(identity.get("strategy_id")) or "makerv3"
 
     flux_identity = FluxIdentityConfig(
         namespace=_optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE,
@@ -260,11 +259,12 @@ def _run_with_socketio_if_available(app: Any, *, host: str, port: int) -> None:
         "use_reloader": False,
     }
     try:
-        if "allow_unsafe_werkzeug" in inspect.signature(socketio.run).parameters:
-            run_kwargs["allow_unsafe_werkzeug"] = True
-    except (TypeError, ValueError):
-        pass
-    socketio.run(app, **run_kwargs)
+        socketio.run(app, **run_kwargs, allow_unsafe_werkzeug=True)
+    except TypeError as exc:
+        # Older flask-socketio versions do not accept this kwarg.
+        if "allow_unsafe_werkzeug" not in str(exc):
+            raise
+        socketio.run(app, **run_kwargs)
 
 
 def main() -> None:

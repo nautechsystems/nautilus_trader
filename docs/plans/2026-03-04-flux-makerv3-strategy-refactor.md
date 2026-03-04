@@ -31,9 +31,9 @@
 ## Key files (current)
 
 1. Strategy: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
-2. Example strategy copy (parity/duplication risk): `nautilus_trader/examples/strategies/makerv3_single_leg_quoter.py`
+2. Example strategy copy (parity/duplication risk): `nautilus_trader/examples/strategies/makerv3.py`
 3. Strategy tests: `tests/unit_tests/flux/strategies/makerv3/test_single_leg_quoter_math.py`, `tests/unit_tests/flux/strategies/makerv3/test_single_leg_quoter_strategy.py`
-4. Example tests: `tests/unit_tests/examples/strategies/test_makerv3_single_leg_quoter.py`
+4. Example tests: `tests/unit_tests/examples/strategies/test_makerv3_quoter.py`
 5. Params manager: `nautilus_trader/flux/params/manager.py`
 6. Key builders/config: `nautilus_trader/flux/common/keys.py`, `nautilus_trader/flux/common/config.py`
 7. Logging guidance: `docs/concepts/logging.md`
@@ -208,7 +208,7 @@ Progress log:
 - 2026-03-04: Approved quality hardening deviation after Task 8 review: fixed `cancel_all_instrument_orders` escape-hatch behavior when local order state is empty, made runtime `qty` updates atomic/reject non-positive values to avoid stale effective quantity, aligned params-manager factory defaults with strategy runtime defaults to prevent first-refresh drift, and widened `_publish_json` typing to support list payloads.
 - 2026-03-04: Task 9 completed (extracted pricing/rebalancing/inventory/managed-orders modules, moved unit tests to module-level imports under `tests/unit_tests/flux/strategies/makerv3/`, and made cancellation safety invariant explicit in `managed_orders.py`; makerv3 strategy suite remained green).
 - 2026-03-04: Task 10 completed (introduced canonical `strategy.py` surface with `MakerV3Strategy`/`MakerV3StrategyConfig`, switched canonical topics to `flux.makerv3.*` only, and removed compatibility surfaces per user request).
-- 2026-03-04: Task 11 completed (replaced `nautilus_trader/examples/strategies/makerv3_single_leg_quoter.py` with a thin wrapper aliasing canonical strategy/config and removed duplicated example strategy logic; example strategy unit test now validates wrapper surface).
+- 2026-03-04: Task 11 completed (replaced `nautilus_trader/examples/strategies/makerv3.py` with a thin wrapper aliasing canonical strategy/config and removed duplicated example strategy logic; example strategy unit test now validates wrapper surface).
 - 2026-03-04: User-approved workflow deviation for Task 11: executed directly without spec/code-quality subagent review loop.
 - 2026-03-04: External-review summary published at `docs/reviews/2026-03-04-flux-makerv3-strategy-refactor-external-review-summary.md`.
 - 2026-03-04: User-requested compatibility removal completed by deleting `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`, removing legacy class exports, and switching live example runners to canonical `MakerV3Strategy` surfaces only.
@@ -229,7 +229,7 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 **Files:**
 
 - Modify: `tests/unit_tests/flux/strategies/makerv3/test_single_leg_quoter_strategy.py`
-- Modify: `tests/unit_tests/examples/strategies/test_makerv3_single_leg_quoter.py`
+- Modify: `tests/unit_tests/examples/strategies/test_makerv3_quoter.py`
 
 **Steps:**
 
@@ -241,7 +241,7 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 **Verify:**
 
 1. `pytest tests/unit_tests/flux/strategies/makerv3/test_single_leg_quoter_strategy.py -q`
-2. `pytest tests/unit_tests/examples/strategies/test_makerv3_single_leg_quoter.py -q`
+2. `pytest tests/unit_tests/examples/strategies/test_makerv3_quoter.py -q`
 
 ### Task 2: Remove unsafe cancel-all behavior (strategy-owned cancellation only)
 
@@ -414,8 +414,8 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Files:**
 
-- Modify: `nautilus_trader/examples/strategies/makerv3_single_leg_quoter.py`
-- Modify: `tests/unit_tests/examples/strategies/test_makerv3_single_leg_quoter.py`
+- Modify: `nautilus_trader/examples/strategies/makerv3.py`
+- Modify: `tests/unit_tests/examples/strategies/test_makerv3_quoter.py`
 
 **Steps:**
 
@@ -425,7 +425,7 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Verify:**
 
-1. `pytest tests/unit_tests/examples/strategies/test_makerv3_single_leg_quoter.py -q`
+1. `pytest tests/unit_tests/examples/strategies/test_makerv3_quoter.py -q`
 
 ---
 

@@ -21,7 +21,7 @@ import sys
 
 DEPRECATION_MESSAGE = (
     "examples/live/poc/nautilus_fluxapi.py is deprecated and no longer supported.\n"
-    "Use examples/live/makerv3_single_leg/run_api.py instead."
+    "Use examples/live/makerv3/run_api.py instead."
 )
 
 

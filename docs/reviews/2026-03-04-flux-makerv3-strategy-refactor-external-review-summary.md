@@ -54,7 +54,7 @@ The strategy has been split into focused modules:
 
 ### 5) Example strategy deduplication
 
-- `nautilus_trader/examples/strategies/makerv3_single_leg_quoter.py` is now a thin wrapper over canonical
+- `nautilus_trader/examples/strategies/makerv3.py` is now a thin wrapper over canonical
   strategy exports with no embedded strategy logic.
 
 ## Additional hardening completed during review
@@ -74,7 +74,7 @@ All commands below were run with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`.
 
 - `pytest tests/unit_tests/flux/strategies/makerv3 -q` → `63 passed`
 - `pytest tests/unit_tests/flux/strategies/makerv3 -q` → `83 passed`
-- `pytest tests/unit_tests/examples/strategies/test_makerv3_single_leg_quoter.py -q` → `4 passed`
+- `pytest tests/unit_tests/examples/strategies/test_makerv3_quoter.py -q` → `4 passed`
 - `pytest tests/unit_tests/flux/common/test_params.py -q` → `18 passed`
 - `pytest tests/unit_tests/flux/params -q` → `25 passed`
 - `pytest tests/unit_tests/flux/api/test_app.py -q` → `16 passed`

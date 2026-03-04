@@ -20,8 +20,8 @@ import sys
 
 
 DEPRECATION_MESSAGE = (
-    "examples/live/poc/makerv3_single_leg_node.py is deprecated and no longer supported.\n"
-    "Use examples/live/makerv3_single_leg/run_node.py instead."
+    "examples/live/poc/makerv3_node.py is deprecated and no longer supported.\n"
+    "Use examples/live/makerv3/run_node.py instead."
 )
 
 
