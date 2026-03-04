@@ -162,9 +162,9 @@ config = TradingNodeConfig(
 )
 ```
 
-For Tasks 2-4 MVP scope, `OrderActionIntent` (cancel-intent stream persistence) is deferred to a
-follow-up task. In this phase, cancel strategy intent metadata is not persisted as a separate
-intent stream.
+In this MVP, `OrderActionIntent` (cancel-intent stream persistence) is deferred to the Task 5
+follow-up. Cancel strategy intent metadata is not persisted as a separate intent stream in this
+phase.
 
 Topic and stream notes:
 
@@ -192,21 +192,54 @@ ORDER BY ts_event DESC;
 ```
 
 ```sql
--- PLACE lifecycle by `action_state`.
+-- PLACE lifecycle by `action_state` with deterministic latest rejection reason.
+WITH place_events AS (
+  SELECT
+    trader_id,
+    strategy_id,
+    client_order_id,
+    action_state,
+    ts_event
+  FROM order_action
+  WHERE trader_id = :trader_id
+    AND strategy_id = :strategy_id
+    AND action_type = 'PLACE'
+),
+latest_reject AS (
+  SELECT
+    trader_id,
+    strategy_id,
+    client_order_id,
+    rejection_reason,
+    ROW_NUMBER() OVER (
+      PARTITION BY trader_id, strategy_id, client_order_id
+      ORDER BY ts_event DESC, event_id DESC
+    ) AS rn
+  FROM order_action
+  WHERE trader_id = :trader_id
+    AND strategy_id = :strategy_id
+    AND action_type = 'PLACE'
+    AND action_state = 'REJECTED'
+)
 SELECT
-  client_order_id,
-  MAX(CASE WHEN action_state = 'SUBMITTED' THEN ts_event END) AS ts_submitted,
-  MAX(CASE WHEN action_state = 'ACCEPTED' THEN ts_event END) AS ts_accepted,
-  MAX(CASE WHEN action_state = 'REJECTED' THEN rejection_reason END) AS rejection_reason
-FROM order_action
-WHERE strategy_id = :strategy_id
-  AND action_type = 'PLACE'
-GROUP BY client_order_id
+  pe.client_order_id,
+  MAX(CASE WHEN pe.action_state = 'SUBMITTED' THEN pe.ts_event END) AS ts_submitted,
+  MAX(CASE WHEN pe.action_state = 'ACCEPTED' THEN pe.ts_event END) AS ts_accepted,
+  lr.rejection_reason
+FROM place_events pe
+LEFT JOIN latest_reject lr
+  ON lr.trader_id = pe.trader_id
+ AND lr.strategy_id = pe.strategy_id
+ AND lr.client_order_id = pe.client_order_id
+ AND lr.rn = 1
+GROUP BY pe.client_order_id, lr.rejection_reason
 ORDER BY ts_submitted DESC;
 ```
 
 ```sql
 -- Join order actions to fills (default setup uses separate DB files).
+-- Safeguards: scope by trader + strategy + instrument + time window, and include
+-- venue/account keys when available to avoid cross-strategy or reused-ID collisions.
 ATTACH DATABASE '/var/lib/nautilus/orders.sqlite' AS orders;
 ATTACH DATABASE '/var/lib/nautilus/fills.sqlite' AS fills;
 
@@ -222,9 +255,16 @@ SELECT
 FROM orders.order_action oa
 LEFT JOIN fills.execution_fill ef
   ON ef.trader_id = oa.trader_id
+ AND ef.strategy_id = oa.strategy_id
+ AND ef.instrument_id = oa.instrument_id
  AND ef.client_order_id = oa.client_order_id
-WHERE oa.strategy_id = :strategy_id
+ AND (oa.venue_order_id IS NULL OR ef.venue_order_id = oa.venue_order_id)
+ AND (oa.account_id IS NULL OR ef.account_id = oa.account_id)
+WHERE oa.trader_id = :trader_id
+  AND oa.strategy_id = :strategy_id
+  AND oa.instrument_id = :instrument_id
   AND oa.action_type = 'PLACE'
+  AND oa.ts_event BETWEEN :window_start_ns AND :window_end_ns
 ORDER BY oa.ts_event DESC, ef.ts_event DESC;
 ```
 
