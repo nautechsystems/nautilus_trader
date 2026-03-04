@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from typing import Any
 
 from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
@@ -23,6 +24,14 @@ from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_FV
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_TRADE
 from nautilus_trader.flux.strategies.makerv3.wire import build_quote_cycle_envelope
 from nautilus_trader.flux.strategies.makerv3.wire import build_quote_cycle_id
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.accounting.accounts.base import Account
+    from nautilus_trader.model.identifiers import ClientOrderId
+    from nautilus_trader.model.objects import Price
+    from nautilus_trader.model.orders import Order
+    from nautilus_trader.model.position import Position
 
 
 _to_decimal = pricing_mod.to_decimal
@@ -82,33 +91,33 @@ if _NAUTILUS_IMPORT_ERROR is None:
         reference_instrument_id: InstrumentId
         order_qty: Decimal
         external_strategy_id: str = "makerv3"
-        bot_on: bool = False
+        bot_on: bool | None = None
         qty: Decimal | None = None
-        des_qty_global: NonNegativeFloat = 0.0
-        max_qty_global: NonNegativeFloat = 20_000.0
-        max_skew_bps_global: NonNegativeFloat = 0.0
-        des_qty_local: NonNegativeFloat = 0.0
-        max_qty_local: NonNegativeFloat = 0.0
-        max_skew_bps_local: NonNegativeFloat = 0.0
-        linear_offset_bps: NonNegativeFloat = 0.0
-        max_age_ms: PositiveInt = 2_000
-        bid_edge1: NonNegativeFloat = 0.05
-        ask_edge1: NonNegativeFloat = 0.05
-        place_edge1: NonNegativeFloat = 2.0
-        distance1: NonNegativeFloat = 0.02
-        n_orders1: NonNegativeInt = 1
-        bid_edge2: NonNegativeFloat = 0.15
-        ask_edge2: NonNegativeFloat = 0.15
-        place_edge2: NonNegativeFloat = 2.0
-        distance2: NonNegativeFloat = 0.04
-        n_orders2: NonNegativeInt = 1
-        bid_edge3: NonNegativeFloat = 0.35
-        ask_edge3: NonNegativeFloat = 0.35
-        place_edge3: NonNegativeFloat = 2.0
-        distance3: NonNegativeFloat = 0.08
-        n_orders3: NonNegativeInt = 1
-        quote_fail_critical_after_count: NonNegativeInt = 3
-        quote_fail_critical_after_s: NonNegativeFloat = 60.0
+        des_qty_global: NonNegativeFloat | None = None
+        max_qty_global: NonNegativeFloat | None = None
+        max_skew_bps_global: NonNegativeFloat | None = None
+        des_qty_local: NonNegativeFloat | None = None
+        max_qty_local: NonNegativeFloat | None = None
+        max_skew_bps_local: NonNegativeFloat | None = None
+        linear_offset_bps: NonNegativeFloat | None = None
+        max_age_ms: PositiveInt | None = None
+        bid_edge1: NonNegativeFloat | None = None
+        ask_edge1: NonNegativeFloat | None = None
+        place_edge1: NonNegativeFloat | None = None
+        distance1: NonNegativeFloat | None = None
+        n_orders1: NonNegativeInt | None = None
+        bid_edge2: NonNegativeFloat | None = None
+        ask_edge2: NonNegativeFloat | None = None
+        place_edge2: NonNegativeFloat | None = None
+        distance2: NonNegativeFloat | None = None
+        n_orders2: NonNegativeInt | None = None
+        bid_edge3: NonNegativeFloat | None = None
+        ask_edge3: NonNegativeFloat | None = None
+        place_edge3: NonNegativeFloat | None = None
+        distance3: NonNegativeFloat | None = None
+        n_orders3: NonNegativeInt | None = None
+        quote_fail_critical_after_count: NonNegativeInt | None = None
+        quote_fail_critical_after_s: NonNegativeFloat | None = None
         cancel_all_instrument_orders: bool = False
 
         @property
@@ -498,7 +507,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._invalidate_inventory_skew_cache()
             self._reconcile_managed_order(getattr(event, "client_order_id", None), lifecycle="expired")
 
-        def _reconcile_managed_order(self, client_order_id: Any, *, lifecycle: str) -> None:
+        def _reconcile_managed_order(
+            self,
+            client_order_id: ClientOrderId | str | None,
+            *,
+            lifecycle: str,
+        ) -> None:
             had_order = managed_orders_mod.reconcile_managed_order(
                 self._managed_client_order_ids,
                 client_order_id,
@@ -515,7 +529,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             )
 
         def _position_signed_qty(self) -> Decimal | None:
-            positions: list[Any] = []
+            positions: list[Position] = []
             try:
                 positions.extend(
                     self.cache.positions_open(
@@ -527,7 +541,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             return inventory_mod.position_signed_qty(positions)
 
         def _spot_balance_total(self, currency_code: str) -> Decimal | None:
-            accounts: list[Any] = []
+            accounts: list[Account] = []
             try:
                 accounts.extend(list(self.cache.accounts()))
             except Exception:
@@ -637,7 +651,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         def _publish_balances_if_due(self) -> None:
             publisher_mod.publish_balances_if_due(self)
 
-        def _is_stale_order(self, order: Any, now_ns: int, *, max_age_ms: int | None = None) -> bool:
+        def _is_stale_order(self, order: Order, now_ns: int, *, max_age_ms: int | None = None) -> bool:
             age_ms = self._runtime_int("max_age_ms") if max_age_ms is None else int(max_age_ms)
             max_age_ns = age_ms * 1_000_000
             ts_init = int(getattr(order, "ts_init", 0))
@@ -647,8 +661,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self,
             *,
             side: OrderSide,
-            active_orders: list[Any],
-            desired_levels: list[tuple[Any, Decimal, Decimal]],
+            active_orders: list[Order],
+            desired_levels: list[tuple[Price, Decimal, Decimal]],
             now_ns: int,
             max_age_ms: int,
         ) -> int:
@@ -688,8 +702,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self,
             *,
             side: OrderSide,
-            active_orders: list[Any],
-            desired_levels: list[tuple[Any, Decimal, Decimal]],
+            active_orders: list[Order],
+            desired_levels: list[tuple[Price, Decimal, Decimal]],
             best_bid_px: Decimal,
             best_ask_px: Decimal,
         ) -> int:
@@ -720,7 +734,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 active_prices.append(target_px)
             return places
 
-        def _register_managed_order(self, order: Any) -> None:
+        def _register_managed_order(self, order: Order) -> None:
             client_order_id = managed_orders_mod.register_managed_order(
                 self._managed_client_order_ids,
                 order,
@@ -729,7 +743,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return
             self._invalidate_inventory_skew_cache()
 
-        def _managed_orders(self) -> list[Any]:
+        def _managed_orders(self) -> list[Order]:
             return managed_orders_mod.collect_managed_orders(
                 cache=self.cache,
                 instrument_id=self.config.maker_instrument_id,
@@ -741,7 +755,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             reason: str,
             force: bool = False,
             *,
-            managed_orders: list[Any] | None = None,
+            managed_orders: list[Order] | None = None,
         ) -> None:
             if managed_orders is None:
                 managed_orders = self._managed_orders()

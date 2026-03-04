@@ -5,7 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
+from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
 from nautilus_trader.flux.strategies.makerv3 import MakerV3Strategy
+from nautilus_trader.flux.strategies.makerv3 import MakerV3StrategyConfig
+from nautilus_trader.flux.strategies.makerv3 import runtime_params as runtime_params_mod
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 def test_refresh_runtime_params_is_idempotent_and_noop_when_unchanged(strategy_factory) -> None:
@@ -34,6 +39,25 @@ def test_refresh_runtime_params_is_idempotent_and_noop_when_unchanged(strategy_f
     assert runtime_params_after_first_refresh == initial_runtime_params
     assert strategy._runtime_params == runtime_params_after_first_refresh
     assert strategy._order_qty is initial_order_qty
+
+
+def test_initial_runtime_params_use_registry_defaults_when_config_omits_values() -> None:
+    config = MakerV3StrategyConfig(
+        maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
+        reference_instrument_id=InstrumentId.from_str("REF.SIM"),
+        order_qty=Decimal("1"),
+    )
+
+    runtime_params = runtime_params_mod.initial_runtime_params(config)
+
+    assert runtime_params["qty"] == Decimal("1")
+    for name in MAKERV3_RUNTIME_PARAM_REGISTRY.names:
+        if name == "qty":
+            continue
+        assert runtime_params[name] == runtime_params_mod.coerce_runtime_param_value(
+            name,
+            MAKERV3_RUNTIME_PARAM_DEFAULTS[name],
+        )
 
 
 def test_apply_runtime_param_updates_rejects_unknown_keys(strategy_factory) -> None:
@@ -143,4 +167,3 @@ def test_params_manager_factory_defaults_align_with_strategy_runtime_defaults(cl
     assert manager.defaults["max_age_ms"] == strategy.config.max_age_ms
     assert manager.defaults["n_orders2"] == strategy.config.n_orders2
     assert manager.defaults["bid_edge1"] == pytest.approx(strategy.config.bid_edge1)
-
