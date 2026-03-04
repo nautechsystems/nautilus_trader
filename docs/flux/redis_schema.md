@@ -41,6 +41,8 @@ This document defines the production Redis contract for Flux integrations.
 
 ## High-churn retention defaults
 
+This table is the authoritative source for production high-churn retention defaults and allowed tuning ranges.
+
 | Dataset | Canonical key | Default | Allowed range |
 | --- | --- | --- | --- |
 | Events | `flux:v1:events:{strategy_id}` | `MAXLEN ~ 5_000` | `1_000-50_000` |

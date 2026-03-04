@@ -408,12 +408,7 @@ Canonical output keys (recommended):
 10. `flux:v1:params:{strategy_id}` (hash)
 11. `flux:v1:params:global` and `flux:v1:params:{strategy_id}` (pubsub channels)
 
-Retention policy defaults (tune later, but must exist):
-
-1. `events`: keep last 300 to 2000 entries
-2. `alerts`: keep last 200 to 1000 entries
-3. `trades`: keep last 1000 to 5000 entries
-4. `fv`: keep last 200 to 1000 entries, or store latest only if consumers do not need history
+Retention policy defaults and allowed ranges are authoritative in `docs/flux/redis_schema.md` under **High-churn retention defaults**.
 
 Migration policy:
 
@@ -523,7 +518,7 @@ python -m pytest tests/unit_tests -q
 
 1. Redis schema namespace for production modules is fixed to `flux:v1` with strategy-scoped keys by default; key builders allow namespace/schema injection only for controlled testing.
 2. Config contract starts with explicit typed config structs in `nautilus_trader/flux/common/config.py`; unsupported schema versions fail fast at construction time.
-3. Retention defaults are mandatory for high-churn streams: `events` 1000, `alerts` 500, `trades` 3000, `fv` 500 (with bounded tuning ranges documented in `docs/flux/redis_schema.md`).
+3. Retention defaults are mandatory for high-churn streams; `docs/flux/redis_schema.md` is the single source of truth for numeric defaults and allowed tuning ranges.
 4. Migration policy is hard cutover: one clean production build with `flux:v1:*` reads/writes only and no runtime legacy-read path.
 
 ## Progress log
