@@ -64,6 +64,12 @@ pub const BETFAIR_KEEP_ALIVE_URL: &str = "https://identitysso.betfair.com/api/ke
 pub const BETFAIR_RATE_LIMIT_DEFAULT: &str = "default";
 pub const BETFAIR_RATE_LIMIT_ORDERS: &str = "orders";
 
+/// Maximum length for the `customer_order_ref` field on place instructions.
+///
+/// Betfair silently truncates longer references. We take the last 32 characters
+/// of the client order ID to preserve the high-entropy suffix (UUID tail).
+pub const BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN: usize = 32;
+
 /// Betfair tiered price tiers: (min, max, increment).
 pub const BETFAIR_PRICE_TIERS: [(f64, f64, f64); 10] = [
     (1.01, 2.0, 0.01),

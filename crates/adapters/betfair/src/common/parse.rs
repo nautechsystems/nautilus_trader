@@ -88,6 +88,20 @@ pub fn parse_millis_timestamp(timestamp_ms: u64) -> UnixNanos {
     UnixNanos::from(timestamp_ms * NANOSECONDS_IN_MILLISECOND)
 }
 
+/// Truncates a client order ID to a Betfair `customer_order_ref`.
+///
+/// Takes the last 32 characters to preserve the high-entropy UUID suffix.
+/// Returns the full string if it is already 32 characters or shorter.
+#[must_use]
+pub fn make_customer_order_ref(client_order_id: &str) -> String {
+    let len = client_order_id.len();
+    if len <= super::consts::BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN {
+        client_order_id.to_string()
+    } else {
+        client_order_id[len - super::consts::BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN..].to_string()
+    }
+}
+
 /// Parses a Betfair [`MarketCatalogue`] into a vec of [`InstrumentAny`].
 ///
 /// Each runner in the catalogue becomes a separate [`BettingInstrument`].
@@ -621,5 +635,30 @@ mod tests {
         let (selection_id, handicap) = extract_selection_id(&instrument_id).unwrap();
         assert_eq!(selection_id, 19248890);
         assert_eq!(handicap, Decimal::new(15, 1));
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_short_id() {
+        let result = make_customer_order_ref("O-20240101-001");
+        assert_eq!(result, "O-20240101-001");
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_exactly_32_chars() {
+        let id = "12345678901234567890123456789012";
+        assert_eq!(id.len(), 32);
+        let result = make_customer_order_ref(id);
+        assert_eq!(result, id);
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_truncates_to_last_32() {
+        // UUID-style ID longer than 32 chars
+        let id = "O-20240101-550e8400-e29b-41d4-a716-446655440000";
+        assert!(id.len() > 32);
+        let result = make_customer_order_ref(id);
+        assert_eq!(result.len(), 32);
+        // Should keep the last 32 characters (high-entropy UUID tail)
+        assert_eq!(result, &id[id.len() - 32..]);
     }
 }

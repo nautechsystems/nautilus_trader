@@ -16,7 +16,7 @@
 //! Live market data client for the Betfair adapter.
 
 use std::sync::{
-    Arc, RwLock,
+    Arc, Mutex, RwLock,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -24,7 +24,7 @@ use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{get_runtime, runner::get_data_event_sender},
     messages::{
         DataEvent,
         data::{
@@ -42,12 +42,13 @@ use nautilus_model::{
 };
 use nautilus_network::socket::TcpMessageHandler;
 use rust_decimal::Decimal;
+use tokio::task::JoinHandle;
 
 use crate::{
     common::{
         consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION, BETFAIR_VENUE},
         credential::BetfairCredential,
-        enums::MarketDataFilterField,
+        enums::{MarketDataFilterField, MarketStatus},
         parse::{
             extract_market_id, make_instrument_id, parse_market_definition, parse_millis_timestamp,
         },
@@ -61,6 +62,9 @@ use crate::{
         parse::{make_trade_tick, parse_instrument_status, parse_runner_book_deltas},
     },
 };
+
+/// Keep-alive interval in seconds (10 hours, matching Python default).
+const KEEP_ALIVE_INTERVAL_SECS: u64 = 36_000;
 
 /// Betfair live data client.
 #[derive(Debug)]
@@ -76,6 +80,7 @@ pub struct BetfairDataClient {
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
     subscribed_market_ids: AHashSet<String>,
+    keep_alive_handle: Option<JoinHandle<()>>,
 }
 
 impl BetfairDataClient {
@@ -111,6 +116,7 @@ impl BetfairDataClient {
             data_sender,
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             subscribed_market_ids: AHashSet::new(),
+            keep_alive_handle: None,
         }
     }
 
@@ -120,6 +126,11 @@ impl BetfairDataClient {
         currency: Currency,
         min_notional: Option<Money>,
     ) -> TcpMessageHandler {
+        // Track cumulative traded volumes per (instrument_id, price) to compute
+        // incremental trade sizes. Betfair `trd` fields report totals, not deltas.
+        let traded_volumes: Arc<Mutex<AHashMap<(InstrumentId, Decimal), Decimal>>> =
+            Arc::new(Mutex::new(AHashMap::new()));
+
         Arc::new(move |data: &[u8]| {
             let msg = match stream_decode(data) {
                 Ok(msg) => msg,
@@ -144,9 +155,12 @@ impl BetfairDataClient {
 
                     for mc in market_changes {
                         let is_snapshot = mc.img;
+                        let mut market_closed = false;
 
                         if let Some(def) = &mc.market_definition {
                             if let Some(status) = &def.status {
+                                market_closed = *status == MarketStatus::Closed;
+                                let in_play = def.in_play.unwrap_or(false);
                                 let guard = instruments.read().ok();
                                 if let Some(guard) = &guard {
                                     for inst in guard.values() {
@@ -155,6 +169,7 @@ impl BetfairDataClient {
                                             let event = parse_instrument_status(
                                                 inst.id(),
                                                 *status,
+                                                in_play,
                                                 ts_event,
                                                 ts_init,
                                             );
@@ -199,76 +214,100 @@ impl BetfairDataClient {
                             }
                         }
 
-                        let Some(runner_changes) = &mc.rc else {
-                            continue;
-                        };
+                        if let Some(runner_changes) = &mc.rc {
+                            for rc in runner_changes {
+                                let handicap = rc.hc.unwrap_or(Decimal::ZERO);
+                                let instrument_id = make_instrument_id(&mc.id, rc.id, handicap);
 
-                        for rc in runner_changes {
-                            let handicap = rc.hc.unwrap_or(Decimal::ZERO);
-                            let instrument_id = make_instrument_id(&mc.id, rc.id, handicap);
-
-                            match parse_runner_book_deltas(
-                                instrument_id,
-                                rc,
-                                is_snapshot,
-                                mcm.pt,
-                                ts_event,
-                                ts_init,
-                            ) {
-                                Ok(Some(deltas)) => {
-                                    if let Err(e) = data_sender.send(DataEvent::Data(Data::Deltas(
-                                        OrderBookDeltas_API::new(deltas),
-                                    ))) {
-                                        log::warn!("Failed to send book deltas: {e}");
+                                match parse_runner_book_deltas(
+                                    instrument_id,
+                                    rc,
+                                    is_snapshot,
+                                    mcm.pt,
+                                    ts_event,
+                                    ts_init,
+                                ) {
+                                    Ok(Some(deltas)) => {
+                                        if let Err(e) = data_sender.send(DataEvent::Data(
+                                            Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                        )) {
+                                            log::warn!("Failed to send book deltas: {e}");
+                                        }
+                                    }
+                                    Ok(None) => {}
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Failed to parse book deltas for {instrument_id}: {e}"
+                                        );
                                     }
                                 }
-                                Ok(None) => {}
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to parse book deltas for {instrument_id}: {e}"
-                                    );
+
+                                if let Some(trades) = &rc.trd {
+                                    let mut volumes = traded_volumes.lock().unwrap();
+                                    for pv in trades {
+                                        if pv.volume == Decimal::ZERO {
+                                            continue;
+                                        }
+
+                                        let key = (instrument_id, pv.price);
+                                        let prev_volume =
+                                            volumes.get(&key).copied().unwrap_or(Decimal::ZERO);
+
+                                        if pv.volume <= prev_volume {
+                                            continue;
+                                        }
+
+                                        let trade_volume = pv.volume - prev_volume;
+                                        volumes.insert(key, pv.volume);
+
+                                        let price = match Price::from_decimal_dp(
+                                            pv.price,
+                                            BETFAIR_PRICE_PRECISION,
+                                        ) {
+                                            Ok(p) => p,
+                                            Err(e) => {
+                                                log::warn!("Invalid trade price: {e}");
+                                                continue;
+                                            }
+                                        };
+                                        let size = match Quantity::from_decimal_dp(
+                                            trade_volume,
+                                            BETFAIR_QUANTITY_PRECISION,
+                                        ) {
+                                            Ok(q) => q,
+                                            Err(e) => {
+                                                log::warn!("Invalid trade size: {e}");
+                                                continue;
+                                            }
+                                        };
+                                        let trade_id = TradeId::new(format!(
+                                            "{}-{}-{}",
+                                            mcm.pt, rc.id, pv.price
+                                        ));
+                                        let tick: TradeTick = make_trade_tick(
+                                            instrument_id,
+                                            price,
+                                            size,
+                                            trade_id,
+                                            ts_event,
+                                            ts_init,
+                                        );
+
+                                        if let Err(e) =
+                                            data_sender.send(DataEvent::Data(Data::Trade(tick)))
+                                        {
+                                            log::warn!("Failed to send trade tick: {e}");
+                                        }
+                                    }
                                 }
                             }
+                        }
 
-                            if let Some(trades) = &rc.trd {
-                                for (i, pv) in trades.iter().enumerate() {
-                                    let price = match Price::from_decimal_dp(
-                                        pv.price,
-                                        BETFAIR_PRICE_PRECISION,
-                                    ) {
-                                        Ok(p) => p,
-                                        Err(e) => {
-                                            log::warn!("Invalid trade price: {e}");
-                                            continue;
-                                        }
-                                    };
-                                    let size = match Quantity::from_decimal_dp(
-                                        pv.volume,
-                                        BETFAIR_QUANTITY_PRECISION,
-                                    ) {
-                                        Ok(q) => q,
-                                        Err(e) => {
-                                            log::warn!("Invalid trade size: {e}");
-                                            continue;
-                                        }
-                                    };
-                                    let trade_id =
-                                        TradeId::new(format!("{}-{}-{i}", mcm.pt, rc.id));
-                                    let tick: TradeTick = make_trade_tick(
-                                        instrument_id,
-                                        price,
-                                        size,
-                                        trade_id,
-                                        ts_event,
-                                        ts_init,
-                                    );
+                        if market_closed {
+                            let prefix = format!("{}-", mc.id);
 
-                                    if let Err(e) =
-                                        data_sender.send(DataEvent::Data(Data::Trade(tick)))
-                                    {
-                                        log::warn!("Failed to send trade tick: {e}");
-                                    }
-                                }
+                            if let Ok(mut volumes) = traded_volumes.lock() {
+                                volumes.retain(|k, _| !k.0.symbol.as_str().starts_with(&prefix));
                             }
                         }
                     }
@@ -308,12 +347,20 @@ impl DataClient for BetfairDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Betfair data client: {}", self.client_id);
+
+        if let Some(handle) = self.keep_alive_handle.take() {
+            handle.abort();
+        }
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::info!("Resetting Betfair data client: {}", self.client_id);
+
+        if let Some(handle) = self.keep_alive_handle.take() {
+            handle.abort();
+        }
         self.is_connected.store(false, Ordering::Relaxed);
         self.stream_client = None;
         self.provider.store_mut().clear();
@@ -398,6 +445,27 @@ impl DataClient for BetfairDataClient {
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         self.stream_client = Some(Arc::new(stream_client));
+
+        // Abort any existing keep-alive task before spawning a new one
+        if let Some(handle) = self.keep_alive_handle.take() {
+            handle.abort();
+        }
+
+        // Spawn periodic keep-alive to prevent session expiry
+        let keep_alive_client = Arc::clone(&self.http_client);
+        self.keep_alive_handle = Some(get_runtime().spawn(async move {
+            let interval = tokio::time::Duration::from_secs(KEEP_ALIVE_INTERVAL_SECS);
+            loop {
+                tokio::time::sleep(interval).await;
+
+                if let Err(e) = keep_alive_client.keep_alive().await {
+                    log::warn!("Betfair keep-alive failed: {e}");
+                } else {
+                    log::debug!("Betfair session keep-alive sent");
+                }
+            }
+        }));
+
         self.is_connected.store(true, Ordering::Release);
 
         log::info!("Betfair data client connected: {}", self.client_id);
@@ -407,6 +475,10 @@ impl DataClient for BetfairDataClient {
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         if self.is_disconnected() {
             return Ok(());
+        }
+
+        if let Some(handle) = self.keep_alive_handle.take() {
+            handle.abort();
         }
 
         if let Some(client) = &self.stream_client {

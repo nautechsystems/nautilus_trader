@@ -36,7 +36,7 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderType, TimeInForce},
-    identifiers::{AccountId, ClientId, Venue, VenueOrderId},
+    identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
     orders::Order,
     reports::OrderStatusReport,
     types::{AccountBalance, Currency, MarginBalance},
@@ -49,10 +49,13 @@ use crate::{
     common::{
         consts::BETFAIR_VENUE,
         credential::BetfairCredential,
-        enums::{BetfairOrderType, BetfairSide, ExecutionReportStatus, PersistenceType},
+        enums::{
+            BetfairOrderType, BetfairSide, BetfairTimeInForce, ExecutionReportStatus,
+            PersistenceType, StreamingOrderStatus,
+        },
         parse::{
-            extract_market_id, extract_selection_id, make_instrument_id, parse_account_state,
-            parse_millis_timestamp,
+            extract_market_id, extract_selection_id, make_customer_order_ref, make_instrument_id,
+            parse_account_state, parse_millis_timestamp,
         },
         types::BetId,
     },
@@ -60,17 +63,23 @@ use crate::{
         client::BetfairHttpClient,
         models::{
             AccountFundsResponse, CancelExecutionReport, CancelInstruction, CancelOrdersParams,
-            LimitOrder, PlaceExecutionReport, PlaceInstruction, PlaceOrdersParams,
-            ReplaceExecutionReport, ReplaceInstruction, ReplaceOrdersParams,
+            LimitOrder, MarketOnCloseOrder, PlaceExecutionReport, PlaceInstruction,
+            PlaceOrdersParams, ReplaceExecutionReport, ReplaceInstruction, ReplaceOrdersParams,
         },
     },
     stream::{
         client::BetfairStreamClient,
         config::BetfairStreamConfig,
         messages::{StreamMessage, stream_decode},
-        parse::parse_order_status_report,
+        parse::{FillTracker, parse_order_status_report},
     },
 };
+
+/// Keep-alive interval in seconds (10 hours, matching Python default).
+const KEEP_ALIVE_INTERVAL_SECS: u64 = 36_000;
+
+/// Account state polling interval in seconds (5 minutes, matching Python default).
+const ACCOUNT_STATE_INTERVAL_SECS: u64 = 300;
 
 /// Betfair live execution client.
 #[derive(Debug)]
@@ -83,7 +92,10 @@ pub struct BetfairExecutionClient {
     credential: BetfairCredential,
     stream_config: BetfairStreamConfig,
     currency: Currency,
+    fill_tracker: Arc<Mutex<FillTracker>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    keep_alive_handle: Option<JoinHandle<()>>,
+    account_state_handle: Option<JoinHandle<()>>,
 }
 
 impl BetfairExecutionClient {
@@ -114,7 +126,10 @@ impl BetfairExecutionClient {
             credential,
             stream_config,
             currency,
+            fill_tracker: Arc::new(Mutex::new(FillTracker::new())),
             pending_tasks: Mutex::new(Vec::new()),
+            keep_alive_handle: None,
+            account_state_handle: None,
         }
     }
 
@@ -141,9 +156,21 @@ impl BetfairExecutionClient {
         }
     }
 
+    fn abort_background_tasks(&mut self) {
+        if let Some(handle) = self.keep_alive_handle.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.account_state_handle.take() {
+            handle.abort();
+        }
+    }
+
     fn create_ocm_handler(
         emitter: ExecutionEventEmitter,
         account_id: AccountId,
+        currency: Currency,
+        fill_tracker: Arc<Mutex<FillTracker>>,
     ) -> TcpMessageHandler {
         Arc::new(move |data: &[u8]| {
             let msg = match stream_decode(data) {
@@ -181,22 +208,16 @@ impl BetfairExecutionClient {
                             };
 
                             for uo in unmatched_orders {
-                                match parse_order_status_report(
+                                Self::process_unmatched_order(
                                     uo,
                                     instrument_id,
                                     account_id,
+                                    currency,
+                                    &emitter,
+                                    &fill_tracker,
                                     ts_event,
                                     ts_init,
-                                ) {
-                                    Ok(report) => {
-                                        emitter.send_order_status_report(report);
-                                    }
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Failed to parse order status report for {instrument_id}: {e}"
-                                        );
-                                    }
-                                }
+                                );
                             }
                         }
                     }
@@ -216,6 +237,59 @@ impl BetfairExecutionClient {
                 StreamMessage::MarketChange(_) => {}
             }
         })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn process_unmatched_order(
+        uo: &crate::stream::messages::UnmatchedOrder,
+        instrument_id: InstrumentId,
+        account_id: AccountId,
+        currency: Currency,
+        emitter: &ExecutionEventEmitter,
+        fill_tracker: &Arc<Mutex<FillTracker>>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) {
+        let report =
+            match parse_order_status_report(uo, instrument_id, account_id, ts_event, ts_init) {
+                Ok(report) => report,
+                Err(e) => {
+                    log::warn!("Failed to parse order status report for {instrument_id}: {e}");
+                    return;
+                }
+            };
+
+        // Emit fill reports before order status reports so reconciliation does
+        // not infer a duplicate fill from the cumulative filled_qty on the
+        // status report.
+        if let Ok(mut tracker) = fill_tracker.lock()
+            && let Some(fill_report) = tracker.maybe_fill_report(
+                uo,
+                uo.s,
+                instrument_id,
+                account_id,
+                currency,
+                ts_event,
+                ts_init,
+            )
+        {
+            log::debug!(
+                "Fill: bet_id={}, last_qty={}, last_px={}",
+                uo.id,
+                fill_report.last_qty,
+                fill_report.last_px,
+            );
+            emitter.send_fill_report(fill_report);
+        }
+
+        emitter.send_order_status_report(report);
+
+        // Prune fill tracker state for terminal orders
+        if uo.status == StreamingOrderStatus::ExecutionComplete
+            && let Ok(mut tracker) = fill_tracker.lock()
+        {
+            tracker.prune(&uo.id);
+        }
     }
 }
 
@@ -281,6 +355,7 @@ impl ExecutionClient for BetfairExecutionClient {
 
         self.core.set_stopped();
         self.core.set_disconnected();
+        self.abort_background_tasks();
         self.abort_pending_tasks();
         log::info!("Stopped: client_id={}", self.core.client_id);
         Ok(())
@@ -318,7 +393,12 @@ impl ExecutionClient for BetfairExecutionClient {
             .await
             .ok_or_else(|| anyhow::anyhow!("No session token after login"))?;
 
-        let handler = Self::create_ocm_handler(self.emitter.clone(), self.core.account_id);
+        let handler = Self::create_ocm_handler(
+            self.emitter.clone(),
+            self.core.account_id,
+            self.currency,
+            Arc::clone(&self.fill_tracker),
+        );
 
         let stream_client = BetfairStreamClient::connect(
             &self.credential,
@@ -337,6 +417,52 @@ impl ExecutionClient for BetfairExecutionClient {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         self.stream_client = Some(stream_client);
+
+        // Spawn periodic keep-alive to prevent session expiry
+        let keep_alive_client = Arc::clone(&self.http_client);
+        self.keep_alive_handle = Some(get_runtime().spawn(async move {
+            let interval = tokio::time::Duration::from_secs(KEEP_ALIVE_INTERVAL_SECS);
+            loop {
+                tokio::time::sleep(interval).await;
+
+                if let Err(e) = keep_alive_client.keep_alive().await {
+                    log::warn!("Betfair execution keep-alive failed: {e}");
+                } else {
+                    log::debug!("Betfair execution session keep-alive sent");
+                }
+            }
+        }));
+
+        // Spawn periodic account state polling
+        let acct_client = Arc::clone(&self.http_client);
+        let acct_emitter = self.emitter.clone();
+        let acct_id = self.core.account_id;
+        let acct_currency = self.currency;
+        let acct_clock = self.clock;
+        self.account_state_handle = Some(get_runtime().spawn(async move {
+            let interval = tokio::time::Duration::from_secs(ACCOUNT_STATE_INTERVAL_SECS);
+            loop {
+                tokio::time::sleep(interval).await;
+                match acct_client
+                    .send_accounts::<AccountFundsResponse, _>(
+                        "AccountAPING/v1.0/getAccountFunds",
+                        serde_json::json!({}),
+                    )
+                    .await
+                {
+                    Ok(funds) => {
+                        let ts_init = acct_clock.get_time_ns();
+                        match parse_account_state(&funds, acct_id, acct_currency, ts_init, ts_init)
+                        {
+                            Ok(state) => acct_emitter.send_account_state(state),
+                            Err(e) => log::warn!("Failed to parse account state: {e}"),
+                        }
+                    }
+                    Err(e) => log::warn!("Failed to fetch account state: {e}"),
+                }
+            }
+        }));
+
         self.core.set_connected();
 
         log::info!("Connected: client_id={}", self.core.client_id);
@@ -348,6 +474,7 @@ impl ExecutionClient for BetfairExecutionClient {
             return Ok(());
         }
 
+        self.abort_background_tasks();
         self.abort_pending_tasks();
 
         if let Some(client) = &self.stream_client {
@@ -374,52 +501,73 @@ impl ExecutionClient for BetfairExecutionClient {
         let (selection_id, handicap) = extract_selection_id(&instrument_id)?;
 
         let side = BetfairSide::from(order.order_side());
-        let order_type = match order.order_type() {
-            OrderType::Limit => BetfairOrderType::Limit,
+        let size = order.quantity().as_decimal();
+        let handicap_opt = if handicap == Decimal::ZERO {
+            None
+        } else {
+            Some(handicap)
+        };
+        let customer_order_ref = Some(make_customer_order_ref(order.client_order_id().as_str()));
+
+        let instruction = match order.order_type() {
+            OrderType::Limit => {
+                let price = order
+                    .price()
+                    .ok_or_else(|| anyhow::anyhow!("Limit order missing price"))?
+                    .as_decimal();
+
+                let (persistence_type, time_in_force, min_fill_size) = match order.time_in_force() {
+                    TimeInForce::Ioc => (
+                        None,
+                        Some(BetfairTimeInForce::FillOrKill),
+                        Some(Decimal::ZERO),
+                    ),
+                    TimeInForce::Fok => (None, Some(BetfairTimeInForce::FillOrKill), None),
+                    TimeInForce::Gtc => (Some(PersistenceType::Persist), None, None),
+                    TimeInForce::AtTheClose => (Some(PersistenceType::MarketOnClose), None, None),
+                    _ => (Some(PersistenceType::Lapse), None, None),
+                };
+
+                PlaceInstruction {
+                    order_type: BetfairOrderType::Limit,
+                    selection_id,
+                    handicap: handicap_opt,
+                    side,
+                    limit_order: Some(LimitOrder {
+                        size,
+                        price,
+                        persistence_type,
+                        time_in_force,
+                        min_fill_size,
+                        bet_target_type: None,
+                        bet_target_size: None,
+                    }),
+                    limit_on_close_order: None,
+                    market_on_close_order: None,
+                    customer_order_ref,
+                }
+            }
+            OrderType::Market => {
+                if order.time_in_force() != TimeInForce::AtTheClose {
+                    anyhow::bail!(
+                        "Market orders on Betfair are only supported with AtTheClose \
+                         time in force (BSP MarketOnClose)"
+                    );
+                }
+                PlaceInstruction {
+                    order_type: BetfairOrderType::MarketOnClose,
+                    selection_id,
+                    handicap: handicap_opt,
+                    side,
+                    limit_order: None,
+                    limit_on_close_order: None,
+                    market_on_close_order: Some(MarketOnCloseOrder { liability: size }),
+                    customer_order_ref,
+                }
+            }
             other => {
                 anyhow::bail!("Unsupported order type for Betfair: {other:?}");
             }
-        };
-
-        let price = order
-            .price()
-            .ok_or_else(|| anyhow::anyhow!("Limit order missing price"))?
-            .as_decimal();
-        let size = order.quantity().as_decimal();
-
-        let persistence_type = match order.time_in_force() {
-            TimeInForce::Day => PersistenceType::Lapse,
-            TimeInForce::Gtc => PersistenceType::Persist,
-            TimeInForce::AtTheClose => PersistenceType::MarketOnClose,
-            other => {
-                log::warn!(
-                    "Unsupported time_in_force {other:?} for Betfair, falling back to Lapse"
-                );
-                PersistenceType::Lapse
-            }
-        };
-
-        let instruction = PlaceInstruction {
-            order_type,
-            selection_id,
-            handicap: if handicap == Decimal::ZERO {
-                None
-            } else {
-                Some(handicap)
-            },
-            side,
-            limit_order: Some(LimitOrder {
-                size,
-                price,
-                persistence_type: Some(persistence_type),
-                time_in_force: None,
-                min_fill_size: None,
-                bet_target_type: None,
-                bet_target_size: None,
-            }),
-            limit_on_close_order: None,
-            market_on_close_order: None,
-            customer_order_ref: Some(order.client_order_id().to_string()),
         };
 
         let params = PlaceOrdersParams {
@@ -570,17 +718,32 @@ impl ExecutionClient for BetfairExecutionClient {
             .ok_or_else(|| anyhow::anyhow!("Cannot modify order without venue_order_id"))?;
         let bet_id: BetId = venue_order_id.to_string();
 
-        let new_price = cmd
-            .price
-            .ok_or_else(|| anyhow::anyhow!("Cannot modify order without new price"))?
-            .as_decimal();
-
-        let params = ReplaceOrdersParams {
-            market_id,
-            instructions: vec![ReplaceInstruction { bet_id, new_price }],
-            customer_ref: None,
-            market_version: None,
+        // Compare against existing order to determine actual changes
+        let existing_order = self.core.get_order(&cmd.client_order_id);
+        let has_price_change = match (&cmd.price, &existing_order) {
+            (Some(new_price), Ok(order)) => order.price() != Some(*new_price),
+            (Some(_), Err(_)) => true,
+            (None, _) => false,
         };
+        let has_quantity_change = match (&cmd.quantity, &existing_order) {
+            (Some(new_qty), Ok(order)) => order.quantity() != *new_qty,
+            (Some(_), Err(_)) => true,
+            (None, _) => false,
+        };
+
+        // Betfair does not support atomic price+quantity modification
+        if has_price_change && has_quantity_change {
+            let ts_event = self.clock.get_time_ns();
+            self.emitter.emit_order_modify_rejected_event(
+                cmd.strategy_id,
+                instrument_id,
+                cmd.client_order_id,
+                Some(venue_order_id),
+                "cannot modify price and quantity simultaneously on Betfair",
+                ts_event,
+            );
+            return Ok(());
+        }
 
         let client_order_id = cmd.client_order_id;
         let strategy_id = cmd.strategy_id;
@@ -588,42 +751,128 @@ impl ExecutionClient for BetfairExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
-        self.spawn_task("modify-order", async move {
-            let result: Result<ReplaceExecutionReport, _> = http_client
-                .send_betting_order("SportsAPING/v1.0/replaceOrders", &params)
-                .await;
+        if has_price_change {
+            let new_price = cmd.price.unwrap().as_decimal();
 
-            match result {
-                Ok(report) if report.status == ExecutionReportStatus::Failure => {
-                    let reason = report
-                        .error_code
-                        .map_or_else(|| "unknown error".to_string(), |c| format!("{c:?}"));
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_modify_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        Some(venue_order_id),
-                        &reason,
-                        ts_event,
-                    );
+            let params = ReplaceOrdersParams {
+                market_id,
+                instructions: vec![ReplaceInstruction { bet_id, new_price }],
+                customer_ref: None,
+                market_version: None,
+            };
+
+            self.spawn_task("modify-order-price", async move {
+                let result: Result<ReplaceExecutionReport, _> = http_client
+                    .send_betting_order("SportsAPING/v1.0/replaceOrders", &params)
+                    .await;
+
+                match result {
+                    Ok(report) if report.status == ExecutionReportStatus::Failure => {
+                        let reason = report
+                            .error_code
+                            .map_or_else(|| "unknown error".to_string(), |c| format!("{c:?}"));
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_modify_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Some(venue_order_id),
+                            &reason,
+                            ts_event,
+                        );
+                    }
+                    Err(e) => {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_modify_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Some(venue_order_id),
+                            &format!("modify-order error: {e}"),
+                            ts_event,
+                        );
+                    }
+                    Ok(_) => {}
                 }
-                Err(e) => {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_modify_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        Some(venue_order_id),
-                        &format!("modify-order error: {e}"),
-                        ts_event,
-                    );
-                }
-                Ok(_) => {}
+
+                Ok(())
+            });
+        } else if has_quantity_change {
+            // Quantity reduction via partial cancel
+            let order = self.core.get_order(&client_order_id)?;
+            let existing_qty = order.quantity().as_decimal();
+            let new_qty = cmd.quantity.unwrap().as_decimal();
+
+            if new_qty >= existing_qty {
+                let ts_event = self.clock.get_time_ns();
+                self.emitter.emit_order_modify_rejected_event(
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    Some(venue_order_id),
+                    "can only reduce quantity on Betfair",
+                    ts_event,
+                );
+                return Ok(());
             }
 
-            Ok(())
-        });
+            let size_reduction = existing_qty - new_qty;
+            let params = CancelOrdersParams {
+                market_id: Some(market_id),
+                instructions: Some(vec![CancelInstruction {
+                    bet_id,
+                    size_reduction: Some(size_reduction),
+                }]),
+                customer_ref: None,
+            };
+
+            self.spawn_task("modify-order-quantity", async move {
+                let result: Result<CancelExecutionReport, _> = http_client
+                    .send_betting_order("SportsAPING/v1.0/cancelOrders", &params)
+                    .await;
+
+                match result {
+                    Ok(report) if report.status != ExecutionReportStatus::Success => {
+                        let reason = report
+                            .error_code
+                            .map_or_else(|| "unknown error".to_string(), |c| format!("{c:?}"));
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_modify_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Some(venue_order_id),
+                            &reason,
+                            ts_event,
+                        );
+                    }
+                    Err(e) => {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_modify_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Some(venue_order_id),
+                            &format!("modify-order error: {e}"),
+                            ts_event,
+                        );
+                    }
+                    Ok(_) => {}
+                }
+
+                Ok(())
+            });
+        } else {
+            let ts_event = self.clock.get_time_ns();
+            self.emitter.emit_order_modify_rejected_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                Some(venue_order_id),
+                "no effective change in price or quantity",
+                ts_event,
+            );
+        }
 
         Ok(())
     }

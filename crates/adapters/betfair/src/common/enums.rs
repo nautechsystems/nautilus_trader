@@ -1275,4 +1275,31 @@ mod tests {
     ) {
         assert_eq!(TimeInForce::from(input), expected);
     }
+
+    #[rstest]
+    fn test_resolve_streaming_lapsed_and_voided_count_as_closed() {
+        // size_closed includes lapsed + voided, so these should resolve to Canceled
+        // even if size_cancelled itself is zero (the caller aggregates them)
+        assert_eq!(
+            resolve_streaming_order_status(
+                StreamingOrderStatus::ExecutionComplete,
+                Decimal::ZERO,
+                Decimal::new(5, 0), // aggregated lapsed/voided/cancelled
+            ),
+            OrderStatus::Canceled,
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_streaming_partial_match_then_cancel() {
+        // Partially matched then remainder cancelled
+        assert_eq!(
+            resolve_streaming_order_status(
+                StreamingOrderStatus::ExecutionComplete,
+                Decimal::new(3, 0), // matched
+                Decimal::new(7, 0), // cancelled remainder
+            ),
+            OrderStatus::Canceled,
+        );
+    }
 }

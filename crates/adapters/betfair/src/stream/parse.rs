@@ -19,6 +19,7 @@
 //! and instrument status updates. OCM (Order Change Messages) are parsed into
 //! order status reports and fill reports.
 
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{BookOrder, InstrumentStatus, OrderBookDelta, OrderBookDeltas, TradeTick},
@@ -35,7 +36,7 @@ use rust_decimal::Decimal;
 use crate::{
     common::{
         consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION},
-        enums::{MarketStatus, resolve_streaming_order_status},
+        enums::{MarketStatus, StreamingOrderStatus, resolve_streaming_order_status},
         parse::parse_millis_timestamp,
     },
     stream::messages::{RunnerChange, UnmatchedOrder},
@@ -178,22 +179,27 @@ pub fn make_trade_tick(
     )
 }
 
-/// Converts a Betfair [`MarketStatus`] into a Nautilus [`InstrumentStatus`].
+/// Converts a Betfair [`MarketStatus`] and `in_play` flag into a Nautilus [`InstrumentStatus`].
+///
+/// The `in_play` flag distinguishes pre-open (Open + not in play) from active
+/// trading (Open + in play), matching Betfair's market lifecycle.
 #[must_use]
 pub fn parse_instrument_status(
     instrument_id: InstrumentId,
     status: MarketStatus,
+    in_play: bool,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> InstrumentStatus {
-    let action = match status {
-        MarketStatus::Open => MarketStatusAction::Trading,
-        MarketStatus::Closed => MarketStatusAction::Close,
-        MarketStatus::Suspended => MarketStatusAction::Suspend,
-        MarketStatus::Inactive => MarketStatusAction::NotAvailableForTrading,
+    let action = match (status, in_play) {
+        (MarketStatus::Inactive, _) => MarketStatusAction::Close,
+        (MarketStatus::Open, false) => MarketStatusAction::PreOpen,
+        (MarketStatus::Open, true) => MarketStatusAction::Trading,
+        (MarketStatus::Suspended, _) => MarketStatusAction::Pause,
+        (MarketStatus::Closed, _) => MarketStatusAction::Close,
     };
 
-    let is_trading = matches!(status, MarketStatus::Open);
+    let is_trading = matches!(status, MarketStatus::Open) && in_play;
 
     InstrumentStatus::new(
         instrument_id,
@@ -206,6 +212,185 @@ pub fn parse_instrument_status(
         None,
         None,
     )
+}
+
+/// Generates a deterministic [`TradeId`] for a Betfair fill.
+///
+/// Uses `bet_id` and cumulative `sm` (size matched) which together uniquely
+/// identify each fill state, since `sm` increases monotonically with each fill.
+pub fn make_trade_id(uo: &UnmatchedOrder) -> TradeId {
+    let sm = uo.sm.unwrap_or(Decimal::ZERO);
+    TradeId::new(format!("{}-{sm}", uo.id))
+}
+
+/// Tracks cumulative fill state per bet to compute incremental fills from the
+/// Betfair OCM stream.
+///
+/// Betfair provides cumulative `sm` (size matched) and `avp` (average price
+/// matched) on each order update. This tracker maintains per-bet state to
+/// derive individual fill quantities and prices for each update.
+#[derive(Debug, Default)]
+pub struct FillTracker {
+    filled_qty: AHashMap<String, Decimal>,
+    avg_px: AHashMap<String, Decimal>,
+    published_trade_ids: AHashSet<String>,
+}
+
+impl FillTracker {
+    /// Creates a new [`FillTracker`] instance.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Computes an incremental [`FillReport`] for an unmatched order update.
+    ///
+    /// Returns `None` if no new fill occurred (size matched unchanged,
+    /// duplicate trade ID, or overfill detected).
+    #[allow(clippy::too_many_arguments)]
+    pub fn maybe_fill_report(
+        &mut self,
+        uo: &UnmatchedOrder,
+        order_qty: Decimal,
+        instrument_id: InstrumentId,
+        account_id: AccountId,
+        currency: Currency,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Option<FillReport> {
+        let sm = uo.sm?;
+
+        if sm <= Decimal::ZERO {
+            return None;
+        }
+
+        let prev_filled = self
+            .filled_qty
+            .get(&uo.id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+
+        if sm <= prev_filled {
+            return None;
+        }
+
+        // Overfill guard
+        if sm > order_qty {
+            log::warn!(
+                "Rejecting potential overfill for bet_id={}: order_qty={order_qty}, sm={sm}",
+                uo.id,
+            );
+            return None;
+        }
+
+        let trade_id = make_trade_id(uo);
+
+        if self.published_trade_ids.contains(trade_id.as_str()) {
+            return None;
+        }
+
+        let fill_qty_dec = sm - prev_filled;
+        let fill_price = self.compute_fill_price(uo, prev_filled);
+
+        let last_qty = Quantity::from_decimal_dp(fill_qty_dec, BETFAIR_QUANTITY_PRECISION).ok()?;
+        let last_px = Price::from_decimal_dp(fill_price, BETFAIR_PRICE_PRECISION).ok()?;
+
+        // Update state before emitting
+        self.filled_qty.insert(uo.id.clone(), sm);
+
+        if let Some(avp) = uo.avp {
+            self.avg_px.insert(uo.id.clone(), avp);
+        }
+
+        self.published_trade_ids.insert(trade_id.to_string());
+
+        let venue_order_id = VenueOrderId::from(uo.id.as_str());
+        let order_side = OrderSide::from(uo.side);
+        let client_order_id = uo.rfo.as_deref().map(ClientOrderId::from);
+        let ts_fill = uo.md.map_or(ts_event, parse_millis_timestamp);
+
+        Some(make_fill_report(
+            account_id,
+            instrument_id,
+            venue_order_id,
+            trade_id,
+            order_side,
+            last_qty,
+            last_px,
+            currency,
+            client_order_id,
+            ts_fill,
+            ts_init,
+        ))
+    }
+
+    /// Back-calculates the individual fill price from Betfair's cumulative
+    /// average price matched (`avp`).
+    ///
+    /// For the first fill, the average price IS the fill price. For subsequent
+    /// fills, the individual price is derived from:
+    /// `fill_price = (avp * sm - prev_avp * prev_sm) / fill_size`
+    fn compute_fill_price(&self, uo: &UnmatchedOrder, prev_filled: Decimal) -> Decimal {
+        let Some(avp) = uo.avp else {
+            return uo.p;
+        };
+
+        if prev_filled == Decimal::ZERO {
+            return avp;
+        }
+
+        let Some(prev_avg) = self.avg_px.get(&uo.id).copied() else {
+            return avp;
+        };
+
+        if prev_avg == avp {
+            return avp;
+        }
+
+        let sm = uo.sm.unwrap_or(Decimal::ZERO);
+        let fill_size = sm - prev_filled;
+
+        if fill_size == Decimal::ZERO {
+            return prev_avg;
+        }
+
+        let fill_price = (avp * sm - prev_avg * prev_filled) / fill_size;
+
+        if fill_price <= Decimal::ZERO {
+            log::warn!(
+                "Calculated fill price {fill_price} is invalid for bet_id={}, falling back to avp={avp}",
+                uo.id,
+            );
+            return avp;
+        }
+
+        fill_price
+    }
+
+    /// Removes state for a completed bet to prevent unbounded growth.
+    pub fn prune(&mut self, bet_id: &str) {
+        self.filled_qty.remove(bet_id);
+        self.avg_px.remove(bet_id);
+
+        let prefix = format!("{bet_id}-");
+        self.published_trade_ids
+            .retain(|id| !id.starts_with(&prefix));
+    }
+}
+
+/// Returns `true` if the unmatched order has cancel, lapse, or void quantities.
+#[must_use]
+pub fn has_cancel_quantity(uo: &UnmatchedOrder) -> bool {
+    let sc = uo.sc.unwrap_or(Decimal::ZERO);
+    let sl = uo.sl.unwrap_or(Decimal::ZERO);
+    let sv = uo.sv.unwrap_or(Decimal::ZERO);
+    (sc + sl + sv) > Decimal::ZERO
+}
+
+/// Returns `true` if the order is execution-complete and has lapsed.
+#[must_use]
+pub fn is_lapsed(uo: &UnmatchedOrder) -> bool {
+    uo.status == StreamingOrderStatus::ExecutionComplete && uo.lsrc.is_some()
 }
 
 /// Parses a streaming [`UnmatchedOrder`] into a Nautilus [`OrderStatusReport`].
@@ -291,6 +476,7 @@ pub fn make_fill_report(
     last_qty: Quantity,
     last_px: Price,
     currency: Currency,
+    client_order_id: Option<ClientOrderId>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> FillReport {
@@ -304,7 +490,7 @@ pub fn make_fill_report(
         last_px,
         Money::new(0.0, currency),
         LiquiditySide::NoLiquiditySide,
-        None,
+        client_order_id,
         None,
         ts_event,
         ts_init,
@@ -503,16 +689,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case(MarketStatus::Open, MarketStatusAction::Trading, true)]
-    #[case(MarketStatus::Closed, MarketStatusAction::Close, false)]
-    #[case(MarketStatus::Suspended, MarketStatusAction::Suspend, false)]
-    #[case(
-        MarketStatus::Inactive,
-        MarketStatusAction::NotAvailableForTrading,
-        false
-    )]
+    #[case(MarketStatus::Open, false, MarketStatusAction::PreOpen, false)]
+    #[case(MarketStatus::Open, true, MarketStatusAction::Trading, true)]
+    #[case(MarketStatus::Closed, false, MarketStatusAction::Close, false)]
+    #[case(MarketStatus::Closed, true, MarketStatusAction::Close, false)]
+    #[case(MarketStatus::Suspended, false, MarketStatusAction::Pause, false)]
+    #[case(MarketStatus::Suspended, true, MarketStatusAction::Pause, false)]
+    #[case(MarketStatus::Inactive, false, MarketStatusAction::Close, false)]
     fn test_parse_instrument_status(
         #[case] status: MarketStatus,
+        #[case] in_play: bool,
         #[case] expected_action: MarketStatusAction,
         #[case] expected_is_trading: bool,
     ) {
@@ -520,6 +706,7 @@ mod tests {
         let result = parse_instrument_status(
             instrument_id,
             status,
+            in_play,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -626,6 +813,107 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_order_status_report_duplicate_execution() {
+        let data = load_test_json("stream/ocm_DUPLICATE_EXECUTION.json");
+        let msgs: Vec<StreamMessage> = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = &msgs[0] {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let report = parse_order_status_report(
+                uo,
+                instrument_id,
+                AccountId::from("BETFAIR-001"),
+                parse_millis_timestamp(ocm.pt),
+                parse_millis_timestamp(ocm.pt),
+            )
+            .unwrap();
+
+            // Partially filled: sm=1.12, status=E
+            assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+            assert_eq!(report.order_side, OrderSide::Buy); // Lay → Buy
+            assert_eq!(report.filled_qty.as_f64(), 1.12);
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_multiple_fills() {
+        let data = load_test_json("stream/ocm_multiple_fills.json");
+        let msgs: Vec<StreamMessage> = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = &msgs[0] {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let report = parse_order_status_report(
+                uo,
+                instrument_id,
+                AccountId::from("BETFAIR-001"),
+                parse_millis_timestamp(ocm.pt),
+                parse_millis_timestamp(ocm.pt),
+            )
+            .unwrap();
+
+            // Partially filled: sm=16.19, status=E, has rfo
+            assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+            assert_eq!(report.order_side, OrderSide::Sell); // Back → Sell
+            assert_eq!(report.filled_qty.as_f64(), 16.19);
+            assert!(report.client_order_id.is_some());
+            assert!(report.avg_px.is_some());
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_runner_book_snapshot_empty_book() {
+        // A snapshot with no levels should still produce a clear delta
+        let rc = RunnerChange {
+            id: 12345,
+            hc: None,
+            atb: Some(vec![]),
+            atl: Some(vec![]),
+            batb: None,
+            batl: None,
+            bdatb: None,
+            bdatl: None,
+            spb: None,
+            spl: None,
+            spn: None,
+            spf: None,
+            trd: None,
+            ltp: None,
+            tv: None,
+        };
+
+        let result = parse_runner_book_deltas(
+            make_instrument_id("1.123", 12345, Decimal::ZERO),
+            &rc,
+            true,
+            1000,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .expect("should produce snapshot deltas");
+
+        // Just the Clear delta with F_LAST
+        assert_eq!(result.deltas.len(), 1);
+        assert_eq!(result.deltas[0].action, BookAction::Clear);
+        assert!(RecordFlag::F_LAST.matches(result.deltas[0].flags));
+        assert!(RecordFlag::F_SNAPSHOT.matches(result.deltas[0].flags));
+    }
+
+    #[rstest]
     fn test_make_fill_report() {
         let instrument_id = make_instrument_id("1.180604981", 1209555, Decimal::ZERO);
         let fill = make_fill_report(
@@ -637,6 +925,7 @@ mod tests {
             Quantity::new(10.0, BETFAIR_QUANTITY_PRECISION),
             Price::new(1.1, BETFAIR_PRICE_PRECISION),
             Currency::GBP(),
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -647,5 +936,277 @@ mod tests {
         assert_eq!(fill.last_px.as_f64(), 1.1);
         assert_eq!(fill.commission.as_f64(), 0.0);
         assert_eq!(fill.liquidity_side, LiquiditySide::NoLiquiditySide);
+    }
+
+    #[rstest]
+    fn test_fill_tracker_single_full_fill() {
+        let data = load_test_json("stream/ocm_FILLED.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let ts = parse_millis_timestamp(ocm.pt);
+
+            let mut tracker = FillTracker::new();
+            let fill = tracker
+                .maybe_fill_report(
+                    uo,
+                    uo.s,
+                    instrument_id,
+                    AccountId::from("BETFAIR-001"),
+                    Currency::GBP(),
+                    ts,
+                    ts,
+                )
+                .expect("should produce fill");
+
+            assert_eq!(fill.last_qty.as_f64(), 10.0);
+            assert_eq!(fill.last_px.as_f64(), 1.1);
+            assert_eq!(fill.order_side, OrderSide::Buy);
+            assert!(fill.client_order_id.is_some());
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    #[rstest]
+    fn test_fill_tracker_incremental_fills() {
+        let data = load_test_json("stream/ocm_multiple_fills.json");
+        let msgs: Vec<StreamMessage> = serde_json::from_str(&data).unwrap();
+        let instrument_id = make_instrument_id("1.179082386", 50210, Decimal::ZERO);
+
+        let mut tracker = FillTracker::new();
+        let account_id = AccountId::from("BETFAIR-001");
+        let currency = Currency::GBP();
+
+        // First fill: sm=16.19 (from zero)
+        let uo1 = extract_uo(&msgs[0]);
+        let ts1 = extract_ts(&msgs[0]);
+        let fill1 = tracker
+            .maybe_fill_report(uo1, uo1.s, instrument_id, account_id, currency, ts1, ts1)
+            .expect("should produce first fill");
+        assert_eq!(fill1.last_qty.as_f64(), 16.19);
+        assert_eq!(fill1.last_px.as_f64(), 5.8);
+
+        // Second fill: sm=16.96 (delta=0.77)
+        let uo2 = extract_uo(&msgs[1]);
+        let ts2 = extract_ts(&msgs[1]);
+        let fill2 = tracker
+            .maybe_fill_report(uo2, uo2.s, instrument_id, account_id, currency, ts2, ts2)
+            .expect("should produce second fill");
+        assert_eq!(fill2.last_qty.as_f64(), 0.77);
+        assert_eq!(fill2.last_px.as_f64(), 5.8);
+
+        // Third fill: sm=17.73 (delta=0.77)
+        let uo3 = extract_uo(&msgs[2]);
+        let ts3 = extract_ts(&msgs[2]);
+        let fill3 = tracker
+            .maybe_fill_report(uo3, uo3.s, instrument_id, account_id, currency, ts3, ts3)
+            .expect("should produce third fill");
+        assert_eq!(fill3.last_qty.as_f64(), 0.77);
+    }
+
+    #[rstest]
+    fn test_fill_tracker_different_price() {
+        let data = load_test_json("stream/ocm_filled_different_price.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let ts = parse_millis_timestamp(ocm.pt);
+
+            let mut tracker = FillTracker::new();
+            let fill = tracker
+                .maybe_fill_report(
+                    uo,
+                    uo.s,
+                    instrument_id,
+                    AccountId::from("BETFAIR-001"),
+                    Currency::GBP(),
+                    ts,
+                    ts,
+                )
+                .expect("should produce fill");
+
+            // Order placed at 1.3 but average fill price is 1.2
+            assert_eq!(fill.last_qty.as_f64(), 20.0);
+            assert_eq!(fill.last_px.as_f64(), 1.2);
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    #[rstest]
+    fn test_fill_tracker_cancel_no_fill() {
+        let data = load_test_json("stream/ocm_CANCEL.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let ts = parse_millis_timestamp(ocm.pt);
+
+            let mut tracker = FillTracker::new();
+            let result = tracker.maybe_fill_report(
+                uo,
+                uo.s,
+                instrument_id,
+                AccountId::from("BETFAIR-001"),
+                Currency::GBP(),
+                ts,
+                ts,
+            );
+            assert!(result.is_none(), "cancelled order should not produce fill");
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    #[rstest]
+    fn test_fill_tracker_lapsed_no_fill() {
+        let data = load_test_json("stream/ocm_error_fill.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let ts = parse_millis_timestamp(ocm.pt);
+
+            let mut tracker = FillTracker::new();
+            let result = tracker.maybe_fill_report(
+                uo,
+                uo.s,
+                instrument_id,
+                AccountId::from("BETFAIR-001"),
+                Currency::GBP(),
+                ts,
+                ts,
+            );
+            assert!(result.is_none(), "lapsed order should not produce fill");
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    #[rstest]
+    fn test_fill_tracker_duplicate_dedup() {
+        let data = load_test_json("stream/ocm_FILLED.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let ts = parse_millis_timestamp(ocm.pt);
+            let account_id = AccountId::from("BETFAIR-001");
+            let currency = Currency::GBP();
+
+            let mut tracker = FillTracker::new();
+
+            // First call produces fill
+            let fill1 =
+                tracker.maybe_fill_report(uo, uo.s, instrument_id, account_id, currency, ts, ts);
+            assert!(fill1.is_some());
+
+            // Second call with same data produces nothing (dedup)
+            let fill2 =
+                tracker.maybe_fill_report(uo, uo.s, instrument_id, account_id, currency, ts, ts);
+            assert!(fill2.is_none(), "duplicate fill should be suppressed");
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    #[rstest]
+    fn test_fill_tracker_price_back_calculation() {
+        let data = load_test_json("stream/ocm_multiple_fills.json");
+        let msgs: Vec<StreamMessage> = serde_json::from_str(&data).unwrap();
+        let instrument_id = make_instrument_id("1.179082386", 50210, Decimal::ZERO);
+        let account_id = AccountId::from("BETFAIR-001");
+        let currency = Currency::GBP();
+        let mut tracker = FillTracker::new();
+
+        // Process first fill at avp=5.8
+        let uo1 = extract_uo(&msgs[0]);
+        let ts1 = extract_ts(&msgs[0]);
+        let fill1 = tracker
+            .maybe_fill_report(uo1, uo1.s, instrument_id, account_id, currency, ts1, ts1)
+            .unwrap();
+        assert_eq!(fill1.last_px.as_f64(), 5.8);
+
+        // Second fill also at avp=5.8 (same price, avg unchanged)
+        let uo2 = extract_uo(&msgs[1]);
+        let ts2 = extract_ts(&msgs[1]);
+        let fill2 = tracker
+            .maybe_fill_report(uo2, uo2.s, instrument_id, account_id, currency, ts2, ts2)
+            .unwrap();
+        assert_eq!(fill2.last_px.as_f64(), 5.8);
+    }
+
+    #[rstest]
+    fn test_has_cancel_quantity() {
+        let data = load_test_json("stream/ocm_CANCEL.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let uo = &ocm.oc.as_ref().unwrap()[0].orc.as_ref().unwrap()[0]
+                .uo
+                .as_ref()
+                .unwrap()[0];
+            assert!(has_cancel_quantity(uo));
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    #[rstest]
+    fn test_has_cancel_quantity_filled_order() {
+        let data = load_test_json("stream/ocm_FILLED.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let uo = &ocm.oc.as_ref().unwrap()[0].orc.as_ref().unwrap()[0]
+                .uo
+                .as_ref()
+                .unwrap()[0];
+            assert!(!has_cancel_quantity(uo));
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    fn extract_uo(msg: &StreamMessage) -> &UnmatchedOrder {
+        if let StreamMessage::OrderChange(ocm) = msg {
+            &ocm.oc.as_ref().unwrap()[0].orc.as_ref().unwrap()[0]
+                .uo
+                .as_ref()
+                .unwrap()[0]
+        } else {
+            panic!("expected OrderChange")
+        }
+    }
+
+    fn extract_ts(msg: &StreamMessage) -> UnixNanos {
+        if let StreamMessage::OrderChange(ocm) = msg {
+            parse_millis_timestamp(ocm.pt)
+        } else {
+            panic!("expected OrderChange")
+        }
     }
 }
