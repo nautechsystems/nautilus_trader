@@ -78,6 +78,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
     parser.add_argument("--strategy-id", default=None)
+    parser.add_argument("--all-strategies", action="store_true")
     parser.add_argument("--topic", action="append", default=[])
     parser.add_argument("--log-level", default=None)
     return parser.parse_args()
@@ -101,13 +102,29 @@ def _build_handlers() -> dict[str, Any]:
     return handlers
 
 
+def _resolve_strategy_scope(config: dict[str, Any], args: argparse.Namespace) -> str | None:
+    identity = _table(config, "identity")
+    strategy_id_arg = _optional_text(args.strategy_id)
+    all_strategies = bool(args.all_strategies)
+
+    if all_strategies and strategy_id_arg is not None:
+        raise ValueError("`--strategy-id` and `--all-strategies` cannot be used together")
+    if all_strategies:
+        return None
+
+    strategy_id = strategy_id_arg or _optional_text(identity.get("strategy_id"))
+    if not strategy_id:
+        raise ValueError("A non-empty strategy_id is required unless `--all-strategies` is set")
+    return strategy_id
+
+
 def main() -> None:
     args = _parse_args()
     config = _load_config(args.config)
     mode = _resolve_mode(config, args)
+    strategy_scope = _resolve_strategy_scope(config, args)
 
     flux = _table(config, "flux")
-    identity = _table(config, "identity")
     redis_cfg = _table(config, "redis")
     bridge_cfg = _table(config, "bridge")
 
@@ -137,7 +154,7 @@ def main() -> None:
     consumer = FluxBridgeStreamConsumer(
         redis_client=redis_client,
         environment=mode,
-        strategy_id=_optional_text(args.strategy_id) or _optional_text(identity.get("strategy_id")),
+        strategy_id=strategy_scope,
         namespace=str(flux.get("namespace", "flux")),
         schema_version=str(flux.get("schema_version", "v1")),
         handlers=handlers,

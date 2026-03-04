@@ -61,6 +61,13 @@ python examples/live/makerv3_single_leg/run_node.py
 python examples/live/makerv3_single_leg/run_bridge.py
 ```
 
+Bridge strategy scope behavior:
+
+1. Default scope is `identity.strategy_id` from the config file.
+2. Override with `--strategy-id <id>` for a single strategy.
+3. Use `--all-strategies` to consume all strategy streams for the selected mode.
+4. `--strategy-id` and `--all-strategies` are mutually exclusive.
+
 4. Start the Flux API.
 
 ```bash
