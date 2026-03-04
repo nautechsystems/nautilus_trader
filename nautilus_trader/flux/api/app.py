@@ -34,7 +34,6 @@ from flask import request
 from nautilus_trader.flux.api.payloads import ContractCatalogEntry
 from nautilus_trader.flux.api.payloads import StrategyMetadata
 from nautilus_trader.flux.api.payloads import build_alerts_rows
-from nautilus_trader.flux.api.payloads import build_contract_id
 from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.api.payloads import build_envelope
 from nautilus_trader.flux.api.payloads import build_error
@@ -43,12 +42,17 @@ from nautilus_trader.flux.api.payloads import build_params_payload
 from nautilus_trader.flux.api.payloads import build_signals_payload
 from nautilus_trader.flux.api.payloads import build_trades_rows
 from nautilus_trader.flux.api.payloads import coerce_ts_ms
+from nautilus_trader.flux.api.payloads import contract_id_for_leg
 from nautilus_trader.flux.api.payloads import decode_text
 from nautilus_trader.flux.api.payloads import extract_stream_rows
 from nautilus_trader.flux.api.payloads import load_json
 from nautilus_trader.flux.api.payloads import normalize_symbol_parts
 from nautilus_trader.flux.api.payloads import now_ms
+from nautilus_trader.flux.api.payloads import safe_int
 from nautilus_trader.flux.api.payloads import select_latest_strategy_row
+from nautilus_trader.flux.api.payloads import strategy_id_from_row
+from nautilus_trader.flux.api.socketio import create_flux_socket_server
+from nautilus_trader.flux.api.socketio import normalize_profile
 from nautilus_trader.flux.common.config import FluxConfig
 from nautilus_trader.flux.common.config import validate_identifier_part
 from nautilus_trader.flux.common.keys import FluxRedisKeys
@@ -251,7 +255,10 @@ class FluxApiStore:
 
             dedupe_key = (exchange, base, quote)
             if dedupe_key in seen:
-                continue
+                raise ContractCatalogValidationError(
+                    "Duplicate contract catalog entry after normalization: "
+                    f"exchange={exchange!r} symbol={symbol!r} (base={base!r} quote={quote!r})",
+                )
             seen.add(dedupe_key)
             out.append((ContractCatalogEntry(exchange=exchange, symbol=symbol), base, quote))
 
@@ -347,9 +354,8 @@ class FluxApiStore:
         market_rows: dict[str, dict[str, Any]] = {}
         for (contract, _), market_raw in zip(market_pairs, raw[3:]):
             parsed = load_json(market_raw)
-            market_rows[build_contract_id(exchange=contract.exchange, symbol=contract.symbol)] = (
-                dict(parsed) if isinstance(parsed, dict) else {}
-            )
+            contract_id = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
+            market_rows[contract_id] = dict(parsed) if isinstance(parsed, dict) else {}
         legs = build_legs_payload(contracts=self._contracts, market_rows=market_rows, now_ms_value=now_ms())
 
         params = self.load_params(strategy_id)
@@ -368,12 +374,45 @@ class FluxApiStore:
         raw = load_json(self._redis.get(keys.balances_snapshot()))
         return build_balances_rows(raw_snapshot=raw, strategy_id=strategy_id)
 
-    def load_trades_rows(self, strategy_id: str, *, limit: int, since_ms: int | None) -> list[dict[str, Any]]:
+    def load_trades_rows(
+        self,
+        strategy_id: str,
+        *,
+        limit: int,
+        since_ms: int | None,
+        since_seq: int | None = None,
+        scan_limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         keys = self._keys_for_strategy(strategy_id)
-        fetch_count = max(1, min(2_000, (limit * 4) if since_ms is not None else limit))
+        if scan_limit is not None:
+            fetch_count = max(1, min(2_000, scan_limit))
+        else:
+            fetch_count = max(
+                1,
+                min(2_000, (limit * 4) if (since_ms is not None or since_seq is not None) else limit),
+            )
         entries = self._redis.xrevrange(keys.trades_stream(), count=fetch_count)
         rows = extract_stream_rows(entries)
-        return build_trades_rows(rows=rows, strategy_id=strategy_id, limit=limit, since_ms=since_ms)
+        return build_trades_rows(
+            rows=rows,
+            strategy_id=strategy_id,
+            limit=limit,
+            since_ms=since_ms,
+            since_seq=since_seq,
+        )
+
+    def load_all_trades_rows(self, strategy_id: str) -> list[dict[str, Any]]:
+        keys = self._keys_for_strategy(strategy_id)
+        entries = self._redis.xrevrange(keys.trades_stream())
+        rows = extract_stream_rows(entries)
+        filtered = [row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
+        return build_trades_rows(
+            rows=filtered,
+            strategy_id=strategy_id,
+            limit=max(1, len(filtered)),
+            since_ms=None,
+            since_seq=None,
+        )
 
     def load_alerts_rows(self, strategy_id: str, *, limit: int) -> list[dict[str, Any]]:
         keys = self._keys_for_strategy(strategy_id)
@@ -381,6 +420,77 @@ class FluxApiStore:
         entries = self._redis.xrevrange(keys.alerts(), count=fetch_count)
         rows = extract_stream_rows(entries)
         return build_alerts_rows(rows=rows, strategy_id=strategy_id, limit=limit)
+
+    def load_all_alerts_rows(self, strategy_id: str) -> list[dict[str, Any]]:
+        keys = self._keys_for_strategy(strategy_id)
+        entries = self._redis.xrevrange(keys.alerts())
+        rows = extract_stream_rows(entries)
+        filtered = [row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
+        return build_alerts_rows(
+            rows=filtered,
+            strategy_id=strategy_id,
+            limit=max(1, len(filtered)),
+        )
+
+    def trades_stream_len(self, strategy_id: str) -> int | None:
+        keys = self._keys_for_strategy(strategy_id)
+        stream_key = keys.trades_stream()
+        xlen_fn = getattr(self._redis, "xlen", None)
+        if callable(xlen_fn):
+            size = safe_int(xlen_fn(stream_key))
+            return max(0, size or 0)
+        streams = getattr(self._redis, "streams", None)
+        if isinstance(streams, dict):
+            rows = streams.get(stream_key)
+            if isinstance(rows, list):
+                return len(rows)
+        return None
+
+    def alerts_stream_len(self, strategy_id: str) -> int | None:
+        keys = self._keys_for_strategy(strategy_id)
+        stream_key = keys.alerts()
+        xlen_fn = getattr(self._redis, "xlen", None)
+        if callable(xlen_fn):
+            size = safe_int(xlen_fn(stream_key))
+            return max(0, size or 0)
+        streams = getattr(self._redis, "streams", None)
+        if isinstance(streams, dict):
+            rows = streams.get(stream_key)
+            if isinstance(rows, list):
+                return len(rows)
+        return None
+
+    def clear_alerts(self, strategy_id: str) -> int:
+        keys = self._keys_for_strategy(strategy_id)
+        alerts_key = keys.alerts()
+
+        pre_count: int | None = None
+        xlen_fn = getattr(self._redis, "xlen", None)
+        if callable(xlen_fn):
+            size = safe_int(xlen_fn(alerts_key))
+            pre_count = max(0, size or 0)
+        streams = getattr(self._redis, "streams", None)
+        if pre_count is None and isinstance(streams, dict):
+            existing_rows = streams.get(alerts_key)
+            if isinstance(existing_rows, list):
+                pre_count = len(existing_rows)
+
+        delete_fn = getattr(self._redis, "delete", None)
+        if callable(delete_fn):
+            deleted = safe_int(delete_fn(alerts_key))
+            if (deleted or 0) <= 0:
+                return 0
+            if pre_count is not None:
+                return pre_count
+            return 1
+
+        if isinstance(streams, dict):
+            removed_rows = streams.pop(alerts_key, [])
+            if isinstance(removed_rows, list):
+                return len(removed_rows)
+            return 1 if removed_rows else 0
+
+        return 0
 
 
 def _request_id() -> str:
@@ -394,6 +504,23 @@ def _clamp_limit(value: Any, *, default: int = 50, minimum: int = 1, maximum: in
     except (TypeError, ValueError):
         out = default
     return max(minimum, min(maximum, out))
+
+
+def _clamp_offset(value: Any, *, default: int = 0) -> int:
+    try:
+        out = int(str(value))
+    except (TypeError, ValueError):
+        out = default
+    return max(0, out)
+
+
+def _extract_last_seq(rows: Sequence[Mapping[str, Any]], *, fallback: int = 0) -> int:
+    best = fallback
+    for row in rows:
+        seq = safe_int(row.get("seq"))
+        if seq is not None and seq > best:
+            best = seq
+    return best
 
 
 def _params_request_payload() -> dict[str, Any]:
@@ -481,7 +608,7 @@ def create_flux_api_app(
                     message="Strategy metadata resolver failed.",
                     details={
                         "strategy_id": strategy_id,
-                        "reason": str(exc),
+                        "error_type": type(exc).__name__,
                     },
                 ) from exc
         if not isinstance(metadata, StrategyMetadata):
@@ -499,6 +626,22 @@ def create_flux_api_app(
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
     app.json.sort_keys = False
+
+    profile_strategy_map = {
+        "tokenmm": default_strategy_id,
+    }
+
+    def _strategy_for_profile(profile: str) -> str | None:
+        normalized = normalize_profile(profile)
+        return profile_strategy_map.get(normalized)
+
+    create_flux_socket_server(
+        app,
+        store=store,
+        metadata_resolver=_metadata_for_strategy,
+        strategy_resolver=_strategy_for_profile,
+    )
+    app.extensions["flux_profile_strategy_map"] = dict(profile_strategy_map)
 
     def _response(
         *,
@@ -569,7 +712,8 @@ def create_flux_api_app(
                 message="Readiness probe failed during health check.",
                 details={
                     "schema_prefix": store.schema_prefix,
-                    "reason": str(exc),
+                    "reason": "internal_error",
+                    "error_type": type(exc).__name__,
                 },
             )
 
@@ -601,7 +745,8 @@ def create_flux_api_app(
                 message="Readiness probe failed.",
                 details={
                     "schema_prefix": store.schema_prefix,
-                    "reason": str(exc),
+                    "reason": "internal_error",
+                    "error_type": type(exc).__name__,
                 },
             )
 
@@ -630,7 +775,8 @@ def create_flux_api_app(
 
     @app.get("/api/v1/param-schema")
     def api_param_schema() -> Response:
-        return _ok(data={"schema": _ordered_params_schema(schema)})
+        ordered_schema = _ordered_params_schema(schema)
+        return _ok(data={"params": ordered_schema, "deprecated": {}})
 
     @app.get("/api/v1/params")
     def api_params() -> Response:
@@ -645,43 +791,135 @@ def create_flux_api_app(
                 details={"strategy_id": strategy_id},
             )
         payload = build_params_payload(strategy_id=strategy_id, params=params, schema=_ordered_params_schema(schema))
-        return _ok(data={"strategies": [payload]})
+        return _ok(data=[payload])
 
     @app.post("/api/v1/params")
     @app.patch("/api/v1/params")
     def api_params_update() -> Response:
-        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
-        updates = _params_request_payload()
-        if not updates:
-            return _error(
-                status=400,
-                code="missing_payload",
-                message="Request JSON must include `params` mapping.",
-                details={"strategy_id": strategy_id},
-            )
-        try:
-            result = store.update_params(strategy_id, updates)
-        except ParamsUpdateValidationError as exc:
-            return _error(
-                status=400,
-                code="invalid_params_update",
-                message=str(exc),
-                details={"strategy_id": strategy_id},
-            )
-        except ParamsStoreValidationError as exc:
-            return _error(
-                status=500,
-                code="params_store_invalid",
-                message=str(exc),
-                details={"strategy_id": strategy_id},
-            )
-        payload = {
-            "strategy_id": strategy_id,
-            "updated": result["updated"],
-            "params": result["params"],
-            "schema": _ordered_params_schema(schema),
-        }
-        return _ok(data=payload)
+        payload = request.get_json(silent=True)
+        success: list[dict[str, Any]] = []
+        failed: list[str] = []
+        errors: list[dict[str, Any]] = []
+
+        def _record_failed(strategy_id: str) -> None:
+            if strategy_id not in failed:
+                failed.append(strategy_id)
+
+        updates_batch: list[tuple[int, str, dict[str, Any]]] = []
+
+        if isinstance(payload, dict) and isinstance(payload.get("updates"), list):
+            updates_raw = payload.get("updates")
+            for index, item in enumerate(updates_raw):
+                if not isinstance(item, dict):
+                    errors.append(
+                        {
+                            "index": index,
+                            "strategy_id": "",
+                            "code": "missing_payload",
+                            "message": "Each `updates` item must be an object.",
+                        },
+                    )
+                    continue
+                sid_raw = item.get("strategy_id")
+                sid_text = decode_text(sid_raw).strip()
+                if not sid_text:
+                    _record_failed("")
+                    errors.append(
+                        {
+                            "index": index,
+                            "strategy_id": "",
+                            "code": "invalid_strategy_id",
+                            "message": f"`updates[{index}].strategy_id` must be a non-empty string.",
+                        },
+                    )
+                    continue
+                try:
+                    sid = validate_identifier_part(sid_text, f"updates[{index}].strategy_id")
+                except ValueError as exc:
+                    _record_failed(sid_text)
+                    errors.append(
+                        {
+                            "index": index,
+                            "strategy_id": sid_text,
+                            "code": "invalid_strategy_id",
+                            "message": str(exc),
+                        },
+                    )
+                    continue
+
+                item_params = item.get("params")
+                if not isinstance(item_params, dict):
+                    _record_failed(sid)
+                    errors.append(
+                        {
+                            "index": index,
+                            "strategy_id": sid,
+                            "code": "missing_payload",
+                            "message": "Each `updates` item must include a `params` mapping.",
+                        },
+                    )
+                    continue
+
+                updates_batch.append((index, sid, dict(item_params)))
+        else:
+            strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
+            updates = _params_request_payload()
+            if not updates:
+                return _error(
+                    status=400,
+                    code="missing_payload",
+                    message="Request JSON must include `params` mapping.",
+                    details={"strategy_id": strategy_id},
+                )
+            updates_batch.append((0, strategy_id, updates))
+
+        if not updates_batch and errors:
+            return _ok(data={"success": success, "failed": failed, "errors": errors}, status=200)
+
+        for index, strategy_id, updates in updates_batch:
+            try:
+                result = store.update_params(strategy_id, updates)
+            except ParamsUpdateValidationError as exc:
+                _record_failed(strategy_id)
+                errors.append(
+                    {
+                        "index": index,
+                        "strategy_id": strategy_id,
+                        "code": "invalid_params_update",
+                        "message": str(exc),
+                    },
+                )
+            except ParamsStoreValidationError as exc:
+                _record_failed(strategy_id)
+                errors.append(
+                    {
+                        "index": index,
+                        "strategy_id": strategy_id,
+                        "code": "params_store_invalid",
+                        "message": str(exc),
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001
+                _record_failed(strategy_id)
+                errors.append(
+                    {
+                        "index": index,
+                        "strategy_id": strategy_id,
+                        "code": "internal_error",
+                        "message": "Internal server error.",
+                        "details": {"error_type": type(exc).__name__},
+                    },
+                )
+            else:
+                success.append(
+                    {
+                        "strategy_id": strategy_id,
+                        "updated": result["updated"],
+                        "params": result["params"],
+                    },
+                )
+
+        return _ok(data={"success": success, "failed": failed, "errors": errors})
 
     @app.get("/api/v1/signals")
     def api_signals() -> Response:
@@ -699,8 +937,8 @@ def create_flux_api_app(
             return _error(
                 status=503,
                 code="store_unavailable",
-                message=str(exc),
-                details={"strategy_id": strategy_id},
+                message="Data store unavailable.",
+                details={"strategy_id": strategy_id, "error_type": type(exc).__name__},
             )
         return _ok(data={"server_ts_ms": now_ms(), "strategies": [strategy_payload]})
 
@@ -791,21 +1029,82 @@ def create_flux_api_app(
     def api_trades() -> Response:
         strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
-        rows = store.load_trades_rows(strategy_id, limit=limit, since_ms=None)
-        return _ok(data={"rows": rows, "count": len(rows), "server_ts_ms": now_ms()})
+        offset = _clamp_offset(request.args.get("offset"), default=0)
+        all_rows = store.load_all_trades_rows(strategy_id)
+        total = len(all_rows)
+        rows = all_rows[offset : offset + limit]
+        has_more = (offset + len(rows)) < total
+        payload: dict[str, Any] = {
+            "rows": rows,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": has_more,
+            "last_seq": _extract_last_seq(all_rows, fallback=0),
+            "sort": "ts_ms_desc",
+        }
+        if has_more:
+            payload["next_offset"] = offset + len(rows)
+        return _ok(data=payload)
 
     @app.get("/api/v1/trades/delta")
     def api_trades_delta() -> Response:
         strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
-        since_ms = coerce_ts_ms(request.args.get("after"))
-        rows = store.load_trades_rows(strategy_id, limit=limit, since_ms=since_ms)
+        since_seq = safe_int(request.args.get("since_seq"))
+        since_ms = None if since_seq is not None else coerce_ts_ms(request.args.get("after"))
+        fallback_seq = since_seq or 0
+
+        if since_seq is not None:
+            scan_limit = 2_000
+            scanned_rows = store.load_trades_rows(
+                strategy_id,
+                limit=scan_limit,
+                since_ms=None,
+                since_seq=None,
+                scan_limit=scan_limit,
+            )
+            eligible_rows = store.load_trades_rows(
+                strategy_id,
+                limit=scan_limit,
+                since_ms=None,
+                since_seq=since_seq,
+                scan_limit=scan_limit,
+            )
+            stream_len = store.trades_stream_len(strategy_id)
+            seq_values = [safe_int(row.get("seq")) for row in scanned_rows]
+            parsed_seqs = [seq for seq in seq_values if seq is not None]
+            oldest_scanned_seq = min(parsed_seqs) if parsed_seqs else None
+            if (
+                stream_len is not None
+                and stream_len > scan_limit
+                and oldest_scanned_seq is not None
+                and oldest_scanned_seq > (since_seq + 1)
+            ):
+                return _ok(
+                    data={
+                        "rows": [],
+                        "last_seq": since_seq,
+                        "reset_required": True,
+                    },
+                )
+
+            rows = eligible_rows[:limit]
+            last_seq = safe_int(rows[-1].get("seq")) if rows else since_seq
+            return _ok(
+                data={
+                    "rows": rows,
+                    "last_seq": int(last_seq if last_seq is not None else since_seq),
+                    "reset_required": False,
+                },
+            )
+
+        rows = store.load_trades_rows(strategy_id, limit=limit, since_ms=since_ms, since_seq=None)
         return _ok(
             data={
                 "rows": rows,
-                "count": len(rows),
-                "server_ts_ms": now_ms(),
-                "after": since_ms,
+                "last_seq": _extract_last_seq(rows, fallback=fallback_seq),
+                "reset_required": False,
             },
         )
 
@@ -813,8 +1112,36 @@ def create_flux_api_app(
     def api_alerts() -> Response:
         strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
-        rows = store.load_alerts_rows(strategy_id, limit=limit)
-        return _ok(data={"rows": rows, "count": len(rows), "server_ts_ms": now_ms()})
+        offset = _clamp_offset(request.args.get("offset"), default=0)
+        all_rows = store.load_all_alerts_rows(strategy_id)
+        total = len(all_rows)
+        rows = all_rows[offset : offset + limit]
+        has_more = (offset + len(rows)) < total
+        payload: dict[str, Any] = {
+            "rows": rows,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": has_more,
+        }
+        if has_more:
+            payload["next_offset"] = offset + len(rows)
+        return _ok(data=payload)
+
+    @app.delete("/api/v1/alerts")
+    def api_alerts_delete() -> Response:
+        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
+        deleted = store.clear_alerts(strategy_id)
+        remaining = len(store.load_all_alerts_rows(strategy_id))
+        return _ok(
+            data={
+                "success": True,
+                "strategy_id": strategy_id,
+                "deleted": deleted,
+                "remaining": remaining,
+                "server_ts_ms": now_ms(),
+            },
+        )
 
     @app.errorhandler(ApiEnvelopeError)
     def _handle_envelope_error(exc: ApiEnvelopeError) -> Response:
@@ -827,11 +1154,21 @@ def create_flux_api_app(
 
     @app.errorhandler(redis.RedisError)
     def _handle_redis_error(exc: redis.RedisError) -> Response:
-        return _error(status=503, code="store_unavailable", message=str(exc))
+        return _error(
+            status=503,
+            code="store_unavailable",
+            message="Data store unavailable.",
+            details={"error_type": type(exc).__name__},
+        )
 
     @app.errorhandler(Exception)
     def _handle_uncaught(exc: Exception) -> Response:
-        return _error(status=500, code="internal_error", message=str(exc))
+        return _error(
+            status=500,
+            code="internal_error",
+            message="Internal server error.",
+            details={"error_type": type(exc).__name__},
+        )
 
     return app
 

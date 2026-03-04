@@ -74,6 +74,7 @@ dist/
 env/
 *.bak
 *.sh
+!fluxboard/deploy.sh
 *tmp/
 *temp/
 
@@ -127,3 +128,13 @@ tests/test_data/**/backtest/**
 
 /.worktrees/
 .run/
+
+# Vendored Fluxboard artifacts
+fluxboard/node_modules/
+fluxboard/dist/
+fluxboard/.cache/
+fluxboard/.vite/
+fluxboard/playwright-report/
+fluxboard/test-results/
+fluxboard/coverage/
+fluxboard/tmp-*

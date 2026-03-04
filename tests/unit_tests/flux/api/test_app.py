@@ -366,3 +366,28 @@ def test_signals_keeps_distinct_legs_for_same_exchange_different_symbols(
     assert legs["venue_a:XYZ/USDT"]["exchange"] == "venue_a"
     assert legs["venue_a:XYZ/USDT"]["symbol"] == "XYZ/USDT"
     assert legs["venue_a:XYZ/USDT"]["mid"] == 200.5
+
+
+def test_create_app_rejects_duplicate_contract_catalog_entries_after_normalization(
+    flux_config,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    with pytest.raises(ValueError, match="Duplicate contract catalog entry"):
+        create_flux_api_app(
+            flux_config,
+            redis_client,
+            contract_catalog=(
+                ContractCatalogEntry(exchange="Venue_A", symbol="ABC/USDT"),
+                ContractCatalogEntry(exchange="venue_a", symbol="abc/usdt"),
+            ),
+            strategy_metadata=StrategyMetadata(
+                strategy_class="maker_v3",
+                strategy_groups="tokenmm",
+                base_asset="ABC",
+                quote_asset="USDT",
+            ),
+            params_schema=params_schema,
+            params_defaults=params_defaults,
+        )

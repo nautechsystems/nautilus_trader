@@ -49,6 +49,12 @@ class StrategyMetadata:
         }
 
 
+def contract_id_for_leg(*, exchange: Any, symbol: Any) -> str:
+    exchange_text = decode_text(exchange).strip().lower()
+    symbol_text = decode_text(symbol).strip().upper()
+    return f"{exchange_text}:{symbol_text}"
+
+
 def now_ms() -> int:
     return int(time.time() * 1_000)
 
@@ -175,10 +181,6 @@ def normalize_symbol_parts(*, symbol: str) -> tuple[str, str]:
         if cleaned.endswith(quote) and len(cleaned) > len(quote):
             return cleaned[: -len(quote)], quote
     return cleaned, ""
-
-
-def build_contract_id(*, exchange: str, symbol: str) -> str:
-    return f"{decode_text(exchange).strip().lower()}:{decode_text(symbol).strip().upper()}"
 
 
 def strategy_id_from_row(row: Any, fallback: str) -> str:
@@ -433,13 +435,14 @@ def build_legs_payload(
     current_ts_ms = now_ms() if now_ms_value is None else int(now_ms_value)
     out: dict[str, Any] = {}
     for contract in contracts:
-        contract_id = build_contract_id(exchange=contract.exchange, symbol=contract.symbol)
+        contract_id = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
         row = market_rows.get(contract_id) or {}
         bid = safe_float(row.get("bid"))
         ask = safe_float(row.get("ask"))
         ts_ms = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp"))
         age_ms = (current_ts_ms - ts_ms) if ts_ms else None
         out[contract_id] = {
+            "contract_id": contract_id,
             "exchange": contract.exchange,
             "symbol": contract.symbol,
             "bid": bid,
@@ -466,6 +469,7 @@ def build_signals_payload(
     bot_on = bool(parsed_bot_on if parsed_bot_on is not None else state.get("bot_on", False))
     managed = safe_int(state.get("managed_orders")) or 0
     ts_ms = coerce_ts_ms(state.get("ts_ms") or state.get("ts_event"))
+    legs_order = list(legs.keys())
 
     md_health: dict[str, Any] = {
         "legs_count": len(legs),
@@ -494,6 +498,7 @@ def build_signals_payload(
         },
         "state": state,
         "legs": legs,
+        "legs_order": legs_order,
         "fv_row": fv_row,
         "balances_count": len(balances),
         "debug": {
@@ -522,19 +527,30 @@ def build_trades_rows(
     strategy_id: str,
     limit: int,
     since_ms: int | None,
+    since_seq: int | None = None,
 ) -> list[dict[str, Any]]:
     filtered: list[dict[str, Any]] = []
     for row in rows:
         if strategy_id_from_row(row, strategy_id) != strategy_id:
             continue
         out = dict(row)
+        seq = safe_int(out.get("seq"))
+        if seq is not None:
+            out["seq"] = seq
+        if since_seq is not None:
+            if seq is None or seq <= since_seq:
+                continue
         ts_ms = coerce_ts_ms(out.get("ts_ms") or out.get("ts") or out.get("timestamp"))
         if ts_ms is not None:
             out["ts_ms"] = ts_ms
         if since_ms is not None and ts_ms is not None and ts_ms <= since_ms:
             continue
         filtered.append(out)
-    filtered.sort(key=lambda item: coerce_ts_ms(item.get("ts_ms")) or 0, reverse=True)
+    if since_seq is not None:
+        # Delta mode must stream oldest unseen seq first to avoid skipping rows.
+        filtered.sort(key=lambda item: safe_int(item.get("seq")) or 0)
+    else:
+        filtered.sort(key=lambda item: coerce_ts_ms(item.get("ts_ms")) or 0, reverse=True)
     return filtered[: max(1, limit)]
 
 

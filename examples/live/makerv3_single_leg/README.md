@@ -75,12 +75,61 @@ Bridge strategy scope behavior:
 python examples/live/makerv3_single_leg/run_api.py
 ```
 
+By default, `run_api.py` binds to `127.0.0.1` unless you explicitly override host via:
+- CLI: `--host ...`
+- config: `[api].host` in `makerv3_single_leg.toml`
+
 Expose externally only when intentional, for example:
 
 ```bash
 python examples/live/makerv3_single_leg/run_api.py --host 0.0.0.0
 ```
 
+## TokenMM serving modes
+
+### Option A (dev): Vite proxy for `/api/*` and `/socket.io`
+
+Run FluxAPI and Vite in separate terminals:
+
+```bash
+# Terminal 1 (FluxAPI)
+python examples/live/makerv3_single_leg/run_api.py --host 127.0.0.1 --port 5022
+
+# Terminal 2 (Fluxboard dev server)
+cp fluxboard/.env.example fluxboard/.env
+pnpm --dir fluxboard dev
+```
+
+Then open `http://127.0.0.1:5173/tokenmm`.
+
+Notes:
+- Vite proxies `/api/*` and `/socket.io` using `FLUXAPI_*` variables from `fluxboard/.env`.
+- Keep `VITE_BACKEND_URL=/` so Socket.IO stays same-origin and goes through the Vite proxy.
+
+### Option B (prod-like): FluxAPI serves `fluxboard/dist` at `/tokenmm/*`
+
+Build Fluxboard, then run the API with static serving enabled:
+
+```bash
+pnpm --dir fluxboard build
+python examples/live/makerv3_single_leg/run_api.py --serve-fluxboard --host 127.0.0.1 --port 5022
+```
+
+Equivalent env opt-in:
+
+```bash
+FLUXBOARD_SERVE_DIST=1 python examples/live/makerv3_single_leg/run_api.py --host 127.0.0.1 --port 5022
+```
+
+`FLUXBOARD_SERVE_DIST`/`FLUXBOARD_DIST` are backend runner env vars (set in shell for `run_api.py`), not Vite-only vars.
+
+Then open `http://127.0.0.1:5022/tokenmm` (deep links under `/tokenmm/*` use SPA fallback).
+
+Security and behavior:
+- Server returns SPA HTML fallback for `/tokenmm/*` deep links.
+- `/tokenmm/order-view` remains unavailable because the frontend TokenMM route/nav excludes it.
+- `FLUXBOARD_DIST` can override the built asset path (default: `<repo>/fluxboard/dist`).
+- Localhost (`127.0.0.1`) is the default bind when host is not explicitly set; only use `--host` or `[api].host` to expose intentionally.
 ## Live mode (explicit confirmation required)
 
 ```bash

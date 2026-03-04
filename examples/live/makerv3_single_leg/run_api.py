@@ -17,11 +17,15 @@
 from __future__ import annotations
 
 import argparse
+import inspect
+import os
 from pathlib import Path
 from typing import Any
 import tomllib
 
 import redis
+from flask import abort
+from flask import send_from_directory
 
 from nautilus_trader.flux.api import ContractCatalogEntry
 from nautilus_trader.flux.api import StrategyMetadata
@@ -36,6 +40,8 @@ from nautilus_trader.flux.common.config import FluxVenuesConfig
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
 DEFAULT_CONFIG_PATH = Path(__file__).with_name("config") / "makerv3_single_leg.toml"
+DEFAULT_TOKENMM_BASE_PATH = "/tokenmm"
+DEFAULT_FLUXBOARD_DIST = Path(__file__).resolve().parents[3] / "fluxboard" / "dist"
 
 
 def _optional_text(value: Any) -> str | None:
@@ -67,6 +73,17 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--confirm-live", action="store_true")
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
+    parser.add_argument(
+        "--serve-fluxboard",
+        action="store_true",
+        help="Serve built Fluxboard static assets at /tokenmm/* with SPA fallback.",
+    )
+    parser.add_argument(
+        "--fluxboard-dist",
+        type=Path,
+        default=None,
+        help="Path to Fluxboard dist directory (defaults to repo-root/fluxboard/dist).",
+    )
     return parser.parse_args()
 
 
@@ -161,9 +178,88 @@ def _build_flux_config(config: dict[str, Any], *, mode: str, confirm_live: bool)
     )
 
 
-def _resolve_bind_host(config: dict[str, Any], args: argparse.Namespace) -> str:
-    api_cfg = _table(config, "api")
-    return str(args.host or api_cfg.get("host", "127.0.0.1"))
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_fluxboard_dist_path(args: argparse.Namespace, api_cfg: dict[str, Any]) -> Path:
+    if args.fluxboard_dist is not None:
+        return args.fluxboard_dist
+    env_path = _optional_text(os.getenv("FLUXBOARD_DIST"))
+    if env_path:
+        return Path(env_path)
+    config_path = _optional_text(api_cfg.get("fluxboard_dist"))
+    if config_path:
+        return Path(config_path)
+    return DEFAULT_FLUXBOARD_DIST
+
+
+def _is_within(parent: Path, candidate: Path) -> bool:
+    try:
+        candidate.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
+    dist_root = dist_dir.resolve()
+    index_path = dist_root / "index.html"
+    if not index_path.is_file():
+        raise FileNotFoundError(f"Fluxboard index not found at {index_path}")
+
+    def _serve_index() -> Any:
+        return send_from_directory(str(dist_root), "index.html")
+
+    @app.get(DEFAULT_TOKENMM_BASE_PATH)
+    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/")
+    def _tokenmm_index() -> Any:
+        return _serve_index()
+
+    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/assets/<path:asset_path>")
+    def _tokenmm_assets(asset_path: str) -> Any:
+        normalized = asset_path.strip().lstrip("/")
+        candidate = (dist_root / "assets" / normalized).resolve()
+        if not candidate.is_file() or not _is_within(dist_root, candidate):
+            abort(404)
+        return send_from_directory(str(dist_root / "assets"), normalized)
+
+    @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/<path:subpath>")
+    def _tokenmm_asset_or_spa(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        candidate = (dist_root / normalized).resolve()
+        if candidate.is_file() and _is_within(dist_root, candidate):
+            return send_from_directory(str(dist_root), normalized)
+        if normalized.startswith("assets/"):
+            abort(404)
+        return _serve_index()
+
+
+def _run_with_socketio_if_available(app: Any, *, host: str, port: int) -> None:
+    socket_server = app.extensions.get("flux_socket_server")
+    socketio = getattr(socket_server, "socketio", None)
+    if socketio is None:
+        socketio = app.extensions.get("flux_socketio")
+
+    if socketio is None:
+        app.run(host=host, port=port, debug=False, use_reloader=False)
+        return
+
+    run_kwargs: dict[str, Any] = {
+        "host": host,
+        "port": port,
+        "debug": False,
+        "use_reloader": False,
+    }
+    try:
+        if "allow_unsafe_werkzeug" in inspect.signature(socketio.run).parameters:
+            run_kwargs["allow_unsafe_werkzeug"] = True
+    except (TypeError, ValueError):
+        pass
+    socketio.run(app, **run_kwargs)
 
 
 def main() -> None:
@@ -200,9 +296,14 @@ def main() -> None:
         strategy_metadata=metadata,
     )
 
-    host = _resolve_bind_host(config, args)
+    serve_fluxboard = args.serve_fluxboard or _env_flag("FLUXBOARD_SERVE_DIST", default=False)
+    if serve_fluxboard:
+        dist_path = _resolve_fluxboard_dist_path(args, api_cfg)
+        _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_path)
+
+    host = str(args.host or api_cfg.get("host", "127.0.0.1"))
     port = int(args.port or api_cfg.get("port", 5022))
-    app.run(host=host, port=port, debug=False, use_reloader=False)
+    _run_with_socketio_if_available(app, host=host, port=port)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,127 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, waitFor, act, cleanup } from '@testing-library/react';
+import Trades from '../Trades';
+import { useTradesStore } from '../stores';
+
+const mockTable = vi.fn(({ trades }: any) => (
+  <div data-testid="mock-table">{trades?.map((row: any) => row.row_id).join(',')}</div>
+));
+
+vi.mock('../components/trades/TradesTable', () => ({
+  TradesTable: (props: any) => mockTable(props),
+}));
+
+vi.mock('../utils/sound', () => ({
+  playTradeClick: vi.fn(),
+}));
+
+const { socketHandlers, socketMock, getTrades, getTradesDelta } = vi.hoisted(() => {
+  const socketHandlers: Record<string, (msg: any) => void> = {};
+  const socketMock = {
+    on: vi.fn((event: string, handler: (msg: any) => void) => {
+      socketHandlers[event] = handler;
+    }),
+    off: vi.fn((event: string) => {
+      delete socketHandlers[event];
+    }),
+    connected: true,
+  };
+  return {
+    socketHandlers,
+    socketMock,
+    getTrades: vi.fn(),
+    getTradesDelta: vi.fn(),
+  };
+});
+
+vi.mock('../sockets', () => ({ socket: socketMock }));
+
+vi.mock('../api', () => ({
+  api: {
+    getTrades,
+    getTradesDelta,
+  },
+}));
+
+const baseRows = [
+  {
+    row_id: 'old',
+    seq: 1,
+    version: 1,
+    ts: 1,
+    time: '2025-01-01T00:00:01Z',
+    coin: 'PLUME/USDT',
+    exchange: 'bybit',
+    side: 'buy',
+  },
+  {
+    row_id: 'new',
+    seq: 2,
+    version: 1,
+    ts: 2,
+    time: '2025-01-01T00:00:02Z',
+    coin: 'PLUME/USDT',
+    exchange: 'bybit',
+    side: 'sell',
+  },
+];
+
+describe('Trades integration flows', () => {
+  beforeEach(() => {
+    getTrades.mockReset();
+    getTradesDelta.mockReset();
+    mockTable.mockClear();
+    Object.keys(socketHandlers).forEach((key) => delete socketHandlers[key]);
+    useTradesStore.getState().clear();
+    getTrades.mockResolvedValue({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 100,
+      last_seq: 2,
+    });
+    getTradesDelta.mockResolvedValue({ rows: [], last_seq: 2, reset_required: false });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('loads newest-first snapshot using ts_desc by default', async () => {
+    render(<Trades />);
+
+    await waitFor(() => expect(getTrades).toHaveBeenCalled());
+    const firstCall = getTrades.mock.calls[0];
+    expect(firstCall[0]).toBe(1);
+    expect(firstCall[1]).toBe(100);
+    expect(firstCall[2]).toMatchObject({ sort: 'ts_desc' });
+  });
+
+  it('applies live trade_update events to the top of the table', async () => {
+    render(<Trades />);
+    await waitFor(() => expect(mockTable).toHaveBeenCalled());
+
+    const handler = socketHandlers['trade_update'];
+    expect(handler).toBeDefined();
+
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'live',
+        seq: 99,
+        version: 1,
+        ts: 99,
+        coin: 'PLUME/USDT',
+        exchange: 'bybit',
+        side: 'buy',
+      });
+    });
+
+    await waitFor(() => {
+      const lastCall = mockTable.mock.calls[mockTable.mock.calls.length - 1];
+      expect(lastCall).toBeTruthy();
+      const props = lastCall[0];
+      expect(props.trades?.[0].row_id).toBe('live');
+    });
+  });
+});
