@@ -113,8 +113,8 @@ Phase 0: Review and plan
 Phase 1: Naming, layout, and de-POC
 
 - [ ] Create `nautilus_trader/flux/` package and move reusable code out of `examples/live/poc`
-- [ ] Remove `poc` and `chainsaw` naming from code/docs (keep only example-specific labels in examples)
-- [ ] Replace `nautilus_fluxapi.py` / `chainsaw_bridge.py` naming with `flux` naming
+- [x] Remove `poc` and `chainsaw` naming from code/docs (keep only example-specific labels in examples)
+- [x] Replace `nautilus_fluxapi.py` / `chainsaw_bridge.py` naming with `flux` naming
 
 Phase 2: Config contract
 
@@ -159,10 +159,10 @@ Phase 7: Tests + verification
 
 Phase 8: Docs and cleanup
 
-- [ ] Add `docs/flux/redis_schema.md`, `docs/flux/params.md`, `docs/flux/bridge.md`, `docs/flux/api.md`
-- [ ] Remove or replace `docs/plans/2026-03-03-nautilus-makerv3-single-leg-poc.md` with a durable production doc
-- [ ] Keep `/.worktrees/` ignored in `.gitignore` (intentional repo policy for this repo)
-- [ ] Keep `.run/` ignored in `.gitignore` (IDE/run configs; do not commit contents)
+- [x] Add `docs/flux/redis_schema.md`, `docs/flux/params.md`, `docs/flux/bridge.md`, `docs/flux/api.md`
+- [x] Remove or replace `docs/plans/2026-03-03-nautilus-makerv3-single-leg-poc.md` with a durable production doc
+- [x] Keep `/.worktrees/` ignored in `.gitignore` (intentional repo policy for this repo)
+- [x] Keep `.run/` ignored in `.gitignore` (IDE/run configs; do not commit contents)
 
 ### Task execution tracker
 
@@ -173,7 +173,7 @@ Phase 8: Docs and cleanup
 - [x] Task 5: Flux API refactor into app factory + batched Redis reads
 - [x] Task 6: Strategy productionization (core safety/perf work)
 - [ ] Task 7: Replace POC runners with thin examples
-- [ ] Task 8: Clean PR artifacts and enforce “no POC/chainsaw leakage”
+- [x] Task 8: Clean PR artifacts and enforce “no POC/chainsaw leakage”
 
 ---
 
@@ -505,7 +505,7 @@ Must-have test cases:
 Textual policy checks:
 
 ```bash
-rg -n \"\\bpoc\\b|POC_|maker_poc|\\bchainsaw\\b\" -S nautilus_trader docs examples
+scripts/ci/check-flux-leakage.sh
 ```
 
 Focused unit tests:
@@ -524,6 +524,7 @@ python -m pytest tests/unit_tests -q
 6. Bridge ingestion is modularized as topic handlers plus a stream consumer; handlers emit strategy-scoped `flux:v1` writes with bounded retention and normalized `ts_ms` at ingest.
 7. API contract is factory-based (`FluxConfig` + injected Redis client), with centralized envelopes (`api_version`, `request_id`, `timestamp_ms`) and explicit health/readiness schema checks.
 8. Production strategy implementation lives under `nautilus_trader/flux/strategies/makerv3/` with two-leg staleness gating, lifecycle reconciliation, and quote-failure circuit breaker fail-stop semantics.
+9. Production leakage policy is enforced via `scripts/ci/check-flux-leakage.sh`, which fails on POC/chainsaw naming in production Flux paths and on absolute host paths in durable Flux docs.
 
 ## Progress log
 
@@ -533,3 +534,4 @@ python -m pytest tests/unit_tests -q
 4. 2026-03-04T01:33:29Z | Task 4 - Bridge modularization + schema hardening | SHAs: `1ee44e2be39cce1688d886a5f66f8265252ebcbe`, `7c53ac9bf983689a872519a7cef2aa98dab06f8a` | Notes: Moved bridge ingestion into `nautilus_trader/flux/bridge/*` with topic handlers + consumer, replaced monolithic runner with thin wrapper, enforced strategy-scoped `flux:v1` outputs with bounded stream retention, normalized `ts_ms`, and added consumer boundary tests; Task 4 spec review ✅ and code-quality review ✅.
 5. 2026-03-04T01:52:58Z | Task 5 - API package refactor + envelope/readiness hardening | SHAs: `7b9c2deb8425171b956e5887cb9246ca7bd0d54d`, `8d93d0d5f2241e2678d3b1380f0d445f6c6fe345` | Notes: Moved API logic into `nautilus_trader/flux/api/*` with DI app factory, store/payload separation, batched feed reads, schema-based readiness/health endpoints, explicit validation/error envelopes, and thin example runner wiring; Task 5 spec review ✅ and code-quality review ✅.
 6. 2026-03-04T02:13:41Z | Task 6 - Strategy productionization safety/perf refactor | SHAs: `811339f6e4023296e5e11498c7fab28c259dfdd0`, `13295ccf0b91b74012a42276e92e164854b89231` | Notes: Added production strategy module under `nautilus_trader/flux/strategies/makerv3/`, implemented two-leg staleness gating + cancel, quote-failure circuit breaker fail-stop, lifecycle reconciliation for reject/cancel/expire, and stronger cancel-on-stop tracking semantics with new strategy-level tests; Task 6 spec review ✅ and code-quality review ✅.
+7. 2026-03-04T02:31:13Z | Task 8 - PR cleanup + no POC/chainsaw leakage enforcement | SHAs: `aa57547d5` | Notes: Renamed production bus payload type to `FluxBusPayload`, removed POC envelope compatibility from bridge, added durable Flux docs (`params.md`, `bridge.md`, `api.md`), replaced the archived prototype plan doc with a durable pointer, updated `.gitignore` for `/.worktrees/` and `.run/`, and added `scripts/ci/check-flux-leakage.sh` as CI/local guardrail.
