@@ -34,6 +34,11 @@ This document defines the production Redis contract for Flux integrations.
 | `flux:v1:params:{strategy_id}` | Pub/Sub channel | Config writers / control plane | Strategy and bridge subscribers | Ephemeral transport | Parameter-update signal channel (same address as hash by design). |
 | `flux:v1:params:global` | Pub/Sub channel | Config writers / control plane | Strategy and bridge subscribers | Ephemeral transport | Global broadcast for cross-strategy param refresh notices only. |
 
+`flux:v1:params:{strategy_id}` is intentionally dual-role:
+1. Hash operations (`HGET`/`HSET`/`HMGET`) are the authoritative persistent parameter store.
+2. Pub/Sub operations (`SUBSCRIBE`/`PUBLISH`) are only change-notification transport.
+3. Writers must update the hash and then publish a refresh signal; pub/sub does not persist parameter values.
+
 ## High-churn retention defaults
 
 | Dataset | Canonical key | Default | Allowed range |
@@ -65,7 +70,9 @@ Legacy names are supported only in explicit compatibility mode.
 | `maker_poc.fv` | `flux:v1:fv:stream:{strategy_id}` |
 | `maker_poc.balances` | `flux:v1:balances:snapshot:{strategy_id}` and `flux:v1:balances:rows:{strategy_id}` |
 | `maker_poc.market_bbo` | `flux:v1:market:last:{strategy_id}:{exchange}:{base}_{quote}` |
-| `maker_poc` (legacy stream key) | `flux:v1:in:stream:{environment}:{strategy_id}:{topic}` topic fan-out |
+| `maker_poc.params` | `flux:v1:params:global` pub/sub broadcast only (no hash write) |
+| `maker_poc.params.{strategy_id}` | `flux:v1:params:{strategy_id}` dual-role address: `HSET`/`HMSET` hash update, then `PUBLISH` same address |
+| `maker_poc` (legacy stream key) | `flux:v1:in:stream:{environment}:{strategy_id}:{topic}` topic fan-out; inbound entries must include `topic` |
 
 ### Compatibility mode notes
 
@@ -73,6 +80,9 @@ Legacy names are supported only in explicit compatibility mode.
 2. Compatibility mode writes only `flux:v1:*` outputs (no dual-write back to legacy names).
 3. Compatibility mode must still enforce `strategy_id` scoping and `ts_ms` canonicalization at ingest.
 4. API stays `flux:v1`-only even while compatibility mode is enabled.
+5. Legacy `maker_poc` stream entries are routable only when `topic` is present and identifier-safe; missing/invalid `topic` is rejected.
+6. For `flux:v1:in:stream:{environment}:{strategy_id}:{topic}`, `{environment}` is sourced from `FluxConfig.mode`; if `FluxConfig` is not wired, use the process-level `environment` config field. If neither source is available, fail fast at startup.
+7. Missing required routing coordinates (`topic`, `strategy_id`, `ts_ms`, resolved `{environment}`) must fail fast: reject/dead-letter the entry and emit an error.
 
 ### Removal plan
 
