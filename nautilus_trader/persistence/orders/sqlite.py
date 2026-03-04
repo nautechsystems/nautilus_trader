@@ -16,40 +16,45 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import NamedTuple
 
 from nautilus_trader.persistence.orders.schema import INSERT_ORDER_ACTION_SQL
 from nautilus_trader.persistence.orders.schema import ORDER_ACTION_SCHEMA_SQL
 
-OrderActionRow = tuple[
-    str,
-    str,
-    str,
-    str,
-    str,
-    str | None,
-    str | None,
-    str | None,
-    str,
-    str,
-    str,
-    str | None,
-    str | None,
-    int | None,
-    str,
-    str | None,
-    str | None,
-    str | None,
-    int | None,
-    int | None,
-    str | None,
-    str | None,
-    str | None,
-    int,
-    int,
-    int,
-    int,
-    str,
-]
+
+class OrderActionRow(NamedTuple):
+    """
+    Primitive SQLite row ordered to match `INSERT_ORDER_ACTION_SQL`.
+    """
+
+    trader_id: str
+    event_id: str
+    strategy_id: str
+    instrument_id: str
+    client_order_id: str
+    account_id: str | None
+    venue_order_id: str | None
+    position_id: str | None
+    action_type: str
+    action_state: str
+    event_type: str
+    action_id: str | None
+    action_reason: str | None
+    ts_decision_ns: int | None
+    signal_snapshot_json: str
+    order_side: str | None
+    order_type: str | None
+    time_in_force: str | None
+    post_only: int | None
+    reduce_only: int | None
+    order_qty: str | None
+    order_px: str | None
+    rejection_reason: str | None
+    ts_event: int
+    ts_init: int
+    ts_ingest: int
+    reconciliation: int
+    payload_json: str
 
 
 def connect(path: str) -> sqlite3.Connection:

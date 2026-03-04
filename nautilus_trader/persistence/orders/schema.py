@@ -13,7 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-ORDER_ACTION_SCHEMA_SQL = """\
+SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL = "null"
+SIGNAL_SNAPSHOT_JSON_DEFAULT_SQL = f"'{SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL}'"
+
+
+ORDER_ACTION_SCHEMA_SQL = f"""\
 CREATE TABLE IF NOT EXISTS order_action (
   trader_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
@@ -32,7 +36,8 @@ CREATE TABLE IF NOT EXISTS order_action (
   action_id TEXT,
   action_reason TEXT,
   ts_decision_ns INTEGER,
-  signal_snapshot_json TEXT NOT NULL DEFAULT 'null',
+  -- JSON literal `null` (text), not SQL NULL.
+  signal_snapshot_json TEXT NOT NULL DEFAULT {SIGNAL_SNAPSHOT_JSON_DEFAULT_SQL},
 
   order_side TEXT,
   order_type TEXT,
@@ -48,7 +53,7 @@ CREATE TABLE IF NOT EXISTS order_action (
   ts_init INTEGER NOT NULL,
   ts_ingest INTEGER NOT NULL,
   reconciliation INTEGER NOT NULL DEFAULT 0,
-  payload_json TEXT NOT NULL DEFAULT '{}',
+  payload_json TEXT NOT NULL DEFAULT '{{}}',
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   PRIMARY KEY (trader_id, event_id)
 );
