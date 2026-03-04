@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 
 import Params from '../Params';
 import { useParamsStore } from '../stores';
@@ -57,5 +57,21 @@ describe('Params single-strategy auto selection', () => {
     });
 
     expect(screen.getByText('1 selected')).toBeInTheDocument();
+  });
+
+  it('re-selects the only visible strategy after selection is cleared', async () => {
+    render(<Params />);
+
+    await waitFor(() => {
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+    });
+
+    act(() => {
+      useParamsStore.getState().clearSelection();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+    });
   });
 });
