@@ -184,7 +184,8 @@ SELECT
   rejection_reason,
   ts_event
 FROM order_action
-WHERE strategy_id = :strategy_id
+WHERE trader_id = :trader_id
+  AND strategy_id = :strategy_id
   AND action_type = 'CANCEL'
   AND action_state = 'REJECTED'
   AND ts_event >= :window_start_ns
