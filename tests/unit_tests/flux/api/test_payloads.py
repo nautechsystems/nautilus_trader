@@ -106,8 +106,15 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
         metadata=metadata,
         state={"bot_on": True, "managed_orders": 3, "state": "running", "ts_ms": 1700000000000},
         fv_row={"fv": 100.5},
-        params={"qty": 1.0},
-        balances=[],
+        params={"qty": 1.0, "cex_bid_edge": 5.0, "cex_ask_edge": 6.0, "pool_edge": 2.0},
+        balances=[
+            {
+                "strategy_id": "strategy_01",
+                "kind": "position",
+                "instrument_id": "ABCUSDT-PERP",
+                "signed_qty": "12.5",
+            },
+        ],
         legs=legs,
     )
 
@@ -121,7 +128,98 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     }
     assert payload["tradeable"] is True
     assert payload["managed_orders"] == 3
+    assert payload["params"]["qty"] == 1.0
+    assert payload["balances_ok"] is True
+    assert payload["risk_delta"] == 12.5
+    assert payload["decision_edge_bps"] == 0.0
+    assert payload["spread_net_bps"] == 0.0
+    assert payload["required_edge_bps"] == 7.0
+    assert payload["edge2_bps"] == -7.0
+    assert payload["spread_net_best_case"] == "case2"
+    assert payload["spread_net_case1_bps"] == -198.01980198019803
+    assert payload["spread_net_case2_bps"] == 0.0
+    assert payload["maker_role_map"] == {
+        "maker_leg": "venue_a:ABC/USDT",
+        "ref_leg": "venue_b:ABC/USDT",
+    }
+    assert payload["maker_v3"]["quote_snapshot"]["maker_top_bid"] == 100.0
+    assert payload["maker_v3"]["quote_snapshot"]["maker_top_ask"] == 101.0
+    assert payload["maker_v3"]["quote_snapshot"]["ref_bid"] == 99.0
+    assert payload["maker_v3"]["quote_snapshot"]["ref_ask"] == 100.0
     assert payload["legs"]["venue_a:ABC/USDT"]["mid"] == 100.5
+
+
+def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_state(contract_catalog) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="ABC",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 3,
+            "state": "running",
+            "ts_ms": 1700000000000,
+            "pricing_debug": {
+                "pricing": {
+                    "bid_edge1_cfg_bps": "10",
+                    "ask_edge1_cfg_bps": "10",
+                    "bid_edge1_eff_bps": "8",
+                    "ask_edge1_eff_bps": "12",
+                    "maker_top_bid": "100",
+                    "maker_top_ask": "101",
+                    "ref_bid": "99",
+                    "ref_ask": "100",
+                },
+                "skew": {
+                    "inventory_qty": "25",
+                    "global_ratio": "0.5",
+                    "global_skew_bps": "2.5",
+                    "local_ratio": "-0.1",
+                    "local_skew_bps": "-0.5",
+                    "total_skew_bps": "2.0",
+                    "des_qty_global": "0",
+                    "max_qty_global": "40000",
+                    "max_skew_bps_global": "5",
+                },
+            },
+        },
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "place_edge1": 2.0},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["maker_v3"]["quote_snapshot"]["place_bid"] == 100.0
+    assert payload["maker_v3"]["quote_snapshot"]["place_ask"] == 101.0
+    assert payload["maker_v3"]["quote_snapshot"]["eff_bid_edge_bps"] == 8.0
+    assert payload["maker_v3"]["quote_snapshot"]["eff_ask_edge_bps"] == 12.0
+    assert payload["maker_v3"]["quote_snapshot"]["place_edge_bps"] == 2.0
+
+    adjustments = payload["pricing_adjustments"]
+    assert len(adjustments) == 1
+    skew = adjustments[0]
+    assert skew["type"] == "inventory_skew"
+    assert skew["skew_bps_signed"] == 2.0
+    assert skew["inv_skew"] == 2.0
+    assert skew["inv_ratio_global"] == 0.5
+    assert skew["inv_skew_local"] == -0.5
+    assert skew["curr_qty"] == 25.0
+    assert skew["delta_bid_edge_bps"] == -2.0
+    assert skew["delta_ask_edge_bps"] == 2.0
 
 
 def test_build_legs_payload_uses_contract_id_keys_for_same_exchange_contracts() -> None:
