@@ -265,6 +265,22 @@ class FluxBridgeStreamConsumer:
                     payload.get("datetime"),
                 ],
             )
+            rows = payload.get("rows")
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    candidates.extend(
+                        [
+                            row.get("ts_ms"),
+                            row.get("timestamp"),
+                            row.get("ts"),
+                            row.get("ts_event"),
+                            row.get("time"),
+                            row.get("datetime"),
+                        ],
+                    )
+                    break
         ts_ms = None
         for candidate in candidates:
             parsed = coerce_ts_ms(candidate)

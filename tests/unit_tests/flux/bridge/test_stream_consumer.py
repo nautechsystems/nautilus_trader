@@ -72,6 +72,33 @@ def test_decode_entry_uses_ts_event_fallback_for_ts_ms() -> None:
     assert context.ts_ms == 1700000010000
 
 
+def test_decode_entry_extracts_ts_ms_from_flux_bus_rows_payload() -> None:
+    consumer = _consumer()
+    wrapped_payload = {
+        "type": "nautilus_trader.flux.events.FluxBusPayload",
+        "topic": "flux.makerv3.fv",
+        "payload": [
+            {
+                "fv": "0.0097",
+                "ts_ms": 1700000022000,
+            },
+        ],
+    }
+    fields = {"payload": json.dumps(wrapped_payload)}
+
+    decoded = consumer._decode_entry(  # noqa: SLF001
+        stream_key="flux:v1:in:stream:paper:maker_v3_01:fv",
+        entry_id="1700000001000-0",
+        fields=fields,
+    )
+
+    assert decoded is not None
+    payload, context = decoded
+    assert payload == {"rows": [{"fv": "0.0097", "ts_ms": 1700000022000}]}
+    assert context.topic == "fv"
+    assert context.ts_ms == 1700000022000
+
+
 def test_decode_entry_fails_fast_for_missing_parseable_timestamp() -> None:
     consumer = _consumer()
     fields = {"payload": "{this-is-not-json"}
