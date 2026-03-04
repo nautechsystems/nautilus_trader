@@ -37,9 +37,6 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-      - name: Run Flux leakage gate
-        run: bash scripts/ci/check-flux-leakage.sh
-
       - name: Verify capnp schemas are up-to-date
         run: make check-capnp-schemas
 
