@@ -70,6 +70,11 @@ def connect(path: str) -> sqlite3.Connection:
     -------
     sqlite3.Connection
 
+    Notes
+    -----
+    Uses `journal_mode=WAL` with `synchronous=NORMAL` for lower write latency.
+    This can lose the latest committed transaction(s) on abrupt power loss.
+
     """
     conn = sqlite3.connect(path, timeout=5.0)
     conn.execute("PRAGMA journal_mode=WAL;")

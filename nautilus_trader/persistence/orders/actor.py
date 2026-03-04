@@ -46,6 +46,25 @@ _ACTION_MAP: dict[str, tuple[str, str]] = {
 }
 
 
+def _current_ts_ingest_ns(clock: object | None) -> int:
+    if clock is None:
+        return time.time_ns()
+    return int(clock.timestamp_ns())  # type: ignore[no-any-return]
+
+
+def _extract_order_px(options: object) -> str | None:
+    if not isinstance(options, dict):
+        return None
+
+    # Best-effort promotion: options schema varies by order type.
+    for key in ("price", "trigger_price", "activation_price"):
+        value = options.get(key)
+        if value is not None:
+            return str(value)
+
+    return None
+
+
 def _encode_payload_json(
     payload: dict[str, Any],
     on_payload_encode_error: Callable[[], None] | None = None,
@@ -138,11 +157,7 @@ def order_event_to_row(
         post_only = int(bool(post_only_raw)) if post_only_raw is not None else None
         reduce_only = int(bool(reduce_only_raw)) if reduce_only_raw is not None else None
         order_qty = data.get("quantity")
-        options = data.get("options")
-        if isinstance(options, dict):
-            price = options.get("price")
-            if price is not None:
-                order_px = str(price)
+        order_px = _extract_order_px(data.get("options"))
 
     if event_type in ("OrderRejected", "OrderCancelRejected"):
         reason = data.get("reason")
@@ -268,7 +283,12 @@ class OrderActionPersistenceActor(Actor):
                 )
                 self._writer_thread.start()
 
-                startup_timeout = max(1.0, (self.config.flush_interval_ms / 1000.0) * 4.0)
+                startup_timeout = max(
+                    1.0,
+                    self.config.flush_timeout_ms / 1000.0,
+                    self.config.stop_timeout_ms / 1000.0,
+                    (self.config.flush_interval_ms / 1000.0) * 4.0,
+                )
                 if not self._writer_started.wait(timeout=startup_timeout):
                     self._writer_error = RuntimeError("Order action writer thread startup timed out")
                     raise self._writer_error
@@ -355,7 +375,7 @@ class OrderActionPersistenceActor(Actor):
         # Intentional tradeoff: normalize/serialize here once so the queued payload
         # is thread-safe and writer-thread DB work stays purely I/O.
         # No queue waits and no DB I/O on this hot path.
-        ts_ingest = 0 if self.clock is None else self.clock.timestamp_ns()
+        ts_ingest = _current_ts_ingest_ns(self.clock)
         row = order_event_to_row(
             event,
             event_type=event_type,

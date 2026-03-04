@@ -17,12 +17,15 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 
 import pytest
 
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.persistence.orders.actor import OrderActionPersistenceActor
+from nautilus_trader.persistence.orders.actor import _current_ts_ingest_ns
+from nautilus_trader.persistence.orders.actor import order_event_to_row
 from nautilus_trader.persistence.orders.config import OrderActionPersistenceActorConfig
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -79,6 +82,7 @@ def _make_actor(
     strict_stop: bool = False,
     on_error: str = "buffer_until_full_then_fail",
     insert_many_fn=None,
+    connect_fn=None,
 ):
     clock = TestClock()
     msgbus = MessageBus(
@@ -113,6 +117,8 @@ def _make_actor(
     actor_kwargs = {"run_writer_thread": run_writer_thread}
     if insert_many_fn is not None:
         actor_kwargs["insert_many_fn"] = insert_many_fn
+    if connect_fn is not None:
+        actor_kwargs["connect_fn"] = connect_fn
 
     actor = OrderActionPersistenceActor(config=config, **actor_kwargs)
     actor.register_base(
@@ -151,6 +157,54 @@ def test_actor_filters_to_configured_order_event_types_and_sets_ts_ingest(tmp_pa
     assert row["ts_event"] == 101
     assert row["ts_init"] == 0
     assert row["ts_ingest"] == 123_456_789
+
+
+def test_current_ts_ingest_ns_uses_system_clock_when_clock_is_missing() -> None:
+    ts_ingest = _current_ts_ingest_ns(None)
+    assert ts_ingest > 0
+
+
+class _FakeOrderEvent:
+    def __init__(self, data: dict[str, object]) -> None:
+        self._data = data
+
+    def to_dict(self, _event: object) -> dict[str, object]:
+        return self._data
+
+
+def test_order_event_to_row_uses_trigger_price_when_price_not_present() -> None:
+    fake = _FakeOrderEvent(
+        {
+            "trader_id": "TRADER-001",
+            "event_id": "event-1",
+            "strategy_id": "STRAT-001",
+            "instrument_id": "ETHUSDT.BINANCE",
+            "client_order_id": "client-1",
+            "account_id": None,
+            "venue_order_id": None,
+            "position_id": None,
+            "order_side": "BUY",
+            "order_type": "STOP_MARKET",
+            "time_in_force": "GTC",
+            "post_only": False,
+            "reduce_only": False,
+            "quantity": "1.0",
+            "options": {"trigger_price": "105.25"},
+            "tags": [],
+            "ts_event": 100,
+            "ts_init": 90,
+            "reconciliation": False,
+        },
+    )
+
+    row = order_event_to_row(
+        fake,  # type: ignore[arg-type]
+        event_type="OrderInitialized",
+        ts_ingest=123,
+    )
+
+    assert row is not None
+    assert row.order_px == "105.25"
 
 
 def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
@@ -330,6 +384,24 @@ def test_actor_strict_stop_timeout_allows_replacement_actor_restart_after_cleanu
     assert _row_count(db_path) == 2
 
 
+def test_actor_startup_timeout_uses_flush_timeout_budget(tmp_path) -> None:
+    from nautilus_trader.persistence.orders.sqlite import connect as _real_connect
+
+    def _slow_connect(path: str):
+        time.sleep(1.1)
+        return _real_connect(path)
+
+    actor, _, _, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+        flush_timeout_ms=2_000,
+        connect_fn=_slow_connect,
+    )
+
+    actor.start()
+    actor.stop()
+
+
 def test_actor_strict_stop_timeout_with_backlog_larger_than_batch_drains_and_completes_cleanup(
     tmp_path,
 ) -> None:
@@ -409,6 +481,52 @@ def test_actor_db_down_log_and_drop_drops_rows(tmp_path) -> None:
     assert actor.db_write_errors == 1
     assert _row_count(db_path) == 0
     assert actor._queue.unfinished_tasks == 0
+
+
+def test_actor_db_down_fail_fast_raises_and_sets_writer_error(tmp_path) -> None:
+    def _insert_fail(_conn, _rows):
+        raise RuntimeError("db down")
+
+    actor, msgbus, db_path, _ = _make_actor(
+        tmp_path,
+        on_error="fail_fast",
+        run_writer_thread=False,
+        insert_many_fn=_insert_fail,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+    accepted = TestEventStubs.order_accepted(order=order, ts_event=107)
+
+    actor.start()
+    msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=accepted)
+    with pytest.raises(RuntimeError, match="write failed"):
+        actor.flush()
+
+    assert actor.db_write_errors == 1
+    assert actor._writer_error is not None
+    assert _row_count(db_path) == 0
+
+    actor.stop()
+
+
+def test_actor_startup_failure_cleans_resources(tmp_path) -> None:
+    def _connect_fail(_path: str):
+        raise RuntimeError("connect fail")
+
+    actor, _, _, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+        connect_fn=_connect_fail,
+    )
+
+    with pytest.raises(RuntimeError, match="connect fail"):
+        actor.start()
+
+    assert actor._conn is None
+    assert actor._writer_thread is None
+    assert actor._writer_cleanup_thread is None
+    assert actor._writer_cleanup_done.is_set()
+    assert len(actor._pending_rows) == 0
 
 
 def test_actor_parses_order_initialized_tags_with_invalid_decision_and_signal_fallback(tmp_path) -> None:

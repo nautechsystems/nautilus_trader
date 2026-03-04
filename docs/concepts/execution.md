@@ -126,6 +126,13 @@ The persistence actor writes immutable rows into `order_action` using idempotenc
 `(trader_id, event_id)`. The hot path is non-blocking: the MessageBus handler normalizes each
 event and only does `put_nowait` enqueue; DB I/O runs in buffered flushes.
 
+`order_px` is a best-effort promoted column from `OrderInitialized.options` with key precedence
+`price` -> `trigger_price` -> `activation_price`. Treat `payload_json` as the canonical source for
+order-type-specific price semantics.
+
+SQLite defaults use `journal_mode=WAL` and `synchronous=NORMAL` for lower write latency. This can
+lose the most recent committed transaction(s) on abrupt power loss.
+
 ```python
 from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.config import TradingNodeConfig
