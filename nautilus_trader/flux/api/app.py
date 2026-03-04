@@ -33,6 +33,7 @@ from flask import request
 from nautilus_trader.flux.api.payloads import ContractCatalogEntry
 from nautilus_trader.flux.api.payloads import StrategyMetadata
 from nautilus_trader.flux.api.payloads import build_alerts_rows
+from nautilus_trader.flux.api.payloads import build_contract_id
 from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.api.payloads import build_envelope
 from nautilus_trader.flux.api.payloads import build_error
@@ -412,7 +413,9 @@ class FluxApiStore:
         market_rows: dict[str, dict[str, Any]] = {}
         for (contract, _), market_raw in zip(market_pairs, raw[3:]):
             parsed = load_json(market_raw)
-            market_rows[contract.exchange] = dict(parsed) if isinstance(parsed, dict) else {}
+            market_rows[build_contract_id(exchange=contract.exchange, symbol=contract.symbol)] = (
+                dict(parsed) if isinstance(parsed, dict) else {}
+            )
         legs = build_legs_payload(contracts=self._contracts, market_rows=market_rows, now_ms_value=now_ms())
 
         params = self.load_params(strategy_id)

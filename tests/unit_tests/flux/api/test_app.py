@@ -241,3 +241,48 @@ def test_create_app_rejects_invalid_contract_symbol(
             params_schema=params_schema,
             params_defaults=params_defaults,
         )
+
+
+def test_signals_keeps_distinct_legs_for_same_exchange_different_symbols(
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.market_last(exchange="venue_a", base="ABC", quote="USDT"),
+        {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+    )
+    redis_client.set_json(
+        keys.market_last(exchange="venue_a", base="XYZ", quote="USDT"),
+        {"bid": 200.0, "ask": 201.0, "ts_ms": 1700000000100},
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(exchange="venue_a", symbol="ABC/USDT"),
+            ContractCatalogEntry(exchange="venue_a", symbol="XYZ/USDT"),
+        ),
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    legs = body["data"]["strategies"][0]["legs"]
+    assert set(legs.keys()) == {"venue_a:ABC/USDT", "venue_a:XYZ/USDT"}
+    assert legs["venue_a:ABC/USDT"]["exchange"] == "venue_a"
+    assert legs["venue_a:ABC/USDT"]["symbol"] == "ABC/USDT"
+    assert legs["venue_a:ABC/USDT"]["mid"] == 100.5
+    assert legs["venue_a:XYZ/USDT"]["exchange"] == "venue_a"
+    assert legs["venue_a:XYZ/USDT"]["symbol"] == "XYZ/USDT"
+    assert legs["venue_a:XYZ/USDT"]["mid"] == 200.5

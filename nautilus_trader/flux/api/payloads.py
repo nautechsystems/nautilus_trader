@@ -177,6 +177,10 @@ def normalize_symbol_parts(*, symbol: str) -> tuple[str, str]:
     return cleaned, ""
 
 
+def build_contract_id(*, exchange: str, symbol: str) -> str:
+    return f"{decode_text(exchange).strip().lower()}:{decode_text(symbol).strip().upper()}"
+
+
 def strategy_id_from_row(row: Any, fallback: str) -> str:
     if not isinstance(row, dict):
         return fallback
@@ -429,12 +433,13 @@ def build_legs_payload(
     current_ts_ms = now_ms() if now_ms_value is None else int(now_ms_value)
     out: dict[str, Any] = {}
     for contract in contracts:
-        row = market_rows.get(contract.exchange) or {}
+        contract_id = build_contract_id(exchange=contract.exchange, symbol=contract.symbol)
+        row = market_rows.get(contract_id) or {}
         bid = safe_float(row.get("bid"))
         ask = safe_float(row.get("ask"))
         ts_ms = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp"))
         age_ms = (current_ts_ms - ts_ms) if ts_ms else None
-        out[contract.exchange] = {
+        out[contract_id] = {
             "exchange": contract.exchange,
             "symbol": contract.symbol,
             "bid": bid,
@@ -465,8 +470,8 @@ def build_signals_payload(
     md_health: dict[str, Any] = {
         "legs_count": len(legs),
         "stale_legs": sorted(
-            exchange
-            for exchange, row in legs.items()
+            contract_id
+            for contract_id, row in legs.items()
             if safe_int(row.get("age_ms")) is None
         ),
     }

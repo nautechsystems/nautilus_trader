@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from nautilus_trader.flux.api.payloads import StrategyMetadata
+from nautilus_trader.flux.api.payloads import ContractCatalogEntry
 from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.api.payloads import build_envelope
 from nautilus_trader.flux.api.payloads import build_legs_payload
@@ -93,8 +94,8 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     legs = build_legs_payload(
         contracts=contract_catalog,
         market_rows={
-            "venue_a": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
-            "venue_b": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
         },
         now_ms_value=1700000001000,
     )
@@ -119,4 +120,28 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     }
     assert payload["tradeable"] is True
     assert payload["managed_orders"] == 3
-    assert payload["legs"]["venue_a"]["mid"] == 100.5
+    assert payload["legs"]["venue_a:ABC/USDT"]["mid"] == 100.5
+
+
+def test_build_legs_payload_uses_contract_id_keys_for_same_exchange_contracts() -> None:
+    contracts = (
+        ContractCatalogEntry(exchange="venue_a", symbol="ABC/USDT"),
+        ContractCatalogEntry(exchange="venue_a", symbol="XYZ/USDT"),
+    )
+
+    legs = build_legs_payload(
+        contracts=contracts,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_a:XYZ/USDT": {"bid": 200.0, "ask": 201.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    assert set(legs.keys()) == {"venue_a:ABC/USDT", "venue_a:XYZ/USDT"}
+    assert legs["venue_a:ABC/USDT"]["exchange"] == "venue_a"
+    assert legs["venue_a:ABC/USDT"]["symbol"] == "ABC/USDT"
+    assert legs["venue_a:ABC/USDT"]["mid"] == 100.5
+    assert legs["venue_a:XYZ/USDT"]["exchange"] == "venue_a"
+    assert legs["venue_a:XYZ/USDT"]["symbol"] == "XYZ/USDT"
+    assert legs["venue_a:XYZ/USDT"]["mid"] == 200.5
