@@ -16,12 +16,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import Any
 
 import pytest
 
 from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.api.socketio import apply_signal_delta_patch
 from nautilus_trader.flux.api.socketio import build_signal_delta_patch
+from nautilus_trader.flux.api.socketio import FluxSocketEmitter
 from nautilus_trader.flux.api.socketio import normalize_profile
 from nautilus_trader.flux.api.socketio import profile_room
 from nautilus_trader.flux.common.keys import FluxRedisKeys
@@ -94,6 +96,17 @@ def _room_size(socket_server, room: str) -> int:
 
 def _take_socket_packets(client) -> list[dict]:
     return [packet for packet in client.get_received() if packet.get("name") in SOCKET_EVENT_NAMES]
+
+
+class _TestSocketIO:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, Any], str | None]] = []
+
+    def emit(self, event: str, payload: dict[str, Any], to: str | None = None) -> None:
+        self.events.append((event, payload, to))
+
+    def sleep(self, _seconds: float) -> None:
+        return
 
 
 @pytest.mark.parametrize(
@@ -399,5 +412,161 @@ def test_trade_delete_event_emits_once_and_is_reconnect_safe(
     _ = reconnect_client.emit("set_profile", {"profile": "tokenmm"}, callback=True)
     emitter.stop()
     emitter.emit_once(profile="tokenmm")
-    assert _take_socket_packets(reconnect_client) == []
+    reconnect_packets = _take_socket_packets(reconnect_client)
+    reconnect_trade_packets = [packet for packet in reconnect_packets if packet["name"] == "trade_update"]
+    assert len(reconnect_trade_packets) == 1
+    reconnect_trade_payload = reconnect_trade_packets[0]["args"][0]
+    assert reconnect_trade_payload["op"] == "delete"
+    assert reconnect_trade_payload["row_id"] == "trade-001"
+    assert reconnect_trade_payload["version"] == 2
+    assert reconnect_trade_payload["trade"] is None
     reconnect_client.disconnect()
+
+
+def test_profile_refcounts_keep_emitter_active_until_last_disconnect_then_cleanup(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+
+    client_a = socketio.test_client(app)
+    client_b = socketio.test_client(app)
+    assert client_a.emit("set_profile", {"profile": "tokenmm"}, callback=True)["ok"] is True
+    assert client_b.emit("set_profile", {"profile": "tokenmm"}, callback=True)["ok"] is True
+    emitter.stop()
+    emitter.emit_once(profile="tokenmm")
+
+    assert emitter._profile_refcounts["tokenmm"] == 2
+    assert "tokenmm" in emitter._signal_by_profile
+    assert "tokenmm" in emitter._trade_cursor_by_profile
+    assert "tokenmm" in emitter._alerts_by_profile
+
+    client_a.disconnect()
+    assert emitter._profile_refcounts["tokenmm"] == 1
+    assert "tokenmm" in emitter._signal_by_profile
+
+    client_b.disconnect()
+    assert "tokenmm" not in emitter._profile_refcounts
+    assert "tokenmm" not in emitter._seq_by_profile
+    assert "tokenmm" not in emitter._signal_by_profile
+    assert "tokenmm" not in emitter._trade_cursor_by_profile
+    assert "tokenmm" not in emitter._alerts_by_profile
+    assert emitter._active_profiles() == []
+
+
+def test_emitter_emit_once_is_idle_without_active_profiles_and_skips_store_reads(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+    monkeypatch,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    emitter = app.extensions["flux_socket_emitter"]
+    store = emitter._store
+    emitter.stop()
+
+    def _unexpected_store_call(*_args, **_kwargs):
+        raise AssertionError("store read should not run without active profiles")
+
+    monkeypatch.setattr(store, "load_signals_payload", _unexpected_store_call)
+    monkeypatch.setattr(store, "load_trades_rows", _unexpected_store_call)
+    monkeypatch.setattr(store, "load_alerts_rows", _unexpected_store_call)
+    monkeypatch.setattr(store, "alerts_stream_len", _unexpected_store_call)
+
+    assert emitter._active_profiles() == []
+    emitter.emit_once()
+
+
+def test_emitter_isolates_profile_failures_with_logging_and_backoff(caplog) -> None:
+    class _Store:
+        def __init__(self) -> None:
+            self.signal_calls: dict[str, int] = {}
+
+        def load_signals_payload(self, strategy_id: str, metadata: Any) -> dict[str, Any]:
+            _ = metadata
+            self.signal_calls[strategy_id] = self.signal_calls.get(strategy_id, 0) + 1
+            if strategy_id == "strategy_bad":
+                raise RuntimeError("boom")
+            return {
+                "id": strategy_id,
+                "meta": {"strategy_id": strategy_id},
+                "legs": {},
+            }
+
+        def load_trades_rows(
+            self,
+            strategy_id: str,
+            *,
+            limit: int,
+            since_ms: int | None,
+            since_seq: int | None = None,
+            scan_limit: int | None = None,
+        ) -> list[dict[str, Any]]:
+            _ = strategy_id, limit, since_ms, since_seq, scan_limit
+            return []
+
+        def load_alerts_rows(self, strategy_id: str, *, limit: int) -> list[dict[str, Any]]:
+            _ = strategy_id, limit
+            return []
+
+        def alerts_stream_len(self, strategy_id: str) -> int:
+            _ = strategy_id
+            return 0
+
+    socketio = _TestSocketIO()
+    store = _Store()
+    strategy_map = {
+        "healthy": "strategy_ok",
+        "broken": "strategy_bad",
+    }
+    emitter = FluxSocketEmitter(
+        socketio=socketio,
+        store=store,
+        metadata_resolver=lambda strategy_id: {"strategy_id": strategy_id},
+        strategy_resolver=lambda profile: strategy_map.get(profile),
+        poll_interval_s=0.25,
+    )
+    emitter.acquire_profile("healthy")
+    emitter.acquire_profile("broken")
+
+    caplog.set_level("ERROR")
+    emitter.emit_once()
+
+    healthy_events = [event for event in socketio.events if event[2] == "profile:healthy"]
+    assert healthy_events
+    assert store.signal_calls["strategy_ok"] == 1
+    assert store.signal_calls["strategy_bad"] == 1
+    assert any(
+        "profile=broken strategy_id=strategy_bad" in record.getMessage()
+        for record in caplog.records
+    )
+
+    emitter.emit_once()
+    assert store.signal_calls["strategy_ok"] == 2
+    assert store.signal_calls["strategy_bad"] == 1

@@ -18,13 +18,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from collections.abc import Mapping
 from collections.abc import Sequence
-from contextlib import suppress
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
+import logging
+from threading import Event
 from threading import RLock
 from threading import Thread
+from time import monotonic
 from typing import Any
 from typing import Protocol
 from typing import cast
@@ -48,6 +50,10 @@ SOCKETIO_DEFAULT_POLL_INTERVAL_S = 0.75
 SOCKETIO_TRADE_POLL_LIMIT = 200
 SOCKETIO_TRADE_SCAN_LIMIT = 2_000
 SOCKETIO_ALERTS_PREVIEW_LIMIT = 25
+SOCKETIO_FAILURE_BACKOFF_CAP_S = 30.0
+SOCKETIO_FAILURE_STREAK_CAP = 6
+
+_LOG = logging.getLogger(__name__)
 
 
 class FluxSocketStoreProtocol(Protocol):
@@ -273,10 +279,14 @@ class FluxSocketEmitter:
         self._lock = RLock()
         self._running = False
         self._thread: Thread | None = None
+        self._wake_event = Event()
+        self._profile_refcounts: dict[str, int] = {}
         self._seq_by_profile: dict[str, int] = {}
         self._signal_by_profile: dict[str, dict[str, Any]] = {}
         self._trade_cursor_by_profile: dict[str, int] = {}
         self._alerts_by_profile: dict[str, tuple[int, int | None, str]] = {}
+        self._failure_streak_by_profile: dict[str, int] = {}
+        self._backoff_until_by_profile: dict[str, float] = {}
         self._trade_poll_limit = SOCKETIO_TRADE_POLL_LIMIT
         self._trade_scan_limit = SOCKETIO_TRADE_SCAN_LIMIT
         self._alerts_preview_limit = SOCKETIO_ALERTS_PREVIEW_LIMIT
@@ -284,16 +294,19 @@ class FluxSocketEmitter:
     def start(self) -> None:
         with self._lock:
             if self._running:
+                self._wake_event.set()
                 return
             self._running = True
             self._thread = Thread(target=self._run_loop, name=f"flux-socket-emitter-{uuid4().hex[:8]}", daemon=True)
             self._thread.start()
+        self._wake_event.set()
 
     def stop(self) -> None:
         with self._lock:
             self._running = False
             thread = self._thread
             self._thread = None
+            self._wake_event.set()
         if thread is not None and thread.is_alive():
             thread.join(timeout=self._poll_interval_s * 2.0)
 
@@ -305,33 +318,88 @@ class FluxSocketEmitter:
             profiles = [normalized] if normalized else []
 
         for current_profile in profiles:
-            self._emit_profile(current_profile)
+            self._emit_profile_safely(current_profile)
 
     def _run_loop(self) -> None:
         while True:
             with self._lock:
-                running = self._running
-            if not running:
-                return
-            # Keep emitter resilient; REST remains authoritative.
-            with suppress(Exception):
-                self.emit_once()
+                if not self._running:
+                    return
+                profiles = sorted(
+                    profile
+                    for profile, count in self._profile_refcounts.items()
+                    if count > 0
+                )
+                if not profiles:
+                    self._wake_event.clear()
+            if not profiles:
+                self._wake_event.wait(timeout=self._poll_interval_s * 4.0)
+                continue
+
+            for profile in profiles:
+                self._emit_profile_safely(profile)
+
             self._socketio.sleep(self._poll_interval_s)
 
+    def acquire_profile(self, profile: Any) -> None:
+        normalized = normalize_profile(profile)
+        if not normalized:
+            return
+        with self._lock:
+            self._profile_refcounts[normalized] = self._profile_refcounts.get(normalized, 0) + 1
+            self._wake_event.set()
+
+    def release_profile(self, profile: Any) -> None:
+        normalized = normalize_profile(profile)
+        if not normalized:
+            return
+        with self._lock:
+            next_count = self._profile_refcounts.get(normalized, 0) - 1
+            if next_count <= 0:
+                self._profile_refcounts.pop(normalized, None)
+                self._cleanup_profile_state_locked(normalized)
+            else:
+                self._profile_refcounts[normalized] = next_count
+            self._wake_event.set()
+
     def _active_profiles(self) -> list[str]:
-        manager_rooms = self._socketio.server.manager.rooms.get("/", {})
-        out: list[str] = []
-        for room_name, members in manager_rooms.items():
-            if not isinstance(room_name, str) or not room_name.startswith("profile:"):
-                continue
-            if members is None:
-                continue
-            if len(members) <= 0:
-                continue
-            profile = normalize_profile(room_name.split("profile:", maxsplit=1)[1])
-            if profile:
-                out.append(profile)
-        return sorted(set(out))
+        with self._lock:
+            return sorted(
+                profile
+                for profile, count in self._profile_refcounts.items()
+                if count > 0
+            )
+
+    def _cleanup_profile_state_locked(self, profile: str) -> None:
+        self._seq_by_profile.pop(profile, None)
+        self._signal_by_profile.pop(profile, None)
+        self._trade_cursor_by_profile.pop(profile, None)
+        self._alerts_by_profile.pop(profile, None)
+        self._failure_streak_by_profile.pop(profile, None)
+        self._backoff_until_by_profile.pop(profile, None)
+
+    def _clear_profile_failure(self, profile: str) -> None:
+        with self._lock:
+            self._failure_streak_by_profile.pop(profile, None)
+            self._backoff_until_by_profile.pop(profile, None)
+
+    def _record_profile_failure(self, profile: str) -> tuple[int, float]:
+        with self._lock:
+            streak = min(
+                self._failure_streak_by_profile.get(profile, 0) + 1,
+                SOCKETIO_FAILURE_STREAK_CAP,
+            )
+            backoff_s = min(
+                self._poll_interval_s * (2 ** max(0, streak - 1)),
+                SOCKETIO_FAILURE_BACKOFF_CAP_S,
+            )
+            self._failure_streak_by_profile[profile] = streak
+            self._backoff_until_by_profile[profile] = monotonic() + backoff_s
+            return streak, backoff_s
+
+    def _is_profile_backing_off(self, profile: str, *, now_s: float) -> bool:
+        with self._lock:
+            return self._backoff_until_by_profile.get(profile, 0.0) > now_s
 
     def _next_seq(self, profile: str) -> int:
         with self._lock:
@@ -339,14 +407,45 @@ class FluxSocketEmitter:
             self._seq_by_profile[profile] = seq
             return seq
 
-    def _emit_profile(self, profile: str) -> None:
+    def _emit_profile_safely(self, profile: str) -> None:
+        if self._is_profile_backing_off(profile, now_s=monotonic()):
+            return
+
         strategy_id = self._strategy_resolver(profile)
         if not strategy_id:
             return
+
+        room = profile_room(profile)
+        try:
+            self._emit_profile(profile, strategy_id=strategy_id, room=room)
+        except Exception as exc:  # noqa: BLE001
+            streak, backoff_s = self._record_profile_failure(profile)
+            _LOG.exception(
+                "Flux socket emitter profile tick failed profile=%s strategy_id=%s streak=%s backoff_s=%.3f error=%s",
+                profile,
+                strategy_id,
+                streak,
+                backoff_s,
+                type(exc).__name__,
+            )
+        else:
+            self._clear_profile_failure(profile)
+
+    def _emit_profile(
+        self,
+        profile: str,
+        *,
+        strategy_id: str,
+        room: str,
+    ) -> None:
         metadata = self._metadata_resolver(strategy_id)
         signal_payload = build_stable_signal_view(self._store.load_signals_payload(strategy_id, metadata))
 
-        trade_cursor = self._trade_cursor_by_profile.get(profile, 0)
+        with self._lock:
+            trade_cursor = self._trade_cursor_by_profile.get(profile, 0)
+            previous_signal = self._signal_by_profile.get(profile)
+            previous_alerts_signature = self._alerts_by_profile.get(profile)
+
         trades_rows = self._store.load_trades_rows(
             strategy_id,
             limit=self._trade_poll_limit,
@@ -357,9 +456,6 @@ class FluxSocketEmitter:
         alerts_rows = self._store.load_alerts_rows(strategy_id, limit=self._alerts_preview_limit)
         alerts_total = self._store.alerts_stream_len(strategy_id)
 
-        previous_signal = self._signal_by_profile.get(profile)
-        previous_alerts_signature = self._alerts_by_profile.get(profile)
-
         signal_patch = build_signal_delta_patch(previous_signal, signal_payload)
         if signal_patch:
             signal_event = {
@@ -369,7 +465,7 @@ class FluxSocketEmitter:
                 "server_ts_ms": now_ms(),
                 "patch": signal_patch,
             }
-            self._socketio.emit("signal_delta", signal_event, to=profile_room(profile))
+            self._socketio.emit("signal_delta", signal_event, to=room)
 
         latest_trade_seq = trade_cursor
         for row in trades_rows:
@@ -395,7 +491,7 @@ class FluxSocketEmitter:
                     trade=None,
                     server_ts_ms=now_ms(),
                 )
-                self._socketio.emit("trade_update", payload, to=profile_room(profile))
+                self._socketio.emit("trade_update", payload, to=room)
                 continue
 
             normalized = _normalize_trade_row(row, row_id=row_id, version=version)
@@ -409,7 +505,7 @@ class FluxSocketEmitter:
                 trade=normalized,
                 server_ts_ms=now_ms(),
             )
-            self._socketio.emit("trade_update", payload, to=profile_room(profile))
+            self._socketio.emit("trade_update", payload, to=room)
 
         alerts_signature = _alerts_signature(alerts_rows, total_count=alerts_total)
         strategy_changed = previous_signal != signal_payload
@@ -426,11 +522,15 @@ class FluxSocketEmitter:
                     "latest_ts_ms": alerts_signature[1],
                 },
             }
-            self._socketio.emit("market_update", market_payload, to=profile_room(profile))
+            self._socketio.emit("market_update", market_payload, to=room)
 
-        self._signal_by_profile[profile] = _copy_mapping(signal_payload)
-        self._trade_cursor_by_profile[profile] = latest_trade_seq
-        self._alerts_by_profile[profile] = alerts_signature
+        with self._lock:
+            if self._profile_refcounts.get(profile, 0) <= 0:
+                self._cleanup_profile_state_locked(profile)
+                return
+            self._signal_by_profile[profile] = _copy_mapping(signal_payload)
+            self._trade_cursor_by_profile[profile] = latest_trade_seq
+            self._alerts_by_profile[profile] = alerts_signature
 
 
 @dataclass(frozen=True)
@@ -488,6 +588,7 @@ def create_flux_socket_server(  # noqa: C901
         with sid_lock:
             sid_profiles[request.sid] = profile
         join_room(profile_room(profile))
+        emitter.acquire_profile(profile)
         emitter.start()
         return True
 
@@ -497,6 +598,7 @@ def create_flux_socket_server(  # noqa: C901
             profile = sid_profiles.pop(request.sid, "")
         if profile:
             leave_room(profile_room(profile))
+            emitter.release_profile(profile)
 
     @socketio.on("set_profile")
     def _on_set_profile(payload: Any) -> dict[str, Any]:
@@ -508,9 +610,18 @@ def create_flux_socket_server(  # noqa: C901
 
         previous_profile = ""
         with sid_lock:
+            previous_profile = sid_profiles.get(request.sid, "")
+        if previous_profile and previous_profile == next_profile:
+            return {
+                "ok": True,
+                "profile": next_profile,
+                "room": profile_room(next_profile) if next_profile else None,
+            }
+        with sid_lock:
             previous_profile = sid_profiles.pop(request.sid, "")
-            if previous_profile:
-                leave_room(profile_room(previous_profile))
+        if previous_profile:
+            leave_room(profile_room(previous_profile))
+            emitter.release_profile(previous_profile)
         if not next_profile:
             return {
                 "ok": True,
@@ -531,7 +642,8 @@ def create_flux_socket_server(  # noqa: C901
 
         with sid_lock:
             sid_profiles[request.sid] = next_profile
-            join_room(profile_room(next_profile))
+        join_room(profile_room(next_profile))
+        emitter.acquire_profile(next_profile)
 
         if next_profile:
             emitter.start()

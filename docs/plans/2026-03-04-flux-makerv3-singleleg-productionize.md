@@ -75,7 +75,7 @@ Production gaps identified in review (high-level) and status:
 3. Redis schema not versioned / multi-strategy contamination risk: resolved via `flux:v1` + strict strategy scoping (Tasks 1-4).
 4. Unbounded Redis growth paths: resolved via bounded retention defaults + docs (Tasks 2, 4).
 5. Strategy hot-path I/O and incomplete lifecycle reconciliation: resolved for production readiness baseline (Task 6); further modularization/refactor is tracked separately.
-6. Socket.IO emitter lifecycle/perf/observability gaps for Fluxboard realtime: pending hardening (tracked in TokenMM plan open actions; primary code: `nautilus_trader/flux/api/socketio.py`).
+6. Socket.IO emitter lifecycle/perf/observability gaps for Fluxboard realtime: resolved via explicit profile refcounts, idle wake/sleep behavior, bounded per-profile error backoff/logging, and zero-ref state cleanup in `nautilus_trader/flux/api/socketio.py`.
 
 ## Target module layout (proposed)
 
@@ -185,7 +185,11 @@ Phase 8: Docs and cleanup
 - [x] Task 9: Follow-up gate (bridge offsets, API legs keying, CI plotly check, config uniqueness, bridge runner scope hardening)
 - [x] Task 10: Non-overlap follow-up wave (CI/pre-commit gate wiring, redis-schema allowlist enforcement, API localhost defaults, plotly test guard)
 - [x] Task 11: Fluxboard TokenMM migration (Fluxboard app + TokenMM contracts/runbook + compat; tracked in `docs/plans/2026-03-04-fluxboard-tokenmm-minimal-migration.md`)
-- [ ] Task 12: Socket.IO emitter lifecycle/perf hardening (idle when no profiles, avoid room scans, per-profile backoff/logging, bounded emission)
+- [x] Task 12: Socket.IO emitter lifecycle/perf hardening (idle when no profiles, avoid room scans, per-profile backoff/logging, bounded emission)
+
+### Task 12 progress log
+
+- [2026-03-04 09:58 UTC] Task 12: Implemented `FluxSocketEmitter` active-profile refcount bookkeeping (connect/disconnect/set_profile hooks), event-driven idle loop wakeups, per-profile error isolation with bounded backoff+logging, and zero-ref profile state cleanup; added lifecycle/error-isolation tests in `tests/unit_tests/flux/api/test_socketio_tokenmm.py` / evidence: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/unit_tests/flux/api/test_socketio_tokenmm.py --confcutdir=tests/unit_tests/flux/api` (15 passed) / SHA: pending commit (`uncommitted`).
 
 ### Follow-up gate tracker (P0 + P1)
 
