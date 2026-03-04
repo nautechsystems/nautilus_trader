@@ -1284,7 +1284,11 @@ pub trait DataActor:
         let topic = get_option_greeks_topic(instrument_id);
 
         let handler = TypedHandler::from(move |option_greeks: &OptionGreeks| {
-            get_actor_unchecked::<Self>(&actor_id).handle_option_greeks(option_greeks);
+            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                actor.handle_option_greeks(option_greeks);
+            } else {
+                log::error!("Actor {actor_id} not found for option greeks handling");
+            }
         });
 
         DataActorCore::subscribe_option_greeks(
@@ -1368,7 +1372,11 @@ pub trait DataActor:
         let topic = get_option_chain_topic(series_id);
 
         let handler = TypedHandler::from(move |slice: &OptionChainSlice| {
-            get_actor_unchecked::<Self>(&actor_id).handle_option_chain(slice);
+            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                actor.handle_option_chain(slice);
+            } else {
+                log::error!("Actor {actor_id} not found for option chain handling");
+            }
         });
 
         DataActorCore::subscribe_option_chain(

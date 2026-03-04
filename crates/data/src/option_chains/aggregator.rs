@@ -339,25 +339,29 @@ impl OptionChainAggregator {
     pub fn snapshot(&self, ts_init: UnixNanos) -> OptionChainSlice {
         let atm_price = self.atm_tracker.atm_price();
 
-        // Collect all strikes from buffers
-        let all_strikes = self.buffer_strikes();
+        // Use catalog strikes for ATM strike (most accurate closest-strike lookup)
+        let catalog_strikes = Self::sorted_strikes(&self.instruments);
+        let atm_strike = atm_price.and_then(|atm| Self::find_closest_strike(&catalog_strikes, atm));
 
-        // Resolve which strikes to include based on the filter
-        let allowed_strikes = self.strike_range.resolve(atm_price, &all_strikes);
-
-        // Find closest strike to ATM for atm_strike field
-        let atm_strike = atm_price.and_then(|atm| Self::find_closest_strike(&all_strikes, atm));
+        // Filter buffers using active set strikes directly. The active set is already
+        // the result of strike range resolution from the last rebalance. Re-resolving
+        // here would shift the window during hysteresis/cooldown, dropping buffered data.
+        let active_strikes: HashSet<Price> = self
+            .active_ids
+            .iter()
+            .filter_map(|id| self.instruments.get(id).map(|(s, _)| *s))
+            .collect();
 
         // Build filtered snapshot (clone from buffers)
         let mut calls = BTreeMap::new();
         for (strike, data) in &self.call_buffer {
-            if allowed_strikes.contains(strike) {
+            if active_strikes.contains(strike) {
                 calls.insert(*strike, data.clone());
             }
         }
         let mut puts = BTreeMap::new();
         for (strike, data) in &self.put_buffer {
-            if allowed_strikes.contains(strike) {
+            if active_strikes.contains(strike) {
                 puts.insert(*strike, data.clone());
             }
         }
@@ -377,19 +381,6 @@ impl OptionChainAggregator {
             ts_event,
             ts_init,
         }
-    }
-
-    /// Returns all strike prices present in the buffers (union of calls and puts, sorted, deduped).
-    fn buffer_strikes(&self) -> Vec<Price> {
-        let mut strikes: Vec<Price> = self
-            .call_buffer
-            .keys()
-            .chain(self.put_buffer.keys())
-            .copied()
-            .collect();
-        strikes.sort();
-        strikes.dedup();
-        strikes
     }
 
     /// Returns `true` if both buffers are empty.
@@ -1127,6 +1118,67 @@ mod tests {
         let slice = agg.snapshot(UnixNanos::from(1000u64));
         // No quotes → ts_event falls back to ts_init
         assert_eq!(slice.ts_event, UnixNanos::from(1000u64));
+    }
+
+    #[rstest]
+    fn test_snapshot_retains_buffered_data_during_hysteresis_window() {
+        // Setup: 3 strikes at 47500/50000/52500, AtmRelative +-1, hysteresis enabled
+        let strikes = [47500, 50000, 52500];
+        let mut instruments = HashMap::new();
+        for s in &strikes {
+            let strike = Price::from(&s.to_string());
+            let call_id = InstrumentId::from(&format!("BTC-20240101-{s}-C.DERIBIT"));
+            instruments.insert(call_id, (strike, OptionKind::Call));
+        }
+        let tracker = AtmTracker::new(AtmSource::UnderlyingQuoteMid(btc_perp()));
+        let mut agg = OptionChainAggregator::new(
+            make_series_id(),
+            StrikeRange::AtmRelative {
+                strikes_above: 1,
+                strikes_below: 1,
+            },
+            tracker,
+            instruments,
+        );
+        agg.set_hysteresis(0.6);
+        agg.set_cooldown_ns(0);
+
+        // Set ATM to 50000, rebalance -> active: {47500, 50000, 52500}
+        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
+        agg.update_quote(&perp_quote);
+        let action = agg.check_rebalance(now()).unwrap();
+        agg.apply_rebalance(&action, now());
+        assert_eq!(agg.instrument_ids().len(), 3);
+
+        // Buffer quotes for all active strikes
+        let q1 = make_quote(
+            InstrumentId::from("BTC-20240101-47500-C.DERIBIT"),
+            "3000.00",
+            "3100.00",
+        );
+        let q2 = make_quote(
+            InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
+            "1500.00",
+            "1600.00",
+        );
+        let q3 = make_quote(
+            InstrumentId::from("BTC-20240101-52500-C.DERIBIT"),
+            "500.00",
+            "600.00",
+        );
+        agg.update_quote(&q1);
+        agg.update_quote(&q2);
+        agg.update_quote(&q3);
+        assert_eq!(agg.call_buffer_len(), 3);
+
+        // Move ATM slightly toward 52500 but within hysteresis band (no rebalance)
+        let perp_quote2 = make_quote(btc_perp(), "50900.00", "51100.00");
+        agg.update_quote(&perp_quote2);
+        assert!(agg.check_rebalance(now()).is_none());
+
+        // Snapshot must still include all 3 buffered strikes
+        let slice = agg.snapshot(UnixNanos::from(100u64));
+        assert_eq!(slice.call_count(), 3);
     }
 
     #[rstest]

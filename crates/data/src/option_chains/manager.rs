@@ -451,9 +451,28 @@ impl OptionChainManager {
             }
         }
 
-        // Mark and index handlers become no-ops via WeakCell when Rc drops
-        self.mark_handler.take();
-        self.index_handler.take();
+        // Unsubscribe ATM source handler from msgbus
+        match self.atm_source {
+            AtmSource::MarkPrice(source_id) => {
+                if let Some(handler) = self.mark_handler.take() {
+                    let topic = switchboard::get_mark_price_topic(source_id);
+                    msgbus::unsubscribe_mark_prices(topic.into(), &handler);
+                }
+            }
+            AtmSource::IndexPrice(source_id) => {
+                if let Some(handler) = self.index_handler.take() {
+                    let topic = switchboard::get_index_price_topic(source_id);
+                    msgbus::unsubscribe_index_prices(topic.into(), &handler);
+                }
+            }
+            AtmSource::UnderlyingQuoteMid(source_id) => {
+                if let Some(handler) = self.quote_handlers.first() {
+                    let topic = switchboard::get_quotes_topic(source_id);
+                    msgbus::unsubscribe_quotes(topic.into(), handler);
+                }
+            }
+            AtmSource::ForwardPrice => {}
+        }
 
         // Cancel timer
         if let Some(timer_name) = self.timer_name.take() {
