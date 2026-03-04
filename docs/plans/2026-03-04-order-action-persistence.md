@@ -43,12 +43,12 @@ Reference files (source of truth):
 1. Cross-table ACID invariants with fills/positions.
 1. Multi-process writers to SQLite (use Postgres/outbox for multi-node scaling).
 
-## Review decisions to lock early
+## Review decisions locked (Task 1)
 
-1. Event set: do we include `OrderInitialized` (recommended) and `OrderAccepted`/`OrderRejected` (recommended)?
-1. Strategy metadata capture: tags-only (PLACE only) vs tags + custom intent events (PLACE + CANCEL).
-1. SQLite layout: separate DB files for fills vs orders (recommended) vs unified single-writer sink.
-1. Index set: minimal baseline vs additional (instrument/venue_order_id/action_id).
+1. Event set (MVP): include `OrderInitialized`, `OrderSubmitted`, `OrderAccepted`, `OrderRejected`, `OrderPendingCancel`, `OrderCanceled`, `OrderCancelRejected`.
+1. Strategy metadata capture (MVP): tags-based extraction from `OrderInitialized` for PLACE path; keep cancel `OrderActionIntent` stream as follow-up (Task 5), not required for Tasks 2-4.
+1. SQLite layout (MVP default): separate DB files for fills vs orders (`fills.sqlite`, `orders.sqlite`).
+1. Index set (MVP): baseline indexes only; optional indexes (`instrument_id`, `venue_order_id`, `action_id`) deferred until query-driven follow-up.
 
 ---
 
@@ -67,7 +67,7 @@ Topic notes:
 
 ## Event contract (selected `OrderEvent` types)
 
-### Recommended MVP event set (intent -> result)
+### Locked MVP event set (intent -> result)
 
 Persist the following (published on internal order event topics, currently `events.order.<strategy_id>`):
 
@@ -85,6 +85,7 @@ Persist the following (published on internal order event topics, currently `even
 Notes:
 1. `OrderInitialized` is the only order lifecycle event that reliably carries strategy-supplied `tags` today; most other order events do not carry tags/info.
 1. Cancel lifecycle events do not have a native strategy metadata slot; see Strategy intent metadata section for how to persist cancel “reason”.
+1. Scope lock: `OrderInitialized`, `OrderAccepted`, and `OrderRejected` are included in MVP (not optional).
 
 ---
 
@@ -109,15 +110,24 @@ Treat each persisted record as an immutable event.
 
 ### Action type/state mapping
 
-Persist `action_type` and `action_state` as stable, queryable enums derived from `event_type`:
+Persist `action_type` and `action_state` as stable, queryable enums derived from `event_type`.
 
-1. `OrderInitialized` -> `PLACE` / `INITIALIZED`
-1. `OrderSubmitted` -> `PLACE` / `SUBMITTED`
-1. `OrderAccepted` -> `PLACE` / `ACCEPTED`
-1. `OrderRejected` -> `PLACE` / `REJECTED`
-1. `OrderPendingCancel` -> `CANCEL` / `REQUESTED`
-1. `OrderCanceled` -> `CANCEL` / `COMPLETED`
-1. `OrderCancelRejected` -> `CANCEL` / `REJECTED`
+Locked enum domains:
+
+1. `action_type` in `{PLACE, CANCEL}`
+1. `action_state` in `{INITIALIZED, SUBMITTED, ACCEPTED, REQUESTED, COMPLETED, REJECTED}`
+
+Locked event mapping:
+
+| event_type | action_type | action_state |
+| --- | --- | --- |
+| `OrderInitialized` | `PLACE` | `INITIALIZED` |
+| `OrderSubmitted` | `PLACE` | `SUBMITTED` |
+| `OrderAccepted` | `PLACE` | `ACCEPTED` |
+| `OrderRejected` | `PLACE` | `REJECTED` |
+| `OrderPendingCancel` | `CANCEL` | `REQUESTED` |
+| `OrderCanceled` | `CANCEL` | `COMPLETED` |
+| `OrderCancelRejected` | `CANCEL` | `REJECTED` |
 
 ---
 
@@ -151,7 +161,7 @@ Columns (baseline):
 - `position_id TEXT` (nullable)
 
 - `action_type TEXT NOT NULL` (`PLACE` or `CANCEL`)
-- `action_state TEXT NOT NULL` (`INITIALIZED`, `SUBMITTED`, `ACCEPTED`, `REQUESTED`, `COMPLETED`, `REJECTED`)
+- `action_state TEXT NOT NULL` (`INITIALIZED`, `SUBMITTED`, `ACCEPTED`, `REQUESTED`, `COMPLETED`, `REJECTED`; locked enum set, aligned with mapping table above)
 - `event_type TEXT NOT NULL` (e.g., `OrderSubmitted`)
 
 Strategy intent metadata (best-effort, nullable):
@@ -321,12 +331,13 @@ Postgres follow-up avoids these limitations.
 
 ---
 
-## Open questions (to lock before implementation)
+## Open questions status (locked for Tasks 2-4 scope)
 
-1. Do we persist `OrderInitialized` in MVP (recommended for order params + tags)?
-1. Do we add `OrderActionIntent` (recommended for cancel reasons) in MVP or as a follow-up?
-1. Should `action_id` be mandatory in strategies (enforced) or best-effort?
-1. Which optional indexes are required by your real queries (`instrument_id`, `venue_order_id`, `action_id`)?
+1. `OrderInitialized` in MVP: **Yes (locked)**.
+1. `OrderActionIntent` in MVP: **No (follow-up, Task 5)**.
+1. `action_id` strategy requirement in MVP: **best-effort (nullable, not enforced)**.
+1. Optional indexes (`instrument_id`, `venue_order_id`, `action_id`): **defer from MVP; add only when query evidence requires them**.
+1. Blocking check for Tasks 2-4: **No remaining blockers**.
 
 ---
 
@@ -336,7 +347,7 @@ Legend: `TODO` | `DOING` | `DONE` | `BLOCKED`
 
 | Item | Status | Notes | Link |
 | --- | --- | --- | --- |
-| Task 1: Lock MVP scope + mapping | TODO | Confirm event set and `action_state` mapping | |
+| Task 1: Lock MVP scope + mapping | DONE | Locked MVP event set (includes `OrderInitialized`/`OrderAccepted`/`OrderRejected`), locked enum mapping, moved `OrderActionIntent` to follow-up, set `action_id` best-effort, deferred optional indexes | |
 | Task 2: SQLite store for `order_action` | TODO | Schema + writer API + idempotent insert | |
 | Task 3: `OrderActionPersistenceActor` | TODO | Subscribe/filter, enqueue-only hot path, bounded flush, flush barrier | |
 | Task 4: Docs update | TODO | Document usage and joins with fills | |
