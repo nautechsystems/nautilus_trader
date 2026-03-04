@@ -9,9 +9,12 @@ Released on TBD (UTC).
 - None
 
 ### Fixes
-- None
+- Fix Binance algo order update (#3665), thanks @qu1zzyboy
 
 ### Internal Improvements
+- Added Python strategy support to `LiveNode` with `add_strategy_from_config`
+- Added backtest margin models, `FXRolloverInterestModule`, `PerContractFeeModel`, and `SimulationModule` trait in Rust
+- Upgraded `databento` crate to v0.43.0
 - Upgraded `tokio` crate to v1.50.0
 
 ---

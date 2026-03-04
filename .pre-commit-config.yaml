@@ -342,7 +342,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.10.7 # Must match uv-version file
+    rev: 0.10.8 # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

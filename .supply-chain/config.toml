@@ -31,6 +31,12 @@ audit-as-crates-io = true
 [policy.nautilus-backtest]
 audit-as-crates-io = true
 
+[policy.nautilus-betfair]
+audit-as-crates-io = false
+
+[policy.nautilus-binance]
+audit-as-crates-io = true
+
 [policy.nautilus-bitmex]
 audit-as-crates-io = true
 
@@ -59,6 +65,9 @@ audit-as-crates-io = true
 audit-as-crates-io = true
 
 [policy.nautilus-deribit]
+audit-as-crates-io = true
+
+[policy.nautilus-dydx]
 audit-as-crates-io = true
 
 [policy.nautilus-execution]
@@ -91,8 +100,14 @@ audit-as-crates-io = true
 [policy.nautilus-persistence]
 audit-as-crates-io = true
 
+[policy.nautilus-polymarket]
+audit-as-crates-io = false
+
 [policy.nautilus-portfolio]
 audit-as-crates-io = true
+
+[policy.nautilus-pyo3]
+audit-as-crates-io = false
 
 [policy.nautilus-risk]
 audit-as-crates-io = true
@@ -824,7 +839,7 @@ version = "2.10.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.databento]]
-version = "0.42.0"
+version = "0.43.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.datafusion]]
@@ -952,15 +967,11 @@ version = "52.2.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.dbn]]
-version = "0.50.0"
+version = "0.51.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.dbn-macros]]
-version = "0.50.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.deranged]]
-version = "0.5.8"
+version = "0.51.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.derivative]]
@@ -1519,6 +1530,10 @@ criteria = "safe-to-deploy"
 version = "0.53.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.nautilus-binance]]
+version = "0.54.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.nautilus-bitmex]]
 version = "0.53.0"
 criteria = "safe-to-deploy"
@@ -1557,6 +1572,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-deribit]]
 version = "0.53.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.nautilus-dydx]]
+version = "0.54.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-execution]]
@@ -1655,10 +1674,6 @@ criteria = "safe-to-deploy"
 version = "0.4.6"
 criteria = "safe-to-deploy"
 
-[[exemptions.num-conv]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.num_cpus]]
 version = "1.17.0"
 criteria = "safe-to-deploy"
@@ -1717,10 +1732,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.ordered-float]]
 version = "5.1.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.oval]]
-version = "2.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.page_size]]
@@ -1844,7 +1855,7 @@ version = "0.12.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.proc-macro-crate]]
-version = "3.4.0"
+version = "3.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.proc-macro2]]
@@ -1932,7 +1943,7 @@ version = "0.11.13"
 criteria = "safe-to-deploy"
 
 [[exemptions.quote]]
-version = "1.0.44"
+version = "1.0.45"
 criteria = "safe-to-deploy"
 
 [[exemptions.r-efi]]
@@ -2431,14 +2442,6 @@ criteria = "safe-to-deploy"
 version = "0.3.47"
 criteria = "safe-to-deploy"
 
-[[exemptions.time-core]]
-version = "0.1.8"
-criteria = "safe-to-deploy"
-
-[[exemptions.time-macros]]
-version = "0.2.27"
-criteria = "safe-to-deploy"
-
 [[exemptions.tiny-keccak]]
 version = "2.0.2"
 criteria = "safe-to-deploy"
@@ -2484,7 +2487,7 @@ version = "0.9.12+spec-1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.toml]]
-version = "1.0.3+spec-1.1.0"
+version = "1.0.4+spec-1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.toml_datetime]]
@@ -2492,7 +2495,7 @@ version = "1.0.0+spec-1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.toml_edit]]
-version = "0.23.10+spec-1.0.0"
+version = "0.25.4+spec-1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.toml_parser]]

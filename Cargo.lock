@@ -2393,9 +2393,9 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "databento"
-version = "0.42.0"
+version = "0.43.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2821d8a71dd110cc34bbbc92e4062e45eba5ae541bfb046dcdb5380c0500386"
+checksum = "c027d4b810e280c4a21ba792d0aa264f2a2a26e11339f786329acb3e8b75639d"
 dependencies = [
  "async-compression",
  "dbn",
@@ -3049,9 +3049,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.50.0"
+version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3e3b00124837e38a7326429742164b78254ac75077a7591d26b6e6640fdbcbb"
+checksum = "290319a785bb81b62989124cbc343fca7ac018ee98cd80d3ba1d842e7bbfcb42"
 dependencies = [
  "async-compression",
  "csv",
@@ -3060,7 +3060,6 @@ dependencies = [
  "itoa",
  "json-writer",
  "num_enum",
- "oval",
  "serde",
  "thiserror 2.0.18",
  "time",
@@ -3070,9 +3069,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.50.0"
+version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ab1fe79718b811f2e1289b1cccdebc8bfa350566656d7f4f809bf5be405f134"
+checksum = "7bf9d6dbda6ac6b141b8c0f7f07d1965985bafaa9b0abf97f4a1665816647403"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -5214,7 +5213,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.28.0",
- "toml 1.0.3+spec-1.1.0",
+ "toml 1.0.4+spec-1.1.0",
  "ustr",
  "uuid",
 ]
@@ -6349,12 +6348,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oval"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "135cef32720c6746450d910890b0b69bcba2bbf6f85c9f4583df13fe415de828"
-
-[[package]]
 name = "page_size"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6735,9 +6728,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro-crate"
-version = "3.4.0"
+version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "219cb19e96be00ab2e37d6e299658a0cfa83e52429179969b0f0121b4ac46983"
+checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
 dependencies = [
  "toml_edit",
 ]
@@ -6976,7 +6969,7 @@ dependencies = [
  "serde",
  "serde_json",
  "time",
- "toml 1.0.3+spec-1.1.0",
+ "toml 1.0.4+spec-1.1.0",
 ]
 
 [[package]]
@@ -7067,9 +7060,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.44"
+version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21b2ebcf727b7760c461f091f9f0f539b77b8e87f2fd88131e7f1b433b3cece4"
+checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
 ]
@@ -9098,9 +9091,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "1.0.3+spec-1.1.0"
+version = "1.0.4+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7614eaf19ad818347db24addfa201729cf2a9b6fdfd9eb0ab870fcacc606c0c"
+checksum = "c94c3321114413476740df133f0d8862c61d87c8d26f04c6841e033c8c80db47"
 dependencies = [
  "indexmap 2.13.0",
  "serde_core",
@@ -9131,12 +9124,12 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.23.10+spec-1.0.0"
+version = "0.25.4+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84c8b9f757e028cee9fa244aea147aab2a9ec09d5325a9b01e0a49730c2b5269"
+checksum = "7193cbd0ce53dc966037f54351dbbcf0d5a642c7f0038c382ef9e677ce8c13f2"
 dependencies = [
  "indexmap 2.13.0",
- "toml_datetime 0.7.5+spec-1.1.0",
+ "toml_datetime 1.0.0+spec-1.1.0",
  "toml_parser",
  "winnow",
 ]
