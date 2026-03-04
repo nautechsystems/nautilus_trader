@@ -10,6 +10,7 @@ This document defines the production Redis contract for Flux integrations.
 4. Each datum has one authoritative store (no map+list duplication for the same canonical record set).
 5. High-churn data is always bounded by retention policy.
 6. `ts_ms` is the canonical event timestamp field for Flux payloads (integer Unix milliseconds, UTC).
+7. Identity uniqueness policy is configuration-level: `strategy_instance_id` must equal `strategy_id`; Redis keys stay scoped by `strategy_id` with no schema change.
 
 ## Naming conventions
 

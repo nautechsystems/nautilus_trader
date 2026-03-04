@@ -28,7 +28,7 @@ class TestFluxConfig:
             namespace="flux",
             schema_version="v1",
             strategy_id="maker_v3_01",
-            strategy_instance_id="maker_v3_01_a",
+            strategy_instance_id="maker_v3_01",
             trader_id="TRADER-001",
             external_strategy_id="bybit_binance_maker_v3",
         )
@@ -95,6 +95,17 @@ class TestFluxConfig:
                 namespace="flux",
                 schema_version="v2",
                 strategy_id="maker_v3_01",
+                strategy_instance_id="maker_v3_01",
+                trader_id="TRADER-001",
+                external_strategy_id="external_01",
+            )
+
+    def test_rejects_strategy_instance_id_different_from_strategy_id(self) -> None:
+        with pytest.raises(ValueError, match="strategy_instance_id"):
+            FluxIdentityConfig(
+                namespace="flux",
+                schema_version="v1",
+                strategy_id="maker_v3_01",
                 strategy_instance_id="maker_v3_01_a",
                 trader_id="TRADER-001",
                 external_strategy_id="external_01",
@@ -115,7 +126,7 @@ class TestFluxConfig:
             "namespace": "flux",
             "schema_version": "v1",
             "strategy_id": "maker_v3_01",
-            "strategy_instance_id": "maker_v3_01_a",
+            "strategy_instance_id": "maker_v3_01",
             "trader_id": "TRADER-001",
             "external_strategy_id": "external_01",
         }
@@ -203,7 +214,7 @@ class TestFluxConfig:
             namespace="flux",
             schema_version="v1",
             strategy_id="maker_v3_01",
-            strategy_instance_id="maker_v3_01_a",
+            strategy_instance_id="maker_v3_01",
             trader_id="TRADER-001",
             external_strategy_id="external_01",
         )

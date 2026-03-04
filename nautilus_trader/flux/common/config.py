@@ -115,6 +115,8 @@ class FluxIdentityConfig(NautilusConfig, frozen=True):
         validate_schema_version(self.schema_version, "schema_version")
         validate_identifier_part(self.strategy_id, "strategy_id")
         validate_identifier_part(self.strategy_instance_id, "strategy_instance_id")
+        if self.strategy_instance_id != self.strategy_id:
+            raise ValueError("`strategy_instance_id` must exactly match `strategy_id`")
         validate_identifier_part(self.trader_id, "trader_id")
         validate_identifier_part(self.external_strategy_id, "external_strategy_id")
 

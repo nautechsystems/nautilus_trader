@@ -43,7 +43,7 @@ class TestFluxRedisKeys:
             namespace="tokenmm",
             schema_version="v1",
             strategy_id="maker_v3_01",
-            strategy_instance_id="maker_v3_01_a",
+            strategy_instance_id="maker_v3_01",
             trader_id="TRADER-001",
             external_strategy_id="external_01",
         )

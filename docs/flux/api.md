@@ -34,6 +34,13 @@ Error:
 1. Every route that reads strategy data resolves strategy ID from query/path.
 2. If omitted, strategy ID defaults to `FluxConfig.identity.strategy_id`.
 3. Strategy IDs are identifier-validated; invalid values return `400 invalid_strategy_id`.
+4. `FluxIdentityConfig` enforces `strategy_instance_id == strategy_id`; API scoping is keyed only by `strategy_id` (no dual-identifier mode).
+
+## Legs keying
+
+1. Signal payload `legs` maps are keyed by `contract_id = "{exchange}:{symbol}"`.
+2. `exchange` is normalized lowercase and `symbol` is normalized uppercase before key construction.
+3. Each leg row still carries explicit `exchange` and `symbol` fields.
 
 ## Endpoints
 
