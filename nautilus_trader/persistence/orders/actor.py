@@ -214,6 +214,9 @@ class OrderActionPersistenceActor(Actor):
         self._flush_event = threading.Event()
         self._writer_started = threading.Event()
         self._writer_thread: threading.Thread | None = None
+        self._writer_cleanup_thread: threading.Thread | None = None
+        self._writer_cleanup_done = threading.Event()
+        self._writer_cleanup_done.set()
         self._writer_error: RuntimeError | None = None
 
         self.enqueued = 0
@@ -225,10 +228,19 @@ class OrderActionPersistenceActor(Actor):
         self.payload_encode_errors = 0
 
     def on_start(self) -> None:
+        if not self._writer_cleanup_done.is_set():
+            if self._writer_cleanup_thread is not None and not self._writer_cleanup_thread.is_alive():
+                self._writer_cleanup_thread = None
+                self._writer_cleanup_done.set()
+            else:
+                raise RuntimeError("Order action writer cleanup in progress from previous stop timeout")
+
         if self._writer_thread is not None:
             if self._writer_thread.is_alive():
                 raise RuntimeError("Order action writer thread is still running from previous lifecycle")
             self._writer_thread = None
+        if self._writer_cleanup_thread is not None and not self._writer_cleanup_thread.is_alive():
+            self._writer_cleanup_thread = None
         if self._conn is not None:
             self._conn.close()
             self._conn = None
@@ -275,6 +287,7 @@ class OrderActionPersistenceActor(Actor):
                     self._writer_error = RuntimeError(
                         "Order action writer thread did not stop during startup cleanup",
                     )
+                    self._schedule_writer_ref_cleanup(self._writer_thread)
                     self.log.error(str(self._writer_error))
                 else:
                     self._writer_thread = None
@@ -336,6 +349,8 @@ class OrderActionPersistenceActor(Actor):
             return
 
         # Keep cross-thread payloads primitive (tuple row) and handler-only CPU work.
+        # Intentional tradeoff: normalize/serialize here once so the queued payload
+        # is thread-safe and writer-thread DB work stays purely I/O.
         # No queue waits and no DB I/O on this hot path.
         ts_ingest = 0 if self.clock is None else self.clock.timestamp_ns()
         row = order_event_to_row(
@@ -534,23 +549,30 @@ class OrderActionPersistenceActor(Actor):
         self.payload_encode_errors += 1
 
     def _schedule_writer_ref_cleanup(self, writer_thread: threading.Thread) -> None:
-        def _cleanup() -> None:
-            writer_thread.join()
-            if self._writer_thread is writer_thread:
-                self._writer_thread = None
-            # Defensive cleanup in case the writer loop did not clear the connection ref.
-            if self._conn is not None:
-                try:
-                    self._conn.close()
-                except Exception:
-                    pass
-                self._conn = None
+        if self._writer_cleanup_thread is not None and self._writer_cleanup_thread.is_alive():
+            return
 
-        threading.Thread(
+        # Detach actor-owned refs immediately on timeout so lifecycle state is
+        # consistent even while the writer finishes in the background.
+        if self._writer_thread is writer_thread:
+            self._writer_thread = None
+        self._conn = None
+        self._writer_cleanup_done.clear()
+
+        def _cleanup() -> None:
+            try:
+                writer_thread.join()
+            finally:
+                self._writer_cleanup_done.set()
+                self._writer_cleanup_thread = None
+
+        cleanup_thread = threading.Thread(
             target=_cleanup,
             name=f"{self.id}-orders-writer-cleanup",
             daemon=True,
-        ).start()
+        )
+        self._writer_cleanup_thread = cleanup_thread
+        cleanup_thread.start()
 
     def _raise_if_writer_failed(self) -> None:
         if self._writer_error is not None:

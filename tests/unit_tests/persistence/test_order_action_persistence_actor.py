@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-import time
 
 import pytest
 
@@ -211,7 +210,7 @@ def test_actor_non_strict_stop_timeout_sets_error_and_releases_refs_after_writer
 
     def _insert_blocking(conn, rows):
         write_started.set()
-        if not release_write.wait(timeout=1.0):
+        if not release_write.wait(timeout=5.0):
             raise RuntimeError("test write gate timeout")
         return _real_insert_many(conn, rows)
 
@@ -233,21 +232,15 @@ def test_actor_non_strict_stop_timeout_sets_error_and_releases_refs_after_writer
     actor.stop()
     assert actor._writer_error is not None
     assert "did not stop cleanly" in str(actor._writer_error)
-    assert actor._writer_thread is not None
-    assert actor._writer_thread.is_alive()
-
-    release_write.set()
-
-    deadline = time.monotonic() + 1.0
-    # Wait until actor-level refs are cleaned after the writer exits.
-    while actor._writer_thread is not None and time.monotonic() < deadline:
-        time.sleep(0.01)
-
     assert actor._writer_thread is None
     assert actor._conn is None
+    assert not actor._writer_cleanup_done.is_set()
+
+    release_write.set()
+    assert actor._writer_cleanup_done.wait(timeout=1.0)
 
 
-def test_actor_strict_stop_timeout_raises_runtime_error(tmp_path) -> None:
+def test_actor_strict_stop_timeout_cleans_refs_and_signals_cleanup_in_progress(tmp_path) -> None:
     from nautilus_trader.persistence.orders.sqlite import insert_many as _real_insert_many
 
     write_started = threading.Event()
@@ -255,7 +248,7 @@ def test_actor_strict_stop_timeout_raises_runtime_error(tmp_path) -> None:
 
     def _insert_blocking(conn, rows):
         write_started.set()
-        if not release_write.wait(timeout=1.0):
+        if not release_write.wait(timeout=5.0):
             raise RuntimeError("test write gate timeout")
         return _real_insert_many(conn, rows)
 
@@ -277,9 +270,61 @@ def test_actor_strict_stop_timeout_raises_runtime_error(tmp_path) -> None:
     with pytest.raises(RuntimeError, match="did not stop cleanly"):
         actor.stop()
 
+    assert actor._writer_error is not None
+    assert actor._writer_thread is None
+    assert actor._conn is None
+    assert not actor._writer_cleanup_done.is_set()
+
     release_write.set()
-    if actor._writer_thread is not None:
-        actor._writer_thread.join(timeout=1.0)
+    assert actor._writer_cleanup_done.wait(timeout=1.0)
+
+
+def test_actor_strict_stop_timeout_allows_replacement_actor_restart_after_cleanup(tmp_path) -> None:
+    from nautilus_trader.persistence.orders.sqlite import insert_many as _real_insert_many
+
+    write_started = threading.Event()
+    release_write = threading.Event()
+
+    def _insert_blocking(conn, rows):
+        write_started.set()
+        if not release_write.wait(timeout=5.0):
+            raise RuntimeError("test write gate timeout")
+        return _real_insert_many(conn, rows)
+
+    actor, msgbus, db_path, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+        stop_timeout_ms=10,
+        strict_stop=True,
+        insert_many_fn=_insert_blocking,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+    accepted1 = TestEventStubs.order_accepted(order=order, ts_event=205)
+    accepted2 = TestEventStubs.order_accepted(order=order, ts_event=206)
+
+    actor.start()
+    msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=accepted1)
+    assert write_started.wait(timeout=1.0)
+
+    with pytest.raises(RuntimeError, match="did not stop cleanly"):
+        actor.stop()
+
+    release_write.set()
+    assert actor._writer_cleanup_done.wait(timeout=1.0)
+
+    replacement_actor, replacement_msgbus, replacement_db_path, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+    )
+    assert replacement_db_path == db_path
+
+    replacement_actor.start()
+    replacement_msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=accepted2)
+    replacement_actor.flush()
+    replacement_actor.stop()
+
+    assert _row_count(db_path) == 2
 
 
 def test_actor_db_down_log_and_drop_drops_rows(tmp_path) -> None:
