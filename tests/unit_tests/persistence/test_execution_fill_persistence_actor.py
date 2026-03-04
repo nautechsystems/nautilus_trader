@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import sqlite3
-import time
+import threading
 
 import pytest
 
@@ -148,8 +148,13 @@ def test_actor_threaded_writer_mode_persists_without_thread_affinity_errors(tmp_
 def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
     from nautilus_trader.persistence.fills.sqlite import insert_fills as _real_insert_fills
 
+    write_started = threading.Event()
+    release_write = threading.Event()
+
     def _insert_slow(conn, rows):
-        time.sleep(0.05)
+        write_started.set()
+        if not release_write.wait(timeout=1.0):
+            raise RuntimeError("test write gate timeout")
         return _real_insert_fills(conn, rows)
 
     actor, msgbus, db_path = _make_actor(
@@ -162,7 +167,25 @@ def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
 
     actor.start()
     msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
-    actor.flush()
+    assert write_started.wait(timeout=1.0)
+
+    flush_done = threading.Event()
+    flush_errors: list[Exception] = []
+
+    def _flush():
+        try:
+            actor.flush()
+        except Exception as exc:  # pragma: no cover - test assertion captures this
+            flush_errors.append(exc)
+        finally:
+            flush_done.set()
+
+    thread = threading.Thread(target=_flush)
+    thread.start()
+    assert not flush_done.wait(timeout=0.05)
+    release_write.set()
+    assert flush_done.wait(timeout=1.0)
+    assert flush_errors == []
     assert _row_count(db_path) == 1
     actor.stop()
 
@@ -210,8 +233,13 @@ def test_actor_shutdown_drop_path_marks_queue_tasks_done(tmp_path) -> None:
 def test_actor_threaded_flush_timeout_is_configurable(tmp_path) -> None:
     from nautilus_trader.persistence.fills.sqlite import insert_fills as _real_insert_fills
 
+    write_started = threading.Event()
+    release_write = threading.Event()
+
     def _insert_slow(conn, rows):
-        time.sleep(0.05)
+        write_started.set()
+        if not release_write.wait(timeout=1.0):
+            raise RuntimeError("test write gate timeout")
         return _real_insert_fills(conn, rows)
 
     actor, msgbus, _ = _make_actor(
@@ -225,8 +253,10 @@ def test_actor_threaded_flush_timeout_is_configurable(tmp_path) -> None:
 
     actor.start()
     msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    assert write_started.wait(timeout=1.0)
     with pytest.raises(RuntimeError, match="flush timed out"):
         actor.flush()
+    release_write.set()
     actor.stop()
 
 

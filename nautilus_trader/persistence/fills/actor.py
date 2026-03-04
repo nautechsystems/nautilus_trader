@@ -256,7 +256,8 @@ class ExecutionFillPersistenceActor(Actor):
             self.log.error(f"{self._writer_error}: {exc!r}")
         finally:
             try:
-                conn.close()
+                if conn is not None:
+                    conn.close()
             finally:
                 self._conn = None
 
@@ -321,9 +322,15 @@ class ExecutionFillPersistenceActor(Actor):
                 # During shutdown, avoid hanging forever on a failing DB.
                 self.dropped += len(batch)
                 self._mark_batch_done(len(batch))
+                self.log.error(
+                    f"Execution fill DB write failed during shutdown, dropping {len(batch)} rows: {exc!r}",
+                )
+                return True
             else:
                 self._pending_rows.extendleft(reversed(batch))
-            self.log.error(f"Execution fill DB write failed, retaining batch for retry: {exc!r}")
+            self.log.error(
+                f"Execution fill DB write failed, retaining {len(batch)} rows for retry: {exc!r}",
+            )
             return False
 
         self._writer_error = RuntimeError("Execution fill persistence write failed")
