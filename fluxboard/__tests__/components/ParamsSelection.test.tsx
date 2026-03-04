@@ -203,4 +203,5 @@ describe('Params selection interactions', () => {
 
     expect(selectedCountText().some((t) => t === '3 selected')).toBe(true);
   });
+
 });

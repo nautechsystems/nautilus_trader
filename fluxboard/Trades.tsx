@@ -847,46 +847,66 @@ export default function Trades({
       return;
     }
     try {
-      const isPubsubEvent = msg?.op && msg?.row_id && typeof msg?.version === 'number' && typeof msg?.seq === 'number';
+      const normalizedMsg = (msg?.trade && typeof msg.trade === 'object')
+        ? {
+            ...msg.trade,
+            op: msg.op,
+            row_id: msg.row_id ?? msg.trade?.row_id,
+            version: msg.version ?? msg.trade?.version,
+            seq: msg.seq ?? msg.trade?.seq,
+            ts_ms: msg.ts_ms ?? msg.server_ts_ms ?? msg.trade?.ts_ms,
+            strategy_id: msg.strategy_id ?? msg.trade?.strategy_id,
+            signal_id: msg.signal_id ?? msg.strategy_id ?? msg.trade?.signal_id,
+          }
+        : msg;
+      const isPubsubEvent =
+        normalizedMsg?.op
+        && normalizedMsg?.row_id
+        && typeof normalizedMsg?.version === 'number'
+        && typeof normalizedMsg?.seq === 'number';
       let event: TradeEvent;
       if (isPubsubEvent) {
-        event = msg as TradeEvent;
+        event = normalizedMsg as TradeEvent;
       } else {
         const now = Date.now();
-        const timestampParts = getTimestampParts(msg);
+        const timestampParts = getTimestampParts(normalizedMsg);
         if (!timestampParts.hasReliableTimestamp) {
           return;
         }
         const seq: number = timestampParts.seq ?? timestampParts.tsMs ?? timestampParts.ts ?? now;
-        const rowIdFromMsg: string | undefined = typeof msg?.row_id === 'string' && msg.row_id ? msg.row_id : undefined;
+        const rowIdFromMsg: string | undefined =
+          typeof normalizedMsg?.row_id === 'string' && normalizedMsg.row_id ? normalizedMsg.row_id : undefined;
         const rowId: string = rowIdFromMsg || (
-          (msg && (msg.exch_id || msg.trade_id || msg.order_id))
-          || `${msg?.exchange || ''}:${msg?.coin || ''}:${seq}`
+          (normalizedMsg && (normalizedMsg.exch_id || normalizedMsg.trade_id || normalizedMsg.order_id))
+          || `${normalizedMsg?.exchange || ''}:${normalizedMsg?.coin || ''}:${seq}`
         );
-        const versionFromMsg: number | undefined = typeof msg?.version === 'number' && Number.isFinite(msg.version) ? msg.version : undefined;
+        const versionFromMsg: number | undefined =
+          typeof normalizedMsg?.version === 'number' && Number.isFinite(normalizedMsg.version)
+            ? normalizedMsg.version
+            : undefined;
         event = {
           op: 'upsert',
           row_id: rowId,
           version: versionFromMsg ?? 1,
           seq,
           ts: seq,
-          time: msg?.time,
-          coin: msg?.coin,
-          exchange: msg?.exchange,
-          side: msg?.side,
-          price: msg?.price,
-          qty: msg?.qty,
-          mv: msg?.mv,
-          fee: msg?.fee,
-          exec_id: msg?.exch_id,
-          trade_id: msg?.trade_id,
-          order_id: msg?.order_id,
-          signal_id: msg?.signal_id,
-          strategy_id: msg?.strategy_id,
-          decision: msg?.decision,
-          gas: msg?.gas_used,
-          notes: msg?.notes,
-          explorer_url: msg?.explorer_url,
+          time: normalizedMsg?.time,
+          coin: normalizedMsg?.coin,
+          exchange: normalizedMsg?.exchange,
+          side: normalizedMsg?.side,
+          price: normalizedMsg?.price,
+          qty: normalizedMsg?.qty,
+          mv: normalizedMsg?.mv ?? normalizedMsg?.notional,
+          fee: normalizedMsg?.fee,
+          exec_id: normalizedMsg?.exch_id,
+          trade_id: normalizedMsg?.trade_id,
+          order_id: normalizedMsg?.order_id ?? normalizedMsg?.client_order_id,
+          signal_id: normalizedMsg?.signal_id ?? normalizedMsg?.strategy_id,
+          strategy_id: normalizedMsg?.strategy_id,
+          decision: normalizedMsg?.decision,
+          gas: normalizedMsg?.gas_used,
+          notes: normalizedMsg?.notes,
+          explorer_url: normalizedMsg?.explorer_url,
         } as TradeEvent;
       }
 

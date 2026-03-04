@@ -347,6 +347,36 @@ describe('API Client - Param Methods', () => {
       );
     });
 
+    it('normalizes flat balances rows into parent/children rows for tokenmm payloads', async () => {
+      (window.location as any).pathname = '/tokenmm/balances';
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          data: {
+            rows: [
+              { exchange: 'bybit', asset: 'PLUME', total: '100', ts_ms: 1700000000000 },
+              { exchange: 'binance', asset: 'PLUME', total: '50', ts_ms: 1700000001000 },
+            ],
+            count: 2,
+            server_ts_ms: 1700000002000,
+          },
+          error: null,
+        }),
+      });
+
+      const result = await api.getBalances();
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].canonical).toBe('PLUME');
+      expect(result.rows[0].children).toHaveLength(2);
+      expect(result.rows[0].children[0].parent_id).toBe('PLUME_LOGICAL');
+      expect(result.total).toBe(2);
+      expect(result.view).toBe('parents_only');
+      expect(result.generated_at).toBeTruthy();
+      expect(result.totals.mv_raw).toBe(0);
+    });
+
     it('adds profile query for alerts on tokenmm paths', async () => {
       (window.location as any).pathname = '/tokenmm/alerts';
       mockFetch.mockResolvedValueOnce({

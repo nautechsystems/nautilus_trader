@@ -329,6 +329,64 @@ function coerceFiniteNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function deriveCoinFromSymbol(symbol: unknown): string | undefined {
+  const text = String(symbol ?? '').trim().toUpperCase();
+  if (!text) return undefined;
+  const base = text.split('.')[0]?.split('-')[0] || text;
+  for (const quote of ['USDT', 'USDC', 'USD', 'PERP']) {
+    if (base.endsWith(quote) && base.length > quote.length) {
+      return base.slice(0, -quote.length);
+    }
+  }
+  return base || undefined;
+}
+
+function resolveTradingValue(row: Partial<SignalStrategy> & Record<string, any>): unknown {
+  const fromParams = row?.params?.bot_on;
+  if (fromParams !== undefined && fromParams !== null) return fromParams;
+  const fromState = row?.state?.bot_on;
+  if (fromState !== undefined && fromState !== null) return fromState;
+  if (typeof row?.tradeable === 'boolean') return row.tradeable ? 1 : 0;
+  return undefined;
+}
+
+function normalizeDeltaLegs(legs: unknown): unknown {
+  if (!legs || typeof legs !== 'object') return legs;
+  const normalized: Record<string, unknown> = {};
+  for (const [contractId, value] of Object.entries(legs as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') {
+      normalized[contractId] = value;
+      continue;
+    }
+    const leg = { ...(value as Record<string, unknown>) };
+    const bid = coerceFiniteNumber(leg.decision_bid ?? leg.fv_bid ?? leg.bid);
+    const ask = coerceFiniteNumber(leg.decision_ask ?? leg.fv_ask ?? leg.ask);
+    const tsMs = coerceFiniteNumber(leg.update_ts_ms ?? leg.ts_ms ?? leg.timestamp);
+    const ageMs = coerceFiniteNumber(leg.md_age_ms ?? leg.age_ms);
+    const symbol = String(leg.symbol ?? '').trim();
+    if (leg.contract_id == null) leg.contract_id = contractId;
+    if (leg.coin == null && symbol) leg.coin = deriveCoinFromSymbol(symbol);
+    if (bid !== undefined) {
+      if (leg.fv_bid == null) leg.fv_bid = bid;
+      if (leg.decision_bid == null) leg.decision_bid = bid;
+    }
+    if (ask !== undefined) {
+      if (leg.fv_ask == null) leg.fv_ask = ask;
+      if (leg.decision_ask == null) leg.decision_ask = ask;
+    }
+    if (leg.mid == null && bid !== undefined && ask !== undefined) {
+      leg.mid = (bid + ask) / 2;
+    }
+    if (leg.update_ts_ms == null && tsMs !== undefined) leg.update_ts_ms = tsMs;
+    if (leg.update_time == null && tsMs !== undefined) {
+      leg.update_time = new Date(tsMs).toISOString().replace('T', ' ').slice(0, 19);
+    }
+    if (leg.md_age_ms == null && ageMs !== undefined) leg.md_age_ms = ageMs;
+    normalized[contractId] = leg;
+  }
+  return normalized;
+}
+
 type QuoteCounts = {
   source: 'quote_stacks' | 'maker_quote_status' | 'none';
   maker?: { bidOpen: number; bidDepth: number; bidBlocked: number; askOpen: number; askDepth: number; askBlocked: number };
@@ -356,7 +414,7 @@ function shouldShowHedgeQuoteCounts(row: EnrichedRow): boolean {
 }
 
 function shouldSuppressQuoteCounts(row: EnrichedRow): boolean {
-  const tradingEnabled = parseTradingEnabled(row.params?.bot_on);
+  const tradingEnabled = parseTradingEnabled(resolveTradingValue(row));
   const quoteSnapshot = resolveQuoteSnapshot(row) as any;
   const mode = String(quoteSnapshot?.mode ?? '').trim().toUpperCase();
   const reason = String(quoteSnapshot?.reason ?? '').trim().toLowerCase();
@@ -1051,7 +1109,7 @@ function buildMakerTruthTooltip(row: EnrichedRow, quoteSnapshot: MakerV2QuoteSna
 
   return (
     <div className="max-w-[360px] flex flex-col gap-2 font-mono text-[11px] leading-4 tabular-nums">
-      <div className="text-text-muted font-semibold">MakerV2 (Row 2 is quoting truth)</div>
+      <div className="text-text-muted font-semibold">Maker (Row 2 is quoting truth)</div>
 
       <div className="flex flex-col gap-1">
         <div className="text-text-muted font-semibold">State</div>
@@ -1117,7 +1175,7 @@ const MakerTruthRow: FC<{ row: EnrichedRow; legKey: LegKey; quoteSnapshot: Maker
     return (
       <div className="mt-1 flex flex-col gap-0.5 rounded-sm border-l-2 border-neutral-700 bg-neutral-900/10 pl-2 py-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-text-muted font-semibold">MakerV2:</span>
+          <span className="text-[10px] text-text-muted font-semibold">Maker:</span>
           <SimpleTooltip
             content={truthTooltip}
             delay={150}
@@ -1261,7 +1319,7 @@ const MakerAwareLegCell: FC<{ row: EnrichedRow; legKey: LegKey; showQuoted: bool
         leg={leg}
         showQuoted={showQuoted}
         tooltipBehavior="icon"
-        contextHint="MakerV2: quoting truth = Row 2 (Our / Ref used)"
+        contextHint="Maker: quoting truth = Row 2 (Our / Ref used)"
       />
       {quoteSnapshot ? (
         <MakerTruthRow row={row} legKey={legKey} quoteSnapshot={quoteSnapshot} nowMs={nowMs} />
@@ -1437,6 +1495,7 @@ export default function SignalTable({
   // Refs to track state without triggering dependency cycles
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const wsConnectedRef = useRef(false);
+  const snapshotRefreshThrottleRef = useRef<number>(0);
 
   useEffect(() => {
     visibleIdSetRef.current = new Set((rows || []).map((r) => r.id));
@@ -1575,6 +1634,15 @@ export default function SignalTable({
         });
     };
 
+    const scheduleSnapshotRefresh = () => {
+      const now = Date.now();
+      if (now - snapshotRefreshThrottleRef.current < 1000) {
+        return;
+      }
+      snapshotRefreshThrottleRef.current = now;
+      fetchData();
+    };
+
     const startPolling = (intervalMs?: number) => {
       const ms = intervalMs ?? pollIntervalMsRef.current ?? 2000;
       if (pollRef.current) {
@@ -1659,6 +1727,30 @@ export default function SignalTable({
           if (wsConnectedRef.current) {
             resetPollingBackoff();
           }
+          return;
+        }
+
+        // Newer socket contract sends changed IDs only:
+        // { strategies: { changed: [strategy_id...] }, ... }.
+        // Pull a fresh snapshot when this arrives so UI cannot stay stale/blank.
+        const changed = Array.isArray(data?.strategies?.changed)
+          ? data.strategies.changed.filter((item: unknown) => typeof item === 'string')
+          : [];
+        if (changed.length > 0) {
+          scheduleSnapshotRefresh();
+          const newServerTime = data.server_time || new Date().toISOString().slice(0, 19).replace('T', ' ');
+          const newServerTsMs = (typeof data.server_ts_ms === 'number') ? (data.server_ts_ms as number) : null;
+          if (newServerTime !== serverTimeRef.current || newServerTsMs !== serverTsMsRef.current) {
+            setServerTime(newServerTime);
+            serverTimeRef.current = newServerTime;
+            setServerClock(newServerTsMs);
+          }
+          if (data.balance_summary) {
+            setBalanceSummary(data.balance_summary);
+          }
+          const now = Date.now();
+          setLastUpdate(now);
+          lastUpdateRef.current = now;
         }
         // Apply param_update payloads immediately so Trading pill reflects saves from Params
         if (data.param_update && data.param_update.strategy_id && data.param_update.parameters) {
@@ -1693,75 +1785,70 @@ export default function SignalTable({
      */
     const handleSignalDelta = (delta: any) => {
       try {
-        const id = delta?.id;
+        const payload = (delta && typeof delta === 'object' && delta.patch && typeof delta.patch === 'object')
+          ? {
+              id: (delta as any).strategy_id ?? (delta as any).id,
+              ...(delta as any).patch,
+              ts_ms: (delta as any).server_ts_ms ?? (delta as any).ts_ms,
+            }
+          : delta;
+        const id = payload?.id;
         if (!id) return;
-        const visibleByProfile = matchesSignalProfile(pathProfile, delta as SignalStrategy);
-        const hasMeta = !!(delta?.meta && typeof delta.meta === 'object');
+        const hasMeta = !!(payload?.meta && typeof payload.meta === 'object');
+        const knownInView = visibleIdSetRef.current.has(id);
+        if (!hasMeta && !knownInView) {
+          scheduleSnapshotRefresh();
+          return;
+        }
+        const visibleByProfile = matchesSignalProfile(pathProfile, payload as SignalStrategy);
         if (!visibleByProfile && (hasMeta || !visibleIdSetRef.current.has(id))) {
           return;
         }
         const apply: Partial<SignalStrategy> = { id } as any;
-        if (typeof delta.strategy_family === 'string') (apply as any).strategy_family = delta.strategy_family;
-        if (typeof delta.decision_edge_bps === 'number') (apply as any).decision_edge_bps = delta.decision_edge_bps;
-        if (typeof delta.edge2_bps === 'number') (apply as any).edge2_bps = delta.edge2_bps;
-        if (typeof delta.required_edge_bps === 'number') (apply as any).required_edge_bps = delta.required_edge_bps;
-        if (typeof delta.spread_net_bps === 'number') (apply as any).spread_net_bps = delta.spread_net_bps;
-        if (typeof delta.spread_net_case1_bps === 'number') (apply as any).spread_net_case1_bps = delta.spread_net_case1_bps;
-        if (typeof delta.spread_net_case2_bps === 'number') (apply as any).spread_net_case2_bps = delta.spread_net_case2_bps;
-        if (typeof delta.spread_net_best_case === 'string') (apply as any).spread_net_best_case = delta.spread_net_best_case;
-        if (typeof delta.risk_delta === 'number') (apply as any).risk_delta = delta.risk_delta;
-        if (typeof delta.risk_delta_ts_ms === 'number') (apply as any).risk_delta_ts_ms = delta.risk_delta_ts_ms;
-        // MakerV2 truth overlay fields (best-effort; keep last-known if backend omits/returns null).
-        // Only apply when a quote_snapshot object is present so we don't accidentally wipe the overlay
-        // if a backend worker temporarily omits it.
-        if (delta.maker_v2 && typeof delta.maker_v2 === 'object') {
-          const qs = (delta.maker_v2 as any).quote_snapshot;
-          if (qs && typeof qs === 'object') {
-            (apply as any).maker_v2 = delta.maker_v2;
-          }
+        const passThroughKeys = new Set([
+          'strategy_family',
+          'decision_edge_bps',
+          'edge2_bps',
+          'required_edge_bps',
+          'spread_net_bps',
+          'spread_net_case1_bps',
+          'spread_net_case2_bps',
+          'spread_net_best_case',
+          'risk_delta',
+          'risk_delta_ts_ms',
+          'maker_v2',
+          'maker_v3',
+          'maker_role_map',
+          'maker_quote_status',
+          'quote_stacks',
+          'pricing_adjustments',
+          'legs_order',
+          'state',
+          'tradeable',
+          'blocked',
+          'near_tradeable',
+          'managed_orders',
+        ]);
+        for (const [key, value] of Object.entries(payload || {})) {
+          if (key === 'id' || key === 'legs' || !passThroughKeys.has(key)) continue;
+          (apply as any)[key] = value;
         }
-        if (delta.maker_v3 && typeof delta.maker_v3 === 'object') {
-          const qs = (delta.maker_v3 as any).quote_snapshot;
-          if (qs && typeof qs === 'object') {
-            (apply as any).maker_v3 = delta.maker_v3;
-          }
-        }
-        if (delta.maker_role_map && typeof delta.maker_role_map === 'object') {
-          (apply as any).maker_role_map = delta.maker_role_map;
-        }
-        // maker_quote_status is a small dict (bid_open/ask_open/etc). Allow explicit null to clear.
-        if (delta && typeof delta === 'object' && ('maker_quote_status' in delta)) {
-          const mqs = (delta as any).maker_quote_status;
-          if (mqs === null || (mqs && typeof mqs === 'object')) {
-            (apply as any).maker_quote_status = mqs;
-          }
-        }
-        // quote_stacks is a compact per-leg/per-band view. Allow explicit null to clear.
-        if (delta && typeof delta === 'object' && ('quote_stacks' in delta)) {
-          const qs = (delta as any).quote_stacks;
-          if (qs === null || (qs && typeof qs === 'object')) {
-            (apply as any).quote_stacks = qs;
-          }
-        }
-        if (Array.isArray(delta.pricing_adjustments)) {
-          (apply as any).pricing_adjustments = delta.pricing_adjustments;
-        }
-        if (delta && typeof delta === 'object' && 'legs_order' in delta) {
-          if (delta.legs_order === null) {
+        if (payload && typeof payload === 'object' && 'legs_order' in payload) {
+          if ((payload as any).legs_order === null) {
             (apply as any).legs_order = null;
-          } else if (Array.isArray(delta.legs_order)) {
-            (apply as any).legs_order = delta.legs_order.filter((key: unknown) => typeof key === 'string');
+          } else if (Array.isArray((payload as any).legs_order)) {
+            (apply as any).legs_order = (payload as any).legs_order.filter((key: unknown) => typeof key === 'string');
           }
         }
-        const legPatch = buildLegDeltaPatch(delta.legs);
+        const legPatch = buildLegDeltaPatch(normalizeDeltaLegs((payload as any).legs));
         if (legPatch) {
           (apply as any).legs = legPatch;
         }
         // Merge strategy delta
         mergeStrategy(apply as SignalStrategy);
         // If backend provided authoritative server ts, anchor our local ticking to it
-        if (typeof delta.ts_ms === 'number' && Number.isFinite(delta.ts_ms)) {
-          setServerClock(delta.ts_ms as number);
+        if (typeof payload.ts_ms === 'number' && Number.isFinite(payload.ts_ms)) {
+          setServerClock(payload.ts_ms as number);
         }
         const now = Date.now();
         if ((useSignalStore.getState().rows || []).length > 0) {
@@ -1874,7 +1961,7 @@ export default function SignalTable({
         return null;
       }
 
-      const status = deriveStrategyStatus({ trading: row.params?.bot_on });
+      const status = deriveStrategyStatus({ trading: resolveTradingValue(row as any) });
       const tradingFilter = statusToFilterValue(status);
       const orderedLegs = getOrderedLegEntries(row);
       const legA = getLegForSlot(row, 'A');
@@ -2020,7 +2107,7 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Trading"
             tooltip={[
-              'Trading state derived from params.bot_on.',
+              'Trading state derived from params.bot_on, state.bot_on, or tradeable.',
               'Live = bot_on=1 (strategy allowed to place orders).',
               'Paused = bot_on=0.',
               'Pending = runner transition/cooldown.',
@@ -2031,12 +2118,12 @@ export default function SignalTable({
         sortingFn: tradingSortingFn,
         cell: ({ row }) => {
           const descriptor = describeTradingStatus(row.original.status);
-          const raw = row.original.params?.bot_on as any;
+          const raw = resolveTradingValue(row.original as any);
           const rawStr = raw === undefined || raw === null ? 'undefined' : String(raw);
           const tooltip = [
             'Trading status:',
             `- State: ${descriptor.label} (${descriptor.subLabel})`,
-            `- Source: params.bot_on=${rawStr}`,
+            `- Resolved: ${rawStr} (params.bot_on | state.bot_on | tradeable)`,
             '',
             'Semantics:',
             '  Live: bot_on=1 (orders allowed)',

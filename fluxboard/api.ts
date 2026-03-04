@@ -15,6 +15,8 @@ import type {
   SignalStrategy,
   BalancesPayload,
   BalancesResponse,
+  BalanceParentRow,
+  BalanceChildRow,
   Alert,
   RawStrategy,
   BalanceSummary,
@@ -117,6 +119,359 @@ function unwrapFluxEnvelope<T>(payload: T | FluxEnvelope<T>): T {
     return payload.data;
   }
   return payload as T;
+}
+
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toUpperToken(value: unknown, fallback = 'UNKNOWN'): string {
+  const text = String(value ?? '').trim().toUpperCase();
+  return text || fallback;
+}
+
+function formatMoneyDisplay(value: number): string {
+  const safe = Number.isFinite(value) ? value : 0;
+  return `${safe < 0 ? '-$' : '$'}${Math.abs(safe).toFixed(2)}`;
+}
+
+function normalizeCoinHint(raw: Record<string, unknown>): string {
+  const direct = toUpperToken(raw.coin ?? raw.base_currency ?? raw.asset ?? raw.base, '');
+  if (direct) return direct;
+
+  const instrumentId = toUpperToken(raw.instrument_id, '');
+  if (!instrumentId) return 'UNKNOWN';
+  const symbol = instrumentId.split('.')[0] || instrumentId;
+  for (const quote of ['USDT', 'USDC', 'USD', 'PERP']) {
+    if (symbol.endsWith(quote) && symbol.length > quote.length) {
+      return symbol.slice(0, -quote.length) || symbol;
+    }
+  }
+  return symbol;
+}
+
+function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
+  const stableTokens = new Set(['USD', 'USDT', 'USDC', 'DAI', 'FDUSD', 'USDE']);
+  const byParent = new Map<string, BalanceParentRow>();
+
+  rows.forEach((candidate, index) => {
+    if (!candidate || typeof candidate !== 'object') return;
+    const row = candidate as Record<string, unknown>;
+
+    const canonical = normalizeCoinHint(row);
+    const parentId = `${canonical}_LOGICAL`;
+    const venue = String(row.exchange ?? row.venue ?? 'unknown').trim().toLowerCase() || 'unknown';
+    const childCoin = toUpperToken(row.coin ?? row.asset ?? canonical, canonical);
+    const qtyRaw = toFiniteNumber(
+      row.total ?? row.quantity ?? row.signed_qty ?? row.qty ?? row.free,
+      0,
+    );
+    let mvRaw = toFiniteNumber(
+      row.mv_raw ?? row.mv ?? row.notional ?? row.notional_quote ?? row.notional_usd,
+      Number.NaN,
+    );
+    const markRawValue = row.mark_raw ?? row.mark ?? row.avg_px_open ?? row.price;
+    const markRaw = markRawValue == null ? null : toFiniteNumber(markRawValue, 0);
+    if (!Number.isFinite(mvRaw)) {
+      if (markRaw != null && Number.isFinite(markRaw)) {
+        mvRaw = qtyRaw * markRaw;
+      } else if (stableTokens.has(canonical)) {
+        mvRaw = qtyRaw;
+      } else {
+        mvRaw = 0;
+      }
+    }
+    const tsMs = toFiniteNumber(row.ts_ms ?? row.ts ?? row.timestamp, 0);
+
+    const child: BalanceChildRow = {
+      id: String(row.row_id ?? `${parentId}:${venue}:${childCoin}:${index}`),
+      parent_id: parentId,
+      coin: childCoin,
+      venue,
+      wallet: String(row.account ?? row.account_id ?? '').trim() || null,
+      address: String(row.address ?? '').trim() || null,
+      label: String(row.label ?? row.kind ?? '').trim() || null,
+      qty_display: String(row.total ?? row.quantity ?? row.signed_qty ?? row.free ?? qtyRaw),
+      qty_raw: qtyRaw,
+      mv_display: formatMoneyDisplay(mvRaw),
+      mv_raw: mvRaw,
+      mark_display: markRaw == null ? null : String(markRaw),
+      mark_raw: markRaw,
+      time_display: tsMs > 0 ? new Date(tsMs).toISOString() : '',
+      time_iso: tsMs > 0 ? new Date(tsMs).toISOString() : null,
+      last_ts: tsMs > 0 ? tsMs : null,
+      chain: String(row.chain ?? '').trim() || null,
+      contract: String(row.contract ?? row.instrument_id ?? '').trim() || null,
+    };
+
+    const existing = byParent.get(parentId);
+    if (existing) {
+      existing.children.push(child);
+      existing.qty_raw += qtyRaw;
+      existing.mv_raw += mvRaw;
+      existing.qty_display = String(existing.qty_raw);
+      existing.mv_display = formatMoneyDisplay(existing.mv_raw);
+      if (markRaw != null) {
+        existing.mark_raw = markRaw;
+        existing.mark_display = String(markRaw);
+      }
+      if ((existing.last_ts ?? 0) < tsMs) {
+        existing.last_ts = tsMs;
+        existing.time_iso = child.time_iso;
+        existing.time_display = child.time_display;
+      }
+      return;
+    }
+
+    byParent.set(parentId, {
+      id: parentId,
+      coin: `${canonical}_LOGICAL`,
+      canonical,
+      is_parent: true,
+      stable: stableTokens.has(canonical),
+      qty_display: String(qtyRaw),
+      qty_raw: qtyRaw,
+      mv_display: formatMoneyDisplay(mvRaw),
+      mv_raw: mvRaw,
+      mark_display: markRaw == null ? null : String(markRaw),
+      mark_raw: markRaw,
+      time_display: child.time_display,
+      time_iso: child.time_iso,
+      last_ts: child.last_ts,
+      children: [child],
+      raw: {
+        qty: qtyRaw,
+        mv_usd: mvRaw,
+        mark: markRaw,
+      },
+    });
+  });
+
+  return Array.from(byParent.values());
+}
+
+function normalizeBalancesRows(rows: unknown): BalanceParentRow[] {
+  if (!Array.isArray(rows)) return [];
+  if (rows.length === 0) return [];
+
+  const looksLikeParentRows = rows.every((row) => {
+    if (!row || typeof row !== 'object') return false;
+    return Array.isArray((row as { children?: unknown }).children);
+  });
+
+  if (looksLikeParentRows) {
+    return rows.map((row) => {
+      const parent = row as BalanceParentRow;
+      return {
+        ...parent,
+        children: Array.isArray(parent.children) ? parent.children : [],
+      };
+    });
+  }
+
+  return normalizeFlatBalancesRows(rows);
+}
+
+function toFiniteOptionalNumber(value: unknown): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeTradingFlag(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number') return Number.isFinite(value) ? (value !== 0 ? '1' : '0') : undefined;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    return trimmed;
+  }
+  return undefined;
+}
+
+function deriveCoinFromSymbol(rawSymbol: unknown): string | undefined {
+  const symbol = String(rawSymbol ?? '').trim().toUpperCase();
+  if (!symbol) return undefined;
+  const baseSymbol = symbol.split('.')[0]?.split('-')[0] || symbol;
+  for (const quote of ['USDT', 'USDC', 'USD', 'PERP']) {
+    if (baseSymbol.endsWith(quote) && baseSymbol.length > quote.length) {
+      return baseSymbol.slice(0, -quote.length);
+    }
+  }
+  return baseSymbol || undefined;
+}
+
+function deriveExchangeFromInstrument(instrumentId: unknown): string | undefined {
+  const text = String(instrumentId ?? '').trim();
+  if (!text) return undefined;
+  const suffix = text.split('.').pop()?.trim().toLowerCase();
+  return suffix || undefined;
+}
+
+function normalizeLegacySignalLeg(contractId: string, candidate: unknown): Record<string, unknown> | null {
+  if (candidate == null) return null;
+  if (typeof candidate !== 'object') {
+    return { contract_id: contractId };
+  }
+  const raw = candidate as Record<string, unknown>;
+  const normalized: Record<string, unknown> = { ...raw };
+  const decisionBid = toFiniteOptionalNumber(raw.decision_bid ?? raw.fv_bid ?? raw.bid);
+  const decisionAsk = toFiniteOptionalNumber(raw.decision_ask ?? raw.fv_ask ?? raw.ask);
+  const tsMs = toFiniteOptionalNumber(raw.update_ts_ms ?? raw.ts_ms ?? raw.timestamp);
+  const ageMs = toFiniteOptionalNumber(raw.md_age_ms ?? raw.age_ms);
+  const symbol = String(raw.symbol ?? '').trim();
+  const exchangeFromContract = String(contractId || '').split(':')[0]?.trim().toLowerCase() || '';
+  const exchange = String(raw.exchange ?? exchangeFromContract).trim().toLowerCase();
+  const coin = String(raw.coin ?? deriveCoinFromSymbol(symbol) ?? '').trim().toUpperCase();
+
+  if (!normalized.contract_id) normalized.contract_id = contractId;
+  if (decisionBid !== undefined) {
+    if (normalized.fv_bid == null) normalized.fv_bid = decisionBid;
+    if (normalized.decision_bid == null) normalized.decision_bid = decisionBid;
+  }
+  if (decisionAsk !== undefined) {
+    if (normalized.fv_ask == null) normalized.fv_ask = decisionAsk;
+    if (normalized.decision_ask == null) normalized.decision_ask = decisionAsk;
+  }
+  if (normalized.mid == null && decisionBid !== undefined && decisionAsk !== undefined) {
+    normalized.mid = (decisionBid + decisionAsk) / 2;
+  }
+  if (!normalized.update_time && tsMs !== undefined) {
+    normalized.update_time = new Date(tsMs).toISOString().replace('T', ' ').slice(0, 19);
+  }
+  if (normalized.update_ts_ms == null && tsMs !== undefined) normalized.update_ts_ms = tsMs;
+  if (normalized.md_age_ms == null && ageMs !== undefined) normalized.md_age_ms = ageMs;
+  if (!normalized.exchange && exchange) normalized.exchange = exchange;
+  if (!normalized.coin && coin) normalized.coin = coin;
+  return normalized;
+}
+
+function normalizeSignalStrategyCandidate(candidate: unknown): SignalStrategy | null {
+  if (!candidate || typeof candidate !== 'object') return null;
+  const raw = candidate as Record<string, unknown>;
+  const id = String(raw.id ?? raw.strategy_id ?? '').trim();
+  if (!id) return null;
+
+  const state = raw.state && typeof raw.state === 'object' ? (raw.state as Record<string, unknown>) : {};
+  const paramsRaw = raw.params && typeof raw.params === 'object' ? (raw.params as Record<string, unknown>) : {};
+  const params: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(paramsRaw)) {
+    const normalizedValue = normalizeTradingFlag(value) ?? (value == null ? undefined : String(value));
+    params[key] = normalizedValue;
+  }
+  if (params.bot_on === undefined) {
+    params.bot_on = normalizeTradingFlag(state.bot_on);
+  }
+
+  const rawLegs = raw.legs && typeof raw.legs === 'object' ? (raw.legs as Record<string, unknown>) : {};
+  const legs: Record<string, Record<string, unknown> | null> = {};
+  for (const [contractId, legCandidate] of Object.entries(rawLegs)) {
+    legs[contractId] = normalizeLegacySignalLeg(contractId, legCandidate);
+  }
+
+  const balancesCount = toFiniteOptionalNumber(raw.balances_count) ?? 0;
+  const explicitBalancesOk = raw.balances_ok;
+  const balancesOk = typeof explicitBalancesOk === 'boolean' ? explicitBalancesOk : balancesCount > 0;
+  const tradeable =
+    typeof raw.tradeable === 'boolean'
+      ? raw.tradeable
+      : normalizeTradingFlag(state.bot_on) === '1';
+
+  return {
+    ...(raw as SignalStrategy),
+    id,
+    params,
+    legs: legs as SignalStrategy['legs'],
+    balances_ok: balancesOk,
+    tradeable,
+    blocked: typeof raw.blocked === 'boolean' ? raw.blocked : !tradeable,
+  };
+}
+
+function normalizeSignalStrategiesPayload(payload: unknown): SignalStrategiesPayload {
+  const data = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const rawStrategies = Array.isArray(data.strategies) ? data.strategies : [];
+  const strategies = rawStrategies
+    .map((candidate) => normalizeSignalStrategyCandidate(candidate))
+    .filter((row): row is SignalStrategy => Boolean(row));
+  return {
+    strategies,
+    server_time: typeof data.server_time === 'string' ? data.server_time : undefined,
+    server_ts_ms: toFiniteOptionalNumber(data.server_ts_ms),
+    balance_summary: data.balance_summary as BalanceSummary | undefined,
+  };
+}
+
+function normalizeTradeSide(value: unknown): string {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (text === '1' || text === 'buy' || text === 'bid') return 'buy';
+  if (text === '2' || text === 'sell' || text === 'ask') return 'sell';
+  return text;
+}
+
+function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed: number): TradeEvent | null {
+  if (!candidate || typeof candidate !== 'object') return null;
+  const row = candidate as Record<string, unknown>;
+
+  const op = String(row.op ?? 'upsert').trim().toLowerCase() || 'upsert';
+  const tsMs = toFiniteOptionalNumber(row.ts_ms ?? row.ts_event ?? row.ts ?? row.timestamp);
+  const seq =
+    toFiniteOptionalNumber(row.seq) ??
+    toFiniteOptionalNumber(String(row.entry_id ?? '').split('-')[0]) ??
+    tsMs ??
+    (seqSeed + index);
+  const version = Math.max(1, Math.trunc(toFiniteOptionalNumber(row.version) ?? 1));
+  const instrumentId = String(row.instrument_id ?? '').trim();
+  const symbol = String(row.symbol ?? instrumentId.split('.')[0] ?? '').trim();
+  const price = toFiniteOptionalNumber(row.price);
+  const qty = toFiniteOptionalNumber(row.qty);
+  const derivedNotional = (price !== undefined && qty !== undefined) ? price * qty : undefined;
+  const notional =
+    row.mv ??
+    row.notional ??
+    row.notional_quote ??
+    row.notional_usd ??
+    derivedNotional;
+  const coin = String(
+    row.coin ??
+      row.asset ??
+      row.base_currency ??
+      deriveCoinFromSymbol(symbol),
+  ).trim();
+  const exchange = String(
+    row.exchange ??
+      row.venue ??
+      deriveExchangeFromInstrument(instrumentId),
+  ).trim().toLowerCase();
+  const rowId = String(
+    row.row_id ??
+      row.trade_id ??
+      row.client_order_id ??
+      row.entry_id ??
+      `${exchange}:${coin}:${seq}`,
+  ).trim();
+  if (!rowId) return null;
+
+  return {
+    ...(row as TradeEvent),
+    op: op === 'delete' ? 'delete' : 'upsert',
+    row_id: rowId,
+    version,
+    seq,
+    ts_ms: tsMs ?? undefined,
+    ts: tsMs ?? seq,
+    side: normalizeTradeSide(row.side),
+    coin,
+    exchange,
+    signal_id: String(row.signal_id ?? row.strategy_id ?? '').trim(),
+    order_id: String(row.order_id ?? row.client_order_id ?? '').trim(),
+    time:
+      typeof row.time === 'string' && row.time
+        ? row.time
+        : (tsMs ? new Date(tsMs).toISOString() : ''),
+    mv: notional,
+  } as TradeEvent;
 }
 
 async function hmacSha256Hex(secret: string, message: string): Promise<string> {
@@ -765,7 +1120,9 @@ export const api = {
       typeof data.page === 'number' && data.page > 0
         ? data.page
         : (resolvedPageSize > 0 ? Math.floor(resolvedOffset / resolvedPageSize) + 1 : normalizedPage);
-    const rows = data.rows || [];
+    const rows = (data.rows || [])
+      .map((row, index) => normalizeTradeEventCandidate(row, index, resolvedOffset + 1))
+      .filter((row): row is TradeEvent => Boolean(row));
     const returned = rows.length;
     const totalCount = data.total ?? 0;
     const nextCursorValue = typeof data.next_cursor === 'string' ? data.next_cursor : null;
@@ -805,9 +1162,13 @@ export const api = {
     appendProfileQuery(qs);
     const r = await fetchJSON<FluxEnvelope<{ rows: TradeEvent[]; last_seq?: number; reset_required?: boolean }>>(`/api/v1/trades/delta?${qs.toString()}`, init);
     const data = unwrapFluxEnvelope(r);
+    const rows = (data.rows || [])
+      .map((row, index) => normalizeTradeEventCandidate(row, index, sinceSeq + index + 1))
+      .filter((row): row is TradeEvent => Boolean(row));
+    const maxSeq = rows.reduce((acc, row) => Math.max(acc, Number(row.seq) || 0), 0);
     return {
-      rows: (data.rows || []) as TradeEvent[],
-      last_seq: data.last_seq,
+      rows,
+      last_seq: typeof data.last_seq === 'number' ? data.last_seq : (maxSeq > 0 ? maxSeq : sinceSeq),
       reset_required: data.reset_required,
     };
   },
@@ -830,9 +1191,19 @@ export const api = {
         risk_groups: [],
       };
     }
+    const rows = normalizeBalancesRows(payload.rows);
+    const totalMv = rows.reduce((sum, row) => sum + (row.mv_raw ?? 0), 0);
+    const generatedAt =
+      typeof payload.generated_at === 'string' && payload.generated_at
+        ? payload.generated_at
+        : new Date(toFiniteNumber((payload as Record<string, unknown>).server_ts_ms, Date.now())).toISOString();
     return {
       ...payload,
-      rows: Array.isArray(payload.rows) ? payload.rows : [],
+      rows,
+      total: typeof payload.total === 'number' ? payload.total : toFiniteNumber((payload as Record<string, unknown>).count, rows.length),
+      totals: payload.totals ?? { mv_raw: totalMv, mv_display: formatMoneyDisplay(totalMv) },
+      generated_at: generatedAt,
+      view: payload.view ?? 'parents_only',
       risk_groups: Array.isArray(payload.risk_groups) ? payload.risk_groups : [],
     };
   },
@@ -844,12 +1215,7 @@ export const api = {
     const response = await fetchJSON<{ ok: boolean; data: SignalStrategiesPayload }>(
       `/api/v1/signals${qs.toString() ? `?${qs.toString()}` : ''}`
     );
-    return {
-      strategies: response.data?.strategies || [],
-      server_time: response.data?.server_time,
-      server_ts_ms: response.data?.server_ts_ms,
-      balance_summary: response.data?.balance_summary,
-    };
+    return normalizeSignalStrategiesPayload(response.data);
   },
 
   // Signal strategies (FluxAPI v1) - Returns {"ok": true, "data": {"strategies": [...], "server_time": "..."}}
@@ -859,12 +1225,7 @@ export const api = {
     const response = await fetchJSON<{ ok: boolean; data: SignalStrategiesPayload }>(
       `/api/v1/signals${qs.toString() ? `?${qs.toString()}` : ''}`
     );
-    return {
-      strategies: response.data?.strategies || [],
-      server_time: response.data?.server_time,
-      server_ts_ms: response.data?.server_ts_ms,
-      balance_summary: response.data?.balance_summary,
-    };
+    return normalizeSignalStrategiesPayload(response.data);
   },
 
   // Strategies - Flask returns {"strategies": [...]}

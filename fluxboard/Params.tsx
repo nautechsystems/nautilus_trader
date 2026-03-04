@@ -942,6 +942,7 @@ export default function Params({
   const strategyIndexRef = useRef<Map<string, number>>(new Map());
   const flashTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const remoteUpdateTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const didAutoSelectSingleRef = useRef(false);
   const originalValuesRef = useRef<Map<string, Record<string, string>>>(new Map());
   const paramValuesRef = useRef(paramValues);
   const schemaCacheRef = useRef<ParamSchema | null>(null);
@@ -2437,6 +2438,25 @@ export default function Params({
       }
     }
   }, [familyScopedStrategies, selectedStrategies, setSelectedStrategies, clearSelection]);
+
+  useEffect(() => {
+    if (visibleStrategies.length !== 1) {
+      didAutoSelectSingleRef.current = false;
+      return;
+    }
+    if (selectedStrategies.length > 0 || didAutoSelectSingleRef.current) {
+      return;
+    }
+    const onlyStrategyId = visibleStrategies[0]?.strategy_id;
+    if (!onlyStrategyId) {
+      return;
+    }
+    selectionRef.current = [onlyStrategyId];
+    setSelectedStrategies([onlyStrategyId]);
+    setAnchorStrategyId(onlyStrategyId);
+    anchorIndexRef.current = 0;
+    didAutoSelectSingleRef.current = true;
+  }, [visibleStrategies, selectedStrategies, setSelectedStrategies, setAnchorStrategyId]);
 
   useEffect(() => {
     const handleMouseUp = () => {
