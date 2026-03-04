@@ -133,7 +133,19 @@ def normalize_symbol_parts(
         left, right = cleaned.split("_", 1)
         return left, right
 
-    known_quotes = ("USDT", "USDC", "USD", "BTC", "ETH", "EUR", "GBP", "JPY", "BNB")
+    known_quotes = (
+        "USDT",
+        "USDC",
+        "PUSD",
+        "USDE",
+        "USD",
+        "BTC",
+        "ETH",
+        "EUR",
+        "GBP",
+        "JPY",
+        "BNB",
+    )
     for candidate in known_quotes:
         if cleaned.endswith(candidate) and len(cleaned) > len(candidate):
             return cleaned[: -len(candidate)], candidate
@@ -145,6 +157,7 @@ def normalize_ts_ms(row: dict[str, Any], fallback: int) -> int:
         row.get("ts_ms")
         or row.get("timestamp")
         or row.get("ts")
+        or row.get("ts_event")
         or row.get("time")
         or row.get("datetime")
         or row.get("observed_ts")

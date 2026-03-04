@@ -19,6 +19,7 @@ import argparse
 from dataclasses import dataclass
 import json
 import logging
+import os
 import signal
 import time
 from typing import Any
@@ -99,6 +100,45 @@ class FluxBridgeStreamConsumer:
         self._running = True
         self._last_scan_ts = 0.0
         self._stream_ids: dict[str, str] = {}
+
+    def _normalize_topic_name(self, topic: Any) -> str:
+        topic_text = first_text(topic)
+        if not topic_text:
+            return ""
+        if topic_text in self._handlers:
+            return topic_text
+        if "." in topic_text:
+            suffix = topic_text.rsplit(".", maxsplit=1)[-1]
+            if suffix in self._handlers:
+                return suffix
+        return topic_text
+
+    def _unwrap_payload_envelope(self, payload: Any) -> tuple[str, Any]:
+        if not isinstance(payload, dict):
+            return "", payload
+
+        payload_type = self._normalize_topic_name(payload.get("type"))
+        if "MakerPocBusPayload" not in payload_type and not payload_type.endswith("PocBusPayload"):
+            return "", payload
+
+        topic = self._normalize_topic_name(payload.get("topic"))
+        inner = payload.get("payload")
+        if isinstance(inner, dict):
+            return topic, dict(inner)
+        if isinstance(inner, list):
+            return topic, {"rows": inner}
+        if isinstance(inner, bytes | str):
+            parsed = load_json_payload(inner)
+            if isinstance(parsed, dict):
+                return topic, dict(parsed)
+            if isinstance(parsed, list):
+                return topic, {"rows": parsed}
+            if parsed is None:
+                return topic, {}
+            return topic, {"value": parsed}
+        if inner is None:
+            return topic, {}
+        return topic, {"value": inner}
 
     @property
     def _prefix(self) -> str:
@@ -187,17 +227,21 @@ class FluxBridgeStreamConsumer:
 
         self._last_scan_ts = now
 
-    def _payload_from_fields(self, fields: dict[Any, Any]) -> Any:
+    def _payload_from_fields(self, fields: dict[Any, Any]) -> tuple[Any, str]:
+        field_topic = self._normalize_topic_name(first_text(fields.get("topic"), fields.get(b"topic")))
         raw_payload = fields.get("payload")
         if raw_payload is None:
             raw_payload = fields.get(b"payload")
-        parsed = load_json_payload(raw_payload)
         if raw_payload is not None:
-            return parsed
-        return {
+            parsed = load_json_payload(raw_payload)
+            envelope_topic, unwrapped = self._unwrap_payload_envelope(parsed)
+            return unwrapped, envelope_topic or field_topic
+        payload = {
             decode_text(key): load_json_payload(value)
             for key, value in fields.items()
         }
+        envelope_topic, unwrapped = self._unwrap_payload_envelope(payload)
+        return unwrapped, envelope_topic or field_topic
 
     def _normalized_ts_ms(self, payload: Any, fields: dict[Any, Any]) -> int:
         candidates = [
@@ -207,6 +251,8 @@ class FluxBridgeStreamConsumer:
             fields.get(b"timestamp"),
             fields.get("ts"),
             fields.get(b"ts"),
+            fields.get("ts_event"),
+            fields.get(b"ts_event"),
         ]
         if isinstance(payload, dict):
             candidates.extend(
@@ -214,6 +260,7 @@ class FluxBridgeStreamConsumer:
                     payload.get("ts_ms"),
                     payload.get("timestamp"),
                     payload.get("ts"),
+                    payload.get("ts_event"),
                     payload.get("time"),
                     payload.get("datetime"),
                 ],
@@ -239,7 +286,11 @@ class FluxBridgeStreamConsumer:
         if coordinates is None:
             return None
 
-        payload = self._payload_from_fields(fields)
+        payload, payload_topic = self._payload_from_fields(fields)
+        topic = coordinates.topic
+        normalized_payload_topic = self._normalize_topic_name(payload_topic)
+        if normalized_payload_topic in self._handlers:
+            topic = normalized_payload_topic
 
         payload_strategy = ""
         if isinstance(payload, dict):
@@ -263,7 +314,7 @@ class FluxBridgeStreamConsumer:
         ts_ms = self._normalized_ts_ms(payload, fields)
         context = CorrelationContext(
             strategy_id=coordinates.strategy_id,
-            topic=coordinates.topic,
+            topic=topic,
             entry_id=entry_id,
             ts_ms=ts_ms,
         )
@@ -398,7 +449,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--redis-db", type=int, default=0)
     parser.add_argument("--redis-username", default=None)
     parser.add_argument("--redis-password", default=None)
-    parser.add_argument("--environment", required=True)
+    parser.add_argument(
+        "--environment",
+        default=os.getenv("FLUX_ENVIRONMENT", "paper"),
+    )
     parser.add_argument("--strategy-id", default=None)
     parser.add_argument("--topics", nargs="*", default=[])
     parser.add_argument("--scan-interval-sec", type=float, default=3.0)

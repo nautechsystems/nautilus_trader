@@ -143,6 +143,23 @@ def test_transform_market_bbo_writes_strategy_scoped_snapshot() -> None:
     assert op.value["ts_ms"] == 1700000000000
 
 
+def test_transform_market_bbo_supports_extended_quote_suffixes() -> None:
+    payload = {
+        "exchange": "BYBIT",
+        "symbol": "PLUMEPUSD",
+        "bid": "1.0",
+        "ask": "1.1",
+        "timestamp": "1700000000",
+    }
+
+    ops = transform_market_bbo(payload, _context("market_bbo"))
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert isinstance(op, SetJSONOp)
+    assert op.key == "flux:v1:market:last:maker_v3_01:bybit:PLUME_PUSD"
+
+
 def test_transform_balances_writes_snapshot_and_rows_hash() -> None:
     payload = {
         "accounts": [
@@ -170,3 +187,12 @@ def test_transform_balances_writes_snapshot_and_rows_hash() -> None:
     assert row["topic"] == "balances"
     assert row["entry_id"] == "1700000001000-0"
     assert isinstance(row["ts_ms"], int)
+
+
+def test_transform_event_supports_ts_event_fallback() -> None:
+    ops = transform_event({"event": "quote_refresh", "ts_event": "1700000001"}, _context("event"))
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert isinstance(op, StreamJSONOp)
+    assert op.row["ts_ms"] == 1700000001000
