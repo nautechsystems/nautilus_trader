@@ -15,9 +15,12 @@
 
 from __future__ import annotations
 
+from argparse import Namespace
+
 from examples.live.makerv3_single_leg.run_api import DEFAULT_CONFIG_PATH
 from examples.live.makerv3_single_leg.run_api import _build_flux_config
 from examples.live.makerv3_single_leg.run_api import _load_config
+from examples.live.makerv3_single_leg.run_api import _resolve_bind_host
 
 
 def test_default_config_builds_flux_config_with_strategy_identity_uniqueness() -> None:
@@ -26,3 +29,23 @@ def test_default_config_builds_flux_config_with_strategy_identity_uniqueness() -
     flux_config = _build_flux_config(config, mode="paper", confirm_live=True)
 
     assert flux_config.identity.strategy_instance_id == flux_config.identity.strategy_id
+
+
+def test_default_config_api_host_is_localhost() -> None:
+    config = _load_config(DEFAULT_CONFIG_PATH)
+
+    host = _resolve_bind_host(config, Namespace(host=None))
+
+    assert host == "127.0.0.1"
+
+
+def test_resolve_bind_host_defaults_to_localhost_when_missing() -> None:
+    host = _resolve_bind_host({"api": {}}, Namespace(host=None))
+
+    assert host == "127.0.0.1"
+
+
+def test_resolve_bind_host_prefers_cli_override() -> None:
+    host = _resolve_bind_host({"api": {"host": "127.0.0.1"}}, Namespace(host="0.0.0.0"))
+
+    assert host == "0.0.0.0"

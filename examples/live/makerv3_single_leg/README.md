@@ -15,6 +15,7 @@ This directory contains thin runner wrappers for the production Flux modules und
 1. Default mode is `paper`.
 2. Live mode requires explicit `--confirm-live` on each runner.
 3. No `eval`-based secret loading is used or required.
+4. API runner binds to `127.0.0.1` by default; external exposure requires explicit host override.
 
 ## Configuration
 
@@ -72,6 +73,12 @@ Bridge strategy scope behavior:
 
 ```bash
 python examples/live/makerv3_single_leg/run_api.py
+```
+
+Expose externally only when intentional, for example:
+
+```bash
+python examples/live/makerv3_single_leg/run_api.py --host 0.0.0.0
 ```
 
 ## Live mode (explicit confirmation required)

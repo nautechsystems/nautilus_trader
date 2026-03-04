@@ -9,6 +9,7 @@ This document defines the production API contract implemented by `nautilus_trade
 3. API responses use a consistent envelope with explicit `ok`, `api_version`, `request_id`, and `timestamp_ms`.
 4. Readiness and health checks are dependency-based (Redis availability + required key checks).
 5. No runtime compatibility mode exists for legacy non-`flux:v1` keyspaces.
+6. Example runner `examples/live/makerv3_single_leg/run_api.py` binds to `127.0.0.1` by default; external bind addresses must be explicitly requested (for example `--host 0.0.0.0`).
 
 ## Request/response envelope
 

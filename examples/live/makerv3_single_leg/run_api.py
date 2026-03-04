@@ -161,6 +161,11 @@ def _build_flux_config(config: dict[str, Any], *, mode: str, confirm_live: bool)
     )
 
 
+def _resolve_bind_host(config: dict[str, Any], args: argparse.Namespace) -> str:
+    api_cfg = _table(config, "api")
+    return str(args.host or api_cfg.get("host", "127.0.0.1"))
+
+
 def main() -> None:
     args = _parse_args()
     config = _load_config(args.config)
@@ -195,7 +200,7 @@ def main() -> None:
         strategy_metadata=metadata,
     )
 
-    host = str(args.host or api_cfg.get("host", "0.0.0.0"))
+    host = _resolve_bind_host(config, args)
     port = int(args.port or api_cfg.get("port", 5022))
     app.run(host=host, port=port, debug=False, use_reloader=False)
 
