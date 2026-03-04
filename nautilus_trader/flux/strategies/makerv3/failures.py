@@ -2,21 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING
 
 from nautilus_trader.flux.strategies.makerv3.constants import ALERT_COOLDOWN_QUOTE_FAIL_CIRCUIT_BREAKER_MS
 from nautilus_trader.flux.strategies.makerv3.constants import ALERT_KEY_QUOTE_FAIL_CIRCUIT_BREAKER
 
 
-def handle_quote_failure(strategy: Any, *, now_ns: int, exc: Exception, context: str) -> None:
+if TYPE_CHECKING:
+    from nautilus_trader.flux.strategies.makerv3.strategy import MakerV3Strategy
+
+
+def handle_quote_failure(strategy: MakerV3Strategy, *, now_ns: int, exc: Exception, context: str) -> None:
     """Record a quote-cycle failure and stop after circuit-breaker thresholds are exceeded."""
     if not hasattr(strategy, "_quote_failure_circuit_open"):
         strategy._quote_failure_circuit_open = False
     if not hasattr(strategy, "_quote_failures_ns"):
         strategy._quote_failures_ns = []
 
-    def _safe(effect: Any) -> None:
+    def _safe(effect: Callable[[], None]) -> None:
         try:
             effect()
         except Exception:
@@ -93,4 +98,3 @@ def handle_quote_failure(strategy: Any, *, now_ns: int, exc: Exception, context:
 
 
 __all__ = ["handle_quote_failure"]
-

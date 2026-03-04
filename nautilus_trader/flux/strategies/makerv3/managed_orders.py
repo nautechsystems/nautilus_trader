@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.orders import Order
 
 
 CANCELLATION_SAFETY_INVARIANT = (
@@ -28,7 +33,7 @@ class CancelManagedQuotesResult:
     cancel_all_exceptions: int
 
 
-def _managed_order_dedupe_key(order: Any) -> tuple[Any, ...]:
+def _managed_order_dedupe_key(order: Order) -> tuple[object, ...]:
     client_order_id = str(getattr(order, "client_order_id", "") or "")
     venue_order_id = str(getattr(order, "venue_order_id", "") or "")
     if client_order_id:
@@ -44,11 +49,16 @@ def _managed_order_dedupe_key(order: Any) -> tuple[Any, ...]:
     )
 
 
-def collect_managed_orders(*, cache: Any, instrument_id: Any, strategy_id: Any) -> list[Any]:
+def collect_managed_orders(
+    *,
+    cache: Cache,
+    instrument_id: InstrumentId,
+    strategy_id: StrategyId,
+) -> list[Order]:
     """Collect currently open/inflight managed orders with deduplication."""
-    orders: list[Any] = []
-    seen_order_keys: set[tuple[Any, ...]] = set()
-    sources: list[list[Any]] = []
+    orders: list[Order] = []
+    seen_order_keys: set[tuple[object, ...]] = set()
+    sources: list[list[Order]] = []
     for fetch_name in ("orders_open", "orders_inflight"):
         fetch = getattr(cache, fetch_name, None)
         if not callable(fetch):
@@ -82,7 +92,7 @@ def collect_managed_orders(*, cache: Any, instrument_id: Any, strategy_id: Any) 
     return orders
 
 
-def register_managed_order(tracked_ids: set[str], order: Any) -> str | None:
+def register_managed_order(tracked_ids: set[str], order: Order) -> str | None:
     """Register a managed order client ID and return it when present."""
     client_order_id = str(getattr(order, "client_order_id", "") or "")
     if not client_order_id:
@@ -91,7 +101,10 @@ def register_managed_order(tracked_ids: set[str], order: Any) -> str | None:
     return client_order_id
 
 
-def reconcile_managed_order(tracked_ids: set[str], client_order_id: Any) -> bool:
+def reconcile_managed_order(
+    tracked_ids: set[str],
+    client_order_id: ClientOrderId | str | None,
+) -> bool:
     """Remove a managed order ID from tracking and return prior membership."""
     client_order_id_str = str(client_order_id or "")
     if not client_order_id_str:
@@ -106,10 +119,10 @@ def cancel_managed_quotes(
     reason: str,
     force: bool,
     tracked_ids: set[str],
-    managed_orders: list[Any],
-    maker_instrument_id: Any,
-    cancel_order: Callable[[Any], None],
-    cancel_all_orders: Callable[[Any], None] | None,
+    managed_orders: list[Order],
+    maker_instrument_id: InstrumentId,
+    cancel_order: Callable[[Order], None],
+    cancel_all_orders: Callable[[InstrumentId], None] | None,
     cancel_all_instrument_orders: bool = False,
 ) -> CancelManagedQuotesResult:
     """Cancel managed orders and optionally cancel all instrument orders."""

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING
 
 from nautilus_trader.flux.strategies.makerv3 import pricing as pricing_mod
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_SKIPPED
@@ -11,6 +11,12 @@ from nautilus_trader.flux.strategies.makerv3.constants import REASON_SKIPPED_BOT
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_SKIPPED_QUOTE_FAIL_CIRCUIT_OPEN
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_SKIPPED_REQUOTE_THROTTLED
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_FV
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.identifiers import InstrumentId
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.flux.strategies.makerv3.strategy import MakerV3Strategy
 
 
 _price_to_decimal = pricing_mod.price_to_decimal
@@ -32,7 +38,7 @@ def should_publish_market_bbo(
     return now_ns - last_publish_ns >= interval_ns
 
 
-def on_order_book_deltas(strategy: Any, deltas: Any) -> None:
+def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> None:
     """Process market deltas and trigger quote-cycle refresh when eligible."""
     book = strategy._books.get(deltas.instrument_id)
     if book is None:
@@ -117,7 +123,7 @@ def on_order_book_deltas(strategy: Any, deltas: Any) -> None:
         strategy._handle_quote_failure(now_ns=now_ns, exc=exc, context="on_order_book_deltas")
 
 
-def best_bid_ask(strategy: Any, instrument_id: Any) -> tuple[Decimal, Decimal] | None:
+def best_bid_ask(strategy: MakerV3Strategy, instrument_id: InstrumentId) -> tuple[Decimal, Decimal] | None:
     """Return the best bid/ask decimal prices for an instrument."""
     book = strategy._books.get(instrument_id)
     if book is None:
@@ -129,7 +135,7 @@ def best_bid_ask(strategy: Any, instrument_id: Any) -> tuple[Decimal, Decimal] |
     return bid.as_decimal(), ask.as_decimal()
 
 
-def best_mid(strategy: Any, instrument_id: Any) -> Decimal | None:
+def best_mid(strategy: MakerV3Strategy, instrument_id: InstrumentId) -> Decimal | None:
     """Return the mid price derived from the current best bid/ask."""
     bbo = strategy._best_bid_ask(instrument_id)
     if bbo is None:
@@ -138,7 +144,7 @@ def best_mid(strategy: Any, instrument_id: Any) -> Decimal | None:
     return (bid + ask) / Decimal("2")
 
 
-def book_spread(strategy: Any, instrument_id: Any) -> Decimal | None:
+def book_spread(strategy: MakerV3Strategy, instrument_id: InstrumentId) -> Decimal | None:
     """Return the current top-of-book spread, if available."""
     bbo = strategy._best_bid_ask(instrument_id)
     if bbo is None:
@@ -147,7 +153,7 @@ def book_spread(strategy: Any, instrument_id: Any) -> Decimal | None:
     return ask - bid
 
 
-def recompute_and_publish_fv(strategy: Any) -> None:
+def recompute_and_publish_fv(strategy: MakerV3Strategy) -> None:
     """Compute fair-value midpoint and publish it."""
     maker_mid = strategy._best_mid(strategy.config.maker_instrument_id)
     reference_mid = strategy._best_mid(strategy.config.reference_instrument_id)

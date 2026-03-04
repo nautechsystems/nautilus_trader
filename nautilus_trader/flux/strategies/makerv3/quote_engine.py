@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING
 
 from nautilus_trader.flux.strategies.makerv3 import pricing as pricing_mod
 from nautilus_trader.flux.strategies.makerv3 import publisher as publisher_mod
@@ -18,6 +18,11 @@ from nautilus_trader.flux.strategies.makerv3.constants import REASON_COMPLETED_N
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_COMPLETED_NO_TARGETS
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_COMPLETED_REBALANCED
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.objects import Price
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.flux.strategies.makerv3.strategy import MakerV3Strategy
 
 
 _to_decimal = pricing_mod.to_decimal
@@ -32,7 +37,7 @@ _decimal_to_json_str = publisher_mod.decimal_to_json_str
 
 
 def handle_stale_quote_block(
-    strategy: Any,
+    strategy: MakerV3Strategy,
     *,
     now_ns: int,
     state: str,
@@ -76,14 +81,18 @@ def handle_stale_quote_block(
     strategy.log.warning(warning_message)
 
 
-def publish_recovery_state_if_blocked(strategy: Any, *, managed_orders_count: int | None = None) -> None:
+def publish_recovery_state_if_blocked(
+    strategy: MakerV3Strategy,
+    *,
+    managed_orders_count: int | None = None,
+) -> None:
     """Publish a recovery state transition when leaving a blocked state."""
     if not bool(getattr(strategy, "_state_is_blocked", False)):
         return
     strategy._publish_state("running", managed_orders_count=managed_orders_count)
 
 
-def refresh_quotes(strategy: Any, *, now_ns: int, quote_cycle_id: str | None = None) -> None:
+def refresh_quotes(strategy: MakerV3Strategy, *, now_ns: int, quote_cycle_id: str | None = None) -> None:
     """Compute desired quote ladder and rebalance managed orders to match it."""
     if strategy._maker_instrument is None or strategy._order_qty is None:
         return
@@ -212,8 +221,8 @@ def refresh_quotes(strategy: Any, *, now_ns: int, quote_cycle_id: str | None = N
     )
     match_tol = tick / Decimal("2") if tick > 0 else Decimal("0")
 
-    desired_buys: list[tuple[Any, Decimal, Decimal]] = []
-    desired_sells: list[tuple[Any, Decimal, Decimal]] = []
+    desired_buys: list[tuple[Price, Decimal, Decimal]] = []
+    desired_sells: list[tuple[Price, Decimal, Decimal]] = []
     seen_buy_prices: set[str] = set()
     seen_sell_prices: set[str] = set()
     for bid_place, bid_cancel in bid_levels:
@@ -434,4 +443,3 @@ __all__ = [
     "publish_recovery_state_if_blocked",
     "refresh_quotes",
 ]
-

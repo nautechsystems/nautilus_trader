@@ -8,9 +8,13 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.flux.strategies.makerv3.pricing import clamp_decimal
 from nautilus_trader.flux.strategies.makerv3.pricing import to_decimal
 from nautilus_trader.flux.strategies.makerv3.pricing import to_decimal_or_none
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.position import Position
 
 
 INVENTORY_SKEW_RUNTIME_PARAMS: set[str] = {
@@ -58,7 +62,7 @@ def normalize_contract_symbol(raw_symbol: str) -> tuple[str, str]:
     return symbol.upper(), ""
 
 
-def maker_base_currency_code(*, instrument: Any, instrument_id: Any) -> str | None:
+def maker_base_currency_code(*, instrument: Instrument | None, instrument_id: InstrumentId) -> str | None:
     """Return the maker instrument base currency code when available."""
     if instrument is None:
         return None
@@ -71,7 +75,7 @@ def maker_base_currency_code(*, instrument: Any, instrument_id: Any) -> str | No
     return parsed_base or None
 
 
-def position_signed_qty(positions: Iterable[Any]) -> Decimal | None:
+def position_signed_qty(positions: Iterable[Position]) -> Decimal | None:
     """Aggregate signed position quantity across open positions."""
     total = Decimal("0")
     found = False
@@ -89,7 +93,7 @@ def position_signed_qty(positions: Iterable[Any]) -> Decimal | None:
     return total if found else None
 
 
-def spot_balance_total(*, accounts: Iterable[Any], currency_code: str) -> Decimal | None:
+def spot_balance_total(*, accounts: Iterable[Account], currency_code: str) -> Decimal | None:
     """Aggregate total spot balance for a currency across accounts."""
     code = str(currency_code).strip().upper()
     if not code:

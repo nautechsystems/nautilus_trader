@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
+from typing import TYPE_CHECKING
 
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
@@ -20,7 +22,12 @@ _to_decimal_or_none = pricing_mod.to_decimal_or_none
 _to_int_or_default = pricing_mod.to_int_or_default
 
 
-def parse_bool_text(value: Any) -> bool | None:
+if TYPE_CHECKING:
+    from nautilus_trader.flux.strategies.makerv3.strategy import MakerV3Strategy
+    from nautilus_trader.flux.strategies.makerv3.strategy import MakerV3StrategyConfig
+
+
+def parse_bool_text(value: object) -> bool | None:
     """Return a parsed boolean value for common truthy/falsey runtime payloads."""
     if value is None:
         return None
@@ -92,7 +99,7 @@ def coerce_runtime_param_value(name: str, value: Any) -> Any:
     return coerced
 
 
-def initial_runtime_params(config: Any) -> dict[str, Any]:
+def initial_runtime_params(config: MakerV3StrategyConfig) -> dict[str, Any]:
     """Build the initial runtime parameter set derived from strategy config."""
     runtime_defaults: dict[str, Any] = dict(MAKERV3_RUNTIME_PARAM_DEFAULTS)
     runtime_defaults["qty"] = config.active_order_qty
@@ -105,17 +112,17 @@ def initial_runtime_params(config: Any) -> dict[str, Any]:
     return runtime_params
 
 
-def effective_bot_on(strategy: Any) -> bool:
+def effective_bot_on(strategy: MakerV3Strategy) -> bool:
     """Return the authoritative bot-on state after runtime overrides."""
     return bool(strategy._runtime_params.get("bot_on", strategy.config.bot_on))
 
 
-def runtime_decimal(strategy: Any, name: str) -> Decimal:
+def runtime_decimal(strategy: MakerV3Strategy, name: str) -> Decimal:
     """Return a runtime decimal param, defaulting to config."""
     return _to_decimal(strategy._runtime_params.get(name, getattr(strategy.config, name)))
 
 
-def runtime_int(strategy: Any, name: str) -> int:
+def runtime_int(strategy: MakerV3Strategy, name: str) -> int:
     """Return a runtime integer param, defaulting to config."""
     value = strategy._runtime_params.get(name, getattr(strategy.config, name))
     try:
@@ -124,7 +131,7 @@ def runtime_int(strategy: Any, name: str) -> int:
         return int(getattr(strategy.config, name))
 
 
-def runtime_bool(strategy: Any, name: str) -> bool:
+def runtime_bool(strategy: MakerV3Strategy, name: str) -> bool:
     """Return a runtime boolean param, defaulting to config."""
     value = strategy._runtime_params.get(name, getattr(strategy.config, name))
     parsed = parse_bool_text(value)
@@ -133,7 +140,7 @@ def runtime_bool(strategy: Any, name: str) -> bool:
     return parsed
 
 
-def quote_runtime_params_snapshot(strategy: Any) -> dict[str, Any]:
+def quote_runtime_params_snapshot(strategy: MakerV3Strategy) -> dict[str, Any]:
     """Return a pre-coerced runtime snapshot used by the quote engine."""
     runtime = strategy._runtime_params
     snapshot: dict[str, Any] = {}
@@ -153,14 +160,14 @@ def params_manager_factory(
     namespace: str = "flux",
     schema_version: str = "v1",
     defaults: Mapping[str, Any] | None = None,
-) -> Any:
+) -> Callable[[MakerV3Strategy], Any]:
     """Build a params-manager factory bound to MakerV3 runtime schema."""
     base_defaults: dict[str, Any] = dict(MAKERV3_RUNTIME_PARAM_DEFAULTS)
     if defaults:
         for name, value in defaults.items():
             base_defaults[str(name)] = value
 
-    def _factory(strategy: Any) -> Any:
+    def _factory(strategy: MakerV3Strategy) -> Any:
         from nautilus_trader.flux.params.manager import FluxParamsManager
 
         strategy_runtime_params = getattr(strategy, "_runtime_params", {})
@@ -184,7 +191,7 @@ def params_manager_factory(
     return _factory
 
 
-def ensure_params_manager_identity(strategy: Any, manager: Any | None) -> None:
+def ensure_params_manager_identity(strategy: MakerV3Strategy, manager: Any | None) -> None:
     """Validate that a manager is bound to the correct strategy identity."""
     if manager is None:
         return
@@ -199,13 +206,13 @@ def ensure_params_manager_identity(strategy: Any, manager: Any | None) -> None:
         )
 
 
-def set_params_manager(strategy: Any, manager: Any | None) -> None:
+def set_params_manager(strategy: MakerV3Strategy, manager: Any | None) -> None:
     """Attach an explicit runtime params manager instance."""
     ensure_params_manager_identity(strategy, manager)
     strategy._params_manager = manager
 
 
-def set_params_manager_factory(strategy: Any, factory: Any | None) -> None:
+def set_params_manager_factory(strategy: MakerV3Strategy, factory: Any | None) -> None:
     """Attach a lazy factory used to construct a params manager on demand."""
     if factory is None:
         strategy._params_manager_factory = None
@@ -215,7 +222,7 @@ def set_params_manager_factory(strategy: Any, factory: Any | None) -> None:
     strategy._params_manager_factory = factory
 
 
-def ensure_params_manager(strategy: Any) -> Any | None:
+def ensure_params_manager(strategy: MakerV3Strategy) -> Any | None:
     """Return a params manager, creating it via the configured factory if needed."""
     if strategy._params_manager is not None:
         return strategy._params_manager
@@ -227,7 +234,7 @@ def ensure_params_manager(strategy: Any) -> Any | None:
     return strategy._params_manager
 
 
-def apply_runtime_param_updates(strategy: Any, updates: dict[str, Any]) -> None:
+def apply_runtime_param_updates(strategy: MakerV3Strategy, updates: dict[str, Any]) -> None:
     """Apply a validated runtime param update payload atomically."""
     coerced_updates: dict[str, Any] = {}
     for name, raw_value in updates.items():
@@ -255,7 +262,12 @@ def apply_runtime_param_updates(strategy: Any, updates: dict[str, Any]) -> None:
         strategy._invalidate_inventory_skew_cache()
 
 
-def refresh_runtime_params(strategy: Any, *, now_ns: int | None = None, force: bool = False) -> None:
+def refresh_runtime_params(
+    strategy: MakerV3Strategy,
+    *,
+    now_ns: int | None = None,
+    force: bool = False,
+) -> None:
     """Refresh runtime params from the configured manager if due."""
     if now_ns is None:
         now_ns = int(strategy.clock.timestamp_ns())
@@ -272,7 +284,7 @@ def refresh_runtime_params(strategy: Any, *, now_ns: int | None = None, force: b
     apply_runtime_param_updates(strategy, updates_fn())
 
 
-def fail_fast_runtime_params(strategy: Any, *, context: str, exc: Exception) -> None:
+def fail_fast_runtime_params(strategy: MakerV3Strategy, *, context: str, exc: Exception) -> None:
     """Emit diagnostics and stop the strategy after a runtime params failure."""
     if strategy._runtime_params_failed:
         return
