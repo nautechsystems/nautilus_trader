@@ -840,7 +840,7 @@ pub struct BinanceLeverageResponse {
 #[serde(rename_all = "camelCase")]
 pub struct BinanceCancelAllOrdersResponse {
     /// Response code (200 = success).
-    pub code: String,
+    pub code: i32,
     /// Response message.
     pub msg: String,
 }

@@ -199,6 +199,9 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::events::OrderCanceled>()?;
     m.add_class::<crate::events::OrderExpired>()?;
     m.add_class::<crate::events::OrderSnapshot>()?;
+    m.add_class::<crate::events::PositionOpened>()?;
+    m.add_class::<crate::events::PositionChanged>()?;
+    m.add_class::<crate::events::PositionClosed>()?;
     m.add_class::<crate::events::PositionAdjusted>()?;
     m.add_class::<crate::events::PositionSnapshot>()?;
     // Accounts

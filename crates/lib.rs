@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod adjusted;
-pub mod changed;
-pub mod closed;
-pub mod opened;
-pub mod snapshot;
+//! Workspace shim crate for NautilusTrader.
+//!
+//! This crate does not expose any public API of its own. It exists solely so
+//! that the root `crates/` directory is a valid Cargo crate, which prevents
+//! Cargo from discarding incremental build artefacts when only the dependency
+//! graph changes.

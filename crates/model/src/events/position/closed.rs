@@ -29,6 +29,10 @@ use crate::{
 /// Represents an event where a position has been closed.
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
 pub struct PositionClosed {
     /// The trader ID associated with the event.
     pub trader_id: TraderId,

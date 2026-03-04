@@ -15,21 +15,22 @@
 
 //! Python bindings for live node.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use nautilus_common::{
-    actor::data_actor::{DataActorConfig, ImportableActorConfig},
-    enums::Environment,
-    live::get_runtime,
-    logging::logger::LoggerConfig,
-    python::actor::PyDataActor,
+    actor::data_actor::ImportableActorConfig, enums::Environment, live::get_runtime,
+    logging::logger::LoggerConfig, python::actor::PyDataActor,
 };
 use nautilus_core::{
     UUID4,
     python::{to_pyruntime_err, to_pyvalue_err},
 };
-use nautilus_model::identifiers::{ActorId, TraderId};
+use nautilus_model::identifiers::{ActorId, ComponentId, StrategyId, TraderId};
 use nautilus_system::get_global_pyo3_registry;
+use nautilus_trading::{
+    ImportableStrategyConfig,
+    python::strategy::{PyStrategy, PyStrategyInner},
+};
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
@@ -165,190 +166,89 @@ impl LiveNode {
 
         log::info!("Importing actor from module: {module_name} class: {class_name}");
 
-        // Import the Python class to verify it exists and get it for method dispatch
-        let _python_class = Python::attach(|py| -> PyResult<Py<PyAny>> {
-            let actor_module = py.import(module_name)?;
-            let actor_class = actor_module.getattr(class_name)?;
-            Ok(actor_class.unbind())
-        })
-        .map_err(|e| to_pyruntime_err(format!("Failed to import Python class: {e}")))?;
+        // Phase 1: Create and configure the Python actor, extract its actor_id
+        let (python_actor, actor_id) =
+            Python::attach(|py| -> anyhow::Result<(Py<PyAny>, ActorId)> {
+                let actor_module = py
+                    .import(module_name)
+                    .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
+                let actor_class = actor_module
+                    .getattr(class_name)
+                    .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
 
-        // Create default DataActorConfig for Rust PyDataActor.
-        // Inherited config attributes extracted and wired after
-        // Python actor creation
-        let basic_data_actor_config = DataActorConfig::default();
+                let config_instance =
+                    create_config_instance(py, &config.config_path, &config.config)?;
 
-        log::debug!("Created basic DataActorConfig for Rust: {basic_data_actor_config:?}");
-
-        // Create the Python actor and register the internal PyDataActor
-        let python_actor = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
-            // Import the Python class
-            let actor_module = py
-                .import(module_name)
-                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-            let actor_class = actor_module
-                .getattr(class_name)
-                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
-
-            // Create config instance if config_path and config are provided
-            let config_instance = if !config.config_path.is_empty() && !config.config.is_empty() {
-                // Parse the config_path to get module and class
-                let config_parts: Vec<&str> = config.config_path.split(':').collect();
-                if config_parts.len() != 2 {
-                    anyhow::bail!(
-                        "config_path must be in format 'module.path:ClassName', was {}",
-                        config.config_path
-                    );
-                }
-                let (config_module_name, config_class_name) = (config_parts[0], config_parts[1]);
-
-                log::debug!("Importing config class from module: {config_module_name} class: {config_class_name}");
-
-                // Import the config class
-                let config_module = py
-                    .import(config_module_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to import config module {config_module_name}: {e}"))?;
-                let config_class = config_module
-                    .getattr(config_class_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to get config class {config_class_name}: {e}"))?;
-
-                // Convert the serde_json::Value config dict to a Python dict
-                let py_dict = PyDict::new(py);
-                for (key, value) in &config.config {
-                    // Convert serde_json::Value back to Python object via JSON
-                    let json_str = serde_json::to_string(value)
-                        .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
-                    let py_value = PyModule::import(py, "json")?
-                        .call_method("loads", (json_str,), None)?;
-                    py_dict.set_item(key, py_value)?;
-                }
-
-                log::debug!("Created config dict: {py_dict:?}");
-
-                // Try multiple approaches to create the config instance
-                let config_instance = {
-                    // Try calling config class with **kwargs first
-                    match config_class.call((), Some(&py_dict)) {
-                        Ok(instance) => {
-                            log::debug!("Successfully created config instance with kwargs");
-                            instance
-                        },
-                        Err(kwargs_err) => {
-                            log::debug!("Failed to create config with kwargs: {kwargs_err}");
-
-                            // Second approach: try to create with default constructor and set attributes
-                            match config_class.call0() {
-                                Ok(instance) => {
-                                    log::debug!("Created default config instance, setting attributes");
-                                    for (key, value) in &config.config {
-                                        let json_str = serde_json::to_string(value)
-                                            .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
-                                        let py_value = PyModule::import(py, "json")?
-                                            .call_method("loads", (json_str,), None)?;
-
-                                        if let Err(setattr_err) = instance.setattr(key, py_value) {
-                                            log::warn!("Failed to set attribute {key}: {setattr_err}");
-                                        }
-                                    }
-
-                                    // Only call __post_init__ if it exists (setattr path
-                                    // needs it, kwargs path already triggered it via __init__)
-                                    if instance.hasattr("__post_init__")? {
-                                        instance.call_method0("__post_init__")?;
-                                    }
-
-                                    instance
-                                },
-                                Err(default_err) => {
-                                    log::debug!("Failed to create default config: {default_err}");
-
-                                    // If both approaches fail, return the original error
-                                    anyhow::bail!(
-                                        "Failed to create config instance. Tried kwargs approach: {kwargs_err}, default constructor: {default_err}"
-                                    );
-                                }
-                            }
-                        }
-                    }
+                let python_actor = if let Some(config_obj) = config_instance.clone() {
+                    actor_class.call1((config_obj,))?
+                } else {
+                    actor_class.call0()?
                 };
 
-                log::debug!("Created config instance: {config_instance:?}");
+                log::debug!("Created Python actor instance: {python_actor:?}");
 
-                Some(config_instance)
-            } else {
-                log::debug!("No config_path or empty config, using None");
-                None
-            };
+                let mut py_data_actor_ref = python_actor
+                    .extract::<PyRefMut<PyDataActor>>()
+                    .map_err(Into::<PyErr>::into)
+                    .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
 
-            // Create the Python actor instance with the config
-            let python_actor = if let Some(config_obj) = config_instance.clone() {
-                actor_class.call1((config_obj,))?
-            } else {
-                actor_class.call0()?
-            };
-
-            log::debug!("Created Python actor instance: {python_actor:?}");
-
-            // Get a mutable reference to the internal PyDataActor for registration
-            let mut py_data_actor_ref = python_actor
-                .extract::<PyRefMut<PyDataActor>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-            log::debug!(
-                "Internal PyDataActor mem_addr: {}, registered: {}",
-                &py_data_actor_ref.mem_address(),
-                py_data_actor_ref.is_registered()
-            );
-
-            // Extract inherited DataActorConfig fields from the Python actor instance
-            // and wire them into the PyDataActor's core config
-            if let Some(config_obj) = config_instance.as_ref() {
-                log::debug!("Extracting inherited config fields from Python actor config");
-
-                // Extract actor_id if present
-                if let Ok(actor_id) = config_obj.getattr("actor_id")
-                    && !actor_id.is_none() {
-                        // Try to extract as ActorId first, then as string
-                        let actor_id_val = if let Ok(actor_id_val) = actor_id.extract::<ActorId>() {
-                            actor_id_val
-                        } else if let Ok(actor_id_str) = actor_id.extract::<String>() {
-                            ActorId::new_checked(&actor_id_str)?
+                // Extract inherited config fields from the Python config
+                if let Some(config_obj) = config_instance.as_ref() {
+                    if let Ok(actor_id) = config_obj.getattr("actor_id")
+                        && !actor_id.is_none()
+                    {
+                        let actor_id_val = if let Ok(aid) = actor_id.extract::<ActorId>() {
+                            aid
+                        } else if let Ok(aid_str) = actor_id.extract::<String>() {
+                            ActorId::new_checked(&aid_str)?
                         } else {
-                            log::warn!("Failed to extract actor_id as ActorId or String");
                             anyhow::bail!("Invalid `actor_id` type");
                         };
-
-                        log::debug!("Extracted actor_id: {actor_id_val}");
                         py_data_actor_ref.set_actor_id(actor_id_val);
                     }
 
-                // Extract log_events if present
-                if let Ok(log_events) = config_obj.getattr("log_events")
-                    && let Ok(log_events_val) = log_events.extract::<bool>() {
-                        log::debug!("Extracted log_events: {log_events_val}");
-                        py_data_actor_ref.set_log_events(log_events_val);
+                    if let Some(val) = extract_bool_config_attr(config_obj, "log_events") {
+                        py_data_actor_ref.set_log_events(val);
                     }
 
-                // Extract log_commands if present
-                if let Ok(log_commands) = config_obj.getattr("log_commands")
-                    && let Ok(log_commands_val) = log_commands.extract::<bool>() {
-                        log::debug!("Extracted log_commands: {log_commands_val}");
-                        py_data_actor_ref.set_log_commands(log_commands_val);
+                    if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
+                        py_data_actor_ref.set_log_commands(val);
                     }
+                }
 
-                log::debug!("Successfully updated PyDataActor config from Python actor instance");
-            }
+                py_data_actor_ref.set_python_instance(python_actor.clone().unbind());
 
-            // Set the Python instance reference for method dispatch on the original
-            py_data_actor_ref.set_python_instance(python_actor.clone().unbind());
+                let actor_id = py_data_actor_ref.actor_id();
 
-            log::debug!("Set Python instance reference for method dispatch");
+                Ok((python_actor.unbind(), actor_id))
+            })
+            .map_err(to_pyruntime_err)?;
 
-            // Register the internal PyDataActor
-            let trader_id = self.trader_id();
-            let clock = self.kernel().clock();
-            let cache = self.kernel().cache();
+        // Validate no duplicate before any mutations
+        if self.kernel().trader.actor_ids().contains(&actor_id) {
+            return Err(to_pyruntime_err(format!(
+                "Actor '{actor_id}' is already registered"
+            )));
+        }
+
+        // Phase 2: Create per-component clock via the trader.
+        // This requires `&mut self` access to the kernel, which cannot be held
+        // inside a `Python::attach` block, hence the separate phases.
+        let trader_id = self.kernel().trader_id();
+        let cache = self.kernel().cache();
+        let component_id = ComponentId::new(actor_id.inner().as_str());
+        let clock = self
+            .kernel_mut()
+            .trader
+            .create_component_clock(component_id);
+
+        // Phase 3: Register the actor with its dedicated clock
+        Python::attach(|py| -> anyhow::Result<()> {
+            let py_actor = python_actor.bind(py);
+            let mut py_data_actor_ref = py_actor
+                .extract::<PyRefMut<PyDataActor>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
 
             py_data_actor_ref
                 .register(trader_id, clock, cache)
@@ -360,19 +260,18 @@ impl LiveNode {
                 py_data_actor_ref.state()
             );
 
-            Ok(python_actor.unbind())
+            Ok(())
         })
         .map_err(to_pyruntime_err)?;
 
-        let actor_id = Python::attach(|py| -> anyhow::Result<ActorId> {
+        // Phase 4: Register in global registries and track for lifecycle
+        Python::attach(|py| -> anyhow::Result<()> {
             let py_actor = python_actor.bind(py);
             let py_data_actor_ref = py_actor
                 .cast::<PyDataActor>()
                 .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
-            let py_data_actor = py_data_actor_ref.borrow();
-            py_data_actor.register_in_global_registries();
-
-            Ok(py_data_actor.actor_id())
+            py_data_actor_ref.borrow().register_in_global_registries();
+            Ok(())
         })
         .map_err(to_pyruntime_err)?;
 
@@ -381,10 +280,165 @@ impl LiveNode {
             .add_actor_id_for_lifecycle(actor_id)
             .map_err(to_pyruntime_err)?;
 
-        // Note: No mem::forget needed - the actor's py_self field holds a Py<PyAny>
-        // that keeps the Python instance alive, and registries share the inner via Rc::clone()
-
         log::info!("Registered Python actor {actor_id}");
+        Ok(())
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "Required for Python strategy component registration"
+    )]
+    #[pyo3(name = "add_strategy_from_config")]
+    fn py_add_strategy_from_config(
+        &mut self,
+        _py: Python,
+        config: ImportableStrategyConfig,
+    ) -> PyResult<()> {
+        log::debug!("`add_strategy_from_config` with: {config:?}");
+
+        // Extract module and class name from strategy_path
+        let parts: Vec<&str> = config.strategy_path.split(':').collect();
+        if parts.len() != 2 {
+            return Err(to_pyvalue_err(
+                "strategy_path must be in format 'module.path:ClassName'",
+            ));
+        }
+        let (module_name, class_name) = (parts[0], parts[1]);
+
+        log::info!("Importing strategy from module: {module_name} class: {class_name}");
+
+        // Phase 1: Create and configure the Python strategy, extract its strategy_id
+        let (python_strategy, strategy_id) =
+            Python::attach(|py| -> anyhow::Result<(Py<PyAny>, StrategyId)> {
+                let strategy_module = py
+                    .import(module_name)
+                    .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
+                let strategy_class = strategy_module
+                    .getattr(class_name)
+                    .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
+
+                let config_instance =
+                    create_config_instance(py, &config.config_path, &config.config)?;
+
+                let python_strategy = if let Some(config_obj) = config_instance.clone() {
+                    strategy_class.call1((config_obj,))?
+                } else {
+                    strategy_class.call0()?
+                };
+
+                log::debug!("Created Python strategy instance: {python_strategy:?}");
+
+                let mut py_strategy_ref = python_strategy
+                    .extract::<PyRefMut<PyStrategy>>()
+                    .map_err(Into::<PyErr>::into)
+                    .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+
+                // Extract inherited config fields from the Python config
+                if let Some(config_obj) = config_instance.as_ref() {
+                    if let Ok(strategy_id) = config_obj.getattr("strategy_id")
+                        && !strategy_id.is_none()
+                    {
+                        let strategy_id_val = if let Ok(sid) = strategy_id.extract::<StrategyId>() {
+                            sid
+                        } else if let Ok(sid_str) = strategy_id.extract::<String>() {
+                            StrategyId::new_checked(&sid_str)?
+                        } else {
+                            anyhow::bail!("Invalid `strategy_id` type");
+                        };
+                        py_strategy_ref.set_strategy_id(strategy_id_val);
+                    }
+
+                    if let Some(val) = extract_bool_config_attr(config_obj, "log_events") {
+                        py_strategy_ref.set_log_events(val);
+                    }
+
+                    if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
+                        py_strategy_ref.set_log_commands(val);
+                    }
+                }
+
+                py_strategy_ref.set_python_instance(python_strategy.clone().unbind());
+
+                let strategy_id = py_strategy_ref.strategy_id();
+
+                Ok((python_strategy.unbind(), strategy_id))
+            })
+            .map_err(to_pyruntime_err)?;
+
+        // Validate no duplicate before any mutations
+        if self.kernel().trader.strategy_ids().contains(&strategy_id) {
+            return Err(to_pyruntime_err(format!(
+                "Strategy '{strategy_id}' is already registered"
+            )));
+        }
+
+        // Phase 2: Create per-component clock via the trader.
+        // This requires `&mut self` access to the kernel, which cannot be held
+        // inside a `Python::attach` block, hence the separate phases.
+        let trader_id = self.kernel().trader_id();
+        let cache = self.kernel().cache();
+        let portfolio = self.kernel().portfolio.clone();
+        let component_id = ComponentId::new(strategy_id.inner().as_str());
+        let clock = self
+            .kernel_mut()
+            .trader
+            .create_component_clock(component_id);
+
+        // Phase 3: Register the strategy with its dedicated clock
+        Python::attach(|py| -> anyhow::Result<()> {
+            let py_strategy = python_strategy.bind(py);
+            let mut py_strategy_ref = py_strategy
+                .extract::<PyRefMut<PyStrategy>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+
+            py_strategy_ref
+                .register(trader_id, clock, cache, portfolio)
+                .map_err(|e| anyhow::anyhow!("Failed to register PyStrategy: {e}"))?;
+
+            log::debug!(
+                "Internal PyStrategy registered: {}",
+                py_strategy_ref.is_registered()
+            );
+
+            Ok(())
+        })
+        .map_err(to_pyruntime_err)?;
+
+        // Phase 4: Register in global registries and install event subscriptions
+        Python::attach(|py| -> anyhow::Result<()> {
+            let py_strategy = python_strategy.bind(py);
+            let py_strategy_ref = py_strategy
+                .cast::<PyStrategy>()
+                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyStrategy: {e}"))?;
+            py_strategy_ref.borrow().register_in_global_registries();
+            Ok(())
+        })
+        .map_err(to_pyruntime_err)?;
+
+        // TODO: Register external order claims with the execution manager
+        // once PyStrategy exposes external_order_claims publicly.
+        // Currently external_order_claims are only handled for Rust-native
+        // strategies via LiveNode::add_strategy<T>().
+        Python::attach(|py| {
+            let py_strategy = python_strategy.bind(py);
+            if let Ok(claims) = py_strategy.getattr("external_order_claims")
+                && !claims.is_none()
+                && claims.len().unwrap_or(0) > 0
+            {
+                log::warn!(
+                    "Strategy '{strategy_id}' has external_order_claims configured, \
+                     but these are not yet supported for Python strategies on the Rust backend"
+                );
+            }
+        });
+
+        self.kernel_mut()
+            .trader
+            .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
+            .map_err(to_pyruntime_err)?;
+
+        log::info!("Registered Python strategy {strategy_id}");
         Ok(())
     }
 
@@ -655,4 +709,111 @@ impl LiveNodeBuilderPy {
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
+}
+
+/// Creates a Python config instance from a config path and config dictionary.
+///
+/// This helper is shared between `add_actor_from_config` and `add_strategy_from_config`.
+/// It handles:
+/// 1. Importing the config class from the module path
+/// 2. Converting the `HashMap<String, serde_json::Value>` to a Python dict
+/// 3. Trying kwargs-first construction, falling back to default + setattr
+/// 4. Calling `__post_init__` for dataclasses when using the setattr path
+fn create_config_instance<'py>(
+    py: Python<'py>,
+    config_path: &str,
+    config: &HashMap<String, serde_json::Value>,
+) -> anyhow::Result<Option<Bound<'py, PyAny>>> {
+    if config_path.is_empty() && config.is_empty() {
+        log::debug!("No config_path or empty config, using None");
+        return Ok(None);
+    }
+
+    let config_parts: Vec<&str> = config_path.split(':').collect();
+    if config_parts.len() != 2 {
+        anyhow::bail!("config_path must be in format 'module.path:ClassName', was {config_path}");
+    }
+    let (config_module_name, config_class_name) = (config_parts[0], config_parts[1]);
+
+    log::debug!(
+        "Importing config class from module: {config_module_name} class: {config_class_name}"
+    );
+
+    let config_module = py
+        .import(config_module_name)
+        .map_err(|e| anyhow::anyhow!("Failed to import config module {config_module_name}: {e}"))?;
+    let config_class = config_module
+        .getattr(config_class_name)
+        .map_err(|e| anyhow::anyhow!("Failed to get config class {config_class_name}: {e}"))?;
+
+    // Convert config dict to Python dict
+    let py_dict = PyDict::new(py);
+    for (key, value) in config {
+        let json_str = serde_json::to_string(value)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
+        let py_value = PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
+        py_dict.set_item(key, py_value)?;
+    }
+
+    log::debug!("Created config dict: {py_dict:?}");
+
+    // Try kwargs first, then default constructor with setattr
+    let config_instance = match config_class.call((), Some(&py_dict)) {
+        Ok(instance) => {
+            log::debug!("Created config instance with kwargs");
+            instance
+        }
+        Err(kwargs_err) => {
+            log::debug!("Failed to create config with kwargs: {kwargs_err}");
+
+            match config_class.call0() {
+                Ok(instance) => {
+                    log::debug!("Created default config instance, setting attributes");
+                    for (key, value) in config {
+                        let json_str = serde_json::to_string(value).map_err(|e| {
+                            anyhow::anyhow!("Failed to serialize config value: {e}")
+                        })?;
+                        let py_value = PyModule::import(py, "json")?.call_method(
+                            "loads",
+                            (json_str,),
+                            None,
+                        )?;
+
+                        if let Err(setattr_err) = instance.setattr(key, py_value) {
+                            log::warn!("Failed to set attribute {key}: {setattr_err}");
+                        }
+                    }
+
+                    // Only call __post_init__ if it exists (setattr path
+                    // needs it, kwargs path already triggered it via __init__)
+                    if instance.hasattr("__post_init__")? {
+                        instance.call_method0("__post_init__")?;
+                    }
+
+                    instance
+                }
+                Err(default_err) => {
+                    anyhow::bail!(
+                        "Failed to create config instance. \
+                         Tried kwargs: {kwargs_err}, default: {default_err}"
+                    );
+                }
+            }
+        }
+    };
+
+    log::debug!("Created config instance: {config_instance:?}");
+
+    Ok(Some(config_instance))
+}
+
+/// Extracts an optional boolean attribute from a Python config object.
+///
+/// Returns `None` if the attribute doesn't exist or isn't a bool,
+/// without raising an error (config fields are optional overrides).
+fn extract_bool_config_attr(config_obj: &Bound<'_, PyAny>, attr: &str) -> Option<bool> {
+    config_obj
+        .getattr(attr)
+        .ok()
+        .and_then(|val| val.extract::<bool>().ok())
 }
