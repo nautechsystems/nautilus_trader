@@ -58,6 +58,7 @@ This table is the authoritative source for production high-churn retention defau
 3. API reads only canonical `flux:v1:*` output keys/channels and returns `ts_ms` unchanged.
 4. API must not infer strategy context from global keys; `strategy_id` is explicit in every lookup path.
 
+<!-- leakage-allowlist:start maker_poc_migration -->
 ## Migration from `maker_poc.*` / `maker_poc`
 
 Legacy names below are a one-time cutover reference only.
@@ -84,3 +85,4 @@ Legacy names below are a one-time cutover reference only.
 3. Legacy `maker_poc` names remain documentation-only mapping references for one-time cutover planning.
 4. For `flux:v1:in:stream:{environment}:{strategy_id}:{topic}`, `{environment}` is sourced from `FluxConfig.mode`; if `FluxConfig` is not wired, use the process-level `environment` config field. If neither source is available, fail fast at startup.
 5. Missing required routing coordinates (`topic`, `strategy_id`, `ts_ms`, resolved `{environment}`) must fail fast: reject/dead-letter the entry and emit an error.
+<!-- leakage-allowlist:end maker_poc_migration -->
