@@ -530,7 +530,7 @@ def build_trades_rows(
     since_seq: int | None = None,
 ) -> list[dict[str, Any]]:
     filtered: list[dict[str, Any]] = []
-    for row in rows:
+    for index, row in enumerate(rows):
         if strategy_id_from_row(row, strategy_id) != strategy_id:
             continue
         out = dict(row)
@@ -541,10 +541,20 @@ def build_trades_rows(
             if seq is None or seq <= since_seq:
                 continue
         ts_ms = coerce_ts_ms(out.get("ts_ms") or out.get("ts") or out.get("timestamp"))
-        if ts_ms is not None:
-            out["ts_ms"] = ts_ms
         if since_ms is not None and ts_ms is not None and ts_ms <= since_ms:
             continue
+        out["ts_ms"] = int(ts_ms if ts_ms is not None else 0)
+
+        version = safe_int(out.get("version"))
+        out["version"] = int(version if version is not None and version > 0 else 1)
+
+        row_id = decode_text(out.get("row_id")).strip()
+        if not row_id:
+            if seq is not None:
+                row_id = f"{strategy_id}:trade:{seq}:{out['version']}"
+            else:
+                row_id = f"{strategy_id}:trade:{out['ts_ms']}:{index}"
+        out["row_id"] = row_id
         filtered.append(out)
     if since_seq is not None:
         # Delta mode must stream oldest unseen seq first to avoid skipping rows.

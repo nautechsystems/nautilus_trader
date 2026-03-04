@@ -171,14 +171,14 @@ Matches legacy exactly:
 ```ts
 {
   path: '/socket.io',
-  transports: ['websocket', 'polling'],
+  transports: ['polling'],
   reconnection: true,
   reconnectionDelay: 500,
   reconnectionDelayMax: 5000
 }
 ```
 
-## API Endpoints (Proxied to :5000)
+## API Endpoints (Proxied to :5022)
 
 - `GET /api/v1/market-data/snapshot` - Market snapshots
 - `GET /api/v1/trades?limit=<n>&offset=<n>` - Paged trades (returns totals and optional cursor fields)

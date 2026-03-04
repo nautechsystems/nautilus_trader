@@ -20,7 +20,7 @@ TokenMM routes:
 | --- | --- | --- |
 | `/tokenmm` | required | Dashboard landing |
 | `/tokenmm/dashboard` | required | Dashboard explicit route |
-| `/tokenmm/signals` | required | Signals page |
+| `/tokenmm/signal` | required | Signals page |
 | `/tokenmm/params` | required | Params page |
 | `/tokenmm/balances` | required | Balances page |
 | `/tokenmm/trades` | required | Trades page |

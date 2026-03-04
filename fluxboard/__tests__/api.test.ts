@@ -449,7 +449,7 @@ describe('API Client - Existing Methods', () => {
     it('fetches strategy list', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ ok: true, data: { rows: [{ id: 'strat1' }, { id: 'strat2' }] }, error: null })
+        json: async () => ({ ok: true, data: { strategies: [{ id: 'strat1' }, { id: 'strat2' }] }, error: null })
       });
 
       const result = await api.getStrategies();
@@ -466,12 +466,25 @@ describe('API Client - Existing Methods', () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ ok: true, data: { rows: mockStrategies, count: mockStrategies.length }, error: null })
+        json: async () => ({ ok: true, data: { strategies: mockStrategies, count: mockStrategies.length }, error: null })
       });
 
       const result = await api.getStrategiesWithStatus();
 
       expect(result).toEqual(mockStrategies);
+    });
+  });
+
+  describe('getStrategyParams', () => {
+    it('fetches and stringifies strategy params from params payload key', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, data: { strategy_id: 'strat1', params: { bot_on: true, qty: 10 } }, error: null }),
+      });
+
+      const result = await api.getStrategyParams('strat1');
+
+      expect(result).toEqual({ bot_on: 'true', qty: '10' });
     });
   });
 });

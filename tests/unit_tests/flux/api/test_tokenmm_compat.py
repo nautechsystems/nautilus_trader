@@ -236,7 +236,7 @@ def test_trades_pagination_and_delta_shapes_match_tokenmm_contract(
     redis_client.add_stream_rows(
         keys.trades_stream(),
         [
-            {"strategy_id": flux_config.identity.strategy_id, "row_id": "t-101", "seq": 101, "ts_ms": 101_000},
+            {"strategy_id": flux_config.identity.strategy_id, "seq": 101, "ts_ms": 101_000},
             {"strategy_id": flux_config.identity.strategy_id, "row_id": "t-102", "seq": 102, "ts_ms": 102_000},
             {"strategy_id": flux_config.identity.strategy_id, "row_id": "t-103", "seq": 103, "ts_ms": 103_000},
         ],
@@ -263,12 +263,19 @@ def test_trades_pagination_and_delta_shapes_match_tokenmm_contract(
     assert trades_body["data"]["offset"] == 0
     assert trades_body["data"]["has_more"] is True
     assert len(trades_body["data"]["rows"]) == 2
+    for row in trades_body["data"]["rows"]:
+        assert isinstance(row.get("row_id"), str) and row["row_id"]
+        assert isinstance(row.get("ts_ms"), int)
+        assert isinstance(row.get("version"), int)
 
     assert delta_response.status_code == 200
     assert set(delta_body["data"].keys()) >= {"rows", "last_seq", "reset_required"}
     assert delta_body["data"]["reset_required"] is False
     assert delta_body["data"]["last_seq"] == 102
     assert [row["seq"] for row in delta_body["data"]["rows"]] == [101, 102]
+    generated_row = delta_body["data"]["rows"][0]
+    assert generated_row["row_id"].startswith(f"{flux_config.identity.strategy_id}:trade:")
+    assert generated_row["version"] == 1
 
 
 def test_trades_delta_sets_reset_required_when_gap_exceeds_bounded_scan(

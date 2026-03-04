@@ -869,22 +869,23 @@ export const api = {
 
   // Strategies - Flask returns {"strategies": [...]}
   getStrategies: async (): Promise<string[]> => {
-    const response = await fetchJSON<FluxEnvelope<{ rows: RawStrategy[] }>>('/api/v1/strategies');
+    const response = await fetchJSON<FluxEnvelope<{ strategies?: RawStrategy[]; rows?: RawStrategy[] }>>('/api/v1/strategies');
     const payload = unwrapFluxEnvelope(response);
-    return (payload?.rows || []).map(s => s.id || '');
+    const strategies = payload?.strategies || payload?.rows || [];
+    return strategies.map(s => s.id || '');
   },
 
   // Get full strategy objects with status (for Params page)
   getStrategiesWithStatus: async (): Promise<RawStrategy[]> => {
-    const response = await fetchJSON<FluxEnvelope<{ rows: RawStrategy[]; count: number }>>('/api/v1/strategies');
+    const response = await fetchJSON<FluxEnvelope<{ strategies?: RawStrategy[]; rows?: RawStrategy[]; count: number }>>('/api/v1/strategies');
     const payload = unwrapFluxEnvelope(response);
-    return payload?.rows || [];
+    return payload?.strategies || payload?.rows || [];
   },
 
   getStrategyParams: async (id: string) => {
-    const response = await fetchJSON<FluxEnvelope<{ parameters: Record<string, any> }>>(`/api/v1/strategies/${id}/parameters`);
+    const response = await fetchJSON<FluxEnvelope<{ params?: Record<string, any>; parameters?: Record<string, any> }>>(`/api/v1/strategies/${id}/parameters`);
     const payload = unwrapFluxEnvelope(response);
-    const params = payload?.parameters || {};
+    const params = payload?.params || payload?.parameters || {};
     const normalized: Record<string, string> = {};
     for (const [k, v] of Object.entries(params)) {
       normalized[k] = String(v);
