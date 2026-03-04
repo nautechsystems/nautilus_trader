@@ -26,7 +26,7 @@ DURABLE_DOCS=(
   docs/flux/api.md
 )
 
-ABSOLUTE_PATH_PATTERN='/home/[^/[:space:]]+|/Users/[^/[:space:]]+|(^|[[:space:][:punct:]])[A-Za-z]:(\\\\|/)'
+ABSOLUTE_PATH_PATTERN='/home/[^/[:space:]]+|/Users/[^/[:space:]]+|(^|[[:space:][:punct:]])[A-Za-z]:(\\|/)'
 
 if rg "${RG_FLAGS[@]}" "$ABSOLUTE_PATH_PATTERN" "${DURABLE_DOCS[@]}"; then
   echo "[flux-leakage] Found absolute host paths in durable Flux docs." >&2
