@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections.abc import Iterable
+from datetime import timedelta
 from decimal import ROUND_CEILING
 from decimal import ROUND_FLOOR
 from decimal import Decimal
 import json
 import os
-import socket
 from typing import Any
+
+import redis
+
+from nautilus_trader.flux.params.manager import FluxParamsManager
 
 try:
     from examples.live.poc.contracts import TOPIC_ALERT
@@ -86,91 +90,6 @@ def _to_json_safe(payload: Any) -> str:
     return json_dumps_compact(payload)
 
 
-def _resp_command(*parts: str) -> bytes:
-    encoded = [part.encode("utf-8") for part in parts]
-    out = [f"*{len(encoded)}\r\n".encode("ascii")]
-    for part in encoded:
-        out.append(f"${len(part)}\r\n".encode("ascii"))
-        out.append(part + b"\r\n")
-    return b"".join(out)
-
-
-def _readline(sock: socket.socket) -> bytes:
-    chunks: list[bytes] = []
-    while True:
-        data = sock.recv(1)
-        if not data:
-            raise RuntimeError("redis socket closed")
-        chunks.append(data)
-        if len(chunks) >= 2 and chunks[-2] == b"\r" and chunks[-1] == b"\n":
-            return b"".join(chunks[:-2])
-
-
-def _read_redis_reply(sock: socket.socket) -> Any:
-    prefix = sock.recv(1)
-    if not prefix:
-        raise RuntimeError("redis socket closed")
-    if prefix == b"+":
-        return _readline(sock)
-    if prefix == b"$":
-        length = int(_readline(sock))
-        if length < 0:
-            return None
-        payload = b""
-        while len(payload) < length + 2:
-            chunk = sock.recv(length + 2 - len(payload))
-            if not chunk:
-                raise RuntimeError("redis socket closed")
-            payload += chunk
-        return payload[:-2]
-    if prefix == b":":
-        return _readline(sock)
-    if prefix == b"*":
-        count = int(_readline(sock))
-        if count < 0:
-            return None
-        values: list[Any] = []
-        for _ in range(count):
-            values.append(_read_redis_reply(sock))
-        return values
-    if prefix == b"-":
-        message = _readline(sock).decode("utf-8", errors="replace")
-        raise RuntimeError(f"redis error: {message}")
-    raise RuntimeError(f"unsupported redis reply prefix: {prefix!r}")
-
-
-def _redis_get_text(
-    *,
-    host: str,
-    port: int,
-    db: int,
-    username: str | None,
-    password: str | None,
-    key: str,
-    timeout_secs: float = 0.2,
-) -> tuple[bool, str | None]:
-    try:
-        with socket.create_connection((host, int(port)), timeout=timeout_secs) as sock:
-            if password:
-                if username:
-                    sock.sendall(_resp_command("AUTH", username, password))
-                else:
-                    sock.sendall(_resp_command("AUTH", password))
-                _read_redis_reply(sock)
-
-            if db:
-                sock.sendall(_resp_command("SELECT", str(db)))
-                _read_redis_reply(sock)
-
-            sock.sendall(_resp_command("GET", key))
-            value = _read_redis_reply(sock)
-            if value is None:
-                return True, None
-            return True, value.decode("utf-8", errors="replace")
-    except Exception:
-        return False, None
-
-
 def _parse_bool_text(value: Any) -> bool | None:
     if value is None:
         return None
@@ -180,15 +99,6 @@ def _parse_bool_text(value: Any) -> bool | None:
     if text in {"0", "false", "f", "no", "n", "off", "disabled"}:
         return False
     return None
-
-
-def _resp_text(value: Any) -> str:
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    if value is None:
-        return ""
-    return str(value)
-
 
 RUNTIME_PARAM_TYPES: dict[str, str] = {
     "qty": "decimal",
@@ -218,6 +128,13 @@ RUNTIME_PARAM_TYPES: dict[str, str] = {
     "quote_fail_critical_after_count": "int",
     "quote_fail_critical_after_s": "decimal",
     "bot_on": "bool",
+}
+
+RUNTIME_PARAM_SCHEMA: dict[str, dict[str, str]] = {
+    name: {
+        "type": "boolean" if kind == "bool" else "integer" if kind == "int" else "number",
+    }
+    for name, kind in RUNTIME_PARAM_TYPES.items()
 }
 
 
@@ -910,8 +827,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         INTERNAL_REQUOTE_THROTTLE_MS = 150
         BALANCES_PUBLISH_INTERVAL_MS = 10_000
         STALE_CANCELS_PER_SIDE_PER_CYCLE = 1
-        BOT_ON_REFRESH_INTERVAL_MS = 500
-        PUBSUB_RECONNECT_INTERVAL_MS = 2_000
+        PARAMS_REFRESH_INTERVAL_MS = 500
         MARKET_BBO_HEARTBEAT_MS = 1_000
 
         def __init__(self, config: MakerV3SingleLegQuoterConfig) -> None:
@@ -940,26 +856,21 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 for name in RUNTIME_PARAM_TYPES
                 if hasattr(self.config, name)
             }
-            self._bot_on_param_key = f"strategy.{self._external_strategy_id}.bot_on"
-            self._runtime_bot_on_override: bool | None = None
-            self._last_bot_on_refresh_ns = 0
-            self._redis_host = os.getenv("POC_REDIS_HOST", "127.0.0.1")
-            self._redis_port = int(os.getenv("POC_REDIS_PORT", "6380"))
-            self._redis_db = int(os.getenv("POC_REDIS_DB", "0"))
-            self._redis_username = os.getenv("POC_REDIS_USERNAME") or None
-            self._redis_password = os.getenv("POC_REDIS_PASSWORD") or None
-            self._params_pubsub_channels: tuple[str, ...] = (
-                f"maker_poc.params.{self._external_strategy_id}",
-                "maker_poc.params",
-            )
-            self._params_pubsub_sock: socket.socket | None = None
-            self._last_pubsub_reconnect_ns = 0
+            if self._runtime_params.get("qty") is None:
+                self._runtime_params["qty"] = self.config.active_order_qty
+            self._redis_host = os.getenv("FLUX_REDIS_HOST", "127.0.0.1")
+            self._redis_port = int(os.getenv("FLUX_REDIS_PORT", "6380"))
+            self._redis_db = int(os.getenv("FLUX_REDIS_DB", "0"))
+            self._redis_username = os.getenv("FLUX_REDIS_USERNAME") or None
+            self._redis_password = os.getenv("FLUX_REDIS_PASSWORD") or None
+            self._redis_client: redis.Redis | None = None
+            self._params_manager: FluxParamsManager | None = None
+            self._last_params_refresh_ns = 0
+            self._params_timer_name = f"maker-v3-params-refresh:{self._external_strategy_id}"
 
         def on_start(self) -> None:
             self._last_bot_on = self._runtime_bool("bot_on")
-            self._connect_params_pubsub()
-            self._refresh_runtime_bot_on(force=True)
-            self._last_bot_on = self._effective_bot_on()
+            self._init_params_manager()
             instrument_id = self.config.bybit_instrument_id
             self._bybit_instrument = self.cache.instrument(instrument_id)
             if self._bybit_instrument is None:
@@ -985,6 +896,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 )
                 self.stop()
                 return
+            self._refresh_runtime_params(force=True)
+            self._last_bot_on = self._effective_bot_on()
+            self.clock.set_timer(
+                name=self._params_timer_name,
+                interval=timedelta(milliseconds=self.PARAMS_REFRESH_INTERVAL_MS),
+                callback=self.on_time_event,
+            )
             self._price_precision = self._bybit_instrument.price_precision
 
             self._books = {
@@ -1016,10 +934,23 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def on_stop(self) -> None:
             self._cancel_managed_quotes("on_stop")
-            self._close_params_pubsub()
+            if self._params_timer_name in self.clock.timer_names:
+                self.clock.cancel_timer(self._params_timer_name)
             self.unsubscribe_order_book_deltas(instrument_id=self.config.bybit_instrument_id)
             self.unsubscribe_order_book_deltas(instrument_id=self.config.binance_instrument_id)
             self._publish_state("on_stop")
+
+        def on_time_event(self, event: Any) -> None:
+            if getattr(event, "name", "") != self._params_timer_name:
+                return
+
+            now_ns = int(self.clock.timestamp_ns())
+            self._refresh_runtime_params(now_ns=now_ns)
+            bot_on_now = self._effective_bot_on()
+            if _did_bot_turn_off(self._last_bot_on, bot_on_now):
+                self._cancel_managed_quotes("bot_off_flip", force=True)
+                self._publish_state("bot_off")
+            self._last_bot_on = bot_on_now
 
         def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
             book = self._books.get(deltas.instrument_id)
@@ -1061,16 +992,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
             self._publish_balances_if_due()
 
-            now_ns = int(self.clock.timestamp_ns())
-            self._poll_param_updates()
-            self._refresh_runtime_bot_on(now_ns=now_ns)
-
             bot_on_now = self._effective_bot_on()
-            if _did_bot_turn_off(self._last_bot_on, bot_on_now):
-                self._cancel_managed_quotes("bot_off_flip", force=True)
-                self._publish_state("bot_off")
-            self._last_bot_on = bot_on_now
-
             if self.config.bybit_instrument_id != deltas.instrument_id:
                 return
 
@@ -1079,14 +1001,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._publish_state("bot_off")
                 return
 
+            now_ns = int(self.clock.timestamp_ns())
             if now_ns - self._last_requote_ns < self.INTERNAL_REQUOTE_THROTTLE_MS * 1_000_000:
                 return
             self._refresh_quotes(now_ns=now_ns)
 
         def _effective_bot_on(self) -> bool:
-            if self._runtime_bot_on_override is None:
-                return bool(self._runtime_params.get("bot_on", self.config.bot_on))
-            return bool(self._runtime_bot_on_override)
+            return bool(self._runtime_params.get("bot_on", self.config.bot_on))
 
         def _runtime_decimal(self, name: str) -> Decimal:
             return _to_decimal(self._runtime_params.get(name, getattr(self.config, name)))
@@ -1105,135 +1026,47 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return bool(getattr(self.config, name))
             return parsed
 
-        def _connect_params_pubsub(self) -> None:
-            self._close_params_pubsub()
-            try:
-                sock = socket.create_connection((self._redis_host, int(self._redis_port)), timeout=0.5)
-                sock.settimeout(0.5)
-                if self._redis_password:
-                    if self._redis_username:
-                        sock.sendall(_resp_command("AUTH", self._redis_username, self._redis_password))
-                    else:
-                        sock.sendall(_resp_command("AUTH", self._redis_password))
-                    _read_redis_reply(sock)
-                if self._redis_db:
-                    sock.sendall(_resp_command("SELECT", str(self._redis_db)))
-                    _read_redis_reply(sock)
-                sock.sendall(_resp_command("SUBSCRIBE", *self._params_pubsub_channels))
-                for _ in self._params_pubsub_channels:
-                    _read_redis_reply(sock)
-                sock.setblocking(False)
-                self._params_pubsub_sock = sock
-            except Exception:
-                self._params_pubsub_sock = None
-
-        def _close_params_pubsub(self) -> None:
-            sock = self._params_pubsub_sock
-            self._params_pubsub_sock = None
-            if sock is None:
-                return
-            try:
-                sock.close()
-            except Exception:
-                pass
-
-        def _read_pubsub_message(self) -> tuple[str, str] | None:
-            sock = self._params_pubsub_sock
-            if sock is None:
-                return None
-            frame = _read_redis_reply(sock)
-            if not isinstance(frame, list) or len(frame) < 3:
-                return None
-            message_type = _resp_text(frame[0]).strip().lower()
-            if message_type != "message":
-                return None
-            channel = _resp_text(frame[1]).strip()
-            payload = _resp_text(frame[2]).strip()
-            if not channel or not payload:
-                return None
-            return channel, payload
+        def _init_params_manager(self) -> None:
+            self._redis_client = redis.Redis(
+                host=self._redis_host,
+                port=self._redis_port,
+                db=self._redis_db,
+                username=self._redis_username,
+                password=self._redis_password,
+                decode_responses=False,
+            )
+            self._params_manager = FluxParamsManager(
+                redis_client=self._redis_client,
+                strategy_id=self._external_strategy_id,
+                schema=RUNTIME_PARAM_SCHEMA,
+                defaults=self._runtime_params,
+            )
 
         def _apply_runtime_param_updates(self, updates: dict[str, Any]) -> None:
             qty_changed = False
             for name, raw_value in updates.items():
                 if name not in RUNTIME_PARAM_TYPES:
-                    continue
-                try:
-                    coerced = _coerce_runtime_param_value(name, raw_value)
-                except Exception:
-                    continue
+                    raise ValueError(f"Unsupported runtime param: {name!r}")
+                coerced = _coerce_runtime_param_value(name, raw_value)
                 self._runtime_params[name] = coerced
-                if name == "bot_on":
-                    self._runtime_bot_on_override = None
                 if name == "qty":
                     qty_changed = True
 
             if qty_changed and self._bybit_instrument is not None:
                 qty = self._runtime_decimal("qty")
                 if qty > 0:
-                    try:
-                        self._order_qty = self._bybit_instrument.make_qty(qty)
-                    except Exception:
-                        pass
+                    self._order_qty = self._bybit_instrument.make_qty(qty)
 
-        def _poll_param_updates(self) -> None:
-            now_ns = int(self.clock.timestamp_ns())
-            if self._params_pubsub_sock is None:
-                if now_ns - self._last_pubsub_reconnect_ns < self.PUBSUB_RECONNECT_INTERVAL_MS * 1_000_000:
-                    return
-                self._last_pubsub_reconnect_ns = now_ns
-                self._connect_params_pubsub()
-                if self._params_pubsub_sock is None:
-                    return
-            for _ in range(16):
-                try:
-                    message = self._read_pubsub_message()
-                except (BlockingIOError, TimeoutError, socket.timeout):
-                    break
-                except Exception:
-                    self._last_pubsub_reconnect_ns = now_ns
-                    self._connect_params_pubsub()
-                    break
-                if message is None:
-                    break
-                _channel, payload_text = message
-                try:
-                    payload_obj = json.loads(payload_text)
-                except Exception:
-                    continue
-                if not isinstance(payload_obj, dict):
-                    continue
-                sid = _resp_text(payload_obj.get("strategy_id")).strip()
-                if sid and sid != self._external_strategy_id:
-                    continue
-                updates = payload_obj.get("updates")
-                if not isinstance(updates, dict):
-                    continue
-                self._apply_runtime_param_updates(updates)
-
-        def _refresh_runtime_bot_on(self, *, now_ns: int | None = None, force: bool = False) -> None:
+        def _refresh_runtime_params(self, *, now_ns: int | None = None, force: bool = False) -> None:
             if now_ns is None:
                 now_ns = int(self.clock.timestamp_ns())
-            if not force and now_ns - self._last_bot_on_refresh_ns < self.BOT_ON_REFRESH_INTERVAL_MS * 1_000_000:
+            if not force and now_ns - self._last_params_refresh_ns < self.PARAMS_REFRESH_INTERVAL_MS * 1_000_000:
                 return
-            self._last_bot_on_refresh_ns = now_ns
+            self._last_params_refresh_ns = now_ns
 
-            ok, value = _redis_get_text(
-                host=self._redis_host,
-                port=self._redis_port,
-                db=self._redis_db,
-                username=self._redis_username,
-                password=self._redis_password,
-                key=self._bot_on_param_key,
-            )
-            if not ok:
-                return
-            if value is None:
-                self._runtime_bot_on_override = None
-                return
-            parsed = _parse_bool_text(value)
-            if parsed is not None:
-                self._runtime_bot_on_override = parsed
+            if self._params_manager is None:
+                raise RuntimeError("Flux params manager was not initialized")
+            self._apply_runtime_param_updates(self._params_manager.load())
 
         def on_order_filled(self, event: OrderFilled) -> None:
             self._publish_json(

@@ -18,6 +18,8 @@ from flask import jsonify
 from flask import Response
 from flask import request
 
+from nautilus_trader.flux.params.manager import FluxParamsManager
+
 DEFAULT_STRATEGY_ID = "bybit_binance_plumeusdt_makerv3"
 DEFAULT_REDIS_HOST = "127.0.0.1"
 DEFAULT_REDIS_PORT = 6380
@@ -379,69 +381,6 @@ def _unwrap_bus_payload_row(row: Any) -> dict[str, Any]:
     return {}
 
 
-def _param_key(strategy_id: str, name: str) -> str:
-    return f"strategy.{strategy_id}.{name}"
-
-
-def _coerce_param_value(name: str, value: Any, schema_type: str) -> Any:
-    if schema_type == "boolean":
-        result = _safe_bool(value)
-        if result is None:
-            raise ValueError(f"Invalid boolean value for param '{name}': {value!r}")
-        return result
-    if schema_type == "integer":
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            raise ValueError(f"Invalid integer value for param '{name}': {value!r}")
-    if schema_type == "number":
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            raise ValueError(f"Invalid number value for param '{name}': {value!r}")
-    return _decode(value)
-
-
-def _param_value_to_redis(value: Any) -> str:
-    if isinstance(value, bool):
-        return "1" if value else "0"
-    return str(value)
-
-
-def _load_param_value(
-    redis_client: redis.Redis,
-    strategy_id: str,
-    name: str,
-    schema_type: str,
-) -> Any | None:
-    raw = redis_client.get(_param_key(strategy_id, name))
-    if raw is None:
-        return None
-    loaded = _load_json(raw)
-    value = _decode(raw) if loaded is None else loaded
-    return _coerce_param_value(name, value, schema_type)
-
-
-def _load_params(redis_client: redis.Redis, strategy_id: str) -> dict[str, Any]:
-    params: dict[str, Any] = {}
-    for name in PARAMS_ORDER:
-        schema = PARAMS_SCHEMA.get(name, {})
-        schema_type = str(schema.get("type", "number"))
-        value = _load_param_value(redis_client, strategy_id, name, schema_type)
-        if value is None:
-            value = PARAMS_DEFAULTS.get(name)
-        params[name] = value
-    for name, schema in PARAMS_SCHEMA.items():
-        if name in params:
-            continue
-        schema_type = str(schema.get("type", "number"))
-        value = _load_param_value(redis_client, strategy_id, name, schema_type)
-        if value is None:
-            value = PARAMS_DEFAULTS.get(name)
-        params[name] = value
-    return params
-
-
 def _ordered_schema() -> dict[str, dict[str, Any]]:
     schema: dict[str, dict[str, Any]] = {}
     for key in PARAMS_ORDER:
@@ -451,6 +390,19 @@ def _ordered_schema() -> dict[str, dict[str, Any]]:
         if key not in schema:
             schema[key] = value
     return schema
+
+
+def _params_manager(redis_client: redis.Redis, strategy_id: str) -> FluxParamsManager:
+    return FluxParamsManager(
+        redis_client=redis_client,
+        strategy_id=strategy_id,
+        schema=_ordered_schema(),
+        defaults=PARAMS_DEFAULTS,
+    )
+
+
+def _load_params(redis_client: redis.Redis, strategy_id: str) -> dict[str, Any]:
+    return _params_manager(redis_client, strategy_id).load()
 
 
 def _read_params_request_payload() -> dict[str, Any]:
@@ -471,33 +423,15 @@ def _build_params_payload(redis_client: redis.Redis, strategy_id: str) -> dict[s
 
 
 def _apply_params_update(redis_client: redis.Redis, strategy_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    manager = _params_manager(redis_client, strategy_id)
     if not updates:
-        params = _load_params(redis_client, strategy_id)
-        return {"updated": [], "params": params}
+        return {"updated": [], "params": manager.load()}
 
-    updated: list[str] = []
-    applied_updates: dict[str, Any] = {}
-    for key, value in updates.items():
-        schema = PARAMS_SCHEMA.get(key)
-        if schema is None:
-            raise ValueError(f"Unknown parameter '{key}' for strategy '{strategy_id}'")
-        schema_type = str(schema.get("type", "number"))
-        coerced = _coerce_param_value(key, value, schema_type)
-        redis_client.set(_param_key(strategy_id, key), _param_value_to_redis(coerced))
-        updated.append(key)
-        applied_updates[key] = coerced
-
+    applied_updates = manager.update(updates)
     if applied_updates:
-        payload = {
-            "strategy_id": strategy_id,
-            "updates": applied_updates,
-            "ts_ms": _now_ms(),
-        }
-        encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-        redis_client.publish("maker_poc.params", encoded)
-        redis_client.publish(f"maker_poc.params.{strategy_id}", encoded)
+        manager.publish_update(applied_updates, ts_ms=_now_ms())
 
-    return {"updated": sorted(updated), "params": _load_params(redis_client, strategy_id)}
+    return {"updated": sorted(applied_updates), "params": manager.load()}
 
 
 def _load_contracts_module() -> Any | None:
@@ -1200,11 +1134,11 @@ def build_app() -> Flask:
     app.config["JSON_SORT_KEYS"] = False
     app.json.sort_keys = False
 
-    redis_host = os.getenv("POC_REDIS_HOST", DEFAULT_REDIS_HOST)
-    redis_port = int(os.getenv("POC_REDIS_PORT", str(DEFAULT_REDIS_PORT)))
-    redis_db = int(os.getenv("POC_REDIS_DB", str(DEFAULT_REDIS_DB)))
-    redis_username = os.getenv("POC_REDIS_USERNAME") or None
-    redis_password = os.getenv("POC_REDIS_PASSWORD") or None
+    redis_host = os.getenv("FLUX_REDIS_HOST", DEFAULT_REDIS_HOST)
+    redis_port = int(os.getenv("FLUX_REDIS_PORT", str(DEFAULT_REDIS_PORT)))
+    redis_db = int(os.getenv("FLUX_REDIS_DB", str(DEFAULT_REDIS_DB)))
+    redis_username = os.getenv("FLUX_REDIS_USERNAME") or None
+    redis_password = os.getenv("FLUX_REDIS_PASSWORD") or None
 
     redis_client = redis.Redis(
         host=redis_host,
