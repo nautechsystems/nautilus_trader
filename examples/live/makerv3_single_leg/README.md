@@ -16,6 +16,8 @@ This directory contains thin runner wrappers for the production Flux modules und
 2. Live mode requires explicit `--confirm-live` on each runner.
 3. No `eval`-based secret loading is used or required.
 4. API runner binds to `127.0.0.1` by default; external exposure requires explicit host override.
+5. If you bind to a non-loopback address, treat the API as an internal service and front it with TLS + auth + IP
+   allowlist.
 
 ## Configuration
 

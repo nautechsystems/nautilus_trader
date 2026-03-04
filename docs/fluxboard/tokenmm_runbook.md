@@ -1,3 +1,5 @@
+<!-- DOCID: docs/fluxboard/tokenmm_runbook@v1 -->
+
 # TokenMM Serving Runbook
 
 This runbook covers the two supported serving modes for Task 7.

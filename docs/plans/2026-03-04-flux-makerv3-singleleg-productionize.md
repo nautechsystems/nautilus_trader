@@ -21,12 +21,14 @@
 
 **Out of scope (for this plan)**
 
-1. Fluxboard/UI work.
+1. Fluxboard/UI work beyond the TokenMM migration slice (tracked separately in `docs/plans/2026-03-04-fluxboard-tokenmm-minimal-migration.md`).
 2. Adding new venues/features beyond what is already present; focus on hardening/modularizing existing behavior.
 
 ## Production bar (acceptance criteria)
 
-1. No `poc` naming in shipped module paths, strategy IDs, topic prefixes, env vars, docs, or defaults.
+1. No `poc` naming in shipped production module paths, strategy IDs, topic prefixes, env vars, durable Flux docs,
+   or defaults. Allowlisted legacy mapping references in `docs/flux/redis_schema.md` and deprecated example
+   wrappers are excluded.
 2. No `chainsaw` naming in shipped code/docs.
 3. No hardcoded instruments/venues/products/strategy names in production modules (only in example wrappers).
 4. Config is explicit and validated (fail-fast) with a single, documented configuration contract.
@@ -40,34 +42,38 @@
 
 Primary references:
 
-1. [coding_standards.md](/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/docs/developer_guide/coding_standards.md)
-2. [python.md](/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/docs/developer_guide/python.md)
-3. [strategies.md](/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/docs/concepts/strategies.md)
-4. [logging.md](/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/docs/concepts/logging.md)
-5. [message_bus.md](/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/docs/concepts/message_bus.md)
-6. [live.md](/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/docs/concepts/live.md)
-7. [testing.md](/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/docs/developer_guide/testing.md)
-8. [architecture.md](/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr/docs/concepts/architecture.md)
+1. [coding_standards.md](docs/developer_guide/coding_standards.md)
+2. [python.md](docs/developer_guide/python.md)
+3. [strategies.md](docs/concepts/strategies.md)
+4. [logging.md](docs/concepts/logging.md)
+5. [message_bus.md](docs/concepts/message_bus.md)
+6. [live.md](docs/concepts/live.md)
+7. [testing.md](docs/developer_guide/testing.md)
+8. [architecture.md](docs/concepts/architecture.md)
 
 ## Current PR contents (what exists today)
 
-Branch: `poc/makerv3-singleleg-mono-pr` (worktree: `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr`)
+Branch: `poc/makerv3-singleleg-mono-pr` (worktree: `.worktrees/makerv3-mono-pr`)
 
-Files added/changed in PR:
+Major surfaces added/changed:
 
-1. `.gitignore` (adds `.worktrees/` ignore and other entries)
-2. `docs/plans/2026-03-03-nautilus-makerv3-single-leg-poc.md` (prototype plan artifact)
-3. `examples/live/poc/*` (node wiring, contracts, bridge, API, README, smoke script)
-4. `nautilus_trader/examples/strategies/makerv3_single_leg_quoter.py` (strategy)
-5. `tests/unit_tests/examples/strategies/test_makerv3_single_leg_quoter.py` (tests)
+1. `nautilus_trader/flux/common/*` (typed config + Redis key builders)
+2. `nautilus_trader/flux/params/*` (parameter manager + pub/sub semantics)
+3. `nautilus_trader/flux/bridge/*` (modular handlers + stream consumer + bounded retention)
+4. `nautilus_trader/flux/api/*` (app-factory API + payload builders + readiness/health)
+5. `nautilus_trader/flux/strategies/makerv3/*` (production strategy; further refactor tracked separately)
+6. `docs/flux/*` (durable schema/params/bridge/api docs; schema includes allowlisted legacy mapping)
+7. `scripts/ci/check-flux-leakage.sh` + CI/pre-commit wiring (`.github/workflows/build.yml`, `.pre-commit-config.yaml`)
+8. `examples/live/makerv3_single_leg/*` (thin runners + config + README) and deprecated wrappers under `examples/live/poc/*`
+9. Unit test coverage under `tests/unit_tests/flux/*` and `tests/unit_tests/examples/*`
 
-Key production gaps identified in review (high-level):
+Production gaps identified in review (high-level) and status:
 
-1. Unsafe/POC operational patterns in docs and runners (example: `eval`-based secret export).
-2. Widespread hardcoding of instruments/venues/strategy IDs/topic prefixes.
-3. Redis schema is not versioned or safely namespaced; multi-strategy contamination risks exist.
-4. Redis growth is unbounded for some structures (trade hash map).
-5. Strategy logic has hot-path I/O, incomplete order lifecycle reconciliation, missing stale maker-side MD gating, and dead failure config.
+1. Unsafe operational patterns in docs/runners (example: `eval`-based secret export): resolved (Task 7).
+2. Widespread hardcoding of instruments/venues/strategy IDs/topic prefixes: resolved for production modules; examples remain config-driven (Tasks 1-7).
+3. Redis schema not versioned / multi-strategy contamination risk: resolved via `flux:v1` + strict strategy scoping (Tasks 1-4).
+4. Unbounded Redis growth paths: resolved via bounded retention defaults + docs (Tasks 2, 4).
+5. Strategy hot-path I/O and incomplete lifecycle reconciliation: resolved for production readiness baseline (Task 6); further modularization/refactor is tracked separately.
 
 ## Target module layout (proposed)
 
@@ -112,55 +118,55 @@ Phase 0: Review and plan
 
 Phase 1: Naming, layout, and de-POC
 
-- [ ] Create `nautilus_trader/flux/` package and move reusable code out of `examples/live/poc`
-- [x] Remove `poc` and `chainsaw` naming from code/docs (keep only example-specific labels in examples)
+- [x] Create `nautilus_trader/flux/` package and move reusable code out of `examples/live/poc`
+- [x] Remove `poc` and `chainsaw` naming from production code/durable docs (allowlisted migration mapping and deprecated examples are excluded)
 - [x] Replace `nautilus_fluxapi.py` / `chainsaw_bridge.py` naming with `flux` naming
 
 Phase 2: Config contract
 
-- [ ] Define a single `FluxConfig` (and sub-configs) with validation
-- [ ] Remove scattered `os.getenv`/magic defaults from strategy/bridge/api internals
-- [ ] Document configuration fields and safe defaults
+- [x] Define a single `FluxConfig` (and sub-configs) with validation
+- [x] Remove scattered `os.getenv`/magic defaults from strategy/bridge/api internals
+- [x] Document configuration fields and safe defaults
 
 Phase 3: Redis schema + docs
 
-- [ ] Implement versioned Redis key builders (`flux:v1`)
-- [ ] Fix multi-strategy contamination paths by strategy-scoping all state
-- [ ] Implement bounded retention for trades/events
-- [ ] Document Redis schema and migration notes
+- [x] Implement versioned Redis key builders (`flux:v1`)
+- [x] Fix multi-strategy contamination paths by strategy-scoping all state
+- [x] Implement bounded retention for trades/events
+- [x] Document Redis schema and migration notes
 
 Phase 4: Bridge productionization
 
-- [ ] Extract bridge ingestion into modular handlers (topic -> handler map)
-- [ ] Enforce timestamp normalization (ms) at ingest boundary
-- [ ] Improve error handling and structured logs with correlation fields
+- [x] Extract bridge ingestion into modular handlers (topic -> handler map)
+- [x] Enforce timestamp normalization (ms) at ingest boundary
+- [x] Improve error handling and structured logs with correlation fields
 
 Phase 5: Flux API productionization
 
-- [ ] Split payload building from Redis I/O and adopt batched reads
-- [ ] Remove hardcoded contracts/asset assumptions; inject via config/contract catalog
-- [ ] Add basic readiness/health endpoints keyed to schema readiness
+- [x] Split payload building from Redis I/O and adopt batched reads
+- [x] Remove hardcoded contracts/asset assumptions; inject via config/contract catalog
+- [x] Add basic readiness/health endpoints keyed to schema readiness
 
 Phase 6: Strategy productionization
 
-- [ ] Move strategy out of `nautilus_trader/examples/strategies/` into production module path
-- [ ] Fix stale market-data gating on both legs; cancel managed orders on staleness
-- [ ] Implement quote failure streak tracking and escalation/backoff using existing config knobs
-- [ ] Remove Redis polling from hot book callbacks; move to timer/heartbeat path
-- [ ] Implement full order lifecycle reconciliation (rejected/canceled/expired) + auto-cancel on stop
-- [ ] Replace hardcoded venue/currency assumptions with config + instrument metadata
-- [ ] Improve runtime logs (`self.log.*`) and keep msgbus publishes for external consumers
+- [x] Move strategy out of `nautilus_trader/examples/strategies/` into production module path
+- [x] Fix stale market-data gating on both legs; cancel managed orders on staleness
+- [x] Implement quote failure streak tracking and escalation/backoff using existing config knobs
+- [x] Remove Redis polling from hot book callbacks; move to timer/heartbeat path
+- [x] Implement full order lifecycle reconciliation (rejected/canceled/expired) + auto-cancel on stop
+- [x] Replace hardcoded venue/currency assumptions with config + instrument metadata
+- [x] Improve runtime logs (`self.log.*`) and keep msgbus publishes for external consumers
 
 Phase 7: Tests + verification
 
-- [ ] Add strategy-level tests for invariants (quote stack, cancel/replace, staleness, lifecycle events)
-- [ ] Add unit tests for redis key builders, param schema validation, and bounded retention logic
-- [ ] Add integration-ish tests around bridge handler transforms (pure functions where possible)
+- [x] Add strategy-level tests for invariants (quote stack, cancel/replace, staleness, lifecycle events)
+- [x] Add unit tests for redis key builders, param schema validation, and bounded retention logic
+- [x] Add integration-ish tests around bridge handler transforms (pure functions where possible)
 
 Phase 8: Docs and cleanup
 
 - [x] Add `docs/flux/redis_schema.md`, `docs/flux/params.md`, `docs/flux/bridge.md`, `docs/flux/api.md`
-- [x] Remove or replace `docs/plans/2026-03-03-nautilus-makerv3-single-leg-poc.md` with a durable production doc
+- [x] Archive `docs/plans/2026-03-03-nautilus-makerv3-single-leg-poc.md` as a prototype artifact; treat `docs/flux/*` as durable production docs
 - [x] Keep `/.worktrees/` ignored in `.gitignore` (intentional repo policy for this repo)
 - [x] Keep `.run/` ignored in `.gitignore` (IDE/run configs; do not commit contents)
 
@@ -196,7 +202,10 @@ Phase 8: Docs and cleanup
 
 ```bash
 scripts/ci/check-flux-leakage.sh
-rg -n "\bpoc\b|POC_|maker_poc|\bchainsaw\b" -S nautilus_trader docs examples
+# NOTE: repo-wide grep for legacy naming is expected to match:
+# - docs/flux/redis_schema.md inside the allowlisted migration block
+# - examples/live/poc/* deprecated wrappers (kept for transition)
+# Use scripts/ci/check-flux-leakage.sh as the authoritative production leakage gate.
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit_tests/flux/common -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit_tests/flux/bridge -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit_tests/flux/api -q

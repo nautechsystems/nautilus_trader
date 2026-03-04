@@ -1,6 +1,8 @@
+<!-- DOCID: docs/fluxboard/tokenmm_contract@v1 -->
+
 # TokenMM HTTP Contract (`tokenmm:v1`)
 
-This document freezes the Task 1 HTTP contract for the TokenMM surface.
+This document freezes the HTTP contract for the TokenMM surface.
 It is implementation-facing and explicitly excludes order-view.
 
 ## Scope and Route Surface
@@ -112,7 +114,7 @@ Required leg fields:
 Request:
 
 ```bash
-curl -s 'http://localhost:8000/api/v1/signals?profile=tokenmm&strategy=maker_v3_01'
+curl -s 'http://127.0.0.1:5022/api/v1/signals?profile=tokenmm&strategy=maker_v3_01'
 ```
 
 Response `data`:
@@ -177,7 +179,7 @@ Response `data`:
 Request:
 
 ```bash
-curl -s 'http://localhost:8000/api/v1/params?profile=tokenmm&strategy=maker_v3_01'
+curl -s 'http://127.0.0.1:5022/api/v1/params?profile=tokenmm&strategy=maker_v3_01'
 ```
 
 Response `data`:
@@ -210,7 +212,7 @@ Response `data`:
 Request:
 
 ```bash
-curl -s -X PATCH 'http://localhost:8000/api/v1/params?profile=tokenmm&strategy=maker_v3_01' \
+curl -s -X PATCH 'http://127.0.0.1:5022/api/v1/params?profile=tokenmm&strategy=maker_v3_01' \
   -H 'Content-Type: application/json' \
   -d '{"params":{"bot_on":false,"qty":750.0}}'
 ```
@@ -243,7 +245,7 @@ Response `data`:
 Request:
 
 ```bash
-curl -s 'http://localhost:8000/api/v1/param-schema?profile=tokenmm'
+curl -s 'http://127.0.0.1:5022/api/v1/param-schema?profile=tokenmm'
 ```
 
 Response `data`:
@@ -273,7 +275,7 @@ Response `data`:
 Request:
 
 ```bash
-curl -s 'http://localhost:8000/api/v1/balances?profile=tokenmm&strategy=maker_v3_01&limit=50'
+curl -s 'http://127.0.0.1:5022/api/v1/balances?profile=tokenmm&strategy=maker_v3_01&limit=50'
 ```
 
 Response `data`:
@@ -306,7 +308,7 @@ Trade row contract:
 Request:
 
 ```bash
-curl -s 'http://localhost:8000/api/v1/trades?profile=tokenmm&strategy=maker_v3_01&limit=100'
+curl -s 'http://127.0.0.1:5022/api/v1/trades?profile=tokenmm&strategy=maker_v3_01&limit=100'
 ```
 
 Response `data`:
@@ -343,7 +345,7 @@ Delta trade rows use the same contract as `GET /api/v1/trades`, including requir
 Request:
 
 ```bash
-curl -s 'http://localhost:8000/api/v1/trades/delta?profile=tokenmm&strategy=maker_v3_01&since_seq=1091&limit=100'
+curl -s 'http://127.0.0.1:5022/api/v1/trades/delta?profile=tokenmm&strategy=maker_v3_01&since_seq=1091&limit=100'
 ```
 
 Response `data`:
@@ -380,7 +382,7 @@ Delta cursor semantics:
 Request:
 
 ```bash
-curl -s 'http://localhost:8000/api/v1/alerts?profile=tokenmm&strategy=maker_v3_01&limit=50'
+curl -s 'http://127.0.0.1:5022/api/v1/alerts?profile=tokenmm&strategy=maker_v3_01&limit=50'
 ```
 
 Response `data`:
@@ -417,7 +419,7 @@ Semantics:
 Request:
 
 ```bash
-curl -s -X DELETE 'http://localhost:8000/api/v1/alerts?profile=tokenmm&strategy=maker_v3_01'
+curl -s -X DELETE 'http://127.0.0.1:5022/api/v1/alerts?profile=tokenmm&strategy=maker_v3_01'
 ```
 
 Response `data`:

@@ -70,21 +70,21 @@ Added optimized Zustand selectors to all 8 stores in `fluxboard/stores.ts` to pr
 
 ### Files Modified
 
-1. **`/home/ubuntu/chainsaw/fluxboard/stores.ts`** - Core changes
+1. **`fluxboard/stores.ts`** - Core changes
    - Added `export { shallow } from 'zustand/shallow'`
    - Added 48 selector functions across 8 stores
    - Added comprehensive JSDoc documentation for each selector group
    - No breaking changes to existing API
 
-2. **Panel Components** (Example migrations)
-   - `/home/ubuntu/chainsaw/fluxboard/components/panels/TradesPanel.tsx`
-   - `/home/ubuntu/chainsaw/fluxboard/components/panels/AlertsPanel.tsx`
-   - `/home/ubuntu/chainsaw/fluxboard/components/panels/MarketDataPanel.tsx`
-   - `/home/ubuntu/chainsaw/fluxboard/components/panels/SignalPanel.tsx`
+2. **TokenMM panels** (example usage)
+   - `fluxboard/Trades.tsx`
+   - `fluxboard/Alerts.tsx`
+   - `fluxboard/MarketData.tsx`
+   - `fluxboard/Signal.tsx`
 
 3. **Documentation**
-   - `/home/ubuntu/chainsaw/fluxboard/docs/SELECTORS_GUIDE.md` - Comprehensive usage guide
-   - `/home/ubuntu/chainsaw/fluxboard/docs/SELECTORS_MIGRATION_SUMMARY.md` - This file
+   - `fluxboard/docs/SELECTORS_GUIDE.md` - Comprehensive usage guide
+   - `fluxboard/docs/SELECTORS_MIGRATION_SUMMARY.md` - This file
 
 ## Selector Count by Store
 
@@ -375,9 +375,9 @@ import { shallow } from './stores';
 
 ## References
 
-- **Main Implementation**: `/home/ubuntu/chainsaw/fluxboard/stores.ts`
-- **Usage Guide**: `/home/ubuntu/chainsaw/fluxboard/docs/SELECTORS_GUIDE.md`
-- **Example Migrations**: `/home/ubuntu/chainsaw/fluxboard/components/panels/*Panel.tsx`
+- **Main Implementation**: `fluxboard/stores.ts`
+- **Usage Guide**: `fluxboard/docs/SELECTORS_GUIDE.md`
+- **Example usage**: `fluxboard/{Signal,Trades,Alerts,MarketData}.tsx`
 - **Zustand Docs**: https://github.com/pmndrs/zustand
 - **React Profiler**: https://react.dev/learn/react-developer-tools
 

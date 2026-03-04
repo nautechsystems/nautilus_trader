@@ -332,19 +332,19 @@ If you still want to force DataTable/InlineEditCell integration:
 ## Files Created
 
 ### Production Code
-- `/home/ubuntu/chainsaw/fluxboard/hooks/useDirtyState.ts`
-- `/home/ubuntu/chainsaw/fluxboard/hooks/useBoundedSave.ts`
-- `/home/ubuntu/chainsaw/fluxboard/components/domain/params/SaveButton.tsx`
-- `/home/ubuntu/chainsaw/fluxboard/components/domain/params/SaveAllButton.tsx`
-- `/home/ubuntu/chainsaw/fluxboard/components/domain/params/AutoModeToggle.tsx`
-- `/home/ubuntu/chainsaw/fluxboard/components/domain/params/ParamsToolbar.tsx`
-- `/home/ubuntu/chainsaw/fluxboard/components/domain/params/index.ts`
+- `fluxboard/hooks/useDirtyState.ts`
+- `fluxboard/hooks/useBoundedSave.ts`
+- `fluxboard/components/domain/params/SaveButton.tsx`
+- `fluxboard/components/domain/params/SaveAllButton.tsx`
+- `fluxboard/components/domain/params/AutoModeToggle.tsx`
+- `fluxboard/components/domain/params/ParamsToolbar.tsx`
+- `fluxboard/components/domain/params/index.ts`
 
 ### Test Code
-- `/home/ubuntu/chainsaw/fluxboard/__tests__/hooks/useDirtyState.test.ts`
-- `/home/ubuntu/chainsaw/fluxboard/__tests__/hooks/useBoundedSave.test.ts`
-- `/home/ubuntu/chainsaw/fluxboard/__tests__/components/domain/params/SaveButton.test.tsx`
-- `/home/ubuntu/chainsaw/fluxboard/__tests__/components/domain/params/AutoModeToggle.test.tsx`
+- `fluxboard/__tests__/hooks/useDirtyState.test.ts`
+- `fluxboard/__tests__/hooks/useBoundedSave.test.ts`
+- `fluxboard/__tests__/components/domain/params/SaveButton.test.tsx`
+- `fluxboard/__tests__/components/domain/params/AutoModeToggle.test.tsx`
 
 ## Next Steps
 

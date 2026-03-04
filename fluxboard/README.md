@@ -5,7 +5,7 @@
 ## Purpose
 Describe Fluxboard’s architecture, APIs, and operational invariants so frontend and backend engineers stay aligned.
 
-Modern React+TypeScript migration of Chainsaw GUI pages (Params, Trades, Market Data, FVs, PnL).
+Modern React+TypeScript implementation of Fluxboard panels (Params, Trades, Market Data, FVs, PnL, Alerts).
 
 ## Scope
 
@@ -16,9 +16,9 @@ Modern React+TypeScript migration of Chainsaw GUI pages (Params, Trades, Market 
 ## Overview
 
 - **Tech Stack:** React 18, TypeScript, Vite, Tailwind CSS, Zustand, Socket.IO
-- **Backend:** Flask on :5000
-- **Frontend:** Served by Flask on :5000 (production) or Vite dev server (development)
-- **Features:** Real-time updates via WebSocket, session persistence, exact formatting parity
+- **Backend:** FluxAPI (Flask). For TokenMM, default runner target is `127.0.0.1:5022`.
+- **Frontend:** Vite dev server (default `http://127.0.0.1:5173`) or embedded static serving from FluxAPI at `/tokenmm/*`.
+- **Features:** Real-time updates via Socket.IO (polling transport by default), session persistence, formatting parity
 
 ## Quick Start
 
@@ -26,41 +26,27 @@ Modern React+TypeScript migration of Chainsaw GUI pages (Params, Trades, Market 
 
 - Node.js >= 18
 - pnpm installed (`npm install -g pnpm`)
-- Flask backend running on :5000
+- FluxAPI running (see `examples/live/makerv3_single_leg/README.md` and `docs/fluxboard/tokenmm_runbook.md`)
 
 ### Installation
 
 ```bash
 # from repository root
-cd fluxboard
-pnpm install
-pnpm exec playwright install chromium
+pnpm --dir fluxboard install --frozen-lockfile
+pnpm --dir fluxboard exec playwright install chromium
 ```
 
 ### Development
 
-**Production:** Build static assets to be served by your backend:
-```bash
-# from repository root
-cd fluxboard
-pnpm build
-```
+For TokenMM, follow:
 
-Access at: http://localhost:5000
-
-**Development:** Start Vite dev server (requires backend running on :5000 in another terminal):
-```bash
-# from repository root
-cd fluxboard
-pnpm dev
-```
-
-Ensure your backend is running on :5000 before opening the app.
+1. `examples/live/makerv3_single_leg/README.md` (end-to-end runner order + dev/prod-like serving modes)
+2. `docs/fluxboard/tokenmm_runbook.md` (serving/runbook + smoke checks)
 
 ### Build
 
 ```bash
-pnpm build
+pnpm --dir fluxboard build
 ```
 
 Outputs to `dist/` directory.
@@ -239,7 +225,7 @@ Fluxboard now consumes only the versioned FluxAPI surface; `/api/v1/*` endpoints
 | Fluxboard lives under `fluxboard/` in this repository | ✅ |
 | Commands run from repo root with `cd fluxboard` | ✅ |
 | All files in single `fluxboard/` directory | ✅ |
-| Vite proxies `/api`, `/socket.io`, `/export_blotter` to :5000 | ✅ |
+| Vite proxies `/api` and `/socket.io` to FluxAPI (TokenMM default: :5022) | ✅ |
 | Timestamps render exactly as delivered | ✅ |
 | Trades pagination uses `sessionStorage` | ✅ |
 | Socket deduplication working | ✅ |
@@ -259,20 +245,18 @@ Add to your CI workflow:
 ```yaml
 - name: Run Frontend Unit Tests
   run: |
-    cd fluxboard
-    pnpm install
-    pnpm test:run
+    pnpm --dir fluxboard install --frozen-lockfile
+    pnpm --dir fluxboard test:run
 ```
 
 ### E2E Tests (Playwright)
-Requires Flask backend running on :5000:
+Requires FluxAPI reachable (TokenMM default: `127.0.0.1:5022`) and explicit opt-in:
 ```yaml
 - name: Run Frontend E2E Tests
   run: |
-    cd fluxboard
-    pnpm install
-    pnpm exec playwright install chromium
-    pnpm test:e2e
+    pnpm --dir fluxboard install --frozen-lockfile
+    pnpm --dir fluxboard exec playwright install chromium
+    FLUXBOARD_E2E=1 pnpm --dir fluxboard test:e2e
 ```
 
 ### Test Coverage
@@ -295,24 +279,24 @@ Requires Flask backend running on :5000:
 
 ## Troubleshooting
 
-### Port 5000 in use
+### Port in use
 ```bash
-lsof -ti:5000 | xargs kill -9
+lsof -ti:5022
 ```
 
 ### Backend not running
 ```bash
 # start your backend process in another terminal (from repository root)
-curl -fsS http://localhost:5000/api/v1/healthz
+curl -fsS http://127.0.0.1:5022/api/v1/healthz
 ```
 
 ### Socket not connecting
-Check Flask is running on :5000 and serving `/socket.io` endpoint.
+Check FluxAPI is running and serving `/socket.io` (TokenMM default: `http://127.0.0.1:5022/socket.io/...`).
 
 ### Dependencies not installing
 ```bash
-rm -rf node_modules pnpm-lock.yaml
-pnpm install
+rm -rf fluxboard/node_modules
+pnpm --dir fluxboard install --frozen-lockfile
 ```
 
 ## References
@@ -328,4 +312,4 @@ pnpm install
 
 ## License
 
-Internal project - see main Chainsaw repo.
+Internal project.

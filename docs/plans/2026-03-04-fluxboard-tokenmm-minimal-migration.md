@@ -43,6 +43,24 @@
 4. Real-time behavior:
    - Socket.IO is required and must work in polling mode by default.
 
+## Master plan alignment
+
+This plan is a UI + API migration slice which depends on the production Flux integration work tracked in:
+
+1. `docs/plans/2026-03-04-flux-makerv3-singleleg-productionize.md`
+2. `docs/flux/*` (schema and API contract docs)
+
+Non-negotiable prerequisites for a TokenMM `GO` decision:
+
+1. Flux leakage gate passes (`scripts/ci/check-flux-leakage.sh`).
+2. Flux API contract remains schema-scoped (`flux:v1:*`) and strategy-scoped (no legacy key reads).
+3. Runner defaults remain localhost-first (`127.0.0.1`) with explicit opt-in for external bind.
+
+Merge policy:
+
+1. Keep this branch as source of truth.
+2. Integrate into the mono PR branch with fast-forward only once the mono PR worktree is clean.
+
 ---
 
 ## Non-negotiable acceptance criteria
@@ -72,7 +90,7 @@
 
 **Recommended `contract_id` format**
 
-- `"{exchange}:{symbol}"` (or `"{exchange}:{instrument_id}"` if symbol ambiguity exists).
+- `"{exchange}:{symbol}"`.
 - The same format must be used everywhere: REST payloads, Socket deltas, and Redis key-building logic.
 
 ### 2) Envelope contract
@@ -330,7 +348,7 @@ Track D: Serving + runbook + validation
 | Task | Owner | Status | Started | Completed | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Codex | Done | 2026-03-04 03:36 UTC | 2026-03-04 03:47 UTC | `docs/fluxboard/tokenmm_contract.md`, `docs/fluxboard/tokenmm_socket_contract.md`, subagent spec ✅ + quality ✅ |
-| 2 | Codex | Done | 2026-03-04 03:49 UTC | 2026-03-04 04:08 UTC | Vendored `fluxboard/` from chainsaw, `.gitignore` updates, `pnpm install --frozen-lockfile` + `pnpm build` pass, spec ✅ + quality ✅ |
+| 2 | Codex | Done | 2026-03-04 03:49 UTC | 2026-03-04 04:08 UTC | Vendored `fluxboard/` from upstream source snapshot, `.gitignore` updates, `pnpm install --frozen-lockfile` + `pnpm build` pass, spec ✅ + quality ✅ |
 | 3 | Codex | Done | 2026-03-04 04:09 UTC | 2026-03-04 04:21 UTC | TokenMM nav/route pruned (order-view removed, alerts retained), `/tokenm` alias preserved, route/nav tests updated, spec ✅ + quality ✅ |
 | 4 | Codex | Done | 2026-03-04 04:22 UTC | 2026-03-04 04:49 UTC | Contract_id leg-map adapter (`legs_order` + sorted fallback), generic leg delta merge/delete semantics, same-exchange coverage tests, spec ✅ + quality ✅ |
 | 5 | Codex | Done | 2026-03-04 04:50 UTC | 2026-03-04 05:23 UTC | FluxAPI TokenMM compat endpoints + tests (`test_tokenmm_compat.py`), contract_id legs + bulk params + trades/delta + alerts DELETE, sanitized errors, spec ✅ + quality ✅ |
@@ -345,7 +363,7 @@ Track D: Serving + runbook + validation
 - `- [YYYY-MM-DD hh:mm UTC] Task {n}: {change} / {evidence} / {next}`
 - [2026-03-04 03:36 UTC] Task 1: Started contract freeze docs with fresh implementer subagent / spawned implementer, spec reviewer, code-quality reviewer / iterate until both reviewers approve.
 - [2026-03-04 03:47 UTC] Task 1: Created TokenMM HTTP + Socket contract docs and resolved reviewer findings (profile scoping, seq semantics, trade cursor versioning) / reviewer verdicts: spec ✅, quality ✅ / proceed to Task 2 vendoring.
-- [2026-03-04 03:49 UTC] Task 2: Started vendoring fluxboard with fresh implementer subagent / rsync from `/home/ubuntu/chainsaw/fluxboard`, baseline `pnpm install` + `pnpm build` / run spec + quality gates.
+- [2026-03-04 03:49 UTC] Task 2: Started vendoring fluxboard with fresh implementer subagent / imported from upstream snapshot, baseline `pnpm install` + `pnpm build` / run spec + quality gates.
 - [2026-03-04 04:08 UTC] Task 2: Vendored `fluxboard/`, added ignore rules, fixed README/runability issues and deploy.sh tracking / evidence: install/build pass and reviewer verdicts spec ✅ quality ✅ / proceed to Task 3 route/nav pruning.
 - [2026-03-04 04:09 UTC] Task 3: Started TokenMM surface pruning with fresh implementer subagent / test-first updates in `uiProfiles/main/Nav` tests and route config changes / run spec + quality gates.
 - [2026-03-04 04:21 UTC] Task 3: Removed order-view from TokenMM route/nav surface, preserved alerts and `/tokenm` alias redirect, and added top-level route/nav active-state regression tests / reviewer verdicts spec ✅ quality ✅ / proceed to Task 4 contract_id leg model updates.
@@ -360,10 +378,10 @@ Track D: Serving + runbook + validation
 - [2026-03-04 06:31 UTC] Task 8: Added final validation gate with scripted/manual smoke checklist + handoff criteria, and documented current migration limitations + next-step notes / evidence: this plan section update / next: run checklist in target environment before merge/deploy decision.
 - [2026-03-04 06:37 UTC] Task 8: Resolved quality-gate findings / added reversible `PATCH /api/v1/params` smoke flow with GET assertions, converted Task 7 serving checks to assertive status/body + Engine.IO-open checks, replaced dual decision checkboxes with single decision field + required NO-GO metadata / next: execute the finalized checklist in target runtime and record GO/NO-GO.
 - [2026-03-04 07:12 UTC] Post-plan review remediation: fixed alerts DELETE response compatibility (`success` + metadata), aligned TokenMM contract/runbook wording, updated frontend profile query propagation + clear-alerts client parsing, socket same-origin default, and explicit `/tokenmm/dashboard` route coverage / evidence: `pytest -q tests/unit_tests/flux/api/test_tokenmm_compat.py tests/unit_tests/flux/api/test_socketio_tokenmm.py tests/unit_tests/flux/api/test_app.py --confcutdir=tests/unit_tests/flux/api` (30 passed), `pnpm --dir fluxboard exec vitest run __tests__/api.test.ts Alerts.test.tsx sockets.test.ts main.routes.test.tsx config/uiProfiles.test.ts` (48 passed) / next: sync with mono-pr strategy branch and rerun compatibility checks.
-- [2026-03-04 07:17 UTC] Mono-PR sync: rebased `poc/fluxboard-tokenmm-migration` onto local `poc/makerv3-singleleg-mono-pr`, resolved conflicts in `docs/flux/api.md`, `examples/live/makerv3_single_leg/{README.md,run_api.py}`, `nautilus_trader/flux/api/{app.py,payloads.py}`, and `tests/unit_tests/flux/api/test_app.py` while preserving strategy-branch host-default expectations and TokenMM contract changes / evidence: successful rebase and preserved `_resolve_bind_host` helper compatibility / next: rerun strategy-side targeted tests.
+- [2026-03-04 07:17 UTC] Mono-PR sync: synchronized `poc/fluxboard-tokenmm-migration` with local `poc/makerv3-singleleg-mono-pr`, resolved conflicts in `docs/flux/api.md`, `examples/live/makerv3_single_leg/{README.md,run_api.py}`, `nautilus_trader/flux/api/{app.py,payloads.py}`, and `tests/unit_tests/flux/api/test_app.py` while preserving host-default expectations and TokenMM contract changes / evidence: preserved `_resolve_bind_host` helper compatibility / next: rerun strategy-side targeted tests.
 - [2026-03-04 07:20 UTC] Rebased compatibility verification: strategy/API guard tests passed after conflict resolution / evidence: `pytest -q tests/unit_tests/examples/strategies/test_makerv3_single_leg_run_api.py tests/unit_tests/examples/strategies/test_makerv3_single_leg_run_bridge.py --confcutdir=tests/unit_tests/examples/strategies` (9 passed), `pytest -q tests/unit_tests/scripts/test_check_flux_leakage.py --confcutdir=tests/unit_tests/scripts` (4 passed) / note: `tests/unit_tests/analysis/test_tearsheet.py` requires compiled Nautilus modules unavailable in this `/tmp` PYTHONPATH test harness.
 - [2026-03-04 07:34 UTC] Review remediation wave 2 (external findings): enforced trade row contract defaults (`row_id`, `version`, stable `ts_ms`) in payload builder, corrected frontend strategy helper parsing to backend keys (`strategies`, `params`), updated Fluxboard README socket/docs defaults (`polling`, :5022), and corrected TokenMM contract path to `/tokenmm/signal` / evidence: RED->GREEN on targeted tests (`pytest -q tests/unit_tests/flux/api/test_tokenmm_compat.py --confcutdir=tests/unit_tests/flux/api`, `pnpm --dir fluxboard exec vitest run __tests__/api.test.ts`) / next: full regression subset.
-- [2026-03-04 07:35 UTC] Post-remediation verification: regression subset green on rebased branch / evidence: `pytest -q tests/unit_tests/flux/api/test_tokenmm_compat.py tests/unit_tests/flux/api/test_socketio_tokenmm.py tests/unit_tests/flux/api/test_app.py --confcutdir=tests/unit_tests/flux/api` (31 passed), `pytest -q tests/unit_tests/examples/strategies/test_makerv3_single_leg_run_api.py tests/unit_tests/examples/strategies/test_makerv3_single_leg_run_bridge.py --confcutdir=tests/unit_tests/examples/strategies` (9 passed), `pytest -q tests/unit_tests/scripts/test_check_flux_leakage.py --confcutdir=tests/unit_tests/scripts` (4 passed), `pnpm --dir fluxboard exec vitest run __tests__/api.test.ts Alerts.test.tsx sockets.test.ts main.routes.test.tsx config/uiProfiles.test.ts` (49 passed), `pnpm --dir fluxboard build`, `python3 -m py_compile examples/live/makerv3_single_leg/run_api.py`.
+- [2026-03-04 07:35 UTC] Post-remediation verification: regression subset green on synchronized branch / evidence: `pytest -q tests/unit_tests/flux/api/test_tokenmm_compat.py tests/unit_tests/flux/api/test_socketio_tokenmm.py tests/unit_tests/flux/api/test_app.py --confcutdir=tests/unit_tests/flux/api` (31 passed), `pytest -q tests/unit_tests/examples/strategies/test_makerv3_single_leg_run_api.py tests/unit_tests/examples/strategies/test_makerv3_single_leg_run_bridge.py --confcutdir=tests/unit_tests/examples/strategies` (9 passed), `pytest -q tests/unit_tests/scripts/test_check_flux_leakage.py --confcutdir=tests/unit_tests/scripts` (4 passed), `pnpm --dir fluxboard exec vitest run __tests__/api.test.ts Alerts.test.tsx sockets.test.ts main.routes.test.tsx config/uiProfiles.test.ts` (49 passed), `pnpm --dir fluxboard build`, `python3 -m py_compile examples/live/makerv3_single_leg/run_api.py`.
 
 ---
 
@@ -580,8 +598,18 @@ Recommended next migration steps:
 
 ---
 
-## Open questions (resolve before Task 5)
+## Resolved decisions
 
-1. Exact `contract_id` string format: `exchange:symbol` vs `exchange:instrument_id`.
-2. Whether FluxAPI should require strategy scoping for tokenmm views (profile->strategy allowlist) or return everything and let UI filter.
-3. Whether Socket.IO emitter should read from Redis Streams directly or rely on API polling + diffing.
+1. `contract_id` string format is fixed to `exchange:symbol` (normalized exchange lowercase + symbol uppercase).
+2. TokenMM REST scope is strategy-driven today (default strategy unless explicit `strategy` query is supplied); profile is accepted for compatibility and used for Socket.IO room scoping.
+3. Socket.IO emitter composes a bounded, polling-based compatibility feed sourced from the canonical `flux:v1` reads and in-memory diffing; it does not read legacy keyspaces.
+
+## Open actions (post-migration hardening)
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| AuthZ/AuthN | Needs follow-up | Add explicit auth for param mutation and Socket.IO profile subscription before any non-local exposure. |
+| Emitter lifecycle | Needs follow-up | Stop/idle emitter when no active profiles exist; avoid background polling when idle. |
+| Trades/alerts pagination | Needs follow-up | Avoid full in-memory hydration to compute totals; use bounded windowing + `XLEN` where possible. |
+| REST vs Socket scoping | Needs follow-up | If profile-based REST scoping is required, implement explicit profile allowlist mapping and test parity. |
+| CI smoke gate | Needs follow-up | Add `scripts/fluxboard/tokenmm_smoke.sh` and wire into CI as an opt-in/required gate. |

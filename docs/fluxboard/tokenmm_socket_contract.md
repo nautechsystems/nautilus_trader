@@ -1,6 +1,8 @@
+<!-- DOCID: docs/fluxboard/tokenmm_socket_contract@v1 -->
+
 # TokenMM Socket.IO Contract (`tokenmm:v1`)
 
-This document freezes the TokenMM Socket.IO contract for Fluxboard migration Task 1.
+This document freezes the TokenMM Socket.IO contract for Fluxboard migration.
 REST remains authoritative for initial load and recovery.
 
 ## Scope
@@ -33,7 +35,7 @@ JavaScript client example:
 ```ts
 import { io } from "socket.io-client";
 
-const socket = io("http://localhost:8000", {
+const socket = io("http://127.0.0.1:5022", {
   path: "/socket.io",
   transports: ["polling"],
   query: { profile: "tokenmm" }

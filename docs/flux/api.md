@@ -9,8 +9,17 @@ This document defines the production API contract implemented by `nautilus_trade
 3. API responses use a consistent envelope with explicit `ok`, `api_version`, `request_id`, and `timestamp_ms`.
 4. Readiness and health checks are dependency-based (Redis availability + required key checks).
 5. No runtime compatibility mode exists for legacy non-`flux:v1` keyspaces.
-6. Example runner `examples/live/makerv3_single_leg/run_api.py` binds to `127.0.0.1` by default; external bind addresses must be explicitly requested (for example `--host 0.0.0.0`).
+6. Example runner `examples/live/makerv3_single_leg/run_api.py` binds to `127.0.0.1` by default; external bind
+   addresses must be explicitly requested via CLI `--host` or config `[api].host` (CLI wins).
 7. Signals legs are keyed by `contract_id` (`{exchange}:{symbol}`) and include `legs_order`.
+
+## Network exposure (security)
+
+1. The example runner and TokenMM static-serving mode are intended for localhost/internal deployments.
+2. The API is unauthenticated by default. Do not expose it directly to the public internet without adding
+   authentication/authorization and TLS.
+3. Prefer binding to loopback and accessing via VPN/SSH tunnel; if you must bind externally, front it with a secure
+   edge (TLS + auth + IP allowlist).
 
 ## Request/response envelope
 
@@ -73,6 +82,8 @@ Pagination/limits:
 
 ## TokenMM compatibility payloads
 
+`profile` is accepted for TokenMM client compatibility and normalized consistently with Socket.IO, but strategy
+scoping is still strategy-driven (default strategy unless an explicit `strategy` query is provided).
 1. `GET /api/v1/param-schema` returns:
    - `data.params` (schema map)
    - `data.deprecated` (always an object, empty when no deprecated fields)

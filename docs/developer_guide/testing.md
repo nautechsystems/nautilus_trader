@@ -53,6 +53,31 @@ uv run --active --no-sync pytest --new-first --failed-first
 pytest
 ```
 
+#### Python optional extras
+
+Some Python tests cover functionality behind optional dependencies. For example, the analysis tearsheet
+visualization paths depend on the `visualization` extra (`plotly`).
+
+Install the extra when you need that coverage:
+
+```bash
+pip install -e '.[visualization]'
+# or, using uv:
+uv pip install -e '.[visualization]'
+```
+
+When the extra is not installed, plotly-dependent tests are skipped.
+
+#### Fluxboard (frontend) tests
+
+Fluxboard UI lives under `fluxboard/` and is tested/built with `pnpm`:
+
+```bash
+pnpm --dir fluxboard install --frozen-lockfile
+pnpm --dir fluxboard test:run
+pnpm --dir fluxboard build
+```
+
 For performance tests:
 
 ```bash

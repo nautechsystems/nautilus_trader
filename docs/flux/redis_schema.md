@@ -58,6 +58,25 @@ This table is the authoritative source for production high-churn retention defau
 3. API reads only canonical `flux:v1:*` output keys/channels and returns `ts_ms` unchanged.
 4. API must not infer strategy context from global keys; `strategy_id` is explicit in every lookup path.
 
+## Legacy naming allowlist (migration-only)
+
+This document includes a single legacy mapping section for one-time cutover planning. It must quote historical
+key names which contain banned legacy prefixes.
+
+Those legacy strings are allowed only inside the marker block below:
+
+1. `<!-- leakage-allowlist:start maker_poc_migration -->`
+2. `<!-- leakage-allowlist:end maker_poc_migration -->`
+
+The CI/pre-commit gate `scripts/ci/check-flux-leakage.sh` strips the allowlisted block and fails if legacy naming
+appears anywhere else in production Flux paths or durable Flux docs.
+
+Policy:
+
+1. Do not add additional allowlist marker pairs (the gate requires exactly one pair).
+2. If further legacy mapping is required, extend the existing allowlist block and keep it minimal.
+3. Consider deleting the legacy mapping after cutover is complete.
+
 <!-- leakage-allowlist:start maker_poc_migration -->
 ## Migration from `maker_poc.*` / `maker_poc`
 
