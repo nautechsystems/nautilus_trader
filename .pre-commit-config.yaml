@@ -152,6 +152,13 @@ repos:
         types_or: [rust, python, cython]
         pass_filenames: false
 
+      - id: check-flux-leakage
+        name: check flux leakage
+        description: Enforces no POC/chainsaw leakage in production Flux paths
+        entry: bash scripts/ci/check-flux-leakage.sh
+        language: system
+        pass_filenames: false
+
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
