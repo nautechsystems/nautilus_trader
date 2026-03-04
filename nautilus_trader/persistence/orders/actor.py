@@ -99,13 +99,15 @@ def _parse_intent_tags(tags: object) -> tuple[str | None, str | None, int | None
 def order_event_to_row(
     event: OrderEvent,
     *,
+    event_type: str | None = None,
     ts_ingest: int,
     on_payload_encode_error: Callable[[], None] | None = None,
 ) -> OrderActionRow | None:
     """
     Convert supported order lifecycle events to a primitive order action row.
     """
-    event_type = type(event).__name__
+    if event_type is None:
+        event_type = type(event).__name__
     action_fields = _ACTION_MAP.get(event_type)
     if action_fields is None:
         return None
@@ -182,8 +184,10 @@ class OrderActionPersistenceActor(Actor):
     """
     Persist selected `OrderEvent` instances from `events.order.*` into SQLite.
 
-    The message-bus hot path is enqueue-only (`put_nowait`), while DB I/O is
-    handled off the hot path via batched flushes.
+    The message-bus hot path is enqueue-only (`put_nowait`): the handler only
+    performs CPU-bound normalization to a primitive row tuple and never performs
+    DB I/O, blocking DB waits, or queue waits. DB I/O is handled off the hot
+    path via batched flushes.
     """
 
     def __init__(
@@ -221,6 +225,14 @@ class OrderActionPersistenceActor(Actor):
         self.payload_encode_errors = 0
 
     def on_start(self) -> None:
+        if self._writer_thread is not None:
+            if self._writer_thread.is_alive():
+                raise RuntimeError("Order action writer thread is still running from previous lifecycle")
+            self._writer_thread = None
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
         self._queue = queue.Queue(maxsize=self.config.max_queue_size)
         self._pending_rows.clear()
         self._stop_event.clear()
@@ -284,6 +296,7 @@ class OrderActionPersistenceActor(Actor):
             if self._writer_thread.is_alive():
                 msg = "Order action writer thread did not stop cleanly"
                 self._writer_error = RuntimeError(msg)
+                self._schedule_writer_ref_cleanup(self._writer_thread)
                 if self.config.strict_stop:
                     raise self._writer_error
                 self.log.error(msg)
@@ -322,10 +335,12 @@ class OrderActionPersistenceActor(Actor):
             self.filtered += 1
             return
 
-        # Keep cross-thread payloads primitive (tuple row), no waits / no DB I/O.
+        # Keep cross-thread payloads primitive (tuple row) and handler-only CPU work.
+        # No queue waits and no DB I/O on this hot path.
         ts_ingest = 0 if self.clock is None else self.clock.timestamp_ns()
         row = order_event_to_row(
             event,
+            event_type=event_type,
             ts_ingest=ts_ingest,
             on_payload_encode_error=self._on_payload_encode_error,
         )
@@ -517,6 +532,25 @@ class OrderActionPersistenceActor(Actor):
 
     def _on_payload_encode_error(self) -> None:
         self.payload_encode_errors += 1
+
+    def _schedule_writer_ref_cleanup(self, writer_thread: threading.Thread) -> None:
+        def _cleanup() -> None:
+            writer_thread.join()
+            if self._writer_thread is writer_thread:
+                self._writer_thread = None
+            # Defensive cleanup in case the writer loop did not clear the connection ref.
+            if self._conn is not None:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._conn = None
+
+        threading.Thread(
+            target=_cleanup,
+            name=f"{self.id}-orders-writer-cleanup",
+            daemon=True,
+        ).start()
 
     def _raise_if_writer_failed(self) -> None:
         if self._writer_error is not None:

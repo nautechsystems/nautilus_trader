@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 
 import pytest
 
@@ -55,6 +56,19 @@ def _rows(db_path: str) -> list[sqlite3.Row]:
         conn.close()
 
 
+def _fetch_one(
+    db_path: str,
+    sql: str,
+    params: tuple[object, ...] = (),
+) -> sqlite3.Row | None:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return conn.execute(sql, params).fetchone()
+    finally:
+        conn.close()
+
+
 def _make_actor(
     tmp_path,
     *,
@@ -63,6 +77,7 @@ def _make_actor(
     flush_timeout_ms: int = 5_000,
     stop_timeout_ms: int = 5_000,
     strict_stop: bool = False,
+    on_error: str = "buffer_until_full_then_fail",
     insert_many_fn=None,
 ):
     clock = TestClock()
@@ -87,7 +102,7 @@ def _make_actor(
         "flush_time_budget_ms": 10,
         "flush_timeout_ms": flush_timeout_ms,
         "max_queue_size": 10_000,
-        "on_error": "buffer_until_full_then_fail",
+        "on_error": on_error,
         "stop_timeout_ms": stop_timeout_ms,
         "strict_stop": strict_stop,
     }
@@ -186,14 +201,8 @@ def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
     actor.stop()
 
 
-@pytest.mark.parametrize(
-    ("strict_stop", "expect_raise"),
-    [(False, False), (True, True)],
-)
-def test_actor_shutdown_backlog_respects_strict_stop(
+def test_actor_non_strict_stop_timeout_sets_error_and_releases_refs_after_writer_finishes(
     tmp_path,
-    strict_stop: bool,
-    expect_raise: bool,
 ) -> None:
     from nautilus_trader.persistence.orders.sqlite import insert_many as _real_insert_many
 
@@ -210,7 +219,7 @@ def test_actor_shutdown_backlog_respects_strict_stop(
         tmp_path,
         run_writer_thread=True,
         stop_timeout_ms=10,
-        strict_stop=strict_stop,
+        strict_stop=False,
         insert_many_fn=_insert_blocking,
     )
     instrument = TestInstrumentProvider.btcusdt_binance()
@@ -221,13 +230,125 @@ def test_actor_shutdown_backlog_respects_strict_stop(
     msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=accepted)
     assert write_started.wait(timeout=1.0)
 
-    try:
-        if expect_raise:
-            with pytest.raises(RuntimeError, match="did not stop cleanly"):
-                actor.stop()
-        else:
-            actor.stop()
-    finally:
-        release_write.set()
-        if actor._writer_thread is not None:
-            actor._writer_thread.join(timeout=1.0)
+    actor.stop()
+    assert actor._writer_error is not None
+    assert "did not stop cleanly" in str(actor._writer_error)
+    assert actor._writer_thread is not None
+    assert actor._writer_thread.is_alive()
+
+    release_write.set()
+
+    deadline = time.monotonic() + 1.0
+    # Wait until actor-level refs are cleaned after the writer exits.
+    while actor._writer_thread is not None and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert actor._writer_thread is None
+    assert actor._conn is None
+
+
+def test_actor_strict_stop_timeout_raises_runtime_error(tmp_path) -> None:
+    from nautilus_trader.persistence.orders.sqlite import insert_many as _real_insert_many
+
+    write_started = threading.Event()
+    release_write = threading.Event()
+
+    def _insert_blocking(conn, rows):
+        write_started.set()
+        if not release_write.wait(timeout=1.0):
+            raise RuntimeError("test write gate timeout")
+        return _real_insert_many(conn, rows)
+
+    actor, msgbus, _, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+        stop_timeout_ms=10,
+        strict_stop=True,
+        insert_many_fn=_insert_blocking,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+    accepted = TestEventStubs.order_accepted(order=order, ts_event=105)
+
+    actor.start()
+    msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=accepted)
+    assert write_started.wait(timeout=1.0)
+
+    with pytest.raises(RuntimeError, match="did not stop cleanly"):
+        actor.stop()
+
+    release_write.set()
+    if actor._writer_thread is not None:
+        actor._writer_thread.join(timeout=1.0)
+
+
+def test_actor_db_down_log_and_drop_drops_rows(tmp_path) -> None:
+    def _insert_fail(_conn, _rows):
+        raise RuntimeError("db down")
+
+    actor, msgbus, db_path, _ = _make_actor(
+        tmp_path,
+        on_error="log_and_drop",
+        run_writer_thread=False,
+        insert_many_fn=_insert_fail,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+    accepted = TestEventStubs.order_accepted(order=order, ts_event=106)
+
+    actor.start()
+    msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=accepted)
+    actor.flush()
+    actor.stop()
+
+    assert actor.dropped == 1
+    assert actor.db_write_errors == 1
+    assert _row_count(db_path) == 0
+    assert actor._queue.unfinished_tasks == 0
+
+
+def test_actor_parses_order_initialized_tags_with_invalid_decision_and_signal_fallback(tmp_path) -> None:
+    actor, msgbus, db_path, clock = _make_actor(
+        tmp_path,
+        event_types=("OrderInitialized",),
+        run_writer_thread=False,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        tags=[
+            "nautilus.intent.action_id=act-1",
+            "nautilus.intent.reason=quote:reprice",
+            "nautilus.intent.ts_decision_ns=invalid-int",
+            "nautilus.intent.signal={bad-json",
+        ],
+    )
+    initialized = order.init_event
+
+    actor.start()
+    clock.advance_time(987_654_321)
+    msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=initialized)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT
+          event_type,
+          action_id,
+          action_reason,
+          ts_decision_ns,
+          signal_snapshot_json,
+          ts_ingest
+        FROM order_action
+        WHERE event_type = 'OrderInitialized'
+        """,
+    )
+    assert row is not None
+    assert row["event_type"] == "OrderInitialized"
+    assert row["action_id"] == "act-1"
+    assert row["action_reason"] == "quote:reprice"
+    assert row["ts_decision_ns"] is None
+    assert row["signal_snapshot_json"] == "\"{bad-json\""
+    assert row["ts_ingest"] == 987_654_321
