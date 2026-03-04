@@ -292,9 +292,9 @@ Legend: `TODO` | `DOING` | `DONE` | `BLOCKED`
 | Item | Status | Notes | PR/Link |
 | --- | --- | --- | --- |
 | Task 1: Lock MVP scope and decisions | TODO | Decide: SQLite-only vs SQLite+streaming; choose default failure policy | |
-| Task 2: SQLite fills store | DONE | Schema + writer + idempotency complete; precision as TEXT; indexes added | [PR #6](https://github.com/clickconfirm/nautilus-trader/pull/6) |
-| Task 3: Fill persistence actor | DONE | Non-blocking enqueue; bounded flush; overflow + DB-down tests complete | [PR #6](https://github.com/clickconfirm/nautilus-trader/pull/6) |
-| Task 4: Usage docs | DONE | Node config example + streaming/ingestion notes added | [PR #6](https://github.com/clickconfirm/nautilus-trader/pull/6) |
+| Task 2: SQLite fills store | DONE | Schema + writer + idempotency complete; precision as TEXT; indexes added | Branch `plan-execution-fill-persistence`, commit `bdea10c1e` |
+| Task 3: Fill persistence actor | DONE | Non-blocking enqueue; bounded flush; overflow + DB-down tests complete | Branch `plan-execution-fill-persistence`, commit `bdea10c1e` |
+| Task 4: Usage docs | DONE | Node config example + streaming/ingestion notes added | Branch `plan-execution-fill-persistence`, commit `bdea10c1e` |
 
 ## Implementation plan (tasks)
 

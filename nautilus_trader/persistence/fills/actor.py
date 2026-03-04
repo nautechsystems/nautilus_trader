@@ -113,7 +113,13 @@ class ExecutionFillPersistenceActor(Actor):
             self._flush_event.set()
             if self._writer_thread is not None:
                 self._writer_thread.join(timeout=self.config.stop_timeout_ms / 1000.0)
-                self._writer_thread = None
+                if self._writer_thread.is_alive():
+                    self._writer_error = RuntimeError(
+                        "Execution fill writer thread did not stop during startup cleanup",
+                    )
+                    self.log.error(str(self._writer_error))
+                else:
+                    self._writer_thread = None
             if self._conn is not None:
                 self._conn.close()
                 self._conn = None

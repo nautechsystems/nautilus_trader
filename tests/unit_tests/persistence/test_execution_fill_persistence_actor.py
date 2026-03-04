@@ -185,6 +185,8 @@ def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
     assert not flush_done.wait(timeout=0.05)
     release_write.set()
     assert flush_done.wait(timeout=1.0)
+    thread.join(timeout=1.0)
+    assert not thread.is_alive()
     assert flush_errors == []
     assert _row_count(db_path) == 1
     actor.stop()
