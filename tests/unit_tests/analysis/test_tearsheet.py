@@ -21,7 +21,7 @@ try:
     import plotly.graph_objects as go
 
     HAS_PLOTLY = True
-except ModuleNotFoundError:
+except ImportError:
     go = None
     HAS_PLOTLY = False
 
@@ -52,10 +52,18 @@ from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
 
 
-pytestmark = pytest.mark.skipif(
-    not HAS_PLOTLY,
-    reason="plotly not installed",
-)
+PLOTLY_OPTIONAL_TESTS = {
+    "test_create_tearsheet_raises_import_error_when_plotly_not_available",
+}
+
+
+@pytest.fixture(autouse=True)
+def skip_if_plotly_missing(request):
+    if HAS_PLOTLY:
+        return
+    if request.node.name in PLOTLY_OPTIONAL_TESTS:
+        return
+    pytest.skip("plotly not installed")
 
 
 @pytest.fixture
