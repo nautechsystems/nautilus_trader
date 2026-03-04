@@ -392,7 +392,6 @@ class FluxBridgeStreamConsumer:
                 stream_key = decode_text(stream_raw)
                 for entry_id_raw, fields in entries:
                     entry_id = decode_text(entry_id_raw)
-                    self._stream_ids[stream_key] = entry_id
 
                     try:
                         decoded = self._decode_entry(
@@ -430,7 +429,7 @@ class FluxBridgeStreamConsumer:
 
                     try:
                         self._apply_write_ops(ops)
-                    except redis.RedisError as exc:
+                    except Exception as exc:  # noqa: BLE001
                         self._logger.error(
                             "Write-op application failed topic=%s stream=%s id=%s err=%s",
                             context.topic,
@@ -438,6 +437,9 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             exc,
                         )
+                        continue
+
+                    self._stream_ids[stream_key] = entry_id
 
 
 def build_parser() -> argparse.ArgumentParser:
