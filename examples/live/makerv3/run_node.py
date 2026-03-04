@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Any
 import tomllib
 
+import redis
+
 from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.adapters.binance import BinanceAccountType
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
@@ -42,6 +44,7 @@ from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.flux.common.config import FLUX_DEFAULT_NAMESPACE
 from nautilus_trader.flux.common.config import FLUX_SCHEMA_VERSION
+from nautilus_trader.flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from nautilus_trader.flux.strategies import MakerV3Strategy
 from nautilus_trader.flux.strategies import MakerV3StrategyConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
@@ -126,6 +129,32 @@ def _enum_member(enum_type: Any, raw_value: Any, *, field_name: str) -> Any:
             return getattr(enum_type, name)
         except AttributeError:
             raise ValueError(f"Invalid {field_name} {raw_value!r}") from exc
+
+
+def _attach_runtime_params_manager(
+    *,
+    strategy: Any,
+    redis_cfg: dict[str, Any],
+    namespace: str,
+    schema_version: str,
+) -> None:
+    redis_client = redis.Redis(
+        host=str(redis_cfg.get("host", "127.0.0.1")),
+        port=int(redis_cfg.get("port", 6380)),
+        db=int(redis_cfg.get("db", 0)),
+        username=_optional_text(redis_cfg.get("username")),
+        password=_optional_text(redis_cfg.get("password")),
+        socket_connect_timeout=float(redis_cfg.get("connect_timeout_secs", 5.0)),
+        socket_timeout=float(redis_cfg.get("read_timeout_secs", 5.0)),
+        decode_responses=False,
+    )
+    strategy.set_params_manager_factory(
+        runtime_params_mod.params_manager_factory(
+            redis_client=redis_client,
+            namespace=namespace,
+            schema_version=schema_version,
+        ),
+    )
 
 
 def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: bool) -> TradingNode:
@@ -274,6 +303,12 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             quote_fail_critical_after_count=int(strategy_cfg.get("quote_fail_critical_after_count", 3)),
             quote_fail_critical_after_s=float(strategy_cfg.get("quote_fail_critical_after_s", 60.0)),
         ),
+    )
+    _attach_runtime_params_manager(
+        strategy=strategy,
+        redis_cfg=redis_cfg,
+        namespace=namespace,
+        schema_version=schema_version,
     )
 
     node = TradingNode(config=config_node)
