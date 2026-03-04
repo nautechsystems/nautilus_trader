@@ -13,8 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import MakerV3SingleLegQuoter
-from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import MakerV3SingleLegQuoterConfig
+"""Expose canonical MakerV3 strategy exports."""
+
+from nautilus_trader.flux.strategies.makerv3.strategy import MakerV3Strategy
+from nautilus_trader.flux.strategies.makerv3.strategy import MakerV3StrategyConfig
 
 
-__all__ = ["MakerV3SingleLegQuoter", "MakerV3SingleLegQuoterConfig"]
+__all__ = [
+    "MakerV3Strategy",
+    "MakerV3StrategyConfig",
+]

@@ -15,7 +15,9 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 import json
+import string
 
 import pytest
 
@@ -134,14 +136,128 @@ def test_publish_update_targets_flux_v1_params_channels(
 
     payload = manager.publish_update({"qty": "4.5", "bot_on": "false"}, ts_ms=123)
 
-    assert payload == {
-        "strategy_id": "maker_v3_01",
-        "updates": {"qty": 4.5, "bot_on": False},
-        "ts_ms": 123,
-    }
+    assert payload["strategy_id"] == "maker_v3_01"
+    assert payload["updates"] == {"qty": 4.5, "bot_on": False}
+    assert payload["ts_ms"] == 123
+    assert payload["schema_version"] == "v1"
+    assert payload["param_set"] == "makerv3"
+    assert isinstance(payload["digest"], str)
+    assert len(payload["digest"]) == 64
+    assert all(char in string.hexdigits for char in payload["digest"])
     assert [channel for channel, _ in redis_client.publish_calls] == [
         "flux:v1:params:global",
         "flux:v1:params:maker_v3_01",
     ]
     parsed_payloads = [json.loads(encoded) for _, encoded in redis_client.publish_calls]
     assert parsed_payloads == [payload, payload]
+
+
+def test_publish_update_digest_is_stable_for_same_schema_metadata(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+) -> None:
+    redis_client = _FakeRedis()
+    manager = _manager(redis_client, schema, defaults)
+
+    first = manager.publish_update({"qty": "1.0"}, ts_ms=1)
+    second = manager.publish_update({"qty": "2.0"}, ts_ms=2)
+
+    assert first["digest"] == second["digest"]
+    assert first["schema_version"] == second["schema_version"] == "v1"
+    assert first["param_set"] == second["param_set"] == "makerv3"
+
+
+def test_publish_update_digest_changes_when_schema_metadata_changes(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+) -> None:
+    base = FluxParamsManager(
+        redis_client=_FakeRedis(),
+        strategy_id="maker_v3_01",
+        schema=schema,
+        defaults=defaults,
+    ).publish_update({"qty": "1.0"}, ts_ms=1)["digest"]
+    changed_schema = FluxParamsManager(
+        redis_client=_FakeRedis(),
+        strategy_id="maker_v3_01",
+        schema={**schema, "new_band": {"type": "number"}},
+        defaults={**defaults, "new_band": 1.0},
+    ).publish_update({"qty": "1.0"}, ts_ms=1)["digest"]
+    changed_param_set = FluxParamsManager(
+        redis_client=_FakeRedis(),
+        strategy_id="maker_v3_01",
+        schema=schema,
+        defaults=defaults,
+        param_set="maker_v3_alt",
+    ).publish_update({"qty": "1.0"}, ts_ms=1)["digest"]
+    changed_defaults = FluxParamsManager(
+        redis_client=_FakeRedis(),
+        strategy_id="maker_v3_01",
+        schema=schema,
+        defaults={**defaults, "qty": 9.0},
+    ).publish_update({"qty": "1.0"}, ts_ms=1)["digest"]
+    assert changed_schema != base
+    assert changed_param_set != base
+    assert changed_defaults != base
+
+
+def test_publish_update_digest_handles_non_json_serializable_schema_metadata(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+) -> None:
+    schema_with_decimal_metadata: dict[str, dict[str, object]] = {
+        **schema,
+        "qty": {
+            **schema["qty"],
+            "step_size": Decimal("0.01"),
+        },
+    }
+    manager = FluxParamsManager(
+        redis_client=_FakeRedis(),
+        strategy_id="maker_v3_01",
+        schema=schema_with_decimal_metadata,
+        defaults=defaults,
+    )
+
+    payload = manager.publish_update({"qty": "1.0"}, ts_ms=1)
+
+    assert isinstance(payload["digest"], str)
+    assert len(payload["digest"]) == 64
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), "nan", "inf", "-inf"])
+def test_update_rejects_non_finite_numbers(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+    value: object,
+) -> None:
+    manager = FluxParamsManager(
+        redis_client=_FakeRedis(),
+        strategy_id="maker_v3_01",
+        schema=schema,
+        defaults=defaults,
+    )
+
+    with pytest.raises(ValueError, match="finite"):
+        manager.update({"qty": value})
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), "nan", "inf", "-inf"])
+def test_constructor_rejects_non_finite_default_numbers(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+    value: object,
+) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        FluxParamsManager(
+            redis_client=_FakeRedis(),
+            strategy_id="maker_v3_01",
+            schema=schema,
+            defaults={**defaults, "qty": value},
+        )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_to_redis_text_rejects_non_finite_numbers(value: float) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        FluxParamsManager._to_redis_text(value)

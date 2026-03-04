@@ -14,6 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""Run the flux bridge consumer for MakerV3 strategy topics."""
+
 from __future__ import annotations
 
 import argparse
@@ -26,13 +28,13 @@ import redis
 
 from nautilus_trader.flux.bridge.handlers import default_topic_handlers
 from nautilus_trader.flux.bridge.stream_consumer import FluxBridgeStreamConsumer
-from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import TOPIC_ALERT
-from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import TOPIC_BALANCES
-from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import TOPIC_EVENT
-from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import TOPIC_FV
-from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import TOPIC_MARKET_BBO
-from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import TOPIC_STATE
-from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import TOPIC_TRADE
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_ALERT
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_BALANCES
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_EVENT
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_FV
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_MARKET_BBO
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_STATE
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_TRADE
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
@@ -119,6 +121,7 @@ def _resolve_strategy_scope(config: dict[str, Any], args: argparse.Namespace) ->
 
 
 def main() -> None:
+    """Parse CLI arguments and run the MakerV3 flux bridge consumer."""
     args = _parse_args()
     config = _load_config(args.config)
     mode = _resolve_mode(config, args)

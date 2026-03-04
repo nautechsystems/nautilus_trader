@@ -15,7 +15,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -24,6 +26,7 @@ from typing import Protocol
 from nautilus_trader.flux.common.config import FLUX_DEFAULT_NAMESPACE
 from nautilus_trader.flux.common.config import FLUX_SCHEMA_VERSION
 from nautilus_trader.flux.common.keys import FluxRedisKeys
+from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
 
 
 class RedisHashPubSubClient(Protocol):
@@ -54,12 +57,26 @@ class FluxParamsManager:
         defaults: Mapping[str, Any],
         namespace: str = FLUX_DEFAULT_NAMESPACE,
         schema_version: str = FLUX_SCHEMA_VERSION,
+        param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
     ) -> None:
         if not schema:
             raise ValueError("`schema` must not be empty")
+        if not isinstance(param_set, str) or not param_set.strip():
+            raise ValueError("`param_set` must be a non-empty string")
+
+        safe_param_set = param_set.strip()
+
         self._redis = redis_client
         self._schema = {str(name): dict(spec) for name, spec in schema.items()}
-        self._defaults = dict(defaults)
+        self._defaults = self._coerce_defaults(defaults)
+        self._schema_version = schema_version
+        self._param_set = safe_param_set
+        self._schema_digest = self._digest_schema_metadata(
+            schema=self._schema,
+            defaults=self._defaults,
+            schema_version=self._schema_version,
+            param_set=self._param_set,
+        )
         self._keys = FluxRedisKeys(
             strategy_id=strategy_id,
             namespace=namespace,
@@ -73,6 +90,10 @@ class FluxParamsManager:
     @property
     def hash_key(self) -> str:
         return self._keys.params_hash_key()
+
+    @property
+    def defaults(self) -> dict[str, Any]:
+        return dict(self._defaults)
 
     def load(self) -> dict[str, Any]:
         fields = list(self._schema.keys())
@@ -114,11 +135,14 @@ class FluxParamsManager:
             ts_ms = self._now_ms()
 
         payload = {
+            "digest": self._schema_digest,
+            "param_set": self._param_set,
+            "schema_version": self._schema_version,
             "strategy_id": self.strategy_id,
             "updates": coerced_updates,
             "ts_ms": int(ts_ms),
         }
-        encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+        encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True, allow_nan=False)
         self._redis.publish(self._keys.global_params_pubsub_channel(), encoded)
         self._redis.publish(self._keys.params_pubsub_channel(), encoded)
         return payload
@@ -127,6 +151,16 @@ class FluxParamsManager:
         out: dict[str, Any] = {}
         for name, raw in updates.items():
             out[name] = self._coerce_value(name, raw)
+        return out
+
+    def _coerce_defaults(self, defaults: Mapping[str, Any]) -> dict[str, Any]:
+        missing = [name for name in self._schema if name not in defaults]
+        if missing:
+            raise ValueError(f"Missing default values for parameters: {sorted(missing)}")
+
+        out: dict[str, Any] = {}
+        for name in self._schema:
+            out[name] = self._coerce_value(name, defaults[name])
         return out
 
     def _coerce_value(self, name: str, value: Any) -> Any:
@@ -149,9 +183,12 @@ class FluxParamsManager:
 
         if schema_type == "number":
             try:
-                return float(self._decode(value))
+                parsed = float(self._decode(value))
             except (TypeError, ValueError):
                 raise ValueError(f"Invalid number value for parameter {name!r}: {value!r}") from None
+            if not math.isfinite(parsed):
+                raise ValueError(f"Invalid number value for parameter {name!r}: {value!r} (must be finite)")
+            return parsed
 
         return self._decode(value)
 
@@ -183,9 +220,65 @@ class FluxParamsManager:
     def _to_redis_text(value: Any) -> str:
         if isinstance(value, bool):
             return "1" if value else "0"
-        if isinstance(value, float) and value.is_integer():
-            return str(int(value))
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                raise ValueError(f"Invalid float value for Redis serialization: {value!r} (must be finite)")
+            if value.is_integer():
+                return str(int(value))
         return str(value)
+
+    @staticmethod
+    def _digest_schema_metadata(
+        *,
+        schema: Mapping[str, Mapping[str, Any]],
+        defaults: Mapping[str, Any],
+        schema_version: str,
+        param_set: str,
+    ) -> str:
+        canonical_payload = FluxParamsManager._normalize_for_digest(
+            {
+                "schema_version": schema_version,
+                "param_set": param_set,
+                "schema": schema,
+                "defaults": defaults,
+            },
+        )
+        canonical = json.dumps(
+            canonical_payload,
+            separators=(",", ":"),
+            sort_keys=True,
+            allow_nan=False,
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _normalize_for_digest(value: Any) -> Any:
+        if value is None or isinstance(value, bool | int | str):
+            return value
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        if isinstance(value, float):
+            if math.isnan(value):
+                return "NaN"
+            if math.isinf(value):
+                return "Infinity" if value > 0 else "-Infinity"
+            return value
+        if isinstance(value, Mapping):
+            return {
+                str(key): FluxParamsManager._normalize_for_digest(item)
+                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            }
+        if isinstance(value, tuple | list):
+            return [FluxParamsManager._normalize_for_digest(item) for item in value]
+        if isinstance(value, set | frozenset):
+            return [
+                FluxParamsManager._normalize_for_digest(item)
+                for item in sorted(value, key=lambda item: f"{type(item).__name__}:{item!s}")
+            ]
+        return {
+            "__type__": f"{type(value).__module__}.{type(value).__qualname__}",
+            "value": str(value),
+        }
 
     def _unknown_hash_fields(self) -> list[str]:
         known = set(self._schema.keys())
@@ -199,4 +292,3 @@ class FluxParamsManager:
     @staticmethod
     def _now_ms() -> int:
         return int(time.time() * 1_000)
-

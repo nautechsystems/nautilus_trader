@@ -453,6 +453,26 @@ The tracing subscriber can only be initialized once per process. When using `use
 `init_tracing()` when already initialized will raise an error.
 :::
 
+## Flux MakerV3 quote-cycle events
+
+`flux.strategy.event` now includes structured `quote_cycle` events for `makerv3` with a stable envelope:
+
+- `run_id`: Strategy run/session identity.
+- `quote_cycle_id`: Monotonic quote-loop ID inside a run.
+- `quote_cycle_event`: One of `skipped`, `blocked`, or `completed`.
+- `reason_code`: Machine-readable reason for the cycle outcome.
+- `ts_event` / `ts_ms`: Event timestamp in nanoseconds/milliseconds.
+
+Current `reason_code` values:
+
+- Skipped: `skip_bot_off`, `skip_requote_throttled`, `skip_quote_fail_circuit_open`.
+- Blocked: `blocked_maker_book_unavailable`, `blocked_maker_md_stale`, `blocked_reference_md_stale`.
+- Completed: `completed_no_targets`, `completed_no_actions`, `completed_rebalanced`.
+
+For blocked cycles, payloads include transition metadata (`from_state`, `to_state`, `blocked_transition`) and managed-order counts for operator triage.
+
+`flux.strategy.alert` emissions are reserved for actionable conditions and de-noised via transition/cooldown gating (for example, repeated blocked market-data loops do not emit repeated alerts until a meaningful transition occurs).
+
 ## Platform-specific considerations
 
 ### Windows shutdown behavior

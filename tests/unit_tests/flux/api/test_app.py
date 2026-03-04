@@ -15,12 +15,19 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
+import nautilus_trader.flux.api.app as app_module
 from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.api import ContractCatalogEntry
+from nautilus_trader.flux.api import DEFAULT_PARAMS_DEFAULTS
+from nautilus_trader.flux.api import DEFAULT_PARAMS_SCHEMA
 from nautilus_trader.flux.api.payloads import StrategyMetadata
 from nautilus_trader.flux.common.keys import FluxRedisKeys
+from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
+from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 
 
 def _seed_required_schema_keys(redis_client, flux_config) -> None:
@@ -36,6 +43,79 @@ def _seed_required_schema_keys(redis_client, flux_config) -> None:
     )
     redis_client.set_json(keys.balances_snapshot(), [])
     redis_client.add_stream_rows(keys.fv_stream(), [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}])
+
+
+def test_default_params_aliases_makerv3_runtime_registry() -> None:
+    assert DEFAULT_PARAMS_SCHEMA == MAKERV3_RUNTIME_PARAM_SCHEMA
+    assert DEFAULT_PARAMS_DEFAULTS == MAKERV3_RUNTIME_PARAM_DEFAULTS
+    assert DEFAULT_PARAMS_SCHEMA is not MAKERV3_RUNTIME_PARAM_SCHEMA
+    assert DEFAULT_PARAMS_DEFAULTS is not MAKERV3_RUNTIME_PARAM_DEFAULTS
+    assert all(
+        DEFAULT_PARAMS_SCHEMA[name] is not MAKERV3_RUNTIME_PARAM_SCHEMA[name]
+        for name in DEFAULT_PARAMS_SCHEMA
+    )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), "nan", "inf", "-inf"])
+def test_create_app_rejects_non_finite_param_defaults(
+    value: object,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        create_flux_api_app(
+            flux_config,
+            redis_client,
+            contract_catalog=contract_catalog,
+            strategy_metadata=strategy_metadata,
+            params_schema=params_schema,
+            params_defaults={**params_defaults, "qty": value},
+        )
+
+
+def test_response_encoding_sanitizes_non_finite_values(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    original_build_envelope = app_module.build_envelope
+
+    def _inject_non_finite(**kwargs):
+        envelope = original_build_envelope(**kwargs)
+        envelope["data"] = {
+            "bad": float("nan"),
+            "nested": [float("inf"), {"x": float("-inf")}],
+        }
+        return envelope
+
+    monkeypatch.setattr(app_module, "build_envelope", _inject_non_finite)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/")
+        raw = response.get_data(as_text=True)
+        body = json.loads(raw)
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/json"
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    assert body["data"] == {"bad": None, "nested": [None, {"x": None}]}
 
 
 def test_readyz_returns_503_with_missing_flux_schema_keys(

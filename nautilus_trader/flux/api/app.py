@@ -18,6 +18,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
+import json
+import math
 import uuid
 from typing import Any
 from typing import Callable
@@ -27,7 +29,6 @@ import redis
 from flask import Flask
 from flask import Response
 from flask import g
-from flask import jsonify
 from flask import request
 
 from nautilus_trader.flux.api.payloads import ContractCatalogEntry
@@ -51,98 +52,18 @@ from nautilus_trader.flux.api.payloads import select_latest_strategy_row
 from nautilus_trader.flux.common.config import FluxConfig
 from nautilus_trader.flux.common.config import validate_identifier_part
 from nautilus_trader.flux.common.keys import FluxRedisKeys
+from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
+from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
+from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 from nautilus_trader.flux.params.manager import FluxParamsManager
 
 
-DEFAULT_PARAMS_DEFAULTS: dict[str, Any] = {
-    "qty": 1_000.0,
-    "des_qty_global": 0.0,
-    "max_qty_global": 40_000.0,
-    "max_skew_bps_global": 20.0,
-    "des_qty_local": 0.0,
-    "max_qty_local": 0.0,
-    "max_skew_bps_local": 0.0,
-    "linear_offset_bps": 0.0,
-    "n_orders1": 5,
-    "distance1": 2.0,
-    "bid_edge1": 10.0,
-    "ask_edge1": 10.0,
-    "place_edge1": 2.0,
-    "n_orders2": 0,
-    "distance2": 5.0,
-    "bid_edge2": 25.0,
-    "ask_edge2": 25.0,
-    "place_edge2": 2.0,
-    "n_orders3": 0,
-    "distance3": 5.0,
-    "bid_edge3": 50.0,
-    "ask_edge3": 50.0,
-    "place_edge3": 2.0,
-    "quote_fail_critical_after_count": 3,
-    "quote_fail_critical_after_s": 60.0,
-    "max_age_ms": 10_000,
-    "bot_on": False,
-}
-
+DEFAULT_PARAMS_DEFAULTS: dict[str, Any] = dict(MAKERV3_RUNTIME_PARAM_DEFAULTS)
 DEFAULT_PARAMS_SCHEMA: dict[str, dict[str, Any]] = {
-    "qty": {"type": "number", "description": "Target base quantity per quote/hedge cycle."},
-    "des_qty_global": {"type": "number", "description": "Global desired inventory target in base units."},
-    "max_qty_global": {"type": "number", "description": "Global hard inventory cap in base units."},
-    "max_skew_bps_global": {"type": "number", "description": "Global maker/hedge skew cap in bps."},
-    "des_qty_local": {"type": "number", "description": "Local desired inventory target in base units."},
-    "max_qty_local": {"type": "number", "description": "Local hard inventory cap in base units."},
-    "max_skew_bps_local": {"type": "number", "description": "Local maker skew cap in bps."},
-    "linear_offset_bps": {"type": "number", "description": "Linear inventory offset in bps."},
-    "n_orders1": {"type": "integer", "description": "Band 1 order depth per side."},
-    "distance1": {"type": "number", "description": "Band 1 spacing increment in bps."},
-    "bid_edge1": {"type": "number", "description": "Band 1 bid edge in bps."},
-    "ask_edge1": {"type": "number", "description": "Band 1 ask edge in bps."},
-    "place_edge1": {"type": "number", "description": "Band 1 placement edge in bps."},
-    "n_orders2": {"type": "integer", "description": "Band 2 order depth per side."},
-    "distance2": {"type": "number", "description": "Band 2 spacing increment in bps."},
-    "bid_edge2": {"type": "number", "description": "Band 2 bid edge in bps."},
-    "ask_edge2": {"type": "number", "description": "Band 2 ask edge in bps."},
-    "place_edge2": {"type": "number", "description": "Band 2 placement edge in bps."},
-    "n_orders3": {"type": "integer", "description": "Band 3 order depth per side."},
-    "distance3": {"type": "number", "description": "Band 3 spacing increment in bps."},
-    "bid_edge3": {"type": "number", "description": "Band 3 bid edge in bps."},
-    "ask_edge3": {"type": "number", "description": "Band 3 ask edge in bps."},
-    "place_edge3": {"type": "number", "description": "Band 3 placement edge in bps."},
-    "quote_fail_critical_after_count": {"type": "integer", "description": "Escalation count for quote failures."},
-    "quote_fail_critical_after_s": {"type": "number", "description": "Escalation window for quote failures."},
-    "max_age_ms": {"type": "integer", "description": "Replace managed orders older than this age."},
-    "bot_on": {"type": "boolean", "description": "Enable quote publishing and management."},
+    name: dict(spec)
+    for name, spec in MAKERV3_RUNTIME_PARAM_SCHEMA.items()
 }
-
-DEFAULT_PARAMS_ORDER: tuple[str, ...] = (
-    "qty",
-    "des_qty_global",
-    "max_qty_global",
-    "max_skew_bps_global",
-    "des_qty_local",
-    "max_qty_local",
-    "max_skew_bps_local",
-    "linear_offset_bps",
-    "n_orders1",
-    "distance1",
-    "bid_edge1",
-    "ask_edge1",
-    "place_edge1",
-    "n_orders2",
-    "distance2",
-    "bid_edge2",
-    "ask_edge2",
-    "place_edge2",
-    "n_orders3",
-    "distance3",
-    "bid_edge3",
-    "ask_edge3",
-    "place_edge3",
-    "quote_fail_critical_after_count",
-    "quote_fail_critical_after_s",
-    "max_age_ms",
-    "bot_on",
-)
+DEFAULT_PARAMS_ORDER: tuple[str, ...] = MAKERV3_RUNTIME_PARAM_REGISTRY.names
 
 
 class RedisPipelineProtocol(Protocol):
@@ -228,6 +149,7 @@ class FluxApiStore:
         contract_catalog: Sequence[ContractCatalogEntry],
         params_schema: Mapping[str, Mapping[str, Any]],
         params_defaults: Mapping[str, Any],
+        param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
         required_readiness_keys: Sequence[str] | None = None,
     ) -> None:
         if not contract_catalog:
@@ -236,11 +158,22 @@ class FluxApiStore:
             raise ValueError("`params_schema` must not be empty")
         if not params_defaults:
             raise ValueError("`params_defaults` must not be empty")
+        if not isinstance(param_set, str) or not param_set.strip():
+            raise ValueError("`param_set` must be a non-empty string")
 
         self._config = flux_config
         self._redis = redis_client
         self._params_schema = _ordered_params_schema(params_schema)
-        self._params_defaults = dict(params_defaults)
+        self._param_set = param_set.strip()
+        self._params_defaults = FluxParamsManager(
+            redis_client=self._redis,
+            strategy_id=self._config.identity.strategy_id,
+            namespace=self._config.identity.namespace,
+            schema_version=self._config.identity.schema_version,
+            schema=self._params_schema,
+            defaults=params_defaults,
+            param_set=self._param_set,
+        ).defaults
         self._contract_specs = self._validate_contract_catalog(contract_catalog)
         self._contracts = tuple(spec[0] for spec in self._contract_specs)
 
@@ -285,6 +218,7 @@ class FluxApiStore:
             schema_version=self._config.identity.schema_version,
             schema=self._params_schema,
             defaults=self._params_defaults,
+            param_set=self._param_set,
         )
 
     def _validate_contract_catalog(
@@ -472,6 +406,23 @@ def _params_request_payload() -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key != "source"}
 
 
+def _strict_json_value(value: Any) -> Any:
+    if value is None or isinstance(value, bool | int | str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Mapping):
+        return {
+            str(key): _strict_json_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, tuple | list | set | frozenset):
+        return [_strict_json_value(item) for item in value]
+    return str(value)
+
+
 def create_flux_api_app(
     flux_config: FluxConfig,
     redis_client: RedisClientProtocol,
@@ -564,7 +515,9 @@ def create_flux_api_app(
             data=data,
             error=error,
         )
-        return jsonify(body), status
+        strict_body = _strict_json_value(body)
+        encoded = json.dumps(strict_body, separators=(",", ":"), sort_keys=False, allow_nan=False)
+        return Response(encoded, status=status, mimetype="application/json")
 
     def _error(
         *,

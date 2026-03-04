@@ -14,6 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""Run a live MakerV3 trading node using canonical strategy exports."""
+
 from __future__ import annotations
 
 import argparse
@@ -40,8 +42,8 @@ from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.flux.common.config import FLUX_DEFAULT_NAMESPACE
 from nautilus_trader.flux.common.config import FLUX_SCHEMA_VERSION
-from nautilus_trader.flux.strategies import MakerV3SingleLegQuoter
-from nautilus_trader.flux.strategies import MakerV3SingleLegQuoterConfig
+from nautilus_trader.flux.strategies import MakerV3Strategy
+from nautilus_trader.flux.strategies import MakerV3StrategyConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import OrderBookDeltas
@@ -118,6 +120,7 @@ def _enum_member(enum_type: Any, raw_value: Any, *, field_name: str) -> Any:
 
 
 def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: bool) -> TradingNode:
+    """Build and return a configured trading node for MakerV3."""
     flux = _table(config, "flux")
     identity = _table(config, "identity")
     redis_cfg = _table(config, "redis")
@@ -227,8 +230,8 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1000"))
     qty = Decimal(str(qty_raw)) if qty_raw is not None else None
 
-    strategy = MakerV3SingleLegQuoter(
-        config=MakerV3SingleLegQuoterConfig(
+    strategy = MakerV3Strategy(
+        config=MakerV3StrategyConfig(
             strategy_id=str(strategy_cfg.get("strategy_id", "MAKERV3-SINGLELEG-001")),
             maker_instrument_id=maker_instrument_id,
             reference_instrument_id=reference_instrument_id,
@@ -275,6 +278,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
 
 
 def main() -> None:
+    """Parse CLI arguments and run the MakerV3 trading node."""
     args = _parse_args()
     config = _load_config(args.config)
     mode = _resolve_mode(config, args)
