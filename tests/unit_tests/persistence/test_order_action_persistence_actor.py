@@ -73,6 +73,7 @@ def _make_actor(
     *,
     event_types: tuple[str, ...] | None = None,
     run_writer_thread: bool = False,
+    max_batch_size: int = 1000,
     flush_timeout_ms: int = 5_000,
     stop_timeout_ms: int = 5_000,
     strict_stop: bool = False,
@@ -97,7 +98,7 @@ def _make_actor(
         "db_path": db_path,
         "topic": "events.order.*",
         "flush_interval_ms": 10,
-        "max_batch_size": 1000,
+        "max_batch_size": max_batch_size,
         "flush_time_budget_ms": 10,
         "flush_timeout_ms": flush_timeout_ms,
         "max_queue_size": 10_000,
@@ -233,11 +234,12 @@ def test_actor_non_strict_stop_timeout_sets_error_and_releases_refs_after_writer
     assert actor._writer_error is not None
     assert "did not stop cleanly" in str(actor._writer_error)
     assert actor._writer_thread is None
-    assert actor._conn is None
     assert not actor._writer_cleanup_done.is_set()
+    assert actor._conn is not None
 
     release_write.set()
     assert actor._writer_cleanup_done.wait(timeout=1.0)
+    assert actor._conn is None
 
 
 def test_actor_strict_stop_timeout_cleans_refs_and_signals_cleanup_in_progress(tmp_path) -> None:
@@ -272,11 +274,12 @@ def test_actor_strict_stop_timeout_cleans_refs_and_signals_cleanup_in_progress(t
 
     assert actor._writer_error is not None
     assert actor._writer_thread is None
-    assert actor._conn is None
     assert not actor._writer_cleanup_done.is_set()
+    assert actor._conn is not None
 
     release_write.set()
     assert actor._writer_cleanup_done.wait(timeout=1.0)
+    assert actor._conn is None
 
 
 def test_actor_strict_stop_timeout_allows_replacement_actor_restart_after_cleanup(tmp_path) -> None:
@@ -325,6 +328,62 @@ def test_actor_strict_stop_timeout_allows_replacement_actor_restart_after_cleanu
     replacement_actor.stop()
 
     assert _row_count(db_path) == 2
+
+
+def test_actor_strict_stop_timeout_with_backlog_larger_than_batch_drains_and_completes_cleanup(
+    tmp_path,
+) -> None:
+    from nautilus_trader.persistence.orders.sqlite import insert_many as _real_insert_many
+
+    write_started = threading.Event()
+    release_write = threading.Event()
+    insert_calls = {"count": 0}
+
+    def _insert_block_first(conn, rows):
+        insert_calls["count"] += 1
+        if insert_calls["count"] == 1:
+            write_started.set()
+            if not release_write.wait(timeout=5.0):
+                raise RuntimeError("test write gate timeout")
+        return _real_insert_many(conn, rows)
+
+    actor, msgbus, db_path, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+        max_batch_size=2,
+        stop_timeout_ms=10,
+        strict_stop=True,
+        insert_many_fn=_insert_block_first,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+
+    actor.start()
+    msgbus.publish(
+        topic=f"events.order.{order.strategy_id.value}",
+        msg=TestEventStubs.order_accepted(order=order, ts_event=300),
+    )
+    assert write_started.wait(timeout=1.0)
+
+    # Build backlog while first write remains blocked.
+    for i in range(1, 6):
+        msgbus.publish(
+            topic=f"events.order.{order.strategy_id.value}",
+            msg=TestEventStubs.order_accepted(order=order, ts_event=300 + i),
+        )
+
+    with pytest.raises(RuntimeError, match="did not stop cleanly"):
+        actor.stop()
+
+    assert not actor._writer_cleanup_done.is_set()
+
+    release_write.set()
+    assert actor._writer_cleanup_done.wait(timeout=2.0)
+    assert _row_count(db_path) == 6
+
+    # Gating should unblock once cleanup completes.
+    actor.start()
+    actor.stop()
 
 
 def test_actor_db_down_log_and_drop_drops_rows(tmp_path) -> None:

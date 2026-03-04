@@ -217,6 +217,7 @@ class OrderActionPersistenceActor(Actor):
         self._writer_cleanup_thread: threading.Thread | None = None
         self._writer_cleanup_done = threading.Event()
         self._writer_cleanup_done.set()
+        self._drain_on_stop_timeout_cleanup = False
         self._writer_error: RuntimeError | None = None
 
         self.enqueued = 0
@@ -250,6 +251,7 @@ class OrderActionPersistenceActor(Actor):
         self._stop_event.clear()
         self._flush_event.clear()
         self._writer_started.clear()
+        self._drain_on_stop_timeout_cleanup = False
         self._writer_error = None
 
         try:
@@ -309,6 +311,7 @@ class OrderActionPersistenceActor(Actor):
             if self._writer_thread.is_alive():
                 msg = "Order action writer thread did not stop cleanly"
                 self._writer_error = RuntimeError(msg)
+                self._drain_on_stop_timeout_cleanup = True
                 self._schedule_writer_ref_cleanup(self._writer_thread)
                 if self.config.strict_stop:
                     raise self._writer_error
@@ -429,7 +432,9 @@ class OrderActionPersistenceActor(Actor):
             while True:
                 processed = self._flush_once()
 
-                if self._writer_error is not None:
+                if self._writer_error is not None and not (
+                    self._drain_on_stop_timeout_cleanup and self._stop_event.is_set()
+                ):
                     break
 
                 if self._stop_event.is_set() and self._queue.empty() and not self._pending_rows:
@@ -552,17 +557,17 @@ class OrderActionPersistenceActor(Actor):
         if self._writer_cleanup_thread is not None and self._writer_cleanup_thread.is_alive():
             return
 
-        # Detach actor-owned refs immediately on timeout so lifecycle state is
-        # consistent even while the writer finishes in the background.
+        # Detach thread ref immediately; keep connection reference intact so the
+        # writer can continue draining queued rows before it exits.
         if self._writer_thread is writer_thread:
             self._writer_thread = None
-        self._conn = None
         self._writer_cleanup_done.clear()
 
         def _cleanup() -> None:
             try:
                 writer_thread.join()
             finally:
+                self._drain_on_stop_timeout_cleanup = False
                 self._writer_cleanup_done.set()
                 self._writer_cleanup_thread = None
 
