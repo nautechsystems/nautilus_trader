@@ -88,11 +88,17 @@ const getTimestampParts = (payload: any): TradeTimestampParts => {
 export const hasReliableTradeTimestamp = (payload: any): boolean =>
   getTimestampParts(payload).hasReliableTimestamp;
 
-const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
+const PAGE_SIZE_OPTIONS = [50, 100, 200];
 const DEFAULT_PAGE_SIZE = 100;
+const LEGACY_PAGE_SIZE = 500;
+const MAX_PAGE_SIZE = 200;
 
 const normalizePageSize = (value: unknown): number => {
   const parsed = parseInt(String(value ?? DEFAULT_PAGE_SIZE), 10);
+  if (parsed === LEGACY_PAGE_SIZE) {
+    // Migrate legacy selection to backend-supported cap.
+    return MAX_PAGE_SIZE;
+  }
   return PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : DEFAULT_PAGE_SIZE;
 };
 

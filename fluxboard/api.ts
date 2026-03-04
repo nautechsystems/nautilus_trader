@@ -440,7 +440,9 @@ function normalizeParamsMap(raw: unknown): Record<string, string> {
 function deriveCoinFromSymbol(rawSymbol: unknown): string | undefined {
   const symbol = String(rawSymbol ?? '').trim().toUpperCase();
   if (!symbol) return undefined;
-  const baseSymbol = symbol.split('.')[0]?.split('-')[0] || symbol;
+  const baseSymbolFromVenue = symbol.split('.')[0] || symbol;
+  const baseSymbolFromSlash = baseSymbolFromVenue.split('/')[0] || baseSymbolFromVenue;
+  const baseSymbol = baseSymbolFromSlash.split('-')[0] || baseSymbolFromSlash;
   for (const quote of ['USDT', 'USDC', 'USD', 'PERP']) {
     if (baseSymbol.endsWith(quote) && baseSymbol.length > quote.length) {
       return baseSymbol.slice(0, -quote.length);
@@ -627,6 +629,91 @@ function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed
         : (tsMs ? new Date(tsMs).toISOString() : ''),
     mv: notional,
   } as TradeEvent;
+}
+
+function extractBulkUpdateFailures(payload: unknown): Array<{ strategy_id: string; message: string }> {
+  if (!payload || typeof payload !== 'object') return [];
+  const data = payload as Record<string, unknown>;
+  const errorsRaw = Array.isArray(data.errors) ? data.errors : [];
+  const fromErrors = errorsRaw
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const row = entry as Record<string, unknown>;
+      const strategyId = String(row.strategy_id ?? '').trim();
+      const message = String(row.error ?? row.message ?? row.code ?? 'update_failed').trim();
+      return { strategy_id: strategyId, message };
+    })
+    .filter((entry): entry is { strategy_id: string; message: string } => Boolean(entry && entry.message));
+  if (fromErrors.length > 0) return fromErrors;
+
+  const failedRaw = Array.isArray(data.failed) ? data.failed : [];
+  return failedRaw
+    .map((entry) => String(entry ?? '').trim())
+    .filter(Boolean)
+    .map((strategy_id) => ({ strategy_id, message: 'update_failed' }));
+}
+
+function attachAlertsPaginationMetadata(
+  rows: Alert[],
+  payload: Record<string, unknown> | null | undefined,
+): Alert[] {
+  const out = [...rows] as Alert[] & {
+    total?: number;
+    limit?: number;
+    offset?: number;
+    has_more?: boolean;
+    next_offset?: number | null;
+    next_cursor?: string | null;
+  };
+  if (!payload || typeof payload !== 'object') {
+    return out;
+  }
+  const total = toFiniteOptionalNumber(payload.total);
+  const limit = toFiniteOptionalNumber(payload.limit);
+  const offset = toFiniteOptionalNumber(payload.offset);
+  const nextOffset = toFiniteOptionalNumber(payload.next_offset);
+  const nextCursor =
+    typeof payload.next_cursor === 'string'
+      ? payload.next_cursor
+      : payload.next_cursor == null
+        ? null
+        : undefined;
+  if (total !== undefined) out.total = total;
+  if (limit !== undefined) out.limit = limit;
+  if (offset !== undefined) out.offset = offset;
+  if (typeof payload.has_more === 'boolean') out.has_more = payload.has_more;
+  if (nextOffset !== undefined) out.next_offset = nextOffset;
+  if (nextCursor !== undefined) out.next_cursor = nextCursor;
+  return out;
+}
+
+function normalizeAlertRow(candidate: unknown): Alert | null {
+  if (!candidate || typeof candidate !== 'object') return null;
+  const row = candidate as Record<string, unknown>;
+  const id = String(row.id ?? row.row_id ?? '').trim();
+  if (!id) return null;
+
+  const severityRaw = String(row.severity ?? row.level ?? 'INFO').trim().toUpperCase();
+  const level = severityRaw === 'CRITICAL' || severityRaw === 'WARNING' ? severityRaw : 'INFO';
+  const timestamp = Math.floor(
+    toFiniteNumber(
+      row.timestamp ?? row.ts ?? Date.parse(String(row.time ?? '')) / 1000,
+      0,
+    ),
+  );
+  const safeTimestamp = timestamp > 0 ? timestamp : Math.floor(Date.now() / 1000);
+  const message = String(row.message ?? row.title ?? id).trim();
+  const details = row.details && typeof row.details === 'object' ? (row.details as Record<string, unknown>) : {};
+
+  return {
+    ...(row as Alert),
+    id,
+    level: level as Alert['level'],
+    severity: row.severity != null ? (level as Alert['severity']) : undefined,
+    timestamp: safeTimestamp,
+    message: message || id,
+    details,
+  };
 }
 
 async function hmacSha256Hex(secret: string, message: string): Promise<string> {
@@ -1224,8 +1311,11 @@ export const api = {
     next_cursor?: string | null;
     sort?: string;
   }> => {
+    const MAX_TRADES_PAGE_SIZE = 200;
     const normalizedPage = Number.isFinite(page) ? Math.max(page, 1) : 1;
-    const normalizedPageSize = Number.isFinite(pageSize) ? Math.max(pageSize, 1) : 1;
+    const normalizedPageSize = Number.isFinite(pageSize)
+      ? Math.min(Math.max(pageSize, 1), MAX_TRADES_PAGE_SIZE)
+      : 1;
     const limit = normalizedPageSize;
     const offset = (normalizedPage - 1) * normalizedPageSize;
     const cursorParam = typeof params.cursor === 'string' && params.cursor ? params.cursor : null;
@@ -1460,7 +1550,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
     });
-    unwrapFluxEnvelope(response);
+    const result = unwrapFluxEnvelope(response);
+    const failures = extractBulkUpdateFailures(result);
+    if (failures.length > 0) {
+      const detail = failures
+        .map((entry) => (entry.strategy_id ? `${entry.strategy_id}: ${entry.message}` : entry.message))
+        .join('; ');
+      throw new Error(detail || 'Parameter update failed');
+    }
     return { ok: true } as const;
   },
 
@@ -1525,11 +1622,30 @@ export const api = {
   getAlerts: async (): Promise<Alert[]> => {
     const qs = new URLSearchParams();
     appendProfileQuery(qs);
-    const response = await fetchJSON<FluxEnvelope<{ rows: Alert[]; total: number }>>(
+    const response = await fetchJSON<FluxEnvelope<{
+      rows?: Alert[];
+      total?: number;
+      limit?: number;
+      offset?: number;
+      has_more?: boolean;
+      next_offset?: number | null;
+      next_cursor?: string | null;
+    }>>(
       `/api/v1/alerts${qs.toString() ? `?${qs.toString()}` : ''}`
     );
     const payload = unwrapFluxEnvelope(response);
-    return payload?.rows || [];
+    if (Array.isArray(payload)) {
+      return payload
+        .map((row) => normalizeAlertRow(row))
+        .filter((row): row is Alert => Boolean(row));
+    }
+    const data = payload && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : null;
+    const rows = (Array.isArray(data?.rows) ? data?.rows : [])
+      .map((row) => normalizeAlertRow(row))
+      .filter((row): row is Alert => Boolean(row));
+    return attachAlertsPaginationMetadata(rows, data);
   },
 
   // Clear all alerts with success toast (FluxAPI v1)

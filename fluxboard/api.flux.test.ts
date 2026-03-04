@@ -112,6 +112,43 @@ describe('api.getTrades', () => {
     });
     expect(result.rows[0]?.mv).toBeCloseTo(9.685, 10);
   });
+
+  it('caps limit to 200 and re-bases offset using capped page size to avoid pagination gaps', async () => {
+    await api.getTrades(3, 500, { sort: 'ts_desc' });
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    const search = (path as string).split('?')[1] ?? '';
+    const params = new URLSearchParams(search);
+
+    expect(params.get('limit')).toBe('200');
+    expect(params.get('offset')).toBe('400');
+  });
+});
+
+describe('api.patchStrategyParams', () => {
+  beforeEach(() => {
+    fetchJSONMock.mockReset();
+    setPathname('/tokenmm/params');
+  });
+
+  it('treats HTTP 200 responses with data.errors as save failure', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        success: [],
+        failed: ['makerv3'],
+        errors: [
+          {
+            strategy_id: 'makerv3',
+            code: 'invalid_params_update',
+            message: 'qty must be >= 0',
+          },
+        ],
+      },
+    });
+
+    await expect(api.patchStrategyParams('makerv3', { qty: '-1' })).rejects.toThrow(/qty must be >= 0/i);
+  });
 });
 
 describe('profile-scoped read APIs', () => {
@@ -290,6 +327,32 @@ describe('profile-scoped read APIs', () => {
     expect(result.rows[0]?.mv).toBe(6);
   });
 
+  it('derives base coin from slash symbols in trade payloads', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            trade_id: 'trade-slash',
+            ts_ms: 1772623943812,
+            strategy_id: 'makerv3',
+            symbol: 'ABC/USDT',
+            side: '1',
+            price: '2',
+            qty: '3',
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      },
+    });
+
+    const result = await api.getTrades(1, 50, { sort: 'ts_desc' });
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]?.coin).toBe('ABC');
+  });
+
   it('normalizes tokenmm flat balances rows and prefers base_currency over UNKNOWN asset', async () => {
     setPathname('/tokenmm/balances');
     fetchJSONMock.mockResolvedValueOnce({
@@ -311,5 +374,63 @@ describe('profile-scoped read APIs', () => {
     const payload = await api.getBalances();
     expect(payload.rows).toHaveLength(1);
     expect(payload.rows[0]?.children[0]?.coin).toBe('PLUME');
+  });
+
+  it('preserves alerts pagination metadata on getAlerts while keeping array return shape', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            id: 'alert-1',
+            level: 'WARNING',
+            message: 'needs attention',
+            details: {},
+            timestamp: 1700000000,
+          },
+        ],
+        total: 10,
+        limit: 1,
+        offset: 0,
+        has_more: true,
+        next_offset: 1,
+        next_cursor: 'alerts-cursor-1',
+      },
+    });
+
+    const alerts = await api.getAlerts();
+    expect(Array.isArray(alerts)).toBe(true);
+    expect(alerts).toHaveLength(1);
+    expect((alerts as any).total).toBe(10);
+    expect((alerts as any).limit).toBe(1);
+    expect((alerts as any).offset).toBe(0);
+    expect((alerts as any).has_more).toBe(true);
+    expect((alerts as any).next_offset).toBe(1);
+    expect((alerts as any).next_cursor).toBe('alerts-cursor-1');
+  });
+
+  it('normalizes alerts rows with row_id fallback and default fields', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            row_id: 'alert-row-2',
+            severity: 'warning',
+            title: 'No explicit message',
+            details: null,
+          },
+        ],
+      },
+    });
+
+    const alerts = await api.getAlerts();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.id).toBe('alert-row-2');
+    expect(alerts[0]?.level).toBe('WARNING');
+    expect(alerts[0]?.message).toBe('No explicit message');
+    expect(alerts[0]?.details).toEqual({});
+    expect(typeof alerts[0]?.timestamp).toBe('number');
+    expect((alerts[0]?.timestamp ?? 0) > 0).toBe(true);
   });
 });

@@ -23,6 +23,17 @@ import { Select } from './components/ui/select';
 import { colors, STALE_THRESHOLDS, spacing, typography } from './lib/tokens';
 import { useMobileLayout } from './hooks/useMobileLayout';
 
+function normalizeAlertWithIdentity(candidate: unknown): Alert | null {
+  if (!candidate || typeof candidate !== 'object') return null;
+  const row = candidate as Record<string, unknown>;
+  const id = String(row.id ?? row.row_id ?? '').trim();
+  if (!id) return null;
+  return {
+    ...(row as Alert),
+    id,
+  };
+}
+
 export default function Alerts({
   dense = false,
   onRemove,
@@ -88,6 +99,14 @@ export default function Alerts({
         if (!payload || !Array.isArray((payload as any).alerts)) return;
         const arr = (payload as any).alerts as Array<Alert | string>;
 
+        if (arr.length === 0) {
+          if (lastWebSocketDataRef.current === '__empty__') return;
+          lastWebSocketDataRef.current = '__empty__';
+          setRows([]);
+          setLastUpdate(Date.now());
+          return;
+        }
+
         // Ignore legacy id-only snapshots (string[] of IDs) to avoid clearing UI
         const allStrings = arr.length > 0 && arr.every((x) => typeof x === 'string');
         if (allStrings) {
@@ -102,8 +121,9 @@ export default function Alerts({
         try {
           // Parse alerts (they may come as JSON strings from Redis)
           const parsedAlerts: Alert[] = arr
-            .map((item) => (typeof item === 'string' ? (JSON.parse(item) as Alert) : item))
-            .filter((a): a is Alert => !!a && typeof a === 'object' && 'id' in a);
+            .map((item) => (typeof item === 'string' ? JSON.parse(item) : item))
+            .map((item) => normalizeAlertWithIdentity(item))
+            .filter((alert): alert is Alert => Boolean(alert));
 
           if (!Array.isArray(parsedAlerts) || parsedAlerts.length === 0) return;
 

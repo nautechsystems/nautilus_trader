@@ -332,7 +332,9 @@ function coerceFiniteNumber(value: unknown): number | undefined {
 function deriveCoinFromSymbol(symbol: unknown): string | undefined {
   const text = String(symbol ?? '').trim().toUpperCase();
   if (!text) return undefined;
-  const base = text.split('.')[0]?.split('-')[0] || text;
+  const baseFromVenue = text.split('.')[0] || text;
+  const baseFromSlash = baseFromVenue.split('/')[0] || baseFromVenue;
+  const base = baseFromSlash.split('-')[0] || baseFromSlash;
   for (const quote of ['USDT', 'USDC', 'USD', 'PERP']) {
     if (base.endsWith(quote) && base.length > quote.length) {
       return base.slice(0, -quote.length);
@@ -1806,6 +1808,10 @@ export default function SignalTable({
         }
         const apply: Partial<SignalStrategy> = { id } as any;
         const passThroughKeys = new Set([
+          'params',
+          'balance_readiness',
+          'balances_ok',
+          'last_trade',
           'strategy_family',
           'decision_edge_bps',
           'edge2_bps',
