@@ -474,10 +474,11 @@ impl OrderManager {
                         self.modify_order_quantity(&contingent_order, filled_qty);
                     }
                 }
-                Some(ContingencyType::Oco) => {
-                    if order.is_closed() && (order.exec_spawn_id().is_none() || !is_spawn_active) {
-                        self.cancel_order(&contingent_order);
-                    }
+                Some(ContingencyType::Oco)
+                    if order.is_closed()
+                        && (order.exec_spawn_id().is_none() || !is_spawn_active) =>
+                {
+                    self.cancel_order(&contingent_order);
                 }
                 Some(ContingencyType::Ouo) => {
                     if (leaves_qty.raw == 0 && order.exec_spawn_id().is_some())

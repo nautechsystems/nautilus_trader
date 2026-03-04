@@ -944,45 +944,41 @@ pub fn decode_exchange_info(buf: &[u8]) -> Result<BinanceExchangeInfoSbe, SbeDec
 
             // Filter body layout: exponent(1) + min(8) + max(8) + size(8) = 25 bytes
             match template_id {
-                PRICE_FILTER_TEMPLATE_ID => {
-                    if filter_bytes.len() >= offset + 25 {
-                        let price_exp = filter_bytes[offset] as i8;
-                        let min_price = i64::from_le_bytes(
-                            filter_bytes[offset + 1..offset + 9].try_into().unwrap(),
-                        );
-                        let max_price = i64::from_le_bytes(
-                            filter_bytes[offset + 9..offset + 17].try_into().unwrap(),
-                        );
-                        let tick_size = i64::from_le_bytes(
-                            filter_bytes[offset + 17..offset + 25].try_into().unwrap(),
-                        );
-                        filters.price_filter = Some(BinancePriceFilterSbe {
-                            price_exponent: price_exp,
-                            min_price,
-                            max_price,
-                            tick_size,
-                        });
-                    }
+                PRICE_FILTER_TEMPLATE_ID if filter_bytes.len() >= offset + 25 => {
+                    let price_exp = filter_bytes[offset] as i8;
+                    let min_price = i64::from_le_bytes(
+                        filter_bytes[offset + 1..offset + 9].try_into().unwrap(),
+                    );
+                    let max_price = i64::from_le_bytes(
+                        filter_bytes[offset + 9..offset + 17].try_into().unwrap(),
+                    );
+                    let tick_size = i64::from_le_bytes(
+                        filter_bytes[offset + 17..offset + 25].try_into().unwrap(),
+                    );
+                    filters.price_filter = Some(BinancePriceFilterSbe {
+                        price_exponent: price_exp,
+                        min_price,
+                        max_price,
+                        tick_size,
+                    });
                 }
-                LOT_SIZE_FILTER_TEMPLATE_ID => {
-                    if filter_bytes.len() >= offset + 25 {
-                        let qty_exp = filter_bytes[offset] as i8;
-                        let min_qty = i64::from_le_bytes(
-                            filter_bytes[offset + 1..offset + 9].try_into().unwrap(),
-                        );
-                        let max_qty = i64::from_le_bytes(
-                            filter_bytes[offset + 9..offset + 17].try_into().unwrap(),
-                        );
-                        let step_size = i64::from_le_bytes(
-                            filter_bytes[offset + 17..offset + 25].try_into().unwrap(),
-                        );
-                        filters.lot_size_filter = Some(BinanceLotSizeFilterSbe {
-                            qty_exponent: qty_exp,
-                            min_qty,
-                            max_qty,
-                            step_size,
-                        });
-                    }
+                LOT_SIZE_FILTER_TEMPLATE_ID if filter_bytes.len() >= offset + 25 => {
+                    let qty_exp = filter_bytes[offset] as i8;
+                    let min_qty = i64::from_le_bytes(
+                        filter_bytes[offset + 1..offset + 9].try_into().unwrap(),
+                    );
+                    let max_qty = i64::from_le_bytes(
+                        filter_bytes[offset + 9..offset + 17].try_into().unwrap(),
+                    );
+                    let step_size = i64::from_le_bytes(
+                        filter_bytes[offset + 17..offset + 25].try_into().unwrap(),
+                    );
+                    filters.lot_size_filter = Some(BinanceLotSizeFilterSbe {
+                        qty_exponent: qty_exp,
+                        min_qty,
+                        max_qty,
+                        step_size,
+                    });
                 }
                 _ => {}
             }

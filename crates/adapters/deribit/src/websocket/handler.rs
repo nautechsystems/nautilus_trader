@@ -366,15 +366,13 @@ impl DeribitWsFeedHandler {
                     trader_id,
                     strategy_id,
                     instrument_id,
-                } => {
-                    if id == client_order_id {
-                        return Some(OrderContext {
-                            client_order_id: *id,
-                            trader_id: *trader_id,
-                            strategy_id: *strategy_id,
-                            instrument_id: *instrument_id,
-                        });
-                    }
+                } if id == client_order_id => {
+                    return Some(OrderContext {
+                        client_order_id: *id,
+                        trader_id: *trader_id,
+                        strategy_id: *strategy_id,
+                        instrument_id: *instrument_id,
+                    });
                 }
                 _ => {}
             }

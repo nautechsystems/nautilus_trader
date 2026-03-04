@@ -1533,7 +1533,7 @@ impl ExecutionClient for DydxExecutionClient {
                 let mut handles = Vec::with_capacity(order_count);
 
                 for (params, (client_order_id, instrument_id, strategy_id)) in
-                    order_params.into_iter().zip(order_info.into_iter())
+                    order_params.into_iter().zip(order_info)
                 {
                     let tx_manager = tx_manager.clone();
                     let broadcaster = broadcaster.clone();
