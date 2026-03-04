@@ -8,7 +8,7 @@ This directory contains thin runner wrappers for the production Flux modules und
   - `examples/live/makerv3/run_node.py`
   - `examples/live/makerv3/run_bridge.py`
   - `examples/live/makerv3/run_api.py`
-- Deprecated old POC runner entrypoints under `examples/live/poc/*`.
+- Removed legacy deprecated runner entrypoints in favor of these production wrappers.
 
 ## Safety defaults
 

@@ -4,7 +4,7 @@
 >
 > **For executing agent (this repo):** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task (fresh implementer subagent per task, then spec review, then code-quality review).
 
-**Goal:** Productionize the `makerv3` quoting strategy currently implemented as a monolith in `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` by making it modular, safe (order lifecycle + cancellation), config-driven, and operationally observable. Standardize naming so the canonical strategy is `makerv3` (not `single_leg_quoter`) and remove legacy `poc` naming from production interfaces.
+**Goal:** Productionize the `makerv3` quoting strategy currently implemented as a monolith in `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` by making it modular, safe (order lifecycle + cancellation), config-driven, and operationally observable. Standardize naming so the canonical strategy is `makerv3` (not `single_leg_quoter`) and remove legacy prototype naming from production interfaces.
 
 **Architecture:** Thin `MakerV3Strategy` orchestrator plus pure modules for pricing/ladder math, rebalancing planning, managed-order reconciliation, runtime params registry, and wire/event payloads. Lock behavior with invariants tests first, then perform a staged refactor (canonical `flux.makerv3.*` topics; no compatibility shims in the final production surface).
 
@@ -42,7 +42,7 @@
 
 ## Production bar (acceptance criteria)
 
-1. No legacy `poc` naming in production module paths, strategy IDs, topic prefixes, payload type strings, docs, or defaults.
+1. No legacy prototype naming in production module paths, strategy IDs, topic prefixes, payload type strings, docs, or defaults.
 2. No hardcoded instruments/venues/products/strategy names in production modules (only in example wrappers).
 3. Strategy cancels and reconciles only its own managed orders by default; no unsafe “cancel everything” behavior.
 4. Order lifecycle reconciliation is deterministic and idempotent across fills/cancels/rejects/expires, including restart/reconnect windows.

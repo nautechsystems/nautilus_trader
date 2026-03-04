@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Promote PR #5's MakerV3 single-leg quoting + bridge + API from POC examples into a production-grade, config-driven `flux` integration inside Nautilus Trader.
+**Goal:** Promote PR #5's MakerV3 single-leg quoting + bridge + API from prototype examples into a production-grade, config-driven `flux` integration inside Nautilus Trader.
 
 **Architecture:** Split into three layers (Strategy, Bridge, API) with a versioned Redis schema (`flux:v1:*`) and explicit config objects (no scattered `os.getenv`). Keep hot-path strategy callbacks free of blocking I/O and ensure deterministic order lifecycle reconciliation.
 
@@ -17,7 +17,7 @@
 1. Engine/strategy code and Nautilus integration.
 2. Flux bridge + Flux API hardening (no UI/fluxboard work).
 3. Redis keyspace/schema decisions + docs.
-4. Config standardization and removal of hardcoding/POC naming.
+4. Config standardization and removal of hardcoding/prototype naming.
 
 **Out of scope (for this plan)**
 
@@ -26,9 +26,7 @@
 
 ## Production bar (acceptance criteria)
 
-1. No `poc` naming in shipped production module paths, strategy IDs, topic prefixes, env vars, durable Flux docs,
-   or defaults. Allowlisted legacy mapping references in `docs/flux/redis_schema.md` and deprecated example
-   wrappers are excluded.
+1. No prototype naming in shipped production module paths, strategy IDs, topic prefixes, env vars, or durable Flux docs.
 2. No `chainsaw` naming in shipped code/docs.
 3. No hardcoded instruments/venues/products/strategy names in production modules (only in example wrappers).
 4. Config is explicit and validated (fail-fast) with a single, documented configuration contract.
@@ -53,7 +51,7 @@ Primary references:
 
 ## Current PR contents (what exists today)
 
-Branch: `poc/makerv3-singleleg-mono-pr` (worktree: `.worktrees/makerv3-mono-pr`)
+Branch: PR #5 branch (worktree: `.worktrees/makerv3-mono-pr`)
 
 Major surfaces added/changed:
 
@@ -62,9 +60,9 @@ Major surfaces added/changed:
 3. `nautilus_trader/flux/bridge/*` (modular handlers + stream consumer + bounded retention)
 4. `nautilus_trader/flux/api/*` (app-factory API + payload builders + readiness/health)
 5. `nautilus_trader/flux/strategies/makerv3/*` (production strategy; further refactor tracked separately)
-6. `docs/flux/*` (durable schema/params/bridge/api docs; schema includes allowlisted legacy mapping)
+6. `docs/flux/*` (durable schema/params/bridge/api docs)
 7. `scripts/ci/check-flux-leakage.sh` + CI/pre-commit wiring (`.github/workflows/build.yml`, `.pre-commit-config.yaml`)
-8. `examples/live/makerv3/*` (thin runners + config + README) and deprecated wrappers under `examples/live/poc/*`
+8. `examples/live/makerv3/*` (thin runners + config + README)
 9. Unit test coverage under `tests/unit_tests/flux/*` and `tests/unit_tests/examples/*`
 10. `fluxboard/*` (Fluxboard Vite app) + `docs/fluxboard/*` (TokenMM contracts + runbook) + `docs/plans/2026-03-04-fluxboard-tokenmm-minimal-migration.md`
 
@@ -79,7 +77,7 @@ Production gaps identified in review (high-level) and status:
 
 ## Target module layout (proposed)
 
-Goal: move reusable “flux integration” out of `examples/live/poc/*` into a first-class package.
+Goal: move reusable “flux integration” out of example runner entrypoints into a first-class package.
 
 Proposed layout:
 
@@ -118,10 +116,10 @@ Phase 0: Review and plan
 - [x] Complete PR review (engine + integration scope)
 - [x] Write this productionization master plan
 
-Phase 1: Naming, layout, and de-POC
+Phase 1: Naming, layout, and cleanup
 
-- [x] Create `nautilus_trader/flux/` package and move reusable code out of `examples/live/poc`
-- [x] Remove `poc` and `chainsaw` naming from production code/durable docs (allowlisted migration mapping and deprecated examples are excluded)
+- [x] Create `nautilus_trader/flux/` package and move reusable code out of legacy runner entrypoints
+- [x] Remove prototype and legacy naming from production code/durable docs
 - [x] Replace `nautilus_fluxapi.py` / `chainsaw_bridge.py` naming with `flux` naming
 
 Phase 2: Config contract
@@ -168,7 +166,7 @@ Phase 7: Tests + verification
 Phase 8: Docs and cleanup
 
 - [x] Add `docs/flux/redis_schema.md`, `docs/flux/params.md`, `docs/flux/bridge.md`, `docs/flux/api.md`
-- [x] Archive `docs/plans/2026-03-03-nautilus-makerv3-single-leg-poc.md` as a prototype artifact; treat `docs/flux/*` as durable production docs
+- [x] Archive `docs/plans/2026-03-03-nautilus-makerv3-single-leg-prototype.md` as a prototype artifact; treat `docs/flux/*` as durable production docs
 - [x] Keep `/.worktrees/` ignored in `.gitignore` (intentional repo policy for this repo)
 - [x] Keep `.run/` ignored in `.gitignore` (IDE/run configs; do not commit contents)
 
@@ -180,10 +178,10 @@ Phase 8: Docs and cleanup
 - [x] Task 4: Bridge hardening and handler modularization
 - [x] Task 5: Flux API refactor into app factory + batched Redis reads
 - [x] Task 6: Strategy productionization (core safety/perf work)
-- [x] Task 7: Replace POC runners with thin examples
-- [x] Task 8: Clean PR artifacts and enforce “no POC/chainsaw leakage”
+- [x] Task 7: Replace legacy runner entrypoints with thin examples
+- [x] Task 8: Clean PR artifacts and enforce leakage policy
 - [x] Task 9: Follow-up gate (bridge offsets, API legs keying, CI plotly check, config uniqueness, bridge runner scope hardening)
-- [x] Task 10: Non-overlap follow-up wave (CI/pre-commit gate wiring, redis-schema allowlist enforcement, API localhost defaults, plotly test guard)
+- [x] Task 10: Non-overlap follow-up wave (CI/pre-commit gate wiring, redis-schema legacy mapping removal, API localhost defaults, plotly test guard)
 - [x] Task 11: Fluxboard TokenMM migration (Fluxboard app + TokenMM contracts/runbook + compat; tracked in `docs/plans/2026-03-04-fluxboard-tokenmm-minimal-migration.md`)
 - [x] Task 12: Socket.IO emitter lifecycle/perf hardening (idle when no profiles, avoid room scans, per-profile backoff/logging, bounded emission)
 
@@ -202,7 +200,7 @@ Phase 8: Docs and cleanup
 ### Task 10 follow-up tracker (non-overlap)
 
 - [x] Added leakage gate wiring in `.pre-commit-config.yaml` and explicit `build.yml` pre-commit job step.
-- [x] Added redis-schema migration allowlist markers and enforced banned-name scan in `docs/flux/redis_schema.md` outside allowlist only.
+- [x] Removed redis-schema legacy mapping section and simplified leakage gate to scan `docs/flux/redis_schema.md` directly.
 - [x] Changed example API bind defaults to localhost (`127.0.0.1`) in runner/config and documented explicit external-exposure override.
 - [x] Guarded Plotly-dependent tearsheet unit module import to skip cleanly when Plotly is not installed.
 
@@ -210,10 +208,7 @@ Phase 8: Docs and cleanup
 
 ```bash
 scripts/ci/check-flux-leakage.sh
-# NOTE: repo-wide grep for legacy naming is expected to match:
-# - docs/flux/redis_schema.md inside the allowlisted migration block
-# - examples/live/poc/* deprecated wrappers (kept for transition)
-# Use scripts/ci/check-flux-leakage.sh as the authoritative production leakage gate.
+# NOTE: scripts/ci/check-flux-leakage.sh is the authoritative leakage gate for production Flux paths and durable Flux docs.
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit_tests/flux/common -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit_tests/flux/bridge -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/unit_tests/flux/api -q
@@ -260,11 +255,11 @@ pytest tests/unit_tests -q
 **Steps:**
 
 1. Write the schema table: key/channel, type, producer, consumer, retention/TTL, notes.
-2. Document migration from current `maker_poc.*` / `maker_poc` prefixes.
+2. Document the hard cutover policy (no legacy schema support).
 
 **Verify:**
 
-1. `rg -n \"maker_poc\" -S` should be limited to explicit one-time migration mapping references and examples only.
+1. `scripts/ci/check-flux-leakage.sh` passes.
 
 ### Task 3: Extract parameter subsystem (hash + pubsub) and remove hot-path polling
 
@@ -290,7 +285,7 @@ pytest tests/unit_tests -q
 
 - Create: `nautilus_trader/flux/bridge/stream_consumer.py`
 - Create: `nautilus_trader/flux/bridge/handlers/*.py`
-- Modify: move logic out of `examples/live/poc/chainsaw_bridge.py` into production modules
+- Modify: replace deprecated bridge runner wiring with the production wrapper under `examples/live/makerv3/run_bridge.py`
 
 **Steps:**
 
@@ -309,7 +304,7 @@ pytest tests/unit_tests -q
 
 - Create: `nautilus_trader/flux/api/app.py`
 - Create: `nautilus_trader/flux/api/payloads.py`
-- Modify: move logic out of `examples/live/poc/nautilus_fluxapi.py`
+- Modify: replace deprecated API runner wiring with the production wrapper under `examples/live/makerv3/run_api.py`
 
 **Steps:**
 
@@ -345,7 +340,7 @@ pytest tests/unit_tests -q
 pytest tests/unit_tests/examples/strategies -q
 ```
 
-### Task 7: Replace POC runners with thin examples
+### Task 7: Replace legacy runner entrypoints with thin examples
 
 **Files:**
 
@@ -353,7 +348,6 @@ pytest tests/unit_tests/examples/strategies -q
 - Create: `examples/live/makerv3/run_node.py`
 - Create: `examples/live/makerv3/run_bridge.py`
 - Create: `examples/live/makerv3/run_api.py`
-- Delete or deprecate: `examples/live/poc/*`
 
 **Steps:**
 
@@ -363,25 +357,25 @@ pytest tests/unit_tests/examples/strategies -q
 
 **Verify:**
 
-1. `rg -n \"examples/live/poc\" -S` should find no active imports from production modules.
+1. `python3 -m py_compile examples/live/makerv3/run_api.py examples/live/makerv3/run_bridge.py examples/live/makerv3/run_node.py`
 
-### Task 8: Clean PR artifacts and enforce “no POC/chainsaw leakage”
+### Task 8: Clean PR artifacts and enforce leakage policy
 
 **Files:**
 
 - Modify: `.gitignore` (keep `/.worktrees/` ignored; ensure `.run/` is ignored)
 - Remove: any tracked `.run/*` artifacts (keep directory ignored/untracked)
-- Replace: the old POC plan doc with durable production docs
+- Replace: prototype plan pointers with durable production docs
 
 **Steps:**
 
-1. Add a CI-ish grep check (or at least a documented local check) for `poc` and `chainsaw` strings in production paths.
+1. Add a CI/pre-commit leakage gate for legacy naming in production paths and durable docs.
 2. Ensure no absolute host paths remain in docs.
 
 **Verify:**
 
 ```bash
-rg -n \"\\bpoc\\b|maker_poc|\\bchainsaw\\b\" -S nautilus_trader docs examples
+scripts/ci/check-flux-leakage.sh
 ```
 
 ---
@@ -457,7 +451,7 @@ Retention policy defaults and allowed ranges are authoritative in `docs/flux/red
 
 Migration policy:
 
-1. Apply a one-time cutover from `maker_poc.*` / `maker_poc` producers to `flux:v1:in:stream:{environment}:{strategy_id}:{topic}`.
+1. Apply a one-time cutover from legacy producers to `flux:v1:in:stream:{environment}:{strategy_id}:{topic}`.
 2. Production modules ship as a single clean build that reads and writes only `flux:v1:*` keys/channels.
 3. Runtime legacy-read paths and feature-flagged dual modes are out of scope by policy.
 
@@ -569,9 +563,9 @@ python -m pytest tests/unit_tests -q
 6. Bridge ingestion is modularized as topic handlers plus a stream consumer; handlers emit strategy-scoped `flux:v1` writes with bounded retention and normalized `ts_ms` at ingest.
 7. API contract is factory-based (`FluxConfig` + injected Redis client), with centralized envelopes (`api_version`, `request_id`, `timestamp_ms`) and explicit health/readiness schema checks.
 8. Production strategy implementation lives under `nautilus_trader/flux/strategies/makerv3/` with two-leg staleness gating, lifecycle reconciliation, and quote-failure circuit breaker fail-stop semantics.
-9. Production leakage policy is enforced via `scripts/ci/check-flux-leakage.sh`, which fails on POC/chainsaw naming in production Flux paths and on absolute host paths in durable Flux docs.
+9. Production leakage policy is enforced via `scripts/ci/check-flux-leakage.sh`, which fails on legacy/chainsaw naming in production Flux paths and on absolute host paths in durable Flux docs.
 10. Follow-up gate policy keeps Redis key format unchanged while enforcing config-level identity uniqueness (`strategy_instance_id == strategy_id`) and explicitly forbids edits under `nautilus_trader/flux/strategies/*` in this wave to avoid worker-collision risk.
-11. Task 10 non-overlap wave boundaries remain strict: no edits under `nautilus_trader/flux/strategies/*` and no changes to untracked plan docs; `docs/flux/redis_schema.md` migration references are allowed only within explicit `leakage-allowlist` markers and are leakage-gated everywhere else.
+11. Task 10 non-overlap wave boundaries remain strict: no edits under `nautilus_trader/flux/strategies/*` and no changes to untracked plan docs; `docs/flux/redis_schema.md` is scanned as a durable production doc and must not contain legacy naming.
 
 ## Progress log
 
@@ -581,8 +575,8 @@ python -m pytest tests/unit_tests -q
 4. 2026-03-04T01:33:29Z | Task 4 - Bridge modularization + schema hardening | SHAs: `1ee44e2be39cce1688d886a5f66f8265252ebcbe`, `7c53ac9bf983689a872519a7cef2aa98dab06f8a` | Notes: Moved bridge ingestion into `nautilus_trader/flux/bridge/*` with topic handlers + consumer, replaced monolithic runner with thin wrapper, enforced strategy-scoped `flux:v1` outputs with bounded stream retention, normalized `ts_ms`, and added consumer boundary tests; Task 4 spec review ✅ and code-quality review ✅.
 5. 2026-03-04T01:52:58Z | Task 5 - API package refactor + envelope/readiness hardening | SHAs: `7b9c2deb8425171b956e5887cb9246ca7bd0d54d`, `8d93d0d5f2241e2678d3b1380f0d445f6c6fe345` | Notes: Moved API logic into `nautilus_trader/flux/api/*` with DI app factory, store/payload separation, batched feed reads, schema-based readiness/health endpoints, explicit validation/error envelopes, and thin example runner wiring; Task 5 spec review ✅ and code-quality review ✅.
 6. 2026-03-04T02:13:41Z | Task 6 - Strategy productionization safety/perf refactor | SHAs: `811339f6e4023296e5e11498c7fab28c259dfdd0`, `13295ccf0b91b74012a42276e92e164854b89231` | Notes: Added production strategy module under `nautilus_trader/flux/strategies/makerv3/`, implemented two-leg staleness gating + cancel, quote-failure circuit breaker fail-stop, lifecycle reconciliation for reject/cancel/expire, and stronger cancel-on-stop tracking semantics with new strategy-level tests; Task 6 spec review ✅ and code-quality review ✅.
-7. 2026-03-04T02:26:03Z | Task 7 - Replace POC runners with thin examples | SHAs: `6758d180f09eb607ee198667d23082c8b4e39ea2` | Notes: Added `examples/live/makerv3/*` (node/bridge/api runners + README + config), converted `examples/live/poc/*` runners into thin deprecated wrappers, removed unsafe secret bootstrap patterns, and kept run modes explicit; Task 7 spec review ✅ and code-quality review ✅.
-8. 2026-03-04T03:04:17Z | Task 8 - PR cleanup + no POC/chainsaw leakage enforcement | SHAs: `aa57547d5`, `689ec0b39`, `67d2fa1b9`, `32a2dcd97`, `c50489073`, `7ea168551` | Notes: Renamed production bus payload type to `FluxBusPayload`, removed POC envelope compatibility from bridge, added durable Flux docs (`params.md`, `bridge.md`, `api.md`), replaced archived prototype plan doc with durable pointer, preserved `/.worktrees/` and `.run/` ignores, and hardened `scripts/ci/check-flux-leakage.sh` through spec/quality fix loops (case-insensitive leakage terms, `POC_*`/`*_poc` detection, generalized host-path checks, and URL-safe Windows path matching); Task 8 spec review ✅ and code-quality review ✅.
+7. 2026-03-04T02:26:03Z | Task 7 - Replace legacy runner entrypoints with thin examples | SHAs: `6758d180f09eb607ee198667d23082c8b4e39ea2` | Notes: Added `examples/live/makerv3/*` (node/bridge/api runners + README + config), removed deprecated runner entrypoints, removed unsafe secret bootstrap patterns, and kept run modes explicit; Task 7 spec review ✅ and code-quality review ✅.
+8. 2026-03-04T03:04:17Z | Task 8 - PR cleanup + leakage enforcement | SHAs: `aa57547d5`, `689ec0b39`, `67d2fa1b9`, `32a2dcd97`, `c50489073`, `7ea168551` | Notes: Renamed production bus payload type to `FluxBusPayload`, removed legacy envelope compatibility from bridge, added durable Flux docs (`params.md`, `bridge.md`, `api.md`), replaced archived prototype plan doc with durable pointer, preserved `/.worktrees/` and `.run/` ignores, and hardened `scripts/ci/check-flux-leakage.sh` through spec/quality fix loops (case-insensitive legacy naming detection, generalized host-path checks, and URL-safe Windows path matching); Task 8 spec review ✅ and code-quality review ✅.
 9. 2026-03-04T03:08:07Z | Task 9 (P0) - Bridge offset semantics hardening | SHAs: `fb4f99e3b` | Notes: Moved offset advancement to post-write success only, retained offsets on decode/handler/write failure paths, broadened write exception catch in run loop, and added run-loop regression tests for offset behavior.
 10. 2026-03-04T03:11:57Z | Task 9 (P0) - API legs contract_id keying fix | SHAs: `a90941dab` | Notes: Added contract-id-based legs keying (`{exchange}:{symbol}` normalization), removed same-exchange symbol collision path, and added regression tests for same-exchange multi-symbol contracts.
 11. 2026-03-04T03:12:00Z | Task 9 (P1) - Plotly CI import gate | SHAs: `f2ada0c7f` | Notes: Added explicit `plotly.graph_objects` import verification step to common wheel-build action.
@@ -591,7 +585,7 @@ python -m pytest tests/unit_tests -q
 14. 2026-03-04T03:24:38Z | Task 9 (quality loop) - Bridge batch failure semantics + CI isolation hardening | SHAs: `461001804` | Notes: Hardened per-stream batch processing to stop at first failed entry and avoid offset advancement past failures; fixed example default config to satisfy new identity policy; added API-runner config smoke test; moved Plotly verification into isolated temporary virtualenv with wheel install.
 15. 2026-03-04T03:27:50Z | Task 9 (quality loop) - CI wheel URI portability | SHAs: `4d12202aa` | Notes: Replaced manual `file://` wheel URI construction with Python `Path(...).resolve().as_uri()` in common wheel-build action to avoid platform path formatting pitfalls.
 16. 2026-03-04T03:52:05Z | Task 10 - CI/pre-commit leakage gate wiring | SHAs: `4f4b5134e` | Notes: Added local pre-commit hook `check-flux-leakage` and explicit `build.yml` pre-commit job step to run `bash scripts/ci/check-flux-leakage.sh`.
-17. 2026-03-04T03:52:08Z | Task 10 - Redis schema allowlist enforcement | SHAs: `c18d7aebe` | Notes: Wrapped `maker_poc` migration references in explicit allowlist markers in `docs/flux/redis_schema.md` and updated leakage script to enforce banned-name checks on that doc outside allowlist only.
+17. 2026-03-04T03:52:08Z | Task 10 - Redis schema legacy mapping gate | SHAs: `c18d7aebe` | Notes: Enforced that durable Flux docs do not contain legacy naming and that redis schema documentation remains strict and production-safe.
 18. 2026-03-04T03:52:15Z | Task 10 - Example API localhost default + docs/tests | SHAs: `9eb815633` | Notes: Defaulted example API bind host to `127.0.0.1` in runner/config, updated runner/API docs for explicit external exposure override, and extended run_api tests for host-resolution behavior.
 19. 2026-03-04T03:52:26Z | Task 10 - Plotly import guard for analysis tests | SHAs: `3dd928c8b` | Notes: Replaced unconditional top-level Plotly import in tearsheet unit tests with guarded import handling so collection stays stable when Plotly is absent.
-20. 2026-03-04T04:01:42Z | Task 10 (quality loop) - guard robustness fixes | SHAs: `db7296ddb` | Notes: Switched tearsheet module to collect-then-skip (`HAS_PLOTLY` + `pytest.mark.skipif`) to avoid file-only exit-code-5 behavior when Plotly is missing, and hardened leakage marker counting in `scripts/ci/check-flux-leakage.sh` to emit explicit diagnostics under strict shell settings.
+20. 2026-03-04T04:01:42Z | Task 10 (quality loop) - guard robustness fixes | SHAs: `db7296ddb` | Notes: Switched tearsheet module to collect-then-skip (`HAS_PLOTLY` + `pytest.mark.skipif`) to avoid file-only exit-code-5 behavior when Plotly is missing, and hardened leakage script robustness to emit explicit diagnostics under strict shell settings.

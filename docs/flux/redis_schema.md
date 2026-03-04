@@ -58,47 +58,9 @@ This table is the authoritative source for production high-churn retention defau
 3. API reads only canonical `flux:v1:*` output keys/channels and returns `ts_ms` unchanged.
 4. API must not infer strategy context from global keys; `strategy_id` is explicit in every lookup path.
 
-## Legacy naming allowlist (migration-only)
+## Legacy keyspace migration
 
-This document includes a single legacy mapping section for one-time cutover planning. It must quote historical
-key names which contain banned legacy prefixes.
+Flux production surfaces do not support legacy keyspaces, dual-read modes, or compatibility shims.
 
-Those legacy strings are allowed only inside the single allowlisted migration block immediately below.
-
-The CI/pre-commit gate `scripts/ci/check-flux-leakage.sh` strips the allowlisted block and fails if legacy naming
-appears anywhere else in production Flux paths or durable Flux docs.
-
-Policy:
-
-1. Do not add additional allowlist marker pairs (the gate requires exactly one pair).
-2. If further legacy mapping is required, extend the existing allowlist block and keep it minimal.
-3. Consider deleting the legacy mapping after cutover is complete.
-
-<!-- leakage-allowlist:start maker_poc_migration -->
-## Migration from `maker_poc.*` / `maker_poc`
-
-Legacy names below are a one-time cutover reference only.
-
-### Legacy mapping
-
-| Legacy input | Canonical `flux:v1` destination |
-| --- | --- |
-| `maker_poc.state` | `flux:v1:state:{strategy_id}` |
-| `maker_poc.event` | `flux:v1:events:{strategy_id}` |
-| `maker_poc.trade` | `flux:v1:trades:stream:{strategy_id}` |
-| `maker_poc.alert` | `flux:v1:alerts:{strategy_id}` |
-| `maker_poc.fv` | `flux:v1:fv:stream:{strategy_id}` |
-| `maker_poc.balances` | `flux:v1:balances:snapshot:{strategy_id}` and `flux:v1:balances:rows:{strategy_id}` |
-| `maker_poc.market_bbo` | `flux:v1:market:last:{strategy_id}:{exchange}:{base}_{quote}` |
-| `maker_poc.params` | `flux:v1:params:global` pub/sub broadcast only (no hash write) |
-| `maker_poc.params.{strategy_id}` | `flux:v1:params:{strategy_id}` dual-role address: `HSET`/`HMSET` hash update, then `PUBLISH` same address |
-| `maker_poc` (legacy stream key) | `flux:v1:in:stream:{environment}:{strategy_id}:{topic}` topic fan-out; inbound entries must include `topic` |
-
-### Cutover policy
-
-1. Production bridge/API read and write only `flux:v1:*` keys and channels.
-2. There is a single production build; no runtime legacy-read switch or dual-path ingestion.
-3. Legacy `maker_poc` names remain documentation-only mapping references for one-time cutover planning.
-4. For `flux:v1:in:stream:{environment}:{strategy_id}:{topic}`, `{environment}` is sourced from `FluxConfig.mode`; if `FluxConfig` is not wired, use the process-level `environment` config field. If neither source is available, fail fast at startup.
-5. Missing required routing coordinates (`topic`, `strategy_id`, `ts_ms`, resolved `{environment}`) must fail fast: reject/dead-letter the entry and emit an error.
-<!-- leakage-allowlist:end maker_poc_migration -->
+If you are migrating from a previous Redis layout, perform an explicit one-time cutover and validate all
+producers/consumers against `flux:v1:*` only.

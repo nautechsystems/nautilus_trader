@@ -8,8 +8,6 @@ import pytest
 
 
 SCRIPT_UNDER_TEST = Path("scripts/ci/check-flux-leakage.sh")
-ALLOWLIST_START = "<!-- leakage-allowlist:start maker_poc_migration -->"
-ALLOWLIST_END = "<!-- leakage-allowlist:end maker_poc_migration -->"
 REQUIRED_BINARIES = ("git", "bash", "rg")
 MISSING_BINARIES = [binary for binary in REQUIRED_BINARIES if shutil.which(binary) is None]
 
@@ -32,9 +30,7 @@ def _base_redis_schema_doc() -> str:
     return "\n".join(
         [
             "# Redis Schema",
-            ALLOWLIST_START,
-            "Legacy key mapping: maker_poc.state -> flux:v1:state:{strategy_id}",
-            ALLOWLIST_END,
+            "No legacy mapping is supported.",
             "",
         ],
     )
@@ -81,14 +77,11 @@ def test_check_flux_leakage_passes_when_banned_names_are_inside_allowlist_only(t
     assert "[flux-leakage] OK" in result.stdout
 
 
-def test_check_flux_leakage_fails_when_banned_names_are_outside_allowlist(tmp_path: Path):
+def test_check_flux_leakage_fails_when_banned_names_are_present(tmp_path: Path):
     redis_schema_doc = "\n".join(
         [
             "# Redis Schema",
-            "This mapping still uses maker_poc and must fail.",
-            ALLOWLIST_START,
-            "Legacy key mapping: maker_poc.state -> flux:v1:state:{strategy_id}",
-            ALLOWLIST_END,
+            "This document references chainsaw and must fail.",
             "",
         ],
     )
@@ -97,45 +90,4 @@ def test_check_flux_leakage_fails_when_banned_names_are_outside_allowlist(tmp_pa
     result = _run_check(repo_root)
 
     assert result.returncode != 0
-    assert "outside allowlist markers" in result.stderr
-
-
-@pytest.mark.parametrize(
-    ("redis_schema_doc", "error_snippet"),
-    [
-        (
-            "\n".join(
-                [
-                    "# Redis Schema",
-                    ALLOWLIST_START,
-                    "Legacy key mapping: maker_poc.state -> flux:v1:state:{strategy_id}",
-                    "",
-                ],
-            ),
-            "Expected exactly one redis_schema allowlist start/end marker pair",
-        ),
-        (
-            "\n".join(
-                [
-                    "# Redis Schema",
-                    ALLOWLIST_END,
-                    ALLOWLIST_START,
-                    "Legacy key mapping: maker_poc.state -> flux:v1:state:{strategy_id}",
-                    "",
-                ],
-            ),
-            "allowlist markers are out of order",
-        ),
-    ],
-)
-def test_check_flux_leakage_fails_when_allowlist_markers_are_invalid(
-    tmp_path: Path,
-    redis_schema_doc: str,
-    error_snippet: str,
-):
-    repo_root = _init_temp_repo(tmp_path, redis_schema_doc)
-
-    result = _run_check(repo_root)
-
-    assert result.returncode != 0
-    assert error_snippet in result.stderr
+    assert "Found forbidden" in result.stderr
