@@ -108,7 +108,6 @@ runs:
         set -euo pipefail
 
         wheel_path=$(ls dist/*.whl | head -n 1)
-        wheel_abs="$(cd "$(dirname "$wheel_path")" && pwd)/$(basename "$wheel_path")"
 
         temp_dir="$(mktemp -d)"
         trap 'rm -rf "$temp_dir"' EXIT
@@ -120,6 +119,10 @@ runs:
           venv_python="$temp_dir/venv/Scripts/python.exe"
         fi
 
+        wheel_uri=$(
+          "$venv_python" -c "from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().as_uri())" "$wheel_path"
+        )
+
         "$venv_python" -m pip install --upgrade pip
-        "$venv_python" -m pip install "nautilus_trader[visualization] @ file://$wheel_abs"
+        "$venv_python" -m pip install "nautilus_trader[visualization] @ $wheel_uri"
         "$venv_python" -c "import plotly.graph_objects as go"
