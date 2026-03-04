@@ -15,12 +15,14 @@
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Final
 
 from nautilus_trader.common.config import NautilusConfig
 
 
+FLUX_DEFAULT_NAMESPACE: Final[str] = "flux"
 FLUX_SCHEMA_VERSION: Final[str] = "v1"
 
 _IDENTIFIER_SAFE_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -42,6 +44,19 @@ def validate_identifier_part(value: str, field_name: str) -> str:
     return value
 
 
+def validate_schema_version(value: str, field_name: str = "schema_version") -> str:
+    """
+    Validate the Flux schema version against the currently supported version.
+    """
+    validate_identifier_part(value, field_name)
+    if value != FLUX_SCHEMA_VERSION:
+        raise ValueError(
+            f"`{field_name}` was unsupported: {value!r}. "
+            f"Supported schema version is {FLUX_SCHEMA_VERSION!r}.",
+        )
+    return value
+
+
 def validate_symbol_part(value: str, field_name: str) -> str:
     """
     Validate that a symbol-like value is safe for use in Redis key segments.
@@ -54,6 +69,33 @@ def validate_symbol_part(value: str, field_name: str) -> str:
             "Allowed characters are letters, digits, '.', '_', '-' and '/'.",
         )
     return value
+
+
+def _validate_int(
+    value: int,
+    field_name: str,
+    *,
+    min_value: int | None = None,
+    max_value: int | None = None,
+) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"`{field_name}` must be an int")
+    if min_value is not None and value < min_value:
+        raise ValueError(f"`{field_name}` must be >= {min_value}")
+    if max_value is not None and value > max_value:
+        raise ValueError(f"`{field_name}` must be <= {max_value}")
+    return value
+
+
+def _validate_positive_finite_number(value: float, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"`{field_name}` must be a float")
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        raise ValueError(f"`{field_name}` must be finite")
+    if numeric <= 0.0:
+        raise ValueError(f"`{field_name}` must be > 0")
+    return numeric
 
 
 class FluxIdentityConfig(NautilusConfig, frozen=True):
@@ -70,7 +112,7 @@ class FluxIdentityConfig(NautilusConfig, frozen=True):
 
     def __post_init__(self) -> None:
         validate_identifier_part(self.namespace, "namespace")
-        validate_identifier_part(self.schema_version, "schema_version")
+        validate_schema_version(self.schema_version, "schema_version")
         validate_identifier_part(self.strategy_id, "strategy_id")
         validate_identifier_part(self.strategy_instance_id, "strategy_instance_id")
         validate_identifier_part(self.trader_id, "trader_id")
@@ -93,14 +135,17 @@ class FluxRedisConfig(NautilusConfig, frozen=True):
     def __post_init__(self) -> None:
         if not isinstance(self.host, str) or not self.host.strip():
             raise ValueError("`host` must be a non-empty string")
-        if self.port <= 0 or self.port > 65535:
-            raise ValueError("`port` must be between 1 and 65535")
-        if self.db < 0:
-            raise ValueError("`db` must be >= 0")
-        if self.connect_timeout_secs <= 0.0:
-            raise ValueError("`connect_timeout_secs` must be > 0")
-        if self.read_timeout_secs <= 0.0:
-            raise ValueError("`read_timeout_secs` must be > 0")
+
+        _validate_int(self.port, "port", min_value=1, max_value=65535)
+        _validate_int(self.db, "db", min_value=0)
+
+        if self.username is not None and not isinstance(self.username, str):
+            raise TypeError("`username` must be `str | None`")
+        if self.password is not None and not isinstance(self.password, str):
+            raise TypeError("`password` must be `str | None`")
+
+        _validate_positive_finite_number(self.connect_timeout_secs, "connect_timeout_secs")
+        _validate_positive_finite_number(self.read_timeout_secs, "read_timeout_secs")
 
 
 class FluxVenuesConfig(NautilusConfig, frozen=True):

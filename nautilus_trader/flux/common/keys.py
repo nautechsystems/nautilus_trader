@@ -15,49 +15,90 @@
 
 from __future__ import annotations
 
-from typing import Final
-
+from nautilus_trader.flux.common.config import FLUX_DEFAULT_NAMESPACE
 from nautilus_trader.flux.common.config import FLUX_SCHEMA_VERSION
+from nautilus_trader.flux.common.config import FluxIdentityConfig
 from nautilus_trader.flux.common.config import validate_identifier_part
+from nautilus_trader.flux.common.config import validate_schema_version
 
 
 class FluxRedisKeys:
     """
     Builder for Flux Redis keys under the versioned namespace.
+
+    Notes
+    -----
+    By current protocol definition, params hash key and strategy-scoped params
+    pubsub channel intentionally share the same Redis address.
     """
 
-    PREFIX: Final[str] = f"flux:{FLUX_SCHEMA_VERSION}"
-
-    def __init__(self, strategy_id: str) -> None:
+    def __init__(
+        self,
+        strategy_id: str,
+        *,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> None:
         self._strategy_id = validate_identifier_part(strategy_id, "strategy_id")
+        self._namespace = validate_identifier_part(namespace, "namespace")
+        self._schema_version = validate_schema_version(schema_version, "schema_version")
+
+    @classmethod
+    def from_identity(cls, identity: FluxIdentityConfig) -> FluxRedisKeys:
+        return cls(
+            strategy_id=identity.strategy_id,
+            namespace=identity.namespace,
+            schema_version=identity.schema_version,
+        )
 
     @property
     def strategy_id(self) -> str:
         return self._strategy_id
 
+    @property
+    def prefix(self) -> str:
+        return f"{self._namespace}:{self._schema_version}"
+
     def state(self) -> str:
-        return f"{self.PREFIX}:state:{self._strategy_id}"
+        return f"{self.prefix}:state:{self._strategy_id}"
 
     def events(self) -> str:
-        return f"{self.PREFIX}:events:{self._strategy_id}"
+        return f"{self.prefix}:events:{self._strategy_id}"
 
     def trades_stream(self) -> str:
-        return f"{self.PREFIX}:trades:stream:{self._strategy_id}"
+        return f"{self.prefix}:trades:stream:{self._strategy_id}"
 
     def alerts(self) -> str:
-        return f"{self.PREFIX}:alerts:{self._strategy_id}"
+        return f"{self.prefix}:alerts:{self._strategy_id}"
 
+    def params_hash_key(self) -> str:
+        return f"{self.prefix}:params:{self._strategy_id}"
+
+    def params_pubsub_channel(self) -> str:
+        return f"{self.prefix}:params:{self._strategy_id}"
+
+    # Backward-compatible aliases for initial Task 1 API names.
     def params_hash(self) -> str:
-        return f"{self.PREFIX}:params:{self._strategy_id}"
+        return self.params_hash_key()
 
     def params_channel(self) -> str:
-        return f"{self.PREFIX}:params:{self._strategy_id}"
+        return self.params_pubsub_channel()
+
+    def global_params_pubsub_channel(self) -> str:
+        return f"{self.prefix}:params:global"
 
     @classmethod
-    def global_params_channel(cls) -> str:
-        return f"{cls.PREFIX}:params:global"
+    def global_params_channel(
+        cls,
+        *,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        safe_namespace = validate_identifier_part(namespace, "namespace")
+        safe_schema_version = validate_schema_version(schema_version, "schema_version")
+        return f"{safe_namespace}:{safe_schema_version}:params:global"
 
     def inbound_stream(self, environment: str, topic: str) -> str:
         safe_environment = validate_identifier_part(environment, "environment")
         safe_topic = validate_identifier_part(topic, "topic")
-        return f"{self.PREFIX}:in:stream:{safe_environment}:{self._strategy_id}:{safe_topic}"
+        return f"{self.prefix}:in:stream:{safe_environment}:{self._strategy_id}:{safe_topic}"
