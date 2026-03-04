@@ -867,6 +867,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._params_manager: FluxParamsManager | None = None
             self._last_params_refresh_ns = 0
             self._params_timer_name = f"maker-v3-params-refresh:{self._external_strategy_id}"
+            self._runtime_params_failed = False
 
         def on_start(self) -> None:
             self._last_bot_on = self._runtime_bool("bot_on")
@@ -896,7 +897,11 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 )
                 self.stop()
                 return
-            self._refresh_runtime_params(force=True)
+            try:
+                self._refresh_runtime_params(force=True)
+            except Exception as exc:
+                self._fail_fast_runtime_params(context="on_start", exc=exc)
+                return
             self._last_bot_on = self._effective_bot_on()
             self.clock.set_timer(
                 name=self._params_timer_name,
@@ -944,8 +949,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if getattr(event, "name", "") != self._params_timer_name:
                 return
 
+            if self._runtime_params_failed:
+                return
+
             now_ns = int(self.clock.timestamp_ns())
-            self._refresh_runtime_params(now_ns=now_ns)
+            try:
+                self._refresh_runtime_params(now_ns=now_ns)
+            except Exception as exc:
+                self._fail_fast_runtime_params(context="on_time_event", exc=exc)
+                return
             bot_on_now = self._effective_bot_on()
             if _did_bot_turn_off(self._last_bot_on, bot_on_now):
                 self._cancel_managed_quotes("bot_off_flip", force=True)
@@ -1055,7 +1067,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if qty_changed and self._bybit_instrument is not None:
                 qty = self._runtime_decimal("qty")
                 if qty > 0:
-                    self._order_qty = self._bybit_instrument.make_qty(qty)
+                    try:
+                        self._order_qty = self._bybit_instrument.make_qty(qty)
+                    except Exception as exc:
+                        raise RuntimeError(
+                            f"Failed to convert runtime qty to instrument quantity for "
+                            f"{self._external_strategy_id}: qty={qty}",
+                        ) from exc
 
         def _refresh_runtime_params(self, *, now_ns: int | None = None, force: bool = False) -> None:
             if now_ns is None:
@@ -1067,6 +1085,54 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if self._params_manager is None:
                 raise RuntimeError("Flux params manager was not initialized")
             self._apply_runtime_param_updates(self._params_manager.load())
+
+        def _fail_fast_runtime_params(self, *, context: str, exc: Exception) -> None:
+            if self._runtime_params_failed:
+                return
+
+            self._runtime_params_failed = True
+            error_type = type(exc).__name__
+            error_message = str(exc)
+            event_payload = {
+                "context": context,
+                "error_type": error_type,
+                "error_message": error_message,
+            }
+
+            logger = getattr(self, "log", None)
+            if logger is not None:
+                log_error = getattr(logger, "error", None)
+                if callable(log_error):
+                    try:
+                        log_error(
+                            _to_json_safe(
+                                {
+                                    "event": "runtime_params_failure",
+                                    "strategy_id": self._external_strategy_id,
+                                    **event_payload,
+                                },
+                            ),
+                        )
+                    except Exception:
+                        pass
+
+            try:
+                self._publish_event("runtime_params_failure", **event_payload)
+            except Exception:
+                pass
+
+            try:
+                self._publish_alert(
+                    (
+                        f"runtime_params_failure[{context}] "
+                        f"{error_type}: {error_message}"
+                    ),
+                    level="error",
+                )
+            except Exception:
+                pass
+
+            self.stop()
 
         def on_order_filled(self, event: OrderFilled) -> None:
             self._publish_json(

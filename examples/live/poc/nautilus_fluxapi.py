@@ -405,6 +405,18 @@ def _load_params(redis_client: redis.Redis, strategy_id: str) -> dict[str, Any]:
     return _params_manager(redis_client, strategy_id).load()
 
 
+def _params_store_error_payload(strategy_id: str, exc: ValueError) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "data": None,
+        "error": {
+            "code": "params_store_invalid",
+            "message": str(exc),
+            "strategy_id": strategy_id,
+        },
+    }
+
+
 def _read_params_request_payload() -> dict[str, Any]:
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
@@ -1202,9 +1214,13 @@ def build_app() -> Flask:
     @app.get("/api/v1/signals")
     def api_signals() -> Any:
         sid = request.args.get("strategy") or DEFAULT_STRATEGY_ID
+        try:
+            strategies = [_build_signals_payload(redis_client, strategy_id=sid)]
+        except ValueError as exc:
+            return jsonify(_params_store_error_payload(sid, exc)), 500
         data = {
             "server_ts_ms": _now_ms(),
-            "strategies": [_build_signals_payload(redis_client, strategy_id=sid)],
+            "strategies": strategies,
         }
         return jsonify({"ok": True, "data": data, "error": None}), 200
 
@@ -1215,7 +1231,11 @@ def build_app() -> Flask:
     @app.get("/api/v1/params")
     def api_params() -> Any:
         sid = request.args.get("strategy") or DEFAULT_STRATEGY_ID
-        payload = {"strategies": [_build_params_payload(redis_client, sid)]}
+        try:
+            strategies = [_build_params_payload(redis_client, sid)]
+        except ValueError as exc:
+            return jsonify(_params_store_error_payload(sid, exc)), 500
+        payload = {"strategies": strategies}
         return jsonify({"ok": True, "data": payload, "error": None}), 200
 
     @app.post("/api/v1/params")
@@ -1239,11 +1259,15 @@ def build_app() -> Flask:
     @app.get("/api/v1/strategies")
     def api_strategies() -> Any:
         sid = request.args.get("strategy") or DEFAULT_STRATEGY_ID
+        try:
+            strategies = [_build_signals_payload(redis_client, strategy_id=sid)]
+        except ValueError as exc:
+            return jsonify(_params_store_error_payload(sid, exc)), 500
         return jsonify(
             {
                 "ok": True,
                 "data": {
-                    "strategies": [_build_signals_payload(redis_client, strategy_id=sid)],
+                    "strategies": strategies,
                     "count": 1,
                 },
                 "error": None,
@@ -1253,11 +1277,11 @@ def build_app() -> Flask:
     @app.get("/api/v1/strategies/<string:strategy_id>/parameters")
     def api_strategy_parameters(strategy_id: str) -> Any:
         sid = strategy_id or DEFAULT_STRATEGY_ID
-        payload = {
-            "strategy_id": sid,
-            "params": _load_params(redis_client, sid),
-            "schema": _ordered_schema(),
-        }
+        try:
+            params = _load_params(redis_client, sid)
+        except ValueError as exc:
+            return jsonify(_params_store_error_payload(sid, exc)), 500
+        payload = {"strategy_id": sid, "params": params, "schema": _ordered_schema()}
         return jsonify({"ok": True, "data": payload, "error": None}), 200
 
     @app.post("/api/v1/strategies/<string:strategy_id>/parameters")
