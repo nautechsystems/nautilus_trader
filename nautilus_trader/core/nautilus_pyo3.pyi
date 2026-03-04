@@ -8497,6 +8497,7 @@ class HyperliquidHttpClient:
         self,
         private_key: str | None = None,
         vault_address: str | None = None,
+        account_address: str | None = None,
         is_testnet: bool = False,
         timeout_secs: int | None = None,
         proxy_url: str | None = None,
