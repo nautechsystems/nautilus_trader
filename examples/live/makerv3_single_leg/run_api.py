@@ -178,6 +178,11 @@ def _build_flux_config(config: dict[str, Any], *, mode: str, confirm_live: bool)
     )
 
 
+def _resolve_bind_host(config: dict[str, Any], args: argparse.Namespace) -> str:
+    api_cfg = _table(config, "api")
+    return str(args.host or api_cfg.get("host", "127.0.0.1"))
+
+
 def _env_flag(name: str, *, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -301,7 +306,7 @@ def main() -> None:
         dist_path = _resolve_fluxboard_dist_path(args, api_cfg)
         _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_path)
 
-    host = str(args.host or api_cfg.get("host", "127.0.0.1"))
+    host = _resolve_bind_host(config, args)
     port = int(args.port or api_cfg.get("port", 5022))
     _run_with_socketio_if_available(app, host=host, port=port)
 
