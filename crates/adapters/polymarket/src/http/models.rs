@@ -176,6 +176,9 @@ pub struct GammaMarket {
     /// URL slug.
     #[serde(rename = "slug")]
     pub market_slug: Option<String>,
+    /// Whether the market uses neg-risk CTF exchange.
+    #[serde(rename = "negRisk")]
+    pub neg_risk: Option<bool>,
 }
 
 /// Tick size response from CLOB `GET /tick-size`.

@@ -73,6 +73,8 @@ pub struct PolymarketInstrumentDef {
     pub active: bool,
     /// URL slug for the market.
     pub market_slug: Option<String>,
+    /// Whether the market uses the neg-risk CTF exchange contract.
+    pub neg_risk: bool,
 }
 
 /// Parses a Gamma market response into instrument definitions.
@@ -121,6 +123,8 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
         && !market.closed.unwrap_or(false)
         && market.accepting_orders.unwrap_or(false);
 
+    let neg_risk = market.neg_risk.unwrap_or(false);
+
     let mut defs = Vec::with_capacity(2);
 
     for (token_id, outcome_label) in token_ids.iter().zip(outcomes.iter()) {
@@ -148,6 +152,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             end_date: market.end_date.clone(),
             active,
             market_slug: market.market_slug.clone(),
+            neg_risk,
         });
     }
 
@@ -264,6 +269,12 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
             serde_json::Value::String(slug.clone()),
         );
     }
+
+    map.insert(
+        "neg_risk".to_string(),
+        serde_json::Value::Bool(def.neg_risk),
+    );
+
     serde_json::Value::Object(map)
 }
 
