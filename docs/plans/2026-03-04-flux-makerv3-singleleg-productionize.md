@@ -167,7 +167,7 @@ Phase 8: Docs and cleanup
 ### Task execution tracker
 
 - [x] Task 1: Create Flux package skeleton (`FluxRedisKeys` + `FluxConfig` + unit tests)
-- [ ] Task 2: Decide and document Redis schema (`flux:v1`)
+- [x] Task 2: Decide and document Redis schema (`flux:v1`)
 - [ ] Task 3: Extract parameter subsystem and remove hot-path polling
 - [ ] Task 4: Bridge hardening and handler modularization
 - [ ] Task 5: Flux API refactor into app factory + batched Redis reads
@@ -219,7 +219,7 @@ pytest tests/unit_tests -q
 
 **Verify:**
 
-1. `rg -n \"maker_poc\" -S` should be limited to explicit migration compatibility layers and examples only.
+1. `rg -n \"maker_poc\" -S` should be limited to explicit one-time migration mapping references and examples only.
 
 ### Task 3: Extract parameter subsystem (hash + pubsub) and remove hot-path polling
 
@@ -417,8 +417,9 @@ Retention policy defaults (tune later, but must exist):
 
 Migration policy:
 
-1. Add explicit `migration_mode=compat` which reads `maker_poc.*` inputs but writes only to `flux:v1:*`.
-2. Compatibility must be behind a feature flag and documented with a removal plan.
+1. Apply a one-time cutover from `maker_poc.*` / `maker_poc` producers to `flux:v1:in:stream:{environment}:{strategy_id}:{topic}`.
+2. Production modules ship as a single clean build that reads and writes only `flux:v1:*` keys/channels.
+3. Runtime legacy-read paths and feature-flagged dual modes are out of scope by policy.
 
 ### FluxConfig contract (explicit configuration model)
 
@@ -520,9 +521,12 @@ python -m pytest tests/unit_tests -q
 
 ## Decisions
 
-1. Redis schema namespace for production modules is fixed to `flux:v1` with strategy-scoped keys by default; key builders allow namespace/schema injection only for controlled compatibility and testing.
+1. Redis schema namespace for production modules is fixed to `flux:v1` with strategy-scoped keys by default; key builders allow namespace/schema injection only for controlled testing.
 2. Config contract starts with explicit typed config structs in `nautilus_trader/flux/common/config.py`; unsupported schema versions fail fast at construction time.
+3. Retention defaults are mandatory for high-churn streams: `events` 1000, `alerts` 500, `trades` 3000, `fv` 500 (with bounded tuning ranges documented in `docs/flux/redis_schema.md`).
+4. Migration policy is hard cutover: one clean production build with `flux:v1:*` reads/writes only and no runtime legacy-read path.
 
 ## Progress log
 
 1. 2026-03-04T00:47:15Z | Task 1 - Flux package skeleton (`FluxRedisKeys` + `FluxConfig` + tests) | SHAs: `8570583d3`, `11249bc3b61a` | Notes: Implemented with TDD and review loops; added strict schema/version and Redis validation; Task 1 spec review ✅ and code-quality review ✅.
+2. 2026-03-04T00:54:07Z | Task 2 - Redis schema decision + durable documentation | SHAs: `919df6857876f3ca64559936491a92797408e076`, `d916df85b` | Notes: Added `docs/flux/redis_schema.md` with canonical keys/channels, retention policy, `ts_ms` contract, and explicit one-time legacy mapping under hard cutover policy (no runtime legacy reads); Task 2 spec review ✅ and code-quality review ✅.

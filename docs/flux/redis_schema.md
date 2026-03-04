@@ -57,7 +57,7 @@ This document defines the production Redis contract for Flux integrations.
 
 ## Migration from `maker_poc.*` / `maker_poc`
 
-Legacy names are supported only in explicit compatibility mode.
+Legacy names below are a one-time cutover reference only.
 
 ### Legacy mapping
 
@@ -74,19 +74,10 @@ Legacy names are supported only in explicit compatibility mode.
 | `maker_poc.params.{strategy_id}` | `flux:v1:params:{strategy_id}` dual-role address: `HSET`/`HMSET` hash update, then `PUBLISH` same address |
 | `maker_poc` (legacy stream key) | `flux:v1:in:stream:{environment}:{strategy_id}:{topic}` topic fan-out; inbound entries must include `topic` |
 
-### Compatibility mode notes
+### Cutover policy
 
-1. `migration_mode=compat` reads legacy `maker_poc.*` and `maker_poc` inputs.
-2. Compatibility mode writes only `flux:v1:*` outputs (no dual-write back to legacy names).
-3. Compatibility mode must still enforce `strategy_id` scoping and `ts_ms` canonicalization at ingest.
-4. API stays `flux:v1`-only even while compatibility mode is enabled.
-5. Legacy `maker_poc` stream entries are routable only when `topic` is present and identifier-safe; missing/invalid `topic` is rejected.
-6. For `flux:v1:in:stream:{environment}:{strategy_id}:{topic}`, `{environment}` is sourced from `FluxConfig.mode`; if `FluxConfig` is not wired, use the process-level `environment` config field. If neither source is available, fail fast at startup.
-7. Missing required routing coordinates (`topic`, `strategy_id`, `ts_ms`, resolved `{environment}`) must fail fast: reject/dead-letter the entry and emit an error.
-
-### Removal plan
-
-1. Enable compatibility mode per environment for cutover only.
-2. Keep compatibility mode until legacy traffic is zero for 14 consecutive days in that environment.
-3. Disable compatibility mode by default in the next release after zero-traffic confirmation.
-4. Remove compatibility aliases and remaining `maker_poc` references one release after default-disable.
+1. Production bridge/API read and write only `flux:v1:*` keys and channels.
+2. There is a single production build; no runtime legacy-read switch or dual-path ingestion.
+3. Legacy `maker_poc` names remain documentation-only mapping references for one-time cutover planning.
+4. For `flux:v1:in:stream:{environment}:{strategy_id}:{topic}`, `{environment}` is sourced from `FluxConfig.mode`; if `FluxConfig` is not wired, use the process-level `environment` config field. If neither source is available, fail fast at startup.
+5. Missing required routing coordinates (`topic`, `strategy_id`, `ts_ms`, resolved `{environment}`) must fail fast: reject/dead-letter the entry and emit an error.
