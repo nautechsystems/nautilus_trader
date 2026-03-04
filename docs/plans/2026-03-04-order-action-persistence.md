@@ -348,7 +348,7 @@ Legend: `TODO` | `DOING` | `DONE` | `BLOCKED`
 
 | Item | Status | Notes | Link |
 | --- | --- | --- | --- |
-| Task 1: Lock MVP scope + mapping | DONE | Locked MVP event set (includes `OrderInitialized`/`OrderAccepted`/`OrderRejected`), locked enum mapping, moved `OrderActionIntent` to follow-up, set `action_id` best-effort, deferred optional indexes. Refs: `98fd07677`, `096697dad`, `771c4642d` | `98fd07677`, `096697dad`, `771c4642d` |
+| Task 1: Lock MVP scope + mapping | DONE | Locked MVP event set (includes `OrderInitialized`/`OrderAccepted`/`OrderRejected`), locked enum mapping, moved `OrderActionIntent` to follow-up, set `action_id` best-effort, deferred optional indexes. Refs: `98fd07677`, `096697dad`, `771c4642d`, `05d7da641` | `98fd07677`, `096697dad`, `771c4642d`, `05d7da641` |
 | Task 2: SQLite store for `order_action` | TODO | Schema + writer API + idempotent insert | |
 | Task 3: `OrderActionPersistenceActor` | TODO | Subscribe/filter, enqueue-only hot path, bounded flush, flush barrier | |
 | Task 4: Docs update | TODO | Document usage and joins with fills | |
