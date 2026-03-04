@@ -23,6 +23,10 @@ from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import MakerV3Sin
 from nautilus_trader.flux.strategies.makerv3.single_leg_quoter import MakerV3SingleLegQuoterConfig
 
 
+def _raise_runtime_error(*_args, **_kwargs) -> None:
+    raise RuntimeError("side-effect boom")
+
+
 def _make_strategy() -> MakerV3SingleLegQuoter:
     config = MakerV3SingleLegQuoterConfig(
         maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
@@ -125,6 +129,24 @@ def test_quote_failure_circuit_breaker_triggers_stop() -> None:
     assert states[-1] == "blocked_quote_failures"
 
 
+def test_quote_failure_circuit_breaker_stops_even_if_side_effects_raise() -> None:
+    strategy = _make_strategy()
+
+    strategy._runtime_params["quote_fail_critical_after_count"] = 1
+    strategy._publish_event = _raise_runtime_error
+    strategy._publish_alert = _raise_runtime_error
+    strategy._publish_state = _raise_runtime_error
+    strategy._cancel_managed_quotes = _raise_runtime_error
+
+    stopped: list[bool] = []
+    strategy.stop = lambda: stopped.append(True)
+
+    strategy._handle_quote_failure(now_ns=1_000_000_000, exc=RuntimeError("boom"), context="test")
+
+    assert strategy._quote_failure_circuit_open is True
+    assert stopped == [True]
+
+
 def test_on_stop_cancels_even_when_cache_managed_orders_are_empty() -> None:
     strategy = _make_strategy()
 
@@ -137,6 +159,8 @@ def test_on_stop_cancels_even_when_cache_managed_orders_are_empty() -> None:
     strategy._publish_state = lambda state: states.append(state)
 
     strategy.on_stop()
+    strategy.on_stop()
 
     assert canceled_all == [str(strategy.config.maker_instrument_id)]
-    assert states == ["on_stop"]
+    assert strategy._managed_client_order_ids == set()
+    assert states == ["on_stop", "on_stop"]

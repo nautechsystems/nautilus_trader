@@ -1100,6 +1100,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if not hasattr(self, "_quote_failures_ns"):
                 self._quote_failures_ns = []
 
+            def _safe(effect: Any) -> None:
+                try:
+                    effect()
+                except Exception:
+                    pass
+
             count_threshold = max(0, self._runtime_int("quote_fail_critical_after_count"))
             window_seconds = max(Decimal("0"), self._runtime_decimal("quote_fail_critical_after_s"))
             window_ns = int(window_seconds * Decimal("1_000_000_000"))
@@ -1111,42 +1117,54 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._quote_failures_ns = self._quote_failures_ns[-count_threshold:]
 
             failure_count = len(self._quote_failures_ns)
-            self._publish_event(
-                "quote_refresh_failed",
-                context=context,
-                failure_count=failure_count,
-                threshold=count_threshold,
-                error_type=type(exc).__name__,
-                error_message=str(exc),
+            _safe(
+                lambda: self._publish_event(
+                    "quote_refresh_failed",
+                    context=context,
+                    failure_count=failure_count,
+                    threshold=count_threshold,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                ),
             )
-            self.log.error(
-                f"Quote refresh failure strategy_id={self._external_strategy_id} context={context} "
-                f"count={failure_count} threshold={count_threshold} err={type(exc).__name__}: {exc}",
+            _safe(
+                lambda: self.log.error(
+                    f"Quote refresh failure strategy_id={self._external_strategy_id} context={context} "
+                    f"count={failure_count} threshold={count_threshold} err={type(exc).__name__}: {exc}",
+                ),
             )
             self._last_requote_ns = now_ns
             if count_threshold <= 0 or failure_count < count_threshold:
                 return
 
             self._quote_failure_circuit_open = True
-            self._cancel_managed_quotes("quote_fail_circuit_breaker", force=True)
-            self._publish_state("blocked_quote_failures")
-            self._publish_alert(
-                (
-                    "quote_fail_circuit_breaker triggered "
-                    f"count={failure_count} threshold={count_threshold} window_s={window_seconds}"
-                ),
-                level="error",
-            )
-            self._publish_event(
-                "quote_fail_circuit_breaker",
-                failure_count=failure_count,
-                threshold=count_threshold,
-                window_s=str(window_seconds),
-            )
-            self.log.error(
-                f"Quote failure circuit breaker triggered strategy_id={self._external_strategy_id}",
-            )
-            self.stop()
+            try:
+                _safe(lambda: self._cancel_managed_quotes("quote_fail_circuit_breaker", force=True))
+                _safe(lambda: self._publish_state("blocked_quote_failures"))
+                _safe(
+                    lambda: self._publish_alert(
+                        (
+                            "quote_fail_circuit_breaker triggered "
+                            f"count={failure_count} threshold={count_threshold} window_s={window_seconds}"
+                        ),
+                        level="error",
+                    ),
+                )
+                _safe(
+                    lambda: self._publish_event(
+                        "quote_fail_circuit_breaker",
+                        failure_count=failure_count,
+                        threshold=count_threshold,
+                        window_s=str(window_seconds),
+                    ),
+                )
+                _safe(
+                    lambda: self.log.error(
+                        f"Quote failure circuit breaker triggered strategy_id={self._external_strategy_id}",
+                    ),
+                )
+            finally:
+                _safe(self.stop)
 
         def on_order_filled(self, event: OrderFilled) -> None:
             self._publish_json(
@@ -1772,7 +1790,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             managed_orders = self._managed_orders()
             tracked_ids = getattr(self, "_managed_client_order_ids", set())
             tracked_count = len(tracked_ids)
-            should_cancel = bool(force or managed_orders or tracked_count > 0)
+            should_cancel = bool(managed_orders or tracked_count > 0)
             if not should_cancel:
                 return
 
@@ -1793,6 +1811,10 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 f"Managed quote cancel triggered strategy_id={self._external_strategy_id} "
                 f"reason={reason} force={force} cache_count={len(managed_orders)} tracked_count={tracked_count}",
             )
+            if force and reason in {"on_stop", "quote_fail_circuit_breaker"}:
+                tracked_ids.clear()
+            elif not managed_orders:
+                tracked_ids.clear()
 
         def _best_bid_ask(self, instrument_id: InstrumentId) -> tuple[Decimal, Decimal] | None:
             book = self._books.get(instrument_id)
