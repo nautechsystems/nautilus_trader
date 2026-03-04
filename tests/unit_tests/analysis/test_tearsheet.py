@@ -17,13 +17,24 @@ import numpy as np
 import pandas as pd
 import pytest
 
+
+def _is_plotly_import_error(exc: ImportError) -> bool:
+    module_name = getattr(exc, "name", "")
+    if module_name and module_name.startswith("plotly"):
+        return True
+    return "plotly" in str(exc).lower()
+
+
 try:
     import plotly.graph_objects as go
 
     HAS_PLOTLY = True
-except ImportError:
-    go = None
-    HAS_PLOTLY = False
+except ImportError as exc:
+    if _is_plotly_import_error(exc):
+        go = None
+        HAS_PLOTLY = False
+    else:
+        raise
 
 from nautilus_trader.analysis.config import GridLayout
 from nautilus_trader.analysis.config import TearsheetConfig
@@ -52,16 +63,11 @@ from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
 
 
-PLOTLY_OPTIONAL_TESTS = {
-    "test_create_tearsheet_raises_import_error_when_plotly_not_available",
-}
-
-
 @pytest.fixture(autouse=True)
 def skip_if_plotly_missing(request):
     if HAS_PLOTLY:
         return
-    if request.node.name in PLOTLY_OPTIONAL_TESTS:
+    if request.node.get_closest_marker("no_plotly_required"):
         return
     pytest.skip("plotly not installed")
 
@@ -242,6 +248,7 @@ def test_create_returns_distribution_with_valid_data(sample_returns, tmp_path):
     assert "Test Distribution" in fig.layout.title.text
 
 
+@pytest.mark.no_plotly_required
 def test_create_tearsheet_raises_import_error_when_plotly_not_available(monkeypatch):
     # Arrange
     monkeypatch.setattr("nautilus_trader.analysis.tearsheet.PLOTLY_AVAILABLE", False)

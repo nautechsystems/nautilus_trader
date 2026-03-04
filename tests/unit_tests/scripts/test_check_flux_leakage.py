@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -9,6 +10,22 @@ import pytest
 SCRIPT_UNDER_TEST = Path("scripts/ci/check-flux-leakage.sh")
 ALLOWLIST_START = "<!-- leakage-allowlist:start maker_poc_migration -->"
 ALLOWLIST_END = "<!-- leakage-allowlist:end maker_poc_migration -->"
+REQUIRED_BINARIES = ("git", "bash", "rg")
+MISSING_BINARIES = [binary for binary in REQUIRED_BINARIES if shutil.which(binary) is None]
+
+pytestmark = pytest.mark.skipif(
+    bool(MISSING_BINARIES),
+    reason=f"Missing required binaries: {', '.join(MISSING_BINARIES)}",
+)
+
+
+def _locate_source_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / ".git").exists() and (parent / SCRIPT_UNDER_TEST).is_file():
+            return parent
+    raise FileNotFoundError(
+        f"Could not locate repository root with {SCRIPT_UNDER_TEST} while walking parent directories",
+    )
 
 
 def _base_redis_schema_doc() -> str:
@@ -27,7 +44,7 @@ def _init_temp_repo(tmp_path: Path, redis_schema_doc: str) -> Path:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
-    source_repo_root = Path(__file__).resolve().parents[3]
+    source_repo_root = _locate_source_repo_root()
     script_contents = (source_repo_root / SCRIPT_UNDER_TEST).read_text()
 
     script_path = repo_root / SCRIPT_UNDER_TEST
