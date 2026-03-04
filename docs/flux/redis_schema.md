@@ -63,10 +63,7 @@ This table is the authoritative source for production high-churn retention defau
 This document includes a single legacy mapping section for one-time cutover planning. It must quote historical
 key names which contain banned legacy prefixes.
 
-Those legacy strings are allowed only inside the marker block below:
-
-1. `<!-- leakage-allowlist:start maker_poc_migration -->`
-2. `<!-- leakage-allowlist:end maker_poc_migration -->`
+Those legacy strings are allowed only inside the single allowlisted migration block immediately below.
 
 The CI/pre-commit gate `scripts/ci/check-flux-leakage.sh` strips the allowlisted block and fails if legacy naming
 appears anywhere else in production Flux paths or durable Flux docs.
