@@ -39,8 +39,9 @@ class StrategyMetadata:
     base_asset: str
     quote_asset: str
 
-    def as_payload(self) -> dict[str, str]:
+    def as_payload(self, *, strategy_id: str) -> dict[str, str]:
         return {
+            "strategy_id": strategy_id,
             "class": self.strategy_class,
             "strategy_groups": self.strategy_groups,
             "base_asset": self.base_asset,
@@ -474,7 +475,7 @@ def build_signals_payload(
 
     return {
         "id": strategy_id,
-        "meta": metadata.as_payload(),
+        "meta": metadata.as_payload(strategy_id=strategy_id),
         "tradeable": bot_on,
         "blocked": not bot_on,
         "near_tradeable": False,
@@ -570,4 +571,3 @@ def build_envelope(
         "data": data,
         "error": dict(error) if error is not None else None,
     }
-

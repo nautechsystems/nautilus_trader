@@ -105,7 +105,7 @@ def _build_flux_config(contracts: tuple[ContractCatalogEntry, ...]) -> FluxConfi
     confirm_live = _env_bool("FLUX_CONFIRM_LIVE", default=False)
     return FluxConfig(
         mode=mode,
-        confirm_live=confirm_live if mode == "live" else True,
+        confirm_live=confirm_live,
         identity=identity,
         redis=redis_config,
         venues=venues,

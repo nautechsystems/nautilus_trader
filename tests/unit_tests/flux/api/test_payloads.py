@@ -111,6 +111,7 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
 
     assert payload["id"] == "strategy_01"
     assert payload["meta"] == {
+        "strategy_id": "strategy_01",
         "class": "maker_v3",
         "strategy_groups": "tokenmm",
         "base_asset": "ABC",
@@ -119,4 +120,3 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     assert payload["tradeable"] is True
     assert payload["managed_orders"] == 3
     assert payload["legs"]["venue_a"]["mid"] == 100.5
-

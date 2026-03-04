@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 import uuid
 from typing import Any
+from typing import Callable
 from typing import Protocol
 
 import redis
@@ -47,6 +48,7 @@ from nautilus_trader.flux.api.payloads import normalize_symbol_parts
 from nautilus_trader.flux.api.payloads import now_ms
 from nautilus_trader.flux.api.payloads import select_latest_strategy_row
 from nautilus_trader.flux.common.config import FluxConfig
+from nautilus_trader.flux.common.config import validate_identifier_part
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.params.manager import FluxParamsManager
 
@@ -172,6 +174,32 @@ class ParamsUpdateValidationError(ValueError):
     """
 
 
+class ContractCatalogValidationError(ValueError):
+    """
+    Raised when contract catalog input is invalid for Flux key building.
+    """
+
+
+class ApiEnvelopeError(ValueError):
+    """
+    Value error carrying response status/code/details for explicit API envelopes.
+    """
+
+    def __init__(
+        self,
+        *,
+        status: int,
+        code: str,
+        message: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status = int(status)
+        self.code = code
+        self.message = message
+        self.details = dict(details) if details is not None else None
+
+
 def _ordered_params_schema(schema: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     ordered: dict[str, dict[str, Any]] = {}
     for name in DEFAULT_PARAMS_ORDER:
@@ -210,9 +238,10 @@ class FluxApiStore:
 
         self._config = flux_config
         self._redis = redis_client
-        self._contracts = tuple(contract_catalog)
         self._params_schema = _ordered_params_schema(params_schema)
         self._params_defaults = dict(params_defaults)
+        self._contract_specs = self._validate_contract_catalog(contract_catalog)
+        self._contracts = tuple(spec[0] for spec in self._contract_specs)
 
         base_keys = self._keys_for_strategy(self._config.identity.strategy_id)
         self._required_readiness_keys = tuple(
@@ -224,6 +253,9 @@ class FluxApiStore:
                 base_keys.fv_stream(),
             ),
         )
+        for key in self._required_readiness_keys:
+            if not isinstance(key, str) or not key.strip():
+                raise ContractCatalogValidationError("`required_readiness_keys` must contain non-empty strings")
 
     @property
     def schema_version(self) -> str:
@@ -253,6 +285,44 @@ class FluxApiStore:
             schema=self._params_schema,
             defaults=self._params_defaults,
         )
+
+    def _validate_contract_catalog(
+        self,
+        contract_catalog: Sequence[ContractCatalogEntry],
+    ) -> tuple[tuple[ContractCatalogEntry, str, str], ...]:
+        keys = self._keys_for_strategy(self._config.identity.strategy_id)
+        seen: set[tuple[str, str, str]] = set()
+        out: list[tuple[ContractCatalogEntry, str, str]] = []
+        for index, contract in enumerate(contract_catalog):
+            if not isinstance(contract, ContractCatalogEntry):
+                raise ContractCatalogValidationError(
+                    f"`contract_catalog[{index}]` must be `ContractCatalogEntry`, got {type(contract).__name__}",
+                )
+
+            exchange = decode_text(contract.exchange).strip().lower()
+            symbol = decode_text(contract.symbol).strip().upper()
+            base, quote = normalize_symbol_parts(symbol=symbol)
+            if not base or not quote:
+                raise ContractCatalogValidationError(
+                    f"Contract symbol did not resolve to base/quote parts: {contract.symbol!r}",
+                )
+
+            try:
+                keys.market_last(exchange=exchange, base=base, quote=quote)
+            except (TypeError, ValueError) as exc:
+                raise ContractCatalogValidationError(
+                    f"Invalid contract catalog entry exchange={exchange!r} symbol={symbol!r}: {exc}",
+                ) from exc
+
+            dedupe_key = (exchange, base, quote)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            out.append((ContractCatalogEntry(exchange=exchange, symbol=symbol), base, quote))
+
+        if not out:
+            raise ContractCatalogValidationError("`contract_catalog` produced no valid contract entries")
+        return tuple(out)
 
     def redis_available(self) -> bool:
         try:
@@ -304,12 +374,7 @@ class FluxApiStore:
     def _market_keys(self, strategy_id: str) -> list[tuple[ContractCatalogEntry, str]]:
         keys = self._keys_for_strategy(strategy_id)
         out: list[tuple[ContractCatalogEntry, str]] = []
-        for contract in self._contracts:
-            base, quote = normalize_symbol_parts(symbol=contract.symbol)
-            if not base or not quote:
-                raise ValueError(
-                    f"Contract symbol did not resolve to base/quote parts: {contract.symbol!r}",
-                )
+        for contract, base, quote in self._contract_specs:
             out.append(
                 (
                     contract,
@@ -410,12 +475,17 @@ def create_flux_api_app(
     *,
     contract_catalog: Sequence[ContractCatalogEntry],
     strategy_metadata: StrategyMetadata,
+    strategy_metadata_resolver: Callable[[str], StrategyMetadata] | None = None,
     params_schema: Mapping[str, Mapping[str, Any]] | None = None,
     params_defaults: Mapping[str, Any] | None = None,
     required_readiness_keys: Sequence[str] | None = None,
 ) -> Flask:
     if not isinstance(flux_config, FluxConfig):
         raise TypeError("`flux_config` must be an instance of `FluxConfig`")
+    if not isinstance(strategy_metadata, StrategyMetadata):
+        raise TypeError("`strategy_metadata` must be an instance of `StrategyMetadata`")
+    if strategy_metadata_resolver is not None and not callable(strategy_metadata_resolver):
+        raise TypeError("`strategy_metadata_resolver` must be callable when provided")
 
     schema = params_schema or DEFAULT_PARAMS_SCHEMA
     defaults = params_defaults or DEFAULT_PARAMS_DEFAULTS
@@ -427,6 +497,50 @@ def create_flux_api_app(
         params_defaults=defaults,
         required_readiness_keys=required_readiness_keys,
     )
+    default_strategy_id = flux_config.identity.strategy_id
+
+    def _resolve_strategy_id(raw_value: Any, *, field_name: str) -> str:
+        text = decode_text(raw_value).strip()
+        candidate = text or default_strategy_id
+        try:
+            return validate_identifier_part(candidate, field_name)
+        except ValueError as exc:
+            raise ApiEnvelopeError(
+                status=400,
+                code="invalid_strategy_id",
+                message=str(exc),
+                details={
+                    "field": field_name,
+                    "strategy_id": text or candidate,
+                },
+            ) from exc
+
+    def _metadata_for_strategy(strategy_id: str) -> StrategyMetadata:
+        metadata = strategy_metadata
+        if strategy_metadata_resolver is not None:
+            try:
+                metadata = strategy_metadata_resolver(strategy_id)
+            except Exception as exc:  # noqa: BLE001
+                raise ApiEnvelopeError(
+                    status=500,
+                    code="config_validation_error",
+                    message="Strategy metadata resolver failed.",
+                    details={
+                        "strategy_id": strategy_id,
+                        "reason": str(exc),
+                    },
+                ) from exc
+        if not isinstance(metadata, StrategyMetadata):
+            raise ApiEnvelopeError(
+                status=500,
+                code="config_validation_error",
+                message="Strategy metadata resolver returned invalid metadata type.",
+                details={
+                    "strategy_id": strategy_id,
+                    "type": type(metadata).__name__,
+                },
+            )
+        return metadata
 
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
@@ -482,38 +596,34 @@ def create_flux_api_app(
 
     @app.get("/api/v1/healthz")
     def healthz() -> Response:
-        redis_available = store.redis_available()
-        required_keys = {key: False for key in store.required_readiness_keys}
-        schema_ready = False
-        error = None
-        if redis_available:
-            try:
-                snapshot = store.readiness_snapshot()
-                required_keys = snapshot.required_keys
-                schema_ready = snapshot.schema_ready
-            except Exception as exc:  # noqa: BLE001
-                error = build_error(
-                    code="readiness_probe_failed",
-                    message=str(exc),
-                    details={"schema_prefix": store.schema_prefix},
-                )
-        else:
-            error = build_error(
+        if not store.redis_available():
+            return _error(
+                status=503,
                 code="redis_unavailable",
                 message="Redis ping failed.",
                 details={"schema_prefix": store.schema_prefix},
             )
 
-        return _response(
-            ok=redis_available,
+        try:
+            snapshot = store.readiness_snapshot()
+        except Exception as exc:  # noqa: BLE001
+            return _error(
+                status=503,
+                code="readiness_probe_failed",
+                message="Readiness probe failed during health check.",
+                details={
+                    "schema_prefix": store.schema_prefix,
+                    "reason": str(exc),
+                },
+            )
+
+        return _ok(
             data={
-                "redis_available": redis_available,
-                "schema_prefix": store.schema_prefix,
-                "schema_ready": schema_ready,
-                "required_keys": required_keys,
+                "redis_available": True,
+                "schema_prefix": snapshot.schema_prefix,
+                "schema_ready": snapshot.schema_ready,
+                "required_keys": snapshot.required_keys,
             },
-            error=error,
-            status=200,
         )
 
     @app.get("/api/v1/readyz")
@@ -532,8 +642,11 @@ def create_flux_api_app(
             return _error(
                 status=503,
                 code="service_not_ready",
-                message=str(exc),
-                details={"schema_prefix": store.schema_prefix},
+                message="Readiness probe failed.",
+                details={
+                    "schema_prefix": store.schema_prefix,
+                    "reason": str(exc),
+                },
             )
 
         if not snapshot.schema_ready:
@@ -565,7 +678,7 @@ def create_flux_api_app(
 
     @app.get("/api/v1/params")
     def api_params() -> Response:
-        strategy_id = request.args.get("strategy") or flux_config.identity.strategy_id
+        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         try:
             params = store.load_params(strategy_id)
         except ParamsStoreValidationError as exc:
@@ -581,7 +694,7 @@ def create_flux_api_app(
     @app.post("/api/v1/params")
     @app.patch("/api/v1/params")
     def api_params_update() -> Response:
-        strategy_id = request.args.get("strategy") or flux_config.identity.strategy_id
+        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         updates = _params_request_payload()
         if not updates:
             return _error(
@@ -616,20 +729,13 @@ def create_flux_api_app(
 
     @app.get("/api/v1/signals")
     def api_signals() -> Response:
-        strategy_id = request.args.get("strategy") or flux_config.identity.strategy_id
+        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         try:
-            strategy_payload = store.load_signals_payload(strategy_id, strategy_metadata)
+            strategy_payload = store.load_signals_payload(strategy_id, _metadata_for_strategy(strategy_id))
         except ParamsStoreValidationError as exc:
             return _error(
                 status=500,
                 code="params_store_invalid",
-                message=str(exc),
-                details={"strategy_id": strategy_id},
-            )
-        except ValueError as exc:
-            return _error(
-                status=500,
-                code="store_validation_error",
                 message=str(exc),
                 details={"strategy_id": strategy_id},
             )
@@ -644,20 +750,13 @@ def create_flux_api_app(
 
     @app.get("/api/v1/strategies")
     def api_strategies() -> Response:
-        strategy_id = request.args.get("strategy") or flux_config.identity.strategy_id
+        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         try:
-            strategy_payload = store.load_signals_payload(strategy_id, strategy_metadata)
+            strategy_payload = store.load_signals_payload(strategy_id, _metadata_for_strategy(strategy_id))
         except ParamsStoreValidationError as exc:
             return _error(
                 status=500,
                 code="params_store_invalid",
-                message=str(exc),
-                details={"strategy_id": strategy_id},
-            )
-        except ValueError as exc:
-            return _error(
-                status=500,
-                code="store_validation_error",
                 message=str(exc),
                 details={"strategy_id": strategy_id},
             )
@@ -670,7 +769,7 @@ def create_flux_api_app(
 
     @app.get("/api/v1/strategies/<string:strategy_id>/parameters")
     def api_strategy_parameters(strategy_id: str) -> Response:
-        sid = strategy_id or flux_config.identity.strategy_id
+        sid = _resolve_strategy_id(strategy_id, field_name="strategy_id")
         try:
             params = store.load_params(sid)
         except ParamsStoreValidationError as exc:
@@ -686,7 +785,7 @@ def create_flux_api_app(
     @app.post("/api/v1/strategies/<string:strategy_id>/parameters")
     @app.patch("/api/v1/strategies/<string:strategy_id>/parameters")
     def api_strategy_parameters_update(strategy_id: str) -> Response:
-        sid = strategy_id or flux_config.identity.strategy_id
+        sid = _resolve_strategy_id(strategy_id, field_name="strategy_id")
         updates = _params_request_payload()
         if not updates:
             return _error(
@@ -721,7 +820,7 @@ def create_flux_api_app(
 
     @app.get("/api/v1/balances")
     def api_balances() -> Response:
-        strategy_id = request.args.get("strategy") or flux_config.identity.strategy_id
+        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         rows = store.load_balances_rows(strategy_id)
         return _ok(
@@ -734,14 +833,14 @@ def create_flux_api_app(
 
     @app.get("/api/v1/trades")
     def api_trades() -> Response:
-        strategy_id = request.args.get("strategy") or flux_config.identity.strategy_id
+        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         rows = store.load_trades_rows(strategy_id, limit=limit, since_ms=None)
         return _ok(data={"rows": rows, "count": len(rows), "server_ts_ms": now_ms()})
 
     @app.get("/api/v1/trades/delta")
     def api_trades_delta() -> Response:
-        strategy_id = request.args.get("strategy") or flux_config.identity.strategy_id
+        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         since_ms = coerce_ts_ms(request.args.get("after"))
         rows = store.load_trades_rows(strategy_id, limit=limit, since_ms=since_ms)
@@ -756,10 +855,19 @@ def create_flux_api_app(
 
     @app.get("/api/v1/alerts")
     def api_alerts() -> Response:
-        strategy_id = request.args.get("strategy") or flux_config.identity.strategy_id
+        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         rows = store.load_alerts_rows(strategy_id, limit=limit)
         return _ok(data={"rows": rows, "count": len(rows), "server_ts_ms": now_ms()})
+
+    @app.errorhandler(ApiEnvelopeError)
+    def _handle_envelope_error(exc: ApiEnvelopeError) -> Response:
+        return _error(
+            status=exc.status,
+            code=exc.code,
+            message=exc.message,
+            details=exc.details,
+        )
 
     @app.errorhandler(redis.RedisError)
     def _handle_redis_error(exc: redis.RedisError) -> Response:
@@ -773,6 +881,8 @@ def create_flux_api_app(
 
 
 __all__ = [
+    "ApiEnvelopeError",
+    "ContractCatalogValidationError",
     "DEFAULT_PARAMS_DEFAULTS",
     "DEFAULT_PARAMS_SCHEMA",
     "FluxApiStore",

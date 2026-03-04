@@ -15,7 +15,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from nautilus_trader.flux.api import create_flux_api_app
+from nautilus_trader.flux.api import ContractCatalogEntry
+from nautilus_trader.flux.api.payloads import StrategyMetadata
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 
 
@@ -131,3 +135,109 @@ def test_signals_uses_batched_pipeline_for_key_lookup(
     assert sum(1 for command in batch if command[0] == "get") == 2 + len(contract_catalog)
     assert any(command[0] == "xrevrange" for command in batch)
 
+
+def test_healthz_readiness_exception_returns_not_ok_with_error(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    redis_client.pipeline_execute_error = RuntimeError("readiness exploded")
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/healthz")
+        body = response.get_json()
+
+    assert response.status_code == 503
+    assert body["ok"] is False
+    assert body["error"]["code"] == "readiness_probe_failed"
+    assert "reason" in body["error"]["details"]
+    assert body["error"]["details"]["schema_prefix"] == "flux:v1"
+
+
+def test_signals_rejects_malformed_strategy_id(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"strategy": "bad id"})
+        body = response.get_json()
+
+    assert response.status_code == 400
+    assert body["ok"] is False
+    assert body["error"]["code"] == "invalid_strategy_id"
+    assert redis_client.pipeline_exec_count == 0
+
+
+def test_signals_metadata_binds_to_requested_strategy_id(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"strategy": "strategy_02"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    strategy = body["data"]["strategies"][0]
+    assert strategy["id"] == "strategy_02"
+    assert strategy["meta"]["strategy_id"] == "strategy_02"
+
+
+def test_create_app_rejects_invalid_contract_symbol(
+    flux_config,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    with pytest.raises(ValueError, match="base/quote"):
+        create_flux_api_app(
+            flux_config,
+            redis_client,
+            contract_catalog=(
+                ContractCatalogEntry(exchange="venue_a", symbol="INVALID"),
+            ),
+            strategy_metadata=StrategyMetadata(
+                strategy_class="maker_v3",
+                strategy_groups="tokenmm",
+                base_asset="ABC",
+                quote_asset="USDT",
+            ),
+            params_schema=params_schema,
+            params_defaults=params_defaults,
+        )

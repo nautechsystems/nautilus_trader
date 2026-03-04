@@ -54,6 +54,9 @@ class FakeRedisPipeline:
         return self
 
     def execute(self) -> list[Any]:
+        if self._redis.pipeline_execute_error is not None:
+            raise self._redis.pipeline_execute_error
+
         self._redis.pipeline_exec_count += 1
         self._redis.pipeline_batches.append(list(self._commands))
 
@@ -81,6 +84,7 @@ class FakeRedis:
         self.direct_xrevrange_calls: list[tuple[str, int | None]] = []
         self.pipeline_exec_count = 0
         self.pipeline_batches: list[list[tuple[str, Any]]] = []
+        self.pipeline_execute_error: Exception | None = None
 
     def set_json(self, key: str, value: Any) -> None:
         self.strings[key] = json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
