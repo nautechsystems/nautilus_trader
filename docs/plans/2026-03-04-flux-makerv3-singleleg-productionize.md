@@ -175,6 +175,7 @@ Phase 8: Docs and cleanup
 - [x] Task 7: Replace POC runners with thin examples
 - [x] Task 8: Clean PR artifacts and enforce “no POC/chainsaw leakage”
 - [x] Task 9: Follow-up gate (bridge offsets, API legs keying, CI plotly check, config uniqueness, bridge runner scope hardening)
+- [x] Task 10: Non-overlap follow-up wave (CI/pre-commit gate wiring, redis-schema allowlist enforcement, API localhost defaults, plotly test guard)
 
 ### Follow-up gate tracker (P0 + P1)
 
@@ -183,6 +184,13 @@ Phase 8: Docs and cleanup
 - [x] P1: Added explicit Plotly availability verification in wheel build action (`uv run --no-sync python -c "import plotly.graph_objects as go"`)
 - [x] P1: Enforced `strategy_instance_id == strategy_id` in `FluxIdentityConfig` without changing `FluxRedisKeys` format
 - [x] P1: Bridge runner wildcard hardening (`--all-strategies`, mutual exclusion with `--strategy-id`, fail-fast strategy scope validation)
+
+### Task 10 follow-up tracker (non-overlap)
+
+- [x] Added leakage gate wiring in `.pre-commit-config.yaml` and explicit `build.yml` pre-commit job step.
+- [x] Added redis-schema migration allowlist markers and enforced banned-name scan in `docs/flux/redis_schema.md` outside allowlist only.
+- [x] Changed example API bind defaults to localhost (`127.0.0.1`) in runner/config and documented explicit external-exposure override.
+- [x] Guarded Plotly-dependent tearsheet unit module import to skip cleanly when Plotly is not installed.
 
 ### Follow-up verification checklist
 
@@ -546,6 +554,7 @@ python -m pytest tests/unit_tests -q
 8. Production strategy implementation lives under `nautilus_trader/flux/strategies/makerv3/` with two-leg staleness gating, lifecycle reconciliation, and quote-failure circuit breaker fail-stop semantics.
 9. Production leakage policy is enforced via `scripts/ci/check-flux-leakage.sh`, which fails on POC/chainsaw naming in production Flux paths and on absolute host paths in durable Flux docs.
 10. Follow-up gate policy keeps Redis key format unchanged while enforcing config-level identity uniqueness (`strategy_instance_id == strategy_id`) and explicitly forbids edits under `nautilus_trader/flux/strategies/*` in this wave to avoid worker-collision risk.
+11. Task 10 non-overlap wave boundaries remain strict: no edits under `nautilus_trader/flux/strategies/*` and no changes to untracked plan docs; `docs/flux/redis_schema.md` migration references are allowed only within explicit `leakage-allowlist` markers and are leakage-gated everywhere else.
 
 ## Progress log
 
@@ -564,3 +573,7 @@ python -m pytest tests/unit_tests -q
 13. 2026-03-04T03:12:09Z | Task 9 (P1) - Bridge runner wildcard hardening | SHAs: `176f0685c` | Notes: Added `--all-strategies` support with strict scope validation (mutual exclusion with `--strategy-id`, fail-fast when scope missing) plus runner unit tests and README updates.
 14. 2026-03-04T03:24:38Z | Task 9 (quality loop) - Bridge batch failure semantics + CI isolation hardening | SHAs: `461001804` | Notes: Hardened per-stream batch processing to stop at first failed entry and avoid offset advancement past failures; fixed example default config to satisfy new identity policy; added API-runner config smoke test; moved Plotly verification into isolated temporary virtualenv with wheel install.
 15. 2026-03-04T03:27:50Z | Task 9 (quality loop) - CI wheel URI portability | SHAs: `4d12202aa` | Notes: Replaced manual `file://` wheel URI construction with Python `Path(...).resolve().as_uri()` in common wheel-build action to avoid platform path formatting pitfalls.
+16. 2026-03-04T03:52:05Z | Task 10 - CI/pre-commit leakage gate wiring | SHAs: `4f4b5134e` | Notes: Added local pre-commit hook `check-flux-leakage` and explicit `build.yml` pre-commit job step to run `bash scripts/ci/check-flux-leakage.sh`.
+17. 2026-03-04T03:52:08Z | Task 10 - Redis schema allowlist enforcement | SHAs: `c18d7aebe` | Notes: Wrapped `maker_poc` migration references in explicit allowlist markers in `docs/flux/redis_schema.md` and updated leakage script to enforce banned-name checks on that doc outside allowlist only.
+18. 2026-03-04T03:52:15Z | Task 10 - Example API localhost default + docs/tests | SHAs: `9eb815633` | Notes: Defaulted example API bind host to `127.0.0.1` in runner/config, updated runner/API docs for explicit external exposure override, and extended run_api tests for host-resolution behavior.
+19. 2026-03-04T03:52:26Z | Task 10 - Plotly import guard for analysis tests | SHAs: `3dd928c8b` | Notes: Replaced unconditional top-level Plotly import in tearsheet unit tests with `pytest.importorskip` so collection stays stable when Plotly is absent.
