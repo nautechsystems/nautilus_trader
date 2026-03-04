@@ -16,7 +16,14 @@
 import numpy as np
 import pandas as pd
 import pytest
-go = pytest.importorskip("plotly.graph_objects", reason="plotly not installed")
+
+try:
+    import plotly.graph_objects as go
+
+    HAS_PLOTLY = True
+except ModuleNotFoundError:
+    go = None
+    HAS_PLOTLY = False
 
 from nautilus_trader.analysis.config import GridLayout
 from nautilus_trader.analysis.config import TearsheetConfig
@@ -43,6 +50,12 @@ from nautilus_trader.analysis.themes import list_themes
 from nautilus_trader.analysis.themes import register_theme
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
+
+
+pytestmark = pytest.mark.skipif(
+    not HAS_PLOTLY,
+    reason="plotly not installed",
+)
 
 
 @pytest.fixture

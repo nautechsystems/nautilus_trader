@@ -22,8 +22,8 @@ if rg "${RG_FLAGS[@]}" "$BANNED_PATTERN" "${PRODUCTION_PATHS[@]}"; then
   exit 1
 fi
 
-allowlist_start_count="$(rg -n -F -- "$ALLOWLIST_START" "$REDIS_SCHEMA_DOC" | wc -l | tr -d ' ')"
-allowlist_end_count="$(rg -n -F -- "$ALLOWLIST_END" "$REDIS_SCHEMA_DOC" | wc -l | tr -d ' ')"
+allowlist_start_count="$(grep -Fxc -- "$ALLOWLIST_START" "$REDIS_SCHEMA_DOC" || true)"
+allowlist_end_count="$(grep -Fxc -- "$ALLOWLIST_END" "$REDIS_SCHEMA_DOC" || true)"
 if [[ "$allowlist_start_count" != "1" || "$allowlist_end_count" != "1" ]]; then
   echo "[flux-leakage] Expected exactly one redis_schema allowlist start/end marker pair." >&2
   exit 1
