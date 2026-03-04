@@ -21,6 +21,7 @@ from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.api.payloads import build_envelope
 from nautilus_trader.flux.api.payloads import build_legs_payload
 from nautilus_trader.flux.api.payloads import build_signals_payload
+from nautilus_trader.flux.api.payloads import build_trades_rows
 
 
 def test_build_envelope_includes_standard_fields() -> None:
@@ -145,3 +146,30 @@ def test_build_legs_payload_uses_contract_id_keys_for_same_exchange_contracts() 
     assert legs["venue_a:XYZ/USDT"]["exchange"] == "venue_a"
     assert legs["venue_a:XYZ/USDT"]["symbol"] == "XYZ/USDT"
     assert legs["venue_a:XYZ/USDT"]["mid"] == 200.5
+
+
+def test_build_trades_rows_enforces_row_contract_defaults() -> None:
+    rows = build_trades_rows(
+        rows=[
+            {"strategy_id": "strategy_01", "seq": "101", "ts_ms": 101_000},
+            {"strategy_id": "strategy_01", "seq": "102"},
+            {"strategy_id": "strategy_01", "row_id": "existing", "version": "3", "ts_ms": 103_000},
+        ],
+        strategy_id="strategy_01",
+        limit=10,
+        since_ms=None,
+        since_seq=None,
+    )
+
+    assert len(rows) == 3
+    assert rows[0]["row_id"] == "existing"
+    assert rows[0]["version"] == 3
+    assert rows[0]["ts_ms"] == 103_000_000
+
+    assert rows[1]["version"] == 1
+    assert rows[1]["row_id"] == "strategy_01:trade:101:101000000:1"
+    assert rows[1]["ts_ms"] == 101_000_000
+
+    assert rows[2]["version"] == 1
+    assert rows[2]["row_id"] == "strategy_01:trade:102:0:1"
+    assert rows[2]["ts_ms"] == 0

@@ -456,6 +456,17 @@ describe('API Client - Existing Methods', () => {
 
       expect(result).toEqual(['strat1', 'strat2']);
     });
+
+    it('falls back to legacy rows key when strategies is missing', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, data: { rows: [{ id: 'strat1' }] }, error: null })
+      });
+
+      const result = await api.getStrategies();
+
+      expect(result).toEqual(['strat1']);
+    });
   });
 
   describe('getStrategiesWithStatus', () => {
@@ -485,6 +496,17 @@ describe('API Client - Existing Methods', () => {
       const result = await api.getStrategyParams('strat1');
 
       expect(result).toEqual({ bot_on: 'true', qty: '10' });
+    });
+
+    it('falls back to legacy parameters key when params is missing', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, data: { strategy_id: 'strat1', parameters: { qty: 5 } }, error: null }),
+      });
+
+      const result = await api.getStrategyParams('strat1');
+
+      expect(result).toEqual({ qty: '5' });
     });
   });
 });

@@ -551,7 +551,7 @@ def build_trades_rows(
         row_id = decode_text(out.get("row_id")).strip()
         if not row_id:
             if seq is not None:
-                row_id = f"{strategy_id}:trade:{seq}:{out['version']}"
+                row_id = f"{strategy_id}:trade:{seq}:{out['ts_ms']}:{out['version']}"
             else:
                 row_id = f"{strategy_id}:trade:{out['ts_ms']}:{index}"
         out["row_id"] = row_id
