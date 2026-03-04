@@ -82,6 +82,32 @@ def _coerce_ts_ms(value: Any) -> int | None:
     return int(ts)
 
 
+def _unwrap_payload(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+
+    payload_type = _first_text(payload.get("type"))
+    if "MakerPocBusPayload" not in payload_type and not payload_type.endswith("PocBusPayload"):
+        return payload
+
+    inner = payload.get("payload")
+    if isinstance(inner, list):
+        return {"rows": inner}
+    if isinstance(inner, dict):
+        return inner
+    if isinstance(inner, (bytes, str)):
+        parsed = _load_json_payload(inner)
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            return {"rows": parsed}
+        if parsed is None:
+            return {}
+        return {"value": str(parsed)}
+
+    return payload
+
+
 def _load_json_payload(raw_payload: Any) -> Any:
     if raw_payload is None:
         return None
@@ -107,6 +133,7 @@ def _load_json_payload(raw_payload: Any) -> Any:
 
 def _as_dict(payload: Any) -> dict[str, Any]:
     if isinstance(payload, dict):
+        payload = _unwrap_payload(payload)
         return dict(payload)
     if isinstance(payload, list):
         return {"rows": payload}
@@ -121,9 +148,8 @@ def _as_dict(payload: Any) -> dict[str, Any]:
 
 
 def _as_rows(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, list):
-        return [dict(row) for row in payload if isinstance(row, dict)]
     if isinstance(payload, dict):
+        payload = _unwrap_payload(payload)
         for key in ("rows", "trades", "alerts", "data", "items", "values"):
             value = payload.get(key)
             if isinstance(value, list):
@@ -131,6 +157,9 @@ def _as_rows(payload: Any) -> list[dict[str, Any]]:
                 if rows:
                     return rows
         return [dict(payload)]
+
+    if isinstance(payload, list):
+        return [dict(row) for row in payload if isinstance(row, dict)]
     if isinstance(payload, str):
         parsed = _load_json_payload(payload)
         return _as_rows(parsed)
@@ -153,10 +182,14 @@ def _normalize_symbol_parts(
 ) -> tuple[str, str]:
     base_text = _decode_text(base).strip().upper()
     quote_text = _decode_text(quote).strip().upper()
+    if base_text and quote_text and base_text.endswith(quote_text) and len(base_text) > len(quote_text):
+        base_text = base_text[: -len(quote_text)]
+
     if base_text and quote_text:
         return base_text, quote_text
 
     symbol_text = _decode_text(symbol).strip().upper()
+    symbol_text = symbol_text.split(".", maxsplit=1)[0].replace("-LINEAR", "")
     if not symbol_text:
         return "", ""
 
@@ -495,6 +528,7 @@ class FluxboardBridge:
         if raw_payload is None:
             raw_payload = fields.get(b"payload")
         payload = _load_json_payload(raw_payload)
+        payload = _unwrap_payload(payload)
         return topic, payload
 
     def _strategy_id_for_payload(self, payload: Any) -> str:
@@ -540,11 +574,62 @@ class FluxboardBridge:
         return _to_json({"value": payload, "strategy_id": strategy_id})
 
     def _handle_state(self, payload: Any) -> None:
-        strategy_id = self._strategy_id_for_payload(payload)
+        state = _as_dict(payload)
+        strategy_id = self._strategy_id_for_payload(state)
         self._redis.set(
             self._state_key_for_strategy(strategy_id),
-            self._json_state(payload, strategy_id),
+            self._json_state(state, strategy_id),
         )
+
+    def _handle_account_event(self, payload: Any, strategy_id: str) -> None:
+        row = _as_dict(payload)
+        if not isinstance(row, dict):
+            return
+
+        balances = row.get("balances")
+        if not isinstance(balances, list):
+            return
+
+        account_id = _first_text(row.get("account_id"), strategy_id).upper()
+        if "-" in account_id:
+            venue = account_id.split("-", maxsplit=1)[0]
+        elif ":" in account_id:
+            venue = account_id.split(":", maxsplit=1)[0]
+        else:
+            venue = account_id or "unknown"
+        venue = self._contracts.normalize_exchange(venue)
+
+        rows: list[dict[str, Any]] = []
+        for balance in balances:
+            if not isinstance(balance, dict):
+                continue
+            row_copy = dict(balance)
+            row_copy.setdefault("strategy_id", strategy_id)
+            row_copy.setdefault("exchange", venue)
+            if "base" not in row_copy and "currency" in row_copy:
+                symbol = _first_text(row_copy.get("currency")).upper()
+                row_copy.setdefault("base", symbol)
+                row_copy.setdefault("coin", symbol)
+                row_copy.setdefault("asset", symbol)
+            rows.append(row_copy)
+
+        if rows:
+            incoming = [dict(row) for row in rows]
+            incoming_keys = {self._balance_merge_key(row, strategy_id) for row in incoming}
+            merged: list[dict[str, Any]] = []
+            for existing_row in self._load_existing_balance_rows():
+                row_sid = _first_text(existing_row.get("strategy_id"), strategy_id)
+                if row_sid != strategy_id:
+                    merged.append(dict(existing_row))
+                    continue
+                if self._is_position_like_row(existing_row):
+                    merged.append(dict(existing_row))
+                    continue
+                if self._balance_merge_key(existing_row, strategy_id) in incoming_keys:
+                    continue
+                merged.append(dict(existing_row))
+            merged.extend(incoming)
+            self._store_balances_rows(merged)
 
     def _handle_event(self, payload: Any) -> None:
         row = _as_dict(payload)
@@ -739,8 +824,7 @@ class FluxboardBridge:
         location = _first_text(row.get("balance_location"), row.get("scope"), str(idx))
         return f"{exchange}:{coin}:{location}"
 
-    def _handle_balances(self, payload: Any) -> None:
-        rows = _as_rows(payload)
+    def _store_balances_rows(self, rows: list[dict[str, Any]]) -> None:
         snapshot = _to_json(rows)
         if not self._rebuild_balances_hash:
             self._redis.set(self._balances_snapshot_key, snapshot)
@@ -752,6 +836,124 @@ class FluxboardBridge:
         for idx, row in enumerate(rows):
             pipe.hset(self._balances_hash_key, self._balance_hash_field(row, idx), _to_json(row))
         pipe.execute()
+
+    def _load_existing_balance_rows(self) -> list[dict[str, Any]]:
+        existing = _load_json_payload(self._redis.get(self._balances_snapshot_key))
+        return _as_rows(existing)
+
+    def _is_position_like_row(self, row: dict[str, Any]) -> bool:
+        kind = _first_text(row.get("kind")).lower()
+        if kind == "position":
+            return True
+        asset = _first_text(row.get("asset"), row.get("coin"), row.get("base")).upper()
+        if "PERP" in asset:
+            return True
+        instrument_text = _first_text(row.get("instrument_id"), row.get("symbol")).upper()
+        return "-LINEAR" in instrument_text or "PERP" in instrument_text
+
+    def _balance_merge_key(self, row: dict[str, Any], strategy_id: str) -> tuple[str, str, str]:
+        sid = _first_text(row.get("strategy_id"), strategy_id)
+        exchange = self._contracts.normalize_exchange(_first_text(row.get("exchange"), row.get("venue"), "unknown"))
+        asset = _first_text(row.get("asset"), row.get("coin"), row.get("base"), row.get("currency"), "UNKNOWN").upper()
+        return sid, exchange, asset
+
+    def _handle_balances(self, payload: Any) -> None:
+        rows = _as_rows(payload)
+        strategy_id = self._strategy_id_for_payload(payload)
+        normalized: list[dict[str, Any]] = []
+        for row in rows:
+            row_strategy_id = self._strategy_id_for_payload(row) or strategy_id
+            accounts = row.get("accounts")
+            if isinstance(accounts, list):
+                for account in accounts:
+                    if not isinstance(account, dict):
+                        continue
+                    account_row = dict(account)
+                    account_row.setdefault("strategy_id", row_strategy_id)
+                    normalized.append(account_row)
+            positions = row.get("positions")
+            if isinstance(positions, list):
+                for position in positions:
+                    if not isinstance(position, dict):
+                        continue
+                    pos_row = dict(position)
+                    if pos_row.get("strategy_id") and pos_row.get("strategy_id") != row_strategy_id:
+                        pos_row["strategy_id_raw"] = pos_row.get("strategy_id")
+                    pos_row["strategy_id"] = row_strategy_id
+                    pos_row.setdefault("kind", "position")
+                    instrument_text = _first_text(
+                        pos_row.get("instrument_id"),
+                        pos_row.get("symbol"),
+                        pos_row.get("coin"),
+                    )
+                    base, quote = _normalize_symbol_parts(
+                        base=pos_row.get("base"),
+                        quote=pos_row.get("quote"),
+                        symbol=instrument_text,
+                    )
+                    if base and not pos_row.get("asset"):
+                        pos_row["asset"] = f"{base}-PERP"
+                    asset = _first_text(pos_row.get("asset"), pos_row.get("coin"), pos_row.get("base"))
+                    if asset:
+                        pos_row.setdefault("asset", asset)
+                        pos_row.setdefault("coin", asset)
+                        pos_row.setdefault("base", asset)
+
+                    qty_text = _first_text(
+                        pos_row.get("signed_qty"),
+                        pos_row.get("quantity"),
+                        pos_row.get("qty"),
+                        pos_row.get("size"),
+                    )
+                    side_text = _first_text(pos_row.get("side"), pos_row.get("position_side"))
+                    avg_px = _first_text(
+                        pos_row.get("avg_px"),
+                        pos_row.get("avg_price"),
+                        pos_row.get("entry_price"),
+                        pos_row.get("avg_px_open"),
+                        pos_row.get("avg_px_close"),
+                    )
+                    upnl = _first_text(
+                        pos_row.get("unrealized_pnl"),
+                        pos_row.get("unrealizedPnl"),
+                        pos_row.get("realized_pnl"),
+                        pos_row.get("realizedPnl"),
+                    )
+                    details = " ".join(
+                        part
+                        for part in (
+                            side_text,
+                            f"avg={avg_px}" if avg_px else "",
+                            f"uPnL={upnl}" if upnl else "",
+                        )
+                        if part
+                    )
+                    if qty_text and "free" not in pos_row:
+                        pos_row["free"] = qty_text
+                    if qty_text and "total" not in pos_row:
+                        pos_row["total"] = qty_text
+                    if details and "locked" not in pos_row:
+                        pos_row["locked"] = details
+
+                    venue = _first_text(
+                        pos_row.get("exchange"),
+                        pos_row.get("venue"),
+                    )
+                    if not venue and ".BYBIT" in instrument_text.upper():
+                        venue = "bybit"
+                    if venue:
+                        pos_row["exchange"] = self._contracts.normalize_exchange(venue)
+                    normalized.append(pos_row)
+
+            if isinstance(accounts, list) or isinstance(positions, list):
+                continue
+            normalized.append(dict(row))
+
+        if not normalized:
+            self._logger.debug("Ignoring empty balances payload to avoid clearing snapshot")
+            return
+
+        self._store_balances_rows(normalized)
 
     def run(self) -> None:
         self._install_signals()
@@ -802,6 +1004,8 @@ class FluxboardBridge:
 
                     handler = self._handlers.get(topic)
                     if handler is None:
+                        if topic.startswith("events.account."):
+                            continue
                         continue
 
                     try:

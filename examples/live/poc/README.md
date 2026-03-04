@@ -39,22 +39,16 @@ This directory defines the shared translation contract for the MakerV3 single-le
    POC_ENABLE_EXEC=1 POC_REDIS_PORT=6380 python examples/live/poc/makerv3_single_leg_node.py
    ```
 
-   Use a dedicated Redis DB (recommended) to avoid sharing with existing Fluxboard/Chainsaw services:
-
-   ```bash
-   POC_REDIS_DB=1 POC_REDIS_PORT=6380 python examples/live/poc/makerv3_single_leg_node.py
-   ```
-
 4. Run the Nautilus<->Fluxboard bridge.
 
    ```bash
    python examples/live/poc/chainsaw_bridge.py --redis-port 6380
    ```
 
-   Match the node Redis DB (or set explicitly):
+   Ensure the same Redis db as the node (`POC_REDIS_DB`, default 0):
 
    ```bash
-   python examples/live/poc/chainsaw_bridge.py --redis-db 1 --redis-port 6380 --strategy-id bybit_binance_plumeusdt_makerv3
+   python examples/live/poc/chainsaw_bridge.py --redis-db 0 --redis-port 6380 --strategy-id bybit_binance_plumeusdt_makerv3
    ```
 
 5. Run the minimal TokenMM API + UI.
@@ -66,7 +60,7 @@ This directory defines the shared translation contract for the MakerV3 single-le
    Match the same Redis DB as above:
 
    ```bash
-   POC_REDIS_DB=1 POC_REDIS_PORT=6380 PORT=5022 python examples/live/poc/nautilus_fluxapi.py
+   POC_REDIS_DB=0 POC_REDIS_PORT=6380 PORT=5022 python examples/live/poc/nautilus_fluxapi.py
    ```
 
 6. Open `http://<host>:5022/tokenmm` (single-page home view with Signal/Params/Balances/Trades/Alerts).
