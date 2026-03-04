@@ -12,6 +12,15 @@ redis-server
 python examples/live/makerv3/run_node.py
 python examples/live/makerv3/run_bridge.py
 ```
+   Or use the managed stack script:
+```bash
+cp examples/live/makerv3/config/makerv3.live.env.example \
+  examples/live/makerv3/config/makerv3.live.env
+# Fill credentials, then:
+scripts/deploy/makerv3_stack.sh start
+```
+The stack script can load credentials from AWS Secrets Manager by default:
+`/nautilus/makerv3/bybit` and `/nautilus/makerv3/binance` (`MAKERV3_*_SECRET_ID` overrides).
 2. Install frontend dependencies once:
 ```bash
 pnpm --dir fluxboard install --frozen-lockfile

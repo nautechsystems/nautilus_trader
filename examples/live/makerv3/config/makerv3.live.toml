@@ -1,13 +1,13 @@
 [flux]
-mode = "paper"
-confirm_live = false
+mode = "live"
+confirm_live = true
 namespace = "flux"
 schema_version = "v1"
 
 [identity]
 strategy_id = "makerv3"
 strategy_instance_id = "makerv3"
-trader_id = "MAKER-PAPER-001"
+trader_id = "MAKER-LIVE-001"
 external_strategy_id = "makerv3"
 
 [redis]
@@ -43,7 +43,7 @@ exec_reconciliation_startup_delay_secs = 1.0
 api_key_env = "BYBIT_API_KEY"
 api_secret_env = "BYBIT_API_SECRET"
 product_type = "LINEAR"
-testnet = true
+testnet = false
 demo = false
 
 [node.binance]

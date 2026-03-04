@@ -75,6 +75,7 @@ env/
 *.bak
 *.sh
 !fluxboard/deploy.sh
+!scripts/deploy/*.sh
 *tmp/
 *temp/
 

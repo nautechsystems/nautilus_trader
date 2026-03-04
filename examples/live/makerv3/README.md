@@ -24,6 +24,9 @@ This directory contains thin runner wrappers for the production Flux modules und
 Default config file:
 
 - `examples/live/makerv3/config/makerv3.toml`
+- Live stack config template: `examples/live/makerv3/config/makerv3.live.toml`
+- Live env template: `examples/live/makerv3/config/makerv3.live.env.example`
+- Managed stack script: `scripts/deploy/makerv3_stack.sh`
 
 Review and update this file before running.
 
@@ -141,3 +144,32 @@ python examples/live/makerv3/run_api.py --mode live --confirm-live
 ```
 
 Without `--confirm-live`, each runner fails fast in `live` mode.
+
+## Production stack script (recommended)
+
+Use the managed deployment script to run Redis + node + bridge + API/Fluxboard with logs and pid tracking:
+
+```bash
+cp examples/live/makerv3/config/makerv3.live.env.example \
+  examples/live/makerv3/config/makerv3.live.env
+# Fill BYBIT/BINANCE keys in makerv3.live.env
+
+scripts/deploy/makerv3_stack.sh start
+scripts/deploy/makerv3_stack.sh status
+scripts/deploy/makerv3_stack.sh health
+```
+
+Useful controls:
+
+```bash
+scripts/deploy/makerv3_stack.sh logs api
+scripts/deploy/makerv3_stack.sh logs node
+scripts/deploy/makerv3_stack.sh stop
+```
+
+Safety/behavior:
+1. Default mode is `live` for this script, with explicit `MAKERV3_CONFIRM_LIVE=1` gate.
+2. Execution stays off by default (`MAKERV3_ENABLE_EXECUTION=0`) until you opt in.
+3. Runtime files live under `.run/makerv3-prod/` (logs + pid files).
+4. AWS secret loading is supported without `eval` via
+   `MAKERV3_LOAD_AWS_SECRETS=1`, `MAKERV3_BYBIT_SECRET_ID`, `MAKERV3_BINANCE_SECRET_ID`.
