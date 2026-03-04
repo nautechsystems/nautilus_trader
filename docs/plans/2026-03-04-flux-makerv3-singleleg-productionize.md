@@ -171,7 +171,7 @@ Phase 8: Docs and cleanup
 - [x] Task 3: Extract parameter subsystem and remove hot-path polling
 - [x] Task 4: Bridge hardening and handler modularization
 - [x] Task 5: Flux API refactor into app factory + batched Redis reads
-- [ ] Task 6: Strategy productionization (core safety/perf work)
+- [x] Task 6: Strategy productionization (core safety/perf work)
 - [ ] Task 7: Replace POC runners with thin examples
 - [ ] Task 8: Clean PR artifacts and enforce “no POC/chainsaw leakage”
 
@@ -523,6 +523,7 @@ python -m pytest tests/unit_tests -q
 5. Runtime parameter ingestion is centralized in `FluxParamsManager` and runs on timer-driven refresh paths; market-data callbacks must read in-memory params only.
 6. Bridge ingestion is modularized as topic handlers plus a stream consumer; handlers emit strategy-scoped `flux:v1` writes with bounded retention and normalized `ts_ms` at ingest.
 7. API contract is factory-based (`FluxConfig` + injected Redis client), with centralized envelopes (`api_version`, `request_id`, `timestamp_ms`) and explicit health/readiness schema checks.
+8. Production strategy implementation lives under `nautilus_trader/flux/strategies/makerv3/` with two-leg staleness gating, lifecycle reconciliation, and quote-failure circuit breaker fail-stop semantics.
 
 ## Progress log
 
@@ -531,3 +532,4 @@ python -m pytest tests/unit_tests -q
 3. 2026-03-04T01:18:14Z | Task 3 - Params subsystem extraction + hot-path polling removal | SHAs: `915772bd9160e5dcf2981b67a99f58f443b72653`, `6bf0fbc70084cb79f4c15af99e3f197bb2c4695d` | Notes: Added `FluxParamsManager` (`HMGET` load, strict unknown-key rejection, update+publish), moved strategy param refresh to timer path, removed market-data callback network polling, and switched API params read/write path to `flux:v1` hash/channel semantics; Task 3 spec review ✅ and code-quality review ✅.
 4. 2026-03-04T01:33:29Z | Task 4 - Bridge modularization + schema hardening | SHAs: `1ee44e2be39cce1688d886a5f66f8265252ebcbe`, `7c53ac9bf983689a872519a7cef2aa98dab06f8a` | Notes: Moved bridge ingestion into `nautilus_trader/flux/bridge/*` with topic handlers + consumer, replaced monolithic runner with thin wrapper, enforced strategy-scoped `flux:v1` outputs with bounded stream retention, normalized `ts_ms`, and added consumer boundary tests; Task 4 spec review ✅ and code-quality review ✅.
 5. 2026-03-04T01:52:58Z | Task 5 - API package refactor + envelope/readiness hardening | SHAs: `7b9c2deb8425171b956e5887cb9246ca7bd0d54d`, `8d93d0d5f2241e2678d3b1380f0d445f6c6fe345` | Notes: Moved API logic into `nautilus_trader/flux/api/*` with DI app factory, store/payload separation, batched feed reads, schema-based readiness/health endpoints, explicit validation/error envelopes, and thin example runner wiring; Task 5 spec review ✅ and code-quality review ✅.
+6. 2026-03-04T02:13:41Z | Task 6 - Strategy productionization safety/perf refactor | SHAs: `811339f6e4023296e5e11498c7fab28c259dfdd0`, `13295ccf0b91b74012a42276e92e164854b89231` | Notes: Added production strategy module under `nautilus_trader/flux/strategies/makerv3/`, implemented two-leg staleness gating + cancel, quote-failure circuit breaker fail-stop, lifecycle reconciliation for reject/cancel/expire, and stronger cancel-on-stop tracking semantics with new strategy-level tests; Task 6 spec review ✅ and code-quality review ✅.
