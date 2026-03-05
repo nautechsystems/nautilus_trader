@@ -74,8 +74,8 @@ export const DecisionModal = ({
 
   const copySummary = () => {
     if (!decision?.opportunity) return;
-    const { case: caseNum, spread_bps, edge_bps_net, required_bps, gas_bps } = decision.opportunity;
-    const text = `case\t${caseNum}\nspread_bps\t${spread_bps}\nedge_bps_net\t${edge_bps_net}\nrequired_bps\t${required_bps}\ngas_bps\t${gas_bps || 0}`;
+    const { case: caseNum, spread_bps, edge_bps_net, required_bps } = decision.opportunity;
+    const text = `case\t${caseNum}\nspread_bps\t${spread_bps}\nedge_bps_net\t${edge_bps_net}\nrequired_bps\t${required_bps}`;
     copyToClipboard(text);
   };
 
@@ -198,12 +198,8 @@ const SummaryTab = ({ decision, onCopy }: { decision: DecisionData; onCopy: () =
         <MetricRow label="Spread (bps)" value={opp.spread_bps?.toFixed(2)} />
         <MetricRow label="Edge Net (bps)" value={opp.edge_bps_net?.toFixed(2)} />
         <MetricRow label="Required (bps)" value={opp.required_bps?.toFixed(2)} />
-        <MetricRow label="Gas (bps)" value={opp.gas_bps?.toFixed(2) || '0.00'} />
         <MetricRow label="Leg 1 Action" value={opp.leg1_action} />
         <MetricRow label="Leg 2 Action" value={opp.leg2_action} />
-        {fees?.gas_quote_per_unit !== undefined && (
-          <MetricRow label="Gas Quote / Unit" value={fees.gas_quote_per_unit} />
-        )}
         {fees?.leg1?.taker_fee_bps !== undefined && (
           <MetricRow label="Leg 1 Taker Fee (bps)" value={fees.leg1.taker_fee_bps} />
         )}
@@ -276,42 +272,6 @@ const LegCard = ({ title, data, fvData }: { title: string; data: any; fvData?: a
       {data.raw?.mid !== null && <MetricRow label="Raw Mid" value={data.raw?.mid} />}
       {fvData?.fv_bid !== null && <MetricRow label="FV Bid" value={fvData?.fv_bid} />}
       {fvData?.fv_ask !== null && <MetricRow label="FV Ask" value={fvData?.fv_ask} />}
-    </div>
-  </div>
-);
-
-// Fees tab component
-const FeesTab = ({ decision }: { decision: DecisionData }) => {
-  const fees = decision.fees;
-  if (!fees) return <div className="text-sm" style={{ color: colors.text.muted }}>No fees data</div>;
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <MetricRow label="Gas Quote Per Unit" value={fees.gas_quote_per_unit} />
-      </div>
-      {fees.leg1 && <FeeCard title="Leg 1 Fees" data={fees.leg1} />}
-      {fees.leg2 && <FeeCard title="Leg 2 Fees" data={fees.leg2} />}
-    </div>
-  );
-};
-
-const FeeCard = ({ title, data }: { title: string; data: any }) => (
-  <div
-    className="p-3 rounded"
-    style={{
-      backgroundColor: colors.bg.hover,
-      border: `1px solid ${colors.border.DEFAULT}`,
-    }}
-  >
-    <div className="text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>
-      {title}
-    </div>
-    <div className="grid grid-cols-2 gap-2 text-xs">
-      {data.taker_fee_bps !== null && <MetricRow label="Taker Fee (bps)" value={data.taker_fee_bps} />}
-      {data.maker_fee_bps !== null && <MetricRow label="Maker Fee (bps)" value={data.maker_fee_bps} />}
-      {data.maker_rebate_bps !== null && <MetricRow label="Maker Rebate (bps)" value={data.maker_rebate_bps} />}
-      {data.pool_fee_bps !== null && <MetricRow label="Pool Fee (bps)" value={data.pool_fee_bps} />}
     </div>
   </div>
 );

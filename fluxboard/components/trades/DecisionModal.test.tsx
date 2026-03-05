@@ -106,8 +106,8 @@ describe('DecisionModal', () => {
 
       // Use role selector to find tabs specifically (avoids "Summary" label in content)
       const tabs = screen.getAllByRole('tab');
-      expect(tabs).toHaveLength(5);
-      expect(tabs.map(t => t.textContent)).toEqual(['Summary', 'Legs', 'Fees', 'Params', 'Raw']);
+      expect(tabs).toHaveLength(4);
+      expect(tabs.map(t => t.textContent)).toEqual(['Summary', 'Legs', 'Params', 'Raw']);
     });
 
     it('renders footer buttons', () => {
@@ -165,19 +165,6 @@ describe('DecisionModal', () => {
       await waitFor(() => {
         expect(screen.getByText('Leg 1 (Market Data)')).toBeVisible();
         expect(screen.getByText('Leg 2 (Market Data)')).toBeVisible();
-      });
-    });
-
-    it('switches to Fees tab when clicked', async () => {
-      const user = userEvent.setup();
-      const trade = generateMockTrade();
-      render(<DecisionModal trade={trade} onClose={mockOnClose} />);
-
-      await user.click(screen.getByText('Fees'));
-
-      await waitFor(() => {
-        expect(screen.getByText('Gas Quote Per Unit')).toBeVisible();
-        expect(screen.getByText('Leg 1 Fees')).toBeVisible();
       });
     });
 
@@ -382,6 +369,7 @@ describe('DecisionModal', () => {
       expect(copiedText).toContain('case\t1');
       expect(copiedText).toContain('spread_bps\t50');
       expect(copiedText).toContain('edge_bps_net\t30');
+      expect(copiedText).not.toContain('gas_bps');
     });
   });
 
@@ -395,7 +383,7 @@ describe('DecisionModal', () => {
       expect(screen.getByText(/Spread \(bps\)/)).toBeInTheDocument();
       expect(screen.getByText(/Edge Net \(bps\)/)).toBeInTheDocument();
       expect(screen.getByText(/Required \(bps\)/)).toBeInTheDocument();
-      expect(screen.getByText(/Gas \(bps\)/)).toBeInTheDocument();
+      expect(screen.queryByText(/Gas \(bps\)/)).not.toBeInTheDocument();
     });
 
     it('displays summary text when present', () => {
@@ -445,36 +433,6 @@ describe('DecisionModal', () => {
 
       await waitFor(() => {
         expect(screen.getByText('No legs data')).toBeVisible();
-      });
-    });
-  });
-
-  describe('Fees Tab Content', () => {
-    it('displays fee data for both legs', async () => {
-      const user = userEvent.setup();
-      const trade = generateMockTrade();
-      render(<DecisionModal trade={trade} onClose={mockOnClose} />);
-
-      await user.click(screen.getByText('Fees'));
-
-      await waitFor(() => {
-        expect(screen.getByText('Gas Quote Per Unit')).toBeVisible();
-        expect(screen.getByText('Leg 1 Fees')).toBeVisible();
-        expect(screen.getByText('Leg 2 Fees')).toBeVisible();
-      });
-    });
-
-    it('handles missing fees data', async () => {
-      const user = userEvent.setup();
-      const trade = generateMockTrade({
-        decision: JSON.stringify({ version: '1.0', opportunity: { case: 1 } }),
-      });
-      render(<DecisionModal trade={trade} onClose={mockOnClose} />);
-
-      await user.click(screen.getByText('Fees'));
-
-      await waitFor(() => {
-        expect(screen.getByText('No fees data')).toBeVisible();
       });
     });
   });
