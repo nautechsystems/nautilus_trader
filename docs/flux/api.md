@@ -84,6 +84,9 @@ Pagination/limits:
 
 `profile` is accepted for TokenMM client compatibility and normalized consistently with Socket.IO, but strategy
 scoping is still strategy-driven (default strategy unless an explicit `strategy` query is provided).
+
+Compatibility is request/response-shape compatibility only; storage remains strict `flux:v1` with no legacy keyspace reads.
+
 1. `GET /api/v1/param-schema` returns:
    - `data.params` (schema map)
    - `data.deprecated` (always an object, empty when no deprecated fields)

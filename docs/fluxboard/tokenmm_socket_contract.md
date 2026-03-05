@@ -76,7 +76,7 @@ Compatibility rules:
 
 1. `seq` comes from one shared stream per normalized profile room (`profile:tokenmm`).
 2. The same counter is used across `market_update`, `signal_delta`, and `trade_update`.
-3. Server increments `seq` by exactly `1` per emitted event in that room.
+3. Server increments `seq` by exactly `1` per emitted event in that room. The server may intentionally skip values to force a client resync when it detects a bounded replay gap (treated as a gap by clients).
 4. Client keeps one `last_seq` per normalized profile.
 5. Client handling rules:
    - `seq == last_seq + 1`: apply event
@@ -110,6 +110,11 @@ Payload example:
   }
 }
 ```
+
+Optional recovery hint:
+
+1. Server may include `recovery: {required, reason}` in `market_update` when it detects a replay boundary.
+2. Clients must treat `seq` gap detection as the definitive resync trigger; the recovery hint is additive.
 
 ## Event: `signal_delta`
 

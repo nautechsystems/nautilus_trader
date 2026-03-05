@@ -456,6 +456,23 @@ class FluxSocketEmitter:
         alerts_rows = self._store.load_alerts_rows(strategy_id, limit=self._alerts_preview_limit)
         alerts_total = self._store.alerts_stream_len(strategy_id)
 
+        trade_gap_cursor: int | None = None
+        if trades_rows:
+            first_seq = safe_int(trades_rows[0].get("seq"))
+            if first_seq is not None and first_seq > (trade_cursor + 1):
+                _LOG.warning(
+                    "Flux socket emitter detected trade replay gap profile=%s strategy_id=%s cursor_seq=%s first_seq=%s scan_limit=%s",
+                    profile,
+                    strategy_id,
+                    trade_cursor,
+                    first_seq,
+                    self._trade_scan_limit,
+                )
+                trade_gap_cursor = max(0, first_seq - 1)
+                # Force a per-profile Socket.IO seq gap so clients trigger REST resync per contract.
+                _ = self._next_seq(profile)
+                trades_rows = []
+
         signal_patch = build_signal_delta_patch(previous_signal, signal_payload)
         if signal_patch:
             signal_event = {
@@ -505,12 +522,13 @@ class FluxSocketEmitter:
                 trade=normalized,
                 server_ts_ms=now_ms(),
             )
-            self._socketio.emit("trade_update", payload, to=room)
+                self._socketio.emit("trade_update", payload, to=room)
 
         alerts_signature = _alerts_signature(alerts_rows, total_count=alerts_total)
         strategy_changed = previous_signal != signal_payload
         alerts_changed = previous_alerts_signature != alerts_signature
-        if strategy_changed or alerts_changed:
+        trade_gap = trade_gap_cursor is not None
+        if trade_gap or strategy_changed or alerts_changed:
             market_payload = {
                 "profile": profile,
                 "seq": self._next_seq(profile),
@@ -522,6 +540,8 @@ class FluxSocketEmitter:
                     "latest_ts_ms": alerts_signature[1],
                 },
             }
+            if trade_gap:
+                market_payload["recovery"] = {"required": True, "reason": "trade_gap"}
             self._socketio.emit("market_update", market_payload, to=room)
 
         with self._lock:
@@ -529,7 +549,9 @@ class FluxSocketEmitter:
                 self._cleanup_profile_state_locked(profile)
                 return
             self._signal_by_profile[profile] = _copy_mapping(signal_payload)
-            self._trade_cursor_by_profile[profile] = latest_trade_seq
+            self._trade_cursor_by_profile[profile] = (
+                int(trade_gap_cursor) if trade_gap_cursor is not None else latest_trade_seq
+            )
             self._alerts_by_profile[profile] = alerts_signature
 
 

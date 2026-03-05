@@ -235,7 +235,7 @@ class FluxApiStore:
         for index, contract in enumerate(contract_catalog):
             if not isinstance(contract, ContractCatalogEntry):
                 raise ContractCatalogValidationError(
-                    f"`contract_catalog[{index}]` must be `ContractCatalogEntry`, got {type(contract).__name__}",
+                    f"`contract_catalog[{index}]` must be `ContractCatalogEntry`, was {type(contract).__name__}",
                 )
 
             exchange = decode_text(contract.exchange).strip().lower()
@@ -1267,6 +1267,29 @@ def create_flux_api_app(
                 since_seq=None,
                 scan_limit=scan_limit,
             )
+            seq_values = [safe_int(row.get("seq")) for row in scanned_rows]
+            parsed_seqs = [seq for seq in seq_values if seq is not None]
+            if not parsed_seqs:
+                reset_required = since_seq > 0
+                return _ok(
+                    data={
+                        "rows": [],
+                        "last_seq": 0,
+                        "reset_required": reset_required,
+                    },
+                )
+
+            min_seq = min(parsed_seqs)
+            max_seq = max(parsed_seqs)
+            if since_seq < (min_seq - 1) or since_seq > max_seq:
+                return _ok(
+                    data={
+                        "rows": [],
+                        "last_seq": int(max_seq),
+                        "reset_required": True,
+                    },
+                )
+
             eligible_rows = store.load_trades_rows(
                 strategy_id,
                 limit=scan_limit,
@@ -1274,24 +1297,6 @@ def create_flux_api_app(
                 since_seq=since_seq,
                 scan_limit=scan_limit,
             )
-            stream_len = store.trades_stream_len(strategy_id)
-            seq_values = [safe_int(row.get("seq")) for row in scanned_rows]
-            parsed_seqs = [seq for seq in seq_values if seq is not None]
-            oldest_scanned_seq = min(parsed_seqs) if parsed_seqs else None
-            if (
-                stream_len is not None
-                and stream_len > scan_limit
-                and oldest_scanned_seq is not None
-                and oldest_scanned_seq > (since_seq + 1)
-            ):
-                return _ok(
-                    data={
-                        "rows": [],
-                        "last_seq": since_seq,
-                        "reset_required": True,
-                    },
-                )
-
             rows = eligible_rows[:limit]
             last_seq = safe_int(rows[-1].get("seq")) if rows else since_seq
             return _ok(
