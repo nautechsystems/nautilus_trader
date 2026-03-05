@@ -3586,6 +3586,16 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo fmt --all -- --check` (pass)
     - `cargo test -p nautilus-model --features defi` (pass)
 
+- 2026-03-05 - PR6b (`pr6b/rpc-http-methods`, head SHA `7c538676148655d2789fd8504f9acb973ab3deea`) - status: ready
+  - Expanded `BlockchainHttpRpcClient` with execution-critical HTTP RPC methods (`eth_getTransactionCount`, `eth_estimateGas`, `eth_sendRawTransaction`, `eth_getTransactionByHash`, `eth_getTransactionReceipt`, `eth_getBlockByNumber`, `eth_getCode`, and `eth_chainId`) and method-scoped quota keys (`rpc:exec:*` / `rpc:data:*`).
+  - Hardened HTTP/RPC error handling to surface status, RPC `code/message/data`, and `Retry-After` (429), and added bounded `eth_getLogs` backfill range splitting for provider range-limit responses.
+  - Added an axum mock-RPC test harness plus integration coverage for payload correctness, parsing, HTTP 429 mapping, `Retry-After` propagation, and range-split behavior.
+  - Tests run:
+    - `cargo fmt --all -- --check` (pass)
+    - `cargo test -p nautilus-blockchain --test rpc_http_execution_methods` (pass)
+    - `cargo test -p nautilus-blockchain rpc::http` (pass)
+    - `cargo test -p nautilus-blockchain` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
