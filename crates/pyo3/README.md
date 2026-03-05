@@ -1,13 +1,13 @@
 # nautilus-pyo3
 
-Python bindings for [NautilusTrader](http://nautilustrader.io).
+Python bindings for [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-pyo3` crate provides all [PyO3](https://pyo3.rs) Python bindings for the
 main `nautilus_trader` Python package, built via [maturin](https://github.com/PyO3/maturin).
 
 ## Platform
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 algorithmic trading platform, providing quantitative traders with the ability to backtest
 portfolios of automated trading strategies on historical data with an event-driven engine,
 and also deploy those same strategies live, with no code changes.
