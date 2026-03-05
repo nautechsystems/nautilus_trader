@@ -27,8 +27,28 @@ Default config file:
 - Live stack config template: `examples/live/makerv3/config/makerv3.live.toml`
 - Live env template: `examples/live/makerv3/config/makerv3.live.env.example`
 - Managed stack script: `scripts/deploy/makerv3_stack.sh`
+- Multi-node TokenMM stack script: `scripts/deploy/tokenmm_stack.sh`
+- Multi-node strategy config contract: `examples/live/makerv3/config/strategies.d/README.md`
 
 Review and update this file before running.
+
+### TokenMM registry contract (Phase 1)
+
+For Phase 1 multi-strategy deployment, TokenMM is explicitly scoped to these 5 PLUME MakerV3 Flux
+strategy IDs (configured in `examples/live/makerv3/config/makerv3.live.toml`):
+
+1. `bybit_binance_plumeusdt_makerv3`
+2. `bybit_binance_plumeusdt_makerv3_02`
+3. `bybit_binance_plumeusdt_makerv3_03`
+4. `bybit_binance_plumeusdt_makerv3_04`
+5. `bybit_binance_plumeusdt_makerv3_05`
+
+Naming convention and ownership:
+
+- Flux strategy ID = `[identity].strategy_id` (API/profile routing key).
+- Base config default keeps `[strategy].strategy_id = "MAKERV3-001"` for single-node compatibility.
+- Multi-node TokenMM deployments should use per-node unique order tags (for example `MAKERV3-TMM-NN`).
+- Keep Flux IDs and Nautilus strategy IDs distinct and stable across processes.
 
 ## Secrets loading (explicit only)
 

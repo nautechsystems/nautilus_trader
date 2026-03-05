@@ -96,6 +96,31 @@ strategy_class = "maker_v3"
 strategy_groups = "tokenmm"
 base_asset = "PLUME"
 quote_asset = "USDT"
+# Phase 1 TokenMM registry contract:
+# - `tokenmm_strategy_ids` values are Flux strategy IDs (`[identity].strategy_id` in per-node configs).
+# - `tokenmm_required_strategy_ids` are used for degraded/missing-required checks in API portfolio views.
+# - Keep this list to the 5 PLUME MakerV3 instances only.
+tokenmm_strategy_ids = [
+  "bybit_binance_plumeusdt_makerv3",
+  "bybit_binance_plumeusdt_makerv3_02",
+  "bybit_binance_plumeusdt_makerv3_03",
+  "bybit_binance_plumeusdt_makerv3_04",
+  "bybit_binance_plumeusdt_makerv3_05",
+]
+tokenmm_required_strategy_ids = [
+  "bybit_binance_plumeusdt_makerv3",
+  "bybit_binance_plumeusdt_makerv3_02",
+  "bybit_binance_plumeusdt_makerv3_03",
+  "bybit_binance_plumeusdt_makerv3_04",
+  "bybit_binance_plumeusdt_makerv3_05",
+]
+
+[portfolio]
+portfolio_id = "tokenmm"
+# Naming convention:
+# - Flux strategy IDs: bybit_binance_plumeusdt_makerv3[_NN]
+# - Base config default keeps `[strategy].strategy_id = "MAKERV3-001"` for single-node compatibility.
+# - Multi-node TokenMM deployments should use per-node unique order tags (for example `MAKERV3-TMM-NN`).
 
 [[contracts]]
 exchange = "bybit"
