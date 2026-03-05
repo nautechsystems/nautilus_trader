@@ -92,6 +92,19 @@ export default function Alerts({
         );
         if (!hasSnapshotPayload) return;
 
+        // Legacy Socket.IO snapshots sometimes shipped `alerts: ['id-a', 'id-b']` with no row data.
+        // Treat those as no-ops so we don't mistakenly clear the UI.
+        const rawAlertsCandidate = (payload as any).alerts ?? (payload as any).rows;
+        if (
+          Array.isArray(rawAlertsCandidate)
+          && rawAlertsCandidate.length > 0
+          && rawAlertsCandidate.every(
+            (item) => typeof item === 'string' && !String(item).trim().startsWith('{'),
+          )
+        ) {
+          return;
+        }
+
         const parsedAlerts = normalizeAlertsSnapshotCandidate(payload);
         if (parsedAlerts.length === 0) {
           if (lastWebSocketDataRef.current === '__empty__') return;

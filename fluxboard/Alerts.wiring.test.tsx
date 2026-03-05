@@ -9,12 +9,17 @@ const mockGetAlerts = vi.hoisted(() => vi.fn());
 const mockUsePolling = vi.hoisted(() => vi.fn());
 const mockUseWebSocket = vi.hoisted(() => vi.fn());
 
-vi.mock('./api', () => ({
-  api: {
-    getAlerts: mockGetAlerts,
-    clearAlerts: vi.fn(),
-  },
-}));
+vi.mock('./api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./api')>();
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      getAlerts: mockGetAlerts,
+      clearAlerts: vi.fn(),
+    },
+  };
+});
 
 vi.mock('./hooks/index', () => ({
   usePolling: (...args: any[]) => mockUsePolling(...args),
