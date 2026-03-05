@@ -36,6 +36,7 @@ pub mod reporting;
 pub mod rpc;
 pub mod tick_map;
 pub mod token;
+pub mod tx_hash;
 pub mod types;
 pub mod validation;
 pub mod wallet;
@@ -54,11 +55,13 @@ pub use data::{
     liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType},
     swap::PoolSwap,
     transaction::Transaction,
+    transaction_receipt::{ReceiptLog, TransactionReceipt},
 };
 pub use dex::{AmmType, Dex, DexType, SharedDex};
 pub use pool_analysis::PoolProfiler;
 pub use pool_identifier::PoolIdentifier;
 pub use token::{SharedToken, Token};
+pub use tx_hash::{decode_raw_tx_hex, tx_hash_from_raw_tx_hex, tx_hash_hex_from_raw_tx_hex};
 
 /// Number of decimal places used by the native Ether denomination.
 ///
