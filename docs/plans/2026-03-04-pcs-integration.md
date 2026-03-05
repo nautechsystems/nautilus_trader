@@ -3475,3 +3475,23 @@ Cons:
 - Requires substantially more protocol-specific decoding and likely EIP-712 signing support (Permit2/self-permit) to realize the UX benefits.
 
 MVP recommendation remains: integrate classic PCS V2 router first, then add SmartRouter/Infinity once the AMM framework and signer capabilities are proven in production.
+
+## Progress Log
+
+- 2026-03-05 - PR-preflight (`prep/ignore-worktrees`, head SHA `3aa099213f71786d288c2338590592777c43d908`) - status: open
+  - Added `.worktrees/` to `.gitignore` to satisfy required worktree hygiene guardrail.
+  - No codepath or runtime behavior changes.
+  - Tests run: none (docs-only `.gitignore` change).
+
+- 2026-03-05 - PR0 (`pr0/pcs-plan-doc`, head SHA `eec2a83595ad8975f81d51f6366e47e16233b68b`) - status: open
+  - Landed `docs/plans/2026-03-04-pcs-integration.md` from `remotes/local/plan/pcs-integration` onto `main` lineage.
+  - Appended required tracking sections (`Progress Log`, `Deviations / Decisions`, `Known Issues / Follow-ups`) without changing milestone content.
+  - Tests run: none (docs-only).
+
+## Deviations / Decisions
+
+- 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
+
+## Known Issues / Follow-ups
+
+- Until PR-preflight is merged, branches created directly from `origin/main` will not inherit `.worktrees/` ignore and may show `.worktrees/` as untracked in that base checkout.
