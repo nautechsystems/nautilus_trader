@@ -75,7 +75,23 @@ describe('API Client - Param Methods', () => {
         expect.stringMatching(/\/api\/v1\/param-schema$/),
         expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
-      expect(result).toEqual(mockSchema);
+      // API layer normalizes param defs (adds label/description/options/etc).
+      expect(result.deprecated).toEqual({});
+      expect(result.params.bot_on).toMatchObject({
+        key: 'bot_on',
+        type: 'select',
+        default: '0',
+        label: 'bot_on',
+        description: 'bot_on',
+        deprecated: false,
+        replacement: null,
+        step: null,
+        unit: null,
+      });
+      expect(result.params.bot_on.options).toEqual([
+        ['0', 'Off (0)'],
+        ['1', 'On (1)'],
+      ]);
     });
 
     it('throws error on 500 response', async () => {
@@ -113,7 +129,10 @@ describe('API Client - Param Methods', () => {
         expect.stringMatching(/\/api\/v1\/params$/),
         expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
-      expect(result).toEqual(mockParams);
+      expect(result).toEqual([
+        { strategy_id: 'strat1', params: { bot_on: '1', qty: '10' }, running: true },
+        { strategy_id: 'strat2', params: { bot_on: '0', qty: '20' }, running: false },
+      ]);
       expect(result.length).toBe(2);
     });
 

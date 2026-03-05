@@ -2,12 +2,13 @@
 // Tests for breakpoint behavior, horizontal scrolling, and small screen layouts
 
 import { render, screen, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { DashboardLayout } from './DashboardLayout';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import * as storage from '../../utils/storage';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
 vi.mock('@/hooks/useIsMobile', () => ({ useIsMobile: vi.fn(() => false) }));
+
+let DashboardLayout: typeof import('./DashboardLayout').DashboardLayout;
 
 const resizeCallbacks: ResizeObserverCallback[] = [];
 let mockContainerWidth = 1200;
@@ -161,6 +162,10 @@ vi.mock('./presets', () => ({
 describe('DashboardLayout Responsive Behavior', () => {
   const originalInnerWidth = window.innerWidth;
   const originalInnerHeight = window.innerHeight;
+
+  beforeAll(async () => {
+    ({ DashboardLayout } = await import('./DashboardLayout'));
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -380,5 +385,4 @@ describe('DashboardLayout Responsive Behavior', () => {
     });
   });
 });
-
 
