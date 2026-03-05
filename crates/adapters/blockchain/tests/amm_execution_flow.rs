@@ -27,6 +27,7 @@ use alloy::{
     sol_types::{SolCall, SolValue},
 };
 use async_trait::async_trait;
+use axum::http::StatusCode;
 use nautilus_blockchain::{
     config::BlockchainExecutionClientConfig,
     contracts::{
@@ -64,7 +65,7 @@ use serde_json::{Value, json};
 
 mod common;
 
-use common::{MockRpcState, start_mock_rpc_server};
+use common::{MockRpcResponse, MockRpcState, start_mock_rpc_server};
 
 const KNOWN_RAW_TX_HEX: &str = "0x02f8af380384068e778084068e77808286ed947977bf3e7e0c954d12cdca3e013adaf57e0b06e080b844a9059cbb000000000000000000000000c7bd78fa510c234b7e6f70f41452948e41d9a9210000000000000000000000000000000000000000000000007e2b7f14c776c000c001a08875591e4e10637a3498a8a05b1d4e498c1d027b2f763a77db767173955a8722a039defee4d3fb717502dcfcff5ccb9122c473e5efac8ad3c5c9c2e97e64a0885f";
 const WALLET_ADDRESS: &str = "0x058e41Ae42e322e5E6ea6Fc9930776d67CDd3115";
@@ -293,6 +294,17 @@ fn make_client(
     signer: Arc<dyn ExecutionTxSigner>,
     journal_path: Option<PathBuf>,
 ) -> BlockchainExecutionClient {
+    make_client_with_runtime(rpc_url, metadata_store, signer, journal_path, 1, 5)
+}
+
+fn make_client_with_runtime(
+    rpc_url: String,
+    metadata_store: InMemoryMetadataStore,
+    signer: Arc<dyn ExecutionTxSigner>,
+    journal_path: Option<PathBuf>,
+    confirmations_required: u64,
+    receipt_max_polls: u32,
+) -> BlockchainExecutionClient {
     let trader_id = TraderId::test_default();
     let account_id = AccountId::new("BINANCE-001");
     let venue = Venue::new("Bsc:PancakeSwapV2");
@@ -311,10 +323,10 @@ fn make_client(
     config.execution_router_address = Some(ROUTER_ADDRESS.to_string());
     config.execution_max_fee_per_gas = 0x68e7780;
     config.execution_max_priority_fee_per_gas = 0x68e7780;
-    config.execution_receipt_max_polls = 5;
+    config.execution_receipt_max_polls = receipt_max_polls;
     config.execution_receipt_poll_interval_ms = 1;
     config.execution_default_deadline_secs = 60;
-    config.execution_confirmations_required = 1;
+    config.execution_confirmations_required = confirmations_required;
     config.execution_require_preapproved_allowance = true;
     config.execution_journal_path = journal_path.map(|path| path.display().to_string());
 
@@ -337,6 +349,84 @@ fn make_client(
         signer,
     )
     .expect("execution client should construct")
+}
+
+fn buy_quote_amounts() -> Vec<U256> {
+    vec![
+        U256::from(2_500_000_000_000_000_000_000u128),
+        U256::from(1_000_000_000_000_000_000_000u128),
+    ]
+}
+
+fn flow_addresses() -> (Address, Address, Address) {
+    (
+        validate_address(WALLET_ADDRESS).expect("wallet address"),
+        validate_address(ROUTER_ADDRESS).expect("router address"),
+        validate_address("0xd13040d4fe917EE704158CfCB3338dCd2838B245").expect("pool address"),
+    )
+}
+
+async fn enqueue_swap_preflight(state: &MockRpcState) {
+    state
+        .enqueue_json(
+            "eth_call",
+            rpc_result(json!(encode_amounts_response(buy_quote_amounts()))),
+        )
+        .await;
+    state
+        .enqueue_json("eth_estimateGas", rpc_result(json!("0x86ed")))
+        .await;
+    state
+        .enqueue_json("eth_getTransactionCount", rpc_result(json!("0x3")))
+        .await;
+}
+
+async fn enqueue_receipt_and_tx_lookup(
+    state: &MockRpcState,
+    tx_hash: &str,
+    wallet: Address,
+    router: Address,
+    pool_address: Address,
+) {
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash, wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionByHash",
+            rpc_result(json!({
+                "chainId": "0x38",
+                "hash": tx_hash,
+                "blockHash": "0x5f567bb0f2a4e22a5f8cc05610b18d5f8ef01cf15b8b7b8d0a8e1756e7f64f5e",
+                "blockNumber": "0x2a",
+                "from": wallet,
+                "to": router,
+                "gas": "0x86ed",
+                "gasPrice": "0x68e7780",
+                "nonce": "0x3",
+                "transactionIndex": "0x1",
+                "value": "0x0",
+                "input": "0x8803dbee0000000000000000000000000000000000000000000000000000000000000000",
+                "maxFeePerGas": "0x68e7780",
+                "maxPriorityFeePerGas": "0x68e7780"
+            })),
+        )
+        .await;
+}
+
+fn block_result(number: u64) -> Value {
+    json!({
+        "hash": "0x71ece187051700b814592f62774e6ebd8ebdf5efbb54c90859a7d1522ce38e0a",
+        "number": format!("0x{number:x}"),
+        "parentHash": "0x2abcce1ac985ebea2a2d6878a78387158f46de8d6db2cefca00ea36df4030a40",
+        "miner": "0x4838b106fce9647bdf1e7877bf73ce8b0bad5f97",
+        "gasLimit": "0x223b4a1",
+        "gasUsed": "0xde3909",
+        "timestamp": "0x6801f4bb"
+    })
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -439,6 +529,737 @@ async fn test_submit_market_order_happy_path_emits_fill_from_swap_log() {
     assert_eq!(state.method_count("eth_getTransactionReceipt").await, 1);
     assert_eq!(state.method_count("eth_call").await, 1);
     assert_eq!(signer.request_count(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_send_raw_tx_transient_rpc_error_retries_once() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    let tx_hash = signed.tx_hash.clone();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_response(
+            "eth_sendRawTransaction",
+            MockRpcResponse::json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32000, "message": "temporarily unavailable"}
+            }))
+            .with_status(StatusCode::SERVICE_UNAVAILABLE),
+        )
+        .await;
+    state
+        .enqueue_json("eth_sendRawTransaction", rpc_result(json!(tx_hash.clone())))
+        .await;
+
+    let (wallet, router, pool_address) = flow_addresses();
+    enqueue_receipt_and_tx_lookup(&state, tx_hash.as_str(), wallet, router, pool_address).await;
+
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("retry-once")),
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-RETRY-001"));
+    client
+        .submit_order(&cmd)
+        .expect("transient sendRawTransaction should retry and succeed");
+
+    assert_eq!(state.method_count("eth_sendRawTransaction").await, 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_send_raw_tx_rate_limited_rpc_code_retries_once() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    let tx_hash = signed.tx_hash.clone();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_response(
+            "eth_sendRawTransaction",
+            MockRpcResponse::json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32005, "message": "rate limit exceeded"}
+            })),
+        )
+        .await;
+    state
+        .enqueue_json("eth_sendRawTransaction", rpc_result(json!(tx_hash.clone())))
+        .await;
+
+    let (wallet, router, pool_address) = flow_addresses();
+    enqueue_receipt_and_tx_lookup(&state, tx_hash.as_str(), wallet, router, pool_address).await;
+
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("retry-rate-limited")),
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-RATELIMIT-001"));
+    client
+        .submit_order(&cmd)
+        .expect("RPC code -32005 should be treated as retryable");
+
+    assert_eq!(state.method_count("eth_sendRawTransaction").await, 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_send_raw_tx_already_known_treated_as_accepted_and_polled_by_hash() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    let tx_hash = signed.tx_hash.clone();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_response(
+            "eth_sendRawTransaction",
+            MockRpcResponse::json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32000, "message": "already known"}
+            })),
+        )
+        .await;
+
+    let (wallet, router, pool_address) = flow_addresses();
+    enqueue_receipt_and_tx_lookup(&state, tx_hash.as_str(), wallet, router, pool_address).await;
+
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("already-known")),
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-ALREADY-001"));
+    client
+        .submit_order(&cmd)
+        .expect("already-known sendRawTransaction should continue by hash");
+
+    assert_eq!(state.method_count("eth_sendRawTransaction").await, 1);
+    assert_eq!(state.method_count("eth_getTransactionReceipt").await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ambiguous_broadcast_timeout_still_polls_by_computed_tx_hash() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    let tx_hash = signed.tx_hash.clone();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_response(
+            "eth_sendRawTransaction",
+            MockRpcResponse::json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32000, "message": "request timed out"}
+            })),
+        )
+        .await;
+
+    let (wallet, router, pool_address) = flow_addresses();
+    enqueue_receipt_and_tx_lookup(&state, tx_hash.as_str(), wallet, router, pool_address).await;
+
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("ambiguous-timeout")),
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-AMBIG-001"));
+    client
+        .submit_order(&cmd)
+        .expect("ambiguous broadcast should continue by computed tx hash");
+
+    assert_eq!(state.method_count("eth_sendRawTransaction").await, 1);
+    assert_eq!(state.method_count("eth_getTransactionReceipt").await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ambiguous_broadcast_timeout_with_receipt_timeout_keeps_order_pending() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_response(
+            "eth_sendRawTransaction",
+            MockRpcResponse::json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32000, "message": "request timed out"}
+            })),
+        )
+        .await;
+    state
+        .enqueue_json("eth_getTransactionReceipt", rpc_result(Value::Null))
+        .await;
+    state
+        .enqueue_json("eth_getTransactionReceipt", rpc_result(Value::Null))
+        .await;
+
+    let (_, router, pool_address) = flow_addresses();
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client_with_runtime(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("ambiguous-receipt-timeout")),
+        1,
+        2,
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-AMBIGPEND-001"));
+    client
+        .submit_order(&cmd)
+        .expect("ambiguous broadcast + receipt timeout should remain pending");
+    client
+        .submit_order(&cmd)
+        .expect("duplicate submit should no-op while pending");
+
+    let fill_reports = client
+        .generate_fill_reports(GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(pool.instrument_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("fill reports should generate");
+
+    assert!(fill_reports.is_empty());
+    assert_eq!(state.method_count("eth_sendRawTransaction").await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_non_retryable_rpc_error_fails_fast() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_response(
+            "eth_sendRawTransaction",
+            MockRpcResponse::json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32000, "message": "execution reverted"}
+            })),
+        )
+        .await;
+
+    let (_, router, pool_address) = flow_addresses();
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("non-retryable")),
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-FAILFAST-001"));
+    let err = client
+        .submit_order(&cmd)
+        .expect_err("non-retryable sendRawTransaction error should fail fast");
+
+    assert!(err.to_string().contains("EXEC_ERR[RPC_NON_RETRYABLE]"));
+    assert_eq!(state.method_count("eth_sendRawTransaction").await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_send_raw_tx_returned_hash_mismatch_fails_closed() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_json(
+            "eth_sendRawTransaction",
+            rpc_result(json!(
+                "0x1111111111111111111111111111111111111111111111111111111111111111"
+            )),
+        )
+        .await;
+
+    let (_, router, pool_address) = flow_addresses();
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("tx-hash-mismatch")),
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-HASHMIS-001"));
+    let err = client
+        .submit_order(&cmd)
+        .expect_err("hash mismatch between signer tx and RPC response must fail closed");
+
+    assert!(
+        err.to_string()
+            .to_ascii_lowercase()
+            .contains("tx hash mismatch")
+    );
+    assert_eq!(state.method_count("eth_sendRawTransaction").await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_send_raw_tx_nonce_too_low_rejected_with_actionable_reason() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_response(
+            "eth_sendRawTransaction",
+            MockRpcResponse::json(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32000, "message": "nonce too low"}
+            })),
+        )
+        .await;
+
+    let (_, router, pool_address) = flow_addresses();
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("nonce-too-low")),
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-NONCE-001"));
+    let err = client
+        .submit_order(&cmd)
+        .expect_err("nonce-too-low must fail with actionable classification");
+
+    assert!(err.to_string().contains("EXEC_ERR[NONCE_TOO_LOW]"));
+    assert_eq!(state.method_count("eth_sendRawTransaction").await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_confirmations_required_delays_fill_until_threshold() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    let tx_hash = signed.tx_hash.clone();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_json("eth_sendRawTransaction", rpc_result(json!(tx_hash.clone())))
+        .await;
+
+    let (wallet, router, pool_address) = flow_addresses();
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionByHash",
+            rpc_result(json!({
+                "chainId": "0x38",
+                "hash": tx_hash,
+                "blockHash": "0x5f567bb0f2a4e22a5f8cc05610b18d5f8ef01cf15b8b7b8d0a8e1756e7f64f5e",
+                "blockNumber": "0x2a",
+                "from": wallet,
+                "to": router,
+                "gas": "0x86ed",
+                "gasPrice": "0x68e7780",
+                "nonce": "0x3",
+                "transactionIndex": "0x1",
+                "value": "0x0",
+                "input": "0x8803dbee0000000000000000000000000000000000000000000000000000000000000000",
+                "maxFeePerGas": "0x68e7780",
+                "maxPriorityFeePerGas": "0x68e7780"
+            })),
+        )
+        .await;
+    state
+        .enqueue_json("eth_getBlockByNumber", rpc_result(block_result(42)))
+        .await;
+    state
+        .enqueue_json("eth_getBlockByNumber", rpc_result(block_result(43)))
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client_with_runtime(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("confirmations")),
+        2,
+        4,
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-CONFIRM-001"));
+    client
+        .submit_order(&cmd)
+        .expect("order should remain pending until confirmations threshold is reached");
+
+    assert_eq!(state.method_count("eth_getBlockByNumber").await, 2);
+    assert_eq!(state.method_count("eth_getTransactionReceipt").await, 3);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_confirmations_timeout_keeps_order_pending() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    let tx_hash = signed.tx_hash.clone();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_json("eth_sendRawTransaction", rpc_result(json!(tx_hash.clone())))
+        .await;
+
+    let (wallet, router, pool_address) = flow_addresses();
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json("eth_getBlockByNumber", rpc_result(block_result(42)))
+        .await;
+    state
+        .enqueue_json("eth_getBlockByNumber", rpc_result(block_result(43)))
+        .await;
+
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client_with_runtime(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("confirm-timeout-pending")),
+        3,
+        2,
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-CONFTIMEOUT-001"));
+    client
+        .submit_order(&cmd)
+        .expect("confirmation timeout should remain pending");
+    client
+        .submit_order(&cmd)
+        .expect("duplicate submit should no-op while pending");
+
+    let fill_reports = client
+        .generate_fill_reports(GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(pool.instrument_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("fill reports should generate");
+
+    assert!(fill_reports.is_empty());
+    assert_eq!(state.method_count("eth_sendRawTransaction").await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_receipt_reappears_and_confirms_emits_fill_once() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    let tx_hash = signed.tx_hash.clone();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_json("eth_sendRawTransaction", rpc_result(json!(tx_hash.clone())))
+        .await;
+
+    let (wallet, router, pool_address) = flow_addresses();
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json("eth_getTransactionReceipt", rpc_result(Value::Null))
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json("eth_getBlockByNumber", rpc_result(block_result(42)))
+        .await;
+    state
+        .enqueue_json("eth_getBlockByNumber", rpc_result(block_result(43)))
+        .await;
+    state
+        .enqueue_json("eth_getBlockByNumber", rpc_result(block_result(44)))
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionByHash",
+            rpc_result(json!({
+                "chainId": "0x38",
+                "hash": tx_hash,
+                "blockHash": "0x5f567bb0f2a4e22a5f8cc05610b18d5f8ef01cf15b8b7b8d0a8e1756e7f64f5e",
+                "blockNumber": "0x2a",
+                "from": wallet,
+                "to": router,
+                "gas": "0x86ed",
+                "gasPrice": "0x68e7780",
+                "nonce": "0x3",
+                "transactionIndex": "0x1",
+                "value": "0x0",
+                "input": "0x8803dbee0000000000000000000000000000000000000000000000000000000000000000",
+                "maxFeePerGas": "0x68e7780",
+                "maxPriorityFeePerGas": "0x68e7780"
+            })),
+        )
+        .await;
+
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client_with_runtime(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("reorg-reappears")),
+        3,
+        4,
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-REAPPEAR-001"));
+    client
+        .submit_order(&cmd)
+        .expect("receipt reappearance should eventually confirm");
+
+    let fill_reports = client
+        .generate_fill_reports(GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(pool.instrument_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("fill reports should generate");
+
+    assert_eq!(fill_reports.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_receipt_disappears_before_confirmations_keeps_order_pending() {
+    let state = MockRpcState::new();
+    let addr = start_mock_rpc_server(state.clone()).await;
+    let rpc_url = format!("http://{addr}/");
+
+    let signed = make_signed_tx();
+    let tx_hash = signed.tx_hash.clone();
+    enqueue_swap_preflight(&state).await;
+    state
+        .enqueue_json("eth_sendRawTransaction", rpc_result(json!(tx_hash.clone())))
+        .await;
+
+    let (wallet, router, pool_address) = flow_addresses();
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            rpc_result(make_receipt(tx_hash.as_str(), wallet, router, pool_address)),
+        )
+        .await;
+    state
+        .enqueue_json(
+            "eth_getTransactionByHash",
+            rpc_result(json!({
+                "chainId": "0x38",
+                "hash": tx_hash,
+                "blockHash": "0x5f567bb0f2a4e22a5f8cc05610b18d5f8ef01cf15b8b7b8d0a8e1756e7f64f5e",
+                "blockNumber": "0x2a",
+                "from": wallet,
+                "to": router,
+                "gas": "0x86ed",
+                "gasPrice": "0x68e7780",
+                "nonce": "0x3",
+                "transactionIndex": "0x1",
+                "value": "0x0",
+                "input": "0x8803dbee0000000000000000000000000000000000000000000000000000000000000000",
+                "maxFeePerGas": "0x68e7780",
+                "maxPriorityFeePerGas": "0x68e7780"
+            })),
+        )
+        .await;
+    state
+        .enqueue_json("eth_getBlockByNumber", rpc_result(block_result(43)))
+        .await;
+    state
+        .enqueue_json("eth_getTransactionReceipt", rpc_result(Value::Null))
+        .await;
+
+    let mut metadata_store = InMemoryMetadataStore::new();
+    let pool = make_pool(router, pool_address);
+    metadata_store.insert_pool(pool.clone());
+
+    let signer = Arc::new(StaticSigner::new(signed));
+    let client = make_client_with_runtime(
+        rpc_url,
+        metadata_store,
+        signer,
+        Some(temp_journal_path("reorg")),
+        2,
+        2,
+    );
+
+    let cmd = make_submit_cmd(&pool, ClientOrderId::new("O-PR12C-REORG-001"));
+    client
+        .submit_order(&cmd)
+        .expect("receipt disappearance before confirmation should remain pending");
+
+    client
+        .submit_order(&cmd)
+        .expect("duplicate submit should remain a no-op while pending");
+
+    let fill_reports = client
+        .generate_fill_reports(GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(pool.instrument_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("fill reports should generate");
+
+    assert!(fill_reports.is_empty());
+    assert_eq!(state.method_count("eth_sendRawTransaction").await, 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

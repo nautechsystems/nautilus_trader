@@ -114,6 +114,37 @@ struct ExecutionRuntimeState {
     external_orders: HashMap<ClientOrderId, VenueOrderId>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SendRawTxErrorKind {
+    AlreadyKnown,
+    AmbiguousBroadcast,
+    Retryable,
+    NonceTooLow,
+    NonRetryable,
+}
+
+enum ConfirmationOutcome {
+    Confirmed(nautilus_model::defi::TransactionReceipt),
+    ReorgDetected,
+    ConfirmationTimeout,
+}
+
+enum ReceiptPollOutcome {
+    Found(nautilus_model::defi::TransactionReceipt),
+    ReceiptTimeout,
+}
+
+enum SwapExecutionOutcome {
+    Filled {
+        venue_order_id: VenueOrderId,
+        fill_reports: Vec<FillReport>,
+        nonce: u64,
+    },
+    Pending {
+        venue_order_id: VenueOrderId,
+    },
+}
+
 impl ExecutionRuntimeState {
     fn append_event(
         &mut self,
@@ -583,7 +614,11 @@ impl BlockchainExecutionClient {
             .await;
 
         match outcome {
-            Ok((venue_order_id, fill_reports, nonce)) => {
+            Ok(SwapExecutionOutcome::Filled {
+                venue_order_id,
+                fill_reports,
+                nonce,
+            }) => {
                 self.append_journal_event(
                     idempotency_key.clone(),
                     JournalIntentKind::Swap,
@@ -609,6 +644,22 @@ impl BlockchainExecutionClient {
                     .order_reports
                     .insert(cmd.client_order_id, order_report);
                 state.fill_reports.extend(fill_reports);
+                Ok(())
+            }
+            Ok(SwapExecutionOutcome::Pending { venue_order_id }) => {
+                let ts_event = UnixNanos::from(nanos_since_unix_epoch());
+                let order_report = build_order_report(
+                    self.core.account_id,
+                    cmd,
+                    venue_order_id,
+                    OrderStatus::Accepted,
+                    Quantity::zero(cmd.order_init.quantity.precision),
+                    ts_event,
+                );
+                let mut state = self.execution_state.lock().await;
+                state
+                    .order_reports
+                    .insert(cmd.client_order_id, order_report);
                 Ok(())
             }
             Err(error) => {
@@ -650,7 +701,7 @@ impl BlockchainExecutionClient {
         runtime: &ExecutionRuntimeConfig,
         signer: &dyn ExecutionTxSigner,
         intent_hash: &str,
-    ) -> anyhow::Result<(VenueOrderId, Vec<FillReport>, u64)> {
+    ) -> anyhow::Result<SwapExecutionOutcome> {
         let pool_identifier = PoolIdentifier::new_checked(cmd.instrument_id.symbol.as_str())?;
         let pool = {
             let metadata_store = self.metadata_store.lock().map_err(|e| {
@@ -778,10 +829,13 @@ impl BlockchainExecutionClient {
         };
 
         let signed = signer.sign_evm_tx(sign_request).await?;
-        let rpc_tx_hash = self
-            .http_rpc_client
-            .send_raw_transaction(signed.raw_tx_hex.as_str())
-            .await?;
+        let rpc_tx_hash = send_raw_transaction_with_policy(
+            self.http_rpc_client.as_ref(),
+            signed.raw_tx_hex.as_str(),
+            signed.tx_hash.as_str(),
+            2,
+        )
+        .await?;
         assert_rpc_tx_hash_matches_computed(&rpc_tx_hash, &signed.tx_hash)?;
 
         self.append_journal_event(
@@ -799,13 +853,26 @@ impl BlockchainExecutionClient {
         )
         .await?;
 
-        let receipt = poll_for_receipt(
+        let receipt = match poll_for_receipt(
             self.http_rpc_client.as_ref(),
             signed.tx_hash.as_str(),
             runtime.receipt_max_polls,
             runtime.receipt_poll_interval,
         )
-        .await?;
+        .await?
+        {
+            ReceiptPollOutcome::Found(receipt) => receipt,
+            ReceiptPollOutcome::ReceiptTimeout => {
+                log::warn!(
+                    "EXEC_ERR[RECEIPT_TIMEOUT] receipt not found within polling budget tx_hash={} polls={}",
+                    signed.tx_hash,
+                    runtime.receipt_max_polls
+                );
+                return Ok(SwapExecutionOutcome::Pending {
+                    venue_order_id: VenueOrderId::new(signed.tx_hash.clone()),
+                });
+            }
+        };
 
         if receipt.status != 1 {
             anyhow::bail!(
@@ -815,15 +882,38 @@ impl BlockchainExecutionClient {
             );
         }
 
-        verify_receipt_confirmations(
+        let receipt = match verify_receipt_confirmations(
             self.http_rpc_client.as_ref(),
             signed.tx_hash.as_str(),
-            receipt.block_number,
+            receipt,
             runtime.confirmations_required,
             runtime.receipt_max_polls,
             runtime.receipt_poll_interval,
         )
-        .await?;
+        .await?
+        {
+            ConfirmationOutcome::Confirmed(receipt) => receipt,
+            ConfirmationOutcome::ReorgDetected => {
+                log::warn!(
+                    "EXEC_ERR[REORG_DETECTED] receipt disappeared before confirmation threshold tx_hash={} required={}",
+                    signed.tx_hash,
+                    runtime.confirmations_required
+                );
+                return Ok(SwapExecutionOutcome::Pending {
+                    venue_order_id: VenueOrderId::new(signed.tx_hash.clone()),
+                });
+            }
+            ConfirmationOutcome::ConfirmationTimeout => {
+                log::warn!(
+                    "EXEC_ERR[CONFIRMATION_TIMEOUT] transaction {} did not reach required confirmations {}",
+                    signed.tx_hash,
+                    runtime.confirmations_required
+                );
+                return Ok(SwapExecutionOutcome::Pending {
+                    venue_order_id: VenueOrderId::new(signed.tx_hash.clone()),
+                });
+            }
+        };
 
         verify_receipt_identity(&receipt, self.wallet_address, swap_call.to)?;
         verify_transaction_identity(
@@ -853,7 +943,11 @@ impl BlockchainExecutionClient {
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         let venue_order_id = VenueOrderId::new(signed.tx_hash.clone());
-        Ok((venue_order_id, fill_reports, nonce))
+        Ok(SwapExecutionOutcome::Filled {
+            venue_order_id,
+            fill_reports,
+            nonce,
+        })
     }
 
     fn build_amm_adapter(
@@ -1317,15 +1411,101 @@ fn unix_deadline(ttl_secs: u64) -> anyhow::Result<i64> {
     i64::try_from(deadline).map_err(|_| anyhow::anyhow!("deadline does not fit in i64"))
 }
 
+async fn send_raw_transaction_with_policy(
+    rpc_client: &BlockchainHttpRpcClient,
+    raw_tx_hex: &str,
+    expected_tx_hash: &str,
+    max_attempts: u32,
+) -> anyhow::Result<String> {
+    let attempts = max_attempts.max(1);
+    for attempt in 1..=attempts {
+        match rpc_client.send_raw_transaction(raw_tx_hex).await {
+            Ok(tx_hash) => return Ok(tx_hash),
+            Err(error) => match classify_send_raw_tx_error(&error) {
+                SendRawTxErrorKind::AlreadyKnown => {
+                    log::warn!(
+                        "sendRawTransaction already known; continuing by computed hash tx_hash={expected_tx_hash}"
+                    );
+                    return Ok(expected_tx_hash.to_string());
+                }
+                SendRawTxErrorKind::AmbiguousBroadcast => {
+                    log::warn!(
+                        "sendRawTransaction ambiguous result; continuing by computed hash tx_hash={} error={}",
+                        expected_tx_hash,
+                        error
+                    );
+                    return Ok(expected_tx_hash.to_string());
+                }
+                SendRawTxErrorKind::NonceTooLow => {
+                    anyhow::bail!("EXEC_ERR[NONCE_TOO_LOW] sendRawTransaction failed: {error}");
+                }
+                SendRawTxErrorKind::Retryable => {
+                    if attempt < attempts {
+                        let backoff_ms = u64::from(attempt) * 50;
+                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                        continue;
+                    }
+                    anyhow::bail!(
+                        "EXEC_ERR[RPC_RETRY_EXHAUSTED] sendRawTransaction failed after {} attempts: {}",
+                        attempts,
+                        error
+                    );
+                }
+                SendRawTxErrorKind::NonRetryable => {
+                    anyhow::bail!("EXEC_ERR[RPC_NON_RETRYABLE] sendRawTransaction failed: {error}");
+                }
+            },
+        }
+    }
+
+    unreachable!("send_raw_transaction_with_policy loop always returns");
+}
+
+fn classify_send_raw_tx_error(error: &anyhow::Error) -> SendRawTxErrorKind {
+    let lowered = error.to_string().to_ascii_lowercase();
+
+    if lowered.contains("already known")
+        || lowered.contains("already imported")
+        || (lowered.contains("known transaction") && !lowered.contains("unknown transaction"))
+    {
+        return SendRawTxErrorKind::AlreadyKnown;
+    }
+    if lowered.contains("nonce too low") {
+        return SendRawTxErrorKind::NonceTooLow;
+    }
+    if lowered.contains("timeout")
+        || lowered.contains("timed out")
+        || lowered.contains("deadline exceeded")
+    {
+        return SendRawTxErrorKind::AmbiguousBroadcast;
+    }
+    if lowered.contains("http 429")
+        || lowered.contains("rpc_code=-32005")
+        || lowered.contains("code=-32005")
+        || lowered.contains("too many requests")
+        || lowered.contains("rate limit")
+        || lowered.contains("http 502")
+        || lowered.contains("http 503")
+        || lowered.contains("http 504")
+        || lowered.contains("temporarily unavailable")
+        || lowered.contains("connection refused")
+        || lowered.contains("connection reset")
+    {
+        return SendRawTxErrorKind::Retryable;
+    }
+
+    SendRawTxErrorKind::NonRetryable
+}
+
 async fn poll_for_receipt(
     rpc_client: &BlockchainHttpRpcClient,
     tx_hash: &str,
     max_polls: u32,
     interval: Duration,
-) -> anyhow::Result<nautilus_model::defi::TransactionReceipt> {
+) -> anyhow::Result<ReceiptPollOutcome> {
     for attempt in 0..max_polls {
         if let Some(receipt) = rpc_client.get_transaction_receipt(tx_hash).await? {
-            return Ok(receipt);
+            return Ok(ReceiptPollOutcome::Found(receipt));
         }
 
         if attempt + 1 == max_polls {
@@ -1334,49 +1514,78 @@ async fn poll_for_receipt(
         tokio::time::sleep(interval).await;
     }
 
-    anyhow::bail!(
-        "receipt not found within polling budget tx_hash={} polls={}",
-        tx_hash,
-        max_polls
-    )
+    Ok(ReceiptPollOutcome::ReceiptTimeout)
 }
 
 async fn verify_receipt_confirmations(
     rpc_client: &BlockchainHttpRpcClient,
     tx_hash: &str,
-    receipt_block: u64,
+    initial_receipt: nautilus_model::defi::TransactionReceipt,
     confirmations_required: u64,
     max_polls: u32,
     interval: Duration,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ConfirmationOutcome> {
     if confirmations_required <= 1 {
-        return Ok(());
+        return Ok(ConfirmationOutcome::Confirmed(initial_receipt));
     }
 
-    for _ in 0..max_polls {
+    let mut receipt = initial_receipt;
+    let mut consecutive_missing_receipts = 0_u32;
+    for attempt in 0..max_polls {
+        if attempt > 0 {
+            match rpc_client.get_transaction_receipt(tx_hash).await? {
+                Some(updated) => {
+                    receipt = updated;
+                    consecutive_missing_receipts = 0;
+                }
+                None => {
+                    consecutive_missing_receipts = consecutive_missing_receipts.saturating_add(1);
+                    if consecutive_missing_receipts >= 2 {
+                        return Ok(ConfirmationOutcome::ReorgDetected);
+                    }
+
+                    if attempt + 1 == max_polls {
+                        break;
+                    }
+                    tokio::time::sleep(interval).await;
+                    continue;
+                }
+            }
+        }
+
         let latest = rpc_client
             .get_block_by_number(None)
             .await?
             .ok_or_else(|| anyhow::anyhow!("latest block unavailable while confirming tx"))?;
         let confirmations = latest
             .number
-            .saturating_sub(receipt_block)
+            .saturating_sub(receipt.block_number)
             .saturating_add(1);
         if confirmations >= confirmations_required {
-            let still_present = rpc_client.get_transaction_receipt(tx_hash).await?;
-            if still_present.is_some() {
-                return Ok(());
+            match rpc_client.get_transaction_receipt(tx_hash).await? {
+                Some(current) => {
+                    consecutive_missing_receipts = 0;
+                    let current_confirmations = latest
+                        .number
+                        .saturating_sub(current.block_number)
+                        .saturating_add(1);
+                    if current_confirmations >= confirmations_required {
+                        return Ok(ConfirmationOutcome::Confirmed(current));
+                    }
+                    receipt = current;
+                }
+                None => return Ok(ConfirmationOutcome::ReorgDetected),
             }
+        }
+
+        if attempt + 1 == max_polls {
+            break;
         }
 
         tokio::time::sleep(interval).await;
     }
 
-    anyhow::bail!(
-        "transaction {} did not reach required confirmations {}",
-        tx_hash,
-        confirmations_required
-    )
+    Ok(ConfirmationOutcome::ConfirmationTimeout)
 }
 
 fn verify_receipt_identity(
@@ -1535,7 +1744,7 @@ fn build_fill_report(
 mod tests {
     use std::{cell::RefCell, rc::Rc, sync::Arc};
 
-    use super::BlockchainExecutionClient;
+    use super::{BlockchainExecutionClient, SendRawTxErrorKind, classify_send_raw_tx_error};
     use crate::{
         config::BlockchainExecutionClientConfig,
         execution::metadata_store::{InMemoryMetadataStore, PoolMetadataStore},
@@ -1661,5 +1870,61 @@ mod tests {
             )
         );
         assert_eq!(token_universe.len(), 5);
+    }
+
+    #[test]
+    fn test_classify_send_raw_tx_error_already_known() {
+        let error = anyhow::anyhow!("RPC error code=-32000 message=already known");
+        assert_eq!(
+            classify_send_raw_tx_error(&error),
+            SendRawTxErrorKind::AlreadyKnown
+        );
+    }
+
+    #[test]
+    fn test_classify_send_raw_tx_error_retryable() {
+        let error = anyhow::anyhow!(
+            "HTTP 503 RPC request failed rpc_code=-32000 rpc_message=temporarily unavailable"
+        );
+        assert_eq!(
+            classify_send_raw_tx_error(&error),
+            SendRawTxErrorKind::Retryable
+        );
+    }
+
+    #[test]
+    fn test_classify_send_raw_tx_error_rate_limited_rpc_code_retryable() {
+        let error = anyhow::anyhow!("RPC error code=-32005 message=rate limit exceeded data=null");
+        assert_eq!(
+            classify_send_raw_tx_error(&error),
+            SendRawTxErrorKind::Retryable
+        );
+    }
+
+    #[test]
+    fn test_classify_send_raw_tx_error_nonce_too_low() {
+        let error = anyhow::anyhow!("RPC error code=-32000 message=nonce too low");
+        assert_eq!(
+            classify_send_raw_tx_error(&error),
+            SendRawTxErrorKind::NonceTooLow
+        );
+    }
+
+    #[test]
+    fn test_classify_send_raw_tx_error_timeout_ambiguous() {
+        let error = anyhow::anyhow!("transport request timed out while waiting for provider");
+        assert_eq!(
+            classify_send_raw_tx_error(&error),
+            SendRawTxErrorKind::AmbiguousBroadcast
+        );
+    }
+
+    #[test]
+    fn test_classify_send_raw_tx_error_unknown_transaction_not_already_known() {
+        let error = anyhow::anyhow!("RPC error code=-32000 message=unknown transaction");
+        assert_eq!(
+            classify_send_raw_tx_error(&error),
+            SendRawTxErrorKind::NonRetryable
+        );
     }
 }
