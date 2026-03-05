@@ -155,6 +155,34 @@ def test_build_ladder_place_cancel_levels_from_bps_applies_tick_min_offset_per_l
     ]
 
 
+def test_build_ladder_place_cancel_levels_from_bps_allows_signed_bid_ask_edges() -> None:
+    bid_levels, ask_levels = build_ladder_place_cancel_levels_from_bps(
+        anchor_bid=Decimal("100"),
+        anchor_ask=Decimal("101"),
+        bid_edges_bps=(Decimal("-5"), Decimal("0"), Decimal("0")),
+        ask_edges_bps=(Decimal("-5"), Decimal("0"), Decimal("0")),
+        place_edges_bps=(Decimal("1"), Decimal("0"), Decimal("0")),
+        distances_bps=(Decimal("0"), Decimal("0"), Decimal("0")),
+        n_orders=(1, 0, 0),
+    )
+
+    assert bid_levels == [(Decimal("100.0400"), Decimal("100.0500"))]
+    assert ask_levels == [(Decimal("100.9596"), Decimal("100.9495"))]
+
+
+def test_build_ladder_place_cancel_levels_from_bps_rejects_negative_place_edges() -> None:
+    with pytest.raises(ValueError, match="place edges must be non-negative"):
+        build_ladder_place_cancel_levels_from_bps(
+            anchor_bid=Decimal("100"),
+            anchor_ask=Decimal("101"),
+            bid_edges_bps=(Decimal("5"), Decimal("0"), Decimal("0")),
+            ask_edges_bps=(Decimal("5"), Decimal("0"), Decimal("0")),
+            place_edges_bps=(Decimal("-1"), Decimal("0"), Decimal("0")),
+            distances_bps=(Decimal("0"), Decimal("0"), Decimal("0")),
+            n_orders=(1, 0, 0),
+        )
+
+
 def test_apply_inventory_skew_to_edges_handles_positive_negative_and_zero() -> None:
     bid_up, ask_up = apply_inventory_skew_to_edges(
         bid_edge_bps=Decimal("10"),

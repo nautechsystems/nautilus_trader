@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any
 
 MAX_UNIQUE_PRICE_NUDGES = 200
-EDGE_VALIDATION_RULE = "All edge inputs (bid/ask/place) must be non-negative."
+EDGE_VALIDATION_RULE = "Bid/ask edges may be signed; place edges must be non-negative."
 
 
 def to_decimal(value: Decimal | float | str) -> Decimal:
@@ -181,8 +181,6 @@ def build_ladder_targets(
     distances = (to_decimal(distance_1), to_decimal(distance_2), to_decimal(distance_3))
     n_orders = (int(n_1), int(n_2), int(n_3))
 
-    _validate_non_negative(bid_edges, "bid edges")
-    _validate_non_negative(ask_edges, "ask edges")
     _validate_non_negative(distances, "distances")
     _validate_non_negative(n_orders, "n_orders")
 
@@ -227,8 +225,6 @@ def build_ladder_place_cancel_levels(
     distances_dec = (to_decimal(distance_1), to_decimal(distance_2), to_decimal(distance_3))
     n_orders_int = (int(n_1), int(n_2), int(n_3))
 
-    _validate_non_negative(bid_edges_dec, "bid edges")
-    _validate_non_negative(ask_edges_dec, "ask edges")
     _validate_non_negative(place_edges_dec, "place edges")
     _validate_non_negative(distances_dec, "distances")
     _validate_non_negative(n_orders_int, "n_orders")
@@ -278,8 +274,6 @@ def build_ladder_place_cancel_levels_from_bps(
     n_orders_int = (int(n_1), int(n_2), int(n_3))
     tick_dec = to_decimal(tick)
 
-    _validate_non_negative(bid_edges_dec, "bid edges")
-    _validate_non_negative(ask_edges_dec, "ask edges")
     _validate_non_negative(place_edges_dec, "place edges")
     _validate_non_negative(distances_dec, "distances")
     _validate_non_negative(n_orders_int, "n_orders")
