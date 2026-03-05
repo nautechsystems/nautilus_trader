@@ -108,6 +108,11 @@ def normalize_address(address: str, chain: str, dex_type: str, label: str = "add
 
 
 def _normalize_checksum_address(address: str, chain: str, dex_type: str, label: str) -> str:
+    if not address or address.strip() != address:
+        raise ValueError(
+            f"Invalid {label} '{address}' for venue '{chain}:{dex_type}': blank or padded values are not allowed",
+        )
+
     try:
         return to_checksum_address(address)
     except ValueError as exc:
@@ -118,7 +123,7 @@ def _normalize_checksum_address(address: str, chain: str, dex_type: str, label: 
 
 def validate_factory_pair_address(
     pool_address: str,
-    factory_pair_address: str | None,
+    factory_pair_address: str,
     chain: str,
     dex_type: str,
 ) -> None:
@@ -129,7 +134,7 @@ def validate_factory_pair_address(
     ----------
     pool_address : str
         The normalized configured pool address.
-    factory_pair_address : str, optional
+    factory_pair_address : str
         The onboarding `factory.getPair(token0, token1)` result.
     chain : str
         The chain name.
@@ -142,9 +147,6 @@ def validate_factory_pair_address(
         If `factory_pair_address` is provided and does not match `pool_address`.
 
     """
-    if factory_pair_address is None:
-        return
-
     normalized_factory_pair = normalize_address(
         factory_pair_address,
         chain=chain,

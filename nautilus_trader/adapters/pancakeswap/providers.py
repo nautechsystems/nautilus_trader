@@ -54,8 +54,8 @@ class PancakeSwapPoolConfig(msgspec.Struct, frozen=True, kw_only=True):
         The token1 display symbol/code.
     token1_decimals : int
         The token1 decimals from on-chain metadata.
-    factory_pair_address : str, optional
-        Optional `factory.getPair(token0, token1)` result used to validate onboarding config.
+    factory_pair_address : str
+        Required `factory.getPair(token0, token1)` result used to validate onboarding config.
 
     """
 
@@ -66,7 +66,7 @@ class PancakeSwapPoolConfig(msgspec.Struct, frozen=True, kw_only=True):
     token1_address: str
     token1_symbol: str
     token1_decimals: int
-    factory_pair_address: str | None = None
+    factory_pair_address: str
 
     def __post_init__(self) -> None:
         PyCondition.valid_string(self.pool_address, "pool_address")
@@ -74,6 +74,7 @@ class PancakeSwapPoolConfig(msgspec.Struct, frozen=True, kw_only=True):
         PyCondition.valid_string(self.token0_symbol, "token0_symbol")
         PyCondition.valid_string(self.token1_address, "token1_address")
         PyCondition.valid_string(self.token1_symbol, "token1_symbol")
+        PyCondition.valid_string(self.factory_pair_address, "factory_pair_address")
 
         if self.token0_decimals < 0:
             raise ValueError(f"token0_decimals must be non-negative, was {self.token0_decimals}")
@@ -101,7 +102,7 @@ class PancakeSwapInstrumentProviderConfig(InstrumentProviderConfig, frozen=True,
     pools: tuple[PancakeSwapPoolConfig, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.pools and not self.load_all:
+        if self.pools and not self.load_all and self.load_ids is None:
             msgspec.structs.force_setattr(self, "load_all", True)
 
 
@@ -124,6 +125,7 @@ class PancakeSwapInstrumentProvider(InstrumentProvider):
 
         super().__init__(config=config)
         self._config = config
+        self._currency_metadata: dict[str, tuple[str, int]] = {}
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         pools = self._config.pools
@@ -135,8 +137,36 @@ class PancakeSwapInstrumentProvider(InstrumentProvider):
         for pool in pools:
             instrument = self._build_instrument(pool)
             self.add(instrument)
-            self.add_currency(instrument.base_currency)
-            self.add_currency(instrument.quote_currency)
+            self._add_currency_strict(
+                instrument.base_currency,
+                token_address=instrument.info["token0_address"],
+                token_decimals=instrument.info["token0_decimals"],
+            )
+            self._add_currency_strict(
+                instrument.quote_currency,
+                token_address=instrument.info["token1_address"],
+                token_decimals=instrument.info["token1_decimals"],
+            )
+
+    def _add_currency_strict(
+        self,
+        currency: Currency,
+        token_address: str,
+        token_decimals: int,
+    ) -> None:
+        existing_metadata = self._currency_metadata.get(currency.code)
+        incoming_metadata = (token_address, token_decimals)
+
+        if existing_metadata is not None and existing_metadata != incoming_metadata:
+            existing_address, existing_decimals = existing_metadata
+            raise ValueError(
+                f"Conflicting currency metadata for symbol '{currency.code}': "
+                f"existing(address={existing_address}, decimals={existing_decimals}) "
+                f"!= new(address={token_address}, decimals={token_decimals})",
+            )
+
+        self._currency_metadata.setdefault(currency.code, incoming_metadata)
+        self.add_currency(currency)
 
     def _build_instrument(self, pool: PancakeSwapPoolConfig) -> CurrencyPair:
         instrument_id = pool_instrument_id(
@@ -203,6 +233,13 @@ class PancakeSwapInstrumentProvider(InstrumentProvider):
             ts_init=0,
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
+            info={
+                "pool_address": normalized_pool_address,
+                "token0_address": token0_address,
+                "token0_decimals": pool.token0_decimals,
+                "token1_address": token1_address,
+                "token1_decimals": pool.token1_decimals,
+            },
         )
 
 
