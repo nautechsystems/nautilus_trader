@@ -3558,6 +3558,17 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo fmt --all -- --check` (pass after formatting)
     - `cargo test -p nautilus-model --features defi` (pass)
 
+- 2026-03-05 - PR5a (`pr5a/instrument-provider-minimal`, head SHA `2a7787530d8793386caffdcd1f27567d8a518c50`) - status: ready
+  - Added a Python-first `nautilus_trader.adapters.pancakeswap` package with config-driven pool onboarding (`PancakeSwapInstrumentProviderConfig`, `PancakeSwapPoolConfig`, `PancakeSwapInstrumentProvider`) and DEX venue semantics (`Bsc:PancakeSwapV2`).
+  - Added strict EVM checksum address validation/normalization at the adapter boundary and explicit factory `getPair` mismatch checks for onboarding safety.
+  - Added integration tests for pool instrument construction, `load_ids` subset behavior, invalid address rejection, factory mismatch rejection, and address normalization helpers.
+  - Tests run:
+    - `uv sync --active --all-groups --all-extras --inexact --no-install-package nautilus_trader` (pass)
+    - `uv run --active --no-sync build.py` (pass)
+    - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --active --no-sync pytest -p pytest_asyncio.plugin tests/integration_tests/adapters/pancakeswap -k provider -q` (pass)
+    - `uv run --active --no-sync ruff check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/providers.py nautilus_trader/adapters/pancakeswap/symbol.py tests/integration_tests/adapters/pancakeswap/__init__.py tests/integration_tests/adapters/pancakeswap/conftest.py tests/integration_tests/adapters/pancakeswap/test_provider.py` (pass)
+    - `uv run --active --no-sync ruff format --check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/providers.py nautilus_trader/adapters/pancakeswap/symbol.py tests/integration_tests/adapters/pancakeswap/__init__.py tests/integration_tests/adapters/pancakeswap/conftest.py tests/integration_tests/adapters/pancakeswap/test_provider.py` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
