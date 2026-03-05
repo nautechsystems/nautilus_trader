@@ -3664,6 +3664,15 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo test -p nautilus-blockchain --test execution_journal_primitives` (pass)
     - `cargo test -p nautilus-blockchain --lib --tests` (pass)
 
+- 2026-03-05 - PR12b (`pr12b/happy-path-exec`, head SHA `c0c25ff76aa43fca2289c48ea4b83ac3f7568cfa`) - status: ready
+  - Implemented PR12b execution vertical slice in `BlockchainExecutionClient`: deterministic idempotent submit path (`quote -> sign -> sendRawTransaction -> receipt/tx identity verify -> decode fills -> reports`) with signer-only boundary checks, fail-closed runtime validation, and max-inflight serialization.
+  - Corrected pool side semantics for `token0/token1` instruments (`SELL base` exact-in on `[token0, token1]`, `BUY base` exact-out on `[token1, token0]`) and fixed fill qty/price mapping to base/quote decimals.
+  - Added milestone integration tests for happy-path execution and duplicate-submit behaviors (`tests/amm_execution_flow.rs`) plus deterministic non-panic execution client method coverage (`tests/execution_client_no_todos.rs`), and expanded runtime validation tests for router-required + signer-wallet mismatch fail-closed behavior.
+  - Tests run:
+    - `cargo test -p nautilus-blockchain --test amm_execution_flow --test execution_client_no_todos` (pass)
+    - `cargo test -p nautilus-blockchain` (pass)
+    - `cargo fmt --all -- --check` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
