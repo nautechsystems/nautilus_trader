@@ -3578,6 +3578,14 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `uv run --active --no-sync ruff format --check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/providers.py nautilus_trader/adapters/pancakeswap/symbol.py tests/integration_tests/adapters/pancakeswap/__init__.py tests/integration_tests/adapters/pancakeswap/conftest.py tests/integration_tests/adapters/pancakeswap/test_provider.py` (pass)
     - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --active --no-sync pytest -p pytest_asyncio.plugin tests/integration_tests/adapters/pancakeswap -k provider -q` (pass)
 
+- 2026-03-05 - PR6a (`pr6a/rpc-types-models`, head SHA `20b5ecc961249b218d5d490baa78347f805bf2c2`) - status: ready
+  - Added EVM receipt/log RPC models (`TransactionReceipt`, `ReceiptLog`) and exposed them through `nautilus-model` DeFi re-exports.
+  - Extended transaction/RPC error models for real node payloads (`to: null` contract creation support, optional EIP-1559 fee fields, and `RpcError.data` across object/string/array/missing forms).
+  - Added strict raw-tx hash helpers with real BSC legacy/type-2 raw transaction vectors verifying canonical `keccak256(raw_tx_bytes)` semantics (including typed prefix bytes).
+  - Tests run:
+    - `cargo fmt --all -- --check` (pass)
+    - `cargo test -p nautilus-model --features defi` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
