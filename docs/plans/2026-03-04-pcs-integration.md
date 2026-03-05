@@ -3546,6 +3546,18 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo test -p nautilus-blockchain --features "python,hypersync"` (pass)
     - `cargo test -p nautilus-pyo3 --features defi` (pass)
 
+- 2026-03-05 - PR4 (`pr4/dextype-pancakeswapv2`, head SHA `7602813b0794485b6c2db20f5e2bc72f2ca6ad03`) - status: ready
+  - Added `DexType::PancakeSwapV2` to the core DeFi enum so `DexType::from_dex_name(\"PancakeSwapV2\")` resolves as a first-class variant.
+  - Extended venue parsing tests with `Bsc:PancakeSwapV2` coverage and added `PancakeSwapV2` to valid DEX-name venue fixtures.
+  - Added instrument-ID validation coverage for `0x... .Bsc:PancakeSwapV2` to ensure DEX-address parsing works for the new venue.
+  - Tests run:
+    - `cargo test -p nautilus-model --features defi --no-run` (fail: expected RED before enum variant; unresolved `DexType::PancakeSwapV2`)
+    - `cargo test -p nautilus-model --features defi test_dex_type_from_dex_name_valid -- --nocapture` (pass)
+    - `cargo test -p nautilus-model --features defi test_parse_dex_valid -- --nocapture` (pass)
+    - `cargo test -p nautilus-model --features defi test_blockchain_instrument_id_valid_pancakeswap_v2 -- --nocapture` (pass)
+    - `cargo fmt --all -- --check` (pass after formatting)
+    - `cargo test -p nautilus-model --features defi` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
