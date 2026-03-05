@@ -3525,10 +3525,16 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `uv run --active --no-sync python - <<'PY' ... BlockchainExecutionClientConfig(... Venue('Bsc:PancakeSwapV2') ...) ... PY` (expected fail: `dex 'PancakeSwapV2' not recognized`, pending PR4)
     - `uv run --active --no-sync python - <<'PY' ... LiveNode.builder(...).add_exec_client(...).start(); ... stop() ... PY` (pass: no panic; connection failure to `https://127.0.0.1:1` logged and handled)
 
+- 2026-03-05 - PR2 (`pr2/pyo3-execution-exposure`, head SHA `2f6e3a9978515692f2b8d7213b7a08f601301ab8`) - status: ready
+  - Restored non-breaking PyO3 surface by exposing `BlockchainDataClientConfig` whenever `python` feature is enabled, while keeping data factory/extractor registration gated behind `hypersync`.
+  - Hardened the PyO3 registry test by asserting `BlockchainDataClientConfig` is present in the blockchain module under `--features python`.
+  - Tests run: `cargo fmt --all -- --check` (pass), `cargo test -p nautilus-blockchain` (pass), `cargo test -p nautilus-blockchain --features python --test pyo3_exec_registry` (pass), `cargo test -p nautilus-blockchain --features python` (pass).
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
 - 2026-03-05 - Progress Log correction: entry at line 3491 recorded a mistyped SHA (`3edac0c621c59c1db0c4bc2b8d354ed17d8355fb`); correct SHA is `3edac0c626077c915da3260bb16f3f3b75f0f891`.
+- 2026-03-05 - PR2 scope reality: execution/factory ungating and token metadata caching changes have already landed in PR2; PR3 should be re-scoped to avoid duplicate churn while still delivering the remaining feature-gating/metadata boundary goals.
 
 ## Known Issues / Follow-ups
 
