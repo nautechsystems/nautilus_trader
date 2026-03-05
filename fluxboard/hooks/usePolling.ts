@@ -42,6 +42,25 @@ export function usePolling(
   useEffect(() => {
     if (!enabled) return;
 
+    const isTestEnv = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+    const invokeFetchFn = (): void => {
+      try {
+        const result = fetchFnRef.current();
+        // Avoid leaking unhandled rejections when callers provide async functions.
+        if (result && typeof (result as Promise<void>).catch === 'function') {
+          (result as Promise<void>).catch((err) => {
+            if (!isTestEnv && import.meta.env?.DEV) {
+              console.error('[polling] poll callback failed', err);
+            }
+          });
+        }
+      } catch (err) {
+        if (!isTestEnv && import.meta.env?.DEV) {
+          console.error('[polling] poll callback threw', err);
+        }
+      }
+    };
+
     const canUseDocument = typeof document !== 'undefined';
     const hasHiddenInterval =
       typeof options?.hiddenIntervalMs === 'number' && options.hiddenIntervalMs > 0;
@@ -60,17 +79,17 @@ export function usePolling(
         clearInterval(timer);
       }
       timer = setInterval(() => {
-        fetchFnRef.current();
+        invokeFetchFn();
       }, currentInterval());
     };
 
     // Initial fetch
-    fetchFnRef.current();
+    invokeFetchFn();
     startTimer();
 
     const handleVisibilityChange = (): void => {
       if (options?.refreshOnVisible && canUseDocument && !document.hidden) {
-        fetchFnRef.current();
+        invokeFetchFn();
       }
       if (hasHiddenInterval) {
         startTimer();

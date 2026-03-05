@@ -96,4 +96,38 @@ describe('usePolling', () => {
     });
     expect(fetchFn).toHaveBeenCalledTimes(5);
   });
+
+  it('attaches a rejection handler when polling callback returns a promise', () => {
+    const catchSpy = vi.fn();
+    const thenable = { catch: catchSpy };
+    const fetchFn = vi.fn(() => thenable as any);
+
+    renderHook(() => usePolling(fetchFn, 1000, true));
+
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(catchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not leak unhandled rejections when the polling function rejects', async () => {
+    // Use real timers to allow Node to surface unhandledRejection events reliably.
+    vi.useRealTimers();
+
+    const fetchFn = vi.fn(async () => {
+      throw new Error('boom');
+    });
+
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      const view = renderHook(() => usePolling(fetchFn, 1000, true));
+      // Give the event loop a turn; if the hook doesn't catch the rejection,
+      // Node will emit `unhandledRejection`.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      view.unmount();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+
+    expect(unhandled).not.toHaveBeenCalled();
+  });
 });
