@@ -13,28 +13,32 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from [PyO3](https://pyo3.rs).
-
-pub mod config;
-pub mod engine;
-pub mod node;
-pub mod result;
+//! Python bindings for margin model types.
 
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.backtest`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if registering any module components fails.
-#[pymodule]
-pub fn backtest(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<crate::config::BacktestEngineConfig>()?;
-    m.add_class::<crate::config::BacktestVenueConfig>()?;
-    m.add_class::<crate::config::BacktestDataConfig>()?;
-    m.add_class::<crate::config::BacktestRunConfig>()?;
-    m.add_class::<crate::result::BacktestResult>()?;
-    m.add_class::<crate::node::BacktestNode>()?;
-    m.add_class::<engine::PyBacktestEngine>()?;
-    Ok(())
+use crate::accounts::margin_model::{LeveragedMarginModel, StandardMarginModel};
+
+#[pymethods]
+impl StandardMarginModel {
+    #[new]
+    fn py_new() -> Self {
+        Self
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
+#[pymethods]
+impl LeveragedMarginModel {
+    #[new]
+    fn py_new() -> Self {
+        Self
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
 }

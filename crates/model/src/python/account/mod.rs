@@ -15,6 +15,7 @@
 
 pub mod cash;
 pub mod margin;
+pub mod margin_model;
 pub mod transformer;
 
 use nautilus_core::python::to_pyvalue_err;

@@ -26,7 +26,7 @@ use nautilus_trading::{
 };
 use pyo3::{prelude::*, types::PyDict};
 
-use crate::{config::BacktestRunConfig, engine::BacktestResult, node::BacktestNode};
+use crate::{config::BacktestRunConfig, node::BacktestNode, result::BacktestResult};
 
 #[pymethods]
 impl BacktestNode {
@@ -353,7 +353,7 @@ impl BacktestNode {
     }
 }
 
-fn create_config_instance<'py>(
+pub(crate) fn create_config_instance<'py>(
     py: Python<'py>,
     config_path: &str,
     config: &HashMap<String, serde_json::Value>,

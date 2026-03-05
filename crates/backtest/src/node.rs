@@ -34,7 +34,8 @@ use rust_decimal::{Decimal, prelude::FromPrimitive};
 
 use crate::{
     config::{BacktestDataConfig, BacktestRunConfig, NautilusDataType},
-    engine::{BacktestEngine, BacktestResult},
+    engine::BacktestEngine,
+    result::BacktestResult,
 };
 
 /// Orchestrates catalog-driven backtests from run configurations.

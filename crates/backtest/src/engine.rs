@@ -15,7 +15,7 @@
 
 //! The core `BacktestEngine` for backtesting on historical data.
 
-use std::{any::Any, cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc, sync::Arc};
+use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_analysis::analyzer::PortfolioAnalyzer;
@@ -57,138 +57,8 @@ use crate::{
     accumulator::TimeEventAccumulator, config::BacktestEngineConfig,
     data_client::BacktestDataClient, data_iterator::BacktestDataIterator,
     exchange::SimulatedExchange, execution_client::BacktestExecutionClient,
-    modules::SimulationModule,
+    modules::SimulationModule, result::BacktestResult,
 };
-
-/// Results from a completed backtest run.
-#[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.backtest",
-        skip_from_py_object
-    )
-)]
-pub struct BacktestResult {
-    pub trader_id: String,
-    pub machine_id: String,
-    pub instance_id: UUID4,
-    pub run_config_id: Option<String>,
-    pub run_id: Option<UUID4>,
-    pub run_started: Option<UnixNanos>,
-    pub run_finished: Option<UnixNanos>,
-    pub backtest_start: Option<UnixNanos>,
-    pub backtest_end: Option<UnixNanos>,
-    pub elapsed_time_secs: f64,
-    pub iterations: usize,
-    pub total_events: usize,
-    pub total_orders: usize,
-    pub total_positions: usize,
-    pub stats_pnls: AHashMap<String, AHashMap<String, f64>>,
-    pub stats_returns: AHashMap<String, f64>,
-    pub stats_general: AHashMap<String, f64>,
-}
-
-#[cfg(feature = "python")]
-#[pyo3::pymethods]
-impl BacktestResult {
-    #[getter]
-    #[pyo3(name = "trader_id")]
-    fn py_trader_id(&self) -> &str {
-        &self.trader_id
-    }
-
-    #[getter]
-    #[pyo3(name = "machine_id")]
-    fn py_machine_id(&self) -> &str {
-        &self.machine_id
-    }
-
-    #[getter]
-    #[pyo3(name = "instance_id")]
-    const fn py_instance_id(&self) -> UUID4 {
-        self.instance_id
-    }
-
-    #[getter]
-    #[pyo3(name = "run_config_id")]
-    fn py_run_config_id(&self) -> Option<&str> {
-        self.run_config_id.as_deref()
-    }
-
-    #[getter]
-    #[pyo3(name = "elapsed_time_secs")]
-    const fn py_elapsed_time_secs(&self) -> f64 {
-        self.elapsed_time_secs
-    }
-
-    #[getter]
-    #[pyo3(name = "iterations")]
-    const fn py_iterations(&self) -> usize {
-        self.iterations
-    }
-
-    #[getter]
-    #[pyo3(name = "total_events")]
-    const fn py_total_events(&self) -> usize {
-        self.total_events
-    }
-
-    #[getter]
-    #[pyo3(name = "total_orders")]
-    const fn py_total_orders(&self) -> usize {
-        self.total_orders
-    }
-
-    #[getter]
-    #[pyo3(name = "total_positions")]
-    const fn py_total_positions(&self) -> usize {
-        self.total_positions
-    }
-
-    #[getter]
-    #[pyo3(name = "stats_pnls")]
-    fn py_stats_pnls(&self) -> HashMap<String, HashMap<String, f64>> {
-        self.stats_pnls
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    v.iter().map(|(k2, v2)| (k2.clone(), *v2)).collect(),
-                )
-            })
-            .collect()
-    }
-
-    #[getter]
-    #[pyo3(name = "stats_returns")]
-    fn py_stats_returns(&self) -> HashMap<String, f64> {
-        self.stats_returns
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect()
-    }
-
-    #[getter]
-    #[pyo3(name = "stats_general")]
-    fn py_stats_general(&self) -> HashMap<String, f64> {
-        self.stats_general
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "BacktestResult(trader_id='{}', elapsed={:.2}s, iterations={}, orders={}, positions={})",
-            self.trader_id,
-            self.elapsed_time_secs,
-            self.iterations,
-            self.total_orders,
-            self.total_positions,
-        )
-    }
-}
 
 /// Core backtesting engine for running event-driven strategy backtests on historical data.
 ///
