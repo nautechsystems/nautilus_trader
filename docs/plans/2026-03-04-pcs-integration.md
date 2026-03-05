@@ -3673,6 +3673,15 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo test -p nautilus-blockchain` (pass)
     - `cargo fmt --all -- --check` (pass)
 
+- 2026-03-05 - PR12c (`pr12c/ambiguous-retry-reorg`, head SHA `b348f319d17aa5390e6687920459441a7cb55322`) - status: ready
+  - Hardened `sendRawTransaction` taxonomy + policy handling for ambiguous broadcast and rate-limit (`-32005`) cases, including retry classification coverage and strict hash mismatch/nonce-too-low fail-closed checks.
+  - Updated execution lifecycle semantics to keep orders non-terminal (`Accepted`/pending) on receipt timeout, confirmation timeout, and reorg detection, while preserving terminal rejection for non-retryable/signer/identity failures.
+  - Expanded PR12c test coverage in `amm_execution_flow` and RPC method tests: transient/rate-limit retries, ambiguous broadcast pending path, confirmation timeout pending path, reorg disappearance pending path, reappearance+confirmation single-fill path, and top-level RPC error/null-result handling.
+  - Tests run:
+    - `cargo fmt --all -- --check` (pass)
+    - `cargo test -p nautilus-blockchain --test amm_execution_flow --test rpc_http_execution_methods` (pass)
+    - `cargo test -p nautilus-blockchain` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
