@@ -3631,6 +3631,10 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo test -p nautilus-blockchain --features python --test pyo3_exec_registry` (fail: pre-existing `nautilus-model` Python compile errors in `crates/model/src/python/defi/data.rs` for `Option<Address>` parse/display)
     - `cargo test -p nautilus-pyo3 --features defi` (fail: same pre-existing `nautilus-model` Python compile errors)
 
+- 2026-03-05 - PR9 (`pr9/defi-wallet`, head SHA `1114e0eb8d2495b887fb89dc997f38f1caa7ac47`) - status: ready
+  - Updated PR9 head SHA after appending plan tracking sections for milestone progress/deviation/follow-up compliance.
+  - Tests run: none (plan tracking append-only update).
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
