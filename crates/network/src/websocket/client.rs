@@ -19,6 +19,7 @@
 //! - Connection management with automatic reconnection.
 //! - Split read/write architecture with separate tasks.
 //! - Unbounded channels on latency-sensitive paths.
+//! - Event-driven state notification via `Notify` for immediate wakeup on transitions.
 //! - Heartbeat support.
 //! - Rate limiting integration.
 
@@ -51,7 +52,7 @@ use super::{
     config::WebSocketConfig,
     consts::{
         CONNECTION_STATE_CHECK_INTERVAL_MS, GRACEFUL_SHUTDOWN_DELAY_MS,
-        GRACEFUL_SHUTDOWN_TIMEOUT_SECS, SEND_OPERATION_CHECK_INTERVAL_MS,
+        GRACEFUL_SHUTDOWN_TIMEOUT_SECS,
     },
     types::{MessageHandler, MessageReader, MessageWriter, PingHandler, WriterCommand},
 };
@@ -92,6 +93,7 @@ pub struct WebSocketClientInner {
     writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     connection_mode: Arc<AtomicU8>,
+    state_notify: Arc<tokio::sync::Notify>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
     /// True if this is a stream-based client (created via `connect_stream`).
@@ -119,6 +121,7 @@ impl WebSocketClientInner {
         install_cryptographic_provider();
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
 
         // Note: We don't spawn a read task here since the reader is handled externally
         let read_task = None;
@@ -133,7 +136,12 @@ impl WebSocketClientInner {
         .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
 
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
-        let write_task = Self::spawn_write_task(connection_mode.clone(), writer, writer_rx);
+        let write_task = Self::spawn_write_task(
+            connection_mode.clone(),
+            state_notify.clone(),
+            writer,
+            writer_rx,
+        );
 
         let heartbeat_task = if let Some(heartbeat_interval) = config.heartbeat {
             Some(Self::spawn_heartbeat_task(
@@ -155,6 +163,7 @@ impl WebSocketClientInner {
             ping_handler: None,
             writer_tx,
             connection_mode,
+            state_notify,
             reconnect_timeout,
             heartbeat_task,
             read_task,
@@ -202,10 +211,12 @@ impl WebSocketClientInner {
             Self::connect_with_server(&config.url, config.headers.clone()).await?;
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
 
         let read_task = if message_handler.is_some() {
             Some(Self::spawn_message_handler_task(
                 connection_mode.clone(),
+                state_notify.clone(),
                 reader,
                 message_handler.as_ref(),
                 ping_handler.as_ref(),
@@ -216,7 +227,12 @@ impl WebSocketClientInner {
         };
 
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
-        let write_task = Self::spawn_write_task(connection_mode.clone(), writer, writer_rx);
+        let write_task = Self::spawn_write_task(
+            connection_mode.clone(),
+            state_notify.clone(),
+            writer,
+            writer_rx,
+        );
 
         // Optionally spawn a heartbeat task to periodically ping server
         let heartbeat_task = config.heartbeat.map(|heartbeat_secs| {
@@ -248,6 +264,7 @@ impl WebSocketClientInner {
             writer_tx,
             heartbeat_task,
             connection_mode,
+            state_notify,
             reconnect_timeout,
             backoff,
             // Set stream mode when no message handler (reader not managed by client)
@@ -479,6 +496,7 @@ impl WebSocketClientInner {
             self.read_task = if self.message_handler.is_some() {
                 Some(Self::spawn_message_handler_task(
                     self.connection_mode.clone(),
+                    self.state_notify.clone(),
                     reader,
                     self.message_handler.as_ref(),
                     self.ping_handler.as_ref(),
@@ -519,6 +537,7 @@ impl WebSocketClientInner {
 
     fn spawn_message_handler_task(
         connection_state: Arc<AtomicU8>,
+        state_notify: Arc<tokio::sync::Notify>,
         mut reader: MessageReader,
         message_handler: Option<&MessageHandler>,
         ping_handler: Option<&PingHandler>,
@@ -597,6 +616,9 @@ impl WebSocketClientInner {
                     }
                 }
             }
+
+            // Wake the controller immediately so it detects the dead read task
+            state_notify.notify_one();
         })
     }
 
@@ -643,6 +665,7 @@ impl WebSocketClientInner {
 
     fn spawn_write_task(
         connection_state: Arc<AtomicU8>,
+        state_notify: Arc<tokio::sync::Notify>,
         writer: MessageWriter,
         mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
     ) -> tokio::task::JoinHandle<()> {
@@ -745,6 +768,7 @@ impl WebSocketClientInner {
                                     reconnect_buffer.push_back(msg);
                                     connection_state
                                         .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+                                    state_notify.notify_one();
                                 }
                             }
                         }
@@ -870,6 +894,7 @@ impl Debug for WebSocketClientInner {
 pub struct WebSocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
+    pub(crate) state_notify: Arc<tokio::sync::Notify>,
     pub(crate) reconnect_timeout: Duration,
     pub(crate) rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     pub(crate) writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
@@ -914,6 +939,7 @@ impl WebSocketClient {
         let inner = WebSocketClientInner::new_with_writer(config, writer).await?;
 
         let connection_mode = inner.connection_mode.clone();
+        let state_notify = inner.state_notify.clone();
         let reconnect_timeout = inner.reconnect_timeout;
         let keyed_quotas = keyed_quotas
             .into_iter()
@@ -922,14 +948,19 @@ impl WebSocketClient {
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
         let writer_tx = inner.writer_tx.clone();
 
-        let controller_task =
-            Self::spawn_controller_task(inner, connection_mode.clone(), post_reconnect);
+        let controller_task = Self::spawn_controller_task(
+            inner,
+            connection_mode.clone(),
+            state_notify.clone(),
+            post_reconnect,
+        );
 
         Ok((
             reader,
             Self {
                 controller_task,
                 connection_mode,
+                state_notify,
                 reconnect_timeout,
                 rate_limiter,
                 writer_tx,
@@ -974,11 +1005,16 @@ impl WebSocketClient {
         let inner =
             WebSocketClientInner::connect_url(config, message_handler, ping_handler).await?;
         let connection_mode = inner.connection_mode.clone();
+        let state_notify = inner.state_notify.clone();
         let writer_tx = inner.writer_tx.clone();
         let reconnect_timeout = inner.reconnect_timeout;
 
-        let controller_task =
-            Self::spawn_controller_task(inner, connection_mode.clone(), post_reconnection);
+        let controller_task = Self::spawn_controller_task(
+            inner,
+            connection_mode.clone(),
+            state_notify.clone(),
+            post_reconnection,
+        );
 
         let keyed_quotas = keyed_quotas
             .into_iter()
@@ -989,6 +1025,7 @@ impl WebSocketClient {
         Ok(Self {
             controller_task,
             connection_mode,
+            state_notify,
             reconnect_timeout,
             rate_limiter,
             writer_tx,
@@ -1056,41 +1093,62 @@ impl WebSocketClient {
         self.connection_mode().is_closed()
     }
 
-    /// Wait for the client to become active before sending.
+    /// Checks whether the connection is in a terminal state (disconnecting or closed).
     ///
-    /// Returns an error if the client is closed, disconnecting, or if the wait times out.
+    /// Single atomic load to fail fast before rate limiting or waiting.
+    #[inline]
+    fn check_not_terminal(&self) -> Result<(), SendError> {
+        match self.connection_mode() {
+            ConnectionMode::Disconnect | ConnectionMode::Closed => Err(SendError::Closed),
+            _ => Ok(()),
+        }
+    }
+
+    /// Waits for the client to become active before sending.
+    ///
+    /// Uses `state_notify` for event-driven wakeup so sends resume immediately
+    /// after reconnection completes. A fallback interval guards against missed
+    /// notifications.
     async fn wait_for_active(&self) -> Result<(), SendError> {
-        if self.is_closed() {
+        const FALLBACK_INTERVAL_MS: u64 = 100;
+
+        let mode = self.connection_mode();
+        if mode.is_active() {
+            return Ok(());
+        }
+
+        if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
             return Err(SendError::Closed);
         }
 
-        let timeout = self.reconnect_timeout;
-        let check_interval = Duration::from_millis(SEND_OPERATION_CHECK_INTERVAL_MS);
+        log::debug!("Waiting for client to become ACTIVE before sending...");
 
-        if !self.is_active() {
-            log::debug!("Waiting for client to become ACTIVE before sending...");
+        let fallback_interval = Duration::from_millis(FALLBACK_INTERVAL_MS);
 
-            let inner = tokio::time::timeout(timeout, async {
-                loop {
-                    if self.is_active() {
-                        return Ok(());
-                    }
+        tokio::time::timeout(self.reconnect_timeout, async {
+            loop {
+                // Register notification interest BEFORE checking state to prevent
+                // a race where the state changes between our check and the await
+                let notified = self.state_notify.notified();
 
-                    if matches!(
-                        self.connection_mode(),
-                        ConnectionMode::Disconnect | ConnectionMode::Closed
-                    ) {
-                        return Err(());
-                    }
-                    tokio::time::sleep(check_interval).await;
+                let mode = self.connection_mode();
+                if mode.is_active() {
+                    return Ok(());
                 }
-            })
-            .await
-            .map_err(|_| SendError::Timeout)?;
-            inner.map_err(|()| SendError::Closed)?;
-        }
 
-        Ok(())
+                if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
+                    return Err(());
+                }
+
+                tokio::select! {
+                    () = notified => {}
+                    () = tokio::time::sleep(fallback_interval) => {}
+                }
+            }
+        })
+        .await
+        .map_err(|_| SendError::Timeout)?
+        .map_err(|()| SendError::Closed)
     }
 
     /// Set disconnect mode to true.
@@ -1101,6 +1159,7 @@ impl WebSocketClient {
         log::debug!("Disconnecting");
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+        self.state_notify.notify_one();
 
         if tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
             while !self.is_disconnected() {
@@ -1135,10 +1194,7 @@ impl WebSocketClient {
     /// Returns a websocket error if unable to send.
     #[allow(unused_variables)]
     pub async fn send_text(&self, data: String, keys: Option<&[Ustr]>) -> Result<(), SendError> {
-        // Check connection state before rate limiting to fail fast
-        if self.is_closed() || self.is_disconnecting() {
-            return Err(SendError::Closed);
-        }
+        self.check_not_terminal()?;
 
         self.rate_limiter.await_keys_ready(keys).await;
         self.wait_for_active().await?;
@@ -1174,10 +1230,7 @@ impl WebSocketClient {
     /// Returns a websocket error if unable to send.
     #[allow(unused_variables)]
     pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<&[Ustr]>) -> Result<(), SendError> {
-        // Check connection state before rate limiting to fail fast
-        if self.is_closed() || self.is_disconnecting() {
-            return Err(SendError::Closed);
-        }
+        self.check_not_terminal()?;
 
         self.rate_limiter.await_keys_ready(keys).await;
         self.wait_for_active().await?;
@@ -1207,15 +1260,22 @@ impl WebSocketClient {
     fn spawn_controller_task(
         mut inner: WebSocketClientInner,
         connection_mode: Arc<AtomicU8>,
+        state_notify: Arc<tokio::sync::Notify>,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> tokio::task::JoinHandle<()> {
+        const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
+
         tokio::task::spawn(async move {
             log_task_started("controller");
 
-            let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
+            let fallback_interval = Duration::from_millis(CONTROLLER_FALLBACK_INTERVAL_MS);
 
             loop {
-                tokio::time::sleep(check_interval).await;
+                tokio::select! {
+                    () = state_notify.notified() => {}
+                    () = tokio::time::sleep(fallback_interval) => {}
+                }
+
                 let mut mode = ConnectionMode::from_atomic(&connection_mode);
 
                 if mode.is_disconnect() {
@@ -1279,6 +1339,7 @@ impl WebSocketClient {
                             "Max reconnection attempts ({max_attempts}) exceeded, transitioning to CLOSED"
                         );
                         connection_mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+                        state_notify.notify_waiters();
                         break;
                     }
 
@@ -1294,9 +1355,10 @@ impl WebSocketClient {
                     match inner.reconnect().await {
                         Ok(()) => {
                             inner.backoff.reset();
-                            inner.reconnection_attempt_count = 0; // Reset counter on success
+                            inner.reconnection_attempt_count = 0;
 
-                            // Only invoke callbacks if not in disconnect state
+                            state_notify.notify_waiters();
+
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
                                 if let Some(ref handler) = inner.message_handler {
                                     let reconnected_msg =

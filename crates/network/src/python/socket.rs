@@ -176,12 +176,13 @@ impl SocketClient {
     /// Reconnect the client.
     #[pyo3(name = "reconnect")]
     fn py_reconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let mode = slf.connection_mode.clone();
-        let mode_str = ConnectionMode::from_atomic(&mode).to_string();
+        let connection_mode = slf.connection_mode.clone();
+        let state_notify = slf.state_notify.clone();
+        let mode_str = ConnectionMode::from_atomic(&connection_mode).to_string();
         log::debug!("Reconnect from mode {mode_str}");
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            match ConnectionMode::from_atomic(&mode) {
+            match ConnectionMode::from_atomic(&connection_mode) {
                 ConnectionMode::Reconnect => {
                     log::warn!("Cannot reconnect - socket already reconnecting");
                 }
@@ -192,10 +193,15 @@ impl SocketClient {
                     log::warn!("Cannot reconnect - socket closed");
                 }
                 _ => {
-                    mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+                    connection_mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+                    state_notify.notify_one();
+
+                    let fallback_interval = Duration::from_millis(100);
                     let timeout = tokio::time::timeout(Duration::from_secs(30), async {
                         loop {
-                            let current = ConnectionMode::from_atomic(&mode);
+                            let notified = state_notify.notified();
+
+                            let current = ConnectionMode::from_atomic(&connection_mode);
                             if current.is_active() {
                                 return Ok(());
                             }
@@ -203,7 +209,11 @@ impl SocketClient {
                             if current.is_closed() || current.is_disconnect() {
                                 return Err("Connection closed during reconnect");
                             }
-                            tokio::time::sleep(Duration::from_millis(10)).await;
+
+                            tokio::select! {
+                                () = notified => {}
+                                () = tokio::time::sleep(fallback_interval) => {}
+                            }
                         }
                     })
                     .await;
@@ -231,12 +241,13 @@ impl SocketClient {
     /// - Any auto-reconnect job should be aborted before closing the client
     #[pyo3(name = "close")]
     fn py_close<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let mode = slf.connection_mode.clone();
-        let mode_str = ConnectionMode::from_atomic(&mode).to_string();
+        let connection_mode = slf.connection_mode.clone();
+        let state_notify = slf.state_notify.clone();
+        let mode_str = ConnectionMode::from_atomic(&connection_mode).to_string();
         log::debug!("Close from mode {mode_str}");
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            match ConnectionMode::from_atomic(&mode) {
+            match ConnectionMode::from_atomic(&connection_mode) {
                 ConnectionMode::Closed => {
                     log::debug!("Socket already closed");
                 }
@@ -244,10 +255,11 @@ impl SocketClient {
                     log::debug!("Socket already disconnecting");
                 }
                 _ => {
-                    mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+                    connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+                    state_notify.notify_one();
 
                     let timeout = tokio::time::timeout(Duration::from_secs(5), async {
-                        while !ConnectionMode::from_atomic(&mode).is_closed() {
+                        while !ConnectionMode::from_atomic(&connection_mode).is_closed() {
                             tokio::time::sleep(Duration::from_millis(10)).await;
                         }
                     })
@@ -255,7 +267,7 @@ impl SocketClient {
 
                     if timeout.is_err() {
                         log::error!("Timeout waiting for socket to close, forcing closed state");
-                        mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+                        connection_mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
                     }
                 }
             }
@@ -277,61 +289,70 @@ impl SocketClient {
     ) -> PyResult<Bound<'py, PyAny>> {
         log::trace!("Sending {}", String::from_utf8_lossy(&data));
 
-        let mode = slf.connection_mode.clone();
+        let connection_mode = slf.connection_mode.clone();
+        let state_notify = slf.state_notify.clone();
         let writer_tx = slf.writer_tx.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if ConnectionMode::from_atomic(&mode).is_closed() {
-                let msg = format!(
-                    "Cannot send data ({}): socket closed",
-                    String::from_utf8_lossy(&data)
-                );
+            match ConnectionMode::from_atomic(&connection_mode) {
+                ConnectionMode::Disconnect | ConnectionMode::Closed => {
+                    let msg = format!(
+                        "Cannot send data ({}): socket closed",
+                        String::from_utf8_lossy(&data)
+                    );
 
-                let io_err = std::io::Error::new(std::io::ErrorKind::NotConnected, msg);
-                return Err(to_pyruntime_err(io_err));
-            }
+                    let io_err = std::io::Error::new(std::io::ErrorKind::NotConnected, msg);
+                    return Err(to_pyruntime_err(io_err));
+                }
+                mode if !mode.is_active() => {
+                    let timeout = Duration::from_secs(2);
+                    let fallback_interval = Duration::from_millis(100);
 
-            let timeout = Duration::from_secs(2);
-            let check_interval = Duration::from_millis(1);
+                    log::debug!("Waiting for client to become ACTIVE before sending (2s)...");
+                    match tokio::time::timeout(timeout, async {
+                        loop {
+                            let notified = state_notify.notified();
 
-            if !ConnectionMode::from_atomic(&mode).is_active() {
-                log::debug!("Waiting for client to become ACTIVE before sending (2s)...");
-                match tokio::time::timeout(timeout, async {
-                    while !ConnectionMode::from_atomic(&mode).is_active() {
-                        if matches!(
-                            ConnectionMode::from_atomic(&mode),
-                            ConnectionMode::Disconnect | ConnectionMode::Closed
-                        ) {
-                            return Err("Client disconnected waiting to send");
+                            let mode = ConnectionMode::from_atomic(&connection_mode);
+                            if mode.is_active() {
+                                return Ok(());
+                            }
+
+                            if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
+                                return Err("Client disconnected waiting to send");
+                            }
+
+                            tokio::select! {
+                                () = notified => {}
+                                () = tokio::time::sleep(fallback_interval) => {}
+                            }
                         }
+                    })
+                    .await
+                    {
+                        Ok(Ok(())) => log::debug!("Client now active"),
+                        Ok(Err(e)) => {
+                            let err_msg = format!(
+                                "Failed sending data ({}): {e}",
+                                String::from_utf8_lossy(&data)
+                            );
 
-                        tokio::time::sleep(check_interval).await;
-                    }
+                            let io_err =
+                                std::io::Error::new(std::io::ErrorKind::NotConnected, err_msg);
+                            return Err(to_pyruntime_err(io_err));
+                        }
+                        Err(_) => {
+                            let err_msg = format!(
+                                "Failed sending data ({}): timeout waiting to become ACTIVE",
+                                String::from_utf8_lossy(&data)
+                            );
 
-                    Ok(())
-                })
-                .await
-                {
-                    Ok(Ok(())) => log::debug!("Client now active"),
-                    Ok(Err(e)) => {
-                        let err_msg = format!(
-                            "Failed sending data ({}): {e}",
-                            String::from_utf8_lossy(&data)
-                        );
-
-                        let io_err = std::io::Error::new(std::io::ErrorKind::NotConnected, err_msg);
-                        return Err(to_pyruntime_err(io_err));
-                    }
-                    Err(_) => {
-                        let err_msg = format!(
-                            "Failed sending data ({}): timeout waiting to become ACTIVE",
-                            String::from_utf8_lossy(&data)
-                        );
-
-                        let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, err_msg);
-                        return Err(to_pyruntime_err(io_err));
+                            let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, err_msg);
+                            return Err(to_pyruntime_err(io_err));
+                        }
                     }
                 }
+                _ => {}
             }
 
             let msg = WriterCommand::Send(data.into());

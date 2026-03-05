@@ -15,7 +15,7 @@
 
 //! HTTP client implementation with rate limiting and timeout support.
 
-use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
+use std::{borrow::Cow, collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use nautilus_core::collections::into_ustr_vec;
 use nautilus_cryptography::providers::install_cryptographic_provider;
@@ -27,6 +27,15 @@ use ustr::Ustr;
 
 use super::{HttpClientError, HttpResponse, HttpStatus};
 use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
+
+/// Default maximum idle connections per host.
+const DEFAULT_POOL_MAX_IDLE_PER_HOST: usize = 32;
+
+/// Default idle connection timeout in seconds.
+const DEFAULT_POOL_IDLE_TIMEOUT_SECS: u64 = 60;
+
+/// Default HTTP/2 keep-alive interval in seconds.
+const DEFAULT_HTTP2_KEEP_ALIVE_SECS: u64 = 30;
 
 /// An HTTP client that supports rate limiting and timeouts.
 ///
@@ -77,8 +86,14 @@ impl HttpClient {
             header_map.insert(header_name, header_value);
         }
 
-        let mut client_builder = reqwest::Client::builder().default_headers(header_map);
-        client_builder = client_builder.tcp_nodelay(true);
+        let mut client_builder = reqwest::Client::builder()
+            .default_headers(header_map)
+            .tcp_nodelay(true)
+            .pool_max_idle_per_host(DEFAULT_POOL_MAX_IDLE_PER_HOST)
+            .pool_idle_timeout(Duration::from_secs(DEFAULT_POOL_IDLE_TIMEOUT_SECS))
+            .http2_keep_alive_interval(Duration::from_secs(DEFAULT_HTTP2_KEEP_ALIVE_SECS))
+            .http2_keep_alive_while_idle(true)
+            .http2_adaptive_window(true);
 
         if let Some(timeout_secs) = timeout_secs {
             client_builder = client_builder.timeout(Duration::from_secs(timeout_secs));
@@ -95,9 +110,16 @@ impl HttpClient {
             .build()
             .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
 
+        // Pre-intern header keys as HeaderName, keeping both vectors aligned
+        let (valid_keys, header_names): (Vec<String>, Vec<HeaderName>) = header_keys
+            .into_iter()
+            .filter_map(|k| HeaderName::from_str(&k).ok().map(|name| (k, name)))
+            .unzip();
+
         let client = InnerHttpClient {
             client,
-            header_keys: Arc::new(header_keys),
+            header_keys: Arc::new(valid_keys),
+            header_names: Arc::new(header_names),
         };
 
         let keyed_quotas = keyed_quotas
@@ -291,6 +313,7 @@ impl HttpClient {
 pub struct InnerHttpClient {
     pub(crate) client: reqwest::Client,
     pub(crate) header_keys: Arc<Vec<String>>,
+    pub(crate) header_names: Arc<Vec<HeaderName>>,
 }
 
 impl InnerHttpClient {
@@ -309,8 +332,15 @@ impl InnerHttpClient {
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
         let full_url = encode_url_params(&url, params)?;
-        self.send_request_internal(method, full_url, None::<&()>, headers, body, timeout_secs)
-            .await
+        self.send_request_internal(
+            method,
+            full_url.as_ref(),
+            None::<&()>,
+            headers,
+            body,
+            timeout_secs,
+        )
+        .await
     }
 
     /// Sends an HTTP request with query parameters using reqwest's `.query()` method.
@@ -330,7 +360,7 @@ impl InnerHttpClient {
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
-        self.send_request_internal(method, url, query, headers, body, timeout_secs)
+        self.send_request_internal(method, &url, query, headers, body, timeout_secs)
             .await
     }
 
@@ -342,32 +372,34 @@ impl InnerHttpClient {
     async fn send_request_internal<Q: serde::Serialize>(
         &self,
         method: Method,
-        url: String,
+        url: &str,
         query: Option<&Q>,
         headers: Option<HashMap<String, String>>,
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
-        let headers = headers.unwrap_or_default();
-        let reqwest_url = Url::parse(url.as_str())
-            .map_err(|e| HttpClientError::from(format!("URL parse error: {e}")))?;
+        let reqwest_url =
+            Url::parse(url).map_err(|e| HttpClientError::from(format!("URL parse error: {e}")))?;
 
-        let mut header_map = HeaderMap::new();
-        for (header_key, header_value) in &headers {
-            let key = HeaderName::from_bytes(header_key.as_bytes())
-                .map_err(|e| HttpClientError::from(format!("Invalid header name: {e}")))?;
+        let mut request_builder = self.client.request(method, reqwest_url);
 
-            if let Some(old_value) = header_map.insert(
-                key.clone(),
-                header_value
-                    .parse()
-                    .map_err(|e| HttpClientError::from(format!("Invalid header value: {e}")))?,
-            ) {
-                log::trace!("Replaced header '{key}': old={old_value:?}, new={header_value}");
+        if let Some(headers) = headers {
+            let mut header_map = HeaderMap::with_capacity(headers.len());
+            for (header_key, header_value) in &headers {
+                let key = HeaderName::from_bytes(header_key.as_bytes())
+                    .map_err(|e| HttpClientError::from(format!("Invalid header name: {e}")))?;
+
+                if let Some(old_value) = header_map.insert(
+                    key.clone(),
+                    header_value
+                        .parse()
+                        .map_err(|e| HttpClientError::from(format!("Invalid header value: {e}")))?,
+                ) {
+                    log::trace!("Replaced header '{key}': old={old_value:?}, new={header_value}");
+                }
             }
+            request_builder = request_builder.headers(header_map);
         }
-
-        let mut request_builder = self.client.request(method, reqwest_url).headers(header_map);
 
         if let Some(q) = query {
             request_builder = request_builder.query(q);
@@ -398,19 +430,26 @@ impl InnerHttpClient {
 
     /// Converts a `reqwest::Response` into an `HttpResponse`.
     ///
+    /// Uses pre-interned `HeaderName` values to avoid string-to-header parsing per response.
+    ///
     /// # Errors
     ///
     /// Returns an error if unable to send request or times out.
     pub async fn to_response(&self, response: Response) -> Result<HttpResponse, HttpClientError> {
         log::trace!("{response:?}");
 
-        let headers: HashMap<String, String> = self
-            .header_keys
-            .iter()
-            .filter_map(|key| response.headers().get(key).map(|val| (key, val)))
-            .filter_map(|(key, val)| val.to_str().map(|v| (key, v)).ok())
-            .map(|(k, v)| (k.clone(), v.to_owned()))
-            .collect();
+        let resp_headers = response.headers();
+        let mut headers =
+            HashMap::with_capacity(std::cmp::min(self.header_names.len(), resp_headers.len()));
+
+        for (name, key_str) in self.header_names.iter().zip(self.header_keys.iter()) {
+            if let Some(val) = resp_headers.get(name)
+                && let Ok(v) = val.to_str()
+            {
+                headers.insert(key_str.clone(), v.to_owned());
+            }
+        }
+
         let status = HttpStatus::new(response.status());
         let body = response.bytes().await.map_err(HttpClientError::from)?;
 
@@ -432,39 +471,42 @@ impl Default for InnerHttpClient {
         Self {
             client,
             header_keys: Arc::default(),
+            header_names: Arc::default(),
         }
     }
 }
 
-/// Helper function to encode URL parameters.
+/// Encodes URL parameters into the query string.
 ///
-/// Takes a base URL and optional query parameters, returning the full URL with encoded query string.
+/// Returns `Cow::Borrowed` when no parameters need appending (zero-alloc fast path).
 /// Parameters can have multiple values per key (for doseq=True behavior).
 /// Preserves existing query strings in the URL by appending with '&' instead of '?'.
-fn encode_url_params(
-    url: &str,
+fn encode_url_params<'a>(
+    url: &'a str,
     params: Option<&HashMap<String, Vec<String>>>,
-) -> Result<String, HttpClientError> {
+) -> Result<Cow<'a, str>, HttpClientError> {
     let Some(params) = params else {
-        return Ok(url.to_string());
+        return Ok(Cow::Borrowed(url));
     };
 
-    // Flatten HashMap<String, Vec<String>> into Vec<(String, String)> for serde_urlencoded
-    let pairs: Vec<(String, String)> = params
+    let pairs: Vec<(&str, &str)> = params
         .iter()
-        .flat_map(|(key, values)| values.iter().map(move |value| (key.clone(), value.clone())))
+        .flat_map(|(key, values)| {
+            values
+                .iter()
+                .map(move |value| (key.as_str(), value.as_str()))
+        })
         .collect();
 
     if pairs.is_empty() {
-        return Ok(url.to_string());
+        return Ok(Cow::Borrowed(url));
     }
 
     let query_string = serde_urlencoded::to_string(pairs)
         .map_err(|e| HttpClientError::Error(format!("Failed to encode params: {e}")))?;
 
-    // Check if URL already has a query string
     let separator = if url.contains('?') { '&' } else { '?' };
-    Ok(format!("{url}{separator}{query_string}"))
+    Ok(Cow::Owned(format!("{url}{separator}{query_string}")))
 }
 
 #[cfg(test)]

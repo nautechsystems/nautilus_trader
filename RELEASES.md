@@ -14,6 +14,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Added Python strategy support to `LiveNode` with `add_strategy_from_config`
 - Added backtest margin models, `FXRolloverInterestModule`, `PerContractFeeModel`, and `SimulationModule` trait in Rust
+- Optimized network client performance and add benchmarks
 - Upgraded `databento` crate to v0.43.0
 - Upgraded `tokio` crate to v1.50.0
 

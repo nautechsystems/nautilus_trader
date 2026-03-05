@@ -188,6 +188,7 @@ impl WebSocketClient {
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let connection_mode = slf.connection_mode.clone();
+        let state_notify = slf.state_notify.clone();
         let mode = ConnectionMode::from_atomic(&connection_mode);
         log::debug!("Close from mode {mode}");
 
@@ -201,6 +202,7 @@ impl WebSocketClient {
                 }
                 _ => {
                     connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+                    state_notify.notify_one();
 
                     let timeout = tokio::time::timeout(Duration::from_secs(5), async {
                         while !ConnectionMode::from_atomic(&connection_mode).is_closed() {

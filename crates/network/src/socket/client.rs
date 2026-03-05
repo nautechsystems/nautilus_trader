@@ -27,6 +27,7 @@
 //! - Read half runs in dedicated task.
 //! - Write half runs in dedicated task connected with channel.
 //! - Controller task manages lifecycle.
+//! - Event-driven state notification via `Notify` for immediate wakeup on transitions.
 
 use std::{
     collections::VecDeque,
@@ -59,7 +60,6 @@ use crate::{
 const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
 const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
-const SEND_OPERATION_CHECK_INTERVAL_MS: u64 = 1;
 
 // Maximum buffer size for read operations (10 MB)
 const MAX_READ_BUFFER_BYTES: usize = 10 * 1024 * 1024;
@@ -91,6 +91,7 @@ struct SocketClientInner {
     writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     connection_mode: Arc<AtomicU8>,
+    state_notify: Arc<tokio::sync::Notify>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
     handler: Option<TcpMessageHandler>,
@@ -218,6 +219,7 @@ impl SocketClientInner {
         log::debug!("Connected");
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
 
         let read_task = Arc::new(Self::spawn_read_task(
             connection_mode.clone(),
@@ -229,8 +231,13 @@ impl SocketClientInner {
 
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
 
-        let write_task =
-            Self::spawn_write_task(connection_mode.clone(), writer, writer_rx, suffix.clone());
+        let write_task = Self::spawn_write_task(
+            connection_mode.clone(),
+            state_notify.clone(),
+            writer,
+            writer_rx,
+            suffix.clone(),
+        );
 
         // Optionally spawn a heartbeat task to periodically ping server
         let heartbeat_task = heartbeat.as_ref().map(|heartbeat| {
@@ -258,6 +265,7 @@ impl SocketClientInner {
             writer_tx,
             heartbeat_task,
             connection_mode,
+            state_notify,
             reconnect_timeout,
             backoff,
             handler: message_handler.clone(),
@@ -614,6 +622,7 @@ impl SocketClientInner {
 
     fn spawn_write_task(
         connection_state: Arc<AtomicU8>,
+        state_notify: Arc<tokio::sync::Notify>,
         writer: TcpWriter,
         mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
         suffix: Vec<u8>,
@@ -690,16 +699,17 @@ impl SocketClientInner {
                                     reconnect_buffer.push_back(msg);
                                     connection_state
                                         .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+                                    state_notify.notify_one();
                                     continue;
                                 }
 
                                 if let Err(e) = active_writer.write_all(&suffix).await {
                                     log::error!("Failed to send suffix: {e}");
                                     log::warn!("Writer triggering reconnect");
-                                    // Buffer this message before triggering reconnect since suffix failed
                                     reconnect_buffer.push_back(msg);
                                     connection_state
                                         .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+                                    state_notify.notify_one();
                                 }
                             }
                         }
@@ -804,6 +814,7 @@ impl CleanDrop for SocketClientInner {
 pub struct SocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
+    pub(crate) state_notify: Arc<tokio::sync::Notify>,
     pub(crate) reconnect_timeout: Duration,
     pub writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
 }
@@ -829,11 +840,13 @@ impl SocketClient {
         let inner = SocketClientInner::connect_url(config).await?;
         let writer_tx = inner.writer_tx.clone();
         let connection_mode = inner.connection_mode.clone();
+        let state_notify = inner.state_notify.clone();
         let reconnect_timeout = inner.reconnect_timeout;
 
         let controller_task = Self::spawn_controller_task(
             inner,
             connection_mode.clone(),
+            state_notify.clone(),
             post_reconnection,
             post_disconnection,
         );
@@ -846,6 +859,7 @@ impl SocketClient {
         Ok(Self {
             controller_task,
             connection_mode,
+            state_notify,
             reconnect_timeout,
             writer_tx,
         })
@@ -904,6 +918,7 @@ impl SocketClient {
     pub async fn close(&self) {
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+        self.state_notify.notify_one();
 
         if tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
             while !self.is_closed() {
@@ -931,42 +946,70 @@ impl SocketClient {
         }
     }
 
+    /// Checks whether the connection is in a terminal state (disconnecting or closed).
+    ///
+    /// Single atomic load to fail fast before waiting.
+    #[inline]
+    fn check_not_terminal(&self) -> Result<(), SendError> {
+        match self.connection_mode() {
+            ConnectionMode::Disconnect | ConnectionMode::Closed => Err(SendError::Closed),
+            _ => Ok(()),
+        }
+    }
+
+    /// Waits for the client to become active before sending.
+    ///
+    /// Uses `state_notify` for event-driven wakeup so sends resume immediately
+    /// after reconnection completes. A fallback interval guards against missed
+    /// notifications.
+    async fn wait_for_active(&self) -> Result<(), SendError> {
+        const FALLBACK_INTERVAL_MS: u64 = 100;
+
+        let mode = self.connection_mode();
+        if mode.is_active() {
+            return Ok(());
+        }
+
+        if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
+            return Err(SendError::Closed);
+        }
+
+        log::debug!("Waiting for client to become ACTIVE before sending...");
+
+        let fallback_interval = Duration::from_millis(FALLBACK_INTERVAL_MS);
+
+        tokio::time::timeout(self.reconnect_timeout, async {
+            loop {
+                let notified = self.state_notify.notified();
+
+                let mode = self.connection_mode();
+                if mode.is_active() {
+                    return Ok(());
+                }
+
+                if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
+                    return Err(());
+                }
+
+                tokio::select! {
+                    () = notified => {}
+                    () = tokio::time::sleep(fallback_interval) => {}
+                }
+            }
+        })
+        .await
+        .map_err(|_| SendError::Timeout)?
+        .map_err(|()| SendError::Closed)
+    }
+
     /// Sends a message of the given `data`.
     ///
     /// # Errors
     ///
     /// Returns an error if sending fails.
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), SendError> {
-        // Check connection state to fail fast
-        if self.is_closed() || self.is_disconnecting() {
-            return Err(SendError::Closed);
-        }
-
-        let timeout = self.reconnect_timeout;
-        let check_interval = Duration::from_millis(SEND_OPERATION_CHECK_INTERVAL_MS);
-
-        if !self.is_active() {
-            log::debug!("Waiting for client to become ACTIVE before sending...");
-
-            let inner = tokio::time::timeout(timeout, async {
-                loop {
-                    if self.is_active() {
-                        return Ok(());
-                    }
-
-                    if matches!(
-                        self.connection_mode(),
-                        ConnectionMode::Disconnect | ConnectionMode::Closed
-                    ) {
-                        return Err(());
-                    }
-                    tokio::time::sleep(check_interval).await;
-                }
-            })
-            .await
-            .map_err(|_| SendError::Timeout)?;
-            inner.map_err(|()| SendError::Closed)?;
-        }
+        self.check_not_terminal()?;
+        self.wait_for_active().await?;
 
         let msg = WriterCommand::Send(data.into());
         self.writer_tx
@@ -977,16 +1020,23 @@ impl SocketClient {
     fn spawn_controller_task(
         mut inner: SocketClientInner,
         connection_mode: Arc<AtomicU8>,
+        state_notify: Arc<tokio::sync::Notify>,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         post_disconnection: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> tokio::task::JoinHandle<()> {
+        const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
+
         tokio::task::spawn(async move {
             log_task_started("controller");
 
-            let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
+            let fallback_interval = Duration::from_millis(CONTROLLER_FALLBACK_INTERVAL_MS);
 
             loop {
-                tokio::time::sleep(check_interval).await;
+                tokio::select! {
+                    () = state_notify.notified() => {}
+                    () = tokio::time::sleep(fallback_interval) => {}
+                }
+
                 let mut mode = ConnectionMode::from_atomic(&connection_mode);
 
                 if mode.is_disconnect() {
@@ -1053,6 +1103,7 @@ impl SocketClient {
                             "Max reconnection attempts ({max_attempts}) exceeded, transitioning to CLOSED"
                         );
                         connection_mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+                        state_notify.notify_waiters();
                         break;
                     }
 
@@ -1061,8 +1112,10 @@ impl SocketClient {
                         Ok(()) => {
                             log::debug!("Reconnected successfully");
                             inner.backoff.reset();
-                            inner.reconnect_attempt_count = 0; // Reset counter on success
-                            // Only invoke reconnect handler if still active
+                            inner.reconnect_attempt_count = 0;
+
+                            state_notify.notify_waiters();
+
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
                                 if let Some(ref handler) = post_reconnection {
                                     handler();
