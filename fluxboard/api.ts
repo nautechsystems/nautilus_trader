@@ -695,21 +695,31 @@ function normalizeAlertRow(candidate: unknown): Alert | null {
 
   const severityRaw = String(row.severity ?? row.level ?? 'INFO').trim().toUpperCase();
   const level = severityRaw === 'CRITICAL' || severityRaw === 'WARNING' ? severityRaw : 'INFO';
+  const tsMsCandidate = toFiniteOptionalNumber(row.ts_ms ?? row.ts_event);
   const timestamp = Math.floor(
     toFiniteNumber(
-      row.timestamp ?? row.ts ?? Date.parse(String(row.time ?? '')) / 1000,
+      row.timestamp
+        ?? row.ts
+        ?? (
+          tsMsCandidate == null
+            ? undefined
+            : (tsMsCandidate >= 1_000_000_000_000 ? tsMsCandidate / 1000 : tsMsCandidate)
+        )
+        ?? Date.parse(String(row.time ?? '')) / 1000,
       0,
     ),
   );
   const safeTimestamp = timestamp > 0 ? timestamp : Math.floor(Date.now() / 1000);
   const message = String(row.message ?? row.title ?? id).trim();
   const details = row.details && typeof row.details === 'object' ? (row.details as Record<string, unknown>) : {};
+  const strategyId = String(row.strategy_id ?? row.strategy ?? row.signal_id ?? '').trim();
 
   return {
     ...(row as Alert),
     id,
     level: level as Alert['level'],
     severity: row.severity != null ? (level as Alert['severity']) : undefined,
+    strategy_id: strategyId || undefined,
     timestamp: safeTimestamp,
     message: message || id,
     details,

@@ -501,7 +501,12 @@ export default function Balances({
 
   const filtersApplied = useMemo(() => {
     if (!totals) return false;
-    return Math.abs((totals.mv_raw ?? 0) - visibleTotalRaw) > 0.5;
+    const authoritativeRaw = (
+      totals.net_mv_raw
+      ?? ((totals.mv_raw ?? 0) > 0 ? totals.mv_raw : null)
+      ?? visibleTotalRaw
+    );
+    return Math.abs(authoritativeRaw - visibleTotalRaw) > 0.5;
   }, [totals, visibleTotalRaw]);
 
   const summaryTotals = useMemo(() => {
@@ -518,6 +523,13 @@ export default function Balances({
       return null;
     }
     return totals;
+  }, [totals]);
+
+  const authoritativeNetDisplay = useMemo(() => {
+    if (!totals) return null;
+    if (totals.net_mv_display) return totals.net_mv_display;
+    if ((totals.mv_raw ?? 0) > 0 && totals.mv_display) return totals.mv_display;
+    return null;
   }, [totals]);
 
   const handleRiskSortChange = useCallback(
@@ -1107,7 +1119,7 @@ export default function Balances({
       )}
       <div className="border-t border-border bg-bg-surface/80 px-4 py-2 text-right text-sm backdrop-blur">
         <span className="font-medium text-text-primary">
-          Net Equity (Σ MV): {totals?.net_mv_display ?? visibleTotalDisplay}
+          Net Equity (Σ MV): {authoritativeNetDisplay ?? visibleTotalDisplay}
         </span>
         {filtersApplied && totals && (
           <span className="ml-2 text-xs text-text-muted">

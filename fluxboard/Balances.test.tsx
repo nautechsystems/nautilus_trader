@@ -170,6 +170,24 @@ describe('Balances component', () => {
     expect(screen.getByText('Net Equity (Σ MV): $75.50')).toBeInTheDocument();
   });
 
+  it('prefers authoritative totals.mv_display when net_mv_display is missing', async () => {
+    const payload = buildPayload();
+    mockedApi.getBalances.mockResolvedValueOnce({
+      ...payload,
+      totals: {
+        mv_raw: 999.12,
+        mv_display: '$999.12',
+      },
+    } as any);
+
+    render(<Balances />);
+    await waitFor(() => {
+      expect(screen.getByText('PLUME')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Net Equity (Σ MV): $999.12')).toBeInTheDocument();
+  });
+
   it('defaults to expanded rows and allows collapsing from the header control', async () => {
     const user = userEvent.setup();
     render(<Balances />);

@@ -478,6 +478,29 @@ describe('profile-scoped read APIs', () => {
     expect((alerts[0]?.timestamp ?? 0) > 0).toBe(true);
   });
 
+  it('normalizes alerts rows using ts_ms and strategy fallback fields', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            row_id: 'alert-row-ts-ms',
+            level: 'info',
+            ts_ms: 1_700_000_111_222,
+            strategy: 'strategy_from_alt_field',
+            title: 'fallback strategy mapping',
+          },
+        ],
+      },
+    });
+
+    const alerts = await api.getAlerts();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.id).toBe('alert-row-ts-ms');
+    expect(alerts[0]?.timestamp).toBe(1_700_000_111);
+    expect((alerts[0] as any)?.strategy_id).toBe('strategy_from_alt_field');
+  });
+
   it('supports alerts payloads using data.alerts in addition to data.rows', async () => {
     fetchJSONMock.mockResolvedValueOnce({
       ok: true,
