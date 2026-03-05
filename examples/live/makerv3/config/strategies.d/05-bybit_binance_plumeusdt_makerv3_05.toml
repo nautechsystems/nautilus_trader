@@ -1,0 +1,83 @@
+[flux]
+mode = "live"
+confirm_live = true
+namespace = "flux"
+schema_version = "v1"
+
+[identity]
+strategy_id = "bybit_binance_plumeusdt_makerv3_05"
+strategy_instance_id = "bybit_binance_plumeusdt_makerv3_05"
+trader_id = "MAKER-LIVE-TMM-05"
+external_strategy_id = "bybit_binance_plumeusdt_makerv3_05"
+
+[redis]
+host = "127.0.0.1"
+port = 6380
+db = 0
+username = ""
+password = ""
+connect_timeout_secs = 5.0
+read_timeout_secs = 5.0
+
+[venues]
+execution_venue = "BYBIT"
+reference_venue = "BINANCE"
+execution_symbol = "PLUMEUSDT"
+reference_symbol = "PLUMEUSDT"
+
+[node]
+maker_instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
+reference_instrument_id = "PLUMEUSDT.BINANCE"
+enable_execution = false
+log_level = "INFO"
+timeout_connection = 20.0
+timeout_reconciliation = 30.0
+timeout_portfolio = 10.0
+timeout_disconnection = 10.0
+timeout_post_stop = 5.0
+exec_reconciliation = true
+exec_reconciliation_lookback_mins = 0
+exec_reconciliation_startup_delay_secs = 10.0
+
+[node.bybit]
+api_key_env = "BYBIT_API_KEY"
+api_secret_env = "BYBIT_API_SECRET"
+product_type = "LINEAR"
+testnet = false
+demo = false
+
+[node.binance]
+api_key_env = "BINANCE_API_KEY"
+api_secret_env = "BINANCE_API_SECRET"
+account_type = "SPOT"
+
+[strategy]
+strategy_id = "MAKERV3-TMM-05"
+order_qty = "1000"
+qty = "1000"
+bot_on = false
+max_age_ms = 10000
+des_qty_global = 0.0
+max_qty_global = 40000.0
+max_skew_bps_global = 5.0
+des_qty_local = 0.0
+max_qty_local = 0.0
+max_skew_bps_local = 0.0
+linear_offset_bps = 0.0
+bid_edge1 = 10.0
+ask_edge1 = 10.0
+place_edge1 = 2.0
+distance1 = 2.0
+n_orders1 = 5
+bid_edge2 = 25.0
+ask_edge2 = 25.0
+place_edge2 = 2.0
+distance2 = 5.0
+n_orders2 = 0
+bid_edge3 = 50.0
+ask_edge3 = 50.0
+place_edge3 = 2.0
+distance3 = 5.0
+n_orders3 = 0
+quote_fail_critical_after_count = 3
+quote_fail_critical_after_s = 60.0
