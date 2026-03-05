@@ -3701,6 +3701,19 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
   - Updated PR13 head SHA after committing Python surface/docs/tests changes and plan tracking entry.
   - Tests run: none (plan tracking append-only update).
 
+- 2026-03-05 - PR13 (`pr13/python-surface`, head SHA `878f91c8051f8d8715bcd670f361f35e19ed23bb`) - status: ready
+  - Re-verified PR13 incremental scope (`origin/pr12c/ambiguous-retry-reorg..origin/pr13/python-surface`) and completed the requested extra review loop with two review agents plus one implementation agent; no additional code/docs changes were required.
+  - Confirmed PancakeSwap Python execution wrappers fail closed in non-`defi` builds via explicit runtime error rather than import-time panic.
+  - Tests run:
+    - `cargo fmt --all -- --check` (pass)
+    - `cargo test -p nautilus-blockchain` (pass)
+    - `cargo test -p nautilus-blockchain --features python` (fail: pre-existing `nautilus-model` Python compile errors in `crates/model/src/python/defi/data.rs` for `Option<Address>` parse/display)
+    - `cargo test -p nautilus-pyo3 --features defi` (fail: same pre-existing `nautilus-model` Python compile errors)
+    - `ruff check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/config.py nautilus_trader/adapters/pancakeswap/constants.py nautilus_trader/adapters/pancakeswap/factories.py tests/integration_tests/adapters/pancakeswap/test_execution.py tests/integration_tests/adapters/pancakeswap/test_factories.py` (pass)
+    - `ruff format --check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/config.py nautilus_trader/adapters/pancakeswap/constants.py nautilus_trader/adapters/pancakeswap/factories.py tests/integration_tests/adapters/pancakeswap/test_execution.py tests/integration_tests/adapters/pancakeswap/test_factories.py` (pass)
+    - `uv run --active --no-sync pytest tests/integration_tests/adapters/pancakeswap -q` (pass: `17 passed, 6 skipped`)
+    - `uv run --active --no-sync python - <<'PY' ... PancakeSwapV2ExecClientConfig(...).to_pyo3() ... PY` (pass: explicit `RuntimeError` in non-`defi` build, no panic)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
