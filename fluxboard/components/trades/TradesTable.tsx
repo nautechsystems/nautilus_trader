@@ -35,8 +35,6 @@ const BASE_GRID_COLUMNS: ColumnKey[] = [
   'qty',
   'notional',
   'fee',
-  'gas_used',
-  'id', // tx hash
   'id', // trade id
   'id', // signal id
   'id', // strategy id
@@ -65,7 +63,6 @@ const COLUMN_ALIGN: Record<string, 'left' | 'right' | 'center'> = {
   qty: 'right',
   notional: 'right',
   fee: 'right',
-  gas_used: 'right',
   tx_hash: 'left',
   trd_id: 'left',
   signal: 'left',

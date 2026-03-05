@@ -1,15 +1,14 @@
-import { createColumnHelper } from '@tanstack/react-table';
+import { createColumnHelper, type ColumnDef } from '@tanstack/react-table';
 import type { MouseEvent } from 'react';
-import type { Trade } from '../../types';
+import type { TradeRow } from '../../types';
 import { fmtTime, fmtTimeTip, num, shortId, truncate } from './formatters';
-import { TxHashLink } from './TxHashLink';
 import { Button } from '../ui/button/Button';
 import { SideCell } from './SidePill';
 import { colors, typography } from '@/lib/tokens';
 import { COLUMN_MAP } from '@/config/columnMap';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 
-const columnHelper = createColumnHelper<Trade>();
+const columnHelper = createColumnHelper<TradeRow>();
 
 // Copyable ID cell component
 function CopyableIdCell({ value, label }: { value?: string; label: string }) {
@@ -52,10 +51,10 @@ type ColumnOptions = {
 };
 
 export const createColumns = (
-  onViewDecision: (t: Trade) => void,
+  onViewDecision: (t: TradeRow) => void,
   options?: ColumnOptions,
 ) => {
-  const cols = [
+  const cols: ColumnDef<TradeRow, any>[] = [
     columnHelper.accessor('time', {
     id: 'time',
     header: 'time',
@@ -218,42 +217,6 @@ export const createColumns = (
     },
     size: COLUMN_MAP.fee.min,
     minSize: COLUMN_MAP.fee.min,
-    enableSorting: false,
-  }),
-  // Gas column – show explicit gas units when available (fallback to legacy gas_used)
-  columnHelper.accessor((row) => (row as any).gas_units ?? (row as any).gas_used ?? null, {
-    id: 'gas_used',
-    header: 'gas (units)',
-    cell: (info) => {
-      const v = info.getValue();
-      const n = typeof v === 'string' ? parseFloat(v) : v;
-      return (
-        <span
-          className="text-right tabular-nums block w-full font-mono"
-          style={{
-            fontSize: typography.fontSize.sm,
-            color: colors.text.secondary,
-          }}
-        >
-          {num(n, 6)}
-        </span>
-      );
-    },
-    size: COLUMN_MAP.gas_used.min,
-    minSize: COLUMN_MAP.gas_used.min,
-    enableSorting: false,
-  }),
-  columnHelper.accessor('exch_id', {
-    id: 'tx_hash',
-    header: 'tx_hash',
-    cell: (info) => (
-      <TxHashLink
-        hash={info.getValue()}
-        explorerUrl={info.row.original.explorer_url}
-      />
-    ),
-    size: COLUMN_MAP.id.min,
-    minSize: COLUMN_MAP.id.min,
     enableSorting: false,
   }),
   columnHelper.accessor('trade_id', {

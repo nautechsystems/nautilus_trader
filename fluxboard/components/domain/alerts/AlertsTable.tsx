@@ -109,9 +109,6 @@ function summarizeAlert(alert: Alert): string {
   if (typeof context?.edge_bps === 'number') {
     return `Edge ${context.edge_bps.toFixed(2)} bps`;
   }
-  if (typeof context?.gas_used === 'number') {
-    return `Gas used ${context.gas_used.toLocaleString()}`;
-  }
   if (typeof (alert as any).message === 'string') {
     return (alert as any).message;
   }
@@ -271,8 +268,7 @@ export function AlertsTable({
                     >
                       <TimeAgo
                         timestamp={ts}
-                        className=""
-                        style={{ color: colors.text.secondary }}
+                        className="text-text-secondary"
                       />
                     </div>
                   </td>
@@ -401,7 +397,7 @@ const AlertCard = ({ alert, onDismiss, onRowClick }: AlertCardProps) => {
             className="h-1.5 w-1.5 rounded-full"
             style={{ backgroundColor: getSeverityBorderColor(level) }}
           />
-          <TimeAgo timestamp={ts} className="" style={{ color: colors.text.secondary }} />
+          <TimeAgo timestamp={ts} className="text-text-secondary" />
         </div>
         <span className="font-mono" style={{ color: colors.text.muted }}>{alert.strategy_id || '-'}</span>
       </div>
@@ -471,9 +467,6 @@ function InlineAlertDetails({ alert }: { alert: Alert }) {
             )}
             {typeof context.edge_bps === 'number' && Number.isFinite(context.edge_bps) && (
               <div><span style={{ color: colors.text.muted }}>Edge:</span> {context.edge_bps.toFixed(2)} bps</div>
-            )}
-            {typeof context.gas_used === 'number' && Number.isFinite(context.gas_used) && (
-              <div><span style={{ color: colors.text.muted }}>Gas Used:</span> {context.gas_used.toLocaleString()}</div>
             )}
             {context.order_id && (
               <div><span style={{ color: colors.text.muted }}>Order:</span> {String(context.order_id)}</div>

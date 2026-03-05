@@ -57,6 +57,22 @@ describe('api.getTrades', () => {
     expect(result.next_cursor).toBe('cursor-token');
   });
 
+  it('falls back to total_records when total is missing', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [],
+        total_records: 417,
+        limit: 50,
+        offset: 0,
+      },
+    });
+
+    const result = await api.getTrades(1, 50, { sort: 'ts_desc' });
+    expect(result.total).toBe(417);
+    expect(result.total_records).toBe(417);
+  });
+
   it('passes cursor param when present', async () => {
     await api.getTrades(1, 50, { cursor: 'abc', sort: 'ts_desc' });
 
@@ -432,5 +448,27 @@ describe('profile-scoped read APIs', () => {
     expect(alerts[0]?.details).toEqual({});
     expect(typeof alerts[0]?.timestamp).toBe('number');
     expect((alerts[0]?.timestamp ?? 0) > 0).toBe(true);
+  });
+
+  it('supports alerts payloads using data.alerts in addition to data.rows', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        alerts: [
+          {
+            row_id: 'alert-from-alerts-key',
+            severity: 'critical',
+            message: 'critical alert',
+            details: {},
+            timestamp: 1_700_000_000,
+          },
+        ],
+      },
+    });
+
+    const alerts = await api.getAlerts();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.id).toBe('alert-from-alerts-key');
+    expect(alerts[0]?.level).toBe('CRITICAL');
   });
 });

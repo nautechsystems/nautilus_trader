@@ -5,10 +5,9 @@
  * Uses Dialog component from UI library with JSON formatting.
  */
 
-import { useMemo, useCallback } from 'react';
+import { useMemo } from 'react';
 import { Dialog } from '@/components/ui/dialog/Dialog';
 import type { Alert } from '@/types';
-import { txExplorerUrl } from '@/utils';
 
 export interface AlertDetailsProps {
   /**
@@ -84,7 +83,6 @@ export function AlertDetails({ alert, isOpen, onClose }: AlertDetailsProps) {
   if (!alert) return null;
 
   const context = alert.context as any;
-  const details = alert.details as any;
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title="Alert Details" size="lg" variant="sheet">
@@ -107,34 +105,6 @@ export function AlertDetails({ alert, isOpen, onClose }: AlertDetailsProps) {
               {typeof context.edge_bps === 'number' && Number.isFinite(context.edge_bps) && (
                 <div>
                   <span className="text-zinc-500">Edge:</span> {context.edge_bps.toFixed(2)} bps
-                </div>
-              )}
-              {(context.explorer_url || context.tx_hash) && (
-                <div className="break-all">
-                  <span className="text-zinc-500">TX Hash:</span>{' '}
-                  <a
-                    href={
-                      typeof (context as any).explorer_url === 'string' &&
-                      (context as any).explorer_url.startsWith('http')
-                        ? (context as any).explorer_url
-                        : txExplorerUrl(
-                            (context as any).tx_hash,
-                            (context as any)?.chain || (details as any)?.chain
-                          )
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 underline"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {((context as any).tx_hash || '').substring(0, 10)}...
-                    {((context as any).tx_hash || '').slice(-8)}
-                  </a>
-                </div>
-              )}
-              {typeof context.gas_used === 'number' && Number.isFinite(context.gas_used) && (
-                <div>
-                  <span className="text-zinc-500">Gas Used:</span> {context.gas_used.toLocaleString()}
                 </div>
               )}
               {context.receipt_status !== undefined && (

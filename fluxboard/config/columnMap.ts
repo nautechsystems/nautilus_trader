@@ -27,7 +27,6 @@ export const COLUMN_MAP = {
   px: { min: 100, align: 'right' },
   notional: { min: 100, align: 'right' },
   fee: { min: 64, align: 'right' },
-  gas_used: { min: 74, align: 'right' },
   id: { min: 120, align: 'left' },
   decision: { min: 54, align: 'left' },
   decision_summary: { min: 240, align: 'left' },

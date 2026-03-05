@@ -716,6 +716,40 @@ function normalizeAlertRow(candidate: unknown): Alert | null {
   };
 }
 
+function parseAlertItemCandidate(candidate: unknown): unknown {
+  if (typeof candidate !== 'string') {
+    return candidate;
+  }
+  const text = candidate.trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+export function normalizeAlertsSnapshotCandidate(payload: unknown): Alert[] {
+  if (Array.isArray(payload)) {
+    return payload
+      .map((item) => parseAlertItemCandidate(item))
+      .map((row) => normalizeAlertRow(row))
+      .filter((row): row is Alert => Boolean(row));
+  }
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+
+  const data = payload as Record<string, unknown>;
+  const rawRows = Array.isArray(data.rows)
+    ? data.rows
+    : (Array.isArray(data.alerts) ? data.alerts : []);
+  return rawRows
+    .map((item) => parseAlertItemCandidate(item))
+    .map((row) => normalizeAlertRow(row))
+    .filter((row): row is Alert => Boolean(row));
+}
+
 async function hmacSha256Hex(secret: string, message: string): Promise<string> {
   const enc = new TextEncoder();
   const data = enc.encode(message);
@@ -1369,7 +1403,7 @@ export const api = {
       .map((row, index) => normalizeTradeEventCandidate(row, index, resolvedOffset + 1))
       .filter((row): row is TradeEvent => Boolean(row));
     const returned = rows.length;
-    const totalCount = data.total ?? 0;
+    const totalCount = data.total ?? data.total_records ?? 0;
     const nextCursorValue = typeof data.next_cursor === 'string' ? data.next_cursor : null;
     const hasMore =
       typeof data.has_more === 'boolean'
@@ -1635,16 +1669,12 @@ export const api = {
     );
     const payload = unwrapFluxEnvelope(response);
     if (Array.isArray(payload)) {
-      return payload
-        .map((row) => normalizeAlertRow(row))
-        .filter((row): row is Alert => Boolean(row));
+      return normalizeAlertsSnapshotCandidate(payload);
     }
     const data = payload && typeof payload === 'object'
       ? (payload as Record<string, unknown>)
       : null;
-    const rows = (Array.isArray(data?.rows) ? data?.rows : [])
-      .map((row) => normalizeAlertRow(row))
-      .filter((row): row is Alert => Boolean(row));
+    const rows = normalizeAlertsSnapshotCandidate(data);
     return attachAlertsPaginationMetadata(rows, data);
   },
 

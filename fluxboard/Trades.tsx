@@ -88,17 +88,11 @@ const getTimestampParts = (payload: any): TradeTimestampParts => {
 export const hasReliableTradeTimestamp = (payload: any): boolean =>
   getTimestampParts(payload).hasReliableTimestamp;
 
-const PAGE_SIZE_OPTIONS = [50, 100, 200];
+const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
 const DEFAULT_PAGE_SIZE = 100;
-const LEGACY_PAGE_SIZE = 500;
-const MAX_PAGE_SIZE = 200;
 
 const normalizePageSize = (value: unknown): number => {
   const parsed = parseInt(String(value ?? DEFAULT_PAGE_SIZE), 10);
-  if (parsed === LEGACY_PAGE_SIZE) {
-    // Migrate legacy selection to backend-supported cap.
-    return MAX_PAGE_SIZE;
-  }
   return PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : DEFAULT_PAGE_SIZE;
 };
 
@@ -701,12 +695,13 @@ export default function Trades({
         }
 
         // DEFENSIVE FIX: Validate sequence consistency
-        const hasNumericLastSeq = typeof delta.last_seq === 'number';
+        const deltaLastSeq = typeof delta.last_seq === 'number' ? delta.last_seq : null;
+        const hasNumericLastSeq = deltaLastSeq !== null;
         const seqIsNonRegressive =
-          hasNumericLastSeq && delta.last_seq >= requestedSinceSeq;
+          hasNumericLastSeq && deltaLastSeq >= requestedSinceSeq;
         if (hasNumericLastSeq && !seqIsNonRegressive) {
           console.warn(
-            `[trades] Delta seq regression detected! Backend last_seq (${delta.last_seq}) < ` +
+            `[trades] Delta seq regression detected! Backend last_seq (${deltaLastSeq}) < ` +
             `frontend latestSeq (${requestedSinceSeq}). This suggests missed trades. ` +
             `Socket.IO connected: ${socketConnectedRef.current}`
           );
@@ -921,7 +916,6 @@ export default function Trades({
           signal_id: normalizedMsg?.signal_id ?? normalizedMsg?.strategy_id,
           strategy_id: normalizedMsg?.strategy_id,
           decision: normalizedMsg?.decision,
-          gas: normalizedMsg?.gas_used,
           notes: normalizedMsg?.notes,
           explorer_url: normalizedMsg?.explorer_url,
         } as TradeEvent;
@@ -1156,7 +1150,6 @@ export default function Trades({
           qty: r.qty ?? '',
           notional: r.mv ?? '',
           fee: r.fee ?? '',
-          gas_used: (r as any).gas_used ?? '',
           row_id: r.row_id,
           trade_id: r.trade_id || '',
           order_id: r.order_id || '',
@@ -1355,7 +1348,7 @@ export default function Trades({
                 if (!Number.isFinite(val)) return '0';
                 return val.toFixed(val >= 100 ? 2 : 6);
               };
-              const sum = (arr: any[], key: 'qty' | 'mv' | 'fee' | 'gas_used'): number => {
+              const sum = (arr: any[], key: 'qty' | 'mv' | 'fee'): number => {
                 let total = 0;
                 for (const r of arr) {
                   const x = (r as any)[key];
@@ -1368,10 +1361,9 @@ export default function Trades({
               const q = sum(view, 'qty');
               const notional = sum(view, 'mv');
               const fees = sum(view, 'fee');
-              const gas = sum(view, 'gas_used');
               return (
                 <span style={{ color: colors.text.muted, fontSize: typography.fontSize.sm }}>
-                  Σ qty: {fmt(q)} • Σ notional: {fmt(notional)} • Σ fee: {fmt(fees)} • Σ gas: {fmt(gas)}
+                  Σ qty: {fmt(q)} • Σ notional: {fmt(notional)} • Σ fee: {fmt(fees)}
                 </span>
               );
             })()}

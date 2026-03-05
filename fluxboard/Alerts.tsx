@@ -7,7 +7,7 @@
  */
 
 import { useState, useCallback, useMemo, useRef } from 'react';
-import { api } from './api';
+import { api, normalizeAlertsSnapshotCandidate } from './api';
 import { useAlertsStore } from './stores';
 import { INTERVALS } from './constants';
 import { usePolling, useWebSocket } from './hooks/index';
@@ -22,17 +22,6 @@ import { Switch } from './components/ui/switch';
 import { Select } from './components/ui/select';
 import { colors, STALE_THRESHOLDS, spacing, typography } from './lib/tokens';
 import { useMobileLayout } from './hooks/useMobileLayout';
-
-function normalizeAlertWithIdentity(candidate: unknown): Alert | null {
-  if (!candidate || typeof candidate !== 'object') return null;
-  const row = candidate as Record<string, unknown>;
-  const id = String(row.id ?? row.row_id ?? '').trim();
-  if (!id) return null;
-  return {
-    ...(row as Alert),
-    id,
-  };
-}
 
 export default function Alerts({
   dense = false,
@@ -92,14 +81,19 @@ export default function Alerts({
   usePolling(loadAlerts, INTERVALS.ALERTS_POLL, auto);
 
   // Subscribe to live alert updates via WebSocket using useWebSocket hook
-  useWebSocket<{ alerts?: Alert[] | string[] }>(
+  useWebSocket<{ alerts?: unknown[]; rows?: unknown[] }>(
     'market_update',
     useCallback(
       (payload) => {
-        if (!payload || !Array.isArray((payload as any).alerts)) return;
-        const arr = (payload as any).alerts as Array<Alert | string>;
+        const hasSnapshotPayload = Boolean(
+          payload
+          && typeof payload === 'object'
+          && (Array.isArray((payload as any).alerts) || Array.isArray((payload as any).rows)),
+        );
+        if (!hasSnapshotPayload) return;
 
-        if (arr.length === 0) {
+        const parsedAlerts = normalizeAlertsSnapshotCandidate(payload);
+        if (parsedAlerts.length === 0) {
           if (lastWebSocketDataRef.current === '__empty__') return;
           lastWebSocketDataRef.current = '__empty__';
           setRows([]);
@@ -107,26 +101,7 @@ export default function Alerts({
           return;
         }
 
-        // Ignore legacy id-only snapshots (string[] of IDs) to avoid clearing UI
-        const allStrings = arr.length > 0 && arr.every((x) => typeof x === 'string');
-        if (allStrings) {
-          try {
-            const first = JSON.parse(arr[0] as string);
-            if (!first || typeof first !== 'object') return; // not a JSON object payload
-          } catch {
-            return; // not JSON strings; ignore
-          }
-        }
-
         try {
-          // Parse alerts (they may come as JSON strings from Redis)
-          const parsedAlerts: Alert[] = arr
-            .map((item) => (typeof item === 'string' ? JSON.parse(item) : item))
-            .map((item) => normalizeAlertWithIdentity(item))
-            .filter((alert): alert is Alert => Boolean(alert));
-
-          if (!Array.isArray(parsedAlerts) || parsedAlerts.length === 0) return;
-
           // Deduplicate: hash full alert content (not just IDs) to detect any changes
           const dataHash = JSON.stringify(
             parsedAlerts.map(a => ({ id: a.id, ts: a.ts || a.timestamp, title: a.title, severity: a.severity || a.level }))
@@ -276,7 +251,7 @@ export default function Alerts({
           <Button variant="ghost" size="sm" onClick={() => setShowClearConfirm(false)}>
             Cancel
           </Button>
-          <Button variant="danger" size="sm" onClick={handleClearAll}>
+          <Button variant="destructive" size="sm" onClick={handleClearAll}>
             Clear All
           </Button>
         </div>

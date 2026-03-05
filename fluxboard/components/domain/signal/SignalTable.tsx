@@ -70,6 +70,7 @@ import {
   statusToFilterValue,
   TRADING_FILTER_VALUES,
   type TradingFilterValue,
+  type TradingFlagInput,
 } from '@/utils/strategyStatus';
 
 // =============================================================================
@@ -84,7 +85,7 @@ type EnrichedRow = SignalStrategy & {
   _spreadNet: number | null;
   _riskDelta: number | null;
   _maxAge: number;  // staleness (oldest leg)
-  _minAge?: number; // recency (newest leg)
+  _minAge: number; // recency (newest leg)
   _lastUpdate?: string;
   _lastUpdateMs?: number;
   _legAAge?: number;
@@ -332,9 +333,7 @@ function coerceFiniteNumber(value: unknown): number | undefined {
 function deriveCoinFromSymbol(symbol: unknown): string | undefined {
   const text = String(symbol ?? '').trim().toUpperCase();
   if (!text) return undefined;
-  const baseFromVenue = text.split('.')[0] || text;
-  const baseFromSlash = baseFromVenue.split('/')[0] || baseFromVenue;
-  const base = baseFromSlash.split('-')[0] || baseFromSlash;
+  const base = text.split('.')[0]?.split('-')[0] || text;
   for (const quote of ['USDT', 'USDC', 'USD', 'PERP']) {
     if (base.endsWith(quote) && base.length > quote.length) {
       return base.slice(0, -quote.length);
@@ -343,7 +342,7 @@ function deriveCoinFromSymbol(symbol: unknown): string | undefined {
   return base || undefined;
 }
 
-function resolveTradingValue(row: Partial<SignalStrategy> & Record<string, any>): unknown {
+function resolveTradingValue(row: Partial<SignalStrategy> & Record<string, any>): TradingFlagInput {
   const fromParams = row?.params?.bot_on;
   if (fromParams !== undefined && fromParams !== null) return fromParams;
   const fromState = row?.state?.bot_on;
@@ -702,8 +701,7 @@ function buildBalanceTooltip(readiness?: SignalStrategy['balance_readiness'], fa
       const hasAvail = req.available != null;
       const available = hasAvail ? Number(req.available).toFixed(2) : 'N/A';
       const coverage = formatCoveragePercent(req.coverage);
-      const kindBadge = req.kind === 'gas' ? ' [gas]' : '';
-      lines.push(`  ${req.location} ${req.token}${kindBadge}: ${available}/${required} (${coverage})`);
+      lines.push(`  ${req.location} ${req.token}: ${available}/${required} (${coverage})`);
     });
   } else if (readiness.missing && readiness.missing.length > 0) {
     lines.push('');
@@ -1808,10 +1806,6 @@ export default function SignalTable({
         }
         const apply: Partial<SignalStrategy> = { id } as any;
         const passThroughKeys = new Set([
-          'params',
-          'balance_readiness',
-          'balances_ok',
-          'last_trade',
           'strategy_family',
           'decision_edge_bps',
           'edge2_bps',
@@ -1834,6 +1828,10 @@ export default function SignalTable({
           'blocked',
           'near_tradeable',
           'managed_orders',
+          'params',
+          'balance_readiness',
+          'balances_ok',
+          'last_trade',
         ]);
         for (const [key, value] of Object.entries(payload || {})) {
           if (key === 'id' || key === 'legs' || !passThroughKeys.has(key)) continue;
@@ -2013,7 +2011,7 @@ export default function SignalTable({
         _spreadNet: typeof spreadNet === 'number' ? spreadNet : null,
         _riskDelta: typeof riskDelta === 'number' ? riskDelta : null,
         _maxAge: ageData.displayAgeMs,
-        _minAge: ageData.recentAgeMs,
+        _minAge: ageData.recentAgeMs ?? 0,
         _lastUpdate: lastUpdate,
         _lastUpdateMs: ageData.mostRecentTsMs,
         _legAAge: ageData.perLeg.A?.ageMs,
@@ -2027,7 +2025,7 @@ export default function SignalTable({
         venue_prefix: meta.venue_prefix,
         chain: meta.chain,
       };
-    }).filter((row): row is EnrichedRow => row !== null)) as EnrichedRow[];
+    }).filter((row) => row !== null)) as EnrichedRow[];
   }, [ageSortTick, getServerNowMs, isFamilyVisible, isStrategyVisible, rows]);
 
   // Apply filters
