@@ -223,6 +223,42 @@ def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_st
     assert skew["delta_ask_edge_bps"] == 2.0
 
 
+def test_build_signals_payload_derives_quote_status_from_managed_orders_when_missing(contract_catalog) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="ABC",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={"bot_on": True, "managed_orders": 7, "state": "running", "ts_ms": 1700000000000},
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["maker_quote_status"] == {
+        "bid_open": 4,
+        "ask_open": 3,
+        "bid_depth": 5,
+        "ask_depth": 5,
+        "bid_blocked": 1,
+        "ask_blocked": 2,
+    }
+
+
 def test_build_legs_payload_uses_contract_id_keys_for_same_exchange_contracts() -> None:
     contracts = (
         ContractCatalogEntry(exchange="venue_a", symbol="ABC/USDT"),
@@ -274,6 +310,23 @@ def test_build_trades_rows_enforces_row_contract_defaults() -> None:
     assert rows[2]["ts_ms"] == 0
 
 
+def test_build_trades_rows_uses_entry_id_as_seq_fallback_for_delta_filters() -> None:
+    rows = build_trades_rows(
+        rows=[
+            {"strategy_id": "strategy_01", "entry_id": "1772691122334-0", "ts_ms": 1772691122334},
+            {"strategy_id": "strategy_01", "entry_id": "1772691122335-0", "ts_ms": 1772691122335},
+        ],
+        strategy_id="strategy_01",
+        limit=10,
+        since_ms=None,
+        since_seq=1772691122334,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["seq"] == 1772691122335
+    assert rows[0]["row_id"] == "strategy_01:trade:entry:1772691122335-0"
+
+
 def test_extract_stream_rows_accepts_flat_field_entries_without_payload_wrapper() -> None:
     rows = extract_stream_rows(
         [
@@ -297,5 +350,28 @@ def test_extract_stream_rows_accepts_flat_field_entries_without_payload_wrapper(
             "seq": 101,
             "ts_ms": 1_700_000_000_000,
             "exchange": "bybit",
+            "entry_id": "1700000000000-0",
+        },
+    ]
+
+
+def test_extract_stream_rows_preserves_entry_metadata_for_payload_rows() -> None:
+    rows = extract_stream_rows(
+        [
+            (
+                b"1700000000001-0",
+                {
+                    b"payload": b'{"strategy_id":"strategy_01","event":"order_filled"}',
+                },
+            ),
+        ],
+    )
+
+    assert rows == [
+        {
+            "strategy_id": "strategy_01",
+            "event": "order_filled",
+            "entry_id": "1700000000001-0",
+            "_stream_seq": 1_700_000_000_001,
         },
     ]

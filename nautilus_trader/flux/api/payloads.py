@@ -191,11 +191,21 @@ def strategy_id_from_row(row: Any, fallback: str) -> str:
 
 
 def extract_stream_rows(stream_entries: Any) -> list[dict[str, Any]]:
+    def _with_stream_meta(row: dict[str, Any], *, entry_id: str, stream_seq: int | None) -> dict[str, Any]:
+        out = dict(row)
+        if entry_id and not decode_text(out.get("entry_id")).strip():
+            out["entry_id"] = entry_id
+        if stream_seq is not None and safe_int(out.get("seq")) is None and safe_int(out.get("_stream_seq")) is None:
+            out["_stream_seq"] = stream_seq
+        return out
+
     rows: list[dict[str, Any]] = []
     for entry in as_list(stream_entries):
         if not isinstance(entry, (list, tuple)) or len(entry) != 2:
             continue
-        _, fields = entry
+        stream_id, fields = entry
+        entry_id = decode_text(stream_id).strip()
+        stream_seq = safe_int(entry_id.split("-", maxsplit=1)[0]) if entry_id else None
         if not isinstance(fields, dict):
             continue
         payload = fields.get("payload")
@@ -203,12 +213,12 @@ def extract_stream_rows(stream_entries: Any) -> list[dict[str, Any]]:
             payload = fields.get(b"payload")
         parsed = load_json(payload)
         if isinstance(parsed, dict):
-            rows.append(dict(parsed))
+            rows.append(_with_stream_meta(parsed, entry_id=entry_id, stream_seq=stream_seq))
             continue
         if isinstance(parsed, list):
             for item in parsed:
                 if isinstance(item, dict):
-                    rows.append(dict(item))
+                    rows.append(_with_stream_meta(item, entry_id=entry_id, stream_seq=stream_seq))
             continue
 
         flat_row: dict[str, Any] = {}
@@ -225,7 +235,7 @@ def extract_stream_rows(stream_entries: Any) -> list[dict[str, Any]]:
             else:
                 flat_row[key] = parsed_value
         if flat_row:
-            rows.append(flat_row)
+            rows.append(_with_stream_meta(flat_row, entry_id=entry_id, stream_seq=stream_seq))
     return rows
 
 
@@ -796,6 +806,42 @@ def _derive_quote_snapshot(
     return quote_snapshot
 
 
+def _derive_maker_quote_status_from_managed_orders(
+    *,
+    managed_orders: int,
+    params: Mapping[str, Any],
+) -> dict[str, int] | None:
+    managed = max(0, int(managed_orders))
+    if managed <= 0:
+        return None
+
+    target_depth = (
+        max(0, safe_int(params.get("n_orders1")) or 0)
+        + max(0, safe_int(params.get("n_orders2")) or 0)
+        + max(0, safe_int(params.get("n_orders3")) or 0)
+    )
+    if target_depth <= 0:
+        bid_depth = (managed + 1) // 2
+        ask_depth = managed // 2
+    else:
+        bid_depth = target_depth
+        ask_depth = target_depth
+
+    maker_capacity = max(0, bid_depth + ask_depth)
+    maker_open_total = managed if maker_capacity <= 0 else min(managed, maker_capacity)
+    bid_open = min(bid_depth, (maker_open_total + 1) // 2) if bid_depth > 0 else (maker_open_total + 1) // 2
+    ask_open = min(ask_depth, maker_open_total // 2) if ask_depth > 0 else maker_open_total // 2
+
+    return {
+        "bid_open": int(max(0, bid_open)),
+        "ask_open": int(max(0, ask_open)),
+        "bid_depth": int(max(0, bid_depth)),
+        "ask_depth": int(max(0, ask_depth)),
+        "bid_blocked": int(max(0, bid_depth - bid_open)),
+        "ask_blocked": int(max(0, ask_depth - ask_open)),
+    }
+
+
 def build_signals_payload(
     *,
     strategy_id: str,
@@ -895,6 +941,11 @@ def build_signals_payload(
 
     state_quote_status = state.get("maker_quote_status")
     maker_quote_status = dict(state_quote_status) if isinstance(state_quote_status, Mapping) else None
+    if maker_quote_status is None:
+        maker_quote_status = _derive_maker_quote_status_from_managed_orders(
+            managed_orders=managed,
+            params=params,
+        )
     state_quote_stacks = state.get("quote_stacks")
     quote_stacks = dict(state_quote_stacks) if isinstance(state_quote_stacks, Mapping) else None
     state_balance_readiness = state.get("balance_readiness")
@@ -981,8 +1032,19 @@ def build_trades_rows(
             continue
         out = dict(row)
         seq = safe_int(out.get("seq"))
+        if seq is None:
+            seq = safe_int(out.get("_stream_seq"))
+        if seq is None:
+            entry_id_text = decode_text(out.get("entry_id")).strip()
+            if entry_id_text:
+                seq = safe_int(entry_id_text.split("-", maxsplit=1)[0])
+        if seq is not None and seq <= 0:
+            seq = None
+        if seq is None:
+            seq = coerce_ts_ms(out.get("ts_ms") or out.get("ts") or out.get("timestamp"))
         if seq is not None:
             out["seq"] = seq
+        out.pop("_stream_seq", None)
         if since_seq is not None:
             if seq is None or seq <= since_seq:
                 continue
@@ -999,7 +1061,7 @@ def build_trades_rows(
             entry_id = decode_text(out.get("entry_id")).strip()
             if entry_id:
                 row_id = f"{strategy_id}:trade:entry:{entry_id}"
-            if seq is not None:
+            elif seq is not None:
                 row_id = f"{strategy_id}:trade:{seq}:{out['ts_ms']}:{out['version']}"
             else:
                 row_id = row_id or f"{strategy_id}:trade:{out['ts_ms']}:{index}"

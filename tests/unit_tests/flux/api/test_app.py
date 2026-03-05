@@ -299,6 +299,59 @@ def test_signals_metadata_binds_to_requested_strategy_id(
     assert strategy["meta"]["strategy_id"] == "strategy_02"
 
 
+def test_trades_delta_uses_timestamp_seq_fallback_for_seq_less_rows(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-seqless-older",
+                "ts_ms": 1_700_000_000_100,
+                "price": "100.0",
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-seqless-newer",
+                "ts_ms": 1_700_000_000_200,
+                "price": "101.0",
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get(
+            "/api/v1/trades/delta",
+            query_string={"since_seq": "1700000000150", "limit": "50"},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["ok"] is True
+    rows = body["data"]["rows"]
+    assert len(rows) == 1
+    assert rows[0]["row_id"] == "trade-seqless-newer"
+    assert rows[0]["seq"] == 1_700_000_000_200
+    assert body["data"]["last_seq"] == 1_700_000_000_200
+    assert body["data"]["reset_required"] is False
+
+
 def test_create_app_rejects_invalid_contract_symbol(
     flux_config,
     redis_client,

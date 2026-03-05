@@ -459,7 +459,7 @@ class FluxSocketEmitter:
         trade_gap_cursor: int | None = None
         if trades_rows:
             first_seq = safe_int(trades_rows[0].get("seq"))
-            if first_seq is not None and first_seq > (trade_cursor + 1):
+            if first_seq is not None and trade_cursor > 0 and first_seq > (trade_cursor + 1):
                 _LOG.warning(
                     "Flux socket emitter detected trade replay gap profile=%s strategy_id=%s cursor_seq=%s first_seq=%s scan_limit=%s",
                     profile,

@@ -321,6 +321,66 @@ def test_socket_emitter_emits_minimum_tokenmm_payload_shapes(
     assert isinstance(trade_payload["trade"], dict)
 
 
+def test_socket_emitter_emits_seq_less_trade_rows_via_ts_seq_fallback(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    for contract in contract_catalog:
+        base, quote = contract.symbol.split("/", maxsplit=1)
+        redis_client.set_json(
+            keys.market_last(exchange=contract.exchange, base=base, quote=quote),
+            {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000100},
+        )
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-seqless-1",
+                "version": 1,
+                "ts_ms": 1700000000200,
+                "exchange": "venue_a",
+                "symbol": "ABC/USDT",
+                "side": "BUY",
+                "price": 100.0,
+                "qty": 1.0,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _ = client.emit("set_profile", {"profile": "tokenmm"}, callback=True)
+    emitter.stop()
+
+    emitter.emit_once(profile="tokenmm")
+
+    received = _take_socket_packets(client)
+    trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
+    assert len(trade_packets) == 1
+    trade_payload = trade_packets[0]["args"][0]
+    assert trade_payload["row_id"] == "trade-seqless-1"
+    assert trade_payload["op"] == "upsert"
+    assert isinstance(trade_payload["trade"], dict)
+    assert trade_payload["trade"]["seq"] == 1700000000200
+    client.disconnect()
+
+
 def test_socket_emitter_second_poll_with_no_changes_emits_no_extra_events(
     flux_config,
     redis_client,
