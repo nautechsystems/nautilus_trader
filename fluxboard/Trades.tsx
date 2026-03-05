@@ -26,6 +26,7 @@ import { colors, spacing, typography, STALE_THRESHOLDS, borderRadius } from './l
 import { usePanelHeaderSlots } from './components/layout/PanelWrapper';
 import { exportCSV, generateTimestampFilename } from './utils/export';
 import { isTradesDecisionDetailsEnabled } from './config/featureFlags';
+import { computeTradesRollups } from './components/trades/rollups';
 
 const PERF_RENDER_ENABLED = typeof import.meta !== 'undefined'
   && Boolean(import.meta.env?.DEV)
@@ -1448,19 +1449,8 @@ export default function Trades({
                 if (!Number.isFinite(val)) return '0';
                 return val.toFixed(val >= 100 ? 2 : 6);
               };
-              const sum = (arr: any[], key: 'qty' | 'mv' | 'fee'): number => {
-                let total = 0;
-                for (const r of arr) {
-                  const x = (r as any)[key];
-                  const n = typeof x === 'number' ? x : (typeof x === 'string' && x.trim() !== '' ? Number(x) : NaN);
-                  if (Number.isFinite(n)) total += n as number;
-                }
-                return total;
-              };
               const view = rowsToRender || [];
-              const q = sum(view, 'qty');
-              const notional = sum(view, 'mv');
-              const fees = sum(view, 'fee');
+              const { qty: q, notional, fee: fees } = computeTradesRollups(view);
               return (
                 <span style={{ color: colors.text.muted, fontSize: typography.fontSize.sm }}>
                   Σ qty: {fmt(q)} • Σ notional: {fmt(notional)} • Σ fee: {fmt(fees)}
