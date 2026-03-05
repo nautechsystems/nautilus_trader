@@ -15,13 +15,35 @@
 
 //! Defines the Apache Arrow schema for Nautilus types.
 
+pub mod account_state;
 pub mod bar;
 pub mod close;
 pub mod delta;
 pub mod depth;
+pub mod funding_rate;
 pub mod index_price;
 pub mod instrument;
 pub mod mark_price;
+pub mod order_accepted;
+pub mod order_cancel_rejected;
+pub mod order_canceled;
+pub mod order_denied;
+pub mod order_emulated;
+pub mod order_expired;
+pub mod order_filled;
+pub mod order_initialized;
+pub mod order_modify_rejected;
+pub mod order_pending_cancel;
+pub mod order_pending_update;
+pub mod order_rejected;
+pub mod order_released;
+pub mod order_submitted;
+pub mod order_triggered;
+pub mod order_updated;
+pub mod position_adjusted;
+pub mod position_changed;
+pub mod position_closed;
+pub mod position_opened;
 pub mod quote;
 pub mod trade;
 
