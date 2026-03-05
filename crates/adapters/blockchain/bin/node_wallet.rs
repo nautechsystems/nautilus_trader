@@ -24,8 +24,9 @@ use nautilus_common::{
     clients::ExecutionClient,
     live::get_runtime,
     logging::{init_logging, logger::LoggerConfig, writer::FileWriterConfig},
+    messages::execution::QueryAccount,
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, UnixNanos, time::nanos_since_unix_epoch};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     defi::chain::chains,
@@ -90,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ethereum_config.venue,
         OmsType::Netting,
         account,
-        AccountType::Wallet,
+        AccountType::Cash,
         None,
         cache.clone(),
     );
@@ -100,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         arbitrum_config.venue,
         OmsType::Netting,
         account,
-        AccountType::Wallet,
+        AccountType::Cash,
         None,
         cache,
     );
@@ -115,6 +116,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         arbitrum_execution_client.connect().await?;
         Ok::<(), anyhow::Error>(())
     })?;
+
+    let query = QueryAccount::new(
+        trader_id,
+        None,
+        account,
+        UUID4::new(),
+        UnixNanos::from(nanos_since_unix_epoch()),
+    );
+    ethereum_execution_client.query_account(&query)?;
+    arbitrum_execution_client.query_account(&query)?;
 
     Ok(())
 }

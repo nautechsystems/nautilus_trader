@@ -164,7 +164,7 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
             blockchain_execution_config.venue,
             OmsType::Netting,
             blockchain_execution_config.client_id,
-            AccountType::Wallet,
+            AccountType::Cash,
             None,
             cache,
         );
