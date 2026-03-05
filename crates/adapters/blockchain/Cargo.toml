@@ -55,7 +55,7 @@ nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
 
 ahash = { workspace = true }
-alloy = { workspace = true }
+alloy = { workspace = true, features = ["k256"] }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
