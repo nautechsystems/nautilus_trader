@@ -316,6 +316,34 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
+  it('derives params running flag from bot_on when backend omits running', async () => {
+    setPathname('/tokenmm/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: [
+        {
+          strategy_id: 'run_on',
+          params: {
+            bot_on: true,
+          },
+        },
+        {
+          strategy_id: 'run_off',
+          params: {
+            bot_on: 0,
+          },
+        },
+      ],
+    });
+
+    const rows = await api.getParams();
+    expect(rows).toHaveLength(2);
+    expect(rows[0].strategy_id).toBe('run_on');
+    expect(rows[0].running).toBe(true);
+    expect(rows[1].strategy_id).toBe('run_off');
+    expect(rows[1].running).toBe(false);
+  });
+
   it('derives trade mv from price*qty when incoming notional/mv is zero', async () => {
     fetchJSONMock.mockResolvedValueOnce({
       ok: true,

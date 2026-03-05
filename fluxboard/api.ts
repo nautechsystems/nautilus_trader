@@ -1623,10 +1623,17 @@ export const api = {
       const candidate = row as Record<string, unknown>;
       const strategyId = String(candidate.strategy_id ?? '').trim();
       const params = normalizeParamsMap(candidate.params);
+      const runningCandidate = candidate.running;
+      const normalizedBotOn = normalizeTradingFlag(params.bot_on);
+      const running =
+        typeof runningCandidate === 'boolean'
+          ? runningCandidate
+          : (normalizedBotOn === undefined ? null : normalizedBotOn === '1');
       return {
         ...(row as ParamsResponse),
         strategy_id: strategyId,
         params,
+        running,
       };
     }).filter((row) => Boolean(row.strategy_id));
   },
