@@ -162,6 +162,10 @@ impl AtmSource {
 
 /// Exchange-provided option Greeks and implied volatility for a single instrument.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
 pub struct OptionGreeks {
     /// The instrument ID these Greeks apply to.
     pub instrument_id: InstrumentId,
@@ -230,6 +234,10 @@ impl Display for OptionGreeks {
 
 /// Combined quote and Greeks data for a single strike in an option chain.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
 pub struct OptionStrikeData {
     /// The latest quote for this strike.
     pub quote: QuoteTick,
@@ -239,6 +247,10 @@ pub struct OptionStrikeData {
 
 /// A point-in-time snapshot of an option chain for a single series.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
 pub struct OptionChainSlice {
     /// The option series identifier.
     pub series_id: OptionSeriesId,

@@ -25,6 +25,10 @@ use crate::identifiers::InstrumentId;
 /// This is a general derivatives concept used for ATM determination in option chains
 /// and other forward-price dependent calculations.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
 pub struct ForwardPrice {
     /// The instrument ID this forward price applies to.
     pub instrument_id: InstrumentId,

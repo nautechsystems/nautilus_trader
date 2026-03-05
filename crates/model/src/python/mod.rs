@@ -73,6 +73,12 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::close::InstrumentClose>()?;
     m.add_class::<crate::data::funding::FundingRateUpdate>()?;
     m.add_class::<crate::data::greeks::BlackScholesGreeksResult>()?;
+    m.add_class::<crate::data::option_chain::OptionGreeks>()?;
+    m.add_class::<crate::data::option_chain::OptionChainSlice>()?;
+    m.add_class::<crate::data::option_chain::OptionStrikeData>()?;
+    m.add_class::<crate::python::data::option_chain::PyStrikeRange>()?;
+    m.add_class::<crate::python::data::option_chain::PyAtmSource>()?;
+    m.add_class::<crate::data::forward::ForwardPrice>()?;
     m.add_function(wrap_pyfunction!(
         crate::python::data::greeks::py_black_scholes_greeks,
         m
@@ -134,6 +140,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::identifiers::TraderId>()?;
     m.add_class::<crate::identifiers::Venue>()?;
     m.add_class::<crate::identifiers::VenueOrderId>()?;
+    m.add_class::<crate::identifiers::OptionSeriesId>()?;
     // Orders
     m.add_class::<crate::orders::LimitOrder>()?;
     m.add_class::<crate::orders::LimitIfTouchedOrder>()?;

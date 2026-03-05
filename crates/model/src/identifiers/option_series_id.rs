@@ -29,6 +29,10 @@ use crate::{identifiers::Venue, instruments::CryptoOption};
 
 /// Identifies a unique option series: a specific venue + underlying + settlement currency + expiration.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
 pub struct OptionSeriesId {
     /// The trading venue.
     pub venue: Venue,
