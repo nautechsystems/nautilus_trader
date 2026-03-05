@@ -3495,7 +3495,9 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
+- 2026-03-05 - Progress Log correction: entry at line 3491 recorded a mistyped SHA (`3edac0c621c59c1db0c4bc2b8d354ed17d8355fb`); correct SHA is `3edac0c626077c915da3260bb16f3f3b75f0f891`.
 
 ## Known Issues / Follow-ups
 
 - Until PR-preflight is merged, branches created directly from `origin/main` will not inherit `.worktrees/` ignore and may show `.worktrees/` as untracked in that base checkout.
+- `docs/plans/2026-03-04-pcs-integration.md` contains existing trailing whitespace and possible spell-check terms from source import; text-lint hooks may fail in CI until normalized or explicitly exempted.
