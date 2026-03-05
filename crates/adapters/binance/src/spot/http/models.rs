@@ -461,14 +461,6 @@ pub struct BinanceKlines {
     pub klines: Vec<BinanceKline>,
 }
 
-/// Listen key response for user data stream.
-#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListenKeyResponse {
-    /// The listen key for WebSocket user data stream.
-    pub listen_key: String,
-}
-
 /// 24-hour ticker statistics response.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -711,13 +703,6 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-
-    #[rstest]
-    fn test_listen_key_response_deserialize() {
-        let json = r#"{"listenKey": "abc123xyz"}"#;
-        let response: ListenKeyResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.listen_key, "abc123xyz");
-    }
 
     #[rstest]
     fn test_ticker_price_deserialize() {

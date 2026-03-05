@@ -722,24 +722,6 @@ pub struct KlinesParams {
     pub limit: Option<u32>,
 }
 
-/// Query parameters for listen key operations (extend/close).
-#[derive(Debug, Clone, Serialize)]
-pub struct ListenKeyParams {
-    /// The listen key to extend or close.
-    #[serde(rename = "listenKey")]
-    pub listen_key: String,
-}
-
-impl ListenKeyParams {
-    /// Creates new listen key params.
-    #[must_use]
-    pub fn new(listen_key: impl Into<String>) -> Self {
-        Self {
-            listen_key: listen_key.into(),
-        }
-    }
-}
-
 /// Query parameters for ticker endpoints.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct TickerParams {

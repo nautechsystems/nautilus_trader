@@ -17,7 +17,10 @@
 
 use std::{
     future::Future,
-    sync::Mutex,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -46,31 +49,54 @@ use nautilus_model::{
         OrderModifyRejected, OrderRejected, OrderUpdated,
     },
     identifiers::{AccountId, ClientId, Venue, VenueOrderId},
-    orders::Order,
+    instruments::Instrument,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
 use tokio::task::JoinHandle;
 
 use crate::{
-    common::{consts::BINANCE_VENUE, credential::resolve_credentials, enums::BinanceProductType},
+    common::{
+        consts::BINANCE_VENUE,
+        credential::{Credential, resolve_credentials},
+        enums::{BinanceEnvironment, BinanceProductType},
+    },
     config::BinanceExecClientConfig,
-    spot::http::{
-        client::BinanceSpotHttpClient, models::BatchCancelResult, query::BatchCancelItem,
+    spot::{
+        http::{
+            client::BinanceSpotHttpClient, models::BatchCancelResult, query::BatchCancelItem,
+        },
+        websocket::{
+            handler_exec::BinanceSpotExecWsFeedHandler,
+            messages_exec::{
+                NautilusSpotExecWsMessage, SpotExecHandlerCommand,
+            },
+            user_data::BinanceSpotUserDataStream,
+        },
     },
 };
 
 /// Live execution client for Binance Spot trading.
 ///
 /// Implements the [`ExecutionClient`] trait for order management on Binance Spot
-/// and Spot Margin markets. Uses HTTP API for all order operations with SBE encoding.
+/// and Spot Margin markets. Uses HTTP API for order operations (SBE encoding)
+/// and a User Data Stream WebSocket for real-time fill/cancel events.
+///
+/// The execution handler maintains pending order maps for correlating WebSocket
+/// updates with order context (strategy, instrument, trader).
 #[derive(Debug)]
 pub struct BinanceSpotExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
     config: BinanceExecClientConfig,
+    credential: Arc<Credential>,
     emitter: ExecutionEventEmitter,
     http_client: BinanceSpotHttpClient,
+    uds_client: Option<BinanceSpotUserDataStream>,
+    exec_cmd_tx: Option<tokio::sync::mpsc::UnboundedSender<SpotExecHandlerCommand>>,
+    handler_signal: Arc<AtomicBool>,
+    uds_task: Mutex<Option<JoinHandle<()>>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
 }
 
@@ -95,6 +121,7 @@ impl BinanceSpotExecutionClient {
         )?;
 
         let clock = get_atomic_clock_realtime();
+        let credential = Arc::new(Credential::new(api_key.clone(), api_secret.clone()));
 
         let http_client = BinanceSpotHttpClient::new(
             config.environment,
@@ -119,8 +146,13 @@ impl BinanceSpotExecutionClient {
             core,
             clock,
             config,
+            credential,
             emitter,
             http_client,
+            uds_client: None,
+            exec_cmd_tx: None,
+            handler_signal: Arc::new(AtomicBool::new(false)),
+            uds_task: Mutex::new(None),
             pending_tasks: Mutex::new(Vec::new()),
         })
     }
@@ -253,22 +285,14 @@ impl BinanceSpotExecutionClient {
 
             match result {
                 Ok(venue_order_id) => {
-                    // Order canceled - dispatch OrderCanceled event
-                    let ts_now = clock.get_time_ns();
-                    let canceled_event = OrderCanceled::new(
-                        trader_id,
-                        command.strategy_id,
-                        command.instrument_id,
+                    // HTTP only logs success. OrderCanceled comes from UDS WebSocket
+                    // push event (executionReport with x=CANCELED). This follows the
+                    // Futures adapter pattern where HTTP cancel only emits rejection
+                    // on failure.
+                    log::debug!(
+                        "Cancel request accepted: client_order_id={}, venue_order_id={venue_order_id}",
                         command.client_order_id,
-                        UUID4::new(),
-                        ts_now,
-                        ts_now,
-                        false,
-                        Some(venue_order_id),
-                        Some(account_id),
                     );
-
-                    event_emitter.send_order_event(OrderEventAny::Canceled(canceled_event));
                 }
                 Err(e) => {
                     let ts_now = clock.get_time_ns();
@@ -318,6 +342,66 @@ impl BinanceSpotExecutionClient {
         let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
         for handle in tasks.drain(..) {
             handle.abort();
+        }
+    }
+
+    /// Registers an order with the execution handler for context tracking.
+    ///
+    /// Must be called BEFORE the HTTP order submission so that the handler
+    /// can correlate incoming WebSocket fill events with the order context.
+    fn register_order(&self, order: &OrderAny) {
+        if let Some(ref cmd_tx) = self.exec_cmd_tx {
+            let cmd = SpotExecHandlerCommand::RegisterOrder {
+                client_order_id: order.client_order_id(),
+                trader_id: order.trader_id(),
+                strategy_id: order.strategy_id(),
+                instrument_id: order.instrument_id(),
+            };
+
+            if let Err(e) = cmd_tx.send(cmd) {
+                log::error!("Failed to register order with handler: {e}");
+            }
+        }
+    }
+
+    /// Registers a cancel request with the execution handler for context tracking.
+    fn register_cancel(
+        &self,
+        cmd: &CancelOrder,
+    ) {
+        if let Some(ref cmd_tx) = self.exec_cmd_tx {
+            let cancel_cmd = SpotExecHandlerCommand::RegisterCancel {
+                client_order_id: cmd.client_order_id,
+                trader_id: self.core.trader_id,
+                strategy_id: cmd.strategy_id,
+                instrument_id: cmd.instrument_id,
+                venue_order_id: cmd.venue_order_id,
+            };
+
+            if let Err(e) = cmd_tx.send(cancel_cmd) {
+                log::error!("Failed to register cancel with handler: {e}");
+            }
+        }
+    }
+
+    /// Dispatches a normalized execution event to the emitter.
+    fn handle_exec_event(message: NautilusSpotExecWsMessage, emitter: &ExecutionEventEmitter) {
+        match message {
+            NautilusSpotExecWsMessage::OrderFilled(event) => {
+                emitter.send_order_event(OrderEventAny::Filled(event));
+            }
+            NautilusSpotExecWsMessage::OrderCanceled(event) => {
+                emitter.send_order_event(OrderEventAny::Canceled(event));
+            }
+            NautilusSpotExecWsMessage::OrderRejected(event) => {
+                emitter.send_order_event(OrderEventAny::Rejected(event));
+            }
+            NautilusSpotExecWsMessage::AccountUpdate(event) => {
+                emitter.send_account_state(event);
+            }
+            NautilusSpotExecWsMessage::Reconnected => {
+                log::info!("User data stream reconnected");
+            }
         }
     }
 
@@ -383,7 +467,9 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         }
 
         // Load instruments if not already done
-        if !self.core.instruments_initialized() {
+        let instruments = if self.core.instruments_initialized() {
+            Vec::new()
+        } else {
             let instruments = self
                 .http_client
                 .request_instruments()
@@ -394,13 +480,76 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 log::warn!("No instruments returned for Binance Spot");
             } else {
                 log::info!("Loaded {} Spot instruments", instruments.len());
-                self.http_client.cache_instruments(instruments);
+                self.http_client.cache_instruments(instruments.clone());
             }
 
             self.core.set_instruments_initialized();
+            instruments
+        };
+
+        // Set up User Data Stream WebSocket BEFORE account state (Futures pattern).
+        // This ensures no fill events are missed between account state request and
+        // WS connection.
+        self.handler_signal.store(false, Ordering::Relaxed);
+
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.exec_cmd_tx = Some(cmd_tx.clone());
+
+        // Create and connect UDS WebSocket client
+        let is_testnet = self.config.environment == BinanceEnvironment::Testnet;
+        let mut uds_client = BinanceSpotUserDataStream::new(
+            self.credential.clone(),
+            event_tx,
+            self.config.base_url_ws.clone(),
+            is_testnet,
+        );
+
+        uds_client
+            .connect()
+            .await
+            .context("failed to connect User Data Stream WebSocket")?;
+        self.uds_client = Some(uds_client);
+
+        // Create exec handler and populate instrument cache
+        let mut handler = BinanceSpotExecWsFeedHandler::new(
+            self.clock,
+            self.core.trader_id,
+            self.core.account_id,
+            self.handler_signal.clone(),
+            cmd_rx,
+            event_rx,
+        );
+
+        // Cache instrument precision for all loaded instruments
+        for inst in &instruments {
+            if let Err(e) = cmd_tx.send(SpotExecHandlerCommand::CacheInstrument {
+                symbol: inst.raw_symbol().to_string(),
+                price_precision: inst.price_precision(),
+                qty_precision: inst.size_precision(),
+            }) {
+                log::error!("Failed to cache instrument precision: {e}");
+            }
         }
 
-        // Request initial account state
+        // Spawn handler task that processes events and dispatches to emitter
+        let emitter = self.emitter.clone();
+        let handler_signal = self.handler_signal.clone();
+
+        let uds_task = get_runtime().spawn(async move {
+            while let Some(event) = handler.next().await {
+                Self::handle_exec_event(event, &emitter);
+            }
+
+            if !handler_signal.load(Ordering::Relaxed) {
+                log::warn!("UDS handler task ended unexpectedly");
+            }
+        });
+        *self.uds_task.lock().expect(MUTEX_POISONED) = Some(uds_task);
+
+        // Request initial account state AFTER WebSocket is connected, matching
+        // the Futures adapter pattern. This ensures fill events on pre-existing
+        // orders are captured by the handler.
         let account_state = self
             .refresh_account_state()
             .await
@@ -426,6 +575,28 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         if self.core.is_disconnected() {
             return Ok(());
+        }
+
+        // Signal handler to stop and drop command channel
+        self.handler_signal.store(true, Ordering::Relaxed);
+        self.exec_cmd_tx = None;
+
+        // Disconnect UDS WebSocket first — this aborts the process_task which
+        // drops event_tx, causing handler's event_rx to close. Without this,
+        // handler.next() blocks indefinitely on the open event_rx channel
+        // (Q-009: shutdown timeout >15s).
+        if let Some(ref mut uds_client) = self.uds_client {
+            uds_client.disconnect().await;
+        }
+        self.uds_client = None;
+
+        // Await handler task with timeout — should exit quickly now that both
+        // channels are closed, but abort after 5s as a safety net.
+        let uds_task = self.uds_task.lock().expect(MUTEX_POISONED).take();
+        if let Some(task) = uds_task
+            && tokio::time::timeout(Duration::from_secs(5), task).await.is_err()
+        {
+            log::warn!("UDS handler task did not stop within 5s, aborting");
         }
 
         self.abort_pending_tasks();
@@ -525,6 +696,16 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             return Ok(());
         }
 
+        // Signal handler to stop and drop command channel
+        self.handler_signal.store(true, Ordering::Relaxed);
+        self.exec_cmd_tx = None;
+
+        // Abort UDS handler task
+        let uds_task = self.uds_task.lock().expect(MUTEX_POISONED).take();
+        if let Some(task) = uds_task {
+            task.abort();
+        }
+
         self.core.set_stopped();
         self.core.set_disconnected();
         self.abort_pending_tasks();
@@ -545,6 +726,9 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             log::warn!("Cannot submit closed order {client_order_id}");
             return Ok(());
         }
+
+        // Register order context with handler BEFORE HTTP submission
+        self.register_order(&order);
 
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
@@ -676,13 +860,14 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 
     fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+        // Register cancel context with handler BEFORE HTTP cancellation
+        self.register_cancel(cmd);
         self.cancel_order_internal(cmd)
     }
 
     fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let command = cmd.clone();
-
         let event_emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
@@ -691,7 +876,10 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         self.spawn_task("cancel_all_orders", async move {
             let canceled_orders = http_client.cancel_all_orders(command.instrument_id).await?;
 
-            // Generate OrderCanceled events for each canceled order
+            // Emit OrderCanceled from HTTP response for immediate feedback.
+            // UDS may also deliver CANCELED events — the handler deduplicates
+            // by removing from active_orders on first cancel, mapping any
+            // subsequent cancel to EXTERNAL strategy (benign).
             for (venue_order_id, client_order_id) in canceled_orders {
                 let canceled_event = OrderCanceled::new(
                     trader_id,
@@ -763,23 +951,13 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                             let cancel = &chunk[i];
                             match result {
                                 BatchCancelResult::Success(success) => {
-                                    let venue_order_id =
-                                        VenueOrderId::new(success.order_id.to_string());
-                                    let canceled_event = OrderCanceled::new(
-                                        trader_id,
-                                        cancel.strategy_id,
-                                        cancel.instrument_id,
+                                    // HTTP only logs success. OrderCanceled comes from
+                                    // UDS WebSocket push event.
+                                    log::debug!(
+                                        "Batch cancel accepted: client_order_id={}, order_id={}",
                                         cancel.client_order_id,
-                                        UUID4::new(),
-                                        cancel.ts_init,
-                                        clock.get_time_ns(),
-                                        false,
-                                        Some(venue_order_id),
-                                        Some(account_id),
+                                        success.order_id,
                                     );
-
-                                    event_emitter
-                                        .send_order_event(OrderEventAny::Canceled(canceled_event));
                                 }
                                 BatchCancelResult::Error(error) => {
                                     let rejected_event = OrderCancelRejected::new(

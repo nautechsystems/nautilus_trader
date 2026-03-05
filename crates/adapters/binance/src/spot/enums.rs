@@ -64,6 +64,20 @@ pub enum BinanceCancelReplaceMode {
     AllowFailure,
 }
 
+impl From<BinanceSpotOrderType> for OrderType {
+    fn from(value: BinanceSpotOrderType) -> Self {
+        match value {
+            BinanceSpotOrderType::Limit | BinanceSpotOrderType::LimitMaker => Self::Limit,
+            BinanceSpotOrderType::Market => Self::Market,
+            BinanceSpotOrderType::StopLoss | BinanceSpotOrderType::TakeProfit => Self::StopMarket,
+            BinanceSpotOrderType::StopLossLimit | BinanceSpotOrderType::TakeProfitLimit => {
+                Self::StopLimit
+            }
+            BinanceSpotOrderType::Unknown => Self::Market, // Exchange-generated orders
+        }
+    }
+}
+
 /// Converts a Nautilus order type to Binance Spot order type.
 ///
 /// # Errors
@@ -80,5 +94,33 @@ pub fn order_type_to_binance_spot(
         (OrderType::StopMarket, _) => Ok(BinanceSpotOrderType::StopLoss),
         (OrderType::StopLimit, _) => Ok(BinanceSpotOrderType::StopLossLimit),
         _ => anyhow::bail!("Unsupported order type for Binance Spot: {order_type:?}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::enums::OrderType;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn spot_order_type_unknown_deserializes_from_unknown_string() {
+        let result: BinanceSpotOrderType =
+            serde_json::from_str(r#""CONDITIONAL""#).expect("Should not fail");
+        assert_eq!(result, BinanceSpotOrderType::Unknown);
+    }
+
+    #[rstest]
+    fn spot_order_type_to_nautilus_all_variants() {
+        assert_eq!(OrderType::from(BinanceSpotOrderType::Limit), OrderType::Limit);
+        assert_eq!(OrderType::from(BinanceSpotOrderType::LimitMaker), OrderType::Limit);
+        assert_eq!(OrderType::from(BinanceSpotOrderType::Market), OrderType::Market);
+        assert_eq!(OrderType::from(BinanceSpotOrderType::StopLoss), OrderType::StopMarket);
+        assert_eq!(OrderType::from(BinanceSpotOrderType::TakeProfit), OrderType::StopMarket);
+        assert_eq!(OrderType::from(BinanceSpotOrderType::StopLossLimit), OrderType::StopLimit);
+        assert_eq!(OrderType::from(BinanceSpotOrderType::TakeProfitLimit), OrderType::StopLimit);
+        // Unknown exchange-generated orders map to Market (consistent with futures adapter)
+        assert_eq!(OrderType::from(BinanceSpotOrderType::Unknown), OrderType::Market);
     }
 }

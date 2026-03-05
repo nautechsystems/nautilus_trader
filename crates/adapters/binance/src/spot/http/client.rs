@@ -57,14 +57,14 @@ use super::{
     models::{
         AvgPrice, BatchCancelResult, BatchOrderResult, BinanceAccountInfo, BinanceAccountTrade,
         BinanceCancelOrderResponse, BinanceDepth, BinanceKlines, BinanceNewOrderResponse,
-        BinanceOrderResponse, BinanceTrades, BookTicker, ListenKeyResponse, Ticker24hr,
+        BinanceOrderResponse, BinanceTrades, BookTicker, Ticker24hr,
         TickerPrice, TradeFee,
     },
     parse,
     query::{
         AccountInfoParams, AccountTradesParams, AllOrdersParams, AvgPriceParams, BatchCancelItem,
         BatchOrderItem, CancelOpenOrdersParams, CancelOrderParams, CancelReplaceOrderParams,
-        DepthParams, KlinesParams, ListenKeyParams, NewOrderParams, OpenOrdersParams,
+        DepthParams, KlinesParams, NewOrderParams, OpenOrdersParams,
         QueryOrderParams, TickerParams, TradeFeeParams, TradesParams,
     },
 };
@@ -1134,98 +1134,6 @@ impl BinanceRawSpotHttpClient {
         Ok(response)
     }
 
-    /// Performs an API-key authenticated request (no signature) that returns JSON.
-    async fn request_with_api_key<P>(
-        &self,
-        method: Method,
-        path: &str,
-        params: Option<&P>,
-    ) -> BinanceSpotHttpResult<Vec<u8>>
-    where
-        P: Serialize + ?Sized,
-    {
-        let cred = self
-            .credential
-            .as_ref()
-            .ok_or(BinanceSpotHttpError::MissingCredentials)?;
-
-        let query = params
-            .map(serde_urlencoded::to_string)
-            .transpose()
-            .map_err(|e| BinanceSpotHttpError::ValidationError(e.to_string()))?
-            .unwrap_or_default();
-
-        let url = self.build_url(path, &query);
-
-        let mut headers = HashMap::new();
-        headers.insert("X-MBX-APIKEY".to_string(), cred.api_key().to_string());
-
-        let keys = vec![BINANCE_GLOBAL_RATE_KEY.to_string()];
-
-        let response = self
-            .client
-            .request(
-                method,
-                url,
-                None::<&HashMap<String, Vec<String>>>,
-                Some(headers),
-                None,
-                None,
-                Some(keys),
-            )
-            .await?;
-
-        if !response.status.is_success() {
-            return self.parse_error_response(response);
-        }
-
-        Ok(response.body.to_vec())
-    }
-
-    /// Creates a new listen key for the user data stream.
-    ///
-    /// Listen keys are valid for 60 minutes. Use `extend_listen_key` to keep
-    /// the stream alive.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing or the request fails.
-    pub async fn create_listen_key(&self) -> BinanceSpotHttpResult<ListenKeyResponse> {
-        let bytes = self
-            .request_with_api_key(Method::POST, "userDataStream", None::<&()>)
-            .await?;
-
-        let response: ListenKeyResponse = serde_json::from_slice(&bytes)
-            .map_err(|e| BinanceSpotHttpError::JsonError(e.to_string()))?;
-
-        Ok(response)
-    }
-
-    /// Extends the validity of a listen key by 60 minutes.
-    ///
-    /// Should be called periodically to keep the user data stream alive.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing or the request fails.
-    pub async fn extend_listen_key(&self, listen_key: &str) -> BinanceSpotHttpResult<()> {
-        let params = ListenKeyParams::new(listen_key);
-        self.request_with_api_key(Method::PUT, "userDataStream", Some(&params))
-            .await?;
-        Ok(())
-    }
-
-    /// Closes a listen key, terminating the user data stream.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing or the request fails.
-    pub async fn close_listen_key(&self, listen_key: &str) -> BinanceSpotHttpResult<()> {
-        let params = ListenKeyParams::new(listen_key);
-        self.request_with_api_key(Method::DELETE, "userDataStream", Some(&params))
-            .await?;
-        Ok(())
-    }
 }
 
 /// High-level HTTP client for Binance Spot API.

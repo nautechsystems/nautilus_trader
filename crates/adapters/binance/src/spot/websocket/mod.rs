@@ -32,8 +32,13 @@
 //! - Cancel-replace operations
 
 pub mod error;
+pub mod handler_exec;
+pub mod messages_exec;
 pub mod streams;
 pub mod trading;
+pub mod types_exec;
+pub mod user_data;
 
 pub use streams::BinanceSpotWebSocketClient;
 pub use trading::BinanceSpotWsTradingClient;
+pub use user_data::BinanceSpotUserDataStream;
