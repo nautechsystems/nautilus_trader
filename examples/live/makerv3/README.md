@@ -47,12 +47,14 @@ source ./.env.makerv3
 set +a
 ```
 
+Only source trusted env files. `source` executes shell syntax; keep env files as strict `KEY=VALUE` lines.
+
 ## Run order
 
 1. Start Redis.
 
 ```bash
-redis-server
+redis-server --port 6380
 ```
 
 2. Start the Nautilus node (safe default `paper` mode).

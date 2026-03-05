@@ -13,8 +13,8 @@ CONFIRM_LIVE="${MAKERV3_CONFIRM_LIVE:-1}"
 ENABLE_EXECUTION="${MAKERV3_ENABLE_EXECUTION:-0}"
 ALLOW_MISSING_KEYS="${MAKERV3_ALLOW_MISSING_KEYS:-0}"
 MANAGE_REDIS="${MAKERV3_MANAGE_REDIS:-1}"
-REDIS_HOST="${MAKERV3_REDIS_HOST:-127.0.0.1}"
-REDIS_PORT="${MAKERV3_REDIS_PORT:-6380}"
+REDIS_HOST="127.0.0.1"
+REDIS_PORT="6380"
 API_HOST="${MAKERV3_API_HOST:-127.0.0.1}"
 API_PORT="${MAKERV3_API_PORT:-5022}"
 START_TIMEOUT_SECS="${MAKERV3_START_TIMEOUT_SECS:-60}"
@@ -42,7 +42,7 @@ Commands:
 Environment overrides:
   MAKERV3_ENV_PATH, MAKERV3_CONFIG_PATH, MAKERV3_MODE, MAKERV3_CONFIRM_LIVE
   MAKERV3_ENABLE_EXECUTION, MAKERV3_ALLOW_MISSING_KEYS, MAKERV3_MANAGE_REDIS
-  MAKERV3_REDIS_HOST, MAKERV3_REDIS_PORT, MAKERV3_API_HOST, MAKERV3_API_PORT
+  MAKERV3_API_HOST, MAKERV3_API_PORT
   MAKERV3_SKIP_FLUXBOARD_BUILD, MAKERV3_START_TIMEOUT_SECS
 USAGE
 }
@@ -75,8 +75,30 @@ resolve_python_bin() {
 
 load_env_file() {
   if [[ -f "${ENV_PATH}" ]]; then
-    # shellcheck disable=SC1090
-    set -a; source "${ENV_PATH}"; set +a
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line%"${line##*[![:space:]]}"}"
+      [[ -z "${line}" ]] && continue
+      [[ "${line}" == \#* ]] && continue
+      if [[ "${line}" == export\ * ]]; then
+        line="${line#export }"
+        line="${line#"${line%%[![:space:]]*}"}"
+      fi
+
+      if [[ "${line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+        local key="${BASH_REMATCH[1]}"
+        local value="${BASH_REMATCH[2]}"
+        if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+          value="${value:1:-1}"
+        elif [[ "${value}" == \'*\' && "${value}" == *\' ]]; then
+          value="${value:1:-1}"
+        fi
+        export "${key}=${value}"
+      else
+        echo "[makerv3-stack] invalid line in env file ${ENV_PATH}: ${line}" >&2
+        exit 1
+      fi
+    done < "${ENV_PATH}"
   fi
   CONFIG_PATH="${MAKERV3_CONFIG_PATH:-${CONFIG_PATH}}"
   MODE="${MAKERV3_MODE:-${MODE}}"
@@ -84,8 +106,6 @@ load_env_file() {
   ENABLE_EXECUTION="${MAKERV3_ENABLE_EXECUTION:-${ENABLE_EXECUTION}}"
   ALLOW_MISSING_KEYS="${MAKERV3_ALLOW_MISSING_KEYS:-${ALLOW_MISSING_KEYS}}"
   MANAGE_REDIS="${MAKERV3_MANAGE_REDIS:-${MANAGE_REDIS}}"
-  REDIS_HOST="${MAKERV3_REDIS_HOST:-${REDIS_HOST}}"
-  REDIS_PORT="${MAKERV3_REDIS_PORT:-${REDIS_PORT}}"
   API_HOST="${MAKERV3_API_HOST:-${API_HOST}}"
   API_PORT="${MAKERV3_API_PORT:-${API_PORT}}"
   START_TIMEOUT_SECS="${MAKERV3_START_TIMEOUT_SECS:-${START_TIMEOUT_SECS}}"
@@ -94,6 +114,30 @@ load_env_file() {
   AWS_REGION="${MAKERV3_AWS_REGION:-${AWS_REGION}}"
   BYBIT_SECRET_ID="${MAKERV3_BYBIT_SECRET_ID:-${BYBIT_SECRET_ID}}"
   BINANCE_SECRET_ID="${MAKERV3_BINANCE_SECRET_ID:-${BINANCE_SECRET_ID}}"
+}
+
+resolve_redis_target_from_config() {
+  local pybin="$1"
+  if [[ ! -f "${CONFIG_PATH}" ]]; then
+    echo "[makerv3-stack] config not found: ${CONFIG_PATH}" >&2
+    exit 1
+  fi
+
+  local output
+  output="$("${pybin}" - "${CONFIG_PATH}" <<'PY'
+import sys
+from pathlib import Path
+import tomllib
+
+path = Path(sys.argv[1])
+data = tomllib.load(path.open("rb"))
+redis_cfg = data.get("redis") or {}
+host = str(redis_cfg.get("host", "127.0.0.1")).strip() or "127.0.0.1"
+port = int(redis_cfg.get("port", 6380))
+print(f"{host} {port}")
+PY
+)"
+  read -r REDIS_HOST REDIS_PORT <<<"${output}"
 }
 
 load_secret_into_env() {
@@ -199,7 +243,6 @@ is_running() {
 start_process() {
   local svc="$1"
   shift
-  local cmd="$*"
   local file
   file="$(pid_file "${svc}")"
   local log
@@ -212,7 +255,19 @@ start_process() {
 
   echo "[makerv3-stack] starting ${svc}"
   rm -f "${file}"
-  setsid -f bash -lc "cd '${ROOT_DIR}' && echo \$\$ > '${file}' && exec ${cmd}" >>"${log}" 2>&1
+  if (( $# == 0 )); then
+    echo "[makerv3-stack] refusing to start ${svc}: missing command" >&2
+    exit 1
+  fi
+  setsid -f bash -c '
+    set -euo pipefail
+    root_dir="$1"
+    pid_file="$2"
+    shift 2
+    cd "$root_dir"
+    echo $$ > "$pid_file"
+    exec "$@"
+  ' bash "${ROOT_DIR}" "${file}" "$@" >>"${log}" 2>&1
   sleep 1
   if [[ ! -f "${file}" ]]; then
     echo "[makerv3-stack] ${svc} failed to write pid file" >&2
@@ -287,8 +342,14 @@ start_redis_if_needed() {
     exit 1
   fi
 
+  if [[ "${REDIS_HOST}" != "127.0.0.1" && "${REDIS_HOST}" != "localhost" ]]; then
+    echo "[makerv3-stack] refusing to manage redis for non-local host ${REDIS_HOST}:${REDIS_PORT}" >&2
+    echo "[makerv3-stack] update [redis] host/port in ${CONFIG_PATH} to use a local redis instance" >&2
+    exit 1
+  fi
+
   require_cmd redis-server
-  start_process "redis" "redis-server --bind '${REDIS_HOST}' --port '${REDIS_PORT}' --save '' --appendonly no"
+  start_process "redis" redis-server --bind "${REDIS_HOST}" --port "${REDIS_PORT}" --save "" --appendonly no
 
   local deadline=$((SECONDS + START_TIMEOUT_SECS))
   while (( SECONDS < deadline )); do
@@ -330,6 +391,7 @@ start_stack() {
   validate_config_and_keys
   ensure_dirs
 
+  resolve_redis_target_from_config "${pybin}"
   start_redis_if_needed
   build_fluxboard
 
@@ -343,9 +405,27 @@ start_stack() {
     exec_flag="--enable-execution"
   fi
 
-  start_process "node" "env PYTHONPATH='${ROOT_DIR}:${PYTHONPATH:-}' ${pybin} examples/live/makerv3/run_node.py --config '${CONFIG_PATH}' --mode '${MODE}' ${live_flag} ${exec_flag}"
-  start_process "bridge" "env PYTHONPATH='${ROOT_DIR}:${PYTHONPATH:-}' ${pybin} examples/live/makerv3/run_bridge.py --config '${CONFIG_PATH}' --mode '${MODE}' ${live_flag}"
-  start_process "api" "env PYTHONPATH='${ROOT_DIR}:${PYTHONPATH:-}' ${pybin} examples/live/makerv3/run_api.py --config '${CONFIG_PATH}' --mode '${MODE}' ${live_flag} --host '${API_HOST}' --port '${API_PORT}' --serve-fluxboard"
+  local -a node_cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" examples/live/makerv3/run_node.py --config "${CONFIG_PATH}" --mode "${MODE}")
+  if [[ -n "${live_flag}" ]]; then
+    node_cmd+=("${live_flag}")
+  fi
+  if [[ -n "${exec_flag}" ]]; then
+    node_cmd+=("${exec_flag}")
+  fi
+  start_process "node" "${node_cmd[@]}"
+
+  local -a bridge_cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" examples/live/makerv3/run_bridge.py --config "${CONFIG_PATH}" --mode "${MODE}")
+  if [[ -n "${live_flag}" ]]; then
+    bridge_cmd+=("${live_flag}")
+  fi
+  start_process "bridge" "${bridge_cmd[@]}"
+
+  local -a api_cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" examples/live/makerv3/run_api.py --config "${CONFIG_PATH}" --mode "${MODE}")
+  if [[ -n "${live_flag}" ]]; then
+    api_cmd+=("${live_flag}")
+  fi
+  api_cmd+=(--host "${API_HOST}" --port "${API_PORT}" --serve-fluxboard)
+  start_process "api" "${api_cmd[@]}"
 
   wait_for_url "http://${API_HOST}:${API_PORT}/api/v1/healthz" "flux api"
   wait_for_url "http://${API_HOST}:${API_PORT}/tokenmm" "fluxboard tokenmm"
