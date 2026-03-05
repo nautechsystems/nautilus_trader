@@ -32,6 +32,9 @@ fn test_pyo3_exec_factory_and_config_registry_roundtrip() {
     Python::attach(|py| {
         let module = PyModule::new(py, "blockchain").expect("Module creation should succeed");
         blockchain_pymodule(py, &module).expect("Module init should succeed");
+        module
+            .getattr("BlockchainDataClientConfig")
+            .expect("Data config should be exposed in blockchain pymodule with python feature");
 
         let registry = get_global_pyo3_registry();
 

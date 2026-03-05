@@ -86,10 +86,9 @@ fn extract_blockchain_execution_config(
 #[pymodule]
 pub fn blockchain(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::config::DexPoolFilters>()?;
+    m.add_class::<crate::config::BlockchainDataClientConfig>()?;
     m.add_class::<crate::config::BlockchainExecutionClientConfig>()?;
     m.add_class::<crate::factories::BlockchainExecutionClientFactory>()?;
-    #[cfg(feature = "hypersync")]
-    m.add_class::<crate::config::BlockchainDataClientConfig>()?;
     #[cfg(feature = "hypersync")]
     m.add_class::<crate::factories::BlockchainDataClientFactory>()?;
 
