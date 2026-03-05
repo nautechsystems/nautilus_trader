@@ -101,6 +101,14 @@ describe('signal_delta field pass-through wiring', () => {
     act(() => {
       deltaHandler({
         id: 'pass_through_strategy',
+        legs: {
+          'bybit_linear:PLUMEUSDT': {
+            symbol: 'PLUMEUSDT',
+            decision_bid: 0.0095,
+            decision_ask: 0.0096,
+            update_ts_ms: 1736942400000,
+          },
+        },
         params: { bot_on: '1', qty: '25' },
         balance_readiness: {
           status: 'WARN',
@@ -147,6 +155,12 @@ describe('signal_delta field pass-through wiring', () => {
       price: 0.0095,
       qty: 250,
       ts_ms: 1736942400000,
+    });
+    expect(merged?.legs).toBeTruthy();
+    expect((merged as any).legs['bybit_linear:PLUMEUSDT']).toMatchObject({
+      contract_id: 'bybit_linear:PLUMEUSDT',
+      exchange: 'bybit_linear',
+      coin: 'PLUME',
     });
   });
 });

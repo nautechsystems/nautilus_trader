@@ -360,12 +360,17 @@ function normalizeDeltaLegs(legs: unknown): unknown {
       continue;
     }
     const leg = { ...(value as Record<string, unknown>) };
+    const contractParts = contractId.split(':');
+    const contractExchange = contractParts.length > 1 ? contractParts[0].trim().toLowerCase() : '';
+    const contractSymbol = contractParts.length > 1 ? contractParts.slice(1).join(':').trim() : '';
     const bid = coerceFiniteNumber(leg.decision_bid ?? leg.fv_bid ?? leg.bid);
     const ask = coerceFiniteNumber(leg.decision_ask ?? leg.fv_ask ?? leg.ask);
     const tsMs = coerceFiniteNumber(leg.update_ts_ms ?? leg.ts_ms ?? leg.timestamp);
     const ageMs = coerceFiniteNumber(leg.md_age_ms ?? leg.age_ms);
-    const symbol = String(leg.symbol ?? '').trim();
+    const symbol = String(leg.symbol ?? contractSymbol ?? '').trim();
     if (leg.contract_id == null) leg.contract_id = contractId;
+    if (leg.symbol == null && contractSymbol) leg.symbol = contractSymbol;
+    if (!String(leg.exchange ?? '').trim() && contractExchange) leg.exchange = contractExchange;
     if (leg.coin == null && symbol) leg.coin = deriveCoinFromSymbol(symbol);
     if (bid !== undefined) {
       if (leg.fv_bid == null) leg.fv_bid = bid;
