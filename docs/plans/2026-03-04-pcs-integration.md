@@ -3488,6 +3488,10 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
   - Appended required tracking sections (`Progress Log`, `Deviations / Decisions`, `Known Issues / Follow-ups`) without changing milestone content.
   - Tests run: none (docs-only).
 
+- 2026-03-05 - PR0 (`pr0/pcs-plan-doc`, head SHA `3edac0c621c59c1db0c4bc2b8d354ed17d8355fb`) - status: open
+  - Updated PR0 head SHA after appending mandatory plan tracking sections.
+  - Tests run: none (docs-only).
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
