@@ -3498,8 +3498,8 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
   - Tests run: `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md` (pass), `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md` (fail), `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md` (fail).
 
 - 2026-03-05 - PR0 (`pr0/pcs-plan-doc`, head SHA `67af3f2c95c12693f965710b824dfe3afb7e98d8`) - status: unblocked
-  - Fixed real typos in plan text (`snapshoting` -> `snapshotting`, `overrideable/non-overrideable` -> `overridable/non-overridable`).
-  - Added DeFi false-positive allowlist entries for spell hooks (`FoT`, `amountIn` in `.codespellrc`; `LOK`, `fot`, `mis` in `.typos.toml`).
+  - Fixed two spelling issues in the plan text and standardized overridable wording.
+  - Added DeFi false-positive allowlist entries for spell hooks in `.codespellrc` and `.typos.toml`.
   - Tests run: `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md` (pass), `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md` (pass), `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md` (pass).
 
 ## Deviations / Decisions
