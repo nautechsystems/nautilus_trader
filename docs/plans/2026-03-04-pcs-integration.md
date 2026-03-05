@@ -3697,6 +3697,10 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `uv run --active --no-sync pytest tests/integration_tests/adapters/pancakeswap -q` (pass: `17 passed, 6 skipped`)
     - `uv run --active --no-sync python - <<'PY' ... PancakeSwapV2ExecClientConfig(...).to_pyo3() ... PY` (pass: explicit `RuntimeError` in non-`defi` build, no panic)
 
+- 2026-03-05 - PR13 (`pr13/python-surface`, head SHA `704c76ebd0d198bf5ff160b06576e11ae00d3d0d`) - status: ready
+  - Updated PR13 head SHA after committing Python surface/docs/tests changes and plan tracking entry.
+  - Tests run: none (plan tracking append-only update).
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
