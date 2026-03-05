@@ -148,7 +148,7 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
             .downcast_ref::<BlockchainExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BlockchainDataClientFactory. Expected `BlockchainDataClientConfig`, was {config:?}"
+                    "Invalid config type for BlockchainExecutionClientFactory. Expected `BlockchainExecutionClientConfig`, was {config:?}"
                 )
             })?;
 
