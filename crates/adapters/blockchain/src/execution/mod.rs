@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod amm;
 pub mod client;
 pub mod erc20_allowance;
 pub mod metadata_store;
