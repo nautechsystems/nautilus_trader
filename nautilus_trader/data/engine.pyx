@@ -67,6 +67,7 @@ from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_SECOND
 from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.core.rust.model cimport OrderBookDeltas_API
 from nautilus_trader.core.rust.model cimport PriceType
@@ -215,6 +216,7 @@ cdef class DataEngine(Component):
         self._option_chain_managers: dict[str, object] = {}
         self._option_chain_instrument_index: dict[InstrumentId, str] = {}
         self._option_chain_timer_names: dict[str, str] = {}
+        self._option_chain_atm_source_index: dict[InstrumentId, str] = {}  # ATM source instrument_id -> series_key
         self._pending_option_chain_requests: dict[object, tuple] = {}  # correlation_id -> (command, atm_source)
 
         self._request_group_parent_request: dict[UUID4, RequestData] = {}
@@ -1357,6 +1359,80 @@ cdef class DataEngine(Component):
                     ),
                 )
 
+    cdef void _unsubscribe_option_chain_instruments(
+        self,
+        MarketDataClient client,
+        list instrument_ids,
+    ):
+        """Unsubscribe quotes and greeks for option chain instruments."""
+        cdef uint64_t ts = self._clock.timestamp_ns()
+        for pyo3_id in instrument_ids:
+            cython_id = InstrumentId.from_str(str(pyo3_id))
+            if cython_id in client.subscribed_quote_ticks():
+                client.unsubscribe_quote_ticks(
+                    UnsubscribeQuoteTicks(
+                        instrument_id=cython_id,
+                        client_id=client.id,
+                        venue=client.venue,
+                        command_id=UUID4(),
+                        ts_init=ts,
+                    ),
+                )
+            if cython_id in client.subscribed_option_greeks():
+                client.unsubscribe_option_greeks(
+                    UnsubscribeOptionGreeks(
+                        instrument_id=cython_id,
+                        client_id=client.id,
+                        venue=client.venue,
+                        command_id=UUID4(),
+                        ts_init=ts,
+                    ),
+                )
+
+    cdef void _unsubscribe_atm_source(self, MarketDataClient client, object atm_source):
+        """Unsubscribe the ATM source feed (mark price, index price, or quote)."""
+        source_instrument_id = atm_source.instrument_id  # None for ForwardPrice
+        if source_instrument_id is None:
+            return  # ForwardPrice — nothing to unsubscribe
+
+        cdef InstrumentId cython_id = InstrumentId.from_str(str(source_instrument_id))
+        cdef uint64_t ts = self._clock.timestamp_ns()
+        cdef str atm_str = str(atm_source)
+
+        if "MarkPrice" in atm_str:
+            if cython_id in client.subscribed_mark_prices():
+                client.unsubscribe_mark_prices(
+                    UnsubscribeMarkPrices(
+                        instrument_id=cython_id,
+                        client_id=client.id,
+                        venue=client.venue,
+                        command_id=UUID4(),
+                        ts_init=ts,
+                    ),
+                )
+        elif "IndexPrice" in atm_str:
+            if cython_id in client.subscribed_index_prices():
+                client.unsubscribe_index_prices(
+                    UnsubscribeIndexPrices(
+                        instrument_id=cython_id,
+                        client_id=client.id,
+                        venue=client.venue,
+                        command_id=UUID4(),
+                        ts_init=ts,
+                    ),
+                )
+        elif "UnderlyingQuoteMid" in atm_str:
+            if cython_id in client.subscribed_quote_ticks():
+                client.unsubscribe_quote_ticks(
+                    UnsubscribeQuoteTicks(
+                        instrument_id=cython_id,
+                        client_id=client.id,
+                        venue=client.venue,
+                        command_id=UUID4(),
+                        ts_init=ts,
+                    ),
+                )
+
     cdef void _create_option_chain_manager(self, SubscribeOptionChain command, object atm_source, object initial_atm_price):
         """Create option chain manager, resolve instruments, subscribe, and set timer."""
         cdef str series_key = str(command.series_id)
@@ -1384,7 +1460,7 @@ cdef class DataEngine(Component):
                 continue
 
             # Match settlement currency
-            if str(inst.settlement_currency) != series_settlement:
+            if str(inst.get_settlement_currency()) != series_settlement:
                 continue
 
             # Build instrument entry: strike as Price, kind as u8 (0=Call, 1=Put)
@@ -1417,6 +1493,12 @@ cdef class DataEngine(Component):
         for pyo3_id in resolved:
             cython_id = InstrumentId.from_str(str(pyo3_id))
             self._option_chain_instrument_index[cython_id] = series_key
+
+        # Index ATM source instrument for targeted routing
+        atm_instrument_id = atm_source.instrument_id
+        if atm_instrument_id is not None:
+            cython_atm_id = InstrumentId.from_str(str(atm_instrument_id))
+            self._option_chain_atm_source_index[cython_atm_id] = series_key
 
         # Subscribe quotes + greeks for active instruments
         active_ids = manager.active_instrument_ids()
@@ -1461,7 +1543,7 @@ cdef class DataEngine(Component):
             inst = self._cache.instrument(InstrumentId.from_str(str(fp.instrument_id)))
             if inst is not None:
                 if (hasattr(inst, 'expiration_ns') and inst.expiration_ns == series_id.expiration_ns
-                        and str(inst.settlement_currency) == str(series_id.settlement_currency)):
+                        and str(inst.get_settlement_currency()) == str(series_id.settlement_currency)):
                     initial_atm_price = nautilus_pyo3.Price.from_str(str(fp.forward_price))
                     break
 
@@ -1472,8 +1554,7 @@ cdef class DataEngine(Component):
 
         # Fallback: if ForwardPrice source and no bootstrap data, try perpetual index price
         if initial_atm_price is None:
-            atm_source_name = type(atm_source).__name__
-            if "forward" in atm_source_name.lower() or "ForwardPrice" in str(atm_source):
+            if atm_source.instrument_id is None:  # ForwardPrice has no instrument_id
                 fallback = self._resolve_perpetual_atm_source(series_id)
                 if fallback is not None:
                     self._log.info(f"Forward price bootstrap failed, falling back to {fallback}")
@@ -1518,7 +1599,7 @@ cdef class DataEngine(Component):
             if not hasattr(inst, 'option_kind'):
                 continue
             if (hasattr(inst, 'expiration_ns') and inst.expiration_ns == series_id.expiration_ns
-                    and str(inst.settlement_currency) == str(series_id.settlement_currency)):
+                    and str(inst.get_settlement_currency()) == str(series_id.settlement_currency)):
                 return InstrumentId.from_str(str(inst.id))
         return None
 
@@ -1554,6 +1635,15 @@ cdef class DataEngine(Component):
 
     cdef void _teardown_option_chain(self, str series_key, MarketDataClient client):
         """Tear down an existing option chain manager."""
+        manager = self._option_chain_managers.get(series_key)
+
+        # Forward wire-level unsubscribes before dropping the manager
+        if manager is not None and client is not None:
+            all_ids = manager.all_instrument_ids()
+            atm_source = manager.atm_source
+            self._unsubscribe_option_chain_instruments(client, all_ids)
+            self._unsubscribe_atm_source(client, atm_source)
+
         # Cancel timer
         timer_name = self._option_chain_timer_names.pop(series_key, None)
         if timer_name is not None:
@@ -1566,6 +1656,14 @@ cdef class DataEngine(Component):
         ]
         for iid in to_remove:
             del self._option_chain_instrument_index[iid]
+
+        # Remove ATM source index entries for this series
+        atm_to_remove = [
+            iid for iid, sk in self._option_chain_atm_source_index.items()
+            if sk == series_key
+        ]
+        for iid in atm_to_remove:
+            del self._option_chain_atm_source_index[iid]
 
         # Remove manager
         self._option_chain_managers.pop(series_key, None)
@@ -1590,7 +1688,7 @@ cdef class DataEngine(Component):
 
         cdef uint64_t ts_ns = self._clock.timestamp_ns()
 
-        # Check rebalance
+        # Check rebalance and forward subscribe/unsubscribe for changed instruments
         rebalance = manager.check_rebalance(ts_ns)
         if rebalance is not None:
             added, removed = rebalance
@@ -1598,6 +1696,33 @@ cdef class DataEngine(Component):
                 self._log.debug(
                     f"Option chain {series_key} rebalanced: +{len(added)} -{len(removed)} instruments",
                 )
+
+                # Resolve client from venue
+                venue = Venue(str(manager.series_id.venue))
+                client = self._routing_map.get(venue)
+                if client is not None:
+                    if added:
+                        sub_cmd = SubscribeOptionChain(
+                            series_id=manager.series_id,
+                            strike_range=None,
+                            atm_source=None,
+                            snapshot_interval_ms=None,
+                            client_id=client.id,
+                            venue=venue,
+                            command_id=UUID4(),
+                            ts_init=ts_ns,
+                        )
+                        self._subscribe_option_chain_instruments(client, added, sub_cmd)
+                    if removed:
+                        self._unsubscribe_option_chain_instruments(client, removed)
+
+                    # Update instrument index
+                    for pyo3_id in added:
+                        cython_id = InstrumentId.from_str(str(pyo3_id))
+                        self._option_chain_instrument_index[cython_id] = series_key
+                    for pyo3_id in removed:
+                        cython_id = InstrumentId.from_str(str(pyo3_id))
+                        self._option_chain_instrument_index.pop(cython_id, None)
 
         # Publish snapshot
         chain_slice = manager.snapshot(ts_ns)
@@ -2447,6 +2572,10 @@ cdef class DataEngine(Component):
             msg=modified_instrument,
         )
 
+        # Check if this instrument belongs to an active option chain
+        if not historical:
+            self._update_option_chains(modified_instrument)
+
     cpdef Instrument _modify_instrument_properties(self, Instrument instrument, dict instrument_properties):
         if instrument_properties is None:
             return instrument
@@ -2668,6 +2797,13 @@ cdef class DataEngine(Component):
     cpdef void _handle_instrument_status(self, InstrumentStatus data, bint historical = False):
         self._msgbus.publish_c(topic=self._topic_cache.get_status_topic(data.instrument_id, historical), msg=data)
 
+        # Check for option chain instrument expiry
+        if (data.action == MarketStatusAction.CLOSE
+                or data.action == MarketStatusAction.NOT_AVAILABLE_FOR_TRADING):
+            series_key = self._option_chain_instrument_index.get(data.instrument_id)
+            if series_key is not None:
+                self._expire_option_chain_instrument(data.instrument_id, series_key)
+
     cpdef void _handle_close_price(self, InstrumentClose data, bint historical = False):
         self._msgbus.publish_c(topic=self._topic_cache.get_close_prices_topic(data.instrument_id, historical), msg=data)
 
@@ -2730,24 +2866,138 @@ cdef class DataEngine(Component):
             self._log.error(f"Error feeding greeks to option chain {series_key}: {e}")
 
     cdef void _feed_mark_price_to_option_chains(self, MarkPriceUpdate mark_price):
-        pyo3_mark_price = mark_price.to_pyo3()
-        for series_key, manager in self._option_chain_managers.items():
-            try:
-                bootstrapped = manager.handle_mark_price(pyo3_mark_price)
-                if bootstrapped:
-                    self._complete_option_chain_bootstrap(series_key, manager)
-            except Exception as e:
-                self._log.error(f"Error feeding mark price to option chain {series_key}: {e}")
+        cdef str series_key = self._option_chain_atm_source_index.get(mark_price.instrument_id)
+        if series_key is None:
+            return
+        manager = self._option_chain_managers.get(series_key)
+        if manager is None:
+            return
+        try:
+            pyo3_mark_price = mark_price.to_pyo3()
+            bootstrapped = manager.handle_mark_price(pyo3_mark_price)
+            if bootstrapped:
+                self._complete_option_chain_bootstrap(series_key, manager)
+        except Exception as e:
+            self._log.error(f"Error feeding mark price to option chain {series_key}: {e}")
 
     cdef void _feed_index_price_to_option_chains(self, IndexPriceUpdate index_price):
-        pyo3_index_price = index_price.to_pyo3()
-        for series_key, manager in self._option_chain_managers.items():
-            try:
-                bootstrapped = manager.handle_index_price(pyo3_index_price)
-                if bootstrapped:
-                    self._complete_option_chain_bootstrap(series_key, manager)
-            except Exception as e:
-                self._log.error(f"Error feeding index price to option chain {series_key}: {e}")
+        cdef str series_key = self._option_chain_atm_source_index.get(index_price.instrument_id)
+        if series_key is None:
+            return
+        manager = self._option_chain_managers.get(series_key)
+        if manager is None:
+            return
+        try:
+            pyo3_index_price = index_price.to_pyo3()
+            bootstrapped = manager.handle_index_price(pyo3_index_price)
+            if bootstrapped:
+                self._complete_option_chain_bootstrap(series_key, manager)
+        except Exception as e:
+            self._log.error(f"Error feeding index price to option chain {series_key}: {e}")
+
+    cdef void _expire_option_chain_instrument(self, InstrumentId instrument_id, str series_key):
+        """Remove an expired instrument from the option chain and unsubscribe."""
+        cdef Venue venue
+        cdef MarketDataClient client
+
+        # Remove from instrument index
+        self._option_chain_instrument_index.pop(instrument_id, None)
+
+        manager = self._option_chain_managers.get(series_key)
+        if manager is None:
+            return
+
+        # Remove from manager
+        pyo3_id = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
+        series_empty = manager.remove_instrument(pyo3_id)
+
+        # Unsubscribe quotes + greeks for this single instrument
+        venue = Venue(str(manager.series_id.venue))
+        client = self._routing_map.get(venue)
+        if client is not None:
+            self._unsubscribe_option_chain_instruments(client, [pyo3_id])
+
+        self._log.info(f"Expired instrument {instrument_id} from option chain {series_key}")
+
+        # If all instruments expired, tear down the chain
+        if series_empty:
+            self._teardown_option_chain(series_key, client)
+            self._log.info(f"Option chain {series_key} is empty after expiry, torn down")
+
+    cdef void _update_option_chains(self, Instrument instrument):
+        """Check if a newly discovered instrument belongs to an active option chain."""
+        cdef str venue_str
+        cdef str underlying_str
+        cdef str settlement_str
+        cdef uint64_t expiration_ns
+        cdef str series_key
+        cdef Venue venue
+        cdef MarketDataClient client
+
+        if not hasattr(instrument, 'option_kind'):
+            return
+
+        # Extract option attributes
+        if not hasattr(instrument, 'expiration_ns') or not hasattr(instrument, 'strike_price'):
+            return
+
+        venue_str = str(instrument.id.venue)
+        underlying_str = ''
+        if hasattr(instrument, 'underlying'):
+            underlying_str = str(instrument.underlying)
+        if not underlying_str:
+            return
+
+        settlement_str = str(instrument.get_settlement_currency())
+        expiration_ns = instrument.expiration_ns
+
+        # Build series key and look up manager
+        try:
+            pyo3_series_id = nautilus_pyo3.OptionSeriesId(
+                venue_str,
+                underlying_str,
+                settlement_str,
+                expiration_ns,
+            )
+            series_key = str(pyo3_series_id)
+        except Exception:
+            return
+
+        manager = self._option_chain_managers.get(series_key)
+        if manager is None:
+            return
+
+        # Build pyo3 args and add instrument
+        pyo3_id = nautilus_pyo3.InstrumentId.from_str(str(instrument.id))
+        pyo3_strike = nautilus_pyo3.Price.from_str(str(instrument.strike_price))
+        kind_u8 = 0 if instrument.option_kind == OptionKind.CALL else 1
+        newly_inserted = manager.add_instrument(pyo3_id, pyo3_strike, kind_u8)
+
+        if newly_inserted:
+            self._option_chain_instrument_index[instrument.id] = series_key
+
+            # Check if instrument is in the active set and subscribe if so
+            active_ids = manager.active_instrument_ids()
+            pyo3_id_str = str(pyo3_id)
+            for aid in active_ids:
+                if str(aid) == pyo3_id_str:
+                    venue = Venue(venue_str)
+                    client = self._routing_map.get(venue)
+                    if client is not None:
+                        sub_cmd = SubscribeOptionChain(
+                            series_id=manager.series_id,
+                            strike_range=None,
+                            atm_source=None,
+                            snapshot_interval_ms=None,
+                            client_id=client.id,
+                            venue=venue,
+                            command_id=UUID4(),
+                            ts_init=self._clock.timestamp_ns(),
+                        )
+                        self._subscribe_option_chain_instruments(client, [pyo3_id], sub_cmd)
+                    break
+
+            self._log.debug(f"Discovered instrument {instrument.id} added to option chain {series_key}")
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 

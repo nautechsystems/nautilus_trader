@@ -343,7 +343,8 @@ class DeribitDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_option_greeks(self, command) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_option_greeks(pyo3_instrument_id)  # type: ignore[attr-defined]
+        interval = self._get_interval(getattr(command, "params", None))
+        await self._ws_client.unsubscribe_option_greeks(pyo3_instrument_id, interval)  # type: ignore[attr-defined]
 
     async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         kind = "any"

@@ -427,12 +427,21 @@ class BybitDataClient(LiveMarketDataClient):
             return
 
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_option_greeks(pyo3_instrument_id)  # type: ignore[attr-defined]
+        # Reference counting: only subscribe ticker if first user of channel
+        if pyo3_instrument_id not in self._ticker_subscriptions:
+            self._ticker_subscriptions[pyo3_instrument_id] = set()
+            await ws_client.subscribe_ticker(pyo3_instrument_id)
+        self._ticker_subscriptions[pyo3_instrument_id].add("option_greeks")
 
     async def _unsubscribe_option_greeks(self, command) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_option_greeks(pyo3_instrument_id)  # type: ignore[attr-defined]
+        # Reference counting: only unsubscribe ticker if last user of channel
+        if pyo3_instrument_id in self._ticker_subscriptions:
+            self._ticker_subscriptions[pyo3_instrument_id].discard("option_greeks")
+            if not self._ticker_subscriptions[pyo3_instrument_id]:
+                await ws_client.unsubscribe_ticker(pyo3_instrument_id)
+                del self._ticker_subscriptions[pyo3_instrument_id]
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)

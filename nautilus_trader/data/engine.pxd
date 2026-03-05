@@ -24,6 +24,7 @@ from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport SpreadQuoteAggregator
@@ -115,6 +116,8 @@ cdef class DataEngine(Component):
     cdef readonly dict _option_chain_managers
     cdef readonly dict _option_chain_instrument_index
     cdef readonly dict _option_chain_timer_names
+    cdef readonly dict _option_chain_atm_source_index
+    cdef readonly dict _pending_option_chain_requests
 
     cdef readonly dict[UUID4, RequestData] _request_group_parent_request
     cdef readonly dict[UUID4, int] _request_group_n_components
@@ -237,12 +240,16 @@ cdef class DataEngine(Component):
 # -- OPTION CHAIN HELPERS -------------------------------------------------------------------------
 
     cdef void _subscribe_option_chain_instruments(self, MarketDataClient client, list active_ids, SubscribeOptionChain command)
+    cdef void _unsubscribe_option_chain_instruments(self, MarketDataClient client, list instrument_ids)
+    cdef void _unsubscribe_atm_source(self, MarketDataClient client, object atm_source)
     cdef void _create_option_chain_manager(self, SubscribeOptionChain command, object atm_source, object initial_atm_price)
     cdef void _handle_forward_prices_response(self, object correlation_id, list forward_prices)
     cdef object _resolve_perpetual_atm_source(self, object series_id)
     cdef object _find_sample_instrument(self, object series_id)
     cdef void _complete_option_chain_bootstrap(self, str series_key, object manager)
     cdef void _teardown_option_chain(self, str series_key, MarketDataClient client)
+    cdef void _expire_option_chain_instrument(self, InstrumentId instrument_id, str series_key)
+    cdef void _update_option_chains(self, Instrument instrument)
     cdef void _feed_quote_to_option_chain(self, QuoteTick tick)
     cdef void _feed_greeks_to_option_chain(self, OptionGreeks option_greeks)
     cdef void _feed_mark_price_to_option_chains(self, MarkPriceUpdate mark_price)
