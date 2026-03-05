@@ -225,7 +225,7 @@ apply to the order type being created, or are only needed to specify more advanc
 This leaves the factory with simpler order creation methods to work with, all the
 examples use an `OrderFactory` from within a `Strategy` context.
 
-See the [`OrderFactory` API Reference](../api_reference/common.md#class-orderfactory) for further details.
+See the [`OrderFactory` API Reference](/docs/python-api-latest/common.html#nautilus_trader.common.factories.OrderFactory) for further details.
 
 ## Order types
 
@@ -259,7 +259,7 @@ order: MarketOrder = self.order_factory.market(
 )
 ```
 
-See the [`MarketOrder` API Reference](../api_reference/model/orders.md#class-marketorder) for further details.
+See the [`MarketOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.market.MarketOrder) for further details.
 
 ### Limit
 
@@ -291,7 +291,7 @@ order: LimitOrder = self.order_factory.limit(
 )
 ```
 
-See the [`LimitOrder` API Reference](../api_reference/model/orders.md#class-limitorder) for further details.
+See the [`LimitOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.limit.LimitOrder) for further details.
 
 ### Stop-Market
 
@@ -324,7 +324,7 @@ order: StopMarketOrder = self.order_factory.stop_market(
 )
 ```
 
-See the [`StopMarketOrder` API Reference](../api_reference/model/orders.md#class-stopmarketorder) for further details.
+See the [`StopMarketOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.stop_market.StopMarketOrder) for further details.
 
 ### Stop-Limit
 
@@ -359,7 +359,7 @@ order: StopLimitOrder = self.order_factory.stop_limit(
 )
 ```
 
-See the [`StopLimitOrder` API Reference](../api_reference/model/orders.md#class-stoplimitorder) for further details.
+See the [`StopLimitOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.stop_limit.StopLimitOrder) for further details.
 
 ### Market-To-Limit
 
@@ -387,7 +387,7 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
 )
 ```
 
-See the [`MarketToLimitOrder` API Reference](../api_reference/model/orders.md#class-markettolimitorder) for further details.
+See the [`MarketToLimitOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.market_to_limit.MarketToLimitOrder) for further details.
 
 ### Market-If-Touched
 
@@ -421,7 +421,7 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
 )
 ```
 
-See the [`MarketIfTouchedOrder` API Reference](../api_reference/model/orders.md#class-marketiftouchedorder) for further details.
+See the [`MarketIfTouchedOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.market_if_touched.MarketIfTouchedOrder) for further details.
 
 ### Limit-If-Touched
 
@@ -457,7 +457,7 @@ order: LimitIfTouchedOrder = self.order_factory.limit_if_touched(
 )
 ```
 
-See the [`LimitIfTouched` API Reference](../api_reference/model/orders.md#class-limitiftouchedorder-1) for further details.
+See the [`LimitIfTouchedOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.limit_if_touched.LimitIfTouchedOrder) for further details.
 
 ### Trailing-Stop-Market
 
@@ -495,7 +495,7 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
 )
 ```
 
-See the [`TrailingStopMarketOrder` API Reference](../api_reference/model/orders.md#class-trailingstopmarketorder-1) for further details.
+See the [`TrailingStopMarketOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.trailing_stop_market.TrailingStopMarketOrder) for further details.
 
 ### Trailing-Stop-Limit
 
@@ -536,7 +536,7 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 )
 ```
 
-See the [`TrailingStopLimitOrder` API Reference](../api_reference/model/orders.md#class-trailingstoplimitorder-1) for further details.
+See the [`TrailingStopLimitOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.trailing_stop_limit.TrailingStopLimitOrder) for further details.
 
 ## Advanced orders
 
@@ -657,7 +657,7 @@ levels for a position simultaneously. This involves placing a parent order (entr
 orders: a take-profit `LIMIT` order and a stop-loss `STOP_MARKET` order. When the parent order executes,
 the system places the child orders. The take-profit closes the position if the market moves favorably, and the stop-loss limits losses if it moves unfavorably.
 
-Bracket orders can be easily created using the [OrderFactory](../api_reference/common.md#class-orderfactory),
+Bracket orders can be easily created using the [OrderFactory](/docs/python-api-latest/common.html#nautilus_trader.common.factories.OrderFactory),
 which supports various order types, parameters, and instructions.
 
 :::warning
@@ -802,7 +802,7 @@ The following `Cache` methods are available:
 - `self.cache.is_order_emulated(...)`: Checks if a specific order is emulated.
 - `self.cache.orders_emulated_count(...)`: Returns the count of emulated orders.
 
-See the full [API reference](../api_reference/cache.md) for additional details.
+See the full [API reference](/docs/python-api-latest/cache.html) for additional details.
 
 #### Direct order queries
 

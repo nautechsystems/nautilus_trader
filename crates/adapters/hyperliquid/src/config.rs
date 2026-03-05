@@ -206,8 +206,9 @@ impl HyperliquidExecClientConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::rstest;
+
+    use super::*;
 
     #[rstest]
     fn test_exec_config_default_account_address_is_none() {

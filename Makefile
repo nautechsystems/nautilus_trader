@@ -348,7 +348,7 @@ docs: docs-python docs-rust  #-- Build all documentation (Python and Rust)
 .PHONY: docs-python
 docs-python: export BUILD_MODE=debug
 docs-python:  #-- Build Python documentation with Sphinx
-	uv run --active --no-sync sphinx-build -M markdown ./docs/api_reference ./api_reference
+	uv run --active --no-sync sphinx-build -M html ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
 docs-rust: export RUSTDOCFLAGS=--enable-index-page -Zunstable-options

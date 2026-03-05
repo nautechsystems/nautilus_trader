@@ -374,7 +374,7 @@ notional = position.notional_value(current_price)
 
 :::info
 For complete type information and detailed property documentation, see the Position
-[API Reference](../api_reference/model/position.md#class-position).
+[API Reference](/docs/python-api-latest/model/position.html#nautilus_trader.model.position.Position).
 :::
 
 ## Events and tracking

@@ -57,7 +57,7 @@ custom data types:
 - `BinanceBar`: Represents data for historical requests or real-time subscriptions to Binance bars, with additional volume metrics.
 - `BinanceFuturesMarkPriceUpdate`: Represents mark price updates for Binance Futures subscriptions.
 
-See the Binance [API Reference](../api_reference/adapters/binance.md) for full definitions.
+See the Binance [API Reference](/docs/python-api-latest/adapters/binance.html) for full definitions.
 
 ## Symbology
 

@@ -3,6 +3,18 @@ revision = 3
 requires-python = ">=3.12, <3.15"
 
 [[package]]
+name = "accessible-pygments"
+version = "0.0.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pygments" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bc/c1/bbac6a50d02774f91572938964c582fff4270eee73ab822a4aeea4d8b11b/accessible_pygments-0.0.5.tar.gz", hash = "sha256:40918d3e6a2b619ad424cb91e556bd3bd8865443d9f22f1dcdf79e33c8046872", size = 1377899, upload-time = "2024-05-10T11:23:10.216Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/3f/95338030883d8c8b91223b4e21744b04d11b161a3ef117295d8241f50ab4/accessible_pygments-0.0.5-py3-none-any.whl", hash = "sha256:88ae3211e68a1d0b011504b2ffc1691feafce124b845bd072ab6f9f66f34d4b7", size = 1395903, upload-time = "2024-05-10T11:23:08.421Z" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -156,6 +168,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7d/b2/51899539b6ceeeb420d40ed3cd4b7a40519404f9baf3d4ac99dc413a834b/babel-2.18.0.tar.gz", hash = "sha256:b80b99a14bd085fcacfa15c9165f651fbb3406e66cc603abf11c5750937c992d", size = 9959554, upload-time = "2026-02-01T12:30:56.078Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/77/f5/21d2de20e8b8b0408f0681956ca2c69f1320a3848ac50e6e7f39c6159675/babel-2.18.0-py3-none-any.whl", hash = "sha256:e2b422b277c2b9a9630c1d7903c2a00d0830c409c59ac8cae9081c92f1aeba35", size = 10196845, upload-time = "2026-02-01T12:30:53.445Z" },
+]
+
+[[package]]
+name = "beautifulsoup4"
+version = "4.14.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "soupsieve" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c3/b0/1c6a16426d389813b48d95e26898aff79abbde42ad353958ad95cc8c9b21/beautifulsoup4-4.14.3.tar.gz", hash = "sha256:6292b1c5186d356bba669ef9f7f051757099565ad9ada5dd630bd9de5fa7fb86", size = 627737, upload-time = "2025-11-30T15:08:26.084Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1a/39/47f9197bdd44df24d67ac8893641e16f386c984a0619ef2ee4c51fbbc019/beautifulsoup4-4.14.3-py3-none-any.whl", hash = "sha256:0918bfe44902e6ad8d57732ba310582e98da931428d231a5ecb9e7c703a735bb", size = 107721, upload-time = "2025-11-30T15:08:24.087Z" },
 ]
 
 [[package]]
@@ -925,6 +950,22 @@ wheels = [
 ]
 
 [[package]]
+name = "furo"
+version = "2025.12.19"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "accessible-pygments" },
+    { name = "beautifulsoup4" },
+    { name = "pygments" },
+    { name = "sphinx" },
+    { name = "sphinx-basic-ng" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ec/20/5f5ad4da6a5a27c80f2ed2ee9aee3f9e36c66e56e21c00fde467b2f8f88f/furo-2025.12.19.tar.gz", hash = "sha256:188d1f942037d8b37cd3985b955839fea62baa1730087dc29d157677c857e2a7", size = 1661473, upload-time = "2025-12-19T17:34:40.889Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/b2/50e9b292b5cac13e9e81272c7171301abc753a60460d21505b606e15cf21/furo-2025.12.19-py3-none-any.whl", hash = "sha256:bb0ead5309f9500130665a26bee87693c41ce4dbdff864dbfb6b0dae4673d24f", size = 339262, upload-time = "2025-12-19T17:34:38.905Z" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1486,11 +1527,11 @@ dev = [
     { name = "types-toml" },
 ]
 docs = [
+    { name = "furo" },
     { name = "linkify-it-py" },
     { name = "myst-parser" },
     { name = "numpydoc" },
     { name = "sphinx-comments" },
-    { name = "sphinx-markdown-builder" },
 ]
 test = [
     { name = "aiohttp" },
@@ -1540,11 +1581,11 @@ dev = [
     { name = "types-toml", specifier = ">=0.10.2,<1.0.0" },
 ]
 docs = [
+    { name = "furo", specifier = "==2025.12.19" },
     { name = "linkify-it-py", specifier = ">=2.1.0,<3.0.0" },
     { name = "myst-parser", specifier = ">=5.0.0,<6.0.0" },
     { name = "numpydoc", specifier = ">=1.10.0,<2.0.0" },
     { name = "sphinx-comments", specifier = ">=0.0.3,<1.0.0" },
-    { name = "sphinx-markdown-builder", specifier = ">=0.6.9,<1.0.0" },
 ]
 test = [
     { name = "aiohttp", specifier = ">=3.13.3,<4.0.0" },
@@ -2600,6 +2641,15 @@ wheels = [
 ]
 
 [[package]]
+name = "soupsieve"
+version = "2.8.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/ae/2d9c981590ed9999a0d91755b47fc74f74de286b0f5cee14c9269041e6c4/soupsieve-2.8.3.tar.gz", hash = "sha256:3267f1eeea4251fb42728b6dfb746edc9acaffc4a45b27e19450b676586e8349", size = 118627, upload-time = "2026-01-20T04:27:02.457Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/2c/1462b1d0a634697ae9e55b3cecdcb64788e8b7d63f54d923fcd0bb140aed/soupsieve-2.8.3-py3-none-any.whl", hash = "sha256:ed64f2ba4eebeab06cc4962affce381647455978ffc1e36bb79a545b91f45a95", size = 37016, upload-time = "2026-01-20T04:27:01.012Z" },
+]
+
+[[package]]
 name = "sphinx"
 version = "9.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2628,6 +2678,18 @@ wheels = [
 ]
 
 [[package]]
+name = "sphinx-basic-ng"
+version = "1.0.0b2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sphinx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/98/0b/a866924ded68efec7a1759587a4e478aec7559d8165fac8b2ad1c0e774d6/sphinx_basic_ng-1.0.0b2.tar.gz", hash = "sha256:9ec55a47c90c8c002b5960c57492ec3021f5193cb26cebc2dc4ea226848651c9", size = 20736, upload-time = "2023-07-08T18:40:54.166Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/dd/018ce05c532a22007ac58d4f45232514cd9d6dd0ee1dc374e309db830983/sphinx_basic_ng-1.0.0b2-py3-none-any.whl", hash = "sha256:eb09aedbabfb650607e9b4b68c9d240b90b1e1be221d6ad71d61c52e29f7932b", size = 22496, upload-time = "2023-07-08T18:40:52.659Z" },
+]
+
+[[package]]
 name = "sphinx-comments"
 version = "0.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2637,20 +2699,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c0/75/5bbf29e83eaf79843180cf424d0d550bda14a1792ca51dcf79daa065ba93/sphinx-comments-0.0.3.tar.gz", hash = "sha256:00170afff27019fad08e421da1ae49c681831fb2759786f07c826e89ac94cf21", size = 7960, upload-time = "2020-08-12T00:07:31.183Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/26/97/a5c39f619375d4f81d5422377fb027075898efa6b6202c1ccf1e5bb38a32/sphinx_comments-0.0.3-py3-none-any.whl", hash = "sha256:1e879b4e9bfa641467f83e3441ac4629225fc57c29995177d043252530c21d00", size = 4591, upload-time = "2020-08-12T00:07:30.297Z" },
-]
-
-[[package]]
-name = "sphinx-markdown-builder"
-version = "0.6.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "docutils" },
-    { name = "sphinx" },
-    { name = "tabulate" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d2/f6/7566ba54c8b9744192bdf19ba01e62e1bb6cb1e8526447cdb29feb7cac7c/sphinx_markdown_builder-0.6.9.tar.gz", hash = "sha256:e89dc1b9eb837da430c2c230011fad95a3dfab0345ad503a32e35a31d284a722", size = 22707, upload-time = "2025-12-07T14:36:14.088Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/18/ee/02f9986d7818be2ccc5bce76d388e73f5a163f604f682d1ad69e6bc0df7c/sphinx_markdown_builder-0.6.9-py3-none-any.whl", hash = "sha256:35b555760c48d4a38fe4b27813cb5ca636bbd22d8ef0742ac6959043f8000840", size = 16717, upload-time = "2025-12-07T14:36:12.646Z" },
 ]
 
 [[package]]
@@ -2705,15 +2753,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3b/44/6716b257b0aa6bfd51a1b31665d1c205fb12cb5ad56de752dfa15657de2f/sphinxcontrib_serializinghtml-2.0.0.tar.gz", hash = "sha256:e9d912827f872c029017a53f0ef2180b327c3f7fd23c87229f7a8e8b70031d4d", size = 16080, upload-time = "2024-07-29T01:10:09.332Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/52/a7/d2782e4e3f77c8450f727ba74a8f12756d5ba823d81b941f1b04da9d033a/sphinxcontrib_serializinghtml-2.0.0-py3-none-any.whl", hash = "sha256:6e2cb0eef194e10c27ec0023bfeb25badbbb5868244cf5bc5bdc04e4464bf331", size = 92072, upload-time = "2024-07-29T01:10:08.203Z" },
-]
-
-[[package]]
-name = "tabulate"
-version = "0.10.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/46/58/8c37dea7bbf769b20d58e7ace7e5edfe65b849442b00ffcdd56be88697c6/tabulate-0.10.0.tar.gz", hash = "sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d", size = 91754, upload-time = "2026-03-04T18:55:34.402Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl", hash = "sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3", size = 39814, upload-time = "2026-03-04T18:55:31.284Z" },
 ]
 
 [[package]]

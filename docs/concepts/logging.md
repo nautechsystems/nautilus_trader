@@ -91,7 +91,7 @@ The following log levels are supported:
 You can set `TRACE` as a filter level to capture trace logs from Rust components, even though Python code cannot emit them directly.
 :::
 
-See the `LoggingConfig` [API Reference](../api_reference/config.md#class-loggingconfig) for further details.
+See the `LoggingConfig` [API Reference](/docs/python-api-latest/config.html#nautilus_trader.common.config.LoggingConfig) for further details.
 
 Logging can be configured in the following ways:
 
@@ -298,7 +298,7 @@ log_guard = init_logging()
 logger = Logger("MyLogger")
 ```
 
-See the [`init_logging` API Reference](../api_reference/common.md) for further details.
+See the [`init_logging` API Reference](/docs/python-api-latest/common.html) for further details.
 
 :::warning
 Only one logging subsystem can be initialized per process with an `init_logging` call. Multiple `LogGuard` instances (up to 255) can exist concurrently, and the logging thread will remain active until all guards are dropped.

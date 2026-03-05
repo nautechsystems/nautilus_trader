@@ -64,7 +64,7 @@ from nautilus_trader.model.instruments import Instrument
 instrument = Instrument(...)  # <-- provide all necessary parameters
 ```
 
-See the full instrument [API Reference](../api_reference/model/instruments.md).
+See the full instrument [API Reference](/docs/python-api-latest/model/instruments.html).
 
 ## Live trading
 
@@ -507,7 +507,7 @@ Considerable effort has been made to validate inputs, including the derivation f
 synthetic instruments. Despite this, caution is advised as invalid or erroneous inputs may lead to
 undefined behavior.
 
-See the [`SyntheticInstrument` API Reference](../api_reference/model/instruments.md#class-syntheticinstrument-1) for input requirements and potential exceptions.
+See the [`SyntheticInstrument` API Reference](/docs/python-api-latest/model/instruments.html#nautilus_trader.model.instruments.synthetic.SyntheticInstrument) for input requirements and potential exceptions.
 
 ## Related guides
 

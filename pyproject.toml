@@ -113,7 +113,7 @@ docs = [
   "linkify-it-py>=2.1.0,<3.0.0",
   "myst-parser>=5.0.0,<6.0.0",
   "sphinx-comments>=0.0.3,<1.0.0",
-  "sphinx-markdown-builder>=0.6.9,<1.0.0",
+  "furo==2025.12.19", # Pinned to 2025.12.19 for stability
 ]
 
 [tool.isort]

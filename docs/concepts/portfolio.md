@@ -147,7 +147,7 @@ stat = WinRate()
 engine.portfolio.analyzer.register_statistic(stat)
 ```
 
-See the [`PortfolioAnalyzer` API Reference](../api_reference/analysis.md#class-portfolioanalyzer) for all available methods.
+See the [`PortfolioAnalyzer` API Reference](/docs/python-api-latest/analysis.html#nautilus_trader.analysis.analyzer.PortfolioAnalyzer) for all available methods.
 
 :::tip
 Your statistic should handle degenerate inputs such as `None`, empty series, or insufficient data.

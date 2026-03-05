@@ -92,6 +92,6 @@ between backtesting and live trading.
 Requirements and best practices for developing integration adapters for data providers and trading venues.
 
 :::note
-The [API Reference](../api_reference/index.md) is the source of truth for the platform.
-If there are discrepancies between these guides and the API Reference, the API Reference is correct.
+The Python API reference (linked in the sidebar) is the source of truth for the platform.
+If there are discrepancies between these guides and the API reference, the API reference is correct.
 :::

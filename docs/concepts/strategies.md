@@ -23,7 +23,7 @@ Using the basic building blocks of data ingest, event handling, and order manage
 below), it's possible to implement any type of strategy including directional, momentum, re-balancing,
 pairs, market making etc.
 
-See the [`Strategy` API Reference](../api_reference/trading.md) for all available methods.
+See the [`Strategy` API Reference](/docs/python-api-latest/trading.html) for all available methods.
 
 There are two main parts of a Nautilus trading strategy:
 
@@ -239,7 +239,7 @@ def on_start(self) -> None:
 Strategies have access to a `Clock` which provides a number of methods for creating
 different timestamps, as well as setting time alerts or timers to trigger `TimeEvent`s.
 
-See the [`Clock` API Reference](../api_reference/common.md) for all available methods.
+See the [`Clock` API Reference](/docs/python-api-latest/common.html) for all available methods.
 
 #### Current timestamps
 
@@ -319,7 +319,7 @@ order = self.cache.order(client_order_id)
 position = self.cache.position(position_id)
 ```
 
-See the [`Cache` API Reference](../api_reference/cache.md) for all available methods.
+See the [`Cache` API Reference](/docs/python-api-latest/cache.html) for all available methods.
 
 ### Portfolio access
 
@@ -357,7 +357,7 @@ def is_flat(self, instrument_id: InstrumentId) -> bool
 def is_completely_flat(self) -> bool
 ```
 
-See the [`Portfolio` API Reference](../api_reference/portfolio.md) for all available methods.
+See the [`Portfolio` API Reference](/docs/python-api-latest/portfolio.html) for all available methods.
 
 #### Reports and analysis
 
@@ -365,7 +365,7 @@ The `Portfolio` also makes a `PortfolioAnalyzer` available, which can be fed wit
 (to accommodate different lookback windows). The analyzer can provide tracking for and generating of performance
 metrics and statistics.
 
-See the [`PortfolioAnalyzer` API Reference](../api_reference/analysis.md) and [Portfolio statistics](portfolio.md#portfolio-statistics) guide.
+See the [`PortfolioAnalyzer` API Reference](/docs/python-api-latest/analysis.html) and [Portfolio statistics](portfolio.md#portfolio-statistics) guide.
 
 ### Trading commands
 
@@ -683,7 +683,7 @@ various commands and events belong to. A strategy ID is made up of the
 strategy class name, and the strategies `order_id_tag` separated by a hyphen. For
 example the above config would result in a strategy ID of `MyStrategy-001`.
 
-See the [`StrategyId` API Reference](../api_reference/model/identifiers.md) for further details.
+See the [`StrategyId` API Reference](/docs/python-api-latest/model/identifiers.html) for further details.
 
 ## Related guides
 
