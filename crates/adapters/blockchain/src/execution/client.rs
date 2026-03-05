@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
@@ -44,7 +41,9 @@ use nautilus_model::{
 };
 
 use crate::{
-    config::BlockchainExecutionClientConfig, contracts::erc20::Erc20Contract,
+    config::BlockchainExecutionClientConfig,
+    contracts::erc20::Erc20Contract,
+    execution::metadata_store::{InMemoryMetadataStore, MetadataStore},
     rpc::http::BlockchainHttpRpcClient,
 };
 
@@ -53,8 +52,8 @@ use crate::{
 pub struct BlockchainExecutionClient {
     /// Core execution client providing base functionality.
     core: ExecutionClientCore,
-    /// In-memory cache for token metadata fetched via RPC calls.
-    token_cache: HashMap<Address, Token>,
+    /// Metadata store for token and pool details required during execution.
+    metadata_store: Box<dyn MetadataStore>,
     /// The blockchain network configuration.
     chain: SharedChain,
     /// The wallet address used for transactions and balance queries.
@@ -76,6 +75,19 @@ impl BlockchainExecutionClient {
     pub fn new(
         core_client: ExecutionClientCore,
         config: BlockchainExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
+        Self::with_metadata_store(core_client, config, Box::new(InMemoryMetadataStore::new()))
+    }
+
+    /// Creates a new [`BlockchainExecutionClient`] instance with a caller-supplied metadata store.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the wallet address or any token address in the config is invalid.
+    pub fn with_metadata_store(
+        core_client: ExecutionClientCore,
+        config: BlockchainExecutionClientConfig,
+        metadata_store: Box<dyn MetadataStore>,
     ) -> anyhow::Result<Self> {
         let chain = Arc::new(config.chain);
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
@@ -100,7 +112,7 @@ impl BlockchainExecutionClient {
             core: core_client,
             wallet_balance,
             chain,
-            token_cache: HashMap::new(),
+            metadata_store,
             erc20_contract,
             http_rpc_client,
             wallet_address,
@@ -128,7 +140,7 @@ impl BlockchainExecutionClient {
         token_address: &Address,
     ) -> anyhow::Result<TokenBalance> {
         // Get the cached token or fetch it from the blockchain and cache it.
-        let token = if let Some(token) = self.token_cache.get(token_address) {
+        let token = if let Some(token) = self.metadata_store.get_token(token_address) {
             token.to_owned()
         } else {
             let token_info = self.erc20_contract.fetch_token_info(token_address).await?;
@@ -139,7 +151,7 @@ impl BlockchainExecutionClient {
                 token_info.symbol,
                 token_info.decimals,
             );
-            self.token_cache.insert(*token_address, token.clone());
+            self.metadata_store.insert_token(token.clone());
             token
         };
 
