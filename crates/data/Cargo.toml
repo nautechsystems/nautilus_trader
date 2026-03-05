@@ -31,6 +31,12 @@ ffi = [
   "streaming",
 ]
 high-precision = ["nautilus-model/high-precision"]
+extension-module = [
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+  "pyo3/extension-module",
+]
+python = ["nautilus-core/python", "nautilus-model/python", "pyo3"]
 defi = ["nautilus-common/defi", "nautilus-model/defi", "alloy-primitives"]
 
 [package.metadata.docs.rs]
@@ -53,6 +59,7 @@ log = { workspace = true }
 ustr = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
