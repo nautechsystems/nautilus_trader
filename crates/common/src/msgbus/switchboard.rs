@@ -38,6 +38,7 @@ static EXEC_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static EXEC_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static EXEC_RECONCILE_REPORT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static RISK_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static RISK_QUEUE_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static RISK_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static ORDER_EMULATOR_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ACCOUNT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
@@ -140,6 +141,15 @@ macro_rules! define_switchboard {
             #[must_use]
             pub fn risk_engine_execute() -> MStr<Endpoint> {
                 *RISK_EXECUTE_ENDPOINT.get_or_init(|| "RiskEngine.execute".into())
+            }
+
+            /// Queued endpoint for deferred command execution (re-entrancy safe).
+            /// Falls back to direct endpoint when no `TradingCommandSender` is
+            /// available (backtest / test environments).
+            #[inline]
+            #[must_use]
+            pub fn risk_engine_queue_execute() -> MStr<Endpoint> {
+                *RISK_QUEUE_EXECUTE_ENDPOINT.get_or_init(|| "RiskEngine.queue_execute".into())
             }
 
             #[inline]

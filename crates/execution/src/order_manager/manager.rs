@@ -571,7 +571,11 @@ impl OrderManager {
 
     pub fn send_risk_command(&self, command: TradingCommand) {
         log_cmd_send(&command);
-        let endpoint = MessagingSwitchboard::risk_engine_execute();
+
+        // Use queued endpoint for re-entrancy safety, commands may be sent from
+        // within event handlers which hold a mutable borrow on the strategy.
+        // This mirrors the pattern used by `send_exec_command()`.
+        let endpoint = MessagingSwitchboard::risk_engine_queue_execute();
         msgbus::send_trading_command(endpoint, command);
     }
 
