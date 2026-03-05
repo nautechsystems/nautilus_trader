@@ -3530,6 +3530,22 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
   - Hardened the PyO3 registry test by asserting `BlockchainDataClientConfig` is present in the blockchain module under `--features python`.
   - Tests run: `cargo fmt --all -- --check` (pass), `cargo test -p nautilus-blockchain` (pass), `cargo test -p nautilus-blockchain --features python --test pyo3_exec_registry` (pass), `cargo test -p nautilus-blockchain --features python` (pass).
 
+- 2026-03-05 - PR3 (`pr3/feature-gating-metadata-store`, head SHA `e612430266d9a6f6b7cbe2d8cfe01782f70269e4`) - status: ready
+  - Introduced `execution::metadata_store` with `TokenMetadataStore` and `PoolMetadataStore` traits plus `InMemoryMetadataStore` to keep execution metadata decoupled from hypersync cache types.
+  - Refactored `BlockchainExecutionClient` to use the metadata-store boundary (`Box<dyn MetadataStore>`) with a default in-memory backend and retained existing execution behavior.
+  - Added integration coverage in `crates/adapters/blockchain/tests/execution_metadata_store.rs` for token/pool metadata roundtrip behavior.
+  - Tests run:
+    - `cargo test -p nautilus-blockchain --test execution_metadata_store` (fail: unresolved import before module implementation)
+    - `cargo test -p nautilus-blockchain --test execution_metadata_store` (fail: checksum-invalid test addresses; test fixture corrected)
+    - `cargo test -p nautilus-blockchain --test execution_metadata_store` (pass)
+    - `cargo fmt --all -- --check` (fail: formatting drift on touched files, then pass after formatting)
+    - `cargo fmt --all` (pass)
+    - `cargo test -p nautilus-model --features defi` (pass)
+    - `cargo test -p nautilus-blockchain` (pass)
+    - `cargo test -p nautilus-blockchain --features python` (pass)
+    - `cargo test -p nautilus-blockchain --features "python,hypersync"` (pass)
+    - `cargo test -p nautilus-pyo3 --features defi` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
