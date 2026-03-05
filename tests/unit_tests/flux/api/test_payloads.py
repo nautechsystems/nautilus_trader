@@ -22,6 +22,7 @@ from nautilus_trader.flux.api.payloads import build_envelope
 from nautilus_trader.flux.api.payloads import build_legs_payload
 from nautilus_trader.flux.api.payloads import build_signals_payload
 from nautilus_trader.flux.api.payloads import build_trades_rows
+from nautilus_trader.flux.api.payloads import extract_stream_rows
 
 
 def test_build_envelope_includes_standard_fields() -> None:
@@ -271,3 +272,30 @@ def test_build_trades_rows_enforces_row_contract_defaults() -> None:
     assert rows[2]["version"] == 1
     assert rows[2]["row_id"] == "strategy_01:trade:102:0:1"
     assert rows[2]["ts_ms"] == 0
+
+
+def test_extract_stream_rows_accepts_flat_field_entries_without_payload_wrapper() -> None:
+    rows = extract_stream_rows(
+        [
+            (
+                b"1700000000000-0",
+                {
+                    b"strategy_id": b"strategy_01",
+                    b"row_id": b"trade-1",
+                    b"seq": b"101",
+                    b"ts_ms": b"1700000000000",
+                    b"exchange": b"bybit",
+                },
+            ),
+        ],
+    )
+
+    assert rows == [
+        {
+            "strategy_id": "strategy_01",
+            "row_id": "trade-1",
+            "seq": 101,
+            "ts_ms": 1_700_000_000_000,
+            "exchange": "bybit",
+        },
+    ]

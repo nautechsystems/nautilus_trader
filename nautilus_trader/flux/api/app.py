@@ -298,7 +298,7 @@ class FluxApiStore:
         except ValueError as exc:
             raise ParamsStoreValidationError(str(exc)) from exc
 
-    def discover_strategy_ids_from_params(self, *, limit: int = 200) -> list[str]:
+    def discover_strategy_ids_from_params(self, *, limit: int = 200, include_default: bool = True) -> list[str]:
         max_items = max(1, min(2_000, int(limit)))
         key_prefix = f"{self._config.identity.namespace}:{self._config.identity.schema_version}:params:"
         out: list[str] = []
@@ -340,7 +340,7 @@ class FluxApiStore:
                     break
 
         default_strategy_id = self._config.identity.strategy_id
-        if default_strategy_id not in seen and len(out) < max_items:
+        if include_default and default_strategy_id not in seen and len(out) < max_items:
             out.append(default_strategy_id)
 
         return sorted(out)
@@ -754,20 +754,37 @@ def create_flux_api_app(
         mapped_ids = _coerce_strategy_ids(profile_strategy_map.get(normalized))
         if normalized != "tokenmm":
             return mapped_ids
-        discovered_ids = store.discover_strategy_ids_from_params(limit=200)
-        if not mapped_ids:
-            return discovered_ids
-        seen = set(mapped_ids)
-        for strategy_id in discovered_ids:
-            if strategy_id in seen:
-                continue
-            seen.add(strategy_id)
-            mapped_ids.append(strategy_id)
-        return mapped_ids
+        discovered_ids = store.discover_strategy_ids_from_params(limit=200, include_default=False)
+        if discovered_ids:
+            ordered: list[str] = []
+            seen: set[str] = set()
+            for strategy_id in [*discovered_ids, *mapped_ids]:
+                if strategy_id in seen:
+                    continue
+                seen.add(strategy_id)
+                ordered.append(strategy_id)
+            return ordered
+        if mapped_ids:
+            return mapped_ids
+        return store.discover_strategy_ids_from_params(limit=200, include_default=True)
 
     def _strategy_for_profile(profile: str) -> str | None:
         strategy_ids = _strategy_ids_for_profile(profile)
         return strategy_ids[0] if strategy_ids else None
+
+    def _resolve_strategy_id_for_request(*, field_name: str = "strategy") -> str:
+        strategy_raw = request.args.get("strategy")
+        strategy_text = decode_text(strategy_raw).strip()
+        if strategy_text:
+            return _resolve_strategy_id(strategy_text, field_name=field_name)
+
+        profile_text = decode_text(request.args.get("profile")).strip()
+        if profile_text:
+            resolved_strategy = _strategy_for_profile(profile_text)
+            if resolved_strategy:
+                return _resolve_strategy_id(resolved_strategy, field_name=field_name)
+
+        return _resolve_strategy_id(None, field_name=field_name)
 
     create_flux_socket_server(
         app,
@@ -1012,7 +1029,7 @@ def create_flux_api_app(
 
                 updates_batch.append((index, sid, dict(item_params)))
         else:
-            strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
+            strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
             updates = _params_request_payload()
             if not updates:
                 return _error(
@@ -1073,7 +1090,7 @@ def create_flux_api_app(
 
     @app.get("/api/v1/signals")
     def api_signals() -> Response:
-        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
+        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         try:
             strategy_payload = store.load_signals_payload(strategy_id, _metadata_for_strategy(strategy_id))
         except ParamsStoreValidationError as exc:
@@ -1094,7 +1111,7 @@ def create_flux_api_app(
 
     @app.get("/api/v1/strategies")
     def api_strategies() -> Response:
-        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
+        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         try:
             strategy_payload = store.load_signals_payload(strategy_id, _metadata_for_strategy(strategy_id))
         except ParamsStoreValidationError as exc:
@@ -1164,7 +1181,7 @@ def create_flux_api_app(
 
     @app.get("/api/v1/balances")
     def api_balances() -> Response:
-        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
+        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         rows = store.load_balances_rows(strategy_id)
         total_rows = len(rows)
@@ -1181,7 +1198,7 @@ def create_flux_api_app(
 
     @app.get("/api/v1/trades")
     def api_trades() -> Response:
-        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
+        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         requested_limit_raw = request.args.get("limit")
         requested_limit = safe_int(requested_limit_raw)
         limit = _clamp_limit(requested_limit_raw, default=50, minimum=1, maximum=200)
@@ -1252,7 +1269,7 @@ def create_flux_api_app(
 
     @app.get("/api/v1/trades/delta")
     def api_trades_delta() -> Response:
-        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
+        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         since_seq = safe_int(request.args.get("since_seq"))
         since_ms = None if since_seq is not None else coerce_ts_ms(request.args.get("after"))
@@ -1281,7 +1298,16 @@ def create_flux_api_app(
 
             min_seq = min(parsed_seqs)
             max_seq = max(parsed_seqs)
-            if since_seq < (min_seq - 1) or since_seq > max_seq:
+            if since_seq < (min_seq - 1):
+                return _ok(
+                    data={
+                        "rows": [],
+                        "last_seq": int(since_seq),
+                        "reset_required": True,
+                    },
+                )
+
+            if since_seq > max_seq:
                 return _ok(
                     data={
                         "rows": [],
@@ -1318,7 +1344,7 @@ def create_flux_api_app(
 
     @app.get("/api/v1/alerts")
     def api_alerts() -> Response:
-        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
+        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         offset = _clamp_offset(request.args.get("offset"), default=0)
         all_rows = store.load_all_alerts_rows(strategy_id)
@@ -1338,7 +1364,7 @@ def create_flux_api_app(
 
     @app.delete("/api/v1/alerts")
     def api_alerts_delete() -> Response:
-        strategy_id = _resolve_strategy_id(request.args.get("strategy"), field_name="strategy")
+        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         deleted = store.clear_alerts(strategy_id)
         remaining = len(store.load_all_alerts_rows(strategy_id))
         return _ok(

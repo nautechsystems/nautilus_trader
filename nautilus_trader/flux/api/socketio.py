@@ -522,7 +522,7 @@ class FluxSocketEmitter:
                 trade=normalized,
                 server_ts_ms=now_ms(),
             )
-                self._socketio.emit("trade_update", payload, to=room)
+            self._socketio.emit("trade_update", payload, to=room)
 
         alerts_signature = _alerts_signature(alerts_rows, total_count=alerts_total)
         strategy_changed = previous_signal != signal_payload

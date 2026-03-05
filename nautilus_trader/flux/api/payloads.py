@@ -209,6 +209,23 @@ def extract_stream_rows(stream_entries: Any) -> list[dict[str, Any]]:
             for item in parsed:
                 if isinstance(item, dict):
                     rows.append(dict(item))
+            continue
+
+        flat_row: dict[str, Any] = {}
+        for raw_key, raw_value in fields.items():
+            key = decode_text(raw_key).strip()
+            if not key or key == "payload":
+                continue
+            parsed_value = load_json(raw_value)
+            if parsed_value is None:
+                text_value = decode_text(raw_value)
+                if text_value == "":
+                    continue
+                flat_row[key] = text_value
+            else:
+                flat_row[key] = parsed_value
+        if flat_row:
+            rows.append(flat_row)
     return rows
 
 
