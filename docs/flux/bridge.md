@@ -36,6 +36,7 @@ Timestamp extraction order includes (first parseable wins):
 
 1. Stream fields: `ts_ms`, `timestamp`, `ts`, `ts_event`
 2. Payload fields: `ts_ms`, `timestamp`, `ts`, `ts_event`, `time`, `datetime`
+3. Rows-wrapped payloads: if payload contains `rows: [...]`, the first row is also checked for `ts_ms`, `timestamp`, `ts`, `ts_event`, `time`, `datetime`
 
 If no parseable timestamp is found, the entry is rejected.
 
@@ -63,7 +64,7 @@ All persisted rows include correlation fields:
 1. Stream discovery uses Redis `SCAN` over configured topic patterns.
 2. Ingest loop uses `XREAD` with per-stream offsets.
 3. Write operations are applied atomically via Redis transaction pipeline.
-4. Handler exceptions are logged and the failed entry is skipped.
+4. Decode/handler exceptions are logged and the failed entry is skipped.
 5. Redis read/write failures are logged and retried by the run loop.
 
 ## Runner notes

@@ -422,7 +422,9 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             exc,
                         )
-                        break
+                        # Decode failures are permanent for this entry; advance offset and continue.
+                        self._stream_ids[stream_key] = entry_id
+                        continue
                     if decoded is None:
                         self._logger.error(
                             "Rejected stream entry stream=%s id=%s err=%s",
@@ -430,7 +432,8 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             "decode returned no payload",
                         )
-                        break
+                        self._stream_ids[stream_key] = entry_id
+                        continue
                     payload, context = decoded
 
                     handler = self._handlers.get(context.topic)
@@ -441,7 +444,8 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             f"missing handler for topic={context.topic}",
                         )
-                        break
+                        self._stream_ids[stream_key] = entry_id
+                        continue
 
                     try:
                         ops = handler(payload, context)
@@ -453,7 +457,9 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             exc,
                         )
-                        break
+                        # Handler failures should not stall the stream; skip this entry.
+                        self._stream_ids[stream_key] = entry_id
+                        continue
 
                     try:
                         self._apply_write_ops(ops)
@@ -465,6 +471,8 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             exc,
                         )
+                        # Redis failures are retried; do not advance offset on failure.
+                        time.sleep(0.25)
                         break
 
                     self._stream_ids[stream_key] = entry_id

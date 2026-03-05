@@ -54,7 +54,7 @@ This table is the authoritative source for production high-churn retention defau
 ## Bridge and API contract
 
 1. Bridge normalizes all incoming timestamps to `ts_ms` before writes.
-2. Bridge rejects or dead-letters records missing `strategy_id` or parseable timestamp.
+2. Bridge rejects records missing `strategy_id` or parseable timestamp and skips them (does not stall stream consumption).
 3. API reads only canonical `flux:v1:*` output keys/channels and returns `ts_ms` unchanged.
 4. API must not infer strategy context from global keys; `strategy_id` is explicit in every lookup path.
 
