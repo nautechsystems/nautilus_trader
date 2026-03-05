@@ -261,10 +261,10 @@ impl AmmProtocolAdapter for PancakeSwapV2Adapter {
                         || swapped.token_out != expected_token_out
                     {
                         anyhow::bail!(
-                                "decoded swap direction does not match expected path token_in={} token_out={}",
-                                swapped.token_in,
-                                swapped.token_out
-                            );
+                            "decoded swap direction does not match expected path token_in={} token_out={}",
+                            swapped.token_in,
+                            swapped.token_out
+                        );
                     }
                     swapped
                 }
