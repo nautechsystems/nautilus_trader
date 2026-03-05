@@ -58,6 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arbitrum_config = BlockchainExecutionClientConfig::new(
         trader_id,
         account,
+        *BLOCKCHAIN_VENUE,
         arbitrum,
         String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"),
         Some(vec![
@@ -70,6 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ethereum_config = BlockchainExecutionClientConfig::new(
         trader_id,
         account,
+        *BLOCKCHAIN_VENUE,
         ethereum,
         String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"),
         Some(vec![
@@ -82,10 +84,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     );
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let core_execution_client = ExecutionClientCore::new(
+    let ethereum_core_execution_client = ExecutionClientCore::new(
         trader_id,
         ClientId::new("BLOCKCHAIN"),
-        *BLOCKCHAIN_VENUE,
+        ethereum_config.venue,
+        OmsType::Netting,
+        account,
+        AccountType::Wallet,
+        None,
+        cache.clone(),
+    );
+    let arbitrum_core_execution_client = ExecutionClientCore::new(
+        trader_id,
+        ClientId::new("BLOCKCHAIN"),
+        arbitrum_config.venue,
         OmsType::Netting,
         account,
         AccountType::Wallet,
@@ -94,9 +106,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mut ethereum_execution_client =
-        BlockchainExecutionClient::new(core_execution_client.clone(), ethereum_config)?;
+        BlockchainExecutionClient::new(ethereum_core_execution_client, ethereum_config)?;
     let mut arbitrum_execution_client =
-        BlockchainExecutionClient::new(core_execution_client, arbitrum_config)?;
+        BlockchainExecutionClient::new(arbitrum_core_execution_client, arbitrum_config)?;
 
     get_runtime().block_on(async move {
         ethereum_execution_client.connect().await?;

@@ -3502,6 +3502,16 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
   - Added DeFi false-positive allowlist entries for spell hooks in `.codespellrc` and `.typos.toml`.
   - Tests run: `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md` (pass), `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md` (pass), `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md` (pass).
 
+- 2026-03-05 - PR1 (`pr1/venue-routing`, head SHA `7b1cb9896aa8f8f402df034a0384dc6c0626f849`) - status: open
+  - Added `venue: Venue` to `BlockchainExecutionClientConfig` and wired it through execution client construction.
+  - Removed execution-factory hardcoding to `BLOCKCHAIN_VENUE`; execution core now uses the config venue.
+  - Added a unit test asserting execution factory venue propagation and updated `node_wallet` core initialization to avoid hardcoded venue values.
+  - Tests run: `cargo test -p nautilus-blockchain --features hypersync test_execution_factory_propagates_config_venue -- --nocapture` (pass), `cargo test -p nautilus-blockchain` (pass), `cargo fmt --all -- --check` (pass).
+
+- 2026-03-05 - PR1 (`pr1/venue-routing`, head SHA `c8eeba7cfdb90c96ec5a237a2d53f42f9f3f5e8e`) - status: open
+  - Corrected `BlockchainExecutionClientFactory` downcast error text to reference `BlockchainExecutionClientConfig` instead of data-client config types.
+  - Tests run: `cargo test -p nautilus-blockchain --features hypersync test_execution_factory_propagates_config_venue -- --nocapture` (pass), `cargo test -p nautilus-blockchain` (pass).
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.

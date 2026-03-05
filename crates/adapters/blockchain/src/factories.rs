@@ -34,7 +34,6 @@ use nautilus_system::{
 
 use crate::{
     config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig},
-    constants::BLOCKCHAIN_VENUE,
     data::client::BlockchainDataClient,
     execution::client::BlockchainExecutionClient,
 };
@@ -149,14 +148,14 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
             .downcast_ref::<BlockchainExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BlockchainDataClientFactory. Expected `BlockchainDataClientConfig`, was {config:?}"
+                    "Invalid config type for BlockchainExecutionClientFactory. Expected `BlockchainExecutionClientConfig`, was {config:?}"
                 )
             })?;
 
         let core_execution_client = ExecutionClientCore::new(
             blockchain_execution_config.trader_id,
             ClientId::from(name),
-            *BLOCKCHAIN_VENUE,
+            blockchain_execution_config.venue,
             OmsType::Netting,
             blockchain_execution_config.client_id,
             AccountType::Wallet,
@@ -183,13 +182,21 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
 
+    use nautilus_common::cache::Cache;
     use nautilus_model::defi::chain::{Blockchain, chains};
-    use nautilus_system::factories::DataClientFactory;
+    use nautilus_model::{
+        identifiers::{AccountId, TraderId, Venue},
+        stubs::TestDefault,
+    };
+    use nautilus_system::{ExecutionClientFactory, factories::DataClientFactory};
     use rstest::rstest;
 
-    use crate::{config::BlockchainDataClientConfig, factories::BlockchainDataClientFactory};
+    use crate::{
+        config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig},
+        factories::{BlockchainDataClientFactory, BlockchainExecutionClientFactory},
+    };
 
     #[rstest]
     fn test_blockchain_data_client_config_creation() {
@@ -216,5 +223,28 @@ mod tests {
         let factory = BlockchainDataClientFactory::new();
         assert_eq!(factory.name(), "BLOCKCHAIN");
         assert_eq!(factory.config_type(), "BlockchainDataClientConfig");
+    }
+
+    #[rstest]
+    fn test_execution_factory_propagates_config_venue() {
+        let venue = Venue::new("Arbitrum:UniswapV3");
+        let config = BlockchainExecutionClientConfig::new(
+            TraderId::test_default(),
+            AccountId::test_default(),
+            venue,
+            chains::ARBITRUM.clone(),
+            String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"),
+            None,
+            String::from("https://arb.example.com"),
+            None,
+        );
+        let factory = BlockchainExecutionClientFactory::new();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let client = factory
+            .create("BLOCKCHAIN", &config, cache)
+            .expect("Execution client should be created");
+
+        assert_eq!(client.venue(), venue);
     }
 }

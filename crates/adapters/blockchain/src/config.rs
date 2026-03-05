@@ -18,7 +18,7 @@ use std::any::Any;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType, SharedChain},
-    identifiers::{AccountId, TraderId},
+    identifiers::{AccountId, TraderId, Venue},
 };
 use nautilus_system::ClientConfig;
 
@@ -141,6 +141,8 @@ pub struct BlockchainExecutionClientConfig {
     pub trader_id: TraderId,
     /// The account ID for the client.
     pub client_id: AccountId,
+    /// The execution venue used for routing in the execution engine.
+    pub venue: Venue,
     /// The blockchain chain configuration.
     pub chain: Chain,
     /// The wallet address of the execution client.
@@ -157,6 +159,7 @@ impl BlockchainExecutionClientConfig {
     pub fn new(
         trader_id: TraderId,
         client_id: AccountId,
+        venue: Venue,
         chain: Chain,
         wallet_address: String,
         tokens: Option<Vec<String>>,
@@ -166,6 +169,7 @@ impl BlockchainExecutionClientConfig {
         Self {
             trader_id,
             client_id,
+            venue,
             chain,
             wallet_address,
             tokens,
