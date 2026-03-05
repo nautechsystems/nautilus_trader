@@ -26,19 +26,15 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     messages::data::{
-        SubscribeCommand, SubscribeIndexPrices, SubscribeMarkPrices, SubscribeOptionChain,
-        SubscribeOptionGreeks, SubscribeQuotes, UnsubscribeCommand, UnsubscribeOptionGreeks,
-        UnsubscribeQuotes,
+        SubscribeCommand, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
+        UnsubscribeCommand, UnsubscribeOptionGreeks, UnsubscribeQuotes,
     },
     msgbus::{self, MStr, Topic, TypedHandler, switchboard},
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{UUID4, correctness::FAILED, datetime::millis_to_nanos_unchecked};
 use nautilus_model::{
-    data::{
-        IndexPriceUpdate, MarkPriceUpdate, QuoteTick,
-        option_chain::{AtmSource, OptionGreeks},
-    },
+    data::{QuoteTick, option_chain::OptionGreeks},
     enums::OptionKind,
     identifiers::{InstrumentId, OptionSeriesId, Venue},
     instruments::Instrument,
@@ -48,10 +44,7 @@ use ustr::Ustr;
 
 use super::{
     AtmTracker, OptionChainAggregator,
-    handlers::{
-        OptionChainGreeksHandler, OptionChainIndexPriceHandler, OptionChainMarkPriceHandler,
-        OptionChainQuoteHandler, OptionChainSlicePublisher,
-    },
+    handlers::{OptionChainGreeksHandler, OptionChainQuoteHandler, OptionChainSlicePublisher},
 };
 use crate::{
     client::DataClientAdapter,
@@ -66,12 +59,9 @@ use crate::{
 #[derive(Debug)]
 pub struct OptionChainManager {
     aggregator: OptionChainAggregator,
-    atm_source: AtmSource,
     topic: MStr<Topic>,
     quote_handlers: Vec<TypedHandler<QuoteTick>>,
     greeks_handlers: Vec<TypedHandler<OptionGreeks>>,
-    mark_handler: Option<TypedHandler<MarkPriceUpdate>>,
-    index_handler: Option<TypedHandler<IndexPriceUpdate>>,
     timer_name: Option<Ustr>,
     msgbus_priority: u8,
     /// Whether the first ATM price has been received and the active set bootstrapped.
@@ -96,7 +86,6 @@ impl OptionChainManager {
         series_id: OptionSeriesId,
         cache: Rc<RefCell<Cache>>,
         cmd: &SubscribeOptionChain,
-        resolved_atm_source: AtmSource,
         clock: &Rc<RefCell<dyn Clock>>,
         msgbus_priority: u8,
         client: Option<&mut DataClientAdapter>,
@@ -106,7 +95,7 @@ impl OptionChainManager {
         let topic = switchboard::get_option_chain_topic(series_id);
         let instruments = Self::resolve_instruments(&cache, &series_id);
 
-        let mut tracker = AtmTracker::new(resolved_atm_source);
+        let mut tracker = AtmTracker::new();
 
         // Derive forward price precision from instrument strike prices
         if let Some((strike, _)) = instruments.values().next() {
@@ -131,12 +120,9 @@ impl OptionChainManager {
 
         let manager = Self {
             aggregator,
-            atm_source: resolved_atm_source,
             topic,
             quote_handlers: Vec::new(),
             greeks_handlers: Vec::new(),
-            mark_handler: None,
-            index_handler: None,
             timer_name: None,
             msgbus_priority,
             bootstrapped,
@@ -147,7 +133,7 @@ impl OptionChainManager {
         let manager_rc = Rc::new(RefCell::new(manager));
 
         // Register msgbus handlers for initial active set only
-        let (quote_handlers, quote_handler) = Self::register_quote_handlers(
+        let (quote_handlers, _quote_handler) = Self::register_quote_handlers(
             &manager_rc,
             &active_instrument_ids,
             series_id,
@@ -159,20 +145,12 @@ impl OptionChainManager {
             series_id,
             msgbus_priority,
         );
-        let (mark_handler, index_handler) = Self::register_atm_handler(
-            &manager_rc,
-            resolved_atm_source,
-            &quote_handler,
-            series_id,
-            msgbus_priority,
-        );
 
-        // Forward wire-level subscriptions only for the active set (+ ATM source).
-        // When ATM is unknown, active set is empty → only ATM source sub goes out.
+        // Forward wire-level subscriptions for the active set.
+        // When ATM is unknown, active set is empty — deferred until bootstrap.
         Self::forward_client_subscriptions(
             client,
             &active_instrument_ids,
-            resolved_atm_source,
             cmd,
             series_id.venue,
             clock,
@@ -186,8 +164,6 @@ impl OptionChainManager {
             let mut mgr = manager_rc.borrow_mut();
             mgr.quote_handlers = quote_handlers;
             mgr.greeks_handlers = greeks_handlers;
-            mgr.mark_handler = mark_handler;
-            mgr.index_handler = index_handler;
             mgr.timer_name = timer_name;
         }
 
@@ -250,54 +226,10 @@ impl OptionChainManager {
         handlers
     }
 
-    /// Registers the ATM source handler (mark price, index price, or underlying quote).
-    fn register_atm_handler(
-        manager_rc: &Rc<RefCell<Self>>,
-        atm_source: AtmSource,
-        quote_handler: &TypedHandler<QuoteTick>,
-        series_id: OptionSeriesId,
-        priority: u8,
-    ) -> (
-        Option<TypedHandler<MarkPriceUpdate>>,
-        Option<TypedHandler<IndexPriceUpdate>>,
-    ) {
-        match atm_source {
-            AtmSource::MarkPrice(source_id) => {
-                let handler = TypedHandler::new(OptionChainMarkPriceHandler::new(
-                    manager_rc.clone(),
-                    series_id,
-                ));
-                let topic = switchboard::get_mark_price_topic(source_id);
-                msgbus::subscribe_mark_prices(topic.into(), handler.clone(), Some(priority));
-                (Some(handler), None)
-            }
-            AtmSource::IndexPrice(source_id) => {
-                let handler = TypedHandler::new(OptionChainIndexPriceHandler::new(
-                    manager_rc.clone(),
-                    series_id,
-                ));
-                let topic = switchboard::get_index_price_topic(source_id);
-                msgbus::subscribe_index_prices(topic.into(), handler.clone(), Some(priority));
-                (None, Some(handler))
-            }
-            AtmSource::UnderlyingQuoteMid(source_id) => {
-                let topic = switchboard::get_quotes_topic(source_id);
-                msgbus::subscribe_quotes(topic.into(), quote_handler.clone(), Some(priority));
-                (None, None)
-            }
-            AtmSource::ForwardPrice => {
-                // No separate ATM handler needed — forward price comes from
-                // the greeks stream, which is already subscribed via greeks_handlers
-                (None, None)
-            }
-        }
-    }
-
-    /// Forwards subscribe commands to the data client for all instruments and ATM source.
+    /// Forwards subscribe commands to the data client for all instruments.
     fn forward_client_subscriptions(
         client: Option<&mut DataClientAdapter>,
         instrument_ids: &[InstrumentId],
-        atm_source: AtmSource,
         cmd: &SubscribeOptionChain,
         venue: Venue,
         clock: &Rc<RefCell<dyn Clock>>,
@@ -332,48 +264,8 @@ impl OptionChainManager {
             }));
         }
 
-        match atm_source {
-            AtmSource::MarkPrice(source_id) => {
-                client.execute_subscribe(&SubscribeCommand::MarkPrices(SubscribeMarkPrices {
-                    instrument_id: source_id,
-                    client_id: cmd.client_id,
-                    venue: Some(venue),
-                    command_id: UUID4::new(),
-                    ts_init,
-                    correlation_id: None,
-                    params: None,
-                }));
-            }
-            AtmSource::IndexPrice(source_id) => {
-                client.execute_subscribe(&SubscribeCommand::IndexPrices(SubscribeIndexPrices {
-                    instrument_id: source_id,
-                    client_id: cmd.client_id,
-                    venue: Some(venue),
-                    command_id: UUID4::new(),
-                    ts_init,
-                    correlation_id: None,
-                    params: None,
-                }));
-            }
-            AtmSource::UnderlyingQuoteMid(source_id) => {
-                client.execute_subscribe(&SubscribeCommand::Quotes(SubscribeQuotes {
-                    instrument_id: source_id,
-                    client_id: cmd.client_id,
-                    venue: Some(venue),
-                    command_id: UUID4::new(),
-                    ts_init,
-                    correlation_id: None,
-                    params: None,
-                }));
-            }
-            AtmSource::ForwardPrice => {
-                // No separate ATM source subscription needed — forward price
-                // arrives in the option ticker stream (greeks), already subscribed
-            }
-        }
-
         log::info!(
-            "Forwarded {} quote + {} greeks subscriptions + ATM source to DataClient",
+            "Forwarded {} quote + {} greeks subscriptions to DataClient",
             instrument_ids.len(),
             instrument_ids.len(),
         );
@@ -418,12 +310,6 @@ impl OptionChainManager {
         self.aggregator.all_instrument_ids()
     }
 
-    /// Returns the ATM source for this option chain.
-    #[must_use]
-    pub fn atm_source(&self) -> AtmSource {
-        self.atm_source
-    }
-
     /// Returns the venue for this option chain.
     #[must_use]
     pub fn venue(&self) -> Venue {
@@ -449,29 +335,6 @@ impl OptionChainManager {
                 let topic = switchboard::get_option_greeks_topic(*instrument_id);
                 msgbus::unsubscribe_option_greeks(topic.into(), handler);
             }
-        }
-
-        // Unsubscribe ATM source handler from msgbus
-        match self.atm_source {
-            AtmSource::MarkPrice(source_id) => {
-                if let Some(handler) = self.mark_handler.take() {
-                    let topic = switchboard::get_mark_price_topic(source_id);
-                    msgbus::unsubscribe_mark_prices(topic.into(), &handler);
-                }
-            }
-            AtmSource::IndexPrice(source_id) => {
-                if let Some(handler) = self.index_handler.take() {
-                    let topic = switchboard::get_index_price_topic(source_id);
-                    msgbus::unsubscribe_index_prices(topic.into(), &handler);
-                }
-            }
-            AtmSource::UnderlyingQuoteMid(source_id) => {
-                if let Some(handler) = self.quote_handlers.first() {
-                    let topic = switchboard::get_quotes_topic(source_id);
-                    msgbus::unsubscribe_quotes(topic.into(), handler);
-                }
-            }
-            AtmSource::ForwardPrice => {}
         }
 
         // Cancel timer
@@ -506,22 +369,6 @@ impl OptionChainManager {
         {
             self.publish_slice(greeks.ts_event);
         }
-    }
-
-    /// Routes a mark price update to the ATM tracker, then bootstraps if ready.
-    pub fn handle_mark_price(&mut self, mark: &MarkPriceUpdate) {
-        self.aggregator
-            .atm_tracker_mut()
-            .update_from_mark_price(mark);
-        self.maybe_bootstrap();
-    }
-
-    /// Routes an index price update to the ATM tracker, then bootstraps if ready.
-    pub fn handle_index_price(&mut self, index: &IndexPriceUpdate) {
-        self.aggregator
-            .atm_tracker_mut()
-            .update_from_index_price(index);
-        self.maybe_bootstrap();
     }
 
     /// Handles an expired/settled instrument by removing it from the aggregator,
@@ -880,11 +727,7 @@ mod tests {
 
     use nautilus_common::clock::TestClock;
     use nautilus_core::UnixNanos;
-    use nautilus_model::{
-        data::option_chain::{AtmSource, StrikeRange},
-        identifiers::Venue,
-        types::Quantity,
-    };
+    use nautilus_model::{data::option_chain::StrikeRange, identifiers::Venue, types::Quantity};
     use rstest::*;
 
     use super::*;
@@ -898,10 +741,6 @@ mod tests {
         )
     }
 
-    fn btc_perp() -> InstrumentId {
-        InstrumentId::from("BTC-PERPETUAL.DERIBIT")
-    }
-
     fn make_test_queue() -> DeferredCommandQueue {
         Rc::new(RefCell::new(VecDeque::new()))
     }
@@ -909,8 +748,7 @@ mod tests {
     fn make_manager() -> (OptionChainManager, DeferredCommandQueue) {
         let series_id = make_series_id();
         let topic = switchboard::get_option_chain_topic(series_id);
-        let atm_source = AtmSource::MarkPrice(btc_perp());
-        let tracker = AtmTracker::new(atm_source);
+        let tracker = AtmTracker::new();
         let aggregator = OptionChainAggregator::new(
             series_id,
             StrikeRange::Fixed(vec![]),
@@ -922,12 +760,9 @@ mod tests {
 
         let manager = OptionChainManager {
             aggregator,
-            atm_source,
             topic,
             quote_handlers: Vec::new(),
             greeks_handlers: Vec::new(),
-            mark_handler: None,
-            index_handler: None,
             timer_name: None,
             msgbus_priority: 0,
             bootstrapped: true,
@@ -971,22 +806,9 @@ mod tests {
         assert!(manager.quote_handlers.is_empty());
     }
 
-    fn make_quote(instrument_id: InstrumentId, bid: &str, ask: &str) -> QuoteTick {
-        QuoteTick::new(
-            instrument_id,
-            Price::from(bid),
-            Price::from(ask),
-            Quantity::from("1.0"),
-            Quantity::from("1.0"),
-            UnixNanos::from(1u64),
-            UnixNanos::from(1u64),
-        )
-    }
-
-    fn make_rebalance_manager() -> (OptionChainManager, DeferredCommandQueue) {
+    fn make_option_chain_manager() -> (OptionChainManager, DeferredCommandQueue) {
         let series_id = make_series_id();
         let topic = switchboard::get_option_chain_topic(series_id);
-        let atm_source = AtmSource::UnderlyingQuoteMid(btc_perp());
 
         let strikes = [45000, 47500, 50000, 52500, 55000];
         let mut instruments = HashMap::new();
@@ -998,7 +820,7 @@ mod tests {
             instruments.insert(put_id, (strike, OptionKind::Put));
         }
 
-        let tracker = AtmTracker::new(atm_source);
+        let tracker = AtmTracker::new();
         let aggregator = OptionChainAggregator::new(
             series_id,
             StrikeRange::AtmRelative {
@@ -1013,12 +835,9 @@ mod tests {
 
         let manager = OptionChainManager {
             aggregator,
-            atm_source,
             topic,
             quote_handlers: Vec::new(),
             greeks_handlers: Vec::new(),
-            mark_handler: None,
-            index_handler: None,
             timer_name: None,
             msgbus_priority: 0,
             bootstrapped: false,
@@ -1029,15 +848,24 @@ mod tests {
         (manager, queue)
     }
 
+    fn bootstrap_via_greeks(manager: &mut OptionChainManager) {
+        use nautilus_model::data::option_chain::OptionGreeks;
+        let greeks = OptionGreeks {
+            instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
+            underlying_price: Some(50000.0),
+            ..Default::default()
+        };
+        manager.handle_greeks(&greeks);
+    }
+
     #[rstest]
     fn test_manager_publish_slice_triggers_rebalance() {
-        let (mut manager, queue) = make_rebalance_manager();
+        let (mut manager, queue) = make_option_chain_manager();
         // Initially no instruments active (ATM unknown, deferred)
         assert_eq!(manager.aggregator.instrument_ids().len(), 0);
 
-        // Feed ATM near 50000 — bootstrap computes active set (3 strikes × 2 = 6)
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        manager.handle_quote(&perp_quote);
+        // Feed ATM near 50000 via greeks — bootstrap computes active set (3 strikes × 2 = 6)
+        bootstrap_via_greeks(&mut manager);
         assert!(manager.bootstrapped);
         assert_eq!(manager.aggregator.instrument_ids().len(), 6); // 3 strikes × 2
 
@@ -1051,7 +879,7 @@ mod tests {
 
     #[rstest]
     fn test_manager_add_instrument_new() {
-        let (mut manager, _queue) = make_rebalance_manager();
+        let (mut manager, _queue) = make_option_chain_manager();
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let new_id = InstrumentId::from("BTC-20240101-57500-C.DERIBIT");
         let strike = Price::from("57500");
@@ -1065,7 +893,7 @@ mod tests {
 
     #[rstest]
     fn test_manager_add_instrument_already_known() {
-        let (mut manager, _queue) = make_rebalance_manager();
+        let (mut manager, _queue) = make_option_chain_manager();
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let existing_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
         let strike = Price::from("50000");
@@ -1079,15 +907,14 @@ mod tests {
 
     #[rstest]
     fn test_manager_deferred_bootstrap_on_first_atm() {
-        let (mut manager, queue) = make_rebalance_manager();
+        let (mut manager, queue) = make_option_chain_manager();
         // Initially not bootstrapped, no active instruments
         assert!(!manager.bootstrapped);
         assert_eq!(manager.aggregator.instrument_ids().len(), 0);
         assert!(queue.borrow().is_empty());
 
-        // Feed ATM via quote → triggers bootstrap
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        manager.handle_quote(&perp_quote);
+        // Feed ATM via greeks → triggers bootstrap
+        bootstrap_via_greeks(&mut manager);
 
         assert!(manager.bootstrapped);
         assert_eq!(manager.aggregator.instrument_ids().len(), 6); // 3 strikes × 2
@@ -1105,15 +932,20 @@ mod tests {
 
     #[rstest]
     fn test_manager_bootstrap_idempotent() {
-        let (mut manager, _queue) = make_rebalance_manager();
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        manager.handle_quote(&perp_quote);
+        use nautilus_model::data::option_chain::OptionGreeks;
+
+        let (mut manager, _queue) = make_option_chain_manager();
+        bootstrap_via_greeks(&mut manager);
         assert!(manager.bootstrapped);
         let count = manager.aggregator.instrument_ids().len();
 
         // Feed another ATM update — bootstrap should not fire again
-        let perp_quote2 = make_quote(btc_perp(), "50100.00", "50300.00");
-        manager.handle_quote(&perp_quote2);
+        let greeks2 = OptionGreeks {
+            instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
+            underlying_price: Some(50200.0),
+            ..Default::default()
+        };
+        manager.handle_greeks(&greeks2);
         assert_eq!(manager.aggregator.instrument_ids().len(), count);
     }
 
@@ -1125,57 +957,11 @@ mod tests {
         assert!(queue.borrow().is_empty());
     }
 
-    fn make_forward_price_manager() -> (OptionChainManager, DeferredCommandQueue) {
-        let series_id = make_series_id();
-        let topic = switchboard::get_option_chain_topic(series_id);
-        let atm_source = AtmSource::ForwardPrice;
-
-        let strikes = [45000, 47500, 50000, 52500, 55000];
-        let mut instruments = HashMap::new();
-        for s in &strikes {
-            let strike = Price::from(&s.to_string());
-            let call_id = InstrumentId::from(&format!("BTC-20240101-{s}-C.DERIBIT"));
-            let put_id = InstrumentId::from(&format!("BTC-20240101-{s}-P.DERIBIT"));
-            instruments.insert(call_id, (strike, OptionKind::Call));
-            instruments.insert(put_id, (strike, OptionKind::Put));
-        }
-
-        let tracker = AtmTracker::new(atm_source);
-        let aggregator = OptionChainAggregator::new(
-            series_id,
-            StrikeRange::AtmRelative {
-                strikes_above: 1,
-                strikes_below: 1,
-            },
-            tracker,
-            instruments,
-        );
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
-        let queue = make_test_queue();
-
-        let manager = OptionChainManager {
-            aggregator,
-            atm_source,
-            topic,
-            quote_handlers: Vec::new(),
-            greeks_handlers: Vec::new(),
-            mark_handler: None,
-            index_handler: None,
-            timer_name: None,
-            msgbus_priority: 0,
-            bootstrapped: false,
-            deferred_cmd_queue: queue.clone(),
-            clock,
-            raw_mode: false,
-        };
-        (manager, queue)
-    }
-
     #[rstest]
     fn test_manager_forward_price_bootstrap_from_greeks() {
         use nautilus_model::data::option_chain::OptionGreeks;
 
-        let (mut manager, _queue) = make_forward_price_manager();
+        let (mut manager, _queue) = make_option_chain_manager();
         assert!(!manager.bootstrapped);
 
         // First greeks with underlying_price → updates ATM tracker and triggers bootstrap
@@ -1194,7 +980,7 @@ mod tests {
     fn test_manager_forward_price_no_bootstrap_without_underlying() {
         use nautilus_model::data::option_chain::OptionGreeks;
 
-        let (mut manager, _queue) = make_forward_price_manager();
+        let (mut manager, _queue) = make_option_chain_manager();
         assert!(!manager.bootstrapped);
 
         // Greeks with no underlying_price → should not bootstrap
@@ -1209,10 +995,9 @@ mod tests {
 
     #[rstest]
     fn test_handle_instrument_expired_removes_from_aggregator() {
-        let (mut manager, queue) = make_rebalance_manager();
+        let (mut manager, queue) = make_option_chain_manager();
         // Bootstrap so instruments are active
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        manager.handle_quote(&perp_quote);
+        bootstrap_via_greeks(&mut manager);
         assert!(manager.bootstrapped);
         let initial_count = manager.aggregator.instruments().len();
         queue.borrow_mut().clear(); // clear bootstrap commands
@@ -1227,9 +1012,8 @@ mod tests {
 
     #[rstest]
     fn test_handle_instrument_expired_pushes_deferred_unsubscribes() {
-        let (mut manager, queue) = make_rebalance_manager();
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        manager.handle_quote(&perp_quote);
+        let (mut manager, queue) = make_option_chain_manager();
+        bootstrap_via_greeks(&mut manager);
         queue.borrow_mut().clear();
 
         let expired_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
@@ -1248,12 +1032,11 @@ mod tests {
     fn test_handle_instrument_expired_returns_true_when_last() {
         let series_id = make_series_id();
         let topic = switchboard::get_option_chain_topic(series_id);
-        let atm_source = AtmSource::MarkPrice(btc_perp());
         let call_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
         let strike = Price::from("50000");
         let mut instruments = HashMap::new();
         instruments.insert(call_id, (strike, OptionKind::Call));
-        let tracker = AtmTracker::new(atm_source);
+        let tracker = AtmTracker::new();
         let aggregator = OptionChainAggregator::new(
             series_id,
             StrikeRange::Fixed(vec![strike]),
@@ -1265,12 +1048,9 @@ mod tests {
 
         let mut manager = OptionChainManager {
             aggregator,
-            atm_source,
             topic,
             quote_handlers: Vec::new(),
             greeks_handlers: Vec::new(),
-            mark_handler: None,
-            index_handler: None,
             timer_name: None,
             msgbus_priority: 0,
             bootstrapped: true,

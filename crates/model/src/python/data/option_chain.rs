@@ -23,8 +23,7 @@ use crate::{
         QuoteTick,
         greeks::OptionGreekValues,
         option_chain::{
-            AtmSource as RustAtmSource, OptionChainSlice, OptionGreeks, OptionStrikeData,
-            StrikeRange as RustStrikeRange,
+            OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeRange as RustStrikeRange,
         },
     },
     identifiers::{InstrumentId, OptionSeriesId},
@@ -68,66 +67,6 @@ impl PyStrikeRange {
         Self {
             inner: RustStrikeRange::AtmPercent { pct },
         }
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{:?}", self.inner)
-    }
-
-    fn __str__(&self) -> String {
-        format!("{:?}", self.inner)
-    }
-}
-
-/// Python wrapper for `AtmSource` (complex enum).
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)]
-#[derive(Clone, Debug)]
-pub struct PyAtmSource {
-    pub inner: RustAtmSource,
-}
-
-#[pymethods]
-impl PyAtmSource {
-    /// Creates an `AtmSource::MarkPrice` variant.
-    #[staticmethod]
-    #[pyo3(name = "mark_price")]
-    fn py_mark_price(instrument_id: InstrumentId) -> Self {
-        Self {
-            inner: RustAtmSource::MarkPrice(instrument_id),
-        }
-    }
-
-    /// Creates an `AtmSource::IndexPrice` variant.
-    #[staticmethod]
-    #[pyo3(name = "index_price")]
-    fn py_index_price(instrument_id: InstrumentId) -> Self {
-        Self {
-            inner: RustAtmSource::IndexPrice(instrument_id),
-        }
-    }
-
-    /// Creates an `AtmSource::UnderlyingQuoteMid` variant.
-    #[staticmethod]
-    #[pyo3(name = "underlying_quote_mid")]
-    fn py_underlying_quote_mid(instrument_id: InstrumentId) -> Self {
-        Self {
-            inner: RustAtmSource::UnderlyingQuoteMid(instrument_id),
-        }
-    }
-
-    /// Creates an `AtmSource::ForwardPrice` variant.
-    #[staticmethod]
-    #[pyo3(name = "forward_price")]
-    fn py_forward_price() -> Self {
-        Self {
-            inner: RustAtmSource::ForwardPrice,
-        }
-    }
-
-    #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> Option<InstrumentId> {
-        self.inner.instrument_id()
     }
 
     fn __repr__(&self) -> String {

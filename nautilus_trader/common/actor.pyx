@@ -2089,7 +2089,6 @@ cdef class Actor(Component):
         self,
         object series_id,
         object strike_range = None,
-        object atm_source = None,
         object snapshot_interval_ms = None,
         ClientId client_id = None,
         dict[str, object] params = None,
@@ -2106,8 +2105,6 @@ cdef class Actor(Component):
             The option series to subscribe to.
         strike_range : StrikeRange, optional
             The strike range filter. If ``None`` then all strikes are included.
-        atm_source : AtmSource, optional
-            The ATM price source. If ``None`` then defaults to forward price.
         snapshot_interval_ms : int, optional
             Snapshot interval in milliseconds. If ``None`` then operates in raw mode
             (publish on every quote update).
@@ -2136,7 +2133,6 @@ cdef class Actor(Component):
         cdef SubscribeOptionChain command = SubscribeOptionChain(
             series_id=series_id,
             strike_range=strike_range,
-            atm_source=atm_source,
             snapshot_interval_ms=snapshot_interval_ms,
             client_id=client_id,
             venue=venue,

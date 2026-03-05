@@ -216,8 +216,7 @@ cdef class DataEngine(Component):
         self._option_chain_managers: dict[str, object] = {}
         self._option_chain_instrument_index: dict[InstrumentId, str] = {}
         self._option_chain_timer_names: dict[str, str] = {}
-        self._option_chain_atm_source_index: dict[InstrumentId, str] = {}  # ATM source instrument_id -> series_key
-        self._pending_option_chain_requests: dict[object, tuple] = {}  # correlation_id -> (command, atm_source)
+        self._pending_option_chain_requests: dict[object, object] = {}  # correlation_id -> command
 
         self._request_group_parent_request: dict[UUID4, RequestData] = {}
         self._request_group_n_components: dict[UUID4, int] = {}
@@ -1294,15 +1293,10 @@ cdef class DataEngine(Component):
             self._teardown_option_chain(series_key, client)
 
         # Drain stale pending requests for this series
-        stale = [rid for rid, (cmd, _) in self._pending_option_chain_requests.items()
+        stale = [rid for rid, cmd in self._pending_option_chain_requests.items()
                  if str(cmd.series_id) == series_key]
         for rid in stale:
             del self._pending_option_chain_requests[rid]
-
-        # Default ATM source to ForwardPrice if not provided
-        atm_source = command.atm_source
-        if atm_source is None:
-            atm_source = nautilus_pyo3.PyAtmSource.forward_price()
 
         # For non-Fixed strike ranges, request forward prices for instant bootstrap
         strike_range_type = type(command.strike_range).__name__ if command.strike_range else ""
@@ -1320,12 +1314,12 @@ cdef class DataEngine(Component):
                 ts_init=self._clock.timestamp_ns(),
             )
 
-            self._pending_option_chain_requests[request.id] = (command, atm_source)
+            self._pending_option_chain_requests[request.id] = command
             client.request_forward_prices(request)
             return
 
         # Fixed range: create manager immediately (no ATM bootstrap needed)
-        self._create_option_chain_manager(command, atm_source, None)
+        self._create_option_chain_manager(command, None)
 
     cdef void _subscribe_option_chain_instruments(
         self,
@@ -1389,51 +1383,7 @@ cdef class DataEngine(Component):
                     ),
                 )
 
-    cdef void _unsubscribe_atm_source(self, MarketDataClient client, object atm_source):
-        """Unsubscribe the ATM source feed (mark price, index price, or quote)."""
-        source_instrument_id = atm_source.instrument_id  # None for ForwardPrice
-        if source_instrument_id is None:
-            return  # ForwardPrice — nothing to unsubscribe
-
-        cdef InstrumentId cython_id = InstrumentId.from_str(str(source_instrument_id))
-        cdef uint64_t ts = self._clock.timestamp_ns()
-        cdef str atm_str = str(atm_source)
-
-        if "MarkPrice" in atm_str:
-            if cython_id in client.subscribed_mark_prices():
-                client.unsubscribe_mark_prices(
-                    UnsubscribeMarkPrices(
-                        instrument_id=cython_id,
-                        client_id=client.id,
-                        venue=client.venue,
-                        command_id=UUID4(),
-                        ts_init=ts,
-                    ),
-                )
-        elif "IndexPrice" in atm_str:
-            if cython_id in client.subscribed_index_prices():
-                client.unsubscribe_index_prices(
-                    UnsubscribeIndexPrices(
-                        instrument_id=cython_id,
-                        client_id=client.id,
-                        venue=client.venue,
-                        command_id=UUID4(),
-                        ts_init=ts,
-                    ),
-                )
-        elif "UnderlyingQuoteMid" in atm_str:
-            if cython_id in client.subscribed_quote_ticks():
-                client.unsubscribe_quote_ticks(
-                    UnsubscribeQuoteTicks(
-                        instrument_id=cython_id,
-                        client_id=client.id,
-                        venue=client.venue,
-                        command_id=UUID4(),
-                        ts_init=ts,
-                    ),
-                )
-
-    cdef void _create_option_chain_manager(self, SubscribeOptionChain command, object atm_source, object initial_atm_price):
+    cdef void _create_option_chain_manager(self, SubscribeOptionChain command, object initial_atm_price):
         """Create option chain manager, resolve instruments, subscribe, and set timer."""
         cdef str series_key = str(command.series_id)
 
@@ -1482,7 +1432,6 @@ cdef class DataEngine(Component):
         manager = nautilus_pyo3.PyOptionChainManager(
             series_id=command.series_id,
             strike_range=command.strike_range,
-            atm_source=atm_source,
             instruments=resolved,
             snapshot_interval_ms=command.snapshot_interval_ms,
             initial_atm_price=initial_atm_price,
@@ -1493,12 +1442,6 @@ cdef class DataEngine(Component):
         for pyo3_id in resolved:
             cython_id = InstrumentId.from_str(str(pyo3_id))
             self._option_chain_instrument_index[cython_id] = series_key
-
-        # Index ATM source instrument for targeted routing
-        atm_instrument_id = atm_source.instrument_id
-        if atm_instrument_id is not None:
-            cython_atm_id = InstrumentId.from_str(str(atm_instrument_id))
-            self._option_chain_atm_source_index[cython_atm_id] = series_key
 
         # Subscribe quotes + greeks for active instruments
         active_ids = manager.active_instrument_ids()
@@ -1530,11 +1473,10 @@ cdef class DataEngine(Component):
 
     cdef void _handle_forward_prices_response(self, object correlation_id, list forward_prices):
         """Handle forward prices response for option chain instant bootstrap."""
-        pending = self._pending_option_chain_requests.pop(correlation_id, None)
-        if pending is None:
+        command = self._pending_option_chain_requests.pop(correlation_id, None)
+        if command is None:
             return
 
-        command, atm_source = pending
         series_id = command.series_id
 
         # Find matching forward price by checking expiry + settlement in cache
@@ -1552,43 +1494,7 @@ cdef class DataEngine(Component):
         else:
             self._log.info(f"No matching forward price for {series_id}, will bootstrap from live data")
 
-        # Fallback: if ForwardPrice source and no bootstrap data, try perpetual index price
-        if initial_atm_price is None:
-            if atm_source.instrument_id is None:  # ForwardPrice has no instrument_id
-                fallback = self._resolve_perpetual_atm_source(series_id)
-                if fallback is not None:
-                    self._log.info(f"Forward price bootstrap failed, falling back to {fallback}")
-                    atm_source = fallback
-
-        self._create_option_chain_manager(command, atm_source, initial_atm_price)
-
-    cdef object _resolve_perpetual_atm_source(self, object series_id):
-        """Find a CryptoPerpetual instrument matching the series underlying for IndexPrice fallback."""
-        cdef list instruments = self._cache.instruments()
-        fallback = None
-        for inst in instruments:
-            if str(inst.id.venue) != str(series_id.venue):
-                continue
-            if not hasattr(inst, 'base_currency'):
-                continue
-            if str(inst.base_currency) != str(series_id.underlying):
-                continue
-            # Check for perpetual type (has is_inverse attribute)
-            if not hasattr(inst, 'is_inverse'):
-                continue
-            if str(inst.settlement_currency) == str(series_id.settlement_currency):
-                self._log.info(f"Resolved perpetual ATM source: IndexPrice({inst.id})")
-                return nautilus_pyo3.PyAtmSource.index_price(
-                    nautilus_pyo3.InstrumentId.from_str(str(inst.id))
-                )
-            if fallback is None:
-                fallback = inst.id
-        if fallback is not None:
-            self._log.info(f"Resolved perpetual ATM source (fallback): IndexPrice({fallback})")
-            return nautilus_pyo3.PyAtmSource.index_price(
-                nautilus_pyo3.InstrumentId.from_str(str(fallback))
-            )
-        return None
+        self._create_option_chain_manager(command, initial_atm_price)
 
     cdef object _find_sample_instrument(self, object series_id):
         """Find a single option instrument matching the series for the fast path."""
@@ -1622,7 +1528,6 @@ cdef class DataEngine(Component):
         cdef SubscribeOptionChain sub_cmd = SubscribeOptionChain(
             series_id=manager.series_id,
             strike_range=None,
-            atm_source=None,
             snapshot_interval_ms=None,
             client_id=client.id,
             venue=venue,
@@ -1640,9 +1545,7 @@ cdef class DataEngine(Component):
         # Forward wire-level unsubscribes before dropping the manager
         if manager is not None and client is not None:
             all_ids = manager.all_instrument_ids()
-            atm_source = manager.atm_source
             self._unsubscribe_option_chain_instruments(client, all_ids)
-            self._unsubscribe_atm_source(client, atm_source)
 
         # Cancel timer
         timer_name = self._option_chain_timer_names.pop(series_key, None)
@@ -1656,14 +1559,6 @@ cdef class DataEngine(Component):
         ]
         for iid in to_remove:
             del self._option_chain_instrument_index[iid]
-
-        # Remove ATM source index entries for this series
-        atm_to_remove = [
-            iid for iid, sk in self._option_chain_atm_source_index.items()
-            if sk == series_key
-        ]
-        for iid in atm_to_remove:
-            del self._option_chain_atm_source_index[iid]
 
         # Remove manager
         self._option_chain_managers.pop(series_key, None)
@@ -1705,7 +1600,6 @@ cdef class DataEngine(Component):
                         sub_cmd = SubscribeOptionChain(
                             series_id=manager.series_id,
                             strike_range=None,
-                            atm_source=None,
                             snapshot_interval_ms=None,
                             client_id=client.id,
                             venue=venue,
@@ -2728,10 +2622,6 @@ cdef class DataEngine(Component):
             msg=mark_price,
         )
 
-        # Feed to option chain managers (ATM source may be MarkPrice)
-        if not historical:
-            self._feed_mark_price_to_option_chains(mark_price)
-
     cpdef void _handle_index_price(self, IndexPriceUpdate index_price, bint historical = False):
         if not (historical and self._disable_historical_cache):
             self._cache.add_index_price(index_price)
@@ -2740,10 +2630,6 @@ cdef class DataEngine(Component):
             topic=self._topic_cache.get_index_prices_topic(index_price.instrument_id, historical),
             msg=index_price,
         )
-
-        # Feed to option chain managers (ATM source may be IndexPrice)
-        if not historical:
-            self._feed_index_price_to_option_chains(index_price)
 
     cpdef void _handle_funding_rate(self, FundingRateUpdate funding_rate, bint historical = False):
         if not (historical and self._disable_historical_cache):
@@ -2865,36 +2751,6 @@ cdef class DataEngine(Component):
         except Exception as e:
             self._log.error(f"Error feeding greeks to option chain {series_key}: {e}")
 
-    cdef void _feed_mark_price_to_option_chains(self, MarkPriceUpdate mark_price):
-        cdef str series_key = self._option_chain_atm_source_index.get(mark_price.instrument_id)
-        if series_key is None:
-            return
-        manager = self._option_chain_managers.get(series_key)
-        if manager is None:
-            return
-        try:
-            pyo3_mark_price = mark_price.to_pyo3()
-            bootstrapped = manager.handle_mark_price(pyo3_mark_price)
-            if bootstrapped:
-                self._complete_option_chain_bootstrap(series_key, manager)
-        except Exception as e:
-            self._log.error(f"Error feeding mark price to option chain {series_key}: {e}")
-
-    cdef void _feed_index_price_to_option_chains(self, IndexPriceUpdate index_price):
-        cdef str series_key = self._option_chain_atm_source_index.get(index_price.instrument_id)
-        if series_key is None:
-            return
-        manager = self._option_chain_managers.get(series_key)
-        if manager is None:
-            return
-        try:
-            pyo3_index_price = index_price.to_pyo3()
-            bootstrapped = manager.handle_index_price(pyo3_index_price)
-            if bootstrapped:
-                self._complete_option_chain_bootstrap(series_key, manager)
-        except Exception as e:
-            self._log.error(f"Error feeding index price to option chain {series_key}: {e}")
-
     cdef void _expire_option_chain_instrument(self, InstrumentId instrument_id, str series_key):
         """Remove an expired instrument from the option chain and unsubscribe."""
         cdef Venue venue
@@ -2987,7 +2843,6 @@ cdef class DataEngine(Component):
                         sub_cmd = SubscribeOptionChain(
                             series_id=manager.series_id,
                             strike_range=None,
-                            atm_source=None,
                             snapshot_interval_ms=None,
                             client_id=client.id,
                             venue=venue,

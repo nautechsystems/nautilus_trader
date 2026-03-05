@@ -174,7 +174,6 @@ impl DataActor for OptionChainTester {
         self.subscribe_option_chain(
             series_id,
             strike_range,
-            None, // auto-resolved to ForwardPrice (from option ticker underlying_price)
             snapshot_interval_ms,
             Some(client_id),
         );

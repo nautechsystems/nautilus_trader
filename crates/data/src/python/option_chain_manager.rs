@@ -25,12 +25,12 @@ use std::collections::HashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        IndexPriceUpdate, MarkPriceUpdate, QuoteTick,
-        option_chain::{AtmSource as RustAtmSource, OptionChainSlice, OptionGreeks},
+        QuoteTick,
+        option_chain::{OptionChainSlice, OptionGreeks},
     },
     enums::OptionKind,
     identifiers::{InstrumentId, OptionSeriesId},
-    python::data::option_chain::{PyAtmSource, PyStrikeRange},
+    python::data::option_chain::PyStrikeRange,
     types::Price,
 };
 use pyo3::prelude::*;
@@ -45,15 +45,17 @@ use crate::option_chains::{AtmTracker, OptionChainAggregator};
 /// [`AtmTracker`].
 ///
 /// The Cython `DataEngine` creates one instance per subscribed option series.
-/// It feeds incoming market data (quotes, greeks, mark/index prices) through
-/// the `handle_*` methods and periodically calls `snapshot()` to publish
-/// `OptionChainSlice` objects to the message bus.
+/// It feeds incoming market data (quotes, greeks) through the `handle_*`
+/// methods and periodically calls `snapshot()` to publish `OptionChainSlice`
+/// objects to the message bus.
+///
+/// ATM price is always derived from the exchange-provided forward price
+/// embedded in each option greeks/ticker update.
 #[pyclass(module = "nautilus_trader.core.nautilus_pyo3.data")]
 #[derive(Debug)]
 pub struct PyOptionChainManager {
     aggregator: OptionChainAggregator,
     series_id: OptionSeriesId,
-    atm_source: RustAtmSource,
     raw_mode: bool,
     bootstrapped: bool,
 }
@@ -62,11 +64,10 @@ pub struct PyOptionChainManager {
 impl PyOptionChainManager {
     /// Creates a new option chain manager.
     #[new]
-    #[pyo3(signature = (series_id, strike_range, atm_source, instruments, snapshot_interval_ms=None, initial_atm_price=None))]
+    #[pyo3(signature = (series_id, strike_range, instruments, snapshot_interval_ms=None, initial_atm_price=None))]
     fn py_new(
         series_id: OptionSeriesId,
         strike_range: PyStrikeRange,
-        atm_source: PyAtmSource,
         instruments: HashMap<InstrumentId, (Price, u8)>,
         snapshot_interval_ms: Option<u64>,
         initial_atm_price: Option<Price>,
@@ -83,7 +84,7 @@ impl PyOptionChainManager {
             })
             .collect();
 
-        let mut tracker = AtmTracker::new(atm_source.inner);
+        let mut tracker = AtmTracker::new();
 
         // Derive precision from instrument strikes
         if let Some((strike, _)) = rust_instruments.values().next() {
@@ -105,7 +106,6 @@ impl PyOptionChainManager {
         Self {
             aggregator,
             series_id,
-            atm_source: atm_source.inner,
             raw_mode,
             bootstrapped,
         }
@@ -132,57 +132,19 @@ impl PyOptionChainManager {
     /// Feeds option greeks to the aggregator.
     ///
     /// Returns `True` if the manager just bootstrapped (ATM price derived from
-    /// the greeks' `underlying_price` when ATM source is `ForwardPrice`).
+    /// the greeks' `underlying_price`).
     fn handle_greeks(&mut self, greeks_obj: &Bound<'_, PyAny>) -> PyResult<bool> {
         let greeks = greeks_obj
             .extract::<OptionGreeks>()
             .or_else(|_| OptionGreeks::from_pyobject(greeks_obj))?;
 
-        // Update ATM tracker from greeks (for ForwardPrice source)
+        // Update ATM tracker from greeks forward price
         self.aggregator
             .atm_tracker_mut()
             .update_from_option_greeks(&greeks);
 
         // Update aggregator buffers
         self.aggregator.update_greeks(&greeks);
-
-        if !self.bootstrapped && self.aggregator.atm_tracker().atm_price().is_some() {
-            self.aggregator.recompute_active_set();
-            self.bootstrapped = true;
-            return Ok(true);
-        }
-        Ok(false)
-    }
-
-    /// Feeds a mark price update to the ATM tracker.
-    ///
-    /// Returns `True` if the manager just bootstrapped.
-    fn handle_mark_price(&mut self, update: &Bound<'_, PyAny>) -> PyResult<bool> {
-        let mark = update
-            .extract::<MarkPriceUpdate>()
-            .or_else(|_| MarkPriceUpdate::from_pyobject(update))?;
-        self.aggregator
-            .atm_tracker_mut()
-            .update_from_mark_price(&mark);
-
-        if !self.bootstrapped && self.aggregator.atm_tracker().atm_price().is_some() {
-            self.aggregator.recompute_active_set();
-            self.bootstrapped = true;
-            return Ok(true);
-        }
-        Ok(false)
-    }
-
-    /// Feeds an index price update to the ATM tracker.
-    ///
-    /// Returns `True` if the manager just bootstrapped.
-    fn handle_index_price(&mut self, update: &Bound<'_, PyAny>) -> PyResult<bool> {
-        let index = update
-            .extract::<IndexPriceUpdate>()
-            .or_else(|_| IndexPriceUpdate::from_pyobject(update))?;
-        self.aggregator
-            .atm_tracker_mut()
-            .update_from_index_price(&index);
 
         if !self.bootstrapped && self.aggregator.atm_tracker().atm_price().is_some() {
             self.aggregator.recompute_active_set();
@@ -253,13 +215,6 @@ impl PyOptionChainManager {
     }
 
     #[getter]
-    fn atm_source(&self) -> PyAtmSource {
-        PyAtmSource {
-            inner: self.atm_source,
-        }
-    }
-
-    #[getter]
     fn bootstrapped(&self) -> bool {
         self.bootstrapped
     }
@@ -276,10 +231,9 @@ impl PyOptionChainManager {
 
     fn __repr__(&self) -> String {
         format!(
-            "PyOptionChainManager(series_id={}, atm_source={:?}, bootstrapped={}, raw_mode={}, \
+            "PyOptionChainManager(series_id={}, bootstrapped={}, raw_mode={}, \
              active={}/{})",
             self.series_id,
-            self.atm_source,
             self.bootstrapped,
             self.raw_mode,
             self.aggregator.instrument_ids().len(),

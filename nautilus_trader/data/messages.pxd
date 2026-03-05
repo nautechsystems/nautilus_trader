@@ -103,8 +103,6 @@ cdef class SubscribeOptionChain(SubscribeData):
     """The option series ID for the subscription."""
     cdef readonly object strike_range
     """The strike range for filtering the chain."""
-    cdef readonly object atm_source
-    """The ATM source for tracking the at-the-money price."""
     cdef readonly object snapshot_interval_ms
     """The snapshot interval in milliseconds (None for raw mode)."""
 

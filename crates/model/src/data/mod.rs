@@ -60,7 +60,7 @@ pub use greeks::{
     BlackScholesGreeksResult, GreeksData, HasGreeks, OptionGreekValues, PortfolioGreeks,
     YieldCurveData, black_scholes_greeks, imply_vol_and_greeks, refine_vol_and_greeks,
 };
-pub use option_chain::{AtmSource, OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeRange};
+pub use option_chain::{OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeRange};
 pub use order::{BookOrder, NULL_ORDER};
 pub use prices::{IndexPriceUpdate, MarkPriceUpdate};
 pub use quote::QuoteTick;

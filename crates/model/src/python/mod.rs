@@ -77,7 +77,6 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::option_chain::OptionChainSlice>()?;
     m.add_class::<crate::data::option_chain::OptionStrikeData>()?;
     m.add_class::<crate::python::data::option_chain::PyStrikeRange>()?;
-    m.add_class::<crate::python::data::option_chain::PyAtmSource>()?;
     m.add_class::<crate::data::forward::ForwardPrice>()?;
     m.add_function(wrap_pyfunction!(
         crate::python::data::greeks::py_black_scholes_greeks,

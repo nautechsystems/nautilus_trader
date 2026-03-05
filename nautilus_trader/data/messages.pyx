@@ -1264,8 +1264,6 @@ cdef class SubscribeOptionChain(SubscribeData):
         The option series ID for the subscription.
     strike_range : object
         The strike range for filtering the chain.
-    atm_source : object, optional
-        The ATM source for tracking the at-the-money price.
     snapshot_interval_ms : int, optional
         The snapshot interval in milliseconds (None for raw mode).
     client_id : ClientId or ``None``
@@ -1285,7 +1283,6 @@ cdef class SubscribeOptionChain(SubscribeData):
         self,
         object series_id not None,
         object strike_range not None,
-        object atm_source,
         object snapshot_interval_ms,
         ClientId client_id: ClientId | None,
         Venue venue: Venue | None,
@@ -1306,7 +1303,6 @@ cdef class SubscribeOptionChain(SubscribeData):
         )
         self.series_id = series_id
         self.strike_range = strike_range
-        self.atm_source = atm_source
         self.snapshot_interval_ms = snapshot_interval_ms
 
     def __str__(self) -> str:
@@ -1322,7 +1318,6 @@ cdef class SubscribeOptionChain(SubscribeData):
             f"{type(self).__name__}("
             f"series_id={self.series_id}, "
             f"strike_range={self.strike_range}, "
-            f"atm_source={self.atm_source}, "
             f"snapshot_interval_ms={self.snapshot_interval_ms}, "
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "

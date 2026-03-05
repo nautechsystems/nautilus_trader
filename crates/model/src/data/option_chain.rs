@@ -129,37 +129,6 @@ impl StrikeRange {
     }
 }
 
-/// Specifies the source instrument for determining the ATM (at-the-money) price.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum AtmSource {
-    /// Use the mark price of the given instrument.
-    MarkPrice(InstrumentId),
-    /// Use the index price of the given instrument.
-    IndexPrice(InstrumentId),
-    /// Use the mid-quote of the underlying instrument.
-    UnderlyingQuoteMid(InstrumentId),
-    /// Use the forward/underlying price from the option greeks stream.
-    ///
-    /// Both Deribit and Bybit include `underlying_price` (the exchange-computed forward)
-    /// on every option ticker update. This eliminates the spot-forward basis error
-    /// and removes the need for a separate perpetual subscription.
-    ForwardPrice,
-}
-
-impl AtmSource {
-    /// Returns the instrument ID used as the ATM price source, if applicable.
-    ///
-    /// Returns `None` for `ForwardPrice`, which extracts the ATM price directly
-    /// from the option greeks stream without a separate instrument subscription.
-    #[must_use]
-    pub fn instrument_id(&self) -> Option<InstrumentId> {
-        match self {
-            Self::MarkPrice(id) | Self::IndexPrice(id) | Self::UnderlyingQuoteMid(id) => Some(*id),
-            Self::ForwardPrice => None,
-        }
-    }
-}
-
 /// Exchange-provided option Greeks and implied volatility for a single instrument.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(
@@ -433,22 +402,6 @@ mod tests {
         } else {
             panic!("Expected AtmPercent variant");
         }
-    }
-
-    #[rstest]
-    fn test_atm_source_instrument_id() {
-        let id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
-        let source = AtmSource::MarkPrice(id);
-        assert_eq!(source.instrument_id(), Some(id));
-
-        let source = AtmSource::IndexPrice(id);
-        assert_eq!(source.instrument_id(), Some(id));
-
-        let source = AtmSource::UnderlyingQuoteMid(id);
-        assert_eq!(source.instrument_id(), Some(id));
-
-        let source = AtmSource::ForwardPrice;
-        assert_eq!(source.instrument_id(), None);
     }
 
     #[rstest]

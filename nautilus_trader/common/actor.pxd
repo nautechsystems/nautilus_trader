@@ -198,7 +198,7 @@ cdef class Actor(Component):
     cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_option_greeks(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
-    cpdef void subscribe_option_chain(self, object series_id, object strike_range=*, object atm_source=*, object snapshot_interval_ms=*, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void subscribe_option_chain(self, object series_id, object strike_range=*, object snapshot_interval_ms=*, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_order_fills(self, InstrumentId instrument_id)
     cpdef void subscribe_order_cancels(self, InstrumentId instrument_id)
     cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*, InstrumentId instrument_id=*, dict[str, object] params=*)
