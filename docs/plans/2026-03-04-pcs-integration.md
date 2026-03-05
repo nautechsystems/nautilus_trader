@@ -3569,6 +3569,15 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `uv run --active --no-sync ruff check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/providers.py nautilus_trader/adapters/pancakeswap/symbol.py tests/integration_tests/adapters/pancakeswap/__init__.py tests/integration_tests/adapters/pancakeswap/conftest.py tests/integration_tests/adapters/pancakeswap/test_provider.py` (pass)
     - `uv run --active --no-sync ruff format --check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/providers.py nautilus_trader/adapters/pancakeswap/symbol.py tests/integration_tests/adapters/pancakeswap/__init__.py tests/integration_tests/adapters/pancakeswap/conftest.py tests/integration_tests/adapters/pancakeswap/test_provider.py` (pass)
 
+- 2026-03-05 - PR5a (`pr5a/instrument-provider-minimal`, head SHA `c29c59b9294ea5460553ec8d6d703f5a41026e3a`) - status: ready
+  - Tightened onboarding fail-closed behavior by requiring `factory_pair_address` on each pool config and preserving strict `factory.getPair` equality validation.
+  - Prevented `load_ids` startup scope from being overridden by automatic `load_all` defaults, and added conflict checks for same-symbol/different-token currency metadata.
+  - Stored full token decimals/addresses in instrument `info` metadata while keeping Nautilus precision capped at 16, with expanded tests for these invariants.
+  - Tests run:
+    - `uv run --active --no-sync ruff check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/providers.py nautilus_trader/adapters/pancakeswap/symbol.py tests/integration_tests/adapters/pancakeswap/__init__.py tests/integration_tests/adapters/pancakeswap/conftest.py tests/integration_tests/adapters/pancakeswap/test_provider.py` (pass)
+    - `uv run --active --no-sync ruff format --check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/providers.py nautilus_trader/adapters/pancakeswap/symbol.py tests/integration_tests/adapters/pancakeswap/__init__.py tests/integration_tests/adapters/pancakeswap/conftest.py tests/integration_tests/adapters/pancakeswap/test_provider.py` (pass)
+    - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --active --no-sync pytest -p pytest_asyncio.plugin tests/integration_tests/adapters/pancakeswap -k provider -q` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
