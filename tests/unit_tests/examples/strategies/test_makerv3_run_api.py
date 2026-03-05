@@ -17,8 +17,11 @@ from __future__ import annotations
 
 from argparse import Namespace
 
+import pytest
+
 from examples.live.makerv3.run_api import DEFAULT_CONFIG_PATH
 from examples.live.makerv3.run_api import _build_flux_config
+from examples.live.makerv3.run_api import _build_profile_strategy_maps
 from examples.live.makerv3.run_api import _load_config
 from examples.live.makerv3.run_api import _resolve_bind_host
 
@@ -49,3 +52,25 @@ def test_resolve_bind_host_prefers_cli_override() -> None:
     host = _resolve_bind_host({"api": {"host": "127.0.0.1"}}, Namespace(host="0.0.0.0"))  # noqa: S104
 
     assert host == "0.0.0.0"  # noqa: S104
+
+
+def test_build_profile_strategy_maps_reads_tokenmm_allowlist_and_required_subset() -> None:
+    strategy_map, required_map = _build_profile_strategy_maps(
+        {
+            "tokenmm_strategy_ids": ["strategy_a", "strategy_b"],
+            "tokenmm_required_strategy_ids": ["strategy_a"],
+        },
+    )
+
+    assert strategy_map == {"tokenmm": ["strategy_a", "strategy_b"]}
+    assert required_map == {"tokenmm": ["strategy_a"]}
+
+
+def test_build_profile_strategy_maps_rejects_required_ids_outside_allowlist() -> None:
+    with pytest.raises(ValueError, match="subset"):
+        _build_profile_strategy_maps(
+            {
+                "tokenmm_strategy_ids": ["strategy_a"],
+                "tokenmm_required_strategy_ids": ["strategy_b"],
+            },
+        )

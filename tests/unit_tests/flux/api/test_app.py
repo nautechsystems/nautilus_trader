@@ -493,6 +493,85 @@ def test_params_profile_fanout_returns_multiple_tokenmm_strategies(
     assert by_id["strategy_02"]["params"]["qty"] == 2.5
 
 
+def test_params_profile_tokenmm_uses_explicit_allowlist_without_discovery(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": ["strategy_02"]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows = body["data"]
+    assert [row["strategy_id"] for row in rows] == ["strategy_02"]
+
+
+def test_balances_profile_tokenmm_honors_explicit_required_subset(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 100_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "asset": "USDT",
+                "free": "10",
+                "total": "10",
+                "ts_ms": 98_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id, "strategy_02"]},
+        profile_required_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["missing_required"] == []
+    components = {row["strategy_id"]: row for row in body["data"]["components"]}
+    assert components[flux_config.identity.strategy_id]["required"] is True
+    assert components["strategy_02"]["required"] is False
+
+
 def test_signals_profile_prefers_discovered_tokenmm_strategy_over_default_mapping(
     flux_config,
     redis_client,

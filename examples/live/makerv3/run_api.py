@@ -37,6 +37,7 @@ from nautilus_trader.flux.common.config import FluxConfig
 from nautilus_trader.flux.common.config import FluxIdentityConfig
 from nautilus_trader.flux.common.config import FluxRedisConfig
 from nautilus_trader.flux.common.config import FluxVenuesConfig
+from nautilus_trader.flux.common.config import validate_identifier_part
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
@@ -184,6 +185,56 @@ def _resolve_bind_host(config: dict[str, Any], args: argparse.Namespace) -> str:
     return str(args.host or api_cfg.get("host", "127.0.0.1"))
 
 
+def _coerce_strategy_ids(raw_value: Any, *, field_name: str) -> list[str]:
+    if raw_value is None:
+        return []
+    if not isinstance(raw_value, list):
+        raise ValueError(f"`{field_name}` must be a TOML array of strategy IDs")
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for index, value in enumerate(raw_value):
+        text = _optional_text(value)
+        if not text:
+            continue
+        strategy_id = validate_identifier_part(text, f"{field_name}[{index}]")
+        if strategy_id in seen:
+            continue
+        seen.add(strategy_id)
+        out.append(strategy_id)
+    return out
+
+
+def _build_profile_strategy_maps(
+    api_cfg: dict[str, Any],
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    strategy_ids = _coerce_strategy_ids(
+        api_cfg.get("tokenmm_strategy_ids"),
+        field_name="api.tokenmm_strategy_ids",
+    )
+    required_ids = _coerce_strategy_ids(
+        api_cfg.get("tokenmm_required_strategy_ids"),
+        field_name="api.tokenmm_required_strategy_ids",
+    )
+
+    if required_ids and strategy_ids:
+        strategy_id_set = set(strategy_ids)
+        unknown = sorted(strategy_id for strategy_id in required_ids if strategy_id not in strategy_id_set)
+        if unknown:
+            raise ValueError(
+                "`api.tokenmm_required_strategy_ids` must be a subset of `api.tokenmm_strategy_ids`; "
+                f"unknown={unknown}",
+            )
+
+    profile_strategy_map: dict[str, list[str]] = {}
+    profile_required_strategy_map: dict[str, list[str]] = {}
+    if strategy_ids:
+        profile_strategy_map["tokenmm"] = strategy_ids
+    if required_ids:
+        profile_required_strategy_map["tokenmm"] = required_ids
+    return profile_strategy_map, profile_required_strategy_map
+
+
 def _env_flag(name: str, *, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -288,6 +339,7 @@ def main() -> None:
         base_asset=str(api_cfg.get("base_asset", "BASE")),
         quote_asset=str(api_cfg.get("quote_asset", "QUOTE")),
     )
+    profile_strategy_map, profile_required_strategy_map = _build_profile_strategy_maps(api_cfg)
 
     redis_client = redis.Redis(
         host=flux_config.redis.host,
@@ -305,6 +357,8 @@ def main() -> None:
         cast(RedisClientProtocol, redis_client),
         contract_catalog=contracts,
         strategy_metadata=metadata,
+        profile_strategy_map=profile_strategy_map or None,
+        profile_required_strategy_map=profile_required_strategy_map or None,
     )
 
     serve_fluxboard = args.serve_fluxboard or _env_flag("FLUXBOARD_SERVE_DIST", default=False)
