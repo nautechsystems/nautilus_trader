@@ -765,3 +765,271 @@ def test_balances_response_totals_are_authoritative_even_when_rows_are_truncated
     assert body["data"]["total"] == 3
     assert body["data"]["totals"]["mv_raw"] == 60.0
     assert body["data"]["totals"]["mv_display"] == "$60.00"
+
+
+def test_balances_profile_tokenmm_aggregates_cash_and_positions(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    tertiary_keys = FluxRedisKeys(
+        strategy_id="strategy_03",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(secondary_keys.params_hash_key(), {"qty": "2.0"})
+    redis_client.set_hash_json(tertiary_keys.params_hash_key(), {"qty": "3.0"})
+
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "account": "main",
+                "asset": "USDT",
+                "free": "100",
+                "total": "100",
+                "ts_ms": 1_000,
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "kind": "position",
+                "exchange": "bybit",
+                "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                "quantity": "2",
+                "side": "LONG",
+            },
+        ],
+    )
+    redis_client.set_json(
+        secondary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "exchange": "bybit",
+                "account": "main",
+                "asset": "USDT",
+                "free": "140",
+                "total": "140",
+                "ts_ms": 2_000,
+            },
+            {
+                "strategy_id": "strategy_02",
+                "kind": "position",
+                "exchange": "bybit",
+                "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                "quantity": "1",
+                "side": "SHORT",
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows = body["data"]["rows"]
+    by_row_id = {row["row_id"]: row for row in rows}
+    cash_row = by_row_id["tokenmm:cash:bybit:main:USDT"]
+    assert cash_row["free"] == "140"
+    assert cash_row["total"] == "140"
+    assert cash_row["strategy_id"] == "tokenmm"
+
+    position_row = by_row_id["tokenmm:pos:bybit:PLUMEUSDT-LINEAR.BYBIT"]
+    assert position_row["signed_qty"] == "1"
+    assert position_row["quantity"] == "1"
+    assert position_row["side"] == "LONG"
+    assert position_row["strategy_id"] == "tokenmm"
+
+
+def test_balances_with_strategy_query_keeps_per_strategy_debug_view(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(secondary_keys.params_hash_key(), {"qty": "2.0"})
+    redis_client.set_json(
+        secondary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "exchange": "bybit",
+                "account": "main",
+                "asset": "USDT",
+                "free": "50",
+                "total": "50",
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get(
+            "/api/v1/balances",
+            query_string={"profile": "tokenmm", "strategy": "strategy_02"},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows = body["data"]["rows"]
+    assert len(rows) == 1
+    assert rows[0]["strategy_id"] == "strategy_02"
+    assert rows[0].get("row_id") != "tokenmm:cash:bybit:main:USDT"
+
+
+def test_balances_profile_tokenmm_marks_missing_required_components_as_degraded(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 100_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    missing_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(missing_keys.params_hash_key(), {"qty": "2.0"})
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "asset": "USDT",
+                "free": "10",
+                "total": "10",
+                "ts_ms": 95_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["degraded"] is True
+    assert body["data"]["missing_required"] == ["strategy_02"]
+    components = {row["strategy_id"]: row for row in body["data"]["components"]}
+    assert components["strategy_02"]["snapshot_present"] is False
+    assert components["strategy_02"]["missing"] is True
+    assert components["strategy_02"]["stale"] is True
+
+
+def test_balances_profile_tokenmm_staleness_clears_when_all_components_fresh(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 100_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(secondary_keys.params_hash_key(), {"qty": "2.0"})
+    redis_client.set_json(
+        primary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "asset": "USDT",
+                "free": "10",
+                "total": "10",
+                "ts_ms": 95_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        secondary_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "exchange": "bybit",
+                "asset": "USDT",
+                "free": "20",
+                "total": "20",
+                "ts_ms": 98_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["degraded"] is False
+    assert body["data"]["missing_required"] == []
+    assert all(component["stale"] is False for component in body["data"]["components"])

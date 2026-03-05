@@ -543,6 +543,143 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
     return _aggregate_position_rows(filtered, strategy_id)
 
 
+def _row_ts_ms(row: Mapping[str, Any]) -> int:
+    ts_ms = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp"))
+    return ts_ms if ts_ms is not None else 0
+
+
+def _cash_row_key(row: Mapping[str, Any]) -> tuple[str, str, str] | None:
+    exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
+    account = decode_text(
+        row.get("account")
+        or row.get("account_id")
+        or row.get("wallet")
+        or row.get("subaccount"),
+    ).strip()
+    asset = decode_text(row.get("asset") or row.get("coin") or row.get("base")).strip().upper()
+    if not asset:
+        return None
+    return (exchange, account, asset)
+
+
+def _position_portfolio_key(row: Mapping[str, Any]) -> tuple[str, str] | None:
+    exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
+    instrument = decode_text(
+        row.get("instrument_id")
+        or row.get("symbol")
+        or row.get("asset")
+        or row.get("coin")
+        or row.get("base"),
+    ).strip().upper()
+    if not instrument:
+        return None
+    return (exchange, instrument)
+
+
+def _position_portfolio_row_from_agg(
+    key: tuple[str, str],
+    agg: Mapping[str, Any],
+    *,
+    portfolio_id: str,
+) -> dict[str, Any] | None:
+    exchange, instrument = key
+    qty: Decimal = agg["qty"]
+    if qty == 0:
+        return None
+
+    side = "LONG" if qty > 0 else "SHORT"
+    avg_px = agg["avg_num"] / agg["avg_den"] if agg["avg_den"] > 0 else None
+    upnl = agg["upnl"] if agg["has_upnl"] else None
+
+    row = dict(agg["row"])
+    row["strategy_id"] = portfolio_id
+    if exchange:
+        row["exchange"] = exchange
+    row.setdefault("kind", "position")
+    row["instrument_id"] = decode_text(row.get("instrument_id") or instrument).strip() or instrument
+    if not decode_text(row.get("asset")).strip():
+        row["asset"] = instrument
+    qty_text = _decimal_text(qty)
+    row["signed_qty"] = qty_text
+    row["quantity"] = _decimal_text(abs(qty))
+    row["free"] = qty_text
+    row["total"] = qty_text
+
+    meta_parts = [side]
+    if avg_px is not None:
+        meta_parts.append(f"avg={_decimal_text(avg_px)}")
+    if upnl is not None:
+        meta_parts.append(f"uPnL={_decimal_text(upnl)}")
+    row["locked"] = " ".join(meta_parts)
+    row["side"] = side
+    row["row_id"] = f"{portfolio_id}:pos:{exchange}:{instrument}"
+    return row
+
+
+def merge_portfolio_balances_rows(
+    *,
+    rows_by_strategy: Mapping[str, Sequence[Mapping[str, Any]]],
+    portfolio_id: str = "tokenmm",
+) -> list[dict[str, Any]]:
+    cash_latest: dict[tuple[str, str, str], tuple[int, dict[str, Any]]] = {}
+    position_grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    passthrough_rows: list[dict[str, Any]] = []
+
+    for rows in rows_by_strategy.values():
+        for source_row in rows:
+            if not isinstance(source_row, Mapping):
+                continue
+            row = dict(source_row)
+
+            if _is_position_row(row):
+                position_key = _position_portfolio_key(row)
+                if position_key is None:
+                    continue
+                agg = position_grouped.get(position_key)
+                if agg is None:
+                    agg = {
+                        "row": dict(row),
+                        "qty": Decimal(0),
+                        "avg_num": Decimal(0),
+                        "avg_den": Decimal(0),
+                        "upnl": Decimal(0),
+                        "has_upnl": False,
+                    }
+                    position_grouped[position_key] = agg
+                _position_agg_update(agg, row)
+                continue
+
+            cash_key = _cash_row_key(row)
+            if cash_key is None:
+                passthrough_rows.append(row)
+                continue
+
+            row_ts_ms = _row_ts_ms(row)
+            previous = cash_latest.get(cash_key)
+            if previous is None or row_ts_ms >= previous[0]:
+                merged = dict(row)
+                merged["strategy_id"] = portfolio_id
+                merged["row_id"] = f"{portfolio_id}:cash:{cash_key[0]}:{cash_key[1]}:{cash_key[2]}"
+                merged["exchange"] = cash_key[0]
+                if cash_key[1]:
+                    merged["account"] = cash_key[1]
+                merged["asset"] = cash_key[2]
+                merged["coin"] = cash_key[2]
+                merged["base"] = cash_key[2]
+                cash_latest[cash_key] = (row_ts_ms, merged)
+
+    merged_positions: list[dict[str, Any]] = []
+    for key, agg in position_grouped.items():
+        merged = _position_portfolio_row_from_agg(key, agg, portfolio_id=portfolio_id)
+        if merged is not None:
+            merged_positions.append(merged)
+
+    merged_cash = [item[1] for item in cash_latest.values()]
+    merged_rows = [*merged_positions, *merged_cash, *passthrough_rows]
+    merged_rows.sort(key=lambda row: decode_text(row.get("row_id")).strip())
+    return merged_rows
+
+
 def build_legs_payload(
     *,
     contracts: Sequence[ContractCatalogEntry],
