@@ -118,6 +118,41 @@ function resolveIncomingResyncId(explicitResyncId: unknown, events: TradeEvent[]
   return resolveResyncIdFromEvents(events);
 }
 
+function normalizeTradeSide(value: unknown): string {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (text === '1' || text === 'buy' || text === 'bid') return 'buy';
+  if (text === '2' || text === 'sell' || text === 'ask') return 'sell';
+  return text;
+}
+
+function coerceTradeTsMs(value: unknown): number | undefined {
+  const ts = coerceNumber(value);
+  if (ts === undefined || ts <= 0) return undefined;
+  if (ts < 1e12) return Math.trunc(ts * 1000);
+  if (ts >= 1e18) return Math.trunc(ts / 1e6);
+  if (ts >= 1e15) return Math.trunc(ts / 1e3);
+  return Math.trunc(ts);
+}
+
+function deriveCoinFromSymbol(symbolText: string): string | undefined {
+  const symbol = symbolText.trim().toUpperCase();
+  if (!symbol) return undefined;
+  const baseSymbolFromVenue = symbol.split('.')[0] || symbol;
+  const baseSymbolFromSlash = baseSymbolFromVenue.split('/')[0] || baseSymbolFromVenue;
+  const baseSymbol = baseSymbolFromSlash.split('-')[0] || baseSymbolFromSlash;
+  for (const quote of ['USDT', 'USDC', 'USD', 'PERP']) {
+    if (baseSymbol.endsWith(quote) && baseSymbol.length > quote.length) {
+      return baseSymbol.slice(0, -quote.length);
+    }
+  }
+  return baseSymbol || undefined;
+}
+
+function deriveExchangeFromInstrument(instrumentId: string): string | undefined {
+  const suffix = instrumentId.split('.').pop()?.trim().toLowerCase();
+  return suffix || undefined;
+}
+
 function normalizeTrade(event: TradeEvent): TradeRow | null {
   if (!event || typeof event !== 'object') return null;
   if (event.op !== 'upsert') return null;
@@ -132,26 +167,48 @@ function normalizeTrade(event: TradeEvent): TradeRow | null {
       ? Math.trunc(versionCandidate)
       : 1;
 
-  const ts =
-    coerceNumber((event as any).ts_ms) ??
-    coerceNumber((event as any).ts) ??
-    coerceNumber((event as any).created_ts_ms) ??
-    coerceNumber((event as any).seq) ??
-    Date.now();
   const price = coerceNumber(event.price as unknown);
   const qty = coerceNumber(event.qty as unknown);
-  const mv = coerceNumber((event as any).notional ?? (event as any).mv);
+  const derivedMv = price !== undefined && qty !== undefined ? price * qty : undefined;
+  const rawMv = coerceNumber((event as any).notional ?? (event as any).mv);
+  const mv =
+    (rawMv === undefined || rawMv === 0) && derivedMv !== undefined && derivedMv !== 0
+      ? derivedMv
+      : rawMv;
   const fee = coerceNumber(event.fee as unknown);
   const fee_quote = coerceNumber((event as any).fee_quote);
   const gas_units = coerceNumber(
     (event as any).gas_units ?? (event as any).gas_used ?? (event as any).gas,
   );
 
+  const instrumentId = String((event as any).instrument_id ?? '').trim();
+  const symbolText = String((event as any).symbol ?? (instrumentId ? instrumentId.split('.')[0] : '') ?? '').trim();
+  const coinText = String((event as any).coin ?? (event as any).asset ?? (event as any).base_currency ?? '').trim();
+  const coin = coinText || deriveCoinFromSymbol(symbolText) || symbolText || '';
+  const exchangeText = String((event as any).exchange ?? (event as any).venue ?? '').trim();
+  const exchange = (exchangeText || deriveExchangeFromInstrument(instrumentId) || '').toLowerCase();
+  const side = normalizeTradeSide((event as any).side);
+
+  const tsMs =
+    coerceTradeTsMs((event as any).ts_ms) ??
+    coerceTradeTsMs((event as any).ts_event) ??
+    coerceTradeTsMs((event as any).ts) ??
+    coerceTradeTsMs((event as any).created_ts_ms);
+  const ts =
+    tsMs ??
+    coerceNumber((event as any).ts_ms) ??
+    coerceNumber((event as any).ts) ??
+    coerceNumber((event as any).created_ts_ms) ??
+    coerceNumber((event as any).seq) ??
+    Date.now();
+  const timeText = String((event as any).time ?? '').trim();
+  const time = timeText || (tsMs !== undefined ? new Date(tsMs).toISOString() : '');
+
   const trade: TradeRow = {
-    time: (event as any).time ?? '',
-    coin: (event as any).coin ?? (event as any).symbol ?? '',
-    exchange: (event as any).exchange ?? (event as any).venue ?? '',
-    side: (event as any).side ?? '',
+    time,
+    coin,
+    exchange,
+    side,
     price: price ?? null,
     qty: qty ?? null,
     mv: mv ?? null,
@@ -979,10 +1036,16 @@ const mergeSignalStrategyRows = (
       ? normalizedPrevLastTrade
       : normalizedIncoming.last_trade;
 
+    const mergedParams =
+      (normalizedIncoming as any).params !== undefined
+        ? { ...(prev.params ?? {}), ...(((normalizedIncoming as any).params ?? {}) as any) }
+        : prev.params;
+
     // Sticky edge fields: when WS snapshot momentarily omits decision/edge2, keep last known
     const merged: SignalStrategy = {
       ...prev,
       ...normalizedIncoming,
+      params: mergedParams as any,
       legs: mergedLegs,
       last_trade: mergedLastTrade,
       decision_edge_bps: keepIfUndefined(prev.decision_edge_bps, normalizedIncoming.decision_edge_bps),
@@ -1011,7 +1074,12 @@ const mergeSignalStrategyRows = (
   }
 
   // Add new strategy
-  return [...rows, normalizedIncoming];
+  const incomingParams = (normalizedIncoming as any).params;
+  const normalizedParams =
+    incomingParams && typeof incomingParams === 'object'
+      ? (incomingParams as any)
+      : ({ bot_on: '0' } as any);
+  return [...rows, { ...normalizedIncoming, params: normalizedParams } as SignalStrategy];
 };
 
 export const useSignalStore = create<SignalStore>((set) => ({
@@ -1091,7 +1159,7 @@ export const selectSignalLastUpdate = (state: SignalStore) => state.lastUpdate;
 export const selectSignalById = (state: SignalStore, id: string) =>
   state.rows.find(r => r.id === id);
 export const selectActiveStrategies = (state: SignalStore) =>
-  state.rows.filter(r => r.params.bot_on === '1');
+  state.rows.filter(r => (r.params?.bot_on ?? '0') === '1');
 export const selectSignalByEdge = (state: SignalStore, minEdge: number) =>
   state.rows.filter(r => (r.edge2_bps ?? 0) >= minEdge);
 

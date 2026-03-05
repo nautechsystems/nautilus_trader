@@ -33,4 +33,28 @@ describe('trades store applyDelta stats', () => {
     ]);
     expect(stats3.newRows).toBe(1);
   });
+
+  it('normalizes side/coin/exchange/time/notional for raw trade events', () => {
+    useTradesStore.getState().applyDelta([
+      {
+        op: 'upsert',
+        row_id: 'raw-1',
+        version: 1,
+        seq: 100,
+        ts_ms: 1700000000000,
+        instrument_id: 'PLUMEUSDT.BYBIT',
+        side: '1',
+        price: 0.009974,
+        qty: 1000,
+      } as any,
+    ]);
+
+    const [row] = useTradesStore.getState().rows;
+    expect(row).toBeTruthy();
+    expect(row.coin).toBe('PLUME');
+    expect(row.exchange).toBe('bybit');
+    expect(row.side).toBe('buy');
+    expect(row.time).toBe(new Date(1700000000000).toISOString());
+    expect(row.mv).toBeCloseTo(9.974);
+  });
 });

@@ -1806,6 +1806,7 @@ export default function SignalTable({
         }
         const apply: Partial<SignalStrategy> = { id } as any;
         const passThroughKeys = new Set([
+          'meta',
           'strategy_family',
           'decision_edge_bps',
           'edge2_bps',

@@ -116,6 +116,10 @@ describe('signal_delta field pass-through wiring', () => {
           ],
         },
         balances_ok: true,
+        meta: {
+          class: 'maker_v3',
+          external_strategy_id: 'maker_v3_external',
+        },
         last_trade: {
           side: 'buy',
           price: 0.0095,
@@ -134,6 +138,10 @@ describe('signal_delta field pass-through wiring', () => {
       summary: 'Low inventory on one venue',
     });
     expect(merged?.balances_ok).toBe(true);
+    expect(merged?.meta).toMatchObject({
+      class: 'maker_v3',
+      external_strategy_id: 'maker_v3_external',
+    });
     expect(merged?.last_trade).toMatchObject({
       side: 'buy',
       price: 0.0095,
