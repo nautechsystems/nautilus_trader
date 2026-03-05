@@ -523,14 +523,14 @@ PancakeSwap is no longer “just V2 on BSC”. The official GitHub org publishes
 **Primary sources (SmartRouter / StableSwap / quoters):**
 
 - Note: links below reference upstream `main` branches as of **2026-03-04**; when implementing, prefer commit-pinned URLs for long-lived reproducibility.
-- SmartRouter composition (V2/V3/StableSwap + multicall):  
+- SmartRouter composition (V2/V3/StableSwap + multicall):
   - https://raw.githubusercontent.com/pancakeswap/pancake-v3-contracts/main/projects/router/contracts/SmartRouter.sol
   - https://raw.githubusercontent.com/pancakeswap/pancake-v3-contracts/main/projects/router/contracts/base/MulticallExtended.sol
-- SmartRouter swap interfaces (note lack of `deadline` on swap methods):  
+- SmartRouter swap interfaces (note lack of `deadline` on swap methods):
   - https://raw.githubusercontent.com/pancakeswap/pancake-v3-contracts/main/projects/router/contracts/interfaces/IV2SwapRouter.sol
   - https://raw.githubusercontent.com/pancakeswap/pancake-v3-contracts/main/projects/router/contracts/interfaces/IV3SwapRouter.sol
   - https://raw.githubusercontent.com/pancakeswap/pancake-v3-contracts/main/projects/router/contracts/interfaces/IStableSwapRouter.sol
-- V3 quote surface (internal callback revert is caught/decoded; RPC returns normally):  
+- V3 quote surface (internal callback revert is caught/decoded; RPC returns normally):
   - https://raw.githubusercontent.com/pancakeswap/pancake-v3-contracts/main/projects/router/contracts/lens/QuoterV2.sol
 
 **Canonical addresses (do not hardcode in strategies; treat as defaults + validate at startup):**
@@ -845,10 +845,10 @@ updating config and restarting the node. This avoids hot-reload complexity in ex
 
 **On-chain validation checklist (required before enabling trading for a new pool):**
 
-1) `eth_getCode(pool) != 0x` (contract exists)  
-2) `pair.factory()` equals configured/default PCS factory  
-3) `pair.token0()` / `pair.token1()` resolve to ERC20 contracts with `eth_getCode != 0x`  
-4) token metadata loads (decimals/symbol/name) and passes filters (e.g. non-empty fields if configured)  
+1) `eth_getCode(pool) != 0x` (contract exists)
+2) `pair.factory()` equals configured/default PCS factory
+3) `pair.token0()` / `pair.token1()` resolve to ERC20 contracts with `eth_getCode != 0x`
+4) token metadata loads (decimals/symbol/name) and passes filters (e.g. non-empty fields if configured)
 5) token safety policy:
    - MVP default: deny fee-on-transfer/rebasing unless explicitly allowlisted (section 10.5 / Milestone 7b)
 6) optional but recommended: liquidity sanity check (avoid “dead” pools)
@@ -863,15 +863,15 @@ updating config and restarting the node. This avoids hot-reload complexity in ex
 
 **Adding a pool (MVP):**
 
-1) Add pool address to the adapter config allowlist.  
-2) Run a local validation tool (planned) to print token0/token1, symbols/decimals, factory match, and a config snippet.  
-3) Restart the node and verify instrument is loaded + quoting succeeds.  
+1) Add pool address to the adapter config allowlist.
+2) Run a local validation tool (planned) to print token0/token1, symbols/decimals, factory match, and a config snippet.
+3) Restart the node and verify instrument is loaded + quoting succeeds.
 4) Execute a small “smoke swap” in a non-production wallet to validate end-to-end receipt decoding.
 
 **Removing a pool (MVP):**
 
-1) Remove it from the allowlist.  
-2) Restart the node.  
+1) Remove it from the allowlist.
+2) Restart the node.
 3) Ensure any in-flight tx journal entries for that pool are drained/terminalized before fully disabling the deployment.
 
 **RPC/streaming impact (ops note):**
@@ -1561,17 +1561,17 @@ AMM execution failures are common and often opaque (especially on BSC). The adap
 
 This plan therefore requires three layers of error handling:
 
-1) **JSON-RPC error capture** (code/message/data), per method, with retry classification.  
-2) **EVM revert decoding** (Error(string), Panic(uint256), custom errors).  
+1) **JSON-RPC error capture** (code/message/data), per method, with retry classification.
+2) **EVM revert decoding** (Error(string), Panic(uint256), custom errors).
 3) **DEX-aware mapping** (router/library/helper revert reasons → canonical `DexErrorCode`).
 
 **Classification precedence (required for determinism):**
 
 Always classify in this order so the same failure never maps differently:
 
-1) transport/infrastructure (HTTP status, WS disconnects, timeouts)  
-2) JSON-RPC error (code/message/data)  
-3) EVM revert decode + DEX mapping (selector/reason/custom error)  
+1) transport/infrastructure (HTTP status, WS disconnects, timeouts)
+2) JSON-RPC error (code/message/data)
+3) EVM revert decode + DEX mapping (selector/reason/custom error)
 4) receipt/decode invariants (missing logs, wrong pool, reorg artifacts)
 
 #### 8.5.1 Canonical error taxonomy (Rust types)
@@ -1708,9 +1708,9 @@ When the node returns revert data (from `eth_call`, `eth_estimateGas`, or error 
 - Maintain a per-family selector map fixture under adapter tests (V2, V3, SmartRouter, UniversalRouter, StableSwap) with:
   - `selector_hex` → `decoded_name` → `DexErrorCode` (plus optional severity/retryable hint).
 - Resolution precedence:
-  1) explicit selector map hit,  
-  2) known short string/token mapping,  
-  3) `Error(string)`/`Panic(uint256)` decode,  
+  1) explicit selector map hit,
+  2) known short string/token mapping,
+  3) `Error(string)`/`Panic(uint256)` decode,
   4) `UNKNOWN_REVERT` with full raw bytes.
 - For wrapper errors like `ExecutionFailed(uint256,bytes)`, decode top-level selector first, then nested payload recursively (depth-limited).
 - Persist both top-level and nested selectors in tx journal for later backfilling when selector maps are expanded.
@@ -1753,7 +1753,7 @@ When the node returns revert data (from `eth_call`, `eth_estimateGas`, or error 
 - Pancake V3 pool short codes: https://raw.githubusercontent.com/pancakeswap/pancake-v3-contracts/main/projects/v3-core/contracts/PancakeV3Pool.sol
 - Pancake V3 SwapRouter revert strings: https://raw.githubusercontent.com/pancakeswap/pancake-v3-contracts/main/projects/v3-periphery/contracts/SwapRouter.sol
 - Pancake V3 deadline revert string (`Transaction too old`): https://raw.githubusercontent.com/pancakeswap/pancake-v3-contracts/main/projects/v3-periphery/contracts/base/PeripheryValidation.sol
-- UniversalRouter custom errors + command model (for selector-based mapping):  
+- UniversalRouter custom errors + command model (for selector-based mapping):
   - https://raw.githubusercontent.com/pancakeswap/infinity-universal-router/main/src/interfaces/IUniversalRouter.sol
   - https://raw.githubusercontent.com/pancakeswap/infinity-universal-router/main/src/libraries/Commands.sol
 - BSC JSON-RPC typed error codes (upstream client): https://raw.githubusercontent.com/bnb-chain/bsc/master/internal/ethapi/errors.go
@@ -1866,7 +1866,7 @@ This plan therefore treats RPC usage as a first-class design constraint.
 
 **Guiding principles (required):**
 
-1) **Execution must win over data.**  
+1) **Execution must win over data.**
    If RPC capacity is constrained, execution-critical calls (nonce, sendRawTx, receipts) must not be starved by
    live data streaming or historical backfills. Streaming/backfill must be best-effort and pause/backoff under load.
    - **Implementation requirement:** separate budgets/queues for execution vs data:
@@ -1882,7 +1882,7 @@ This plan therefore treats RPC usage as a first-class design constraint.
      - treat RPC calls as having different “cost”; `eth_getLogs` and `eth_estimateGas` should consume more budget than cheap calls,
      - keep an explicit per-method budget table so adding a new streaming feature cannot accidentally starve receipts.
 
-2) **Prefer push (WebSocket) over pull (HTTP polling).**  
+2) **Prefer push (WebSocket) over pull (HTTP polling).**
    - Use `wss_rpc_url` to subscribe to `newHeads` and drive:
      - receipt polling cadence (poll once per new block instead of every 200–500ms),
      - confirmation counting (avoid `eth_getBlockByNumber` spam).
@@ -1900,7 +1900,7 @@ This plan therefore treats RPC usage as a first-class design constraint.
      - reconnect with bounded backoff and stop flapping after `ws_reconnect_max_attempts` (enter degraded mode + alert operator).
    - If market data is sourced from RPC (instead of HyperSync), prefer WS log streaming where supported.
 
-3) **Batch reads using Multicall3 wherever possible.**  
+3) **Batch reads using Multicall3 wherever possible.**
    Token metadata, balances, and pool static metadata (token0/token1) must be loaded via Multicall when initializing
    a universe of pools/tokens, rather than N× per-token RPC calls.
 
@@ -2211,8 +2211,8 @@ Do it later if/when you want:
   - `PairCreated` topic0: `0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9`
   - `Swap` topic0: `0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822`
   - `Sync` topic0: `0x1c411e9a96e071241c2f21f7726b17ae89e3cab4c78be50e062b03a9fffbbad1`
-- For PCS V3, use the PCS V3 factory + pool event signatures (note: PCS V3 `Swap` differs from vanilla Uniswap V3):  
-  - `PoolCreated(address,address,uint24,int24,address)` topic0: `0x783cca1c0412dd0d695e784568c96da2e9c22ff989357a2e8b1d9b2b4e6b7118`  
+- For PCS V3, use the PCS V3 factory + pool event signatures (note: PCS V3 `Swap` differs from vanilla Uniswap V3):
+  - `PoolCreated(address,address,uint24,int24,address)` topic0: `0x783cca1c0412dd0d695e784568c96da2e9c22ff989357a2e8b1d9b2b4e6b7118`
   - `Swap(address,address,int256,int256,uint160,uint128,int24,uint128,uint128)` topic0: `0x19b47279256b2a23a1665c810c8d55a1758940ee09377d4f8d26497a3577dc83`
 
 **Tests:**
@@ -2922,10 +2922,10 @@ Run:
 
 **Phased delivery recommendation (keeps risk contained):**
 
-1) Command model + safe subset encoding (no Permit2)  
-2) Signer-only tx path for UniversalRouter with pre-approved allowances  
-3) Add typed-data signer capability + Permit2 commands (one-tx permit+swap)  
-4) Harden error decoding/observability (`ExecutionFailed` nesting, opcode attribution)  
+1) Command model + safe subset encoding (no Permit2)
+2) Signer-only tx path for UniversalRouter with pre-approved allowances
+3) Add typed-data signer capability + Permit2 commands (one-tx permit+swap)
+4) Harden error decoding/observability (`ExecutionFailed` nesting, opcode attribution)
 5) Add `INFI_SWAP` planner integration (Infinity pools)
 
 **Files:**
@@ -3212,7 +3212,7 @@ Run: `pytest tests/integration_tests/adapters/pancakeswap -q`
 
 Market data for AMMs has two roles:
 
-1) **Operator/strategy visibility** (prices/volumes, “is the pool alive?”), and  
+1) **Operator/strategy visibility** (prices/volumes, “is the pool alive?”), and
 2) **Execution support** (quote freshness, slippage tuning, pre-trade sanity checks).
 
 Because production RPC (e.g. Chainstack) is **rate-limited**, this milestone is designed to be “RPC-budget aware”.
@@ -3491,6 +3491,11 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - 2026-03-05 - PR0 (`pr0/pcs-plan-doc`, head SHA `3edac0c621c59c1db0c4bc2b8d354ed17d8355fb`) - status: open
   - Updated PR0 head SHA after appending mandatory plan tracking sections.
   - Tests run: none (docs-only).
+
+- 2026-03-05 - PR0 (`pr0/pcs-plan-doc`, head SHA `dfd240b24824d85fadd052f59d455d99e46e33e5`) - status: blocked
+  - Normalized trailing whitespace in imported plan text via pre-commit `trailing-whitespace` hook.
+  - Confirmed text-lint blockers: `typos` and `codespell` flag domain terms (`amountIn`, `FoT`, `LOK`, and related token names) that require explicit dictionary/ignore policy or targeted wording changes.
+  - Tests run: `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md` (pass), `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md` (fail), `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md` (fail).
 
 ## Deviations / Decisions
 
