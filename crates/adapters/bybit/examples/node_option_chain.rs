@@ -94,6 +94,8 @@ impl DataActor for OptionChainTester {
         // Collect option instrument data from cache (owned copies to release borrow).
         // Each entry: (instrument_id, underlying, settlement_currency, expiry_ns)
         // Bybit BTC options are USDT-settled (linear contracts).
+        // Filter out already-expired options.
+        let now_ns = self.clock().timestamp_ns().as_u64();
         let options: Vec<(InstrumentId, Ustr, Ustr, u64)> = {
             let cache = self.cache();
             let instruments = cache.instruments(&venue, Some(&underlying_filter));
@@ -103,6 +105,9 @@ impl DataActor for OptionChainTester {
                 .filter_map(|inst| {
                     if let InstrumentAny::CryptoOption(opt) = inst {
                         let expiry = inst.expiration_ns()?.as_u64();
+                        if expiry <= now_ns {
+                            return None;
+                        }
                         Some((
                             inst.id(),
                             underlying_filter,
@@ -121,7 +126,7 @@ impl DataActor for OptionChainTester {
             return Ok(());
         }
 
-        // Find the nearest (soonest) expiry
+        // Find the nearest (soonest) future expiry
         let nearest_expiry = options.iter().map(|(_, _, _, exp)| *exp).min().unwrap();
 
         // Prefer USDT-settled (Bybit BTC options default); fall back to any available settlement
