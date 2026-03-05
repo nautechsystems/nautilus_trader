@@ -38,6 +38,7 @@ from nautilus_trader.adapters.bybit import BybitExecClientConfig
 from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
 from nautilus_trader.adapters.bybit import BybitProductType
+from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
@@ -160,6 +161,25 @@ def _attach_runtime_params_manager(
     )
 
 
+def _redis_database_config(redis_cfg: dict[str, Any]) -> DatabaseConfig:
+    return DatabaseConfig(
+        type="redis",
+        host=str(redis_cfg.get("host", "127.0.0.1")),
+        port=int(redis_cfg.get("port", 6380)),
+        username=_optional_text(redis_cfg.get("username")),
+        password=_optional_text(redis_cfg.get("password")),
+    )
+
+
+def _resolve_reconciliation_settings(*, mode: str, node_cfg: dict[str, Any]) -> tuple[int, float]:
+    lookback_mins = int(node_cfg.get("exec_reconciliation_lookback_mins", 0))
+    startup_delay_secs = float(node_cfg.get("exec_reconciliation_startup_delay_secs", 10.0))
+    if mode == "live":
+        lookback_mins = max(0, lookback_mins)
+        startup_delay_secs = max(10.0, startup_delay_secs)
+    return lookback_mins, startup_delay_secs
+
+
 def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: bool) -> TradingNode:
     """
     Build and return a configured trading node for MakerV3.
@@ -195,6 +215,10 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     )
 
     enable_execution = bool(node_cfg.get("enable_execution", False)) or force_enable_execution
+    reconciliation_lookback_mins, reconciliation_startup_delay_secs = (
+        _resolve_reconciliation_settings(mode=mode, node_cfg=node_cfg)
+    )
+    redis_database = _redis_database_config(redis_cfg)
 
     config_node = TradingNodeConfig(
         trader_id=TraderId(trader_id),
@@ -204,20 +228,16 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
         ),
         exec_engine=LiveExecEngineConfig(
             reconciliation=bool(node_cfg.get("exec_reconciliation", True)),
-            reconciliation_lookback_mins=int(node_cfg.get("exec_reconciliation_lookback_mins", 5)),
+            reconciliation_lookback_mins=reconciliation_lookback_mins,
             reconciliation_instrument_ids=[maker_instrument_id],
-            reconciliation_startup_delay_secs=float(
-                node_cfg.get("exec_reconciliation_startup_delay_secs", 1.0),
-            ),
+            reconciliation_startup_delay_secs=reconciliation_startup_delay_secs,
+        ),
+        cache=CacheConfig(
+            database=redis_database,
+            flush_on_start=bool(node_cfg.get("cache_flush_on_start", False)),
         ),
         message_bus=MessageBusConfig(
-            database=DatabaseConfig(
-                type="redis",
-                host=str(redis_cfg.get("host", "127.0.0.1")),
-                port=int(redis_cfg.get("port", 6380)),
-                username=_optional_text(redis_cfg.get("username")),
-                password=_optional_text(redis_cfg.get("password")),
-            ),
+            database=redis_database,
             encoding="json",
             use_trader_prefix=False,
             use_trader_id=False,

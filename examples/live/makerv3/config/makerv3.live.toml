@@ -36,8 +36,10 @@ timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
 exec_reconciliation = true
-exec_reconciliation_lookback_mins = 5
-exec_reconciliation_startup_delay_secs = 1.0
+exec_reconciliation_lookback_mins = 0
+exec_reconciliation_startup_delay_secs = 10.0
+# Optional cache persistence guardrail:
+# cache_flush_on_start = false
 
 [node.bybit]
 api_key_env = "BYBIT_API_KEY"

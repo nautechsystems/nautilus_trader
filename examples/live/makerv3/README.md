@@ -200,3 +200,39 @@ Safety/behavior:
 3. Runtime files live under `.run/makerv3-prod/` (logs + pid files).
 4. AWS secret loading is supported without `eval` via
    `MAKERV3_LOAD_AWS_SECRETS=1`, `MAKERV3_BYBIT_SECRET_ID`, `MAKERV3_BINANCE_SECRET_ID`.
+
+## Multi-node TokenMM stack (5 nodes + bridge + API)
+
+Create/update per-node configs in `examples/live/makerv3/config/strategies.d/`, then run:
+
+```bash
+scripts/deploy/tokenmm_stack.sh start
+scripts/deploy/tokenmm_stack.sh status
+scripts/deploy/tokenmm_stack.sh health
+```
+
+Notes:
+
+1. Default mode for `tokenmm_stack.sh` is `paper` for local smoke. Use `TOKENMM_MODE=live` and
+   `TOKENMM_CONFIRM_LIVE=1` for production rollout.
+2. `health` checks:
+   - `GET /api/v1/healthz`
+   - `GET /tokenmm`
+   - Socket.IO polling handshake (`/socket.io/?EIO=4&transport=polling`)
+3. Runtime logs and pid files are under `.run/tokenmm-stack/`.
+
+## Ops guardrails for multi-node shared-account deployment
+
+1. Keep `[identity].strategy_id` (Flux) and `[strategy].strategy_id` (Nautilus StrategyId/order tags) unique
+   across all node processes.
+2. `run_node.py` wires Redis cache persistence by default using the `[redis]` config.
+3. Production defaults are set in `makerv3.live.toml`:
+   - `exec_reconciliation_startup_delay_secs = 10.0`
+   - `exec_reconciliation_lookback_mins = 0`
+4. `makerv3.toml` remains dev-oriented for reconciliation settings.
+5. Keep cancellation boundaries strategy-owned; avoid cross-strategy cancel blasts.
+6. Review execution filtering settings per node (`filter_unclaimed_external_orders`,
+   `filter_position_reports`) and use `external_order_claims` only when intentionally adopting existing
+   venue orders at startup.
+7. Keep strategy callbacks non-blocking; avoid blocking I/O on the event loop thread.
+8. Exclude `PENDING_CANCEL` orders when generating cancel batches to avoid duplicate cancel pressure.

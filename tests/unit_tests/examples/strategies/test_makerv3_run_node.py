@@ -79,3 +79,46 @@ def test_attach_runtime_params_manager_wires_redis_backed_factory(monkeypatch) -
         "schema_version": "v2",
     }
     assert strategy.params_manager_factory is sentinel_factory
+
+
+def test_resolve_reconciliation_settings_enforces_live_minimum_startup_delay() -> None:
+    lookback, startup_delay = run_node._resolve_reconciliation_settings(
+        mode="live",
+        node_cfg={
+            "exec_reconciliation_lookback_mins": -5,
+            "exec_reconciliation_startup_delay_secs": 1.0,
+        },
+    )
+
+    assert lookback == 0
+    assert startup_delay == 10.0
+
+
+def test_resolve_reconciliation_settings_keeps_dev_values_in_paper_mode() -> None:
+    lookback, startup_delay = run_node._resolve_reconciliation_settings(
+        mode="paper",
+        node_cfg={
+            "exec_reconciliation_lookback_mins": 5,
+            "exec_reconciliation_startup_delay_secs": 1.0,
+        },
+    )
+
+    assert lookback == 5
+    assert startup_delay == 1.0
+
+
+def test_redis_database_config_uses_redis_section_values() -> None:
+    database = run_node._redis_database_config(
+        {
+            "host": "127.0.0.10",
+            "port": 6381,
+            "username": "alice",
+            "password": "secret",
+        },
+    )
+
+    assert database.type == "redis"
+    assert database.host == "127.0.0.10"
+    assert database.port == 6381
+    assert database.username == "alice"
+    assert database.password == "secret"
