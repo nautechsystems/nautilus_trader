@@ -27,6 +27,27 @@ use nautilus_system::{
 };
 use pyo3::prelude::*;
 
+#[pyfunction]
+fn pancakeswap_v2_defaults_for_chain_id(chain_id: u32) -> PyResult<(String, String, String)> {
+    match chain_id {
+        // BSC mainnet: router, factory, wrapped native (WBNB).
+        56 => Ok((
+            "0x10ED43C718714eb63d5aA57B78B54704E256024E".to_string(),
+            "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73".to_string(),
+            "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c".to_string(),
+        )),
+        // BSC testnet: router, factory, wrapped native (WBNB).
+        97 => Ok((
+            "0xD99D1c33F9fC3444f8101754aBC46c52416550D1".to_string(),
+            "0x6725F303b657a9451d8BA641348b6761A6CC7a17".to_string(),
+            "0xae13d989dac2f0debff460ac112a837c89baa7cd".to_string(),
+        )),
+        _ => Err(to_pyvalue_err(format!(
+            "No PancakeSwapV2 defaults configured for chain_id={chain_id}"
+        ))),
+    }
+}
+
 #[cfg(feature = "hypersync")]
 /// Extractor function for `BlockchainDataClientFactory`.
 fn extract_blockchain_factory(
@@ -91,6 +112,7 @@ pub fn blockchain(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::factories::BlockchainExecutionClientFactory>()?;
     #[cfg(feature = "hypersync")]
     m.add_class::<crate::factories::BlockchainDataClientFactory>()?;
+    m.add_function(wrap_pyfunction!(pancakeswap_v2_defaults_for_chain_id, m)?)?;
 
     // Register extractors with the global registry
     let registry = get_global_pyo3_registry();

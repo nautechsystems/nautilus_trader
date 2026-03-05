@@ -164,7 +164,24 @@ impl BlockchainExecutionClientConfig {
         wallet_max_tokens_per_refresh=256,
         wallet_refresh_on_connect=true,
         multicall_max_batch_size=64,
-        multicall_min_batch_size=4
+        multicall_min_batch_size=4,
+        signer_endpoint=None,
+        signer_route="/sign/eth",
+        signer_timeout_ms=5_000,
+        signer_require_tls=true,
+        signer_wallet_address=None,
+        execution_router_address=None,
+        execution_default_slippage_bps=100,
+        execution_default_deadline_secs=120,
+        execution_confirmations_required=1,
+        execution_receipt_max_polls=60,
+        execution_receipt_poll_interval_ms=1_000,
+        execution_max_inflight_txs_per_wallet=1,
+        execution_require_preapproved_allowance=true,
+        execution_max_fee_per_gas=1_000_000_000,
+        execution_max_priority_fee_per_gas=1_000_000_000,
+        execution_journal_path=None,
+        execution_unsupported_token_addresses=None
     ))]
     fn py_new(
         trader_id: TraderId,
@@ -183,6 +200,23 @@ impl BlockchainExecutionClientConfig {
         wallet_refresh_on_connect: bool,
         multicall_max_batch_size: u32,
         multicall_min_batch_size: u32,
+        signer_endpoint: Option<String>,
+        signer_route: String,
+        signer_timeout_ms: u64,
+        signer_require_tls: bool,
+        signer_wallet_address: Option<String>,
+        execution_router_address: Option<String>,
+        execution_default_slippage_bps: u32,
+        execution_default_deadline_secs: u64,
+        execution_confirmations_required: u64,
+        execution_receipt_max_polls: u32,
+        execution_receipt_poll_interval_ms: u64,
+        execution_max_inflight_txs_per_wallet: u32,
+        execution_require_preapproved_allowance: bool,
+        execution_max_fee_per_gas: u64,
+        execution_max_priority_fee_per_gas: u64,
+        execution_journal_path: Option<String>,
+        execution_unsupported_token_addresses: Option<Vec<String>>,
     ) -> Self {
         let mut config = Self::new(
             trader_id,
@@ -203,6 +237,24 @@ impl BlockchainExecutionClientConfig {
         config.wallet_refresh_on_connect = wallet_refresh_on_connect;
         config.multicall_max_batch_size = multicall_max_batch_size;
         config.multicall_min_batch_size = multicall_min_batch_size;
+        config.signer_endpoint = signer_endpoint;
+        config.signer_route = signer_route;
+        config.signer_timeout_ms = signer_timeout_ms;
+        config.signer_require_tls = signer_require_tls;
+        config.signer_wallet_address = signer_wallet_address;
+        config.execution_router_address = execution_router_address;
+        config.execution_default_slippage_bps = execution_default_slippage_bps;
+        config.execution_default_deadline_secs = execution_default_deadline_secs;
+        config.execution_confirmations_required = execution_confirmations_required;
+        config.execution_receipt_max_polls = execution_receipt_max_polls;
+        config.execution_receipt_poll_interval_ms = execution_receipt_poll_interval_ms;
+        config.execution_max_inflight_txs_per_wallet = execution_max_inflight_txs_per_wallet;
+        config.execution_require_preapproved_allowance = execution_require_preapproved_allowance;
+        config.execution_max_fee_per_gas = execution_max_fee_per_gas;
+        config.execution_max_priority_fee_per_gas = execution_max_priority_fee_per_gas;
+        config.execution_journal_path = execution_journal_path;
+        config.execution_unsupported_token_addresses =
+            execution_unsupported_token_addresses.unwrap_or_default();
 
         config
     }
@@ -301,6 +353,108 @@ impl BlockchainExecutionClientConfig {
     #[getter]
     const fn rpc_requests_per_second(&self) -> Option<u32> {
         self.rpc_requests_per_second
+    }
+
+    /// Returns the remote signer endpoint URL.
+    #[getter]
+    fn signer_endpoint(&self) -> Option<String> {
+        self.signer_endpoint.clone()
+    }
+
+    /// Returns the signer route path.
+    #[getter]
+    fn signer_route(&self) -> String {
+        self.signer_route.clone()
+    }
+
+    /// Returns signer timeout in milliseconds.
+    #[getter]
+    const fn signer_timeout_ms(&self) -> u64 {
+        self.signer_timeout_ms
+    }
+
+    /// Returns whether signer endpoint must be TLS.
+    #[getter]
+    const fn signer_require_tls(&self) -> bool {
+        self.signer_require_tls
+    }
+
+    /// Returns optional signer wallet override.
+    #[getter]
+    fn signer_wallet_address(&self) -> Option<String> {
+        self.signer_wallet_address.clone()
+    }
+
+    /// Returns optional router address override for execution.
+    #[getter]
+    fn execution_router_address(&self) -> Option<String> {
+        self.execution_router_address.clone()
+    }
+
+    /// Returns default execution slippage (bps).
+    #[getter]
+    const fn execution_default_slippage_bps(&self) -> u32 {
+        self.execution_default_slippage_bps
+    }
+
+    /// Returns default execution deadline (seconds).
+    #[getter]
+    const fn execution_default_deadline_secs(&self) -> u64 {
+        self.execution_default_deadline_secs
+    }
+
+    /// Returns required confirmations before terminalization.
+    #[getter]
+    const fn execution_confirmations_required(&self) -> u64 {
+        self.execution_confirmations_required
+    }
+
+    /// Returns max receipt polling attempts.
+    #[getter]
+    const fn execution_receipt_max_polls(&self) -> u32 {
+        self.execution_receipt_max_polls
+    }
+
+    /// Returns receipt polling interval (ms).
+    #[getter]
+    const fn execution_receipt_poll_interval_ms(&self) -> u64 {
+        self.execution_receipt_poll_interval_ms
+    }
+
+    /// Returns max in-flight transactions per wallet.
+    #[getter]
+    const fn execution_max_inflight_txs_per_wallet(&self) -> u32 {
+        self.execution_max_inflight_txs_per_wallet
+    }
+
+    /// Returns whether preapproved allowance is required.
+    #[getter]
+    const fn execution_require_preapproved_allowance(&self) -> bool {
+        self.execution_require_preapproved_allowance
+    }
+
+    /// Returns max fee per gas.
+    #[getter]
+    const fn execution_max_fee_per_gas(&self) -> u64 {
+        self.execution_max_fee_per_gas
+    }
+
+    /// Returns max priority fee per gas.
+    #[getter]
+    const fn execution_max_priority_fee_per_gas(&self) -> u64 {
+        self.execution_max_priority_fee_per_gas
+    }
+
+    /// Returns optional execution journal path.
+    #[getter]
+    fn execution_journal_path(&self) -> Option<String> {
+        self.execution_journal_path.clone()
+    }
+
+    /// Returns explicit unsupported token addresses for execution decode.
+    #[getter]
+    fn execution_unsupported_token_addresses(&self) -> Vec<String> {
+        self.execution_unsupported_token_addresses.clone()
     }
 
     /// Returns a string representation of the configuration.

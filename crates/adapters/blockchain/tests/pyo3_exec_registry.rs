@@ -38,6 +38,17 @@ fn test_pyo3_exec_factory_and_config_registry_roundtrip() {
         module
             .getattr("BlockchainDataClientConfig")
             .expect("Data config should be exposed in blockchain pymodule with python feature");
+        let defaults_fn = module
+            .getattr("pancakeswap_v2_defaults_for_chain_id")
+            .expect("PancakeSwap defaults helper should be exposed");
+        let defaults: (String, String, String) = defaults_fn
+            .call1((56_u32,))
+            .expect("Defaults lookup for BSC should succeed")
+            .extract()
+            .expect("Defaults tuple should extract");
+        assert_eq!(defaults.0, "0x10ED43C718714eb63d5aA57B78B54704E256024E");
+        assert_eq!(defaults.1, "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73");
+        assert_eq!(defaults.2, "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c");
 
         let registry = get_global_pyo3_registry();
 
@@ -105,6 +116,21 @@ fn test_pyo3_exec_factory_and_config_registry_roundtrip() {
                 String::from("0x0000000000000000000000000000000000000003"),
             )
             .expect("Should set wallet_wnative_address kwarg");
+        kwargs
+            .set_item("signer_endpoint", String::from("https://signer.internal"))
+            .expect("Should set signer_endpoint kwarg");
+        kwargs
+            .set_item(
+                "execution_router_address",
+                String::from("0x0000000000000000000000000000000000000004"),
+            )
+            .expect("Should set execution_router_address kwarg");
+        kwargs
+            .set_item(
+                "execution_unsupported_token_addresses",
+                vec![String::from("0x0000000000000000000000000000000000000005")],
+            )
+            .expect("Should set execution_unsupported_token_addresses kwarg");
 
         let py_config = config_class
             .call(
@@ -150,6 +176,36 @@ fn test_pyo3_exec_factory_and_config_registry_roundtrip() {
         assert_eq!(
             wallet_wnative_address,
             Some(String::from("0x0000000000000000000000000000000000000003"))
+        );
+
+        let signer_endpoint: Option<String> = py_config
+            .getattr("signer_endpoint")
+            .expect("Config should expose signer_endpoint")
+            .extract()
+            .expect("signer_endpoint should extract");
+        assert_eq!(
+            signer_endpoint,
+            Some(String::from("https://signer.internal"))
+        );
+
+        let execution_router_address: Option<String> = py_config
+            .getattr("execution_router_address")
+            .expect("Config should expose execution_router_address")
+            .extract()
+            .expect("execution_router_address should extract");
+        assert_eq!(
+            execution_router_address,
+            Some(String::from("0x0000000000000000000000000000000000000004"))
+        );
+
+        let unsupported_tokens: Vec<String> = py_config
+            .getattr("execution_unsupported_token_addresses")
+            .expect("Config should expose execution_unsupported_token_addresses")
+            .extract()
+            .expect("execution_unsupported_token_addresses should extract");
+        assert_eq!(
+            unsupported_tokens,
+            vec![String::from("0x0000000000000000000000000000000000000005")]
         );
     });
 }
