@@ -427,21 +427,30 @@ class BybitDataClient(LiveMarketDataClient):
             return
 
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        # Reference counting: only subscribe ticker if first user of channel
+        # subscribe_option_greeks registers the instrument for greeks parsing
+        # in the Rust DashSet AND subscribes the ticker channel. Track in
+        # _ticker_subscriptions for ref counting with other ticker users.
         if pyo3_instrument_id not in self._ticker_subscriptions:
             self._ticker_subscriptions[pyo3_instrument_id] = set()
-            await ws_client.subscribe_ticker(pyo3_instrument_id)
+        await ws_client.subscribe_option_greeks(pyo3_instrument_id)  # type: ignore[attr-defined]
         self._ticker_subscriptions[pyo3_instrument_id].add("option_greeks")
 
     async def _unsubscribe_option_greeks(self, command) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        # Reference counting: only unsubscribe ticker if last user of channel
         if pyo3_instrument_id in self._ticker_subscriptions:
             self._ticker_subscriptions[pyo3_instrument_id].discard("option_greeks")
             if not self._ticker_subscriptions[pyo3_instrument_id]:
-                await ws_client.unsubscribe_ticker(pyo3_instrument_id)
+                # Last ticker user — unsubscribe greeks (removes from DashSet
+                # and unsubscribes ticker channel)
+                await ws_client.unsubscribe_option_greeks(pyo3_instrument_id)  # type: ignore[attr-defined]
                 del self._ticker_subscriptions[pyo3_instrument_id]
+            else:
+                # Other ticker users remain — unsubscribe_option_greeks would
+                # kill the ticker channel, so just remove greeks registration
+                # and re-subscribe ticker to keep it alive
+                await ws_client.unsubscribe_option_greeks(pyo3_instrument_id)  # type: ignore[attr-defined]
+                await ws_client.subscribe_ticker(pyo3_instrument_id)
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
