@@ -8,6 +8,7 @@
 
 # Git
 *.diff
+.worktrees/
 
 # Logs and patches
 *.log
