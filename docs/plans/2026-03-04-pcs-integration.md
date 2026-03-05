@@ -3596,14 +3596,26 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo test -p nautilus-blockchain rpc::http` (pass)
     - `cargo test -p nautilus-blockchain` (pass)
 
+- 2026-03-05 - PR7 (`pr7/remote-signer-client`, head SHA `12a9e65d1e9ff5417ad36730948d94871eace0eb`) - status: ready
+  - Added `execution::signer` with `RemoteSignerClient`, canonical `SignRequest` mapping (`oss_v1_flat`), strict preflight guards (EIP-1559 required, gasPrice-only rejection, future deadline, positive decimal `expected_notional`, selector match), and strict post-sign raw-tx verification (`chain_id/nonce/to/data/value/gas/fees/from`).
+  - Enforced typed-tx-safe hash correctness using `tx_hash = keccak256(raw_tx_bytes)` from signer-returned `raw_tx_hex` and fail-closed RPC/computed hash mismatch checks; aligned signer retry policy to milestone requirement (no retry on 4xx, bounded retry for timeout/transport/5xx).
+  - Added signer integration harness (`tests/common/mock_signer.rs`) and expanded `signer_client` coverage for OSS payload conformance (flat payload, numeric JSON fields, no extra intent fields), signer error/retry behavior, deadline/notional fail-closed preflight, and known type-2 raw-tx hash vectors.
+  - Tests run:
+    - `cargo fmt --all -- --check` (pass)
+    - `cargo test -p nautilus-blockchain --test signer_client` (pass)
+    - `cargo test -p nautilus-blockchain signer` (pass)
+    - `cargo test -p nautilus-blockchain` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
 - 2026-03-05 - Progress Log correction: entry at line 3491 recorded a mistyped SHA (`3edac0c621c59c1db0c4bc2b8d354ed17d8355fb`); correct SHA is `3edac0c626077c915da3260bb16f3f3b75f0f891`.
 - 2026-03-05 - PR2 scope reality: execution/factory ungating and token metadata caching changes have already landed in PR2; PR3 should be re-scoped to avoid duplicate churn while still delivering the remaining feature-gating/metadata boundary goals.
+- 2026-03-05 - PR7 decision: full ABI argument policy checks (recipient/spender/minOut/maxIn/deadline-arg parity) are deferred to swap/approve execution milestones (PR10/PR11/PR12) where operation-specific calldata intent fields are available; PR7 enforces fail-closed selector/value/deadline/notional preflight plus strict signed raw-tx field equality and sender recovery.
 
 ## Known Issues / Follow-ups
 
 - Until PR-preflight is merged, branches created directly from `origin/main` will not inherit `.worktrees/` ignore and may show `.worktrees/` as untracked in that base checkout.
 - `docs/plans/2026-03-04-pcs-integration.md` contains existing trailing whitespace and possible spell-check terms from source import; text-lint hooks may fail in CI until normalized or explicitly exempted.
 - PR2 smoke check confirms `Venue("Bsc:PancakeSwapV2")` is still rejected (`dex 'PancakeSwapV2' not recognized`) until PR4 (`DexType::PancakeSwapV2` + venue parsing tests) lands; interim smoke used `Arbitrum:UniswapV3` to validate no-panic lifecycle wiring.
+- PR7 signer preflight currently validates selector-level intent and policy fields but does not yet ABI-decode operation-specific calldata arguments; implement fail-closed arg-level checks once swap/approve builders are integrated (PR10/PR11/PR12).
