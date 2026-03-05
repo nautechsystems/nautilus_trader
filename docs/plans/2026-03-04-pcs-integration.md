@@ -3620,6 +3620,17 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md` (pass)
     - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md` (pass)
 
+- 2026-03-05 - PR9 (`pr9/defi-wallet`, head SHA `323df49dd95f6f39c3f33d7a8edccf9dbf104714`) - status: ready
+  - Added `execution::wallet::WalletTracker` with deterministic snapshot replacement, allowance snapshots across configured spenders, adaptive multicall splitting, and bounded refresh controls.
+  - Refactored execution wallet paths to use tracker refresh (`query_account`, `connect`, account-state emission), switched execution factory/account bootstrap to `AccountType::Cash`, and extended token-universe derivation to union pool token0/token1 + configured wrapped-native + extra tokens.
+  - Exposed new wallet knobs in execution config + PyO3 (`wallet_extra_tokens`, `wallet_wnative_address`, `wallet_allowance_spenders`, TTL/caps/batch controls) and added/updated wallet + registry tests (`wallet_tracker_refresh`, `execution::client` unit coverage, PyO3 keyword-only compatibility assertions).
+  - Tests run:
+    - `cargo fmt --all -- --check` (pass)
+    - `cargo test -p nautilus-blockchain --test wallet_tracker_refresh` (pass)
+    - `cargo test -p nautilus-blockchain --lib --tests` (pass)
+    - `cargo test -p nautilus-blockchain --features python --test pyo3_exec_registry` (fail: pre-existing `nautilus-model` Python compile errors in `crates/model/src/python/defi/data.rs` for `Option<Address>` parse/display)
+    - `cargo test -p nautilus-pyo3 --features defi` (fail: same pre-existing `nautilus-model` Python compile errors)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
@@ -3627,6 +3638,8 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - 2026-03-05 - PR2 scope reality: execution/factory ungating and token metadata caching changes have already landed in PR2; PR3 should be re-scoped to avoid duplicate churn while still delivering the remaining feature-gating/metadata boundary goals.
 - 2026-03-05 - PR7 decision: full ABI argument policy checks (recipient/spender/minOut/maxIn/deadline-arg parity) are deferred to swap/approve execution milestones (PR10/PR11/PR12) where operation-specific calldata intent fields are available; PR7 enforces fail-closed selector/value/deadline/notional preflight plus strict signed raw-tx field equality and sender recovery.
 - 2026-03-05 - PR8 decision: `ApprovalPolicy::Unlimited` now requires an explicit `unlimited_approval_max_amount` that remains signer-compatible for `expected_notional`; uncapped `U256::MAX` approvals are rejected fail-closed before nonce/gas/sign/send to avoid policy-underreporting or signer-preflight coercion.
+- 2026-03-05 - PR9 decision: `query_account` now uses runtime-aware blocking bridge behavior and fails closed on Tokio current-thread runtimes instead of risking nested-runtime panic.
+- 2026-03-05 - PR9 deviation: milestone text lists preflight + post-receipt touched-token refresh triggers; PR9 delivers tracker infrastructure plus `connect`/`query_account` triggers, while execution-path preflight/post-receipt hook-up is deferred to PR12b where receipt/fill orchestration is implemented end-to-end.
 
 ## Known Issues / Follow-ups
 
@@ -3635,3 +3648,5 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - PR2 smoke check confirms `Venue("Bsc:PancakeSwapV2")` is still rejected (`dex 'PancakeSwapV2' not recognized`) until PR4 (`DexType::PancakeSwapV2` + venue parsing tests) lands; interim smoke used `Arbitrum:UniswapV3` to validate no-panic lifecycle wiring.
 - PR7 signer preflight currently validates selector-level intent and policy fields but does not yet ABI-decode operation-specific calldata arguments; implement fail-closed arg-level checks once swap/approve builders are integrated (PR10/PR11/PR12).
 - PR8 currently treats uncapped unlimited approvals (`U256::MAX`) as unsupported in fail-closed mode unless a signer-compatible cap is configured (`unlimited_approval_max_amount`), pending signer-side large-notional compatibility work.
+- `cargo test -p nautilus-blockchain --features python --test pyo3_exec_registry` and `cargo test -p nautilus-pyo3 --features defi` remain blocked by pre-existing `nautilus-model` Python compile errors in `crates/model/src/python/defi/data.rs` (`Option<Address>` parse/display mismatch).
+- PR9 leaves execution preflight/post-receipt touched-token refresh integration as a follow-up for PR12b; tracker and config surfaces are in place for that wiring.
