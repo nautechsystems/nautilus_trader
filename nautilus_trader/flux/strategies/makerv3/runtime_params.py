@@ -278,14 +278,14 @@ def apply_runtime_param_updates(strategy: MakerV3Strategy, updates: dict[str, An
         qty = _to_decimal(coerced_updates["qty"])
         if qty <= 0:
             raise ValueError("`qty` must be > 0")
-            if strategy._maker_instrument is not None:
-                try:
-                    next_order_qty = strategy._maker_instrument.make_qty(qty)
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Failed to convert runtime qty to instrument quantity for "
-                        f"{strategy._external_strategy_id}: qty={qty}",
-                    ) from e
+        if strategy._maker_instrument is not None:
+            try:
+                next_order_qty = strategy._maker_instrument.make_qty(qty)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to convert runtime qty to instrument quantity for "
+                    f"{strategy._external_strategy_id}: qty={qty}",
+                ) from e
 
     strategy._runtime_params.update(coerced_updates)
     if next_order_qty is not None:
