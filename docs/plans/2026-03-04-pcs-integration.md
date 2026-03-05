@@ -183,7 +183,7 @@ shows these concrete “already exists vs missing” deltas.
 - Exchange registry has no BSC map/branch (`exchanges/mod.rs` only Ethereum/Base/Arbitrum).
 - V2 exchange definitions frequently pass empty event signatures (`""`) into `Dex::new`; subscription registration normalizes/hashes these strings, creating bogus topic filters instead of “event absent”.
 - Data core currently assumes swap/mint/burn/collect signatures always exist when syncing pool events.
-- Data core on-chain snapshot path is UniswapV3-only (`get_on_chain_snapshot`), so CPAMM profiling/snapshoting must be explicitly skipped or separately implemented.
+- Data core on-chain snapshot path is UniswapV3-only (`get_on_chain_snapshot`), so CPAMM profiling/snapshotting must be explicitly skipped or separately implemented.
 - RPC chain websocket initialization excludes BSC (`initialize_rpc_client` supports only Ethereum/Polygon/Base/Arbitrum).
 - `BlockchainHttpRpcClient` lacks execution-critical methods (`send_raw_transaction`, `get_transaction_receipt`, `get_transaction_count`, etc.) and needs Milestone 4 expansion.
 - Execution factory currently hardcodes venue to `BLOCKCHAIN` instead of config-driven DEX venue, which breaks venue-based routing for AMM clients.
@@ -1373,7 +1373,7 @@ PCS execution needs a config surface that is:
 - safe by default (timeouts, confirmations, allowlists)
 - explicit (no hidden global constants)
 - reusable across future AMM integrations
-- overrideable per-order *only* where safe
+- overridable per-order *only* where safe
 
 **Recommended shape:** extend `BlockchainExecutionClientConfig` to contain:
 
@@ -3405,7 +3405,7 @@ Required security controls to plan and test:
 - **no zero-fee surprises:** reject requests that would sign with zero `maxFeePerGas`/`maxPriorityFeePerGas` in execution mode
 - **no stale deadline signing:** reject past/negative deadlines even if signer would allow them
 - **no blind signer response trust:** decode and verify returned `raw_tx_hex` matches intended request exactly
-- **no unsafe overrides:** keep signer/security knobs non-overrideable at per-order level
+- **no unsafe overrides:** keep signer/security knobs non-overridable at per-order level
 
 ### 10.7 Platform wiring checks (non-PCS but can block PCS)
 
@@ -3496,6 +3496,11 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
   - Normalized trailing whitespace in imported plan text via pre-commit `trailing-whitespace` hook.
   - Confirmed text-lint blockers: `typos` and `codespell` flag domain terms (`amountIn`, `FoT`, `LOK`, and related token names) that require explicit dictionary/ignore policy or targeted wording changes.
   - Tests run: `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md` (pass), `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md` (fail), `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md` (fail).
+
+- 2026-03-05 - PR0 (`pr0/pcs-plan-doc`, head SHA `67af3f2c95c12693f965710b824dfe3afb7e98d8`) - status: unblocked
+  - Fixed real typos in plan text (`snapshoting` -> `snapshotting`, `overrideable/non-overrideable` -> `overridable/non-overridable`).
+  - Added DeFi false-positive allowlist entries for spell hooks (`FoT`, `amountIn` in `.codespellrc`; `LOK`, `fot`, `mis` in `.typos.toml`).
+  - Tests run: `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md` (pass), `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md` (pass), `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md` (pass).
 
 ## Deviations / Decisions
 
