@@ -50,6 +50,9 @@ Write path (`FluxParamsManager.update` + `publish_update`):
    - `flux:v1:params:global`
    - `flux:v1:params:{strategy_id}`
 4. Publish envelope shape:
+   - `digest`: string sha256 of schema+defaults metadata (for compatibility/diagnostics)
+   - `param_set`: string (parameter registry identifier)
+   - `schema_version`: string (Flux schema version)
    - `strategy_id`: string
    - `updates`: object map of coerced values
    - `ts_ms`: integer Unix milliseconds (UTC)

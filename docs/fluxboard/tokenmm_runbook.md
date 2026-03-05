@@ -8,7 +8,7 @@ This runbook covers the two supported serving modes for the TokenMM Fluxboard su
 
 1. Start Redis and the MakerV3 node/bridge stack if you need live data:
 ```bash
-redis-server
+redis-server --port 6380
 python examples/live/makerv3/run_node.py
 python examples/live/makerv3/run_bridge.py
 ```
@@ -100,6 +100,7 @@ Use these after startup:
 curl -fsS http://127.0.0.1:5022/api/v1/healthz
 curl -i http://127.0.0.1:5022/tokenmm
 curl -i http://127.0.0.1:5022/tokenmm/alerts
+# order-view is UI-forbidden. This check validates only SPA deep-link fallback behavior.
 curl -i http://127.0.0.1:5022/tokenmm/order-view
 curl -i "http://127.0.0.1:5022/socket.io/?EIO=4&transport=polling"
 ```
@@ -107,11 +108,12 @@ curl -i "http://127.0.0.1:5022/socket.io/?EIO=4&transport=polling"
 Expected highlights:
 
 - `/tokenmm` and `/tokenmm/alerts`: `200`.
-- `/tokenmm/order-view`: SPA HTML response (HTTP `200`), then frontend routing keeps order-view unavailable.
+- `/tokenmm/order-view`: SPA HTML response (HTTP `200`), and the TokenMM UI must not expose or render order-view.
 - `/socket.io/...`: handshake response (`200` with Engine.IO payload).
 
 ## Security notes
 
 - Localhost defaults are intentional; only set `--host` or `[api].host` to non-localhost when you intentionally expose the service, and then use auth/TLS/network controls.
+- Do not expose `/api/v1/*` or `/socket.io` on non-loopback without authentication, TLS, and a network allowlist. Mutation routes are especially high risk (`PATCH /api/v1/params`, `DELETE /api/v1/alerts`).
 - `--serve-fluxboard`/`FLUXBOARD_SERVE_DIST` is explicit opt-in to avoid accidentally serving local build artifacts.
 - Avoid setting wildcard `VITE_ALLOWED_HOSTS`; allow only required hosts.

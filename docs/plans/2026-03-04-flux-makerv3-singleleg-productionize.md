@@ -27,7 +27,7 @@
 ## Production bar (acceptance criteria)
 
 1. No prototype naming in shipped production module paths, strategy IDs, topic prefixes, env vars, or durable Flux docs.
-2. No `chainsaw` naming in shipped code/docs.
+2. No legacy prototype naming in shipped code/docs.
 3. No hardcoded instruments/venues/products/strategy names in production modules (only in example wrappers).
 4. Config is explicit and validated (fail-fast) with a single, documented configuration contract.
 5. Redis schema is versioned, namespaced per strategy instance, documented, and has bounded growth policies.
@@ -120,7 +120,7 @@ Phase 1: Naming, layout, and cleanup
 
 - [x] Create `nautilus_trader/flux/` package and move reusable code out of legacy runner entrypoints
 - [x] Remove prototype and legacy naming from production code/durable docs
-- [x] Replace `nautilus_fluxapi.py` / `chainsaw_bridge.py` naming with `flux` naming
+- [x] Replace legacy prototype runner naming with `flux` naming
 
 Phase 2: Config contract
 
@@ -321,7 +321,7 @@ pytest tests/unit_tests -q
 
 **Files:**
 
-- Move: `nautilus_trader/examples/strategies/makerv3.py` -> `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
+- Move: `nautilus_trader/examples/strategies/makerv3.py` -> `nautilus_trader/flux/strategies/makerv3/strategy.py`
 - Modify: tests to target new module path and add strategy-level tests
 
 **Steps (must-hit safety items):**
@@ -443,7 +443,7 @@ Canonical output keys (recommended):
 6. `flux:v1:balances:snapshot:{strategy_id}` (string JSON; latest only)
 7. `flux:v1:balances:rows:{strategy_id}` (hash; keyed by deterministic `exchange:asset:account`)
 8. `flux:v1:market:last:{strategy_id}:{exchange}:{base}_{quote}` (string JSON; latest only)
-9. `flux:v1:fv:{strategy_id}` (stream or list; bounded; avoid a naked global snapshot)
+9. `flux:v1:fv:stream:{strategy_id}` (stream; bounded; avoid a naked global snapshot)
 10. `flux:v1:params:{strategy_id}` (hash)
 11. `flux:v1:params:global` and `flux:v1:params:{strategy_id}` (pubsub channels)
 
@@ -563,7 +563,7 @@ python -m pytest tests/unit_tests -q
 6. Bridge ingestion is modularized as topic handlers plus a stream consumer; handlers emit strategy-scoped `flux:v1` writes with bounded retention and normalized `ts_ms` at ingest.
 7. API contract is factory-based (`FluxConfig` + injected Redis client), with centralized envelopes (`api_version`, `request_id`, `timestamp_ms`) and explicit health/readiness schema checks.
 8. Production strategy implementation lives under `nautilus_trader/flux/strategies/makerv3/` with two-leg staleness gating, lifecycle reconciliation, and quote-failure circuit breaker fail-stop semantics.
-9. Production leakage policy is enforced via `scripts/ci/check-flux-leakage.sh`, which fails on legacy/chainsaw naming in production Flux paths and on absolute host paths in durable Flux docs.
+9. Production leakage policy is enforced via `scripts/ci/check-flux-leakage.sh`, which fails on legacy/prototype naming in production Flux paths and on absolute host paths in durable Flux docs.
 10. Follow-up gate policy keeps Redis key format unchanged while enforcing config-level identity uniqueness (`strategy_instance_id == strategy_id`) and explicitly forbids edits under `nautilus_trader/flux/strategies/*` in this wave to avoid worker-collision risk.
 11. Task 10 non-overlap wave boundaries remain strict: no edits under `nautilus_trader/flux/strategies/*` and no changes to untracked plan docs; `docs/flux/redis_schema.md` is scanned as a durable production doc and must not contain legacy naming.
 12. Durable Flux docs do not embed legacy key prefixes. Any Redis migration must be an explicit out-of-band cutover validated against `flux:v1:*` only; the leakage gate scans `docs/flux/redis_schema.md` directly (no allowlist markers).
@@ -578,7 +578,7 @@ python -m pytest tests/unit_tests -q
 6. 2026-03-04T02:13:41Z | Task 6 - Strategy productionization safety/perf refactor | SHAs: `811339f6e4023296e5e11498c7fab28c259dfdd0`, `13295ccf0b91b74012a42276e92e164854b89231` | Notes: Added production strategy module under `nautilus_trader/flux/strategies/makerv3/`, implemented two-leg staleness gating + cancel, quote-failure circuit breaker fail-stop, lifecycle reconciliation for reject/cancel/expire, and stronger cancel-on-stop tracking semantics with new strategy-level tests; Task 6 spec review ✅ and code-quality review ✅.
 7. 2026-03-04T02:26:03Z | Task 7 - Replace legacy runner entrypoints with thin examples | SHAs: `6758d180f09eb607ee198667d23082c8b4e39ea2` | Notes: Added `examples/live/makerv3/*` (node/bridge/api runners + README + config), removed deprecated runner entrypoints, removed unsafe secret bootstrap patterns, and kept run modes explicit; Task 7 spec review ✅ and code-quality review ✅.
 8. 2026-03-04T03:04:17Z | Task 8 - PR cleanup + leakage enforcement | SHAs: `aa57547d5`, `689ec0b39`, `67d2fa1b9`, `32a2dcd97`, `c50489073`, `7ea168551` | Notes: Renamed production bus payload type to `FluxBusPayload`, removed legacy envelope compatibility from bridge, added durable Flux docs (`params.md`, `bridge.md`, `api.md`), replaced archived prototype plan doc with durable pointer, preserved `/.worktrees/` and `.run/` ignores, and hardened `scripts/ci/check-flux-leakage.sh` through spec/quality fix loops (case-insensitive legacy naming detection, generalized host-path checks, and URL-safe Windows path matching); Task 8 spec review ✅ and code-quality review ✅.
-9. 2026-03-04T03:08:07Z | Task 9 (P0) - Bridge offset semantics hardening | SHAs: `fb4f99e3b` | Notes: Moved offset advancement to post-write success only, retained offsets on decode/handler/write failure paths, broadened write exception catch in run loop, and added run-loop regression tests for offset behavior.
+9. 2026-03-04T03:08:07Z | Task 9 (P0) - Bridge offset semantics hardening | SHAs: `fb4f99e3b` | Notes: Moved offset advancement to post-write success only, advanced offsets past rejected decode/handler failures to avoid stream stalls, retained offsets on Redis write failures for retry, broadened write exception catch in run loop, and added run-loop regression tests for offset behavior.
 10. 2026-03-04T03:11:57Z | Task 9 (P0) - API legs contract_id keying fix | SHAs: `a90941dab` | Notes: Added contract-id-based legs keying (`{exchange}:{symbol}` normalization), removed same-exchange symbol collision path, and added regression tests for same-exchange multi-symbol contracts.
 11. 2026-03-04T03:12:00Z | Task 9 (P1) - Plotly CI import gate | SHAs: `f2ada0c7f` | Notes: Added explicit `plotly.graph_objects` import verification step to common wheel-build action.
 12. 2026-03-04T03:12:04Z | Task 9 (P1) - Identity uniqueness policy | SHAs: `5182a4e65` | Notes: Enforced `strategy_instance_id == strategy_id` in `FluxIdentityConfig`, updated common config/key tests, and documented no-schema-change uniqueness policy.

@@ -176,6 +176,35 @@ Response `data`:
 }
 ```
 
+#### Signal/dashboard fields (best-effort)
+
+1. TokenMM UI expects additional fields to be present when available (backend may omit fields when unknown).
+2. Clients MUST ignore unknown fields and tolerate missing optional fields.
+
+Common fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `strategy_family` | `string` | Strategy family label derived from metadata. |
+| `params` | `object` | Runtime params snapshot (typed values). |
+| `balances_ok` | `boolean` | True when balances snapshot is present. |
+| `risk_delta` | `number \| null` | Inventory/risk proxy (best-effort). |
+| `risk_delta_ts_ms` | `integer \| null` | Timestamp for the risk delta value. |
+| `decision_edge_bps` | `number \| null` | Current decision edge (basis points). |
+| `required_edge_bps` | `number \| null` | Required edge threshold for the chosen case. |
+| `edge2_bps` | `number \| null` | `decision_edge_bps - required_edge_bps` when derivable. |
+| `spread_net_bps` | `number \| null` | Net spread (best-case selection). |
+| `spread_net_case1_bps` | `number \| null` | Net spread for case1 (derived or backend-provided). |
+| `spread_net_case2_bps` | `number \| null` | Net spread for case2 (derived or backend-provided). |
+| `spread_net_best_case` | `"case1" \| "case2" \| null` | Best-case selector when known. |
+| `maker_role_map` | `object` | Role mapping (e.g. `maker_leg`, `ref_leg`, `hedge_leg`) keyed by `contract_id`. |
+| `maker_quote_status` | `object \| null` | Compact quote counts/health fields when available. |
+| `quote_stacks` | `object \| null` | Per-leg/per-band quote stack summary when available. |
+| `pricing_adjustments` | `array` | Pricing/skew adjustments (best-effort). |
+| `balance_readiness` | `object \| null` | Backend readiness/health markers for balances inputs. |
+
+`maker_v3.quote_snapshot` fields are best-effort and may include top-of-book, FV inputs, edge configuration/effective edge numbers, and derived placement prices.
+
 ### `GET /api/v1/params?profile=tokenmm`
 
 Request:

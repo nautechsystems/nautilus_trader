@@ -193,9 +193,9 @@ Fluxboard now consumes only the versioned FluxAPI surface; `/api/v1/*` endpoints
 | `/api/params` | `/api/v1/params` |
 | `/api/pnl` and `/api/pnl/csv` | `/api/v1/pnl` and `/api/v1/pnl/csv` |
 
-**Migration guidance:** update API clients to prepend `/api/v1`, bump cached route lists, and re-run integration tests before deploying. Monitor `fluxapi_legacy_requests_total` to ensure no callers still hit `/api/*`.
+**Migration guidance:** update API clients to prepend `/api/v1`, bump cached route lists, and re-run integration tests before deploying.
 
-**FluxAPI compat boundary flag:** `fluxapi.web` includes legacy `/api/*` compatibility routes by default (`FLUXAPI_ENABLE_LEGACY_COMPAT=1`) to preserve existing behavior. Set `FLUXAPI_ENABLE_LEGACY_COMPAT=0` to exclude legacy compat routes at startup.
+Fluxboard consumes the versioned `/api/v1/*` surface only. Production Flux does not include a runtime legacy `/api/*` compatibility mode.
 
 ### Fluxboard Params UX notes
 
@@ -207,7 +207,7 @@ Fluxboard now consumes only the versioned FluxAPI surface; `/api/v1/*` endpoints
 
 ## Deduplication
 
-- **Trades:** By `trade_id` (warn and skip duplicates)
+- **Trades:** By `row_id` with the highest `version` winning (idempotent upserts)
 - **Market Data:** By `(exchange, symbol)` tuple (merge updates)
 
 ## Error Handling

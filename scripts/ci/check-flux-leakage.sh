@@ -10,6 +10,9 @@ PRODUCTION_PATHS=(
   docs/flux/params.md
   docs/flux/bridge.md
   docs/flux/api.md
+  docs/fluxboard/tokenmm_contract.md
+  docs/fluxboard/tokenmm_socket_contract.md
+  docs/fluxboard/tokenmm_runbook.md
 )
 
 RG_FLAGS=(-n -S -i)
@@ -25,6 +28,9 @@ DURABLE_DOCS=(
   docs/flux/params.md
   docs/flux/bridge.md
   docs/flux/api.md
+  docs/fluxboard/tokenmm_contract.md
+  docs/fluxboard/tokenmm_socket_contract.md
+  docs/fluxboard/tokenmm_runbook.md
 )
 
 ABSOLUTE_PATH_PATTERN='/home/[^/[:space:]]+|/Users/[^/[:space:]]+|(^|[[:space:][:punct:]])[A-Za-z]:(\\|/)'
