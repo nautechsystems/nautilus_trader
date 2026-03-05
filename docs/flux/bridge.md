@@ -65,7 +65,9 @@ All persisted rows include correlation fields:
 2. Ingest loop uses `XREAD` with per-stream offsets.
 3. Write operations are applied atomically via Redis transaction pipeline.
 4. Decode/handler exceptions are logged and the failed entry is skipped.
-5. Redis read/write failures are logged and retried by the run loop.
+5. Redis read failures are logged and retried by the run loop.
+6. Redis write failures are retried with exponential backoff and the stream offset is not advanced; if the same
+   entry cannot be persisted for a sustained period, the consumer exits to avoid silently stalling.
 
 ## Runner notes
 

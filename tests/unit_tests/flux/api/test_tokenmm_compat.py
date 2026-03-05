@@ -24,7 +24,10 @@ from nautilus_trader.flux.common.keys import FluxRedisKeys
 
 def _seed_required_schema_keys(redis_client, flux_config) -> None:
     keys = FluxRedisKeys.from_identity(flux_config.identity)
-    redis_client.set_json(keys.state(), {"bot_on": True, "managed_orders": 2, "ts_ms": 1700000000000})
+    redis_client.set_json(
+        keys.state(),
+        {"bot_on": True, "managed_orders": 2, "ts_ms": 1700000000000},
+    )
     redis_client.set_hash_json(
         keys.params_hash_key(),
         {
@@ -34,7 +37,10 @@ def _seed_required_schema_keys(redis_client, flux_config) -> None:
         },
     )
     redis_client.set_json(keys.balances_snapshot(), [])
-    redis_client.add_stream_rows(keys.fv_stream(), [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}])
+    redis_client.add_stream_rows(
+        keys.fv_stream(),
+        [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}],
+    )
 
 
 def test_signals_legs_key_by_contract_id_for_multiple_contracts_on_same_exchange(
@@ -207,7 +213,10 @@ def test_patch_params_bulk_item_requires_non_empty_strategy_id(
         body = response.get_json()
         default_params_response = client.get("/api/v1/params")
         default_params_body = default_params_response.get_json()
-        strategy_02_response = client.get("/api/v1/params", query_string={"strategy": "strategy_02"})
+        strategy_02_response = client.get(
+            "/api/v1/params",
+            query_string={"strategy": "strategy_02"},
+        )
         strategy_02_body = strategy_02_response.get_json()
 
     assert response.status_code == 200
@@ -237,8 +246,18 @@ def test_trades_pagination_and_delta_shapes_match_tokenmm_contract(
         keys.trades_stream(),
         [
             {"strategy_id": flux_config.identity.strategy_id, "seq": 101, "ts_ms": 101_000},
-            {"strategy_id": flux_config.identity.strategy_id, "row_id": "t-102", "seq": 102, "ts_ms": 102_000},
-            {"strategy_id": flux_config.identity.strategy_id, "row_id": "t-103", "seq": 103, "ts_ms": 103_000},
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-102",
+                "seq": 102,
+                "ts_ms": 102_000,
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-103",
+                "seq": 103,
+                "ts_ms": 103_000,
+            },
         ],
     )
     app = create_flux_api_app(
@@ -253,7 +272,10 @@ def test_trades_pagination_and_delta_shapes_match_tokenmm_contract(
     with app.test_client() as client:
         trades_response = client.get("/api/v1/trades", query_string={"limit": 2, "offset": 0})
         trades_body = trades_response.get_json()
-        delta_response = client.get("/api/v1/trades/delta", query_string={"since_seq": 100, "limit": 2})
+        delta_response = client.get(
+            "/api/v1/trades/delta",
+            query_string={"since_seq": 100, "limit": 2},
+        )
         delta_body = delta_response.get_json()
 
     assert trades_response.status_code == 200
@@ -264,7 +286,9 @@ def test_trades_pagination_and_delta_shapes_match_tokenmm_contract(
     assert trades_body["data"]["has_more"] is True
     assert len(trades_body["data"]["rows"]) == 2
     for row in trades_body["data"]["rows"]:
-        assert isinstance(row.get("row_id"), str) and row["row_id"]
+        row_id = row.get("row_id")
+        assert isinstance(row_id, str)
+        assert row_id
         assert isinstance(row.get("ts_ms"), int)
         assert isinstance(row.get("version"), int)
 
@@ -291,7 +315,12 @@ def test_trades_delta_sets_reset_required_when_gap_exceeds_bounded_scan(
     redis_client.add_stream_rows(
         keys.trades_stream(),
         [
-            {"strategy_id": flux_config.identity.strategy_id, "row_id": f"t-{seq}", "seq": seq, "ts_ms": seq * 1_000}
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": f"t-{seq}",
+                "seq": seq,
+                "ts_ms": seq * 1_000,
+            }
             for seq in range(1, 2_006)
         ],
     )
@@ -327,7 +356,12 @@ def test_trades_delta_boundary_non_gap_does_not_force_reset(
     redis_client.add_stream_rows(
         keys.trades_stream(),
         [
-            {"strategy_id": flux_config.identity.strategy_id, "row_id": f"t-{seq}", "seq": seq, "ts_ms": seq * 1_000}
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": f"t-{seq}",
+                "seq": seq,
+                "ts_ms": seq * 1_000,
+            }
             for seq in range(1, 2_002)
         ],
     )
@@ -376,8 +410,18 @@ def test_alerts_get_and_delete_return_stable_shapes_for_empty_and_non_empty_sets
         redis_client.add_stream_rows(
             keys.alerts(),
             [
-                {"strategy_id": flux_config.identity.strategy_id, "row_id": "a-1", "severity": "warn", "ts_ms": 10},
-                {"strategy_id": flux_config.identity.strategy_id, "row_id": "a-2", "severity": "error", "ts_ms": 20},
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "row_id": "a-1",
+                    "severity": "warn",
+                    "ts_ms": 10,
+                },
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "row_id": "a-2",
+                    "severity": "error",
+                    "ts_ms": 20,
+                },
             ],
         )
         non_empty_response = client.get("/api/v1/alerts", query_string={"limit": 1})
@@ -401,7 +445,13 @@ def test_alerts_get_and_delete_return_stable_shapes_for_empty_and_non_empty_sets
     assert non_empty_body["data"]["has_more"] is True
 
     assert delete_response.status_code == 200
-    assert set(delete_body["data"].keys()) >= {"success", "strategy_id", "deleted", "remaining", "server_ts_ms"}
+    assert set(delete_body["data"].keys()) >= {
+        "success",
+        "strategy_id",
+        "deleted",
+        "remaining",
+        "server_ts_ms",
+    }
     assert delete_body["data"]["success"] is True
     assert delete_body["data"]["strategy_id"] == flux_config.identity.strategy_id
     assert isinstance(delete_body["data"]["server_ts_ms"], int)
@@ -427,14 +477,24 @@ def test_trades_and_alerts_total_reflect_full_candidate_set_not_page_window(
     redis_client.add_stream_rows(
         keys.trades_stream(),
         [
-            {"strategy_id": flux_config.identity.strategy_id, "row_id": f"t-{seq}", "seq": seq, "ts_ms": seq * 1_000}
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": f"t-{seq}",
+                "seq": seq,
+                "ts_ms": seq * 1_000,
+            }
             for seq in range(1, 11)
         ],
     )
     redis_client.add_stream_rows(
         keys.alerts(),
         [
-            {"strategy_id": flux_config.identity.strategy_id, "row_id": f"a-{seq}", "severity": "warn", "ts_ms": seq}
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": f"a-{seq}",
+                "severity": "warn",
+                "ts_ms": seq,
+            }
             for seq in range(1, 11)
         ],
     )

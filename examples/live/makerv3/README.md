@@ -83,6 +83,7 @@ python examples/live/makerv3/run_api.py
 ```
 
 By default, `run_api.py` binds to `127.0.0.1` unless you explicitly override host via:
+
 - CLI: `--host ...`
 - config: `[api].host` in `makerv3.toml`
 
@@ -110,6 +111,7 @@ pnpm --dir fluxboard dev
 Then open `http://127.0.0.1:5173/tokenmm`.
 
 Notes:
+
 - Vite proxies `/api/*` and `/socket.io` using `FLUXAPI_*` variables from `fluxboard/.env`.
 - Keep `VITE_BACKEND_URL=/` so Socket.IO stays same-origin and goes through the Vite proxy.
 
@@ -133,10 +135,12 @@ FLUXBOARD_SERVE_DIST=1 python examples/live/makerv3/run_api.py --host 127.0.0.1 
 Then open `http://127.0.0.1:5022/tokenmm` (deep links under `/tokenmm/*` use SPA fallback).
 
 Security and behavior:
+
 - Server returns SPA HTML fallback for `/tokenmm/*` deep links.
 - `/tokenmm/order-view` remains unavailable because the frontend TokenMM route/nav excludes it.
 - `FLUXBOARD_DIST` can override the built asset path (default: `<repo>/fluxboard/dist`).
 - Localhost (`127.0.0.1`) is the default bind when host is not explicitly set; only use `--host` or `[api].host` to expose intentionally.
+
 ## Live mode (explicit confirmation required)
 
 ```bash
@@ -170,6 +174,7 @@ scripts/deploy/makerv3_stack.sh stop
 ```
 
 Safety/behavior:
+
 1. Default mode is `live` for this script, with explicit `MAKERV3_CONFIRM_LIVE=1` gate.
 2. Execution stays off by default (`MAKERV3_ENABLE_EXECUTION=0`) until you opt in.
 3. Runtime files live under `.run/makerv3-prod/` (logs + pid files).

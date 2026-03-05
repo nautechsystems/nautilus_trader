@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from collections.abc import Mapping
 from dataclasses import dataclass
-import math
 from typing import Any
 from typing import Final
 
@@ -108,7 +108,7 @@ class RuntimeParamSpec:
     minimum: int | float | None = None
     maximum: int | float | None = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901
         if not isinstance(self.name, str) or not self.name:
             raise ValueError("`name` must be a non-empty string")
         if self.schema_type not in {"boolean", "integer", "number"}:
@@ -135,12 +135,10 @@ class RuntimeParamSpec:
         if self.schema_type == "integer":
             if not isinstance(default, int):
                 raise TypeError(f"`default` must be int for {self.name!r}")
-            if minimum is not None:
-                if isinstance(minimum, bool) or not isinstance(minimum, int):
-                    raise TypeError(f"`minimum` must be int for {self.name!r}")
-            if maximum is not None:
-                if isinstance(maximum, bool) or not isinstance(maximum, int):
-                    raise TypeError(f"`maximum` must be int for {self.name!r}")
+            if minimum is not None and (isinstance(minimum, bool) or not isinstance(minimum, int)):
+                raise TypeError(f"`minimum` must be int for {self.name!r}")
+            if maximum is not None and (isinstance(maximum, bool) or not isinstance(maximum, int)):
+                raise TypeError(f"`maximum` must be int for {self.name!r}")
         else:
             if not isinstance(default, (int, float)):
                 raise TypeError(f"`default` must be number for {self.name!r}")
@@ -171,7 +169,7 @@ class RuntimeParamSpec:
             raise ValueError(f"`default` must be <= `maximum` for {self.name!r}")
 
     def to_schema(self) -> dict[str, Any]:
-        schema = {
+        schema: dict[str, Any] = {
             "type": self.schema_type,
             "description": self.description,
         }
@@ -281,7 +279,12 @@ class RuntimeParamRegistry:
             "summary": summary,
         }
 
-    def _coerce_known_values(self, values: Mapping[str, Any] | None, *, context: str) -> dict[str, Any]:
+    def _coerce_known_values(
+        self,
+        values: Mapping[str, Any] | None,
+        *,
+        context: str,
+    ) -> dict[str, Any]:
         if not values:
             return {}
 
@@ -301,21 +304,22 @@ class RuntimeParamRegistry:
     @staticmethod
     def _coerce_with_spec(spec: RuntimeParamSpec, value: Any) -> Any:
         if spec.schema_type == "boolean":
-            parsed = _parse_bool_text(value)
-            if parsed is None:
+            parsed_bool = _parse_bool_text(value)
+            if parsed_bool is None:
                 raise ValueError(f"Invalid boolean value for {spec.name!r}: {value!r}")
-            return parsed
+            return parsed_bool
 
+        parsed_num: int | float
         if spec.schema_type == "integer":
-            parsed = _coerce_integer(value, name=spec.name)
+            parsed_num = _coerce_integer(value, name=spec.name)
         else:
-            parsed = _coerce_number(value, name=spec.name)
+            parsed_num = _coerce_number(value, name=spec.name)
 
-        if spec.minimum is not None and parsed < spec.minimum:
+        if spec.minimum is not None and parsed_num < spec.minimum:
             raise ValueError(f"`{spec.name}` must be >= {spec.minimum}")
-        if spec.maximum is not None and parsed > spec.maximum:
+        if spec.maximum is not None and parsed_num > spec.maximum:
             raise ValueError(f"`{spec.name}` must be <= {spec.maximum}")
-        return parsed
+        return parsed_num
 
 
 _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
@@ -540,7 +544,9 @@ MAKERV3_RUNTIME_PARAM_REGISTRY: Final[RuntimeParamRegistry] = RuntimeParamRegist
     param_set="makerv3",
     specs=_MAKERV3_RUNTIME_PARAM_SPECS,
 )
-MAKERV3_RUNTIME_PARAM_SCHEMA: Final[dict[str, dict[str, Any]]] = MAKERV3_RUNTIME_PARAM_REGISTRY.schema
+MAKERV3_RUNTIME_PARAM_SCHEMA: Final[dict[str, dict[str, Any]]] = (
+    MAKERV3_RUNTIME_PARAM_REGISTRY.schema
+)
 MAKERV3_RUNTIME_PARAM_DEFAULTS: Final[dict[str, Any]] = MAKERV3_RUNTIME_PARAM_REGISTRY.defaults
 
 

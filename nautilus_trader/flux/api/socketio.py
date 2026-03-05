@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from collections.abc import Mapping
 from collections.abc import Sequence
@@ -22,7 +23,6 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
-import logging
 from threading import Event
 from threading import RLock
 from threading import Thread
@@ -297,7 +297,11 @@ class FluxSocketEmitter:
                 self._wake_event.set()
                 return
             self._running = True
-            self._thread = Thread(target=self._run_loop, name=f"flux-socket-emitter-{uuid4().hex[:8]}", daemon=True)
+            self._thread = Thread(
+                target=self._run_loop,
+                name=f"flux-socket-emitter-{uuid4().hex[:8]}",
+                daemon=True,
+            )
             self._thread.start()
         self._wake_event.set()
 
@@ -326,9 +330,7 @@ class FluxSocketEmitter:
                 if not self._running:
                     return
                 profiles = sorted(
-                    profile
-                    for profile, count in self._profile_refcounts.items()
-                    if count > 0
+                    profile for profile, count in self._profile_refcounts.items() if count > 0
                 )
                 if not profiles:
                     self._wake_event.clear()
@@ -365,9 +367,7 @@ class FluxSocketEmitter:
     def _active_profiles(self) -> list[str]:
         with self._lock:
             return sorted(
-                profile
-                for profile, count in self._profile_refcounts.items()
-                if count > 0
+                profile for profile, count in self._profile_refcounts.items() if count > 0
             )
 
     def _cleanup_profile_state_locked(self, profile: str) -> None:
@@ -418,7 +418,7 @@ class FluxSocketEmitter:
         room = profile_room(profile)
         try:
             self._emit_profile(profile, strategy_id=strategy_id, room=room)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as e:
             streak, backoff_s = self._record_profile_failure(profile)
             _LOG.exception(
                 "Flux socket emitter profile tick failed profile=%s strategy_id=%s streak=%s backoff_s=%.3f error=%s",
@@ -426,12 +426,12 @@ class FluxSocketEmitter:
                 strategy_id,
                 streak,
                 backoff_s,
-                type(exc).__name__,
+                type(e).__name__,
             )
         else:
             self._clear_profile_failure(profile)
 
-    def _emit_profile(
+    def _emit_profile(  # noqa: C901
         self,
         profile: str,
         *,
@@ -439,39 +439,70 @@ class FluxSocketEmitter:
         room: str,
     ) -> None:
         metadata = self._metadata_resolver(strategy_id)
-        signal_payload = build_stable_signal_view(self._store.load_signals_payload(strategy_id, metadata))
+        signal_payload = build_stable_signal_view(
+            self._store.load_signals_payload(strategy_id, metadata),
+        )
 
         with self._lock:
             trade_cursor = self._trade_cursor_by_profile.get(profile, 0)
             previous_signal = self._signal_by_profile.get(profile)
             previous_alerts_signature = self._alerts_by_profile.get(profile)
 
-        trades_rows = self._store.load_trades_rows(
+        scanned_trades = self._store.load_trades_rows(
             strategy_id,
-            limit=self._trade_poll_limit,
+            limit=self._trade_scan_limit,
             since_ms=None,
-            since_seq=trade_cursor,
+            since_seq=None,
             scan_limit=self._trade_scan_limit,
         )
         alerts_rows = self._store.load_alerts_rows(strategy_id, limit=self._alerts_preview_limit)
         alerts_total = self._store.alerts_stream_len(strategy_id)
 
+        trades_rows: list[dict[str, Any]] = []
         trade_gap_cursor: int | None = None
-        if trades_rows:
-            first_seq = safe_int(trades_rows[0].get("seq"))
-            if first_seq is not None and trade_cursor > 0 and first_seq > (trade_cursor + 1):
-                _LOG.warning(
-                    "Flux socket emitter detected trade replay gap profile=%s strategy_id=%s cursor_seq=%s first_seq=%s scan_limit=%s",
-                    profile,
-                    strategy_id,
-                    trade_cursor,
-                    first_seq,
-                    self._trade_scan_limit,
-                )
-                trade_gap_cursor = max(0, first_seq - 1)
-                # Force a per-profile Socket.IO seq gap so clients trigger REST resync per contract.
-                _ = self._next_seq(profile)
-                trades_rows = []
+        if scanned_trades:
+            seq_values = [
+                safe_int(row.get("seq")) for row in scanned_trades if isinstance(row, Mapping)
+            ]
+            parsed_seqs = [seq for seq in seq_values if seq is not None]
+            if parsed_seqs:
+                min_seq = min(parsed_seqs)
+                max_seq = max(parsed_seqs)
+                if trade_cursor > 0 and trade_cursor < (min_seq - 1):
+                    _LOG.warning(
+                        "Flux socket emitter detected trade replay boundary profile=%s strategy_id=%s cursor_seq=%s window_min_seq=%s window_max_seq=%s scan_limit=%s",
+                        profile,
+                        strategy_id,
+                        trade_cursor,
+                        min_seq,
+                        max_seq,
+                        self._trade_scan_limit,
+                    )
+                    trade_gap_cursor = max(0, min_seq - 1)
+                elif trade_cursor > max_seq:
+                    _LOG.warning(
+                        "Flux socket emitter detected trade cursor overrun profile=%s strategy_id=%s cursor_seq=%s window_max_seq=%s scan_limit=%s",
+                        profile,
+                        strategy_id,
+                        trade_cursor,
+                        max_seq,
+                        self._trade_scan_limit,
+                    )
+                    trade_gap_cursor = int(max_seq)
+
+        if trade_gap_cursor is None and scanned_trades:
+            for row in scanned_trades:
+                if not isinstance(row, Mapping):
+                    continue
+                row_seq = safe_int(row.get("seq"))
+                if row_seq is None or row_seq <= trade_cursor:
+                    continue
+                trades_rows.append(dict(row))
+            trades_rows.sort(key=lambda item: safe_int(item.get("seq")) or 0)
+            trades_rows = trades_rows[: self._trade_poll_limit]
+        elif trade_gap_cursor is not None:
+            # Force a per-profile Socket.IO seq gap so clients trigger REST resync per contract.
+            _ = self._next_seq(profile)
 
         signal_patch = build_signal_delta_patch(previous_signal, signal_payload)
         if signal_patch:
@@ -533,7 +564,9 @@ class FluxSocketEmitter:
                 "profile": profile,
                 "seq": self._next_seq(profile),
                 "server_ts_ms": now_ms(),
-                "server_time": datetime.now(tz=UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                "server_time": datetime.now(tz=UTC)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
                 "strategies": {"changed": [strategy_id] if strategy_changed else []},
                 "alerts": {
                     "count": alerts_signature[0],

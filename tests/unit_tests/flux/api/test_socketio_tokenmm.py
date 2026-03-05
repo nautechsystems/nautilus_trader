@@ -21,9 +21,9 @@ from typing import Any
 import pytest
 
 from nautilus_trader.flux.api import create_flux_api_app
+from nautilus_trader.flux.api.socketio import FluxSocketEmitter
 from nautilus_trader.flux.api.socketio import apply_signal_delta_patch
 from nautilus_trader.flux.api.socketio import build_signal_delta_patch
-from nautilus_trader.flux.api.socketio import FluxSocketEmitter
 from nautilus_trader.flux.api.socketio import normalize_profile
 from nautilus_trader.flux.api.socketio import profile_room
 from nautilus_trader.flux.common.keys import FluxRedisKeys
@@ -34,7 +34,10 @@ SOCKET_EVENT_NAMES = {"market_update", "signal_delta", "trade_update"}
 
 def _seed_required_schema_keys(redis_client, flux_config) -> None:
     keys = FluxRedisKeys.from_identity(flux_config.identity)
-    redis_client.set_json(keys.state(), {"bot_on": True, "managed_orders": 2, "ts_ms": 1700000000000})
+    redis_client.set_json(
+        keys.state(),
+        {"bot_on": True, "managed_orders": 2, "ts_ms": 1700000000000},
+    )
     redis_client.set_hash_json(
         keys.params_hash_key(),
         {
@@ -44,7 +47,10 @@ def _seed_required_schema_keys(redis_client, flux_config) -> None:
         },
     )
     redis_client.set_json(keys.balances_snapshot(), [])
-    redis_client.add_stream_rows(keys.fv_stream(), [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}])
+    redis_client.add_stream_rows(
+        keys.fv_stream(),
+        [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}],
+    )
 
 
 def _seed_socket_rows(redis_client, flux_config, contract_catalog) -> None:
@@ -473,7 +479,9 @@ def test_trade_delete_event_emits_once_and_is_reconnect_safe(
     emitter.stop()
     emitter.emit_once(profile="tokenmm")
     reconnect_packets = _take_socket_packets(reconnect_client)
-    reconnect_trade_packets = [packet for packet in reconnect_packets if packet["name"] == "trade_update"]
+    reconnect_trade_packets = [
+        packet for packet in reconnect_packets if packet["name"] == "trade_update"
+    ]
     assert len(reconnect_trade_packets) == 1
     reconnect_trade_payload = reconnect_trade_packets[0]["args"][0]
     assert reconnect_trade_payload["op"] == "delete"

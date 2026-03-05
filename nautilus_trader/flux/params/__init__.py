@@ -20,4 +20,3 @@ from nautilus_trader.flux.params.manager import FluxParamsManager
 
 
 __all__ = ["FluxParamsManager"]
-

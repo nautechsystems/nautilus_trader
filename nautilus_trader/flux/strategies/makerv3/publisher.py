@@ -1,10 +1,12 @@
-"""Publish and serialize MakerV3 strategy observability payloads."""
+"""
+Publish and serialize MakerV3 strategy observability payloads.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from decimal import Decimal
 import json
+from contextlib import suppress
+from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
@@ -22,7 +24,9 @@ _to_decimal_or_none = pricing_mod.to_decimal_or_none
 
 
 def to_json_safe(payload: Any) -> str:
-    """Return deterministic compact JSON for message bus publishing."""
+    """
+    Return deterministic compact JSON for message bus publishing.
+    """
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
@@ -31,10 +35,8 @@ def _stringify_identifier(value: Any) -> str:
         return ""
     to_str = getattr(value, "to_str", None)
     if callable(to_str):
-        try:
+        with suppress(Exception):
             return str(to_str())
-        except Exception:
-            pass
     code = getattr(value, "code", None)
     if code is not None:
         return str(code)
@@ -46,10 +48,8 @@ def _money_to_text(value: Any) -> str:
         return "0"
     as_decimal = getattr(value, "as_decimal", None)
     if callable(as_decimal):
-        try:
+        with suppress(Exception):
             return str(as_decimal())
-        except Exception:
-            pass
     return str(value)
 
 
@@ -106,23 +106,21 @@ def _account_balances_rows(account: Any) -> list[dict[str, str]]:
 def _serialize_account_payload(account: Any) -> dict[str, Any]:
     acct_to_dict = getattr(account, "to_dict", None)
     if callable(acct_to_dict):
-        try:
+        with suppress(Exception):
             candidate = _json_safe_or_none(acct_to_dict())
             if candidate is not None:
                 return candidate
-        except Exception:
-            pass
 
-        try:
+        with suppress(Exception):
             candidate = _json_safe_or_none(acct_to_dict(account))
             if candidate is not None:
                 return candidate
-        except Exception:
-            pass
 
     account_id = _stringify_identifier(getattr(account, "id", None))
     if not account_id:
-        account_id = _stringify_identifier(getattr(getattr(account, "last_event", None), "account_id", None))
+        account_id = _stringify_identifier(
+            getattr(getattr(account, "last_event", None), "account_id", None),
+        )
 
     balances = _account_balances_rows(account)
     payload: dict[str, Any] = {"type": type(account).__name__}
@@ -139,19 +137,15 @@ def _serialize_account_payload(account: Any) -> dict[str, Any]:
 def _serialize_position_payload(position: Any) -> dict[str, Any]:
     pos_to_dict = getattr(position, "to_dict", None)
     if callable(pos_to_dict):
-        try:
+        with suppress(Exception):
             candidate = _json_safe_or_none(pos_to_dict())
             if candidate is not None:
                 return candidate
-        except Exception:
-            pass
 
-        try:
+        with suppress(Exception):
             candidate = _json_safe_or_none(pos_to_dict(position))
             if candidate is not None:
                 return candidate
-        except Exception:
-            pass
 
     payload: dict[str, Any] = {"type": type(position).__name__}
     for field_name in (
@@ -173,7 +167,9 @@ def _serialize_position_payload(position: Any) -> dict[str, Any]:
 
 
 def decimal_to_json_str(value: Any) -> str | None:
-    """Return a JSON-safe decimal string without scientific notation."""
+    """
+    Return a JSON-safe decimal string without scientific notation.
+    """
     if value is None:
         return None
 
@@ -190,7 +186,9 @@ def decimal_to_json_str(value: Any) -> str | None:
 
 
 def decimal_to_wire_price(value: Any, *, precision: int | None) -> str:
-    """Return a decimal string formatted for external consumers."""
+    """
+    Return a decimal string formatted for external consumers.
+    """
     as_decimal = _to_decimal_or_none(value)
     if as_decimal is None:
         return str(value)
@@ -211,7 +209,9 @@ def publish_market_bbo(
     ask: Decimal,
     ts_ns: int,
 ) -> None:
-    """Publish a top-of-book snapshot for `instrument_id`."""
+    """
+    Publish a top-of-book snapshot for `instrument_id`.
+    """
     instrument_text = str(instrument_id)
     instrument = strategy._instruments.get(instrument_id)
     if instrument is None:
@@ -258,7 +258,9 @@ def publish_market_bbo(
 
 
 def publish_state_if_due(strategy: Any) -> None:
-    """Publish a periodic running state update when not blocked."""
+    """
+    Publish a periodic running state update when not blocked.
+    """
     if bool(getattr(strategy, "_state_is_blocked", False)):
         return
     now_ns = int(strategy.clock.timestamp_ns())
@@ -268,7 +270,9 @@ def publish_state_if_due(strategy: Any) -> None:
 
 
 def publish_balances_if_due(strategy: Any) -> None:
-    """Publish balances snapshot when the configured interval has elapsed."""
+    """
+    Publish balances snapshot when the configured interval has elapsed.
+    """
     now_ns = int(strategy.clock.timestamp_ns())
     if now_ns - strategy._last_balances_ns < strategy.BALANCES_PUBLISH_INTERVAL_MS * 1_000_000:
         return
@@ -276,7 +280,9 @@ def publish_balances_if_due(strategy: Any) -> None:
 
 
 def publish_state(strategy: Any, state: str, *, managed_orders_count: int | None = None) -> None:
-    """Publish a state snapshot and emit blocked/unblocked transition events."""
+    """
+    Publish a state snapshot and emit blocked/unblocked transition events.
+    """
     now_ns = int(strategy.clock.timestamp_ns())
     was_blocked = bool(getattr(strategy, "_state_is_blocked", False))
     is_blocked = _is_blocked_state(state)
@@ -313,7 +319,9 @@ def publish_state(strategy: Any, state: str, *, managed_orders_count: int | None
 
 
 def publish_event(strategy: Any, name: str, *, ts_ns: int | None = None, **payload: Any) -> None:
-    """Publish a structured strategy event to the event topic."""
+    """
+    Publish a structured strategy event to the event topic.
+    """
     now_ns = int(strategy.clock.timestamp_ns()) if ts_ns is None else int(ts_ns)
     data: dict[str, Any] = {
         "strategy_id": strategy._external_strategy_id,
@@ -336,7 +344,9 @@ def publish_actionable_alert(
     transition: str | None = None,
     now_ns: int | None = None,
 ) -> bool:
-    """Publish a cooldown/transition-gated alert and return True when emitted."""
+    """
+    Publish a cooldown/transition-gated alert and return True when emitted.
+    """
     publish_ns = int(strategy.clock.timestamp_ns()) if now_ns is None else int(now_ns)
     if not message:
         return False
@@ -344,7 +354,12 @@ def publish_actionable_alert(
     last_transition = strategy._last_actionable_alert_transition.get(alert_key)
     transition_changed = transition is not None and transition != last_transition
     cooldown_ns = max(0, int(cooldown_ms)) * 1_000_000
-    if cooldown_ns > 0 and last_sent_ns > 0 and publish_ns - last_sent_ns < cooldown_ns and not transition_changed:
+    if (
+        cooldown_ns > 0
+        and last_sent_ns > 0
+        and publish_ns - last_sent_ns < cooldown_ns
+        and not transition_changed
+    ):
         return False
     if transition is not None:
         strategy._last_actionable_alert_transition[alert_key] = transition
@@ -370,7 +385,9 @@ def publish_alert(
     reason_code: str | None = None,
     actionable: bool | None = None,
 ) -> None:
-    """Publish an alert payload to the alert topic."""
+    """
+    Publish an alert payload to the alert topic.
+    """
     now_ns = int(strategy.clock.timestamp_ns()) if ts_ns is None else int(ts_ns)
     payload: dict[str, Any] = {
         "strategy_id": strategy._external_strategy_id,
@@ -391,8 +408,10 @@ def publish_alert(
     )
 
 
-def publish_balances(strategy: Any) -> None:
-    """Publish account and position balances snapshot."""
+def publish_balances(strategy: Any) -> None:  # noqa: C901
+    """
+    Publish account and position balances snapshot.
+    """
     now_ns = int(strategy.clock.timestamp_ns())
     strategy._last_balances_ns = now_ns
     payload: dict[str, Any] = {
@@ -405,14 +424,16 @@ def publish_balances(strategy: Any) -> None:
     except Exception:
         accounts = []
     if not accounts and hasattr(strategy, "cache"):
-        for account in getattr(strategy.cache, "accounts", lambda: [])():
+        for account in getattr(strategy.cache, "accounts", list)():
             if account is not None:
                 accounts.append(account)
 
     if not accounts and hasattr(strategy, "portfolio"):
         try:
             maker_venue = getattr(strategy.config.maker_instrument_id, "venue", None)
-            account = strategy.portfolio.account(venue=maker_venue) if maker_venue is not None else None
+            account = (
+                strategy.portfolio.account(venue=maker_venue) if maker_venue is not None else None
+            )
         except Exception:
             account = None
         if account is not None:
@@ -422,19 +443,15 @@ def publish_balances(strategy: Any) -> None:
         payload["accounts"].append(_serialize_account_payload(account))
 
     positions: list[Any] = []
-    try:
+    with suppress(Exception):
         positions.extend(
             strategy.cache.positions_open(
                 instrument_id=strategy.config.maker_instrument_id,
             ),
         )
-    except Exception:
-        pass
     if not positions and hasattr(strategy, "cache"):
-        try:
+        with suppress(Exception):
             positions.extend(strategy.cache.positions_open())
-        except Exception:
-            pass
 
     for position in positions:
         payload["positions"].append(_serialize_position_payload(position))
@@ -445,7 +462,9 @@ def publish_balances(strategy: Any) -> None:
 
 
 def publish_json(strategy: Any, topic: str, payload: dict[str, Any] | list[Any]) -> None:
-    """Serialize payload and publish it on `topic` via the message bus."""
+    """
+    Serialize payload and publish it on `topic` via the message bus.
+    """
     payload_json = to_json_safe(payload)
     if FluxBusPayload is None:
         strategy.msgbus.publish(topic=topic, msg=payload_json)

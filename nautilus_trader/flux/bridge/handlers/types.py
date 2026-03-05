@@ -15,15 +15,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from typing import Callable
-from typing import TypeAlias
 
 
-JSONScalar: TypeAlias = None | bool | int | float | str
-JSONValue: TypeAlias = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
-JSONRow: TypeAlias = dict[str, JSONValue]
+type JSONScalar = None | bool | int | float | str
+type JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
+type JSONRow = dict[str, JSONValue]
 
 
 @dataclass(frozen=True)
@@ -55,10 +54,10 @@ class ReplaceHashJSONOp:
     ttl_seconds: int | None = None
 
 
-WriteOp: TypeAlias = SetJSONOp | StreamJSONOp | ReplaceHashJSONOp
+type WriteOp = SetJSONOp | StreamJSONOp | ReplaceHashJSONOp
 
 
-HandlerFn: TypeAlias = Callable[[Any, CorrelationContext], list[WriteOp]]
+type HandlerFn = Callable[[Any, CorrelationContext], list[WriteOp]]
 
 
 __all__ = [

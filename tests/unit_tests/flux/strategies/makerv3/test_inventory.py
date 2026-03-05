@@ -1,20 +1,22 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
+from typing import Any
 
 from nautilus_trader.flux.strategies.makerv3.inventory import InventorySkewCache
 from nautilus_trader.flux.strategies.makerv3.inventory import compute_inventory_skew
 
 
-def _runtime_params(**overrides: Decimal | int | float | str) -> dict[str, Decimal]:
+def _runtime_params(**overrides: Decimal | float | str) -> dict[str, Decimal]:
     params: dict[str, Decimal] = {
-        "des_qty_global": Decimal("0"),
-        "max_qty_global": Decimal("1"),
-        "max_skew_bps_global": Decimal("0"),
-        "des_qty_local": Decimal("0"),
-        "max_qty_local": Decimal("1"),
-        "max_skew_bps_local": Decimal("0"),
-        "linear_offset_bps": Decimal("0"),
+        "des_qty_global": Decimal(0),
+        "max_qty_global": Decimal(1),
+        "max_skew_bps_global": Decimal(0),
+        "des_qty_local": Decimal(0),
+        "max_qty_local": Decimal(1),
+        "max_skew_bps_local": Decimal(0),
+        "linear_offset_bps": Decimal(0),
     }
     for name, value in overrides.items():
         params[name] = Decimal(str(value))
@@ -23,8 +25,8 @@ def _runtime_params(**overrides: Decimal | int | float | str) -> dict[str, Decim
 
 def test_compute_inventory_skew_prefers_position_and_clamps_ratios() -> None:
     skew = compute_inventory_skew(
-        position_qty=Decimal("5"),
-        spot_qty=Decimal("9"),
+        position_qty=Decimal(5),
+        spot_qty=Decimal(9),
         base_currency="BTC",
         runtime_params=_runtime_params(
             max_qty_global=2,
@@ -36,9 +38,9 @@ def test_compute_inventory_skew_prefers_position_and_clamps_ratios() -> None:
     )
 
     assert skew["inventory_source"] == "maker_position"
-    assert skew["inventory_qty"] == Decimal("5")
-    assert skew["global_ratio"] == Decimal("1")
-    assert skew["global_skew_bps"] == Decimal("10")
+    assert skew["inventory_qty"] == Decimal(5)
+    assert skew["global_ratio"] == Decimal(1)
+    assert skew["global_skew_bps"] == Decimal(10)
     assert skew["local_ratio"] == Decimal("0.5")
     assert skew["local_skew_bps"] == Decimal("2.5")
     assert skew["total_skew_bps"] == Decimal("13.5")
@@ -47,7 +49,7 @@ def test_compute_inventory_skew_prefers_position_and_clamps_ratios() -> None:
 def test_compute_inventory_skew_uses_spot_inventory_when_position_unavailable() -> None:
     skew = compute_inventory_skew(
         position_qty=None,
-        spot_qty=Decimal("3"),
+        spot_qty=Decimal(3),
         base_currency="BTC",
         runtime_params=_runtime_params(
             max_qty_global=6,
@@ -56,16 +58,16 @@ def test_compute_inventory_skew_uses_spot_inventory_when_position_unavailable() 
     )
 
     assert skew["inventory_source"] == "maker_spot_balance"
-    assert skew["inventory_qty"] == Decimal("3")
+    assert skew["inventory_qty"] == Decimal(3)
     assert skew["global_ratio"] == Decimal("0.5")
-    assert skew["global_skew_bps"] == Decimal("6")
+    assert skew["global_skew_bps"] == Decimal(6)
 
 
 def test_inventory_skew_cache_honors_ttl_and_invalidation() -> None:
     cache = InventorySkewCache(ttl_ms=100)
     calls = {"count": 0}
 
-    def _compute(runtime_params: dict[str, Decimal]) -> dict[str, Decimal | str | None]:
+    def _compute(runtime_params: Mapping[str, Any]) -> dict[str, Any]:
         calls["count"] += 1
         value = Decimal(calls["count"])
         return {
@@ -96,8 +98,8 @@ def test_inventory_skew_cache_honors_ttl_and_invalidation() -> None:
     cache.invalidate()
     fourth = cache.get(now_ns=1_160_000_000, runtime_params=params, compute=_compute)
 
-    assert first["inventory_qty"] == Decimal("1")
-    assert second["inventory_qty"] == Decimal("1")
-    assert third["inventory_qty"] == Decimal("2")
-    assert fourth["inventory_qty"] == Decimal("3")
+    assert first["inventory_qty"] == Decimal(1)
+    assert second["inventory_qty"] == Decimal(1)
+    assert third["inventory_qty"] == Decimal(2)
+    assert fourth["inventory_qty"] == Decimal(3)
     assert calls["count"] == 3

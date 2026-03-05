@@ -17,25 +17,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-
-def _is_plotly_import_error(exc: ImportError) -> bool:
-    module_name = getattr(exc, "name", "")
-    if module_name and module_name.startswith("plotly"):
-        return True
-    return "plotly" in str(exc).lower()
-
-
-try:
-    import plotly.graph_objects as go
-
-    HAS_PLOTLY = True
-except ImportError as exc:
-    if _is_plotly_import_error(exc):
-        go = None
-        HAS_PLOTLY = False
-    else:
-        raise
-
 from nautilus_trader.analysis.config import GridLayout
 from nautilus_trader.analysis.config import TearsheetConfig
 from nautilus_trader.analysis.config import TearsheetDistributionChart
@@ -61,6 +42,19 @@ from nautilus_trader.analysis.themes import list_themes
 from nautilus_trader.analysis.themes import register_theme
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
+
+
+try:
+    import plotly.graph_objects as go
+
+    HAS_PLOTLY = True
+except ImportError as e:
+    module_name = getattr(e, "name", "")
+    if (module_name and module_name.startswith("plotly")) or ("plotly" in str(e).lower()):
+        go = None
+        HAS_PLOTLY = False
+    else:
+        raise
 
 
 @pytest.fixture(autouse=True)

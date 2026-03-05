@@ -1,4 +1,6 @@
-"""Handle collection, tracking, and cancellation of strategy-managed orders."""
+"""
+Handle collection, tracking, and cancellation of strategy-managed orders.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +22,9 @@ CANCELLATION_SAFETY_INVARIANT = (
 
 @dataclass(frozen=True)
 class CancelManagedQuotesResult:
-    """Represent the outcome of a managed-quote cancellation attempt."""
+    """
+    Represent the outcome of a managed-quote cancellation attempt.
+    """
 
     should_cancel: bool
     tracked_count: int
@@ -49,13 +53,15 @@ def _managed_order_dedupe_key(order: Order) -> tuple[object, ...]:
     )
 
 
-def collect_managed_orders(
+def collect_managed_orders(  # noqa: C901
     *,
     cache: Cache,
     instrument_id: InstrumentId,
     strategy_id: StrategyId,
 ) -> list[Order]:
-    """Collect currently open/inflight managed orders with deduplication."""
+    """
+    Collect currently open/inflight managed orders with deduplication.
+    """
     orders: list[Order] = []
     seen_order_keys: set[tuple[object, ...]] = set()
     sources: list[list[Order]] = []
@@ -93,7 +99,9 @@ def collect_managed_orders(
 
 
 def register_managed_order(tracked_ids: set[str], order: Order) -> str | None:
-    """Register a managed order client ID and return it when present."""
+    """
+    Register a managed order client ID and return it when present.
+    """
     client_order_id = str(getattr(order, "client_order_id", "") or "")
     if not client_order_id:
         return None
@@ -105,7 +113,9 @@ def reconcile_managed_order(
     tracked_ids: set[str],
     client_order_id: ClientOrderId | str | None,
 ) -> bool:
-    """Remove a managed order ID from tracking and return prior membership."""
+    """
+    Remove a managed order ID from tracking and return prior membership.
+    """
     client_order_id_str = str(client_order_id or "")
     if not client_order_id_str:
         return False
@@ -125,7 +135,9 @@ def cancel_managed_quotes(
     cancel_all_orders: Callable[[InstrumentId], None] | None,
     cancel_all_instrument_orders: bool = False,
 ) -> CancelManagedQuotesResult:
-    """Cancel managed orders and optionally cancel all instrument orders."""
+    """
+    Cancel managed orders and optionally cancel all instrument orders.
+    """
     tracked_count = len(tracked_ids)
     cancel_all_instrument = bool(cancel_all_instrument_orders)
     should_cancel = bool(managed_orders or tracked_count > 0 or cancel_all_instrument)
@@ -150,9 +162,10 @@ def cancel_managed_quotes(
         except Exception:
             cancel_exceptions += 1
 
-    cancel_all_attempted = bool(cancel_all_instrument and cancel_all_orders is not None)
+    cancel_all_attempted = False
     cancel_all_exceptions = 0
-    if cancel_all_attempted:
+    if cancel_all_instrument and cancel_all_orders is not None:
+        cancel_all_attempted = True
         try:
             cancel_all_orders(maker_instrument_id)
         except Exception:

@@ -16,14 +16,14 @@ UPSTREAM_SHA="${FLUXBOARD_UPSTREAM_SHA:-}"
 BUILT_AT_UTC="${FLUXBOARD_BUILT_AT_UTC:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
 
 if [ -z "$UPSTREAM_REPO" ]; then
-  UPSTREAM_REPO="$(git -C "$REPO_ROOT" config --get remote.origin.url 2>/dev/null || true)"
+  UPSTREAM_REPO="$(git -C "$REPO_ROOT" config --get remote.origin.url 2> /dev/null || true)"
 fi
 if [ -z "$UPSTREAM_REPO" ]; then
-  UPSTREAM_REPO="$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null || echo "$REPO_ROOT")"
+  UPSTREAM_REPO="$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2> /dev/null || echo "$REPO_ROOT")"
 fi
 
 if [ -z "$UPSTREAM_SHA" ]; then
-  UPSTREAM_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
+  UPSTREAM_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD 2> /dev/null || true)"
 fi
 
 if ! [[ "$UPSTREAM_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -54,7 +54,8 @@ if [ -d "$STATIC_DIR" ] && [ "${FLUXBOARD_BACKUP:-0}" = "1" ]; then
   cp -r "$STATIC_DIR" "$BACKUP_DIR"
 
   # Keep only last 3 backups
-  ls -dt "${STATIC_DIR}.backup."* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
+  # shellcheck disable=SC2012 # Backup dirs are created by this script with sanitized names.
+  ls -dt "${STATIC_DIR}.backup."* 2> /dev/null | tail -n +4 | xargs rm -rf 2> /dev/null || true
 elif [ -d "$STATIC_DIR" ]; then
   echo "ℹ️  Skipping backup (set FLUXBOARD_BACKUP=1 to enable)"
 fi
@@ -70,7 +71,7 @@ cp -f "$DIST_DIR/index.html" "$STATIC_DIR/index.html"
 cp -f "$DIST_DIR/favicon.svg" "$STATIC_DIR/favicon.svg"
 
 # Emit bundle provenance for downstream artifact consumers.
-python3 - "$PROVENANCE_FILE" "$UPSTREAM_REPO" "$UPSTREAM_SHA" "$UI_PROFILE" "$BUILT_AT_UTC" <<'PY'
+python3 - "$PROVENANCE_FILE" "$UPSTREAM_REPO" "$UPSTREAM_SHA" "$UI_PROFILE" "$BUILT_AT_UTC" << 'PY'
 import json
 import pathlib
 import sys
@@ -96,7 +97,7 @@ for file in "${EXPECTED_FILES[@]}"; do
 done
 
 # Count assets
-ASSET_COUNT=$(ls -1 "$STATIC_DIR/assets" | wc -l)
+ASSET_COUNT=$(find "$STATIC_DIR/assets" -mindepth 1 -maxdepth 1 -type f -print 2> /dev/null | wc -l | xargs)
 echo "✅ Deployed $ASSET_COUNT asset files"
 
 # Show what was deployed

@@ -181,8 +181,7 @@ class FluxConfig(NautilusConfig, frozen=True):
     def __post_init__(self) -> None:
         if self.mode not in _ALLOWED_MODES:
             raise ValueError(
-                f"`mode` was invalid: {self.mode!r}. "
-                f"Expected one of {sorted(_ALLOWED_MODES)}.",
+                f"`mode` was invalid: {self.mode!r}. Expected one of {sorted(_ALLOWED_MODES)}.",
             )
         if self.mode == "live" and not self.confirm_live:
             raise ValueError("`confirm_live` must be True when `mode='live'`")

@@ -120,7 +120,11 @@ runs:
         fi
 
         wheel_uri=$(
-          "$venv_python" -c "from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().as_uri())" "$wheel_path"
+          "$venv_python" - "$wheel_path" <<'PY'
+        from pathlib import Path
+        import sys
+        print(Path(sys.argv[1]).resolve().as_uri())
+        PY
         )
 
         "$venv_python" -m pip install --upgrade pip

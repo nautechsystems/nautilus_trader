@@ -10,11 +10,11 @@ from nautilus_trader.flux.strategies.makerv3.rebalancing import plan_side_rebala
 def test_plan_side_rebalance_actions_cancels_overflow_and_too_aggressive_orders() -> None:
     cancel_indices, missing_indices = plan_side_rebalance_actions(
         side="buy",
-        active_prices=[Decimal("101"), Decimal("100"), Decimal("99"), Decimal("98")],
+        active_prices=[Decimal(101), Decimal(100), Decimal(99), Decimal(98)],
         active_stale=[False, False, False, False],
         desired_levels=[
-            (Decimal("100"), Decimal("100.5"), Decimal("0")),
-            (Decimal("99"), Decimal("99.5"), Decimal("0")),
+            (Decimal(100), Decimal("100.5"), Decimal(0)),
+            (Decimal(99), Decimal("99.5"), Decimal(0)),
         ],
     )
 
@@ -25,12 +25,12 @@ def test_plan_side_rebalance_actions_cancels_overflow_and_too_aggressive_orders(
 def test_plan_side_rebalance_actions_uses_stale_cancel_budget_from_tail() -> None:
     cancel_indices, missing_indices = plan_side_rebalance_actions(
         side="sell",
-        active_prices=[Decimal("10"), Decimal("11"), Decimal("12")],
+        active_prices=[Decimal(10), Decimal(11), Decimal(12)],
         active_stale=[True, True, True],
         desired_levels=[
-            (Decimal("10"), Decimal("9"), Decimal("0")),
-            (Decimal("11"), Decimal("10"), Decimal("0")),
-            (Decimal("12"), Decimal("11"), Decimal("0")),
+            (Decimal(10), Decimal(9), Decimal(0)),
+            (Decimal(11), Decimal(10), Decimal(0)),
+            (Decimal(12), Decimal(11), Decimal(0)),
         ],
         stale_cancel_budget=2,
     )
@@ -42,11 +42,11 @@ def test_plan_side_rebalance_actions_uses_stale_cancel_budget_from_tail() -> Non
 def test_plan_side_rebalance_actions_frees_one_slot_for_more_aggressive_missing_level() -> None:
     cancel_indices, missing_indices = plan_side_rebalance_actions(
         side="buy",
-        active_prices=[Decimal("100"), Decimal("99")],
+        active_prices=[Decimal(100), Decimal(99)],
         active_stale=[False, False],
         desired_levels=[
-            (Decimal("101"), Decimal("101"), Decimal("0")),
-            (Decimal("100"), Decimal("100"), Decimal("0")),
+            (Decimal(101), Decimal(101), Decimal(0)),
+            (Decimal(100), Decimal(100), Decimal(0)),
         ],
         stale_cancel_budget=0,
     )
@@ -67,7 +67,7 @@ def test_plan_side_rebalance_actions_rejects_invalid_inputs() -> None:
     with pytest.raises(ValueError, match="length mismatch"):
         plan_side_rebalance_actions(
             side="buy",
-            active_prices=[Decimal("1")],
+            active_prices=[Decimal(1)],
             active_stale=[],
             desired_levels=[],
         )
@@ -80,7 +80,7 @@ def test_plan_side_rebalance_actions_rejects_non_finite_active_prices(bad: Decim
             side="buy",
             active_prices=[bad],
             active_stale=[False],
-            desired_levels=[(Decimal("1"), Decimal("2"), Decimal("0"))],
+            desired_levels=[(Decimal(1), Decimal(2), Decimal(0))],
         )
 
 
@@ -89,7 +89,7 @@ def test_plan_side_rebalance_actions_rejects_non_finite_desired_levels(bad: Deci
     with pytest.raises(ValueError, match="finite"):
         plan_side_rebalance_actions(
             side="buy",
-            active_prices=[Decimal("1")],
+            active_prices=[Decimal(1)],
             active_stale=[False],
-            desired_levels=[(bad, Decimal("2"), Decimal("0"))],
+            desired_levels=[(bad, Decimal(2), Decimal(0))],
         )

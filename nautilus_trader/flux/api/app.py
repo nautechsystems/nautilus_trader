@@ -15,14 +15,15 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import math
+import uuid
+from collections.abc import Callable
 from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
-import json
-import math
-import uuid
 from typing import Any
-from typing import Callable
 from typing import Protocol
 
 import redis
@@ -64,23 +65,36 @@ from nautilus_trader.flux.params.manager import FluxParamsManager
 
 DEFAULT_PARAMS_DEFAULTS: dict[str, Any] = dict(MAKERV3_RUNTIME_PARAM_DEFAULTS)
 DEFAULT_PARAMS_SCHEMA: dict[str, dict[str, Any]] = {
-    name: dict(spec)
-    for name, spec in MAKERV3_RUNTIME_PARAM_SCHEMA.items()
+    name: dict(spec) for name, spec in MAKERV3_RUNTIME_PARAM_SCHEMA.items()
 }
 DEFAULT_PARAMS_ORDER: tuple[str, ...] = MAKERV3_RUNTIME_PARAM_REGISTRY.names
+
+_LOG = logging.getLogger(__name__)
 
 
 class RedisPipelineProtocol(Protocol):
     def get(self, key: str) -> Any: ...
     def exists(self, key: str) -> Any: ...
-    def xrevrange(self, key: str, max: str = "+", min: str = "-", count: int | None = None) -> Any: ...
+    def xrevrange(
+        self,
+        key: str,
+        max: str = "+",
+        min: str = "-",
+        count: int | None = None,
+    ) -> Any: ...
     def execute(self) -> list[Any]: ...
 
 
 class RedisClientProtocol(Protocol):
     def ping(self) -> Any: ...
     def get(self, key: str) -> Any: ...
-    def xrevrange(self, key: str, max: str = "+", min: str = "-", count: int | None = None) -> Any: ...
+    def xrevrange(
+        self,
+        key: str,
+        max: str = "+",
+        min: str = "-",
+        count: int | None = None,
+    ) -> Any: ...
     def hmget(self, key: str, fields: list[str]) -> list[Any]: ...
     def hkeys(self, key: str) -> list[Any]: ...
     def hset(self, key: str, mapping: dict[str, str]) -> int: ...
@@ -193,7 +207,9 @@ class FluxApiStore:
         )
         for key in self._required_readiness_keys:
             if not isinstance(key, str) or not key.strip():
-                raise ContractCatalogValidationError("`required_readiness_keys` must contain non-empty strings")
+                raise ContractCatalogValidationError(
+                    "`required_readiness_keys` must contain non-empty strings",
+                )
 
     @property
     def schema_version(self) -> str:
@@ -248,10 +264,10 @@ class FluxApiStore:
 
             try:
                 keys.market_last(exchange=exchange, base=base, quote=quote)
-            except (TypeError, ValueError) as exc:
+            except (TypeError, ValueError) as e:
                 raise ContractCatalogValidationError(
-                    f"Invalid contract catalog entry exchange={exchange!r} symbol={symbol!r}: {exc}",
-                ) from exc
+                    f"Invalid contract catalog entry exchange={exchange!r} symbol={symbol!r}: {e}",
+                ) from e
 
             dedupe_key = (exchange, base, quote)
             if dedupe_key in seen:
@@ -263,7 +279,9 @@ class FluxApiStore:
             out.append((ContractCatalogEntry(exchange=exchange, symbol=symbol), base, quote))
 
         if not out:
-            raise ContractCatalogValidationError("`contract_catalog` produced no valid contract entries")
+            raise ContractCatalogValidationError(
+                "`contract_catalog` produced no valid contract entries",
+            )
         return tuple(out)
 
     def redis_available(self) -> bool:
@@ -283,7 +301,7 @@ class FluxApiStore:
             )
         key_map = {
             key: bool(value)
-            for key, value in zip(self._required_readiness_keys, exists_raw)
+            for key, value in zip(self._required_readiness_keys, exists_raw, strict=True)
         }
         return ReadinessSnapshot(
             schema_prefix=self.schema_prefix,
@@ -295,55 +313,64 @@ class FluxApiStore:
         manager = self._params_manager(strategy_id)
         try:
             return manager.load()
-        except ValueError as exc:
-            raise ParamsStoreValidationError(str(exc)) from exc
+        except ValueError as e:
+            raise ParamsStoreValidationError(str(e)) from e
 
-    def discover_strategy_ids_from_params(self, *, limit: int = 200, include_default: bool = True) -> list[str]:
+    def _strategy_id_from_params_key(self, raw_key: Any, *, key_prefix: str) -> str | None:
+        key = decode_text(raw_key).strip()
+        if not key.startswith(key_prefix):
+            return None
+        strategy_text = key[len(key_prefix) :].strip()
+        if not strategy_text:
+            return None
+        try:
+            return validate_identifier_part(strategy_text, "strategy_id")
+        except ValueError:
+            return None
+
+    def discover_strategy_ids_from_params(  # noqa: C901
+        self,
+        *,
+        limit: int = 200,
+        include_default: bool = True,
+    ) -> list[str]:
         max_items = max(1, min(2_000, int(limit)))
-        key_prefix = f"{self._config.identity.namespace}:{self._config.identity.schema_version}:params:"
-        out: list[str] = []
-        seen: set[str] = set()
-
-        def _append_from_key(raw_key: Any) -> None:
-            if len(out) >= max_items:
-                return
-            key = decode_text(raw_key).strip()
-            if not key.startswith(key_prefix):
-                return
-            strategy_text = key[len(key_prefix) :].strip()
-            if not strategy_text:
-                return
-            try:
-                strategy_id = validate_identifier_part(strategy_text, "strategy_id")
-            except ValueError:
-                return
-            if strategy_id in seen:
-                return
-            seen.add(strategy_id)
-            out.append(strategy_id)
+        key_prefix = (
+            f"{self._config.identity.namespace}:{self._config.identity.schema_version}:params:"
+        )
+        discovered: set[str] = set()
 
         keys_fn = getattr(self._redis, "keys", None)
         if callable(keys_fn):
             try:
                 for raw_key in keys_fn(f"{key_prefix}*"):
-                    _append_from_key(raw_key)
-                    if len(out) >= max_items:
+                    if len(discovered) >= max_items:
                         break
-            except Exception:  # noqa: BLE001
-                pass
+                    strategy_id = self._strategy_id_from_params_key(raw_key, key_prefix=key_prefix)
+                    if strategy_id:
+                        discovered.add(strategy_id)
+            except Exception as e:
+                _LOG.debug(
+                    "Strategy-id discovery via redis.keys() failed prefix=%s error=%s",
+                    key_prefix,
+                    type(e).__name__,
+                    exc_info=True,
+                )
 
         hashes = getattr(self._redis, "hashes", None)
         if isinstance(hashes, dict):
-            for raw_key in hashes.keys():
-                _append_from_key(raw_key)
-                if len(out) >= max_items:
+            for raw_key in hashes:
+                if len(discovered) >= max_items:
                     break
+                strategy_id = self._strategy_id_from_params_key(raw_key, key_prefix=key_prefix)
+                if strategy_id:
+                    discovered.add(strategy_id)
 
         default_strategy_id = self._config.identity.strategy_id
-        if include_default and default_strategy_id not in seen and len(out) < max_items:
-            out.append(default_strategy_id)
+        if include_default and len(discovered) < max_items:
+            discovered.add(default_strategy_id)
 
-        return sorted(out)
+        return sorted(discovered)
 
     def update_params(self, strategy_id: str, updates: Mapping[str, Any]) -> dict[str, Any]:
         manager = self._params_manager(strategy_id)
@@ -353,8 +380,8 @@ class FluxApiStore:
 
         try:
             applied_updates = manager.update(updates)
-        except ValueError as exc:
-            raise ParamsUpdateValidationError(str(exc)) from exc
+        except ValueError as e:
+            raise ParamsUpdateValidationError(str(e)) from e
         if applied_updates:
             manager.publish_update(applied_updates, ts_ms=now_ms())
         params = self.load_params(strategy_id)
@@ -399,11 +426,15 @@ class FluxApiStore:
         balances = build_balances_rows(raw_snapshot=balances_raw, strategy_id=strategy_id)
 
         market_rows: dict[str, dict[str, Any]] = {}
-        for (contract, _), market_raw in zip(market_pairs, raw[3:]):
+        for (contract, _), market_raw in zip(market_pairs, raw[3:], strict=True):
             parsed = load_json(market_raw)
             contract_id = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
             market_rows[contract_id] = dict(parsed) if isinstance(parsed, dict) else {}
-        legs = build_legs_payload(contracts=self._contracts, market_rows=market_rows, now_ms_value=now_ms())
+        legs = build_legs_payload(
+            contracts=self._contracts,
+            market_rows=market_rows,
+            now_ms_value=now_ms(),
+        )
 
         params = self.load_params(strategy_id)
         return build_signals_payload(
@@ -436,7 +467,10 @@ class FluxApiStore:
         else:
             fetch_count = max(
                 1,
-                min(2_000, (limit * 4) if (since_ms is not None or since_seq is not None) else limit),
+                min(
+                    2_000,
+                    (limit * 4) if (since_ms is not None or since_seq is not None) else limit,
+                ),
             )
         entries = self._redis.xrevrange(keys.trades_stream(), count=fetch_count)
         rows = extract_stream_rows(entries)
@@ -635,16 +669,13 @@ def _strict_json_value(value: Any) -> Any:
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, Mapping):
-        return {
-            str(key): _strict_json_value(item)
-            for key, item in value.items()
-        }
+        return {str(key): _strict_json_value(item) for key, item in value.items()}
     if isinstance(value, tuple | list | set | frozenset):
         return [_strict_json_value(item) for item in value]
     return str(value)
 
 
-def create_flux_api_app(
+def create_flux_api_app(  # noqa: C901
     flux_config: FluxConfig,
     redis_client: RedisClientProtocol,
     *,
@@ -679,32 +710,32 @@ def create_flux_api_app(
         candidate = text or default_strategy_id
         try:
             return validate_identifier_part(candidate, field_name)
-        except ValueError as exc:
+        except ValueError as e:
             raise ApiEnvelopeError(
                 status=400,
                 code="invalid_strategy_id",
-                message=str(exc),
+                message=str(e),
                 details={
                     "field": field_name,
                     "strategy_id": text or candidate,
                 },
-            ) from exc
+            ) from e
 
     def _metadata_for_strategy(strategy_id: str) -> StrategyMetadata:
         metadata = strategy_metadata
         if strategy_metadata_resolver is not None:
             try:
                 metadata = strategy_metadata_resolver(strategy_id)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as e:
                 raise ApiEnvelopeError(
                     status=500,
                     code="config_validation_error",
                     message="Strategy metadata resolver failed.",
                     details={
                         "strategy_id": strategy_id,
-                        "error_type": type(exc).__name__,
+                        "error_type": type(e).__name__,
                     },
-                ) from exc
+                ) from e
         if not isinstance(metadata, StrategyMetadata):
             raise ApiEnvelopeError(
                 status=500,
@@ -856,7 +887,7 @@ def create_flux_api_app(
 
         try:
             snapshot = store.readiness_snapshot()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as e:
             return _error(
                 status=503,
                 code="readiness_probe_failed",
@@ -864,7 +895,7 @@ def create_flux_api_app(
                 details={
                     "schema_prefix": store.schema_prefix,
                     "reason": "internal_error",
-                    "error_type": type(exc).__name__,
+                    "error_type": type(e).__name__,
                 },
             )
 
@@ -889,7 +920,7 @@ def create_flux_api_app(
 
         try:
             snapshot = store.readiness_snapshot()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as e:
             return _error(
                 status=503,
                 code="service_not_ready",
@@ -897,7 +928,7 @@ def create_flux_api_app(
                 details={
                     "schema_prefix": store.schema_prefix,
                     "reason": "internal_error",
-                    "error_type": type(exc).__name__,
+                    "error_type": type(e).__name__,
                 },
             )
 
@@ -944,11 +975,11 @@ def create_flux_api_app(
         for strategy_id in strategy_ids:
             try:
                 params = store.load_params(strategy_id)
-            except ParamsStoreValidationError as exc:
+            except ParamsStoreValidationError as e:
                 return _error(
                     status=500,
                     code="params_store_invalid",
-                    message=str(exc),
+                    message=str(e),
                     details={"strategy_id": strategy_id},
                 )
             payloads.append(
@@ -960,121 +991,107 @@ def create_flux_api_app(
             )
         return _ok(data=payloads)
 
-    @app.post("/api/v1/params")
-    @app.patch("/api/v1/params")
-    def api_params_update() -> Response:
-        payload = request.get_json(silent=True)
-        success: list[dict[str, Any]] = []
-        failed: list[str] = []
-        errors: list[dict[str, Any]] = []
+    def _record_failed(failed: list[str], strategy_id: str) -> None:
+        if strategy_id not in failed:
+            failed.append(strategy_id)
 
-        def _record_failed(strategy_id: str) -> None:
-            if strategy_id not in failed:
-                failed.append(strategy_id)
-
+    def _parse_updates_list(
+        updates_raw: Sequence[Any],
+        *,
+        failed: list[str],
+        errors: list[dict[str, Any]],
+    ) -> list[tuple[int, str, dict[str, Any]]]:
         updates_batch: list[tuple[int, str, dict[str, Any]]] = []
-
-        if isinstance(payload, dict) and isinstance(payload.get("updates"), list):
-            updates_raw = payload.get("updates")
-            for index, item in enumerate(updates_raw):
-                if not isinstance(item, dict):
-                    errors.append(
-                        {
-                            "index": index,
-                            "strategy_id": "",
-                            "code": "missing_payload",
-                            "message": "Each `updates` item must be an object.",
-                        },
-                    )
-                    continue
-                sid_raw = item.get("strategy_id")
-                sid_text = decode_text(sid_raw).strip()
-                if not sid_text:
-                    _record_failed("")
-                    errors.append(
-                        {
-                            "index": index,
-                            "strategy_id": "",
-                            "code": "invalid_strategy_id",
-                            "message": f"`updates[{index}].strategy_id` must be a non-empty string.",
-                        },
-                    )
-                    continue
-                try:
-                    sid = validate_identifier_part(sid_text, f"updates[{index}].strategy_id")
-                except ValueError as exc:
-                    _record_failed(sid_text)
-                    errors.append(
-                        {
-                            "index": index,
-                            "strategy_id": sid_text,
-                            "code": "invalid_strategy_id",
-                            "message": str(exc),
-                        },
-                    )
-                    continue
-
-                item_params = item.get("params")
-                if not isinstance(item_params, dict):
-                    _record_failed(sid)
-                    errors.append(
-                        {
-                            "index": index,
-                            "strategy_id": sid,
-                            "code": "missing_payload",
-                            "message": "Each `updates` item must include a `params` mapping.",
-                        },
-                    )
-                    continue
-
-                updates_batch.append((index, sid, dict(item_params)))
-        else:
-            strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
-            updates = _params_request_payload()
-            if not updates:
-                return _error(
-                    status=400,
-                    code="missing_payload",
-                    message="Request JSON must include `params` mapping.",
-                    details={"strategy_id": strategy_id},
+        for index, item in enumerate(updates_raw):
+            if not isinstance(item, dict):
+                errors.append(
+                    {
+                        "index": index,
+                        "strategy_id": "",
+                        "code": "missing_payload",
+                        "message": "Each `updates` item must be an object.",
+                    },
                 )
-            updates_batch.append((0, strategy_id, updates))
+                continue
+            sid_text = decode_text(item.get("strategy_id")).strip()
+            if not sid_text:
+                _record_failed(failed, "")
+                errors.append(
+                    {
+                        "index": index,
+                        "strategy_id": "",
+                        "code": "invalid_strategy_id",
+                        "message": f"`updates[{index}].strategy_id` must be a non-empty string.",
+                    },
+                )
+                continue
+            try:
+                sid = validate_identifier_part(sid_text, f"updates[{index}].strategy_id")
+            except ValueError as e:
+                _record_failed(failed, sid_text)
+                errors.append(
+                    {
+                        "index": index,
+                        "strategy_id": sid_text,
+                        "code": "invalid_strategy_id",
+                        "message": str(e),
+                    },
+                )
+                continue
+            params = item.get("params")
+            if not isinstance(params, dict):
+                _record_failed(failed, sid)
+                errors.append(
+                    {
+                        "index": index,
+                        "strategy_id": sid,
+                        "code": "missing_payload",
+                        "message": "Each `updates` item must include a `params` mapping.",
+                    },
+                )
+                continue
+            updates_batch.append((index, sid, dict(params)))
+        return updates_batch
 
-        if not updates_batch and errors:
-            return _ok(data={"success": success, "failed": failed, "errors": errors}, status=200)
-
+    def _apply_updates_batch(
+        updates_batch: Sequence[tuple[int, str, dict[str, Any]]],
+        *,
+        failed: list[str],
+        errors: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        success: list[dict[str, Any]] = []
         for index, strategy_id, updates in updates_batch:
             try:
                 result = store.update_params(strategy_id, updates)
-            except ParamsUpdateValidationError as exc:
-                _record_failed(strategy_id)
+            except ParamsUpdateValidationError as e:
+                _record_failed(failed, strategy_id)
                 errors.append(
                     {
                         "index": index,
                         "strategy_id": strategy_id,
                         "code": "invalid_params_update",
-                        "message": str(exc),
+                        "message": str(e),
                     },
                 )
-            except ParamsStoreValidationError as exc:
-                _record_failed(strategy_id)
+            except ParamsStoreValidationError as e:
+                _record_failed(failed, strategy_id)
                 errors.append(
                     {
                         "index": index,
                         "strategy_id": strategy_id,
                         "code": "params_store_invalid",
-                        "message": str(exc),
+                        "message": str(e),
                     },
                 )
-            except Exception as exc:  # noqa: BLE001
-                _record_failed(strategy_id)
+            except Exception as e:
+                _record_failed(failed, strategy_id)
                 errors.append(
                     {
                         "index": index,
                         "strategy_id": strategy_id,
                         "code": "internal_error",
                         "message": "Internal server error.",
-                        "details": {"error_type": type(exc).__name__},
+                        "details": {"error_type": type(e).__name__},
                     },
                 )
             else:
@@ -1085,27 +1102,61 @@ def create_flux_api_app(
                         "params": result["params"],
                     },
                 )
+        return success
 
+    @app.post("/api/v1/params")
+    @app.patch("/api/v1/params")
+    def api_params_update() -> Response:
+        payload = request.get_json(silent=True)
+        failed: list[str] = []
+        errors: list[dict[str, Any]] = []
+        updates_batch: list[tuple[int, str, dict[str, Any]]] = []
+
+        if isinstance(payload, dict) and isinstance(payload.get("updates"), list):
+            updates_batch = _parse_updates_list(
+                payload.get("updates") or [],
+                failed=failed,
+                errors=errors,
+            )
+        else:
+            strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+            updates = _params_request_payload()
+            if not updates:
+                return _error(
+                    status=400,
+                    code="missing_payload",
+                    message="Request JSON must include `params` mapping.",
+                    details={"strategy_id": strategy_id},
+                )
+            updates_batch = [(0, strategy_id, updates)]
+
+        if not updates_batch and errors:
+            return _ok(data={"success": [], "failed": failed, "errors": errors}, status=200)
+
+        success = _apply_updates_batch(updates_batch, failed=failed, errors=errors)
         return _ok(data={"success": success, "failed": failed, "errors": errors})
 
     @app.get("/api/v1/signals")
     def api_signals() -> Response:
         strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         try:
-            strategy_payload = store.load_signals_payload(strategy_id, _metadata_for_strategy(strategy_id))
-        except ParamsStoreValidationError as exc:
+            strategy_payload = store.load_signals_payload(
+                strategy_id,
+                _metadata_for_strategy(strategy_id),
+            )
+        except ParamsStoreValidationError as e:
             return _error(
                 status=500,
                 code="params_store_invalid",
-                message=str(exc),
+                message=str(e),
                 details={"strategy_id": strategy_id},
             )
-        except redis.RedisError as exc:
+        except redis.RedisError as e:
             return _error(
                 status=503,
                 code="store_unavailable",
                 message="Data store unavailable.",
-                details={"strategy_id": strategy_id, "error_type": type(exc).__name__},
+                details={"strategy_id": strategy_id, "error_type": type(e).__name__},
             )
         return _ok(data={"server_ts_ms": now_ms(), "strategies": [strategy_payload]})
 
@@ -1113,12 +1164,15 @@ def create_flux_api_app(
     def api_strategies() -> Response:
         strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         try:
-            strategy_payload = store.load_signals_payload(strategy_id, _metadata_for_strategy(strategy_id))
-        except ParamsStoreValidationError as exc:
+            strategy_payload = store.load_signals_payload(
+                strategy_id,
+                _metadata_for_strategy(strategy_id),
+            )
+        except ParamsStoreValidationError as e:
             return _error(
                 status=500,
                 code="params_store_invalid",
-                message=str(exc),
+                message=str(e),
                 details={"strategy_id": strategy_id},
             )
         return _ok(
@@ -1133,11 +1187,11 @@ def create_flux_api_app(
         sid = _resolve_strategy_id(strategy_id, field_name="strategy_id")
         try:
             params = store.load_params(sid)
-        except ParamsStoreValidationError as exc:
+        except ParamsStoreValidationError as e:
             return _error(
                 status=500,
                 code="params_store_invalid",
-                message=str(exc),
+                message=str(e),
                 details={"strategy_id": sid},
             )
         payload = {"strategy_id": sid, "params": params, "schema": _ordered_params_schema(schema)}
@@ -1157,18 +1211,18 @@ def create_flux_api_app(
             )
         try:
             result = store.update_params(sid, updates)
-        except ParamsUpdateValidationError as exc:
+        except ParamsUpdateValidationError as e:
             return _error(
                 status=400,
                 code="invalid_params_update",
-                message=str(exc),
+                message=str(e),
                 details={"strategy_id": sid},
             )
-        except ParamsStoreValidationError as exc:
+        except ParamsStoreValidationError as e:
             return _error(
                 status=500,
                 code="params_store_invalid",
-                message=str(exc),
+                message=str(e),
                 details={"strategy_id": sid},
             )
         payload = {
@@ -1316,13 +1370,13 @@ def create_flux_api_app(
                     },
                 )
 
-            eligible_rows = store.load_trades_rows(
-                strategy_id,
-                limit=scan_limit,
-                since_ms=None,
-                since_seq=since_seq,
-                scan_limit=scan_limit,
-            )
+            eligible_rows: list[dict[str, Any]] = []
+            for row in scanned_rows:
+                seq = safe_int(row.get("seq"))
+                if seq is None or seq <= since_seq:
+                    continue
+                eligible_rows.append(row)
+            eligible_rows.sort(key=lambda item: safe_int(item.get("seq")) or 0)
             rows = eligible_rows[:limit]
             last_seq = safe_int(rows[-1].get("seq")) if rows else since_seq
             return _ok(
@@ -1408,14 +1462,14 @@ def create_flux_api_app(
 
 
 __all__ = [
-    "ApiEnvelopeError",
-    "ContractCatalogValidationError",
     "DEFAULT_PARAMS_DEFAULTS",
     "DEFAULT_PARAMS_SCHEMA",
+    "ApiEnvelopeError",
+    "ContractCatalogValidationError",
     "FluxApiStore",
     "ParamsStoreValidationError",
     "ParamsUpdateValidationError",
-    "RedisClientProtocol",
     "ReadinessSnapshot",
+    "RedisClientProtocol",
     "create_flux_api_app",
 ]

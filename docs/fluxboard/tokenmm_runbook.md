@@ -7,21 +7,26 @@ This runbook covers the two supported serving modes for the TokenMM Fluxboard su
 ## Prerequisites
 
 1. Start Redis and the MakerV3 node/bridge stack if you need live data:
+
 ```bash
 redis-server --port 6380
 python examples/live/makerv3/run_node.py
 python examples/live/makerv3/run_bridge.py
 ```
+
    Or use the managed stack script:
+
 ```bash
 cp examples/live/makerv3/config/makerv3.live.env.example \
   examples/live/makerv3/config/makerv3.live.env
 # Fill credentials, then:
 scripts/deploy/makerv3_stack.sh start
 ```
+
 The stack script can load credentials from AWS Secrets Manager by default:
 `/nautilus/makerv3/bybit` and `/nautilus/makerv3/binance` (`MAKERV3_*_SECRET_ID` overrides).
 2. Install frontend dependencies once:
+
 ```bash
 pnpm --dir fluxboard install --frozen-lockfile
 ```
@@ -50,43 +55,59 @@ Backend runner variables (export in shell before running `run_api.py`; also docu
 ## Option A (dev): Vite proxy mode
 
 1. Prepare frontend env:
+
 ```bash
 cp fluxboard/.env.example fluxboard/.env
 ```
+
 2. Run FluxAPI:
+
 ```bash
 python examples/live/makerv3/run_api.py --host 127.0.0.1 --port 5022
 ```
+
 3. Run Vite dev server:
+
 ```bash
 pnpm --dir fluxboard dev
 ```
+
 4. Open:
+
 - `http://127.0.0.1:5173/tokenmm` (alias: `/tokenm`)
 
 Expected behavior:
+
 - `/api/*` and `/socket.io` requests from Vite are proxied to FluxAPI.
 - TokenMM routes render from the dev server.
 
 ## Option B (prod-like): FluxAPI serves built SPA at `/tokenmm/*`
 
 1. Build frontend:
+
 ```bash
 pnpm --dir fluxboard build
 ```
+
 2. Run FluxAPI with static serving opt-in:
+
 ```bash
 python examples/live/makerv3/run_api.py --serve-fluxboard --host 127.0.0.1 --port 5022
 ```
+
 Env equivalent:
+
 ```bash
 FLUXBOARD_SERVE_DIST=1 python examples/live/makerv3/run_api.py --host 127.0.0.1 --port 5022
 ```
+
 3. Open:
+
 - `http://127.0.0.1:5022/tokenmm` (alias: `/tokenm`)
 - `http://127.0.0.1:5022/tokenmm/alerts` (deep-link SPA fallback)
 
 Expected behavior:
+
 - Built assets are served from `fluxboard/dist`.
 - `/tokenmm/*` deep links return SPA HTML (including `/tokenmm/order-view`).
 - `/tokenmm/order-view` remains unavailable at the UI level because TokenMM frontend route/nav excludes order-view.

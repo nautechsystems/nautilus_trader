@@ -12,8 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-"""Expose canonical MakerV3 strategy exports."""
+"""
+Expose canonical MakerV3 strategy exports.
+"""
 
 from nautilus_trader.flux.strategies.makerv3.strategy import MakerV3Strategy
 from nautilus_trader.flux.strategies.makerv3.strategy import MakerV3StrategyConfig

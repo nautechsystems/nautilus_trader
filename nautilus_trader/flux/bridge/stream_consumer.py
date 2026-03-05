@@ -16,12 +16,12 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
 import logging
 import os
 import signal
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import redis
@@ -83,7 +83,9 @@ class FluxBridgeStreamConsumer:
         self._schema_version = validate_schema_version(schema_version, "schema_version")
         self._environment = validate_identifier_part(environment, "environment")
         self._strategy_id = (
-            validate_identifier_part(strategy_id, "strategy_id") if strategy_id is not None else None
+            validate_identifier_part(strategy_id, "strategy_id")
+            if strategy_id is not None
+            else None
         )
         self._handlers = handlers or default_topic_handlers()
         self._topics = sorted(topics or self._handlers.keys())
@@ -100,6 +102,9 @@ class FluxBridgeStreamConsumer:
         self._running = True
         self._last_scan_ts = 0.0
         self._stream_ids: dict[str, str] = {}
+        self._write_failure_entry: tuple[str, str] | None = None
+        self._write_failure_streak = 0
+        self._write_failure_first_failure_s = 0.0
 
     def _normalize_topic_name(self, topic: Any) -> str:
         topic_text = first_text(topic)
@@ -158,7 +163,9 @@ class FluxBridgeStreamConsumer:
             if self._strategy_id is None:
                 patterns.append(f"{self._prefix}:in:stream:{self._environment}:*:{topic}")
             else:
-                patterns.append(f"{self._prefix}:in:stream:{self._environment}:{self._strategy_id}:{topic}")
+                patterns.append(
+                    f"{self._prefix}:in:stream:{self._environment}:{self._strategy_id}:{topic}",
+                )
         return patterns
 
     def _parse_stream_key(self, key: str) -> StreamCoordinates | None:
@@ -196,8 +203,8 @@ class FluxBridgeStreamConsumer:
             return
         try:
             redis_type = decode_text(self._redis.type(key)).strip().lower()
-        except redis.RedisError as exc:
-            self._logger.warning("Skipping stream key %s (TYPE failed: %s)", key, exc)
+        except redis.RedisError as e:
+            self._logger.warning("Skipping stream key %s (TYPE failed: %s)", key, e)
             self._stream_ids.pop(key, None)
             return
         if redis_type != "stream":
@@ -228,7 +235,9 @@ class FluxBridgeStreamConsumer:
         self._last_scan_ts = now
 
     def _payload_from_fields(self, fields: dict[Any, Any]) -> tuple[Any, str]:
-        field_topic = self._normalize_topic_name(first_text(fields.get("topic"), fields.get(b"topic")))
+        field_topic = self._normalize_topic_name(
+            first_text(fields.get("topic"), fields.get(b"topic")),
+        )
         raw_payload = fields.get("payload")
         if raw_payload is None:
             raw_payload = fields.get(b"payload")
@@ -236,10 +245,7 @@ class FluxBridgeStreamConsumer:
             parsed = load_json_payload(raw_payload)
             envelope_topic, unwrapped = self._unwrap_payload_envelope(parsed)
             return unwrapped, envelope_topic or field_topic
-        payload = {
-            decode_text(key): load_json_payload(value)
-            for key, value in fields.items()
-        }
+        payload = {decode_text(key): load_json_payload(value) for key, value in fields.items()}
         envelope_topic, unwrapped = self._unwrap_payload_envelope(payload)
         return unwrapped, envelope_topic or field_topic
 
@@ -336,7 +342,7 @@ class FluxBridgeStreamConsumer:
         )
         return payload, context
 
-    def _apply_write_ops(self, ops: list[WriteOp]) -> None:
+    def _apply_write_ops(self, ops: list[WriteOp]) -> None:  # noqa: C901
         if not ops:
             return
 
@@ -356,11 +362,20 @@ class FluxBridgeStreamConsumer:
                 row.setdefault("topic", "")
                 row.setdefault("entry_id", "")
                 row.setdefault("ts_ms", 0)
+                ts_ms_raw = row.get("ts_ms")
+                ts_ms_int = 0
+                if isinstance(ts_ms_raw, (int, float)):
+                    ts_ms_int = int(ts_ms_raw)
+                elif isinstance(ts_ms_raw, str):
+                    try:
+                        ts_ms_int = int(ts_ms_raw)
+                    except ValueError:
+                        ts_ms_int = 0
                 fields = {
                     "strategy_id": decode_text(row.get("strategy_id")),
                     "topic": decode_text(row.get("topic")),
                     "entry_id": decode_text(row.get("entry_id")),
-                    "ts_ms": str(int(row.get("ts_ms") or 0)),
+                    "ts_ms": str(ts_ms_int),
                     "payload": _to_json(row),
                 }
                 pipe.xadd(op.key, fields, maxlen=int(op.maxlen), approximate=True)
@@ -369,17 +384,17 @@ class FluxBridgeStreamConsumer:
             if isinstance(op, ReplaceHashJSONOp):
                 pipe.delete(op.key)
                 if op.mapping:
-                    encoded_mapping = {
-                        field: _to_json(row)
-                        for field, row in op.mapping.items()
-                    }
+                    encoded_mapping: dict[str | bytes, bytes | float | int | str] = {}
+                    for field, row in op.mapping.items():
+                        field_key: str | bytes = field if isinstance(field, bytes) else str(field)
+                        encoded_mapping[field_key] = _to_json(row)
                     pipe.hset(op.key, mapping=encoded_mapping)
                 if op.ttl_seconds is not None:
                     pipe.expire(op.key, int(op.ttl_seconds))
 
         pipe.execute()
 
-    def run(self) -> None:
+    def run(self) -> None:  # noqa: C901
         self._install_signals()
         self._refresh_streams(force=True)
         self._logger.info("Listening for bridge topics: %s", ", ".join(self._topics))
@@ -396,8 +411,8 @@ class FluxBridgeStreamConsumer:
                     count=self._read_count,
                     block=self._block_ms,
                 )
-            except redis.RedisError as exc:
-                self._logger.error("xread failed: %s", exc)
+            except redis.RedisError as e:
+                self._logger.error("xread failed: %s", e)
                 time.sleep(1.0)
                 continue
 
@@ -415,12 +430,12 @@ class FluxBridgeStreamConsumer:
                             entry_id=entry_id,
                             fields=fields,
                         )
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as e:
                         self._logger.error(
                             "Rejected stream entry stream=%s id=%s err=%s",
                             stream_key,
                             entry_id,
-                            exc,
+                            e,
                         )
                         # Decode failures are permanent for this entry; advance offset and continue.
                         self._stream_ids[stream_key] = entry_id
@@ -449,13 +464,13 @@ class FluxBridgeStreamConsumer:
 
                     try:
                         ops = handler(payload, context)
-                    except Exception as exc:
+                    except Exception as e:
                         self._logger.exception(
                             "Handler failed topic=%s stream=%s id=%s err=%s",
                             context.topic,
                             stream_key,
                             entry_id,
-                            exc,
+                            e,
                         )
                         # Handler failures should not stall the stream; skip this entry.
                         self._stream_ids[stream_key] = entry_id
@@ -463,17 +478,50 @@ class FluxBridgeStreamConsumer:
 
                     try:
                         self._apply_write_ops(ops)
-                    except Exception as exc:  # noqa: BLE001
+                    except redis.RedisError as e:
+                        current = (stream_key, entry_id)
+                        if self._write_failure_entry != current:
+                            self._write_failure_entry = current
+                            self._write_failure_streak = 0
+                            self._write_failure_first_failure_s = time.monotonic()
+                        self._write_failure_streak = min(self._write_failure_streak + 1, 50)
+                        elapsed_s = max(0.0, time.monotonic() - self._write_failure_first_failure_s)
+                        backoff_s = min(0.25 * (2 ** max(0, self._write_failure_streak - 1)), 5.0)
                         self._logger.error(
+                            "Write-op application failed topic=%s stream=%s id=%s streak=%s elapsed_s=%.3f backoff_s=%.3f err=%s",
+                            context.topic,
+                            stream_key,
+                            entry_id,
+                            self._write_failure_streak,
+                            elapsed_s,
+                            backoff_s,
+                            e,
+                        )
+                        # Do not advance offset on Redis write failures; retry this entry with backoff.
+                        if elapsed_s >= 60.0:
+                            self._logger.critical(
+                                "Write-op application has failed for %.1fs (topic=%s stream=%s id=%s); stopping consumer to avoid silent stall",
+                                elapsed_s,
+                                context.topic,
+                                stream_key,
+                                entry_id,
+                            )
+                            raise
+                        time.sleep(backoff_s)
+                        break
+                    except Exception as e:
+                        self._logger.exception(
                             "Write-op application failed topic=%s stream=%s id=%s err=%s",
                             context.topic,
                             stream_key,
                             entry_id,
-                            exc,
+                            e,
                         )
-                        # Redis failures are retried; do not advance offset on failure.
-                        time.sleep(0.25)
-                        break
+                        raise
+                    else:
+                        self._write_failure_entry = None
+                        self._write_failure_streak = 0
+                        self._write_failure_first_failure_s = 0.0
 
                     self._stream_ids[stream_key] = entry_id
 

@@ -15,8 +15,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
+from datetime import datetime
 from typing import Any
 
 from nautilus_trader.flux.bridge.handlers.types import CorrelationContext
@@ -87,11 +87,15 @@ def coerce_ts_ms(value: Any) -> int | None:
     if value is None:
         return None
 
+    text = decode_text(value).strip()
     try:
-        ts = float(decode_text(value))
+        ts = float(text)
     except (TypeError, ValueError):
         try:
-            ts = datetime.fromisoformat(decode_text(value).replace("Z", "+00:00")).timestamp()
+            iso = text
+            if iso.endswith("Z"):
+                iso = f"{iso[:-1]}+00:00"
+            ts = datetime.fromisoformat(iso).timestamp()
         except (TypeError, ValueError):
             return None
 
@@ -118,7 +122,12 @@ def normalize_symbol_parts(
 ) -> tuple[str, str]:
     base_text = first_text(base).upper()
     quote_text = first_text(quote).upper()
-    if base_text and quote_text and base_text.endswith(quote_text) and len(base_text) > len(quote_text):
+    if (
+        base_text
+        and quote_text
+        and base_text.endswith(quote_text)
+        and len(base_text) > len(quote_text)
+    ):
         base_text = base_text[: -len(quote_text)]
     if base_text and quote_text:
         return base_text, quote_text
@@ -160,7 +169,7 @@ def normalize_ts_ms(row: dict[str, Any], fallback: int) -> int:
         or row.get("ts_event")
         or row.get("time")
         or row.get("datetime")
-        or row.get("observed_ts")
+        or row.get("observed_ts"),
     )
     if ts_ms is None:
         ts_ms = fallback

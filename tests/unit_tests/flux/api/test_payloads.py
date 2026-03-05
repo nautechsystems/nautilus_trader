@@ -15,8 +15,8 @@
 
 from __future__ import annotations
 
-from nautilus_trader.flux.api.payloads import StrategyMetadata
 from nautilus_trader.flux.api.payloads import ContractCatalogEntry
+from nautilus_trader.flux.api.payloads import StrategyMetadata
 from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.api.payloads import build_envelope
 from nautilus_trader.flux.api.payloads import build_legs_payload
@@ -150,7 +150,9 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     assert payload["legs"]["venue_a:ABC/USDT"]["mid"] == 100.5
 
 
-def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_state(contract_catalog) -> None:
+def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_state(
+    contract_catalog,
+) -> None:
     metadata = StrategyMetadata(
         strategy_class="maker_v3",
         strategy_groups="tokenmm",
@@ -223,7 +225,9 @@ def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_st
     assert skew["delta_ask_edge_bps"] == 2.0
 
 
-def test_build_signals_payload_derives_quote_status_from_managed_orders_when_missing(contract_catalog) -> None:
+def test_build_signals_payload_derives_quote_status_from_managed_orders_when_missing(
+    contract_catalog,
+) -> None:
     metadata = StrategyMetadata(
         strategy_class="maker_v3",
         strategy_groups="tokenmm",
@@ -319,11 +323,11 @@ def test_build_trades_rows_uses_entry_id_as_seq_fallback_for_delta_filters() -> 
         strategy_id="strategy_01",
         limit=10,
         since_ms=None,
-        since_seq=1772691122334,
+        since_seq=7_260_942_837_080_064,
     )
 
     assert len(rows) == 1
-    assert rows[0]["seq"] == 1772691122335
+    assert rows[0]["seq"] == 7_260_942_837_084_160
     assert rows[0]["row_id"] == "strategy_01:trade:entry:1772691122335-0"
 
 
@@ -372,6 +376,6 @@ def test_extract_stream_rows_preserves_entry_metadata_for_payload_rows() -> None
             "strategy_id": "strategy_01",
             "event": "order_filled",
             "entry_id": "1700000000001-0",
-            "_stream_seq": 1_700_000_000_001,
+            "_stream_seq": 6_963_200_000_004_096,
         },
     ]

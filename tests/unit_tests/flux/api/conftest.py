@@ -32,21 +32,21 @@ from nautilus_trader.flux.common.config import FluxVenuesConfig
 class FakeRedisPipeline:
     def __init__(self, redis_client: FakeRedis) -> None:
         self._redis = redis_client
-        self._commands: list[tuple[str, Any]] = []
+        self._commands: list[tuple[str, str, int | None]] = []
 
     def get(self, key: str) -> FakeRedisPipeline:
-        self._commands.append(("get", key))
+        self._commands.append(("get", key, None))
         return self
 
     def exists(self, key: str) -> FakeRedisPipeline:
-        self._commands.append(("exists", key))
+        self._commands.append(("exists", key, None))
         return self
 
     def xrevrange(
         self,
         key: str,
-        max: str = "+",  # noqa: A002
-        min: str = "-",  # noqa: A002
+        max: str = "+",
+        min: str = "-",
         count: int | None = None,
     ) -> FakeRedisPipeline:
         _ = max, min
@@ -61,14 +61,13 @@ class FakeRedisPipeline:
         self._redis.pipeline_batches.append(list(self._commands))
 
         out: list[Any] = []
-        for command in self._commands:
-            op = command[0]
+        for op, key, count in self._commands:
             if op == "get":
-                out.append(self._redis._get_value(command[1]))
+                out.append(self._redis._get_value(key))
             elif op == "exists":
-                out.append(self._redis._exists_value(command[1]))
+                out.append(self._redis._exists_value(key))
             elif op == "xrevrange":
-                out.append(self._redis._xrevrange_value(command[1], count=command[2]))
+                out.append(self._redis._xrevrange_value(key, count=count))
         return out
 
 
@@ -83,7 +82,7 @@ class FakeRedis:
         self.direct_get_calls: list[str] = []
         self.direct_xrevrange_calls: list[tuple[str, int | None]] = []
         self.pipeline_exec_count = 0
-        self.pipeline_batches: list[list[tuple[str, Any]]] = []
+        self.pipeline_batches: list[list[tuple[str, str, int | None]]] = []
         self.pipeline_execute_error: Exception | None = None
 
     def set_json(self, key: str, value: Any) -> None:
@@ -101,7 +100,9 @@ class FakeRedis:
             elif isinstance(value, int | float):
                 target[field] = str(value).encode("utf-8")
             else:
-                target[field] = json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
+                target[field] = json.dumps(value, separators=(",", ":"), sort_keys=True).encode(
+                    "utf-8",
+                )
         self.hashes[key] = target
 
     def add_stream_rows(self, key: str, rows: list[dict[str, Any]]) -> None:
@@ -126,21 +127,26 @@ class FakeRedis:
     def exists(self, key: str) -> int:
         return self._exists_value(key)
 
-    def _xrevrange_value(self, key: str, *, count: int | None) -> list[tuple[bytes, dict[bytes, bytes]]]:
+    def _xrevrange_value(
+        self,
+        key: str,
+        *,
+        count: int | None,
+    ) -> list[tuple[bytes, dict[bytes, bytes]]]:
         rows = list(reversed(self.streams.get(key, [])))
         if count is not None:
             rows = rows[:count]
         out: list[tuple[bytes, dict[bytes, bytes]]] = []
         for index, row in enumerate(rows):
             encoded = json.dumps(row, separators=(",", ":"), sort_keys=True).encode("utf-8")
-            out.append((f"{index}-0".encode("utf-8"), {b"payload": encoded}))
+            out.append((f"{index}-0".encode(), {b"payload": encoded}))
         return out
 
     def xrevrange(
         self,
         key: str,
-        max: str = "+",  # noqa: A002
-        min: str = "-",  # noqa: A002
+        max: str = "+",
+        min: str = "-",
         count: int | None = None,
     ) -> list[tuple[bytes, dict[bytes, bytes]]]:
         _ = max, min

@@ -59,6 +59,7 @@ def test_transform_state_adds_correlation_context_and_ts_ms() -> None:
     op = ops[0]
     assert isinstance(op, SetJSONOp)
     assert op.key == "flux:v1:state:maker_v3_01"
+    assert isinstance(op.value, dict)
     assert op.value["strategy_id"] == "maker_v3_01"
     assert op.value["topic"] == "state"
     assert op.value["entry_id"] == "1700000001000-0"
@@ -137,6 +138,7 @@ def test_transform_market_bbo_writes_strategy_scoped_snapshot() -> None:
     assert isinstance(op, SetJSONOp)
     assert op.key == "flux:v1:market:last:maker_v3_01:bybit:PLUME_USDT"
     assert op.ttl_seconds == 120
+    assert isinstance(op.value, dict)
     assert op.value["strategy_id"] == "maker_v3_01"
     assert op.value["topic"] == "market_bbo"
     assert op.value["entry_id"] == "1700000001000-0"

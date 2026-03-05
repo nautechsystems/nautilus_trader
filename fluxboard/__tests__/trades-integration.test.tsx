@@ -124,4 +124,47 @@ describe('Trades integration flows', () => {
       expect(props.trades?.[0].row_id).toBe('live');
     });
   });
+
+  it('normalizes nested FluxAPI trade_update payloads (trade object) into full blotter rows', async () => {
+    render(<Trades />);
+    await waitFor(() => expect(mockTable).toHaveBeenCalled());
+
+    const handler = socketHandlers['trade_update'];
+    expect(handler).toBeDefined();
+
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'live-nested',
+        seq: 99, // socket seq (not trade seq)
+        version: 1,
+        strategy_id: 'bybit_binance_plumeusdt_makerv3',
+        server_ts_ms: 1772700209799,
+        trade: {
+          row_id: 'live-nested',
+          version: 1,
+          seq: 1772700209804, // trade stream seq
+          ts_ms: 1772700209799,
+          instrument_id: 'PLUMEUSDT-LINEAR.BYBIT',
+          side: '1',
+          price: '0.009974',
+          qty: '1000',
+          client_order_id: 'O-20260305-084321-001-000-932',
+          trade_id: 'live-nested',
+          strategy_id: 'bybit_binance_plumeusdt_makerv3',
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const top = useTradesStore.getState().rows[0];
+      expect(top.row_id).toBe('live-nested');
+      expect(top.coin).toBe('PLUME');
+      expect(top.exchange).toBe('bybit');
+      expect(top.side).toBe('buy');
+      expect(top.order_id).toBe('O-20260305-084321-001-000-932');
+      expect(top.time).toMatch(/T/);
+      expect(top.mv).toBeCloseTo(9.974, 6);
+    });
+  });
 });

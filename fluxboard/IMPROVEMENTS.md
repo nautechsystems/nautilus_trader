@@ -77,9 +77,11 @@ This document summarizes the comprehensive improvements made to the Fluxboard Re
 **Problem**: Hardcoded `calc(100vh-40px)` caused content bleeding and scrolling issues
 
 **Files Modified**:
+
 - `fluxboard/App.tsx` (lines 7-14)
 
 **Changes**:
+
 ```tsx
 // BEFORE:
 <div className="w-full h-screen overflow-hidden bg-neutral-950 text-neutral-100">
@@ -268,6 +270,7 @@ UI = {
    ```
 
 2. **Fixed overflow structure** (lines 99-136):
+
    ```tsx
    // BEFORE:
    <div className="flex flex-col h-full overflow-hidden w-full max-w-none mx-0 px-0">
@@ -279,11 +282,13 @@ UI = {
    ```
 
 3. **Added accessibility** (line 113):
+
    ```tsx
    aria-label={`Add ${displayName} panel`}
    ```
 
 4. **Let GridLayout handle width automatically**:
+
    ```tsx
    // REMOVED width prop - GridLayout handles this internally
    <GridLayout
@@ -295,6 +300,7 @@ UI = {
    ```
 
 **Impact**:
+
 - ✅ Eliminates unnecessary re-renders on window resize
 - ✅ Fixes scroll behavior inconsistencies
 - ✅ Cleaner CSS structure
@@ -309,12 +315,14 @@ UI = {
 ### 7. Created Reusable UI Components ✅
 
 **Files Created**:
+
 - `fluxboard/components/shared/LoadingState.tsx`
 - `fluxboard/components/shared/LoadingState.test.tsx` (10 test cases)
 - `fluxboard/components/shared/EmptyState.tsx`
 - `fluxboard/components/shared/EmptyState.test.tsx` (11 test cases)
 
 **LoadingState Component**:
+
 ```tsx
 <LoadingState
   message="Loading trades..."

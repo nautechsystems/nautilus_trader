@@ -20,10 +20,10 @@ import json
 import pytest
 
 import nautilus_trader.flux.api.app as app_module
-from nautilus_trader.flux.api import create_flux_api_app
-from nautilus_trader.flux.api import ContractCatalogEntry
 from nautilus_trader.flux.api import DEFAULT_PARAMS_DEFAULTS
 from nautilus_trader.flux.api import DEFAULT_PARAMS_SCHEMA
+from nautilus_trader.flux.api import ContractCatalogEntry
+from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.api.payloads import StrategyMetadata
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
@@ -32,7 +32,10 @@ from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 
 def _seed_required_schema_keys(redis_client, flux_config) -> None:
     keys = FluxRedisKeys.from_identity(flux_config.identity)
-    redis_client.set_json(keys.state(), {"bot_on": True, "managed_orders": 2, "ts_ms": 1700000000000})
+    redis_client.set_json(
+        keys.state(),
+        {"bot_on": True, "managed_orders": 2, "ts_ms": 1700000000000},
+    )
     redis_client.set_hash_json(
         keys.params_hash_key(),
         {
@@ -42,7 +45,10 @@ def _seed_required_schema_keys(redis_client, flux_config) -> None:
         },
     )
     redis_client.set_json(keys.balances_snapshot(), [])
-    redis_client.add_stream_rows(keys.fv_stream(), [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}])
+    redis_client.add_stream_rows(
+        keys.fv_stream(),
+        [{"strategy_id": flux_config.identity.strategy_id, "fv": 100.0}],
+    )
 
 
 def test_default_params_aliases_makerv3_runtime_registry() -> None:
@@ -362,9 +368,7 @@ def test_create_app_rejects_invalid_contract_symbol(
         create_flux_api_app(
             flux_config,
             redis_client,
-            contract_catalog=(
-                ContractCatalogEntry(exchange="venue_a", symbol="INVALID"),
-            ),
+            contract_catalog=(ContractCatalogEntry(exchange="venue_a", symbol="INVALID"),),
             strategy_metadata=StrategyMetadata(
                 strategy_class="maker_v3",
                 strategy_groups="tokenmm",
@@ -510,9 +514,15 @@ def test_signals_profile_prefers_discovered_tokenmm_strategy_over_default_mappin
             "max_age_ms": "10000",
         },
     )
-    redis_client.set_json(alt_keys.state(), {"bot_on": True, "managed_orders": 2, "ts_ms": 1700000000000})
+    redis_client.set_json(
+        alt_keys.state(),
+        {"bot_on": True, "managed_orders": 2, "ts_ms": 1700000000000},
+    )
     redis_client.set_json(alt_keys.balances_snapshot(), [])
-    redis_client.add_stream_rows(alt_keys.fv_stream(), [{"strategy_id": "strategy_02", "fv": 100.0}])
+    redis_client.add_stream_rows(
+        alt_keys.fv_stream(),
+        [{"strategy_id": "strategy_02", "fv": 100.0}],
+    )
     app = create_flux_api_app(
         flux_config,
         redis_client,

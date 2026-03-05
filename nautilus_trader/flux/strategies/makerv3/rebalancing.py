@@ -1,4 +1,6 @@
-"""Plan deterministic quote-side rebalancing actions."""
+"""
+Plan deterministic quote-side rebalancing actions.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +12,7 @@ def _require_finite_decimal(value: Decimal, name: str) -> None:
         raise ValueError(f"{name} must be finite")
 
 
-def plan_side_rebalance_actions(
+def plan_side_rebalance_actions(  # noqa: C901
     *,
     side: str,
     active_prices: list[Decimal],
@@ -18,7 +20,9 @@ def plan_side_rebalance_actions(
     desired_levels: list[tuple[Decimal, Decimal, Decimal]],
     stale_cancel_budget: int = 1,
 ) -> tuple[list[int], list[int]]:
-    """Return active cancel indices and missing desired level indices."""
+    """
+    Return active cancel indices and missing desired level indices.
+    """
     side_norm = str(side).lower()
     if side_norm not in {"buy", "sell"}:
         raise ValueError(f"Unsupported side: {side!r}")
@@ -43,9 +47,8 @@ def plan_side_rebalance_actions(
             continue
         current_px = active_prices[index]
         _, cancel_px, _ = desired_levels[index]
-        too_aggressive = (
-            (side_norm == "buy" and current_px > cancel_px)
-            or (side_norm == "sell" and current_px < cancel_px)
+        too_aggressive = (side_norm == "buy" and current_px > cancel_px) or (
+            side_norm == "sell" and current_px < cancel_px
         )
         if too_aggressive:
             cancels.add(index)
@@ -53,9 +56,7 @@ def plan_side_rebalance_actions(
     stale_budget = max(0, int(stale_cancel_budget))
     if stale_budget > 0:
         stale_candidates = [
-            idx
-            for idx, is_stale in enumerate(active_stale)
-            if is_stale and idx not in cancels
+            idx for idx, is_stale in enumerate(active_stale) if is_stale and idx not in cancels
         ]
         for idx in sorted(stale_candidates, reverse=True)[:stale_budget]:
             cancels.add(idx)

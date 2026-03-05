@@ -1,4 +1,6 @@
-"""Define constants for the canonical MakerV3 strategy surface."""
+"""
+Define constants for the canonical MakerV3 strategy surface.
+"""
 
 from __future__ import annotations
 

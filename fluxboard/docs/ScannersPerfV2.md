@@ -83,6 +83,7 @@ See the **Troubleshooting** section at the end of this document for common issue
 ### Store Layer (`fluxboard/stores/scannersStore.ts`)
 
 **State:**
+
 - `rowsById`: Map<pool_address, ScannerPricingSnapshot> - Raw snapshots
 - `enrichedById`: Map<pool_address, EnrichedRow> - Enriched with precomputed display strings
 - `sortedIdsByEdge`: string[] - Sorted by best edge DESC, last_update_ts DESC, pool_address ASC
@@ -90,6 +91,7 @@ See the **Troubleshooting** section at the end of this document for common issue
 - `deltaBuffer`: Map<pool_address, ScannerPricingSnapshot> - Buffered deltas awaiting apply
 
 **Key Functions:**
+
 - `enqueueDelta()`: Buffer delta, schedule rAF apply, track dropped deltas in coarse mode
 - `drainDeltaBuffer()`: Apply all buffered deltas, update indices incrementally
 - `enrichSnapshot()`: Transform snapshot → EnrichedRow with preformatted strings (cache-aware)
@@ -100,6 +102,7 @@ See the **Troubleshooting** section at the end of this document for common issue
 When delta buffer exceeds 5,000 entries, drop intermediate updates per pool (keep latest only). This prevents buffer bloat during bursts.
 
 **Performance Marks:**
+
 - `scanners.delta.enqueue` - When delta arrives
 - `scanners.delta.apply.start/end` - Around drainDeltaBuffer
 - `scanners.index.update.start/end` - Around updateSortedIndex
@@ -107,12 +110,14 @@ When delta buffer exceeds 5,000 entries, drop intermediate updates per pool (kee
 ### Component Layer (`fluxboard/components/domain/scanners/ScannersTable.tsx`)
 
 **Render Performance Tracking:**
+
 - Marks `scanners.render.table.start` before render
 - Measures duration in `useLayoutEffect` after DOM updates
 - Records p50/p95 via `recordRenderDuration()`
 
 **Preformatted Strings:**
 Cell renderers check `isScannersPerfV2Enabled()` and use precomputed display strings when available:
+
 - `bestEdgeDisplay`, `netEdgeSellDisplay`, `netEdgeBuyDisplay` for edge columns
 - `vol24Display`, `tvlDisplay` for volume/TVL columns
 - Falls back to legacy formatting when perfV2 disabled
@@ -120,6 +125,7 @@ Cell renderers check `isScannersPerfV2Enabled()` and use precomputed display str
 ### Backend API (`fluxapi/blueprints/scanners.py`)
 
 **Endpoint:**
+
 - `POST /api/v1/scanners/perf-stats` - Accepts performance stats from frontend
 - Stores in Redis hash: `fluxboard:scanners:perf_v2:stats`
 - Rate limited: 2 RPS, burst 5
@@ -128,6 +134,7 @@ Cell renderers check `isScannersPerfV2Enabled()` and use precomputed display str
 ### Grafana Exporter (`scripts/exporters/fluxboard_perf_exporter.py`)
 
 **Metrics Exposed:**
+
 - `fluxboard_scanners_updates_per_sec` (Gauge)
 - `fluxboard_scanners_apply_duration_ms` (Histogram, buckets: [5, 10, 25, 50, 100, 200])
 - `fluxboard_scanners_index_update_duration_ms` (Histogram)
@@ -139,6 +146,7 @@ Cell renderers check `isScannersPerfV2Enabled()` and use precomputed display str
 - `fluxboard_scanners_delta_buffer_high_water` (Gauge)
 
 **Configuration:**
+
 - Port: 9092 (default)
 - Poll interval: 5s (default)
 - Redis key: `fluxboard:scanners:perf_v2:stats`
@@ -152,6 +160,7 @@ Cell renderers check `isScannersPerfV2Enabled()` and use precomputed display str
 **Default:** `false` (opt-in)
 
 **Enables:**
+
 - rAF delta coalescing
 - Incremental index updates
 - Preformatted display strings
@@ -197,6 +206,7 @@ Cell renderers check `isScannersPerfV2Enabled()` and use precomputed display str
 Generates synthetic scanner snapshots and streams deltas.
 
 **Usage:**
+
 ```bash
 python tools/perf/scannersHarness/backend/generator.py --rows 10000 --rate 100 --duration 60 --output base.json --deltas-output deltas.json
 ```text
@@ -318,4 +328,3 @@ cd fluxboard && npm test -- scannersStorePerfV2.test.ts
 - API: `fluxapi/blueprints/scanners.py`
 - Exporter: `scripts/exporters/fluxboard_perf_exporter.py`
 - Dashboard: `monitoring/grafana/dashboards/fluxboard_scanners_perf.json`
-

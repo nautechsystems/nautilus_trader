@@ -1,19 +1,26 @@
-"""Provide pure pricing and ladder-construction helpers for MakerV3."""
+"""
+Provide pure pricing and ladder-construction helpers for MakerV3.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import suppress
 from decimal import ROUND_CEILING
 from decimal import ROUND_FLOOR
 from decimal import Decimal
 from typing import Any
+from typing import cast
+
 
 MAX_UNIQUE_PRICE_NUDGES = 200
 EDGE_VALIDATION_RULE = "Bid/ask edges may be signed; place edges must be non-negative."
 
 
 def to_decimal(value: Decimal | float | str) -> Decimal:
-    """Convert a numeric-like value to `Decimal`."""
+    """
+    Convert a numeric-like value to `Decimal`.
+    """
     parsed = value if isinstance(value, Decimal) else Decimal(str(value))
     if not parsed.is_finite():
         raise ValueError(f"Non-finite decimal value: {value!r}")
@@ -21,24 +28,24 @@ def to_decimal(value: Decimal | float | str) -> Decimal:
 
 
 def to_decimal_or_none(value: Any) -> Decimal | None:
-    """Convert a numeric-like value to `Decimal` or return `None`."""
+    """
+    Convert a numeric-like value to `Decimal` or return `None`.
+    """
     if value is None:
         return None
-    try:
+    with suppress(Exception):
         return to_decimal(value)
-    except Exception:
-        pass
     as_decimal = getattr(value, "as_decimal", None)
     if callable(as_decimal):
-        try:
+        with suppress(Exception):
             return to_decimal(as_decimal())
-        except Exception:
-            return None
     return None
 
 
 def to_int_or_default(value: Any, default: Any) -> int:
-    """Return `value` as an int or fallback to `default`."""
+    """
+    Return `value` as an int or fallback to `default`.
+    """
     try:
         return int(value)
     except Exception:
@@ -46,23 +53,27 @@ def to_int_or_default(value: Any, default: Any) -> int:
 
 
 def clamp_decimal(value: Decimal, lower: Decimal, upper: Decimal) -> Decimal:
-    """Clamp a decimal between inclusive lower and upper bounds."""
+    """
+    Clamp a decimal between inclusive lower and upper bounds.
+    """
     return max(lower, min(upper, value))
 
 
 def bps_to_price_offset(anchor_price: Decimal, bps: Decimal | float | str) -> Decimal:
-    """Return an absolute price offset for a basis-point delta."""
-    return anchor_price * to_decimal(bps) / Decimal("10000")
+    """
+    Return an absolute price offset for a basis-point delta.
+    """
+    return anchor_price * to_decimal(bps) / Decimal(10000)
 
 
 def price_to_decimal(value: Any) -> Decimal:
-    """Convert a Nautilus `Price`-like object or scalar to `Decimal`."""
+    """
+    Convert a Nautilus `Price`-like object or scalar to `Decimal`.
+    """
     as_decimal = getattr(value, "as_decimal", None)
     if callable(as_decimal):
-        try:
+        with suppress(Exception):
             return to_decimal(as_decimal())
-        except Exception:
-            pass
     return to_decimal(value)
 
 
@@ -73,7 +84,9 @@ def round_price_to_tick(
     is_buy: bool,
     round_in: bool,
 ) -> Decimal:
-    """Round a price to a tick using post-only in/out semantics."""
+    """
+    Round a price to a tick using post-only in/out semantics.
+    """
     if tick <= 0:
         return price
     if round_in:
@@ -96,9 +109,11 @@ def clamp_post_only_price(
     top_ask: Decimal,
     tick: Decimal,
 ) -> Decimal:
-    """Clamp a target price so a post-only order does not cross the spread."""
+    """
+    Clamp a target price so a post-only order does not cross the spread.
+    """
     if is_buy and top_ask > 0 and price >= top_ask:
-        adjusted = max(Decimal("0"), top_ask - tick)
+        adjusted = max(Decimal(0), top_ask - tick)
         return round_price_to_tick(adjusted, tick=tick, is_buy=True, round_in=False)
     if (not is_buy) and top_bid > 0 and price <= top_bid:
         adjusted = top_bid + tick
@@ -113,7 +128,9 @@ def nudge_unique_price(
     is_buy: bool,
     seen: set[str],
 ) -> Decimal | None:
-    """Nudge a price by one tick until it is unique on a side."""
+    """
+    Nudge a price by one tick until it is unique on a side.
+    """
     if tick <= 0:
         key = str(price)
         if key in seen:
@@ -140,7 +157,9 @@ def apply_inventory_skew_to_edges(
     ask_edge_bps: Decimal,
     total_skew_bps: Decimal,
 ) -> tuple[Decimal, Decimal]:
-    """Apply total inventory skew to bid/ask edge basis points."""
+    """
+    Apply total inventory skew to bid/ask edge basis points.
+    """
     skew_abs = abs(total_skew_bps)
     if total_skew_bps > 0:
         return bid_edge_bps + skew_abs, ask_edge_bps - skew_abs
@@ -149,12 +168,14 @@ def apply_inventory_skew_to_edges(
     return bid_edge_bps, ask_edge_bps
 
 
-def validate_three_band_input(values: Iterable[object], name: str) -> tuple[object, object, object]:
-    """Validate that a three-band input contains exactly three values."""
+def validate_three_band_input[T](values: Iterable[T], name: str) -> tuple[T, T, T]:
+    """
+    Validate that a three-band input contains exactly three values.
+    """
     parsed = tuple(values)
     if len(parsed) != 3:
-        raise ValueError(f"{name}: expected three bands, got {len(parsed)}")
-    return parsed  # type: ignore[return-value]
+        raise ValueError(f"{name}: expected three bands, received {len(parsed)}")
+    return cast(tuple[T, T, T], parsed)
 
 
 def _validate_non_negative(values: Iterable[Decimal | int], name: str) -> None:
@@ -170,7 +191,9 @@ def build_ladder_targets(
     distances: Iterable[Decimal | float | str],
     n_orders: Iterable[int],
 ) -> tuple[list[Decimal], list[Decimal]]:
-    """Build bid/ask ladder target prices for three distance bands."""
+    """
+    Build bid/ask ladder target prices for three distance bands.
+    """
     bid_edge_1, bid_edge_2, bid_edge_3 = validate_three_band_input(bid_edges, "bid_edges")
     ask_edge_1, ask_edge_2, ask_edge_3 = validate_three_band_input(ask_edges, "ask_edges")
     distance_1, distance_2, distance_3 = validate_three_band_input(distances, "distances")
@@ -208,7 +231,9 @@ def build_ladder_place_cancel_levels(
     distances: Iterable[Decimal | float | str],
     n_orders: Iterable[int],
 ) -> tuple[list[tuple[Decimal, Decimal]], list[tuple[Decimal, Decimal]]]:
-    """Build place/cancel ladder levels from absolute edge distances."""
+    """
+    Build place/cancel ladder levels from absolute edge distances.
+    """
     bid_edge_1, bid_edge_2, bid_edge_3 = validate_three_band_input(bid_edges, "bid_edges")
     ask_edge_1, ask_edge_2, ask_edge_3 = validate_three_band_input(ask_edges, "ask_edges")
     place_edge_1, place_edge_2, place_edge_3 = validate_three_band_input(place_edges, "place_edges")
@@ -258,12 +283,17 @@ def build_ladder_place_cancel_levels_from_bps(
     place_edges_bps: Iterable[Decimal | float | str],
     distances_bps: Iterable[Decimal | float | str],
     n_orders: Iterable[int],
-    tick: Decimal | float | str = Decimal("0"),
+    tick: Decimal | float | str = Decimal(0),
 ) -> tuple[list[tuple[Decimal, Decimal]], list[tuple[Decimal, Decimal]]]:
-    """Build place/cancel ladder levels from basis-point inputs."""
+    """
+    Build place/cancel ladder levels from basis-point inputs.
+    """
     bid_edge_1, bid_edge_2, bid_edge_3 = validate_three_band_input(bid_edges_bps, "bid_edges_bps")
     ask_edge_1, ask_edge_2, ask_edge_3 = validate_three_band_input(ask_edges_bps, "ask_edges_bps")
-    place_edge_1, place_edge_2, place_edge_3 = validate_three_band_input(place_edges_bps, "place_edges_bps")
+    place_edge_1, place_edge_2, place_edge_3 = validate_three_band_input(
+        place_edges_bps,
+        "place_edges_bps",
+    )
     distance_1, distance_2, distance_3 = validate_three_band_input(distances_bps, "distances_bps")
     n_1, n_2, n_3 = validate_three_band_input(n_orders, "n_orders")
 
@@ -280,7 +310,7 @@ def build_ladder_place_cancel_levels_from_bps(
 
     anchor_bid_dec = to_decimal(anchor_bid)
     anchor_ask_dec = to_decimal(anchor_ask)
-    mid_primary = (anchor_bid_dec + anchor_ask_dec) / Decimal("2")
+    mid_primary = (anchor_bid_dec + anchor_ask_dec) / Decimal(2)
     if mid_primary <= 0:
         return [], []
 
@@ -288,19 +318,19 @@ def build_ladder_place_cancel_levels_from_bps(
     ask_levels: list[tuple[Decimal, Decimal]] = []
 
     for band_idx in range(3):
-        bid_edge_frac = bid_edges_dec[band_idx] / Decimal("10000")
-        ask_edge_frac = ask_edges_dec[band_idx] / Decimal("10000")
-        place_edge_pos = max(Decimal("0"), place_edges_dec[band_idx])
-        bid_place_edge_frac = (bid_edges_dec[band_idx] + place_edge_pos) / Decimal("10000")
-        ask_place_edge_frac = (ask_edges_dec[band_idx] + place_edge_pos) / Decimal("10000")
+        bid_edge_frac = bid_edges_dec[band_idx] / Decimal(10000)
+        ask_edge_frac = ask_edges_dec[band_idx] / Decimal(10000)
+        place_edge_pos = max(Decimal(0), place_edges_dec[band_idx])
+        bid_place_edge_frac = (bid_edges_dec[band_idx] + place_edge_pos) / Decimal(10000)
+        ask_place_edge_frac = (ask_edges_dec[band_idx] + place_edge_pos) / Decimal(10000)
 
-        bid_cancel_base = anchor_bid_dec * (Decimal("1") - bid_edge_frac)
-        ask_cancel_base = anchor_ask_dec * (Decimal("1") + ask_edge_frac)
-        bid_place_base = anchor_bid_dec * (Decimal("1") - bid_place_edge_frac)
-        ask_place_base = anchor_ask_dec * (Decimal("1") + ask_place_edge_frac)
+        bid_cancel_base = anchor_bid_dec * (Decimal(1) - bid_edge_frac)
+        ask_cancel_base = anchor_ask_dec * (Decimal(1) + ask_edge_frac)
+        bid_place_base = anchor_bid_dec * (Decimal(1) - bid_place_edge_frac)
+        ask_place_base = anchor_ask_dec * (Decimal(1) + ask_place_edge_frac)
 
         for level in range(n_orders_int[band_idx]):
-            offset_px = (mid_primary * distances_dec[band_idx] * Decimal(level)) / Decimal("10000")
+            offset_px = (mid_primary * distances_dec[band_idx] * Decimal(level)) / Decimal(10000)
             if tick_dec > 0 and level > 0:
                 min_offset = tick_dec * Decimal(level)
                 if offset_px < min_offset:

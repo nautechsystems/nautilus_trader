@@ -12,8 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-"""Unit tests for MakerV3 pricing helpers."""
+"""
+Unit tests for MakerV3 pricing helpers.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +24,9 @@ import pytest
 
 from nautilus_trader.flux.strategies.makerv3.pricing import apply_inventory_skew_to_edges
 from nautilus_trader.flux.strategies.makerv3.pricing import bps_to_price_offset
-from nautilus_trader.flux.strategies.makerv3.pricing import build_ladder_place_cancel_levels_from_bps
+from nautilus_trader.flux.strategies.makerv3.pricing import (
+    build_ladder_place_cancel_levels_from_bps,
+)
 from nautilus_trader.flux.strategies.makerv3.pricing import clamp_post_only_price
 from nautilus_trader.flux.strategies.makerv3.pricing import nudge_unique_price
 from nautilus_trader.flux.strategies.makerv3.pricing import round_price_to_tick
@@ -31,7 +34,7 @@ from nautilus_trader.flux.strategies.makerv3.pricing import to_decimal
 
 
 def test_bps_to_price_offset_uses_1e4_denominator() -> None:
-    offset = bps_to_price_offset(Decimal("0.0094"), Decimal("10"))
+    offset = bps_to_price_offset(Decimal("0.0094"), Decimal(10))
     assert offset == Decimal("0.0000094")
 
 
@@ -112,12 +115,12 @@ def test_nudge_unique_price_moves_less_aggressive_until_unique() -> None:
 
 def test_build_ladder_place_cancel_levels_from_bps_matches_reference_anchor_pricing() -> None:
     bid_levels, ask_levels = build_ladder_place_cancel_levels_from_bps(
-        anchor_bid=Decimal("100"),
-        anchor_ask=Decimal("101"),
-        bid_edges_bps=(Decimal("10"), Decimal("20"), Decimal("30")),
-        ask_edges_bps=(Decimal("10"), Decimal("20"), Decimal("30")),
-        place_edges_bps=(Decimal("2"), Decimal("3"), Decimal("4")),
-        distances_bps=(Decimal("5"), Decimal("10"), Decimal("20")),
+        anchor_bid=Decimal(100),
+        anchor_ask=Decimal(101),
+        bid_edges_bps=(Decimal(10), Decimal(20), Decimal(30)),
+        ask_edges_bps=(Decimal(10), Decimal(20), Decimal(30)),
+        place_edges_bps=(Decimal(2), Decimal(3), Decimal(4)),
+        distances_bps=(Decimal(5), Decimal(10), Decimal(20)),
         n_orders=(2, 1, 0),
     )
 
@@ -135,34 +138,34 @@ def test_build_ladder_place_cancel_levels_from_bps_matches_reference_anchor_pric
 
 def test_build_ladder_place_cancel_levels_from_bps_applies_tick_min_offset_per_level() -> None:
     bid_levels, ask_levels = build_ladder_place_cancel_levels_from_bps(
-        anchor_bid=Decimal("100"),
-        anchor_ask=Decimal("101"),
-        bid_edges_bps=(Decimal("0"), Decimal("0"), Decimal("0")),
-        ask_edges_bps=(Decimal("0"), Decimal("0"), Decimal("0")),
-        place_edges_bps=(Decimal("0"), Decimal("0"), Decimal("0")),
-        distances_bps=(Decimal("1"), Decimal("0"), Decimal("0")),
+        anchor_bid=Decimal(100),
+        anchor_ask=Decimal(101),
+        bid_edges_bps=(Decimal(0), Decimal(0), Decimal(0)),
+        ask_edges_bps=(Decimal(0), Decimal(0), Decimal(0)),
+        place_edges_bps=(Decimal(0), Decimal(0), Decimal(0)),
+        distances_bps=(Decimal(1), Decimal(0), Decimal(0)),
         n_orders=(2, 0, 0),
         tick=Decimal("0.5"),
     )
 
     assert bid_levels == [
-        (Decimal("100"), Decimal("100")),
+        (Decimal(100), Decimal(100)),
         (Decimal("99.5"), Decimal("99.5")),
     ]
     assert ask_levels == [
-        (Decimal("101"), Decimal("101")),
+        (Decimal(101), Decimal(101)),
         (Decimal("101.5"), Decimal("101.5")),
     ]
 
 
 def test_build_ladder_place_cancel_levels_from_bps_allows_signed_bid_ask_edges() -> None:
     bid_levels, ask_levels = build_ladder_place_cancel_levels_from_bps(
-        anchor_bid=Decimal("100"),
-        anchor_ask=Decimal("101"),
-        bid_edges_bps=(Decimal("-5"), Decimal("0"), Decimal("0")),
-        ask_edges_bps=(Decimal("-5"), Decimal("0"), Decimal("0")),
-        place_edges_bps=(Decimal("1"), Decimal("0"), Decimal("0")),
-        distances_bps=(Decimal("0"), Decimal("0"), Decimal("0")),
+        anchor_bid=Decimal(100),
+        anchor_ask=Decimal(101),
+        bid_edges_bps=(Decimal(-5), Decimal(0), Decimal(0)),
+        ask_edges_bps=(Decimal(-5), Decimal(0), Decimal(0)),
+        place_edges_bps=(Decimal(1), Decimal(0), Decimal(0)),
+        distances_bps=(Decimal(0), Decimal(0), Decimal(0)),
         n_orders=(1, 0, 0),
     )
 
@@ -173,33 +176,33 @@ def test_build_ladder_place_cancel_levels_from_bps_allows_signed_bid_ask_edges()
 def test_build_ladder_place_cancel_levels_from_bps_rejects_negative_place_edges() -> None:
     with pytest.raises(ValueError, match="place edges must be non-negative"):
         build_ladder_place_cancel_levels_from_bps(
-            anchor_bid=Decimal("100"),
-            anchor_ask=Decimal("101"),
-            bid_edges_bps=(Decimal("5"), Decimal("0"), Decimal("0")),
-            ask_edges_bps=(Decimal("5"), Decimal("0"), Decimal("0")),
-            place_edges_bps=(Decimal("-1"), Decimal("0"), Decimal("0")),
-            distances_bps=(Decimal("0"), Decimal("0"), Decimal("0")),
+            anchor_bid=Decimal(100),
+            anchor_ask=Decimal(101),
+            bid_edges_bps=(Decimal(5), Decimal(0), Decimal(0)),
+            ask_edges_bps=(Decimal(5), Decimal(0), Decimal(0)),
+            place_edges_bps=(Decimal(-1), Decimal(0), Decimal(0)),
+            distances_bps=(Decimal(0), Decimal(0), Decimal(0)),
             n_orders=(1, 0, 0),
         )
 
 
 def test_apply_inventory_skew_to_edges_handles_positive_negative_and_zero() -> None:
     bid_up, ask_up = apply_inventory_skew_to_edges(
-        bid_edge_bps=Decimal("10"),
-        ask_edge_bps=Decimal("20"),
-        total_skew_bps=Decimal("3"),
+        bid_edge_bps=Decimal(10),
+        ask_edge_bps=Decimal(20),
+        total_skew_bps=Decimal(3),
     )
     bid_down, ask_down = apply_inventory_skew_to_edges(
-        bid_edge_bps=Decimal("10"),
-        ask_edge_bps=Decimal("20"),
-        total_skew_bps=Decimal("-3"),
+        bid_edge_bps=Decimal(10),
+        ask_edge_bps=Decimal(20),
+        total_skew_bps=Decimal(-3),
     )
     bid_flat, ask_flat = apply_inventory_skew_to_edges(
-        bid_edge_bps=Decimal("10"),
-        ask_edge_bps=Decimal("20"),
-        total_skew_bps=Decimal("0"),
+        bid_edge_bps=Decimal(10),
+        ask_edge_bps=Decimal(20),
+        total_skew_bps=Decimal(0),
     )
 
-    assert (bid_up, ask_up) == (Decimal("13"), Decimal("17"))
-    assert (bid_down, ask_down) == (Decimal("7"), Decimal("23"))
-    assert (bid_flat, ask_flat) == (Decimal("10"), Decimal("20"))
+    assert (bid_up, ask_up) == (Decimal(13), Decimal(17))
+    assert (bid_down, ask_down) == (Decimal(7), Decimal(23))
+    assert (bid_flat, ask_flat) == (Decimal(10), Decimal(20))

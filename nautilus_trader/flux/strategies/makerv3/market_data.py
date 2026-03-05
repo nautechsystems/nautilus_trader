@@ -1,4 +1,6 @@
-"""Maintain MakerV3 market data state and trigger quote cycles."""
+"""
+Maintain MakerV3 market data state and trigger quote cycles.
+"""
 
 from __future__ import annotations
 
@@ -29,7 +31,9 @@ def should_publish_market_bbo(
     now_ns: int,
     heartbeat_ms: int,
 ) -> bool:
-    """Return True when a BBO snapshot should be published (change or heartbeat)."""
+    """
+    Return True when a BBO snapshot should be published (change or heartbeat).
+    """
     if bbo_changed:
         return True
     if last_publish_ns <= 0:
@@ -38,8 +42,10 @@ def should_publish_market_bbo(
     return now_ns - last_publish_ns >= interval_ns
 
 
-def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> None:
-    """Process market deltas and trigger quote-cycle refresh when eligible."""
+def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> None:  # noqa: C901
+    """
+    Process market deltas and trigger quote-cycle refresh when eligible.
+    """
     book = strategy._books.get(deltas.instrument_id)
     if book is None:
         return
@@ -73,7 +79,11 @@ def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> 
             ask=ask_dec,
             ts_ns=now_ns,
         )
-        if bbo_changed or now_ns - strategy._last_fv_snapshot_ts_ns >= strategy.MARKET_BBO_HEARTBEAT_MS * 1_000_000:
+        if (
+            bbo_changed
+            or now_ns - strategy._last_fv_snapshot_ts_ns
+            >= strategy.MARKET_BBO_HEARTBEAT_MS * 1_000_000
+        ):
             strategy._recompute_and_publish_fv()
         strategy._publish_state_if_due()
 
@@ -119,12 +129,17 @@ def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> 
     try:
         strategy._refresh_quotes(now_ns=now_ns, quote_cycle_id=quote_cycle_id)
         strategy._quote_failures_ns.clear()
-    except Exception as exc:
-        strategy._handle_quote_failure(now_ns=now_ns, exc=exc, context="on_order_book_deltas")
+    except Exception as e:
+        strategy._handle_quote_failure(now_ns=now_ns, exc=e, context="on_order_book_deltas")
 
 
-def best_bid_ask(strategy: MakerV3Strategy, instrument_id: InstrumentId) -> tuple[Decimal, Decimal] | None:
-    """Return the best bid/ask decimal prices for an instrument."""
+def best_bid_ask(
+    strategy: MakerV3Strategy,
+    instrument_id: InstrumentId,
+) -> tuple[Decimal, Decimal] | None:
+    """
+    Return the best bid/ask decimal prices for an instrument.
+    """
     book = strategy._books.get(instrument_id)
     if book is None:
         return None
@@ -136,16 +151,20 @@ def best_bid_ask(strategy: MakerV3Strategy, instrument_id: InstrumentId) -> tupl
 
 
 def best_mid(strategy: MakerV3Strategy, instrument_id: InstrumentId) -> Decimal | None:
-    """Return the mid price derived from the current best bid/ask."""
+    """
+    Return the mid price derived from the current best bid/ask.
+    """
     bbo = strategy._best_bid_ask(instrument_id)
     if bbo is None:
         return None
     bid, ask = bbo
-    return (bid + ask) / Decimal("2")
+    return (bid + ask) / Decimal(2)
 
 
 def book_spread(strategy: MakerV3Strategy, instrument_id: InstrumentId) -> Decimal | None:
-    """Return the current top-of-book spread, if available."""
+    """
+    Return the current top-of-book spread, if available.
+    """
     bbo = strategy._best_bid_ask(instrument_id)
     if bbo is None:
         return None
@@ -154,14 +173,16 @@ def book_spread(strategy: MakerV3Strategy, instrument_id: InstrumentId) -> Decim
 
 
 def recompute_and_publish_fv(strategy: MakerV3Strategy) -> None:
-    """Compute fair-value midpoint and publish it."""
+    """
+    Compute fair-value midpoint and publish it.
+    """
     maker_mid = strategy._best_mid(strategy.config.maker_instrument_id)
     reference_mid = strategy._best_mid(strategy.config.reference_instrument_id)
     if maker_mid is None and reference_mid is None:
         return
 
     if maker_mid is not None and reference_mid is not None:
-        strategy._last_fv = (maker_mid + reference_mid) / Decimal("2")
+        strategy._last_fv = (maker_mid + reference_mid) / Decimal(2)
     else:
         strategy._last_fv = maker_mid or reference_mid
 

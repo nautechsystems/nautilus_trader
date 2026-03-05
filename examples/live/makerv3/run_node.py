@@ -13,17 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-"""Run a live MakerV3 trading node using canonical strategy exports."""
+"""
+Run a live MakerV3 trading node using canonical strategy exports.
+"""
 
 from __future__ import annotations
 
 import argparse
-from decimal import Decimal
 import os
+import tomllib
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
-import tomllib
 
 import redis
 
@@ -44,9 +45,9 @@ from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.flux.common.config import FLUX_DEFAULT_NAMESPACE
 from nautilus_trader.flux.common.config import FLUX_SCHEMA_VERSION
-from nautilus_trader.flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from nautilus_trader.flux.strategies import MakerV3Strategy
 from nautilus_trader.flux.strategies import MakerV3StrategyConfig
+from nautilus_trader.flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import OrderBookDeltas
@@ -81,7 +82,9 @@ def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run MakerV3 trading node using flux production modules.")
+    parser = argparse.ArgumentParser(
+        description="Run MakerV3 trading node using flux production modules.",
+    )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
@@ -124,11 +127,11 @@ def _enum_member(enum_type: Any, raw_value: Any, *, field_name: str) -> Any:
 
     try:
         return enum_type[name]
-    except (KeyError, TypeError) as exc:
+    except (KeyError, TypeError) as e:
         try:
             return getattr(enum_type, name)
         except AttributeError:
-            raise ValueError(f"Invalid {field_name} {raw_value!r}") from exc
+            raise ValueError(f"Invalid {field_name} {raw_value!r}") from e
 
 
 def _attach_runtime_params_manager(
@@ -158,7 +161,9 @@ def _attach_runtime_params_manager(
 
 
 def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: bool) -> TradingNode:
-    """Build and return a configured trading node for MakerV3."""
+    """
+    Build and return a configured trading node for MakerV3.
+    """
     flux = _table(config, "flux")
     identity = _table(config, "identity")
     redis_cfg = _table(config, "redis")
@@ -173,13 +178,21 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     namespace = _optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE
     schema_version = _optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION
 
-    maker_instrument_id = InstrumentId.from_str(str(node_cfg.get("maker_instrument_id", "PLUMEUSDT-LINEAR.BYBIT")))
-    reference_instrument_id = InstrumentId.from_str(str(node_cfg.get("reference_instrument_id", "PLUMEUSDT.BINANCE")))
+    maker_instrument_id = InstrumentId.from_str(
+        str(node_cfg.get("maker_instrument_id", "PLUMEUSDT-LINEAR.BYBIT")),
+    )
+    reference_instrument_id = InstrumentId.from_str(
+        str(node_cfg.get("reference_instrument_id", "PLUMEUSDT.BINANCE")),
+    )
 
     bybit_api_key = _resolve_secret(bybit_cfg, value_key="api_key", env_key="api_key_env")
     bybit_api_secret = _resolve_secret(bybit_cfg, value_key="api_secret", env_key="api_secret_env")
     binance_api_key = _resolve_secret(binance_cfg, value_key="api_key", env_key="api_key_env")
-    binance_api_secret = _resolve_secret(binance_cfg, value_key="api_secret", env_key="api_secret_env")
+    binance_api_secret = _resolve_secret(
+        binance_cfg,
+        value_key="api_secret",
+        env_key="api_secret_env",
+    )
 
     enable_execution = bool(node_cfg.get("enable_execution", False)) or force_enable_execution
 
@@ -193,7 +206,9 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             reconciliation=bool(node_cfg.get("exec_reconciliation", True)),
             reconciliation_lookback_mins=int(node_cfg.get("exec_reconciliation_lookback_mins", 5)),
             reconciliation_instrument_ids=[maker_instrument_id],
-            reconciliation_startup_delay_secs=float(node_cfg.get("exec_reconciliation_startup_delay_secs", 1.0)),
+            reconciliation_startup_delay_secs=float(
+                node_cfg.get("exec_reconciliation_startup_delay_secs", 1.0),
+            ),
         ),
         message_bus=MessageBusConfig(
             database=DatabaseConfig(
@@ -215,7 +230,9 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             BYBIT: BybitDataClientConfig(
                 api_key=bybit_api_key,
                 api_secret=bybit_api_secret,
-                instrument_provider=InstrumentProviderConfig(load_ids=frozenset([maker_instrument_id])),
+                instrument_provider=InstrumentProviderConfig(
+                    load_ids=frozenset([maker_instrument_id]),
+                ),
                 product_types=(
                     _enum_member(
                         BybitProductType,
@@ -234,7 +251,9 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
                     binance_cfg.get("account_type", "SPOT"),
                     field_name="node.binance.account_type",
                 ),
-                instrument_provider=InstrumentProviderConfig(load_ids=frozenset([reference_instrument_id])),
+                instrument_provider=InstrumentProviderConfig(
+                    load_ids=frozenset([reference_instrument_id]),
+                ),
             ),
         },
         exec_clients=(
@@ -242,7 +261,9 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
                 BYBIT: BybitExecClientConfig(
                     api_key=bybit_api_key,
                     api_secret=bybit_api_secret,
-                    instrument_provider=InstrumentProviderConfig(load_ids=frozenset([maker_instrument_id])),
+                    instrument_provider=InstrumentProviderConfig(
+                        load_ids=frozenset([maker_instrument_id]),
+                    ),
                     product_types=(
                         _enum_member(
                             BybitProductType,
@@ -300,8 +321,12 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             place_edge3=float(strategy_cfg.get("place_edge3", 2.0)),
             distance3=float(strategy_cfg.get("distance3", 5.0)),
             n_orders3=int(strategy_cfg.get("n_orders3", 0)),
-            quote_fail_critical_after_count=int(strategy_cfg.get("quote_fail_critical_after_count", 3)),
-            quote_fail_critical_after_s=float(strategy_cfg.get("quote_fail_critical_after_s", 60.0)),
+            quote_fail_critical_after_count=int(
+                strategy_cfg.get("quote_fail_critical_after_count", 3),
+            ),
+            quote_fail_critical_after_s=float(
+                strategy_cfg.get("quote_fail_critical_after_s", 60.0),
+            ),
         ),
     )
     _attach_runtime_params_manager(
@@ -322,7 +347,9 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
 
 
 def main() -> None:
-    """Parse CLI arguments and run the MakerV3 trading node."""
+    """
+    Parse CLI arguments and run the MakerV3 trading node.
+    """
     args = _parse_args()
     config = _load_config(args.config)
     mode = _resolve_mode(config, args)

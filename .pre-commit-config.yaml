@@ -45,6 +45,8 @@ repos:
     hooks:
       - id: yamllint
         args: [--strict]
+        # Generated lockfile contains long lines; linting it adds noise without value.
+        exclude: ^fluxboard/pnpm-lock\.yaml$
 
   - repo: https://github.com/ComPWA/taplo-pre-commit
     rev: v0.9.3
@@ -72,6 +74,8 @@ repos:
       - id: codespell
         description: Checks for common misspellings
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
+        # Generated lockfile contains false positives (e.g., package hashes/ids).
+        exclude: ^fluxboard/pnpm-lock\.yaml$
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.0
@@ -317,7 +321,8 @@ repos:
     rev: v1.7.7
     hooks:
       - id: docformatter
-        language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
+        # Use python3 so local devs don't need an explicit python3.13 binary on PATH; CI pins 3.13.
+        language_version: python3
         additional_dependencies: [tomli]
         args: [
           "--wrap-summaries", "88",
@@ -333,7 +338,8 @@ repos:
     rev: v1.19.1
     hooks:
       - id: mypy
-        language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
+        # Use python3 so local devs don't need an explicit python3.13 binary on PATH; CI pins 3.13.
+        language_version: python3
         exclude: (^python/|^nautilus_trader/.*\.pyi$)
         args: [
           "--config", "pyproject.toml",

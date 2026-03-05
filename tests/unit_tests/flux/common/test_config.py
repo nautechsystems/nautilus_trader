@@ -145,7 +145,11 @@ class TestFluxConfig:
             ("reference_symbol", "PLUME:USDT"),
         ],
     )
-    def test_rejects_invalid_venue_and_symbol_fields(self, field_name: str, field_value: str) -> None:
+    def test_rejects_invalid_venue_and_symbol_fields(
+        self,
+        field_name: str,
+        field_value: str,
+    ) -> None:
         kwargs = {
             "execution_venue": "BYBIT",
             "reference_venue": "BINANCE",
@@ -159,7 +163,7 @@ class TestFluxConfig:
 
     def test_requires_explicit_confirm_live_field(self) -> None:
         with pytest.raises(TypeError):
-            FluxConfig(
+            FluxConfig(  # type: ignore[call-arg]
                 mode="paper",
                 identity=self._identity(),
                 redis=self._redis(),
@@ -206,7 +210,7 @@ class TestFluxConfig:
         kwargs[field_name] = field_value
 
         with pytest.raises((TypeError, ValueError), match=field_name):
-            FluxRedisConfig(**kwargs)
+            FluxRedisConfig(**kwargs)  # type: ignore[arg-type]
 
     @staticmethod
     def _identity() -> FluxIdentityConfig:

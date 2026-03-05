@@ -3,6 +3,7 @@
 # Fluxboard
 
 ## Purpose
+
 Describe Fluxboard’s architecture, APIs, and operational invariants so frontend and backend engineers stay aligned.
 
 Modern React+TypeScript implementation of Fluxboard panels (Params, Trades, Market Data, FVs, PnL, Alerts).
@@ -54,6 +55,7 @@ Outputs to `dist/` directory.
 ### Testing
 
 Run unit tests with Vitest:
+
 ```bash
 pnpm test                 # Watch mode (stable subset)
 pnpm test:run             # Run once (stable subset)
@@ -66,6 +68,7 @@ pnpm test:full            # Attempt entire suite (requires backend + sockets)
 > `pnpm test:full`) once those dependencies are available.
 
 Run E2E tests with Playwright:
+
 ```bash
 # Skips unless FLUXBOARD_E2E=1
 FLUXBOARD_E2E=1 pnpm test:e2e
@@ -74,6 +77,7 @@ FLUXBOARD_E2E=1 pnpm test:e2e --debug
 ```
 
 Available test suites:
+
 - **Unit tests (stable)**: Layouts, shared components, hooks, utilities
 - **Quarantined suites**: Trades, Params, Scanners, Alerts, PnL integrations (`pnpm test:full`)
 - **E2E tests**: `pnl.spec.ts`, `params.spec.ts`, `alerts.spec.ts`, `sound.spec.ts`, `dashboard.spec.ts`, `smoke.spec.ts`
@@ -92,11 +96,13 @@ Fluxboard is a Vite + React app kept under `fluxboard/`.
 ## Features
 
 ### Params
+
 - Strategy selector
 - Live parameter editor
 - POST to Redis with error toasts
 
 ### Trades
+
 - Server-side pagination with `< Prev` and `Next >` controls (default 100 rows)
 - Page indicator: `Page X of Y`
 - Page size persists in `sessionStorage`
@@ -107,23 +113,27 @@ Fluxboard is a Vite + React app kept under `fluxboard/`.
 - Row cap: 5,000
 
 ### Market Data
+
 - Real-time price updates
 - Socket merge by `(exchange, symbol)` key
 - Latency formatted to 1 decimal
 - Row cap: 2,000
 
 ### Signal
+
 - Strategy grid mirrors FluxAPI `/api/v1/signals`
 - `Bal` column shows readiness badges (OK/WARN/FAIL/UNKNOWN) with tooltips listing missing tokens
 - Summary strip aggregates badge counts so operators can scan inventory status
 - Badges automatically hide when backend sets `BALANCE_READINESS_ENABLED=0`.
 
 ### FVs
+
 - Dynamic columns from API
 - Console warnings for unexpected keys
 - Row cap: 2,000
 
 ### PnL
+
 - Main operator view for live profitability
 - Time windows: 15m, 1h, 4h, 24h, Last N, All (all minutes-based presets are evaluated relative to *current* UTC time; if there are no fills in that window, the report is empty even if older blotter entries exist)
 - Base filter (canonical tokens) and advanced fee controls
@@ -136,11 +146,14 @@ Fluxboard is a Vite + React app kept under `fluxboard/`.
 ## Formatting Invariants
 
 ### Column Order
+
 Matches legacy exactly:
+
 - **Trades:** time | exchange | coin | side | price | qty | notional | fee | notes
 - **Market Data:** exchange | symbol | bid | ask | latency_ms | publisher | timestamp
 
 ### Number Formats
+
 - Prices/qty: rendered as strings (no coercion)
 - `latency_ms`: 1 decimal (`toFixed(1)`)
 - Timestamps: rendered exactly as delivered by API
@@ -239,7 +252,9 @@ Fluxboard consumes the versioned `/api/v1/*` surface only. Production Flux does 
 To integrate frontend tests into the existing CI pipeline:
 
 ### Unit Tests (Vitest)
+
 Add to your CI workflow:
+
 ```yaml
 - name: Run Frontend Unit Tests
   run: |
@@ -248,7 +263,9 @@ Add to your CI workflow:
 ```
 
 ### E2E Tests (Playwright)
+
 Requires FluxAPI reachable (TokenMM default: `127.0.0.1:5022`) and explicit opt-in:
+
 ```yaml
 - name: Run Frontend E2E Tests
   run: |
@@ -258,6 +275,7 @@ Requires FluxAPI reachable (TokenMM default: `127.0.0.1:5022`) and explicit opt-
 ```
 
 ### Test Coverage
+
 - Unit tests: >80% coverage target
 - E2E tests: Smoke coverage for critical user flows
 - Performance: No regressions in component render times
@@ -278,20 +296,24 @@ Requires FluxAPI reachable (TokenMM default: `127.0.0.1:5022`) and explicit opt-
 ## Troubleshooting
 
 ### Port in use
+
 ```bash
 lsof -ti:5022
 ```
 
 ### Backend not running
+
 ```bash
 # start your backend process in another terminal (from repository root)
 curl -fsS http://127.0.0.1:5022/api/v1/healthz
 ```
 
 ### Socket not connecting
+
 Check FluxAPI is running and serving `/socket.io` (TokenMM default: `http://127.0.0.1:5022/socket.io/...`).
 
 ### Dependencies not installing
+
 ```bash
 rm -rf fluxboard/node_modules
 pnpm --dir fluxboard install --frozen-lockfile

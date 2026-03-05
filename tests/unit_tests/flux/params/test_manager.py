@@ -15,9 +15,10 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 import json
 import string
+from decimal import Decimal
+from typing import cast
 
 import pytest
 
@@ -69,7 +70,11 @@ def defaults() -> dict[str, object]:
     }
 
 
-def _manager(redis_client: _FakeRedis, schema: dict[str, dict[str, str]], defaults: dict[str, object]) -> FluxParamsManager:
+def _manager(
+    redis_client: _FakeRedis,
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+) -> FluxParamsManager:
     return FluxParamsManager(
         redis_client=redis_client,
         strategy_id="maker_v3_01",
@@ -78,7 +83,10 @@ def _manager(redis_client: _FakeRedis, schema: dict[str, dict[str, str]], defaul
     )
 
 
-def test_load_uses_hmget_and_coerces_values(schema: dict[str, dict[str, str]], defaults: dict[str, object]) -> None:
+def test_load_uses_hmget_and_coerces_values(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+) -> None:
     redis_client = _FakeRedis()
     redis_client.hashes["flux:v1:params:maker_v3_01"] = {
         "qty": b"2.5",
@@ -95,7 +103,10 @@ def test_load_uses_hmget_and_coerces_values(schema: dict[str, dict[str, str]], d
     ]
 
 
-def test_load_rejects_unknown_hash_fields(schema: dict[str, dict[str, str]], defaults: dict[str, object]) -> None:
+def test_load_rejects_unknown_hash_fields(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+) -> None:
     redis_client = _FakeRedis()
     redis_client.hashes["flux:v1:params:maker_v3_01"] = {
         "qty": b"2.5",
@@ -107,7 +118,10 @@ def test_load_rejects_unknown_hash_fields(schema: dict[str, dict[str, str]], def
         manager.load()
 
 
-def test_update_writes_coerced_hset_mapping(schema: dict[str, dict[str, str]], defaults: dict[str, object]) -> None:
+def test_update_writes_coerced_hset_mapping(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+) -> None:
     redis_client = _FakeRedis()
     manager = _manager(redis_client, schema, defaults)
 
@@ -119,7 +133,10 @@ def test_update_writes_coerced_hset_mapping(schema: dict[str, dict[str, str]], d
     ]
 
 
-def test_update_rejects_unknown_param_keys(schema: dict[str, dict[str, str]], defaults: dict[str, object]) -> None:
+def test_update_rejects_unknown_param_keys(
+    schema: dict[str, dict[str, str]],
+    defaults: dict[str, object],
+) -> None:
     redis_client = _FakeRedis()
     manager = _manager(redis_client, schema, defaults)
 
@@ -205,10 +222,13 @@ def test_publish_update_digest_handles_non_json_serializable_schema_metadata(
     schema: dict[str, dict[str, str]],
     defaults: dict[str, object],
 ) -> None:
+    schema_base: dict[str, dict[str, object]] = {
+        name: cast(dict[str, object], dict(meta)) for name, meta in schema.items()
+    }
     schema_with_decimal_metadata: dict[str, dict[str, object]] = {
-        **schema,
+        **schema_base,
         "qty": {
-            **schema["qty"],
+            **schema_base["qty"],
             "step_size": Decimal("0.01"),
         },
     }

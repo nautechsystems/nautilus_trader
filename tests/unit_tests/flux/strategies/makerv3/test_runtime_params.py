@@ -45,12 +45,12 @@ def test_initial_runtime_params_use_registry_defaults_when_config_omits_values()
     config = MakerV3StrategyConfig(
         maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
         reference_instrument_id=InstrumentId.from_str("REF.SIM"),
-        order_qty=Decimal("1"),
+        order_qty=Decimal(1),
     )
 
     runtime_params = runtime_params_mod.initial_runtime_params(config)
 
-    assert runtime_params["qty"] == Decimal("1")
+    assert runtime_params["qty"] == Decimal(1)
     for name in MAKERV3_RUNTIME_PARAM_REGISTRY.names:
         if name == "qty":
             continue
@@ -82,7 +82,9 @@ def test_set_params_manager_rejects_strategy_identity_mismatch(strategy_factory)
         strategy.set_params_manager(manager)
 
 
-def test_params_manager_factory_uses_stable_identity_for_updates_and_payloads(clocked_strategy_factory) -> None:
+def test_params_manager_factory_uses_stable_identity_for_updates_and_payloads(
+    clocked_strategy_factory,
+) -> None:
     strategy = clocked_strategy_factory(
         [1, 2],
         external_strategy_id="maker_v3_identity_test",
@@ -121,23 +123,25 @@ def test_params_manager_factory_uses_stable_identity_for_updates_and_payloads(cl
     assert payloads[-1]["strategy_id"] == "maker_v3_identity_test"
 
 
-def test_apply_runtime_param_updates_rejects_non_positive_qty_without_mutating_state(strategy_factory) -> None:
+def test_apply_runtime_param_updates_rejects_non_positive_qty_without_mutating_state(
+    strategy_factory,
+) -> None:
     strategy = strategy_factory()
-    strategy._runtime_params["qty"] = Decimal("1")
+    strategy._runtime_params["qty"] = Decimal(1)
     sentinel_order_qty = object()
     strategy._order_qty = sentinel_order_qty
     strategy._maker_instrument = SimpleNamespace(make_qty=lambda value: f"qty:{value}")
 
     with pytest.raises(ValueError, match="qty"):
-        strategy._apply_runtime_param_updates({"qty": Decimal("0")})
+        strategy._apply_runtime_param_updates({"qty": Decimal(0)})
 
-    assert strategy._runtime_params["qty"] == Decimal("1")
+    assert strategy._runtime_params["qty"] == Decimal(1)
     assert strategy._order_qty is sentinel_order_qty
 
 
 def test_apply_runtime_param_updates_qty_conversion_is_atomic_on_failure(strategy_factory) -> None:
     strategy = strategy_factory()
-    strategy._runtime_params["qty"] = Decimal("1")
+    strategy._runtime_params["qty"] = Decimal(1)
     sentinel_order_qty = object()
     strategy._order_qty = sentinel_order_qty
 
@@ -147,13 +151,15 @@ def test_apply_runtime_param_updates_qty_conversion_is_atomic_on_failure(strateg
     strategy._maker_instrument = SimpleNamespace(make_qty=_raise_conversion)
 
     with pytest.raises(RuntimeError, match="Failed to convert runtime qty"):
-        strategy._apply_runtime_param_updates({"qty": Decimal("2")})
+        strategy._apply_runtime_param_updates({"qty": Decimal(2)})
 
-    assert strategy._runtime_params["qty"] == Decimal("1")
+    assert strategy._runtime_params["qty"] == Decimal(1)
     assert strategy._order_qty is sentinel_order_qty
 
 
-def test_params_manager_factory_defaults_align_with_strategy_runtime_defaults(clocked_strategy_factory) -> None:
+def test_params_manager_factory_defaults_align_with_strategy_runtime_defaults(
+    clocked_strategy_factory,
+) -> None:
     strategy = clocked_strategy_factory(
         [1],
         max_age_ms=321,

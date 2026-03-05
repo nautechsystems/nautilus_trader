@@ -105,6 +105,7 @@ Added optimized Zustand selectors to all 8 stores in `fluxboard/stores.ts` to pr
 ### 1. Reduced Re-renders
 
 **Before:**
+
 ```typescript
 const { rows, loading, lastUpdate } = useAlertsStore();
 // Component re-renders when ANY of these change (or any other store property)

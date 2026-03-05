@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import tomllib
 from pathlib import Path
 from typing import Any
-import tomllib
+from typing import cast
 
 import redis
 from flask import abort
@@ -29,6 +30,7 @@ from flask import send_from_directory
 from nautilus_trader.flux.api import ContractCatalogEntry
 from nautilus_trader.flux.api import StrategyMetadata
 from nautilus_trader.flux.api import create_flux_api_app
+from nautilus_trader.flux.api.app import RedisClientProtocol
 from nautilus_trader.flux.common.config import FLUX_DEFAULT_NAMESPACE
 from nautilus_trader.flux.common.config import FLUX_SCHEMA_VERSION
 from nautilus_trader.flux.common.config import FluxConfig
@@ -260,9 +262,9 @@ def _run_with_socketio_if_available(app: Any, *, host: str, port: int) -> None:
     }
     try:
         socketio.run(app, **run_kwargs, allow_unsafe_werkzeug=True)
-    except TypeError as exc:
+    except TypeError as e:
         # Older flask-socketio versions do not accept this kwarg.
-        if "allow_unsafe_werkzeug" not in str(exc):
+        if "allow_unsafe_werkzeug" not in str(e):
             raise
         socketio.run(app, **run_kwargs)
 
@@ -274,7 +276,11 @@ def main() -> None:
 
     api_cfg = _table(config, "api")
     contracts = _build_contract_catalog(config)
-    flux_config = _build_flux_config(config, mode=mode, confirm_live=(mode != "live" or args.confirm_live))
+    flux_config = _build_flux_config(
+        config,
+        mode=mode,
+        confirm_live=(mode != "live" or args.confirm_live),
+    )
 
     metadata = StrategyMetadata(
         strategy_class=str(api_cfg.get("strategy_class", "maker_v3")),
@@ -296,7 +302,7 @@ def main() -> None:
 
     app = create_flux_api_app(
         flux_config,
-        redis_client,
+        cast(RedisClientProtocol, redis_client),
         contract_catalog=contracts,
         strategy_metadata=metadata,
     )

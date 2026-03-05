@@ -405,14 +405,14 @@ Bridge (ingestion)
 
 API
 
-1. No hardcoded `strategy_id`, assets, contracts, or `POC_REDIS_*` env parsing in production modules.
+1. No hardcoded `strategy_id`, assets, contracts, or legacy env parsing in production modules.
 2. Batch Redis reads (`HMGET`/pipelines) for params and list endpoints; avoid per-key `GET` loops.
 3. Explicit readiness/health endpoints that validate dependencies, not “snapshot presence”.
 4. Standard response/error envelope and pagination/limit caps.
 
 Config and examples
 
-1. Replace scattered `POC_*` env vars with a single explicit `FluxConfig` contract + validation.
+1. Replace scattered prototype env vars with a single explicit `FluxConfig` contract + validation.
 2. Add run modes (`paper`, `testnet`, `live`) and require explicit confirmation for `live`.
 3. Remove unsafe secret bootstrap instructions (no `eval`).
 

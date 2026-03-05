@@ -32,14 +32,14 @@ from nautilus_trader.flux.common.params import summarize_makerv3_param_diff
 
 __all__ = [
     "FLUX_SCHEMA_VERSION",
+    "MAKERV3_RUNTIME_PARAM_DEFAULTS",
+    "MAKERV3_RUNTIME_PARAM_REGISTRY",
+    "MAKERV3_RUNTIME_PARAM_SCHEMA",
     "FluxConfig",
     "FluxIdentityConfig",
     "FluxRedisConfig",
     "FluxRedisKeys",
     "FluxVenuesConfig",
-    "MAKERV3_RUNTIME_PARAM_DEFAULTS",
-    "MAKERV3_RUNTIME_PARAM_REGISTRY",
-    "MAKERV3_RUNTIME_PARAM_SCHEMA",
     "RuntimeParamRegistry",
     "RuntimeParamSpec",
     "summarize_makerv3_param_diff",

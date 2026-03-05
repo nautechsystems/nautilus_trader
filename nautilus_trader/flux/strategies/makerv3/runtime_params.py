@@ -1,19 +1,24 @@
-"""Manage MakerV3 runtime parameter wiring and safe application."""
+"""
+Manage MakerV3 runtime parameter wiring and safe application.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from collections.abc import Mapping
+from contextlib import suppress
 from decimal import Decimal
-from typing import Any
 from typing import TYPE_CHECKING
+from typing import Any
 
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
 from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
 from nautilus_trader.flux.strategies.makerv3 import pricing as pricing_mod
 from nautilus_trader.flux.strategies.makerv3 import publisher as publisher_mod
-from nautilus_trader.flux.strategies.makerv3.constants import ALERT_COOLDOWN_RUNTIME_PARAMS_FAILURE_MS
+from nautilus_trader.flux.strategies.makerv3.constants import (
+    ALERT_COOLDOWN_RUNTIME_PARAMS_FAILURE_MS,
+)
 from nautilus_trader.flux.strategies.makerv3.constants import ALERT_KEY_RUNTIME_PARAMS_FAILURE
 
 
@@ -28,7 +33,9 @@ if TYPE_CHECKING:
 
 
 def parse_bool_text(value: object) -> bool | None:
-    """Return a parsed boolean value for common truthy/falsey runtime payloads."""
+    """
+    Return a parsed boolean value for common truthy/falsey runtime payloads.
+    """
     if value is None:
         return None
     text = str(value).strip().lower()
@@ -40,8 +47,7 @@ def parse_bool_text(value: object) -> bool | None:
 
 
 RUNTIME_PARAM_SCHEMA: dict[str, dict[str, Any]] = {
-    name: dict(spec)
-    for name, spec in MAKERV3_RUNTIME_PARAM_REGISTRY.schema.items()
+    name: dict(spec) for name, spec in MAKERV3_RUNTIME_PARAM_REGISTRY.schema.items()
 }
 
 RUNTIME_PARAM_TYPES: dict[str, str] = {
@@ -86,7 +92,9 @@ _INVENTORY_SKEW_RUNTIME_PARAMS = set(inventory_mod.INVENTORY_SKEW_RUNTIME_PARAMS
 
 
 def coerce_runtime_param_value(name: str, value: Any) -> Any:
-    """Coerce a raw runtime param payload into its canonical Python type."""
+    """
+    Coerce a raw runtime param payload into its canonical Python type.
+    """
     coerced = MAKERV3_RUNTIME_PARAM_REGISTRY.coerce_value(name, value)
     schema = RUNTIME_PARAM_SCHEMA.get(name)
     if schema is None:
@@ -100,7 +108,9 @@ def coerce_runtime_param_value(name: str, value: Any) -> Any:
 
 
 def initial_runtime_params(config: MakerV3StrategyConfig) -> dict[str, Any]:
-    """Build the initial runtime parameter set derived from strategy config."""
+    """
+    Build the initial runtime parameter set derived from strategy config.
+    """
     runtime_defaults: dict[str, Any] = dict(MAKERV3_RUNTIME_PARAM_DEFAULTS)
     runtime_defaults["qty"] = config.active_order_qty
     runtime_params: dict[str, Any] = {}
@@ -113,17 +123,23 @@ def initial_runtime_params(config: MakerV3StrategyConfig) -> dict[str, Any]:
 
 
 def effective_bot_on(strategy: MakerV3Strategy) -> bool:
-    """Return the authoritative bot-on state after runtime overrides."""
+    """
+    Return the authoritative bot-on state after runtime overrides.
+    """
     return bool(strategy._runtime_params.get("bot_on", strategy.config.bot_on))
 
 
 def runtime_decimal(strategy: MakerV3Strategy, name: str) -> Decimal:
-    """Return a runtime decimal param, defaulting to config."""
+    """
+    Return a runtime decimal param, defaulting to config.
+    """
     return _to_decimal(strategy._runtime_params.get(name, getattr(strategy.config, name)))
 
 
 def runtime_int(strategy: MakerV3Strategy, name: str) -> int:
-    """Return a runtime integer param, defaulting to config."""
+    """
+    Return a runtime integer param, defaulting to config.
+    """
     value = strategy._runtime_params.get(name, getattr(strategy.config, name))
     try:
         return int(value)
@@ -132,7 +148,9 @@ def runtime_int(strategy: MakerV3Strategy, name: str) -> int:
 
 
 def runtime_bool(strategy: MakerV3Strategy, name: str) -> bool:
-    """Return a runtime boolean param, defaulting to config."""
+    """
+    Return a runtime boolean param, defaulting to config.
+    """
     value = strategy._runtime_params.get(name, getattr(strategy.config, name))
     parsed = parse_bool_text(value)
     if parsed is None:
@@ -141,7 +159,9 @@ def runtime_bool(strategy: MakerV3Strategy, name: str) -> bool:
 
 
 def quote_runtime_params_snapshot(strategy: MakerV3Strategy) -> dict[str, Any]:
-    """Return a pre-coerced runtime snapshot used by the quote engine."""
+    """
+    Return a pre-coerced runtime snapshot used by the quote engine.
+    """
     runtime = strategy._runtime_params
     snapshot: dict[str, Any] = {}
     for name in _QUOTE_RUNTIME_DECIMAL_NAMES:
@@ -161,7 +181,9 @@ def params_manager_factory(
     schema_version: str = "v1",
     defaults: Mapping[str, Any] | None = None,
 ) -> Callable[[MakerV3Strategy], Any]:
-    """Build a params-manager factory bound to MakerV3 runtime schema."""
+    """
+    Build a params-manager factory bound to MakerV3 runtime schema.
+    """
     base_defaults: dict[str, Any] = dict(MAKERV3_RUNTIME_PARAM_DEFAULTS)
     if defaults:
         for name, value in defaults.items():
@@ -192,7 +214,9 @@ def params_manager_factory(
 
 
 def ensure_params_manager_identity(strategy: MakerV3Strategy, manager: Any | None) -> None:
-    """Validate that a manager is bound to the correct strategy identity."""
+    """
+    Validate that a manager is bound to the correct strategy identity.
+    """
     if manager is None:
         return
     manager_strategy_id = getattr(manager, "strategy_id", None)
@@ -207,13 +231,17 @@ def ensure_params_manager_identity(strategy: MakerV3Strategy, manager: Any | Non
 
 
 def set_params_manager(strategy: MakerV3Strategy, manager: Any | None) -> None:
-    """Attach an explicit runtime params manager instance."""
+    """
+    Attach an explicit runtime params manager instance.
+    """
     ensure_params_manager_identity(strategy, manager)
     strategy._params_manager = manager
 
 
 def set_params_manager_factory(strategy: MakerV3Strategy, factory: Any | None) -> None:
-    """Attach a lazy factory used to construct a params manager on demand."""
+    """
+    Attach a lazy factory used to construct a params manager on demand.
+    """
     if factory is None:
         strategy._params_manager_factory = None
         return
@@ -223,7 +251,9 @@ def set_params_manager_factory(strategy: MakerV3Strategy, factory: Any | None) -
 
 
 def ensure_params_manager(strategy: MakerV3Strategy) -> Any | None:
-    """Return a params manager, creating it via the configured factory if needed."""
+    """
+    Return a params manager, creating it via the configured factory if needed.
+    """
     if strategy._params_manager is not None:
         return strategy._params_manager
     factory = strategy._params_manager_factory
@@ -235,7 +265,9 @@ def ensure_params_manager(strategy: MakerV3Strategy) -> Any | None:
 
 
 def apply_runtime_param_updates(strategy: MakerV3Strategy, updates: dict[str, Any]) -> None:
-    """Apply a validated runtime param update payload atomically."""
+    """
+    Apply a validated runtime param update payload atomically.
+    """
     coerced_updates: dict[str, Any] = {}
     for name, raw_value in updates.items():
         coerced_updates[str(name)] = coerce_runtime_param_value(str(name), raw_value)
@@ -246,14 +278,14 @@ def apply_runtime_param_updates(strategy: MakerV3Strategy, updates: dict[str, An
         qty = _to_decimal(coerced_updates["qty"])
         if qty <= 0:
             raise ValueError("`qty` must be > 0")
-        if strategy._maker_instrument is not None:
-            try:
-                next_order_qty = strategy._maker_instrument.make_qty(qty)
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Failed to convert runtime qty to instrument quantity for "
-                    f"{strategy._external_strategy_id}: qty={qty}",
-                ) from exc
+            if strategy._maker_instrument is not None:
+                try:
+                    next_order_qty = strategy._maker_instrument.make_qty(qty)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to convert runtime qty to instrument quantity for "
+                        f"{strategy._external_strategy_id}: qty={qty}",
+                    ) from e
 
     strategy._runtime_params.update(coerced_updates)
     if next_order_qty is not None:
@@ -268,10 +300,16 @@ def refresh_runtime_params(
     now_ns: int | None = None,
     force: bool = False,
 ) -> None:
-    """Refresh runtime params from the configured manager if due."""
+    """
+    Refresh runtime params from the configured manager if due.
+    """
     if now_ns is None:
         now_ns = int(strategy.clock.timestamp_ns())
-    if not force and now_ns - strategy._last_params_refresh_ns < strategy.PARAMS_REFRESH_INTERVAL_MS * 1_000_000:
+    if (
+        not force
+        and now_ns - strategy._last_params_refresh_ns
+        < strategy.PARAMS_REFRESH_INTERVAL_MS * 1_000_000
+    ):
         return
     strategy._last_params_refresh_ns = now_ns
 
@@ -285,7 +323,9 @@ def refresh_runtime_params(
 
 
 def fail_fast_runtime_params(strategy: MakerV3Strategy, *, context: str, exc: Exception) -> None:
-    """Emit diagnostics and stop the strategy after a runtime params failure."""
+    """
+    Emit diagnostics and stop the strategy after a runtime params failure.
+    """
     if strategy._runtime_params_failed:
         return
 
@@ -302,7 +342,7 @@ def fail_fast_runtime_params(strategy: MakerV3Strategy, *, context: str, exc: Ex
     if logger is not None:
         log_error = getattr(logger, "error", None)
         if callable(log_error):
-            try:
+            with suppress(Exception):
                 log_error(
                     publisher_mod.to_json_safe(
                         {
@@ -312,26 +352,22 @@ def fail_fast_runtime_params(strategy: MakerV3Strategy, *, context: str, exc: Ex
                         },
                     ),
                 )
-            except Exception:
-                pass
 
-    try:
-        strategy._publish_event("runtime_params_failure", **event_payload)
-    except Exception:
-        pass
+    with suppress(Exception):
+        strategy._publish_event(
+            "runtime_params_failure",
+            context=context,
+            error_type=error_type,
+            error_message=error_message,
+        )
 
-    try:
+    with suppress(Exception):
         strategy._publish_actionable_alert(
             alert_key=ALERT_KEY_RUNTIME_PARAMS_FAILURE,
-            message=(
-                f"runtime_params_failure[{context}] "
-                f"{error_type}: {error_message}"
-            ),
+            message=(f"runtime_params_failure[{context}] {error_type}: {error_message}"),
             level="error",
             reason_code=ALERT_KEY_RUNTIME_PARAMS_FAILURE,
             cooldown_ms=ALERT_COOLDOWN_RUNTIME_PARAMS_FAILURE_MS,
         )
-    except Exception:
-        pass
 
     strategy.stop()

@@ -141,6 +141,8 @@ Payload invariants:
 2. `signal_delta` includes `strategy_id` and `patch`.
 3. `trade_update` includes `strategy_id`, `op`, `row_id`, `version`, and `trade` (`null` for delete).
 4. `market_update` includes `strategies.changed` and `alerts` summary fields.
+5. `row_id` is an opaque stable identifier; server may synthesize a fallback using the backing stream `entry_id`
+   when producer rows are missing an explicit `row_id`.
 
 Signal patch semantics:
 

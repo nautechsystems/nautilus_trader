@@ -1,4 +1,6 @@
-"""Run MakerV3 quote-cycle refresh logic and stale-data safety gates."""
+"""
+Run MakerV3 quote-cycle refresh logic and stale-data safety gates.
+"""
 
 from __future__ import annotations
 
@@ -46,10 +48,15 @@ def handle_stale_quote_block(
     quote_cycle_id: str,
     warning_message: str,
 ) -> None:
-    """Cancel managed quotes once per cooldown and publish a blocked state/event."""
+    """
+    Cancel managed quotes once per cooldown and publish a blocked state/event.
+    """
     managed_orders = strategy._managed_orders()
     cooldown_ns = strategy.STALE_CANCEL_COOLDOWN_MS * 1_000_000
-    if strategy._last_stale_cancel_ns <= 0 or now_ns - strategy._last_stale_cancel_ns >= cooldown_ns:
+    if (
+        strategy._last_stale_cancel_ns <= 0
+        or now_ns - strategy._last_stale_cancel_ns >= cooldown_ns
+    ):
         strategy._cancel_managed_quotes(cancel_reason, managed_orders=managed_orders)
         strategy._last_stale_cancel_ns = now_ns
     from_state = getattr(strategy, "_last_state_name", None)
@@ -86,14 +93,23 @@ def publish_recovery_state_if_blocked(
     *,
     managed_orders_count: int | None = None,
 ) -> None:
-    """Publish a recovery state transition when leaving a blocked state."""
+    """
+    Publish a recovery state transition when leaving a blocked state.
+    """
     if not bool(getattr(strategy, "_state_is_blocked", False)):
         return
     strategy._publish_state("running", managed_orders_count=managed_orders_count)
 
 
-def refresh_quotes(strategy: MakerV3Strategy, *, now_ns: int, quote_cycle_id: str | None = None) -> None:
-    """Compute desired quote ladder and rebalance managed orders to match it."""
+def refresh_quotes(  # noqa: C901
+    strategy: MakerV3Strategy,
+    *,
+    now_ns: int,
+    quote_cycle_id: str | None = None,
+) -> None:
+    """
+    Compute desired quote ladder and rebalance managed orders to match it.
+    """
     if strategy._maker_instrument is None or strategy._order_qty is None:
         return
     if quote_cycle_id is None:
@@ -113,7 +129,7 @@ def refresh_quotes(strategy: MakerV3Strategy, *, now_ns: int, quote_cycle_id: st
         )
         return
     best_bid_px, best_ask_px = maker_bbo
-    maker_mid = (best_bid_px + best_ask_px) / Decimal("2")
+    maker_mid = (best_bid_px + best_ask_px) / Decimal(2)
 
     maker_age_ms = None
     if strategy._last_bbo_ts_ns.get(strategy.config.maker_instrument_id, 0) > 0:
@@ -123,7 +139,8 @@ def refresh_quotes(strategy: MakerV3Strategy, *, now_ns: int, quote_cycle_id: st
     reference_age_ms = None
     if strategy._last_bbo_ts_ns.get(strategy.config.reference_instrument_id, 0) > 0:
         reference_age_ms = int(
-            (now_ns - strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id]) / 1_000_000,
+            (now_ns - strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id])
+            / 1_000_000,
         )
     max_age_ms = int(runtime_params["max_age_ms"])
     maker_fresh = bool(maker_age_ms is not None and maker_age_ms < max_age_ms)
@@ -164,20 +181,22 @@ def refresh_quotes(strategy: MakerV3Strategy, *, now_ns: int, quote_cycle_id: st
     anchor_ask = ref_ask
     anchor_source = "reference_leg"
 
-    reference_mid = (ref_bid + ref_ask) / Decimal("2") if ref_bid is not None and ref_ask is not None else None
+    reference_mid = (
+        (ref_bid + ref_ask) / Decimal(2) if ref_bid is not None and ref_ask is not None else None
+    )
     if reference_mid is not None:
-        fair_value = (maker_mid + reference_mid) / Decimal("2")
+        fair_value = (maker_mid + reference_mid) / Decimal(2)
     else:
         fair_value = maker_mid
 
-    bps_anchor = (anchor_bid + anchor_ask) / Decimal("2")
+    bps_anchor = (anchor_bid + anchor_ask) / Decimal(2)
     if bps_anchor <= 0:
         return
     active_orders = strategy._managed_orders()
     publish_recovery_state_if_blocked(strategy, managed_orders_count=len(active_orders))
 
     skew_ctx = strategy._cached_inventory_skew(now_ns=now_ns, runtime_params=runtime_params)
-    total_skew_bps = _to_decimal(skew_ctx.get("total_skew_bps", Decimal("0")))
+    total_skew_bps = _to_decimal(skew_ctx.get("total_skew_bps", Decimal(0)))
 
     bid_edge1_eff_bps, ask_edge1_eff_bps = _apply_inventory_skew_to_edges(
         bid_edge_bps=_to_decimal(runtime_params["bid_edge1"]),
@@ -219,7 +238,7 @@ def refresh_quotes(strategy: MakerV3Strategy, *, now_ns: int, quote_cycle_id: st
         ),
         tick=tick,
     )
-    match_tol = tick / Decimal("2") if tick > 0 else Decimal("0")
+    match_tol = tick / Decimal(2) if tick > 0 else Decimal(0)
 
     desired_buys: list[tuple[Price, Decimal, Decimal]] = []
     desired_sells: list[tuple[Price, Decimal, Decimal]] = []
@@ -245,19 +264,19 @@ def refresh_quotes(strategy: MakerV3Strategy, *, now_ns: int, quote_cycle_id: st
             top_ask=best_ask_px,
             tick=tick,
         )
-        bid_place_rounded = _nudge_unique_price(
+        bid_place_unique = _nudge_unique_price(
             price=bid_place_rounded,
             tick=tick,
             is_buy=True,
             seen=seen_buy_prices,
         )
-        if bid_place_rounded is None:
+        if bid_place_unique is None:
             continue
-        seen_buy_prices.add(str(bid_place_rounded))
-        if bid_place_rounded > 0 and bid_cancel_rounded > 0:
+        seen_buy_prices.add(str(bid_place_unique))
+        if bid_place_unique > 0 and bid_cancel_rounded > 0:
             desired_buys.append(
                 (
-                    strategy._maker_instrument.make_price(bid_place_rounded),
+                    strategy._maker_instrument.make_price(bid_place_unique),
                     bid_cancel_rounded,
                     match_tol,
                 ),
@@ -282,19 +301,19 @@ def refresh_quotes(strategy: MakerV3Strategy, *, now_ns: int, quote_cycle_id: st
             top_ask=best_ask_px,
             tick=tick,
         )
-        ask_place_rounded = _nudge_unique_price(
+        ask_place_unique = _nudge_unique_price(
             price=ask_place_rounded,
             tick=tick,
             is_buy=False,
             seen=seen_sell_prices,
         )
-        if ask_place_rounded is None:
+        if ask_place_unique is None:
             continue
-        seen_sell_prices.add(str(ask_place_rounded))
-        if ask_place_rounded > 0 and ask_cancel_rounded > 0:
+        seen_sell_prices.add(str(ask_place_unique))
+        if ask_place_unique > 0 and ask_cancel_rounded > 0:
             desired_sells.append(
                 (
-                    strategy._maker_instrument.make_price(ask_place_rounded),
+                    strategy._maker_instrument.make_price(ask_place_unique),
                     ask_cancel_rounded,
                     match_tol,
                 ),
@@ -314,7 +333,7 @@ def refresh_quotes(strategy: MakerV3Strategy, *, now_ns: int, quote_cycle_id: st
             "maker_mid": _decimal_to_json_str(maker_mid),
             "reference_mid": _decimal_to_json_str(reference_mid),
             "anchor_spread_bps": _decimal_to_json_str(
-                ((anchor_ask - anchor_bid) / bps_anchor) * Decimal("10000")
+                ((anchor_ask - anchor_bid) / bps_anchor) * Decimal(10000)
                 if bps_anchor > 0
                 else None,
             ),

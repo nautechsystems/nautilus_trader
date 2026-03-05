@@ -31,6 +31,7 @@ class FluxRedisKeys:
     -----
     By current protocol definition, params hash key and strategy-scoped params
     pubsub channel intentionally share the same Redis address.
+
     """
 
     def __init__(

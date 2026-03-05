@@ -9,7 +9,7 @@ PID_DIR="${RUN_DIR}/pids"
 CONFIG_PATH="${MAKERV3_CONFIG_PATH:-${ROOT_DIR}/examples/live/makerv3/config/makerv3.live.toml}"
 ENV_PATH="${MAKERV3_ENV_PATH:-${ROOT_DIR}/examples/live/makerv3/config/makerv3.live.env}"
 MODE="${MAKERV3_MODE:-live}"
-CONFIRM_LIVE="${MAKERV3_CONFIRM_LIVE:-1}"
+CONFIRM_LIVE="${MAKERV3_CONFIRM_LIVE:-0}"
 ENABLE_EXECUTION="${MAKERV3_ENABLE_EXECUTION:-0}"
 ALLOW_MISSING_KEYS="${MAKERV3_ALLOW_MISSING_KEYS:-0}"
 MANAGE_REDIS="${MAKERV3_MANAGE_REDIS:-1}"
@@ -20,7 +20,7 @@ API_PORT="${MAKERV3_API_PORT:-5022}"
 START_TIMEOUT_SECS="${MAKERV3_START_TIMEOUT_SECS:-60}"
 SKIP_FLUXBOARD_BUILD="${MAKERV3_SKIP_FLUXBOARD_BUILD:-0}"
 PYTHON_BIN="${MAKERV3_PYTHON_BIN:-}"
-LOAD_AWS_SECRETS="${MAKERV3_LOAD_AWS_SECRETS:-1}"
+LOAD_AWS_SECRETS="${MAKERV3_LOAD_AWS_SECRETS:-0}"
 AWS_REGION="${MAKERV3_AWS_REGION:-ap-southeast-1}"
 BYBIT_SECRET_ID="${MAKERV3_BYBIT_SECRET_ID:-/nautilus/makerv3/bybit}"
 BINANCE_SECRET_ID="${MAKERV3_BINANCE_SECRET_ID:-/nautilus/makerv3/binance}"
@@ -28,7 +28,7 @@ BINANCE_SECRET_ID="${MAKERV3_BINANCE_SECRET_ID:-/nautilus/makerv3/binance}"
 readonly ROOT_DIR RUN_DIR LOG_DIR PID_DIR
 
 usage() {
-  cat <<USAGE
+  cat << USAGE
 Usage: scripts/deploy/makerv3_stack.sh <command>
 
 Commands:
@@ -49,10 +49,22 @@ USAGE
 
 require_cmd() {
   local cmd="$1"
-  if ! command -v "$cmd" >/dev/null 2>&1; then
+  if ! command -v "$cmd" > /dev/null 2>&1; then
     echo "[makerv3-stack] required command not found: ${cmd}" >&2
     exit 1
   fi
+}
+
+is_allowed_env_key() {
+  local key="$1"
+  case "${key}" in
+    MAKERV3_* | BYBIT_* | BINANCE_*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 resolve_python_bin() {
@@ -61,11 +73,11 @@ resolve_python_bin() {
     echo "${PYTHON_BIN}"
     return
   fi
-  if command -v python3 >/dev/null 2>&1; then
+  if command -v python3 > /dev/null 2>&1; then
     echo "python3"
     return
   fi
-  if command -v python >/dev/null 2>&1; then
+  if command -v python > /dev/null 2>&1; then
     echo "python"
     return
   fi
@@ -88,12 +100,17 @@ load_env_file() {
       if [[ "${line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
         local key="${BASH_REMATCH[1]}"
         local value="${BASH_REMATCH[2]}"
+        if ! is_allowed_env_key "${key}"; then
+          echo "[makerv3-stack] invalid key in env file ${ENV_PATH}: ${key}" >&2
+          exit 1
+        fi
         if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
           value="${value:1:-1}"
         elif [[ "${value}" == \'*\' && "${value}" == *\' ]]; then
           value="${value:1:-1}"
         fi
-        export "${key}=${value}"
+        printf -v "${key}" '%s' "${value}"
+        export "${key?}"
       else
         echo "[makerv3-stack] invalid line in env file ${ENV_PATH}: ${line}" >&2
         exit 1
@@ -124,7 +141,8 @@ resolve_redis_target_from_config() {
   fi
 
   local output
-  output="$("${pybin}" - "${CONFIG_PATH}" <<'PY'
+  output="$(
+    "${pybin}" - "${CONFIG_PATH}" << 'PY'
 import sys
 from pathlib import Path
 import tomllib
@@ -136,8 +154,8 @@ host = str(redis_cfg.get("host", "127.0.0.1")).strip() or "127.0.0.1"
 port = int(redis_cfg.get("port", 6380))
 print(f"{host} {port}")
 PY
-)"
-  read -r REDIS_HOST REDIS_PORT <<<"${output}"
+  )"
+  read -r REDIS_HOST REDIS_PORT <<< "${output}"
 }
 
 load_secret_into_env() {
@@ -146,7 +164,7 @@ load_secret_into_env() {
     return
   fi
   local raw
-  if ! raw="$(aws secretsmanager get-secret-value --region "${AWS_REGION}" --secret-id "${secret_id}" --query SecretString --output text 2>/dev/null)"; then
+  if ! raw="$(aws secretsmanager get-secret-value --region "${AWS_REGION}" --secret-id "${secret_id}" --query SecretString --output text 2> /dev/null)"; then
     echo "[makerv3-stack] warning: failed to load secret ${secret_id}" >&2
     return
   fi
@@ -159,7 +177,7 @@ load_secret_into_env() {
     [[ -z "${key}" ]] && continue
     if [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
       printf -v "${key}" "%s" "${value}"
-      export "${key}"
+      export "${key?}"
     fi
   done < <(printf '%s' "${raw}" | jq -r 'to_entries[] | "\(.key)=\(.value|tostring)"')
 }
@@ -201,7 +219,7 @@ validate_config_and_keys() {
   [[ -z "${BINANCE_API_KEY:-}" ]] && missing+=("BINANCE_API_KEY")
   [[ -z "${BINANCE_API_SECRET:-}" ]] && missing+=("BINANCE_API_SECRET")
 
-  if (( ${#missing[@]} > 0 )); then
+  if ((${#missing[@]} > 0)); then
     echo "[makerv3-stack] missing required live credentials: ${missing[*]}" >&2
     echo "[makerv3-stack] set MAKERV3_ALLOW_MISSING_KEYS=1 only for market-data smoke." >&2
     exit 1
@@ -234,7 +252,7 @@ is_running() {
   if [[ -z "${pid}" ]]; then
     return 1
   fi
-  if kill -0 "${pid}" >/dev/null 2>&1; then
+  if kill -0 "${pid}" > /dev/null 2>&1; then
     return 0
   fi
   return 1
@@ -255,19 +273,19 @@ start_process() {
 
   echo "[makerv3-stack] starting ${svc}"
   rm -f "${file}"
-  if (( $# == 0 )); then
+  if (($# == 0)); then
     echo "[makerv3-stack] refusing to start ${svc}: missing command" >&2
     exit 1
   fi
-  setsid -f bash -c '
-    set -euo pipefail
-    root_dir="$1"
-    pid_file="$2"
-    shift 2
-    cd "$root_dir"
-    echo $$ > "$pid_file"
-    exec "$@"
-  ' bash "${ROOT_DIR}" "${file}" "$@" >>"${log}" 2>&1
+  (
+    cd "${ROOT_DIR}"
+    if command -v nohup > /dev/null 2>&1; then
+      nohup "$@" >> "${log}" 2>&1 &
+    else
+      "$@" >> "${log}" 2>&1 &
+    fi
+    echo $! > "${file}"
+  )
   sleep 1
   if [[ ! -f "${file}" ]]; then
     echo "[makerv3-stack] ${svc} failed to write pid file" >&2
@@ -277,7 +295,7 @@ start_process() {
   local pid
   pid="$(cat "${file}")"
 
-  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+  if ! kill -0 "${pid}" > /dev/null 2>&1; then
     echo "[makerv3-stack] ${svc} failed to start; log tail:" >&2
     tail -n 80 "${log}" >&2 || true
     exit 1
@@ -295,18 +313,18 @@ stop_process() {
 
   local pid
   pid="$(cat "${file}")"
-  if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
+  if [[ -n "${pid}" ]] && kill -0 "${pid}" > /dev/null 2>&1; then
     echo "[makerv3-stack] stopping ${svc} (pid ${pid})"
-    kill "${pid}" >/dev/null 2>&1 || true
+    kill "${pid}" > /dev/null 2>&1 || true
     for _ in {1..20}; do
-      if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      if ! kill -0 "${pid}" > /dev/null 2>&1; then
         break
       fi
       sleep 0.5
     done
-    if kill -0 "${pid}" >/dev/null 2>&1; then
+    if kill -0 "${pid}" > /dev/null 2>&1; then
       echo "[makerv3-stack] force-killing ${svc} (pid ${pid})"
-      kill -9 "${pid}" >/dev/null 2>&1 || true
+      kill -9 "${pid}" > /dev/null 2>&1 || true
     fi
   fi
   rm -f "${file}"
@@ -317,8 +335,8 @@ wait_for_url() {
   local label="$2"
   local deadline=$((SECONDS + START_TIMEOUT_SECS))
 
-  while (( SECONDS < deadline )); do
-    if curl -fsS "${url}" >/dev/null 2>&1; then
+  while ((SECONDS < deadline)); do
+    if curl -fsS "${url}" > /dev/null 2>&1; then
       echo "[makerv3-stack] ${label} ready: ${url}"
       return
     fi
@@ -331,7 +349,7 @@ wait_for_url() {
 
 start_redis_if_needed() {
   require_cmd redis-cli
-  if redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" ping >/dev/null 2>&1; then
+  if redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" ping > /dev/null 2>&1; then
     echo "[makerv3-stack] redis already reachable at ${REDIS_HOST}:${REDIS_PORT}"
     return
   fi
@@ -352,8 +370,8 @@ start_redis_if_needed() {
   start_process "redis" redis-server --bind "${REDIS_HOST}" --port "${REDIS_PORT}" --save "" --appendonly no
 
   local deadline=$((SECONDS + START_TIMEOUT_SECS))
-  while (( SECONDS < deadline )); do
-    if redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" ping >/dev/null 2>&1; then
+  while ((SECONDS < deadline)); do
+    if redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" ping > /dev/null 2>&1; then
       echo "[makerv3-stack] managed redis started at ${REDIS_HOST}:${REDIS_PORT}"
       return
     fi
@@ -514,7 +532,7 @@ main() {
       shift || true
       logs_stack "${1:-}"
       ;;
-    -h|--help|help|"")
+    -h | --help | help | "")
       usage
       ;;
     *)

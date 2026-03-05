@@ -335,6 +335,7 @@ Trade row contract:
 
 1. Each row MUST include `row_id`, `ts_ms`, and `version`.
 2. `version` is required for deterministic reconnect/dedupe behavior.
+3. `row_id` is an opaque stable identifier; server may synthesize a fallback when producer rows are missing one.
 
 Request:
 

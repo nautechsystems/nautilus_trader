@@ -18,6 +18,8 @@ from __future__ import annotations
 from typing import Any
 
 from nautilus_trader.flux.bridge.handlers.types import CorrelationContext
+from nautilus_trader.flux.bridge.handlers.types import JSONRow
+from nautilus_trader.flux.bridge.handlers.types import JSONValue
 from nautilus_trader.flux.bridge.handlers.types import ReplaceHashJSONOp
 from nautilus_trader.flux.bridge.handlers.types import SetJSONOp
 from nautilus_trader.flux.bridge.handlers.types import WriteOp
@@ -57,7 +59,9 @@ def _exchange_from_row(row: dict[str, Any]) -> str:
         prefix = account_id.split("-", maxsplit=1)[0]
     elif ":" in account_id:
         prefix = account_id.split(":", maxsplit=1)[0]
-    return normalize_exchange(first_text(row.get("exchange"), row.get("venue"), row.get("source"), prefix, "unknown"))
+    return normalize_exchange(
+        first_text(row.get("exchange"), row.get("venue"), row.get("source"), prefix, "unknown"),
+    )
 
 
 def _asset_from_row(row: dict[str, Any]) -> str:
@@ -85,8 +89,8 @@ def transform_balances(payload: Any, context: CorrelationContext) -> list[WriteO
     if not rows:
         return []
 
-    normalized_rows: list[dict[str, Any]] = []
-    mapping: dict[str, dict[str, Any]] = {}
+    normalized_rows: list[JSONValue] = []
+    mapping: dict[str, JSONRow] = {}
 
     for row in rows:
         exchange = _exchange_from_row(row)

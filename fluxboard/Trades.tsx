@@ -70,6 +70,103 @@ const coerceFiniteNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const normalizeTradeSide = (value: unknown): string => {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (text === '1' || text === 'buy' || text === 'bid') return 'buy';
+  if (text === '2' || text === 'sell' || text === 'ask') return 'sell';
+  return text;
+};
+
+const deriveCoinFromSymbol = (rawSymbol: unknown): string | undefined => {
+  const symbol = String(rawSymbol ?? '').trim().toUpperCase();
+  if (!symbol) return undefined;
+  const baseSymbolFromVenue = symbol.split('.')[0] || symbol;
+  const baseSymbolFromSlash = baseSymbolFromVenue.split('/')[0] || baseSymbolFromVenue;
+  const baseSymbol = baseSymbolFromSlash.split('-')[0] || baseSymbolFromSlash;
+  for (const quote of ['USDT', 'USDC', 'USD', 'PERP']) {
+    if (baseSymbol.endsWith(quote) && baseSymbol.length > quote.length) {
+      return baseSymbol.slice(0, -quote.length);
+    }
+  }
+  return baseSymbol || undefined;
+};
+
+const deriveExchangeFromInstrument = (instrumentId: unknown): string | undefined => {
+  const text = String(instrumentId ?? '').trim();
+  if (!text) return undefined;
+  const suffix = text.split('.').pop()?.trim().toLowerCase();
+  return suffix || undefined;
+};
+
+const coerceTradeTsMs = (value: unknown): number | undefined => {
+  const ts = coerceFiniteNumber(value);
+  if (ts === undefined || ts <= 0) return undefined;
+  if (ts < 1e12) return Math.trunc(ts * 1000);
+  if (ts >= 1e18) return Math.trunc(ts / 1e6);
+  if (ts >= 1e15) return Math.trunc(ts / 1e3);
+  return Math.trunc(ts);
+};
+
+const normalizeTradeEventLike = (candidate: any): any => {
+  if (!candidate || typeof candidate !== 'object') return candidate;
+  const row = candidate as Record<string, unknown>;
+
+  const instrumentId = String(row.instrument_id ?? '').trim();
+  const symbol = String(row.symbol ?? instrumentId.split('.')[0] ?? '').trim();
+
+  const coinText = String(row.coin ?? row.asset ?? row.base_currency ?? '').trim();
+  if (!coinText) {
+    const derived = deriveCoinFromSymbol(symbol);
+    if (derived) row.coin = derived;
+  }
+
+  const exchangeText = String(row.exchange ?? row.venue ?? '').trim();
+  if (!exchangeText) {
+    const derived = deriveExchangeFromInstrument(instrumentId);
+    if (derived) row.exchange = derived;
+  } else {
+    row.exchange = exchangeText.toLowerCase();
+  }
+
+  row.side = normalizeTradeSide(row.side);
+
+  const orderIdText = String(row.order_id ?? '').trim();
+  if (!orderIdText) {
+    const fallback = String(row.client_order_id ?? '').trim();
+    if (fallback) row.order_id = fallback;
+  }
+
+  const signalIdText = String(row.signal_id ?? '').trim();
+  if (!signalIdText) {
+    const fallback = String(row.strategy_id ?? '').trim();
+    if (fallback) row.signal_id = fallback;
+  }
+
+  const tsMs =
+    coerceTradeTsMs(row.ts_ms) ??
+    coerceTradeTsMs(row.ts_event) ??
+    coerceTradeTsMs(row.ts) ??
+    coerceTradeTsMs(row.timestamp);
+  if ((row.ts_ms == null || row.ts_ms === 0) && tsMs !== undefined) {
+    row.ts_ms = tsMs;
+  }
+
+  const timeText = String(row.time ?? '').trim();
+  if (!timeText && tsMs !== undefined) {
+    row.time = new Date(tsMs).toISOString();
+  }
+
+  if (row.mv == null && row.notional == null) {
+    const price = coerceFiniteNumber(row.price);
+    const qty = coerceFiniteNumber(row.qty);
+    if (price !== undefined && qty !== undefined) {
+      row.mv = price * qty;
+    }
+  }
+
+  return row;
+};
+
 type TradeTimestampParts = {
   seq?: number;
   tsMs?: number;
@@ -854,44 +951,47 @@ export default function Trades({
             op: msg.op,
             row_id: msg.row_id ?? msg.trade?.row_id,
             version: msg.version ?? msg.trade?.version,
-            seq: msg.seq ?? msg.trade?.seq,
-            ts_ms: msg.ts_ms ?? msg.server_ts_ms ?? msg.trade?.ts_ms,
+            // Prefer the trade-stream seq/ts for dedupe/order; the outer msg.seq is a transport sequence.
+            seq: msg.trade?.seq ?? msg.seq,
+            ts_ms: msg.trade?.ts_ms ?? msg.ts_ms ?? msg.server_ts_ms,
             strategy_id: msg.strategy_id ?? msg.trade?.strategy_id,
-            signal_id: msg.signal_id ?? msg.strategy_id ?? msg.trade?.signal_id,
+            signal_id: msg.signal_id ?? msg.strategy_id ?? msg.trade?.signal_id ?? msg.trade?.strategy_id,
           }
         : msg;
+      const normalizedEventCandidate = normalizeTradeEventLike(normalizedMsg);
       const isPubsubEvent =
-        normalizedMsg?.op
-        && normalizedMsg?.row_id
-        && typeof normalizedMsg?.version === 'number'
-        && typeof normalizedMsg?.seq === 'number';
+        normalizedEventCandidate?.op
+        && normalizedEventCandidate?.row_id
+        && typeof normalizedEventCandidate?.version === 'number'
+        && typeof normalizedEventCandidate?.seq === 'number';
       let event: TradeEvent;
       if (isPubsubEvent) {
-        event = normalizedMsg as TradeEvent;
+        event = normalizedEventCandidate as TradeEvent;
       } else {
         const now = Date.now();
-        const timestampParts = getTimestampParts(normalizedMsg);
+        const timestampParts = getTimestampParts(normalizedEventCandidate);
         if (!timestampParts.hasReliableTimestamp) {
           return;
         }
         const seq: number = timestampParts.seq ?? timestampParts.tsMs ?? timestampParts.ts ?? now;
         const rowIdFromMsg: string | undefined =
-          typeof normalizedMsg?.row_id === 'string' && normalizedMsg.row_id ? normalizedMsg.row_id : undefined;
+          typeof normalizedEventCandidate?.row_id === 'string' && normalizedEventCandidate.row_id ? normalizedEventCandidate.row_id : undefined;
         const rowId: string = rowIdFromMsg || (
-          (normalizedMsg && (normalizedMsg.exch_id || normalizedMsg.trade_id || normalizedMsg.order_id))
-          || `${normalizedMsg?.exchange || ''}:${normalizedMsg?.coin || ''}:${seq}`
+          (normalizedEventCandidate
+            && (normalizedEventCandidate.exch_id || normalizedEventCandidate.trade_id || normalizedEventCandidate.order_id))
+          || `${normalizedEventCandidate?.exchange || ''}:${normalizedEventCandidate?.coin || ''}:${seq}`
         );
         const versionFromMsg: number | undefined =
-          typeof normalizedMsg?.version === 'number' && Number.isFinite(normalizedMsg.version)
-            ? normalizedMsg.version
+          typeof normalizedEventCandidate?.version === 'number' && Number.isFinite(normalizedEventCandidate.version)
+            ? normalizedEventCandidate.version
             : undefined;
-        const parsedPrice = coerceFiniteNumber(normalizedMsg?.price);
-        const parsedQty = coerceFiniteNumber(normalizedMsg?.qty);
+        const parsedPrice = coerceFiniteNumber(normalizedEventCandidate?.price);
+        const parsedQty = coerceFiniteNumber(normalizedEventCandidate?.qty);
         const derivedMv =
           parsedPrice !== undefined && parsedQty !== undefined
             ? parsedPrice * parsedQty
             : undefined;
-        const rawMv = coerceFiniteNumber(normalizedMsg?.mv ?? normalizedMsg?.notional);
+        const rawMv = coerceFiniteNumber(normalizedEventCandidate?.mv ?? normalizedEventCandidate?.notional);
         const normalizedMv =
           (rawMv === undefined || rawMv === 0) && derivedMv !== undefined && derivedMv !== 0
             ? derivedMv
@@ -902,22 +1002,22 @@ export default function Trades({
           version: versionFromMsg ?? 1,
           seq,
           ts: seq,
-          time: normalizedMsg?.time,
-          coin: normalizedMsg?.coin,
-          exchange: normalizedMsg?.exchange,
-          side: normalizedMsg?.side,
-          price: normalizedMsg?.price,
-          qty: normalizedMsg?.qty,
+          time: normalizedEventCandidate?.time,
+          coin: normalizedEventCandidate?.coin,
+          exchange: normalizedEventCandidate?.exchange,
+          side: normalizedEventCandidate?.side,
+          price: normalizedEventCandidate?.price,
+          qty: normalizedEventCandidate?.qty,
           mv: normalizedMv,
-          fee: normalizedMsg?.fee,
-          exec_id: normalizedMsg?.exch_id,
-          trade_id: normalizedMsg?.trade_id,
-          order_id: normalizedMsg?.order_id ?? normalizedMsg?.client_order_id,
-          signal_id: normalizedMsg?.signal_id ?? normalizedMsg?.strategy_id,
-          strategy_id: normalizedMsg?.strategy_id,
-          decision: normalizedMsg?.decision,
-          notes: normalizedMsg?.notes,
-          explorer_url: normalizedMsg?.explorer_url,
+          fee: normalizedEventCandidate?.fee,
+          exec_id: normalizedEventCandidate?.exch_id,
+          trade_id: normalizedEventCandidate?.trade_id,
+          order_id: normalizedEventCandidate?.order_id ?? normalizedEventCandidate?.client_order_id,
+          signal_id: normalizedEventCandidate?.signal_id ?? normalizedEventCandidate?.strategy_id,
+          strategy_id: normalizedEventCandidate?.strategy_id,
+          decision: normalizedEventCandidate?.decision,
+          notes: normalizedEventCandidate?.notes,
+          explorer_url: normalizedEventCandidate?.explorer_url,
         } as TradeEvent;
       }
 

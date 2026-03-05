@@ -26,4 +26,3 @@ def event_loop():
     finally:
         if not loop.is_closed():
             loop.close()
-

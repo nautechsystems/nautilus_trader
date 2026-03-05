@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
-from typing import Callable
 
 import pytest
 
@@ -42,8 +42,8 @@ def _bootstrap_strategy(strategy: MakerV3Strategy) -> MakerV3Strategy:
     strategy._quote_failure_circuit_open = False
     strategy._params_timer_name = "params-refresh"
     strategy.unsubscribe_order_book_deltas = lambda *args, **kwargs: None
-    strategy._publish_event = lambda *_args, **_kwargs: None
-    strategy._publish_alert = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+    strategy._publish_alert = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
     strategy._cache = SimpleNamespace(order=lambda _client_order_id: None)
     return strategy
 
@@ -54,7 +54,7 @@ def fixture_strategy_factory() -> Callable[..., MakerV3Strategy]:
         config_kwargs: dict[str, Any] = {
             "maker_instrument_id": InstrumentId.from_str("MAKER.SIM"),
             "reference_instrument_id": InstrumentId.from_str("REF.SIM"),
-            "order_qty": Decimal("1"),
+            "order_qty": Decimal(1),
             "bot_on": True,
             "max_age_ms": 100,
             "quote_fail_critical_after_count": 2,
@@ -97,7 +97,7 @@ def fixture_clocked_strategy_factory() -> Callable[..., MakerV3Strategy]:
         config_kwargs: dict[str, Any] = {
             "maker_instrument_id": InstrumentId.from_str("MAKER.SIM"),
             "reference_instrument_id": InstrumentId.from_str("REF.SIM"),
-            "order_qty": Decimal("1"),
+            "order_qty": Decimal(1),
             "bot_on": True,
             "max_age_ms": 100,
             "quote_fail_critical_after_count": 2,

@@ -15,15 +15,15 @@
 
 from __future__ import annotations
 
+import json
+import time
+from collections.abc import Mapping
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from decimal import InvalidOperation
-import json
-import time
 from typing import Any
-from typing import Mapping
-from typing import Sequence
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +100,40 @@ def safe_int(value: Any) -> int | None:
         return None
 
 
+_JS_SAFE_INTEGER_MAX = 9_007_199_254_740_991
+_REDIS_STREAM_ID_SEQ_MULTIPLIER = 4096
+
+
+def _stream_seq_from_entry_id(entry_id: Any) -> int | None:
+    """
+    Convert a Redis stream entry ID (``ms-seq``) into a monotonic integer cursor.
+
+    TokenMM clients treat ``seq`` as an integer cursor and run in JavaScript where integers must fit within
+    ``Number.MAX_SAFE_INTEGER``. We therefore pack the suffix into the low bits using a bounded multiplier.
+
+    """
+    entry_id_text = decode_text(entry_id).strip()
+    if not entry_id_text:
+        return None
+    if "-" not in entry_id_text:
+        return safe_int(entry_id_text)
+
+    ms_text, sub_text = entry_id_text.split("-", maxsplit=1)
+    ms = safe_int(ms_text)
+    if ms is None:
+        return None
+    sub = safe_int(sub_text)
+    if sub is None or sub < 0:
+        return ms
+    if sub >= _REDIS_STREAM_ID_SEQ_MULTIPLIER:
+        # Defensive: keep cursor monotonic and JS-safe, at the expense of intra-ms uniqueness.
+        return ms
+    packed = (ms * _REDIS_STREAM_ID_SEQ_MULTIPLIER) + sub
+    if packed > _JS_SAFE_INTEGER_MAX:
+        return ms
+    return packed
+
+
 def safe_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -131,11 +165,15 @@ def coerce_ts_ms(value: Any) -> int | None:
     if value is None:
         return None
 
+    text = decode_text(value).strip()
     try:
-        ts = float(decode_text(value))
+        ts = float(text)
     except (TypeError, ValueError):
         try:
-            ts = datetime.fromisoformat(decode_text(value).replace("Z", "+00:00")).timestamp()
+            iso = text
+            if iso.endswith("Z"):
+                iso = f"{iso[:-1]}+00:00"
+            ts = datetime.fromisoformat(iso).timestamp()
         except (TypeError, ValueError):
             return None
 
@@ -190,52 +228,78 @@ def strategy_id_from_row(row: Any, fallback: str) -> str:
     return strategy_id or fallback
 
 
-def extract_stream_rows(stream_entries: Any) -> list[dict[str, Any]]:
-    def _with_stream_meta(row: dict[str, Any], *, entry_id: str, stream_seq: int | None) -> dict[str, Any]:
-        out = dict(row)
-        if entry_id and not decode_text(out.get("entry_id")).strip():
-            out["entry_id"] = entry_id
-        if stream_seq is not None and safe_int(out.get("seq")) is None and safe_int(out.get("_stream_seq")) is None:
-            out["_stream_seq"] = stream_seq
-        return out
+def _with_stream_meta(
+    row: dict[str, Any],
+    *,
+    entry_id: str,
+    stream_seq: int | None,
+) -> dict[str, Any]:
+    out = dict(row)
+    if entry_id and not decode_text(out.get("entry_id")).strip():
+        out["entry_id"] = entry_id
+    if (
+        stream_seq is not None
+        and safe_int(out.get("seq")) is None
+        and safe_int(out.get("_stream_seq")) is None
+    ):
+        out["_stream_seq"] = stream_seq
+    return out
 
+
+def _flat_row_from_stream_fields(fields: Mapping[Any, Any]) -> dict[str, Any]:
+    flat_row: dict[str, Any] = {}
+    for raw_key, raw_value in fields.items():
+        key = decode_text(raw_key).strip()
+        if not key or key == "payload":
+            continue
+        parsed_value = load_json(raw_value)
+        if parsed_value is None:
+            text_value = decode_text(raw_value)
+            if text_value == "":
+                continue
+            flat_row[key] = text_value
+        else:
+            flat_row[key] = parsed_value
+    return flat_row
+
+
+def _stream_rows_from_fields(
+    fields: Mapping[Any, Any],
+    *,
+    entry_id: str,
+    stream_seq: int | None,
+) -> list[dict[str, Any]]:
+    payload = fields.get("payload") or fields.get(b"payload")
+    parsed = load_json(payload)
+    if isinstance(parsed, dict):
+        return [_with_stream_meta(parsed, entry_id=entry_id, stream_seq=stream_seq)]
+    if isinstance(parsed, list):
+        return [
+            _with_stream_meta(item, entry_id=entry_id, stream_seq=stream_seq)
+            for item in parsed
+            if isinstance(item, dict)
+        ]
+    flat_row = _flat_row_from_stream_fields(fields)
+    if not flat_row:
+        return []
+    return [_with_stream_meta(flat_row, entry_id=entry_id, stream_seq=stream_seq)]
+
+
+def extract_stream_rows(stream_entries: Any) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for entry in as_list(stream_entries):
         if not isinstance(entry, (list, tuple)) or len(entry) != 2:
             continue
         stream_id, fields = entry
+        if not isinstance(fields, Mapping):
+            continue
         entry_id = decode_text(stream_id).strip()
-        stream_seq = safe_int(entry_id.split("-", maxsplit=1)[0]) if entry_id else None
-        if not isinstance(fields, dict):
+        if not entry_id:
             continue
-        payload = fields.get("payload")
-        if payload is None:
-            payload = fields.get(b"payload")
-        parsed = load_json(payload)
-        if isinstance(parsed, dict):
-            rows.append(_with_stream_meta(parsed, entry_id=entry_id, stream_seq=stream_seq))
-            continue
-        if isinstance(parsed, list):
-            for item in parsed:
-                if isinstance(item, dict):
-                    rows.append(_with_stream_meta(item, entry_id=entry_id, stream_seq=stream_seq))
-            continue
-
-        flat_row: dict[str, Any] = {}
-        for raw_key, raw_value in fields.items():
-            key = decode_text(raw_key).strip()
-            if not key or key == "payload":
-                continue
-            parsed_value = load_json(raw_value)
-            if parsed_value is None:
-                text_value = decode_text(raw_value)
-                if text_value == "":
-                    continue
-                flat_row[key] = text_value
-            else:
-                flat_row[key] = parsed_value
-        if flat_row:
-            rows.append(_with_stream_meta(flat_row, entry_id=entry_id, stream_seq=stream_seq))
+        stream_seq = _stream_seq_from_entry_id(entry_id)
+        rows.extend(
+            _stream_rows_from_fields(fields, entry_id=entry_id, stream_seq=stream_seq),
+        )
     return rows
 
 
@@ -294,111 +358,137 @@ def _position_signed_qty(row: dict[str, Any]) -> Decimal | None:
         return None
     if source_key != "signed_qty":
         side = decode_text(row.get("side") or row.get("position_side")).strip().upper()
-        if side == "SHORT" and qty > 0:
-            qty = -qty
-        elif side == "LONG" and qty < 0:
+        if (side == "SHORT" and qty > 0) or (side == "LONG" and qty < 0):
             qty = -qty
     return qty
 
 
-def _aggregate_position_rows(rows: list[dict[str, Any]], strategy_id: str) -> list[dict[str, Any]]:
+def _position_group_key(row: dict[str, Any], strategy_id: str) -> tuple[str, str, str] | None:
+    sid = strategy_id_from_row(row, strategy_id)
+    exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
+    instrument = (
+        decode_text(
+            row.get("instrument_id")
+            or row.get("symbol")
+            or row.get("asset")
+            or row.get("coin")
+            or row.get("base"),
+        )
+        .strip()
+        .upper()
+    )
+    if not instrument:
+        return None
+    return (sid, exchange, instrument)
+
+
+def _position_agg_seed(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "row": dict(row),
+        "qty": Decimal(0),
+        "avg_num": Decimal(0),
+        "avg_den": Decimal(0),
+        "upnl": Decimal(0),
+        "has_upnl": False,
+    }
+
+
+def _position_agg_update(agg: dict[str, Any], row: dict[str, Any]) -> None:
+    qty = _position_signed_qty(row)
+    if qty is not None:
+        agg["qty"] += qty
+        avg_px = _to_decimal(
+            row.get("avg_px")
+            or row.get("avg_price")
+            or row.get("entry_price")
+            or row.get("avg_px_open")
+            or row.get("avg_px_close"),
+        )
+        if avg_px is not None and qty != 0:
+            agg["avg_num"] += abs(qty) * avg_px
+            agg["avg_den"] += abs(qty)
+
+    upnl = _to_decimal(
+        row.get("unrealized_pnl")
+        or row.get("unrealizedPnl")
+        or row.get("realized_pnl")
+        or row.get("realizedPnl"),
+    )
+    if upnl is not None:
+        agg["upnl"] += upnl
+        agg["has_upnl"] = True
+
+
+def _group_position_rows(
+    rows: list[dict[str, Any]],
+    *,
+    strategy_id: str,
+) -> tuple[dict[tuple[str, str, str], dict[str, Any]], list[dict[str, Any]]]:
     non_positions: list[dict[str, Any]] = []
     grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
-
     for row in rows:
         if not isinstance(row, dict):
             continue
         if not _is_position_row(row):
             non_positions.append(dict(row))
             continue
-
-        sid = strategy_id_from_row(row, strategy_id)
-        exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
-        instrument = decode_text(
-            row.get("instrument_id")
-            or row.get("symbol")
-            or row.get("asset")
-            or row.get("coin")
-            or row.get("base"),
-        ).strip().upper()
-        if not instrument:
+        key = _position_group_key(row, strategy_id)
+        if key is None:
             non_positions.append(dict(row))
             continue
-
-        key = (sid, exchange, instrument)
         agg = grouped.get(key)
         if agg is None:
-            agg = {
-                "row": dict(row),
-                "qty": Decimal("0"),
-                "avg_num": Decimal("0"),
-                "avg_den": Decimal("0"),
-                "upnl": Decimal("0"),
-                "has_upnl": False,
-            }
+            agg = _position_agg_seed(row)
             grouped[key] = agg
+        _position_agg_update(agg, row)
+    return grouped, non_positions
 
-        qty = _position_signed_qty(row)
-        if qty is not None:
-            agg["qty"] += qty
-            avg_px = _to_decimal(
-                row.get("avg_px")
-                or row.get("avg_price")
-                or row.get("entry_price")
-                or row.get("avg_px_open")
-                or row.get("avg_px_close"),
-            )
-            if avg_px is not None and qty != 0:
-                agg["avg_num"] += abs(qty) * avg_px
-                agg["avg_den"] += abs(qty)
 
-        upnl = _to_decimal(
-            row.get("unrealized_pnl")
-            or row.get("unrealizedPnl")
-            or row.get("realized_pnl")
-            or row.get("realizedPnl"),
-        )
-        if upnl is not None:
-            agg["upnl"] += upnl
-            agg["has_upnl"] = True
+def _position_row_from_agg(key: tuple[str, str, str], agg: dict[str, Any]) -> dict[str, Any] | None:
+    sid, exchange, instrument = key
+    qty: Decimal = agg["qty"]
+    if qty == 0:
+        return None
+    side = "LONG" if qty > 0 else "SHORT"
+    avg_px = agg["avg_num"] / agg["avg_den"] if agg["avg_den"] > 0 else None
+    upnl = agg["upnl"] if agg["has_upnl"] else None
 
+    row = dict(agg["row"])
+    row["strategy_id"] = sid
+    if exchange:
+        row["exchange"] = exchange
+    row.setdefault("kind", "position")
+    row["instrument_id"] = decode_text(row.get("instrument_id") or instrument).strip() or instrument
+    if not decode_text(row.get("asset")).strip():
+        row["asset"] = instrument
+    qty_text = _decimal_text(qty)
+    row["signed_qty"] = qty_text
+    row["quantity"] = _decimal_text(abs(qty))
+    row["free"] = qty_text
+    row["total"] = qty_text
+
+    meta_parts = [side]
+    if avg_px is not None:
+        meta_parts.append(f"avg={_decimal_text(avg_px)}")
+    if upnl is not None:
+        meta_parts.append(f"uPnL={_decimal_text(upnl)}")
+    row["locked"] = " ".join(meta_parts)
+    row["side"] = side
+    row["row_id"] = f"{sid}:pos:{exchange}:{instrument}"
+    return row
+
+
+def _aggregate_position_rows(rows: list[dict[str, Any]], strategy_id: str) -> list[dict[str, Any]]:
+    grouped, non_positions = _group_position_rows(rows, strategy_id=strategy_id)
     merged_positions: list[dict[str, Any]] = []
-    for (sid, exchange, instrument), agg in grouped.items():
-        qty = agg["qty"]
-        if qty == 0:
-            continue
-        side = "LONG" if qty > 0 else "SHORT"
-        avg_px = agg["avg_num"] / agg["avg_den"] if agg["avg_den"] > 0 else None
-        upnl = agg["upnl"] if agg["has_upnl"] else None
-
-        row = dict(agg["row"])
-        row["strategy_id"] = sid
-        if exchange:
-            row["exchange"] = exchange
-        row.setdefault("kind", "position")
-        row["instrument_id"] = decode_text(row.get("instrument_id") or instrument).strip() or instrument
-        if not decode_text(row.get("asset")).strip():
-            row["asset"] = instrument
-        qty_text = _decimal_text(qty)
-        row["signed_qty"] = qty_text
-        row["quantity"] = _decimal_text(abs(qty))
-        row["free"] = qty_text
-        row["total"] = qty_text
-
-        meta_parts = [side]
-        if avg_px is not None:
-            meta_parts.append(f"avg={_decimal_text(avg_px)}")
-        if upnl is not None:
-            meta_parts.append(f"uPnL={_decimal_text(upnl)}")
-        row["locked"] = " ".join(meta_parts)
-        row["side"] = side
-        row["row_id"] = f"{sid}:pos:{exchange}:{instrument}"
-        merged_positions.append(row)
-
+    for key, agg in grouped.items():
+        merged = _position_row_from_agg(key, agg)
+        if merged is not None:
+            merged_positions.append(merged)
     return merged_positions + non_positions
 
 
-def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str, Any]]:
+def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str, Any]]:  # noqa: C901
     rows = as_list(raw_snapshot)
     out: list[dict[str, Any]] = []
     for row in rows:
@@ -495,7 +585,12 @@ def _first_valid_float(*values: Any) -> float | None:
     return None
 
 
-def _resolve_role_leg_id(*, role_value: Any, legs_order: list[str], legs: Mapping[str, Any]) -> str | None:
+def _resolve_role_leg_id(
+    *,
+    role_value: Any,
+    legs_order: list[str],
+    legs: Mapping[str, Any],
+) -> str | None:
     text = decode_text(role_value).strip()
     if not text:
         return None
@@ -519,9 +614,21 @@ def _role_map_for_signal(
     out: dict[str, str] = {}
     raw_role_map = state.get("maker_role_map")
     if isinstance(raw_role_map, Mapping):
-        maker_leg = _resolve_role_leg_id(role_value=raw_role_map.get("maker_leg"), legs_order=legs_order, legs=legs)
-        ref_leg = _resolve_role_leg_id(role_value=raw_role_map.get("ref_leg"), legs_order=legs_order, legs=legs)
-        hedge_leg = _resolve_role_leg_id(role_value=raw_role_map.get("hedge_leg"), legs_order=legs_order, legs=legs)
+        maker_leg = _resolve_role_leg_id(
+            role_value=raw_role_map.get("maker_leg"),
+            legs_order=legs_order,
+            legs=legs,
+        )
+        ref_leg = _resolve_role_leg_id(
+            role_value=raw_role_map.get("ref_leg"),
+            legs_order=legs_order,
+            legs=legs,
+        )
+        hedge_leg = _resolve_role_leg_id(
+            role_value=raw_role_map.get("hedge_leg"),
+            legs_order=legs_order,
+            legs=legs,
+        )
         if maker_leg:
             out["maker_leg"] = maker_leg
         if ref_leg:
@@ -544,8 +651,16 @@ def _spread_bps(*, buy_ask: float | None, sell_bid: float | None) -> float | Non
 
 def _required_edges_by_case(params: Mapping[str, Any]) -> tuple[float | None, float | None]:
     pool_edge = _first_valid_float(params.get("pool_edge"), params.get("place_edge1"), 0.0)
-    bid_edge = _first_valid_float(params.get("cex_bid_edge"), params.get("bid_edge1"), params.get("bid_edge"))
-    ask_edge = _first_valid_float(params.get("cex_ask_edge"), params.get("ask_edge1"), params.get("ask_edge"))
+    bid_edge = _first_valid_float(
+        params.get("cex_bid_edge"),
+        params.get("bid_edge1"),
+        params.get("bid_edge"),
+    )
+    ask_edge = _first_valid_float(
+        params.get("cex_ask_edge"),
+        params.get("ask_edge1"),
+        params.get("ask_edge"),
+    )
     if bid_edge is None and ask_edge is None:
         return None, None
 
@@ -561,7 +676,7 @@ def _required_edges_by_case(params: Mapping[str, Any]) -> tuple[float | None, fl
 
 
 def _risk_delta_from_balances(balances: Sequence[dict[str, Any]]) -> float | None:
-    total = Decimal("0")
+    total = Decimal(0)
     found = False
     for row in balances:
         if not isinstance(row, dict):
@@ -588,7 +703,7 @@ def _state_pricing_debug(state: Mapping[str, Any]) -> tuple[dict[str, Any], dict
     )
 
 
-def _derive_pricing_adjustments(
+def _derive_pricing_adjustments(  # noqa: C901
     *,
     state: Mapping[str, Any],
     params: Mapping[str, Any],
@@ -600,7 +715,10 @@ def _derive_pricing_adjustments(
         return [dict(item) for item in state_adjustments if isinstance(item, Mapping)]
 
     pricing, skew = _state_pricing_debug(state)
-    total_skew_bps = _first_valid_float(skew.get("total_skew_bps"), pricing.get("effective_skew_bps"))
+    total_skew_bps = _first_valid_float(
+        skew.get("total_skew_bps"),
+        pricing.get("effective_skew_bps"),
+    )
     if total_skew_bps is None and not skew:
         inventory_qty = risk_delta
         if inventory_qty is None:
@@ -681,8 +799,16 @@ def _derive_pricing_adjustments(
     if curr_qty is not None:
         adjustment["curr_qty"] = curr_qty
 
-    des_qty = _first_valid_float(skew.get("des_qty_global"), params.get("des_qty_global"), params.get("des_qty"))
-    max_qty = _first_valid_float(skew.get("max_qty_global"), params.get("max_qty_global"), params.get("max_qty"))
+    des_qty = _first_valid_float(
+        skew.get("des_qty_global"),
+        params.get("des_qty_global"),
+        params.get("des_qty"),
+    )
+    max_qty = _first_valid_float(
+        skew.get("max_qty_global"),
+        params.get("max_qty_global"),
+        params.get("max_qty"),
+    )
     max_skew = _first_valid_float(
         skew.get("max_skew_bps_global"),
         params.get("max_skew_bps_global"),
@@ -723,7 +849,7 @@ def _derive_strategy_family(strategy_class: str) -> str:
     return "taker"
 
 
-def _derive_quote_snapshot(
+def _derive_quote_snapshot(  # noqa: C901
     *,
     state: Mapping[str, Any],
     params: Mapping[str, Any],
@@ -771,14 +897,20 @@ def _derive_quote_snapshot(
     place_edge = _first_valid_float(pricing.get("place_edge_bps"), params.get("place_edge1"))
 
     if isinstance(maker_leg, Mapping):
-        quote_snapshot["maker_exchange"] = decode_text(maker_leg.get("exchange")).strip().lower() or None
+        quote_snapshot["maker_exchange"] = (
+            decode_text(maker_leg.get("exchange")).strip().lower() or None
+        )
         quote_snapshot["maker_symbol"] = decode_text(maker_leg.get("symbol")).strip() or None
         quote_snapshot["maker_top_ts_ms"] = coerce_ts_ms(maker_leg.get("ts_ms"))
     if isinstance(ref_leg, Mapping):
-        quote_snapshot["ref_exchange"] = decode_text(ref_leg.get("exchange")).strip().lower() or None
+        quote_snapshot["ref_exchange"] = (
+            decode_text(ref_leg.get("exchange")).strip().lower() or None
+        )
         quote_snapshot["ref_symbol"] = decode_text(ref_leg.get("symbol")).strip() or None
         quote_snapshot["ref_ts_ms"] = coerce_ts_ms(ref_leg.get("ts_ms"))
-    quote_snapshot["ref_source"] = decode_text(pricing.get("anchor_source")).strip() or "reference_leg"
+    quote_snapshot["ref_source"] = (
+        decode_text(pricing.get("anchor_source")).strip() or "reference_leg"
+    )
 
     if maker_bid is not None:
         quote_snapshot["maker_top_bid"] = maker_bid
@@ -829,7 +961,11 @@ def _derive_maker_quote_status_from_managed_orders(
 
     maker_capacity = max(0, bid_depth + ask_depth)
     maker_open_total = managed if maker_capacity <= 0 else min(managed, maker_capacity)
-    bid_open = min(bid_depth, (maker_open_total + 1) // 2) if bid_depth > 0 else (maker_open_total + 1) // 2
+    bid_open = (
+        min(bid_depth, (maker_open_total + 1) // 2)
+        if bid_depth > 0
+        else (maker_open_total + 1) // 2
+    )
     ask_open = min(ask_depth, maker_open_total // 2) if ask_depth > 0 else maker_open_total // 2
 
     return {
@@ -842,7 +978,7 @@ def _derive_maker_quote_status_from_managed_orders(
     }
 
 
-def build_signals_payload(
+def build_signals_payload(  # noqa: C901
     *,
     strategy_id: str,
     metadata: StrategyMetadata,
@@ -866,8 +1002,14 @@ def build_signals_payload(
     if not isinstance(ref_leg, Mapping):
         ref_leg = None
 
-    leg_a = maker_leg if maker_leg is not None else (legs.get(legs_order[0]) if legs_order else None)
-    leg_b = ref_leg if ref_leg is not None else (legs.get(legs_order[1]) if len(legs_order) > 1 else None)
+    leg_a = (
+        maker_leg if maker_leg is not None else (legs.get(legs_order[0]) if legs_order else None)
+    )
+    leg_b = (
+        ref_leg
+        if ref_leg is not None
+        else (legs.get(legs_order[1]) if len(legs_order) > 1 else None)
+    )
     if not isinstance(leg_a, Mapping):
         leg_a = None
     if not isinstance(leg_b, Mapping):
@@ -882,10 +1024,20 @@ def build_signals_payload(
         sell_bid=_first_valid_float(leg_a.get("bid") if leg_a is not None else None),
     )
 
-    spread_case1 = _first_valid_float(state.get("spread_net_case1_bps"), fv_row.get("spread_net_case1_bps"), spread_case1_derived)
-    spread_case2 = _first_valid_float(state.get("spread_net_case2_bps"), fv_row.get("spread_net_case2_bps"), spread_case2_derived)
+    spread_case1 = _first_valid_float(
+        state.get("spread_net_case1_bps"),
+        fv_row.get("spread_net_case1_bps"),
+        spread_case1_derived,
+    )
+    spread_case2 = _first_valid_float(
+        state.get("spread_net_case2_bps"),
+        fv_row.get("spread_net_case2_bps"),
+        spread_case2_derived,
+    )
 
-    best_case = _normalize_best_case(state.get("spread_net_best_case") or fv_row.get("spread_net_best_case"))
+    best_case = _normalize_best_case(
+        state.get("spread_net_best_case") or fv_row.get("spread_net_best_case"),
+    )
     if best_case is None:
         if spread_case1 is not None and spread_case2 is not None:
             best_case = "case1" if spread_case1 >= spread_case2 else "case2"
@@ -908,7 +1060,10 @@ def build_signals_payload(
     )
 
     required_case1, required_case2 = _required_edges_by_case(params)
-    required_edge_bps = _first_valid_float(state.get("required_edge_bps"), fv_row.get("required_edge_bps"))
+    required_edge_bps = _first_valid_float(
+        state.get("required_edge_bps"),
+        fv_row.get("required_edge_bps"),
+    )
     if required_edge_bps is None:
         if best_case == "case1":
             required_edge_bps = required_case1
@@ -922,7 +1077,9 @@ def build_signals_payload(
     risk_delta = _first_valid_float(state.get("risk_delta"), fv_row.get("risk_delta"))
     if risk_delta is None:
         risk_delta = _risk_delta_from_balances(balances)
-    risk_delta_ts_ms = coerce_ts_ms(state.get("risk_delta_ts_ms") or fv_row.get("risk_delta_ts_ms") or ts_ms)
+    risk_delta_ts_ms = coerce_ts_ms(
+        state.get("risk_delta_ts_ms") or fv_row.get("risk_delta_ts_ms") or ts_ms,
+    )
 
     pricing_adjustments = _derive_pricing_adjustments(
         state=state,
@@ -940,7 +1097,9 @@ def build_signals_payload(
     )
 
     state_quote_status = state.get("maker_quote_status")
-    maker_quote_status = dict(state_quote_status) if isinstance(state_quote_status, Mapping) else None
+    maker_quote_status = (
+        dict(state_quote_status) if isinstance(state_quote_status, Mapping) else None
+    )
     if maker_quote_status is None:
         maker_quote_status = _derive_maker_quote_status_from_managed_orders(
             managed_orders=managed,
@@ -949,7 +1108,9 @@ def build_signals_payload(
     state_quote_stacks = state.get("quote_stacks")
     quote_stacks = dict(state_quote_stacks) if isinstance(state_quote_stacks, Mapping) else None
     state_balance_readiness = state.get("balance_readiness")
-    balance_readiness = dict(state_balance_readiness) if isinstance(state_balance_readiness, Mapping) else None
+    balance_readiness = (
+        dict(state_balance_readiness) if isinstance(state_balance_readiness, Mapping) else None
+    )
 
     tradeable = bot_on
     near_tradeable = False
@@ -958,9 +1119,7 @@ def build_signals_payload(
     md_health: dict[str, Any] = {
         "legs_count": len(legs),
         "stale_legs": sorted(
-            contract_id
-            for contract_id, row in legs.items()
-            if safe_int(row.get("age_ms")) is None
+            contract_id for contract_id, row in legs.items() if safe_int(row.get("age_ms")) is None
         ),
     }
     if ts_ms is not None:
@@ -1018,7 +1177,7 @@ def build_params_payload(
     }
 
 
-def build_trades_rows(
+def build_trades_rows(  # noqa: C901
     *,
     rows: Sequence[dict[str, Any]],
     strategy_id: str,
@@ -1037,7 +1196,7 @@ def build_trades_rows(
         if seq is None:
             entry_id_text = decode_text(out.get("entry_id")).strip()
             if entry_id_text:
-                seq = safe_int(entry_id_text.split("-", maxsplit=1)[0])
+                seq = _stream_seq_from_entry_id(entry_id_text)
         if seq is not None and seq <= 0:
             seq = None
         if seq is None:
@@ -1045,9 +1204,8 @@ def build_trades_rows(
         if seq is not None:
             out["seq"] = seq
         out.pop("_stream_seq", None)
-        if since_seq is not None:
-            if seq is None or seq <= since_seq:
-                continue
+        if since_seq is not None and (seq is None or seq <= since_seq):
+            continue
         ts_ms = coerce_ts_ms(out.get("ts_ms") or out.get("ts") or out.get("timestamp"))
         if since_ms is not None and ts_ms is not None and ts_ms <= since_ms:
             continue
@@ -1083,14 +1241,21 @@ def build_alerts_rows(
 ) -> list[dict[str, Any]]:
     filtered = [dict(row) for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
     filtered.sort(
-        key=lambda item: coerce_ts_ms(item.get("ts_ms") or item.get("ts") or item.get("timestamp")) or 0,
+        key=lambda item: (
+            coerce_ts_ms(item.get("ts_ms") or item.get("ts") or item.get("timestamp")) or 0
+        ),
         reverse=True,
     )
     return filtered[: max(1, limit)]
 
 
-def build_error(*, code: str, message: str, details: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    payload = {"code": code, "message": message}
+def build_error(
+    *,
+    code: str,
+    message: str,
+    details: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"code": code, "message": message}
     if details:
         payload["details"] = dict(details)
     return payload

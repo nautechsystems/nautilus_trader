@@ -182,6 +182,12 @@ Consistency rule:
 
 1. For `op=upsert`, `trade.version` MUST be present and equal to top-level `version`.
 
+Row identity rules:
+
+1. `row_id` is an opaque stable identifier; clients must not parse it.
+2. Server prefers producer-provided `row_id`.
+3. If missing, server may synthesize a stable fallback using the backing stream `entry_id` (example: `strategy:trade:entry:<entry_id>`).
+
 Upsert example:
 
 ```json

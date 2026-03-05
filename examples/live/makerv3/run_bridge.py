@@ -13,16 +13,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-"""Run the flux bridge consumer for MakerV3 strategy topics."""
+"""
+Run the flux bridge consumer for MakerV3 strategy topics.
+"""
 
 from __future__ import annotations
 
 import argparse
 import logging
+import tomllib
 from pathlib import Path
 from typing import Any
-import tomllib
 
 import redis
 
@@ -121,7 +122,9 @@ def _resolve_strategy_scope(config: dict[str, Any], args: argparse.Namespace) ->
 
 
 def main() -> None:
-    """Parse CLI arguments and run the MakerV3 flux bridge consumer."""
+    """
+    Parse CLI arguments and run the MakerV3 flux bridge consumer.
+    """
     args = _parse_args()
     config = _load_config(args.config)
     mode = _resolve_mode(config, args)

@@ -22,7 +22,7 @@ class _DummyStrategy:
     def __init__(self) -> None:
         self.params_manager_factory = None
 
-    def set_params_manager_factory(self, factory) -> None:  # noqa: ANN001
+    def set_params_manager_factory(self, factory) -> None:
         self.params_manager_factory = factory
 
 
@@ -33,19 +33,23 @@ def test_attach_runtime_params_manager_wires_redis_backed_factory(monkeypatch) -
     redis_client = object()
     sentinel_factory = object()
 
-    def _fake_redis(**kwargs):  # noqa: ANN003, ANN202
+    def _fake_redis(**kwargs):
         redis_call.update(kwargs)
         return redis_client
 
-    def _fake_params_manager_factory(**kwargs):  # noqa: ANN003, ANN202
+    def _fake_params_manager_factory(**kwargs):
         factory_call.update(kwargs)
         return sentinel_factory
 
     monkeypatch.setattr(run_node.redis, "Redis", _fake_redis)
-    monkeypatch.setattr(run_node.runtime_params_mod, "params_manager_factory", _fake_params_manager_factory)
+    monkeypatch.setattr(
+        run_node.runtime_params_mod,
+        "params_manager_factory",
+        _fake_params_manager_factory,
+    )
 
-    run_node._attach_runtime_params_manager(  # noqa: SLF001
-        strategy=strategy,  # type: ignore[arg-type]
+    run_node._attach_runtime_params_manager(
+        strategy=strategy,
         redis_cfg={
             "host": "127.0.0.10",
             "port": 6381,

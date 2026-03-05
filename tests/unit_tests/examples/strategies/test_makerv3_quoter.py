@@ -21,7 +21,7 @@ def test_example_wrapper_config_and_strategy_construct() -> None:
     config = example_wrapper.MakerV3StrategyConfig(
         maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
         reference_instrument_id=InstrumentId.from_str("REF.SIM"),
-        order_qty=Decimal("1"),
+        order_qty=Decimal(1),
         bot_on=True,
     )
 

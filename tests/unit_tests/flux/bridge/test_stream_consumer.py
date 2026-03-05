@@ -44,7 +44,7 @@ def test_decode_entry_unwraps_flux_bus_payload_and_extracts_topic() -> None:
     }
     fields = {"payload": json.dumps(wrapped_payload)}
 
-    decoded = consumer._decode_entry(  # noqa: SLF001
+    decoded = consumer._decode_entry(
         stream_key="flux:v1:in:stream:paper:maker_v3_01:event",
         entry_id="1700000001000-0",
         fields=fields,
@@ -61,7 +61,7 @@ def test_decode_entry_uses_ts_event_fallback_for_ts_ms() -> None:
     consumer = _consumer()
     fields = {"payload": json.dumps({"event": "refresh", "ts_event": "1700000010"})}
 
-    decoded = consumer._decode_entry(  # noqa: SLF001
+    decoded = consumer._decode_entry(
         stream_key="flux:v1:in:stream:paper:maker_v3_01:event",
         entry_id="1700000001000-0",
         fields=fields,
@@ -86,7 +86,7 @@ def test_decode_entry_extracts_ts_ms_from_flux_bus_rows_payload() -> None:
     }
     fields = {"payload": json.dumps(wrapped_payload)}
 
-    decoded = consumer._decode_entry(  # noqa: SLF001
+    decoded = consumer._decode_entry(
         stream_key="flux:v1:in:stream:paper:maker_v3_01:fv",
         entry_id="1700000001000-0",
         fields=fields,
@@ -104,7 +104,7 @@ def test_decode_entry_fails_fast_for_missing_parseable_timestamp() -> None:
     fields = {"payload": "{this-is-not-json"}
 
     with pytest.raises(ValueError, match="timestamp"):
-        consumer._decode_entry(  # noqa: SLF001
+        consumer._decode_entry(
             stream_key="flux:v1:in:stream:paper:maker_v3_01:event",
             entry_id="1700000001000-0",
             fields=fields,
@@ -130,12 +130,15 @@ class _RunLoopRedis:
         self._stream_key = stream_key
         self._entries = entries or [(entry_id, fields)]
 
-    def xread(self, *, streams: dict[str, str], count: int, block: int) -> list[tuple[bytes, list[tuple[bytes, dict[Any, Any]]]]]:
+    def xread(
+        self,
+        *,
+        streams: dict[str, str],
+        count: int,
+        block: int,
+    ) -> list[tuple[bytes, list[tuple[bytes, dict[Any, Any]]]]]:
         _ = streams, count, block
-        encoded_entries = [
-            (entry_id.encode(), fields)
-            for entry_id, fields in self._entries
-        ]
+        encoded_entries = [(entry_id.encode(), fields) for entry_id, fields in self._entries]
         return [
             (
                 self._stream_key.encode(),
@@ -164,78 +167,78 @@ def _build_run_consumer(
         handlers={"event": handler},
         topics=["event"],
     )
-    consumer._stream_ids = {stream_key: "$"}  # noqa: SLF001
-    consumer._install_signals = lambda: None  # noqa: SLF001
-    consumer._refresh_streams = lambda *, force=False: None  # noqa: SLF001
+    consumer._stream_ids = {stream_key: "$"}
+    consumer._install_signals = lambda: None  # type: ignore[method-assign]
+    consumer._refresh_streams = lambda *, force=False: None  # type: ignore[method-assign]
     return consumer, stream_key, entry_id
 
 
 def test_run_does_not_advance_stream_offset_on_decode_failure() -> None:
-    def _handler(payload, context):  # noqa: ANN001, ANN202
+    def _handler(payload, context):
         _ = payload, context
         return []
 
     consumer, stream_key, _entry_id = _build_run_consumer(handler=_handler)
 
-    def _decode_fail(*, stream_key: str, entry_id: str, fields: dict[Any, Any]):  # noqa: ARG001
-        consumer._running = False  # noqa: SLF001
+    def _decode_fail(*, stream_key: str, entry_id: str, fields: dict[Any, Any]):
+        consumer._running = False
         raise ValueError("decode failed")
 
-    consumer._decode_entry = _decode_fail  # type: ignore[method-assign]  # noqa: SLF001
+    consumer._decode_entry = _decode_fail  # type: ignore[method-assign]
     consumer.run()
 
-    assert consumer._stream_ids[stream_key] == "$"  # noqa: SLF001
+    assert consumer._stream_ids[stream_key] == "$"
 
 
 def test_run_does_not_advance_stream_offset_on_handler_failure() -> None:
-    def _handler(payload, context):  # noqa: ANN001, ANN202
+    def _handler(payload, context):
         _ = payload, context
-        consumer._running = False  # noqa: SLF001
+        consumer._running = False
         raise RuntimeError("handler failed")
 
     consumer, stream_key, _entry_id = _build_run_consumer(handler=_handler)
     consumer.run()
 
-    assert consumer._stream_ids[stream_key] == "$"  # noqa: SLF001
+    assert consumer._stream_ids[stream_key] == "$"
 
 
 def test_run_does_not_advance_stream_offset_on_write_failure() -> None:
-    def _handler(payload, context):  # noqa: ANN001, ANN202
+    def _handler(payload, context):
         _ = payload, context
         return []
 
     consumer, stream_key, _entry_id = _build_run_consumer(handler=_handler)
 
-    def _write_fail(_ops):  # noqa: ANN001, ANN202
-        consumer._running = False  # noqa: SLF001
+    def _write_fail(_ops):
+        consumer._running = False
         raise RuntimeError("write failed")
 
-    consumer._apply_write_ops = _write_fail  # type: ignore[method-assign]  # noqa: SLF001
+    consumer._apply_write_ops = _write_fail  # type: ignore[method-assign]
     consumer.run()
 
-    assert consumer._stream_ids[stream_key] == "$"  # noqa: SLF001
+    assert consumer._stream_ids[stream_key] == "$"
 
 
 def test_run_advances_stream_offset_after_successful_write() -> None:
-    def _handler(payload, context):  # noqa: ANN001, ANN202
+    def _handler(payload, context):
         _ = payload, context
         return []
 
     consumer, stream_key, entry_id = _build_run_consumer(handler=_handler)
 
-    def _write_ok(_ops):  # noqa: ANN001, ANN202
-        consumer._running = False  # noqa: SLF001
+    def _write_ok(_ops):
+        consumer._running = False
 
-    consumer._apply_write_ops = _write_ok  # type: ignore[method-assign]  # noqa: SLF001
+    consumer._apply_write_ops = _write_ok  # type: ignore[method-assign]
     consumer.run()
 
-    assert consumer._stream_ids[stream_key] == entry_id  # noqa: SLF001
+    assert consumer._stream_ids[stream_key] == entry_id
 
 
 def test_run_stops_processing_stream_batch_after_first_decode_failure() -> None:
     handled_entry_ids: list[str] = []
 
-    def _handler(payload, context):  # noqa: ANN001, ANN202
+    def _handler(payload, context):
         _ = payload
         handled_entry_ids.append(context.entry_id)
         return []
@@ -250,16 +253,16 @@ def test_run_stops_processing_stream_batch_after_first_decode_failure() -> None:
         fields=first_fields,
         entries=[(first_entry_id, first_fields), (second_entry_id, second_fields)],
     )
-    decode_entry = consumer._decode_entry  # noqa: SLF001
+    decode_entry = consumer._decode_entry
 
-    def _decode_fail_first(*, stream_key: str, entry_id: str, fields: dict[Any, Any]):  # noqa: ARG001
+    def _decode_fail_first(*, stream_key: str, entry_id: str, fields: dict[Any, Any]):
         if entry_id == first_entry_id:
-            consumer._running = False  # noqa: SLF001
+            consumer._running = False
             raise ValueError("decode failed")
         return decode_entry(stream_key=stream_key, entry_id=entry_id, fields=fields)
 
-    consumer._decode_entry = _decode_fail_first  # type: ignore[method-assign]  # noqa: SLF001
+    consumer._decode_entry = _decode_fail_first  # type: ignore[method-assign]
     consumer.run()
 
     assert handled_entry_ids == []
-    assert consumer._stream_ids[stream_key] == "$"  # noqa: SLF001
+    assert consumer._stream_ids[stream_key] == "$"

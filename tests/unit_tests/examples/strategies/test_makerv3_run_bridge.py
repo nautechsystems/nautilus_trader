@@ -41,7 +41,7 @@ def test_resolve_strategy_scope_uses_config_strategy_id_when_cli_missing() -> No
 
 
 def test_resolve_strategy_scope_requires_strategy_id_without_all_strategies() -> None:
-    config = {"identity": {}}
+    config: dict[str, dict[str, str]] = {"identity": {}}
     args = Namespace(strategy_id=None, all_strategies=False)
 
     with pytest.raises(ValueError, match="strategy_id"):

@@ -1,19 +1,22 @@
-"""Implement the canonical production MakerV3 quoting strategy."""
+"""
+Implement the canonical production MakerV3 quoting strategy.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import suppress
 from datetime import timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 from typing import Any
 
-from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
 from nautilus_trader.flux.strategies.makerv3 import failures as failures_mod
-from nautilus_trader.flux.strategies.makerv3 import market_data as market_data_mod
+from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
 from nautilus_trader.flux.strategies.makerv3 import managed_orders as managed_orders_mod
-from nautilus_trader.flux.strategies.makerv3 import publisher as publisher_mod
+from nautilus_trader.flux.strategies.makerv3 import market_data as market_data_mod
 from nautilus_trader.flux.strategies.makerv3 import pricing as pricing_mod
+from nautilus_trader.flux.strategies.makerv3 import publisher as publisher_mod
 from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from nautilus_trader.flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_NAME
@@ -77,15 +80,17 @@ try:
     from nautilus_trader.model.instruments import Instrument
     from nautilus_trader.model.objects import Quantity
     from nautilus_trader.trading.strategy import Strategy
-except ModuleNotFoundError as exc:  # pragma: no cover - pure-math test fallback
-    _NAUTILUS_IMPORT_ERROR = exc
+except ModuleNotFoundError as e:  # pragma: no cover - pure-math test fallback
+    _NAUTILUS_IMPORT_ERROR = e
 
 
 if _NAUTILUS_IMPORT_ERROR is None:
     from nautilus_trader.flux.strategies.makerv3 import quote_engine as quote_engine_mod
 
     class MakerV3StrategyConfig(StrategyConfig, frozen=True):
-        """Define runtime configuration for `MakerV3Strategy`."""
+        """
+        Define runtime configuration for `MakerV3Strategy`.
+        """
 
         maker_instrument_id: InstrumentId
         reference_instrument_id: InstrumentId
@@ -122,12 +127,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         @property
         def active_order_qty(self) -> Decimal:
-            """Return configured quote quantity with runtime override fallback."""
+            """
+            Return configured quote quantity with runtime override fallback.
+            """
             return self.qty if self.qty is not None else self.order_qty
 
-
     class MakerV3Strategy(Strategy):
-        """Run the MakerV3 single-leg quoting strategy orchestration."""
+        """
+        Run the MakerV3 single-leg quoting strategy orchestration.
+        """
 
         INTERNAL_REQUOTE_THROTTLE_MS = 150
         STALE_CANCEL_COOLDOWN_MS = 1_000
@@ -138,7 +146,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
         INVENTORY_SKEW_CACHE_TTL_MS = 100
 
         def __init__(self, config: MakerV3StrategyConfig) -> None:
-            """Initialize strategy state for lifecycle, pricing, and risk gates."""
+            """
+            Initialize strategy state for lifecycle, pricing, and risk gates.
+            """
             super().__init__(config)
             self._maker_instrument: Instrument | None = None
             self._order_qty: Quantity | None = None
@@ -155,9 +165,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._last_pricing_debug: dict[str, Any] = {}
             self._last_bot_on = bool(self.config.bot_on)
             configured_strategy_id = (
-                self.config.external_strategy_id.strip()
-                if self.config.external_strategy_id
-                else ""
+                self.config.external_strategy_id.strip() if self.config.external_strategy_id else ""
             )
             self._strategy_identity = configured_strategy_id or str(self.id)
             self._external_strategy_id = self._strategy_identity
@@ -183,7 +191,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._last_actionable_alert_transition: dict[str, str] = {}
 
         def on_start(self) -> None:
-            """Start subscriptions, timers, and initial strategy publications."""
+            """
+            Start subscriptions, timers, and initial strategy publications.
+            """
             self._runtime_params_failed = False
             self._quote_failure_circuit_open = False
             self._quote_failures_ns.clear()
@@ -234,8 +244,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return
             try:
                 self._refresh_runtime_params(force=True)
-            except Exception as exc:
-                self._fail_fast_runtime_params(context="on_start", exc=exc)
+            except Exception as e:
+                self._fail_fast_runtime_params(context="on_start", exc=e)
                 return
             self._last_bot_on = self._effective_bot_on()
             self.clock.set_timer(
@@ -255,9 +265,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     book_type=BookType.L2_MBP,
                 ),
             }
-            self._last_bbo = {key: None for key in self._books}
-            self._last_bbo_ts_ns = {key: 0 for key in self._books}
-            self._last_market_bbo_publish_ns = {key: 0 for key in self._books}
+            self._last_bbo = dict.fromkeys(self._books)
+            self._last_bbo_ts_ns = dict.fromkeys(self._books, 0)
+            self._last_market_bbo_publish_ns = dict.fromkeys(self._books, 0)
 
             self.subscribe_order_book_deltas(
                 instrument_id=self.config.maker_instrument_id,
@@ -277,7 +287,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             )
 
         def on_stop(self) -> None:
-            """Stop quoting, cancel managed orders, and publish terminal state."""
+            """
+            Stop quoting, cancel managed orders, and publish terminal state.
+            """
             self._cancel_managed_quotes("on_stop", force=True)
             timer_names: set[str] = set()
             try:
@@ -294,7 +306,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             )
 
         def on_time_event(self, event: Any) -> None:
-            """Handle periodic runtime-parameter refresh timer events."""
+            """
+            Handle periodic runtime-parameter refresh timer events.
+            """
             if getattr(event, "name", "") != self._params_timer_name:
                 return
 
@@ -304,8 +318,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             now_ns = int(self.clock.timestamp_ns())
             try:
                 self._refresh_runtime_params(now_ns=now_ns)
-            except Exception as exc:
-                self._fail_fast_runtime_params(context="on_time_event", exc=exc)
+            except Exception as e:
+                self._fail_fast_runtime_params(context="on_time_event", exc=e)
                 return
             bot_on_now = self._effective_bot_on()
             if _did_bot_turn_off(self._last_bot_on, bot_on_now):
@@ -316,11 +330,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._enforce_stale_market_data(now_ns=now_ns)
 
         def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
-            """Process market deltas and trigger quote-cycle refresh when eligible."""
+            """
+            Process market deltas and trigger quote-cycle refresh when eligible.
+            """
             market_data_mod.on_order_book_deltas(self, deltas)
 
         def _enforce_stale_market_data(self, *, now_ns: int) -> None:
-            """Enforce stale market-data quote blocks even when deltas go silent."""
+            """
+            Enforce stale market-data quote blocks even when deltas go silent.
+            """
             if self._quote_failure_circuit_open:
                 return
 
@@ -328,7 +346,10 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if tracked <= 0 and not self._managed_orders():
                 return
             cooldown_ns = self.STALE_CANCEL_COOLDOWN_MS * 1_000_000
-            cooldown_due = self._last_stale_cancel_ns <= 0 or now_ns - self._last_stale_cancel_ns >= cooldown_ns
+            cooldown_due = (
+                self._last_stale_cancel_ns <= 0
+                or now_ns - self._last_stale_cancel_ns >= cooldown_ns
+            )
             blocked_transition = not bool(getattr(self, "_state_is_blocked", False))
             if not blocked_transition and not cooldown_due:
                 return
@@ -367,13 +388,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 )
                 return
 
-            reference_ts_ns = int(self._last_bbo_ts_ns.get(self.config.reference_instrument_id, 0) or 0)
+            reference_ts_ns = int(
+                self._last_bbo_ts_ns.get(self.config.reference_instrument_id, 0) or 0,
+            )
             reference_age_ns = now_ns - reference_ts_ns if reference_ts_ns > 0 else None
             if reference_age_ns is None or reference_age_ns >= max_age_ns:
-                age_ms = (
-                    int(reference_age_ns / 1_000_000)
-                    if reference_age_ns is not None
-                    else None
+                reference_age_ms = (
+                    int(reference_age_ns / 1_000_000) if reference_age_ns is not None else None
                 )
                 self._handle_stale_quote_block(
                     now_ns=now_ns,
@@ -384,7 +405,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     warning_message=(
                         "Quoting blocked (reference data stale) "
                         f"strategy_id={self._external_strategy_id} "
-                        f"age_ms={age_ms} max_age_ms={max_age_ms}"
+                        f"age_ms={reference_age_ms} max_age_ms={max_age_ms}"
                     ),
                 )
 
@@ -424,7 +445,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         @property
         def runtime_strategy_id(self) -> str:
-            """Return the authoritative strategy identity for runtime wiring."""
+            """
+            Return the authoritative strategy identity for runtime wiring.
+            """
             return self._strategy_identity
 
         @staticmethod
@@ -435,7 +458,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             schema_version: str = "v1",
             defaults: Mapping[str, Any] | None = None,
         ) -> Any:
-            """Build a params-manager factory bound to the MakerV3 runtime schema."""
+            """
+            Build a params-manager factory bound to the MakerV3 runtime schema.
+            """
             return runtime_params_mod.params_manager_factory(
                 redis_client=redis_client,
                 namespace=namespace,
@@ -444,11 +469,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
             )
 
         def set_params_manager(self, manager: Any | None) -> None:
-            """Attach an explicit runtime params manager instance."""
+            """
+            Attach an explicit runtime params manager instance.
+            """
             runtime_params_mod.set_params_manager(self, manager)
 
         def set_params_manager_factory(self, factory: Any | None) -> None:
-            """Attach a lazy factory used to construct a params manager on demand."""
+            """
+            Attach a lazy factory used to construct a params manager on demand.
+            """
             runtime_params_mod.set_params_manager_factory(self, factory)
 
         def _ensure_params_manager_identity(self, manager: Any | None) -> None:
@@ -460,7 +489,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
         def _apply_runtime_param_updates(self, updates: dict[str, Any]) -> None:
             runtime_params_mod.apply_runtime_param_updates(self, updates)
 
-        def _refresh_runtime_params(self, *, now_ns: int | None = None, force: bool = False) -> None:
+        def _refresh_runtime_params(
+            self,
+            *,
+            now_ns: int | None = None,
+            force: bool = False,
+        ) -> None:
             runtime_params_mod.refresh_runtime_params(self, now_ns=now_ns, force=force)
 
         def _fail_fast_runtime_params(self, *, context: str, exc: Exception) -> None:
@@ -470,7 +504,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             failures_mod.handle_quote_failure(self, now_ns=now_ns, exc=exc, context=context)
 
         def on_order_filled(self, event: OrderFilled) -> None:
-            """Handle order fill events and reconcile managed order tracking."""
+            """
+            Handle order fill events and reconcile managed order tracking.
+            """
             self._invalidate_inventory_skew_cache()
             self._publish_json(
                 TOPIC_TRADE,
@@ -489,23 +525,38 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._reconcile_managed_order(event.client_order_id, lifecycle="filled")
 
         def on_order_rejected(self, event: Any) -> None:
-            """Handle order rejection events and reconcile managed tracking."""
+            """
+            Handle order rejection events and reconcile managed tracking.
+            """
             self._invalidate_inventory_skew_cache()
-            self._reconcile_managed_order(getattr(event, "client_order_id", None), lifecycle="rejected")
+            self._reconcile_managed_order(
+                getattr(event, "client_order_id", None),
+                lifecycle="rejected",
+            )
             self.log.warning(
                 f"Order rejected strategy_id={self._external_strategy_id} "
                 f"client_order_id={getattr(event, 'client_order_id', None)}",
             )
 
         def on_order_canceled(self, event: Any) -> None:
-            """Handle order cancel events and reconcile managed tracking."""
+            """
+            Handle order cancel events and reconcile managed tracking.
+            """
             self._invalidate_inventory_skew_cache()
-            self._reconcile_managed_order(getattr(event, "client_order_id", None), lifecycle="canceled")
+            self._reconcile_managed_order(
+                getattr(event, "client_order_id", None),
+                lifecycle="canceled",
+            )
 
         def on_order_expired(self, event: Any) -> None:
-            """Handle order expiry events and reconcile managed tracking."""
+            """
+            Handle order expiry events and reconcile managed tracking.
+            """
             self._invalidate_inventory_skew_cache()
-            self._reconcile_managed_order(getattr(event, "client_order_id", None), lifecycle="expired")
+            self._reconcile_managed_order(
+                getattr(event, "client_order_id", None),
+                lifecycle="expired",
+            )
 
         def _reconcile_managed_order(
             self,
@@ -530,26 +581,26 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def _position_signed_qty(self) -> Decimal | None:
             positions: list[Position] = []
-            try:
+            with suppress(Exception):
                 positions.extend(
                     self.cache.positions_open(
                         instrument_id=self.config.maker_instrument_id,
                     ),
                 )
-            except Exception:
-                pass
             return inventory_mod.position_signed_qty(positions)
 
         def _spot_balance_total(self, currency_code: str) -> Decimal | None:
             accounts: list[Account] = []
-            try:
+            with suppress(Exception):
                 accounts.extend(list(self.cache.accounts()))
-            except Exception:
-                pass
             if not accounts and hasattr(self, "portfolio"):
                 try:
                     maker_venue = getattr(self.config.maker_instrument_id, "venue", None)
-                    account = self.portfolio.account(venue=maker_venue) if maker_venue is not None else None
+                    account = (
+                        self.portfolio.account(venue=maker_venue)
+                        if maker_venue is not None
+                        else None
+                    )
                 except Exception:
                     account = None
                 if account is not None:
@@ -632,7 +683,11 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 warning_message=warning_message,
             )
 
-        def _publish_recovery_state_if_blocked(self, *, managed_orders_count: int | None = None) -> None:
+        def _publish_recovery_state_if_blocked(
+            self,
+            *,
+            managed_orders_count: int | None = None,
+        ) -> None:
             quote_engine_mod.publish_recovery_state_if_blocked(
                 self,
                 managed_orders_count=managed_orders_count,
@@ -651,7 +706,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
         def _publish_balances_if_due(self) -> None:
             publisher_mod.publish_balances_if_due(self)
 
-        def _is_stale_order(self, order: Order, now_ns: int, *, max_age_ms: int | None = None) -> bool:
+        def _is_stale_order(
+            self,
+            order: Order,
+            now_ns: int,
+            *,
+            max_age_ms: int | None = None,
+        ) -> bool:
             age_ms = self._runtime_int("max_age_ms") if max_age_ms is None else int(max_age_ms)
             max_age_ns = age_ms * 1_000_000
             ts_init = int(getattr(order, "ts_init", 0))
@@ -708,10 +769,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             best_ask_px: Decimal,
         ) -> int:
             places = 0
-            active_prices = [
-                _price_to_decimal(order.price)
-                for order in active_orders
-            ]
+            active_prices = [_price_to_decimal(order.price) for order in active_orders]
             for target_price, _, match_tol in desired_levels:
                 target_px = _price_to_decimal(target_price)
                 if side == OrderSide.BUY and target_px >= best_ask_px:
@@ -811,7 +869,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if bbo is None:
                 return None
             bid, ask = bbo
-            return (bid + ask) / Decimal("2")
+            return (bid + ask) / Decimal(2)
 
         def _book_spread(self, instrument_id: InstrumentId) -> Decimal | None:
             bbo = self._best_bid_ask(instrument_id)
@@ -827,7 +885,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return
 
             if maker_mid is not None and reference_mid is not None:
-                self._last_fv = (maker_mid + reference_mid) / Decimal("2")
+                self._last_fv = (maker_mid + reference_mid) / Decimal(2)
             else:
                 self._last_fv = maker_mid or reference_mid
 
@@ -915,17 +973,22 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
 
 else:
-    class MakerV3StrategyConfig:  # pragma: no cover - fallback for pure-math tests
-        """Provide a fallback config type when runtime modules are unavailable."""
+    if not TYPE_CHECKING:
 
-        pass
+        class MakerV3StrategyConfig:  # pragma: no cover - fallback for pure-math tests
+            """
+            Provide a fallback config type when runtime modules are unavailable.
+            """
 
+        class MakerV3Strategy:  # pragma: no cover - fallback for pure-math tests
+            """
+            Raise eagerly when strategy runtime dependencies are unavailable.
+            """
 
-    class MakerV3Strategy:  # pragma: no cover - fallback for pure-math tests
-        """Raise eagerly when strategy runtime dependencies are unavailable."""
-
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-            """Raise `ModuleNotFoundError` in pure-math test environments."""
-            raise ModuleNotFoundError(
-                "NautilusTrader runtime modules are unavailable in this environment",
-            ) from _NAUTILUS_IMPORT_ERROR
+            def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+                """
+                Raise `ModuleNotFoundError` in pure-math test environments.
+                """
+                raise ModuleNotFoundError(
+                    "NautilusTrader runtime modules are unavailable in this environment",
+                ) from _NAUTILUS_IMPORT_ERROR

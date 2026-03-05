@@ -9,7 +9,11 @@ import pytest
 
 SCRIPT_UNDER_TEST = Path("scripts/ci/check-flux-leakage.sh")
 REQUIRED_BINARIES = ("git", "bash", "rg")
-MISSING_BINARIES = [binary for binary in REQUIRED_BINARIES if shutil.which(binary) is None]
+BINARIES = {binary: shutil.which(binary) for binary in REQUIRED_BINARIES}
+MISSING_BINARIES = [binary for binary, path in BINARIES.items() if path is None]
+
+GIT = BINARIES.get("git") or "git"
+BASH = BINARIES.get("bash") or "bash"
 
 pytestmark = pytest.mark.skipif(
     bool(MISSING_BINARIES),
@@ -27,13 +31,7 @@ def _locate_source_repo_root() -> Path:
 
 
 def _base_redis_schema_doc() -> str:
-    return "\n".join(
-        [
-            "# Redis Schema",
-            "No legacy mapping is supported.",
-            "",
-        ],
-    )
+    return "# Redis Schema\nNo legacy mapping is supported.\n\n"
 
 
 def _init_temp_repo(tmp_path: Path, redis_schema_doc: str) -> Path:
@@ -54,13 +52,13 @@ def _init_temp_repo(tmp_path: Path, redis_schema_doc: str) -> Path:
     (repo_root / "docs/flux/api.md").write_text("# API\n")
     (repo_root / "docs/flux/redis_schema.md").write_text(redis_schema_doc)
 
-    subprocess.run(["git", "init", "-q"], cwd=repo_root, check=True)
+    subprocess.run([GIT, "init", "-q"], cwd=repo_root, check=True)  # noqa: S603
     return repo_root
 
 
 def _run_check(repo_root: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["bash", str(SCRIPT_UNDER_TEST)],
+    return subprocess.run(  # noqa: S603
+        [BASH, str(SCRIPT_UNDER_TEST)],
         cwd=repo_root,
         text=True,
         capture_output=True,
@@ -78,13 +76,7 @@ def test_check_flux_leakage_passes_when_banned_names_are_inside_allowlist_only(t
 
 
 def test_check_flux_leakage_fails_when_banned_names_are_present(tmp_path: Path):
-    redis_schema_doc = "\n".join(
-        [
-            "# Redis Schema",
-            "This document references chainsaw and must fail.",
-            "",
-        ],
-    )
+    redis_schema_doc = "# Redis Schema\nThis document references chainsaw and must fail.\n\n"
     repo_root = _init_temp_repo(tmp_path, redis_schema_doc)
 
     result = _run_check(repo_root)

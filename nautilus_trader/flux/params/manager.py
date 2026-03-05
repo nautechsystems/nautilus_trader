@@ -110,7 +110,7 @@ class FluxParamsManager:
             )
 
         params: dict[str, Any] = {}
-        for name, raw in zip(fields, raw_values):
+        for name, raw in zip(fields, raw_values, strict=True):
             if raw is None:
                 params[name] = self._defaults.get(name)
                 continue
@@ -122,14 +122,16 @@ class FluxParamsManager:
         if not coerced_updates:
             return {}
 
-        mapping = {
-            name: self._to_redis_text(value)
-            for name, value in coerced_updates.items()
-        }
+        mapping = {name: self._to_redis_text(value) for name, value in coerced_updates.items()}
         self._redis.hset(self.hash_key, mapping=mapping)
         return coerced_updates
 
-    def publish_update(self, updates: Mapping[str, Any], *, ts_ms: int | None = None) -> dict[str, Any]:
+    def publish_update(
+        self,
+        updates: Mapping[str, Any],
+        *,
+        ts_ms: int | None = None,
+    ) -> dict[str, Any]:
         coerced_updates = self._coerce_updates(updates)
         if ts_ms is None:
             ts_ms = self._now_ms()
@@ -170,25 +172,31 @@ class FluxParamsManager:
 
         schema_type = str(schema.get("type", "number"))
         if schema_type == "boolean":
-            parsed = self._parse_bool(value)
-            if parsed is None:
+            parsed_bool = self._parse_bool(value)
+            if parsed_bool is None:
                 raise ValueError(f"Invalid boolean value for parameter {name!r}: {value!r}")
-            return parsed
+            return parsed_bool
 
         if schema_type == "integer":
             try:
                 return int(self._decode(value))
             except (TypeError, ValueError):
-                raise ValueError(f"Invalid integer value for parameter {name!r}: {value!r}") from None
+                raise ValueError(
+                    f"Invalid integer value for parameter {name!r}: {value!r}",
+                ) from None
 
         if schema_type == "number":
             try:
-                parsed = float(self._decode(value))
+                parsed_num = float(self._decode(value))
             except (TypeError, ValueError):
-                raise ValueError(f"Invalid number value for parameter {name!r}: {value!r}") from None
-            if not math.isfinite(parsed):
-                raise ValueError(f"Invalid number value for parameter {name!r}: {value!r} (must be finite)")
-            return parsed
+                raise ValueError(
+                    f"Invalid number value for parameter {name!r}: {value!r}",
+                ) from None
+            if not math.isfinite(parsed_num):
+                raise ValueError(
+                    f"Invalid number value for parameter {name!r}: {value!r} (must be finite)",
+                )
+            return parsed_num
 
         return self._decode(value)
 
@@ -222,7 +230,9 @@ class FluxParamsManager:
             return "1" if value else "0"
         if isinstance(value, float):
             if not math.isfinite(value):
-                raise ValueError(f"Invalid float value for Redis serialization: {value!r} (must be finite)")
+                raise ValueError(
+                    f"Invalid float value for Redis serialization: {value!r} (must be finite)",
+                )
             if value.is_integer():
                 return str(int(value))
         return str(value)

@@ -37,8 +37,8 @@ class _FakeRedisPipeline:
     def xrevrange(
         self,
         key: str,
-        max: str = "+",  # noqa: A002
-        min: str = "-",  # noqa: A002
+        max: str = "+",
+        min: str = "-",
         count: int | None = None,
     ) -> _FakeRedisPipeline:
         _ = max, min
@@ -86,11 +86,11 @@ class _FakeRedis:
         _ = channel, message
         return 1
 
-    def get(self, key: str):  # noqa: ANN001
+    def get(self, key: str):
         _ = key
         return None
 
-    def xrevrange(self, key: str, max: str = "+", min: str = "-", count: int | None = None):  # noqa: A002, ANN001
+    def xrevrange(self, key: str, max: str = "+", min: str = "-", count: int | None = None):
         _ = key, max, min, count
         return []
 
@@ -155,7 +155,7 @@ def test_api_params_read_returns_explicit_error_when_params_store_invalid() -> N
         "oops": b"bad",
     }
 
-    with app.test_client() as client:
+    with app.test_client() as client:  # type: ignore[attr-defined]
         response = client.get("/api/v1/params?strategy=bad")
         body = response.get_json()
 
@@ -175,7 +175,7 @@ def test_api_signals_read_returns_explicit_error_when_params_store_invalid() -> 
         "oops": b"bad",
     }
 
-    with app.test_client() as client:
+    with app.test_client() as client:  # type: ignore[attr-defined]
         response = client.get("/api/v1/signals?strategy=s1")
         body = response.get_json()
 

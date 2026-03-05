@@ -4,7 +4,9 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 
-def test_cancel_managed_quotes_idempotency_with_tracked_ids_and_cache_visibility(strategy_factory) -> None:
+def test_cancel_managed_quotes_idempotency_with_tracked_ids_and_cache_visibility(
+    strategy_factory,
+) -> None:
     strategy = strategy_factory()
 
     cached_order = SimpleNamespace(client_order_id="RESTING-1")
@@ -43,7 +45,9 @@ def test_cancel_managed_quotes_idempotency_with_tracked_ids_and_cache_visibility
     assert strategy._managed_client_order_ids == {"RESTING-1"}
 
 
-def test_cancel_managed_quotes_escape_hatch_can_cancel_all_instrument_orders(strategy_factory) -> None:
+def test_cancel_managed_quotes_escape_hatch_can_cancel_all_instrument_orders(
+    strategy_factory,
+) -> None:
     strategy = strategy_factory(cancel_all_instrument_orders=True)
 
     strategy._managed_orders = lambda: [SimpleNamespace(client_order_id="RESTING-1")]
@@ -133,7 +137,9 @@ def test_cancel_managed_quotes_records_cancel_all_exception_fields(strategy_fact
     assert events[0][1]["cancel_exceptions"] == 0
 
 
-def test_cancel_managed_quotes_aggregates_cancel_order_exceptions_in_single_event(strategy_factory) -> None:
+def test_cancel_managed_quotes_aggregates_cancel_order_exceptions_in_single_event(
+    strategy_factory,
+) -> None:
     strategy = strategy_factory()
 
     strategy._managed_orders = lambda: [
@@ -164,11 +170,13 @@ def test_cancel_managed_quotes_aggregates_cancel_order_exceptions_in_single_even
     assert events[0][1]["cancel_all_instrument"] is False
 
 
-def test_publish_state_transition_events_only_on_blocked_boundary_crossings(clocked_strategy_factory) -> None:
+def test_publish_state_transition_events_only_on_blocked_boundary_crossings(
+    clocked_strategy_factory,
+) -> None:
     strategy = clocked_strategy_factory([1, 2, 3, 4, 5, 6])
 
     transition_events: list[tuple[str, dict[str, object]]] = []
-    strategy._managed_orders = lambda: []
+    strategy._managed_orders = list
     strategy._publish_event = lambda event, **kwargs: transition_events.append((event, kwargs))
     strategy._publish_json = lambda *_args, **_kwargs: None
 
@@ -198,7 +206,7 @@ def test_publish_state_if_due_does_not_emit_running_while_blocked(clocked_strate
     strategy = clocked_strategy_factory([1, 300_000_000])
 
     transition_events: list[tuple[str, dict[str, object]]] = []
-    strategy._managed_orders = lambda: []
+    strategy._managed_orders = list
     strategy._publish_event = lambda event, **kwargs: transition_events.append((event, kwargs))
     strategy._publish_json = lambda *_args, **_kwargs: None
 
@@ -209,10 +217,12 @@ def test_publish_state_if_due_does_not_emit_running_while_blocked(clocked_strate
     assert strategy._last_state_name == "blocked_reference_md"
 
 
-def test_publish_state_resets_stale_cancel_cooldown_when_leaving_blocked(clocked_strategy_factory) -> None:
+def test_publish_state_resets_stale_cancel_cooldown_when_leaving_blocked(
+    clocked_strategy_factory,
+) -> None:
     strategy = clocked_strategy_factory([1, 2])
 
-    strategy._managed_orders = lambda: []
+    strategy._managed_orders = list
     strategy._publish_event = lambda *_args, **_kwargs: None
     strategy._publish_json = lambda *_args, **_kwargs: None
 
@@ -223,7 +233,9 @@ def test_publish_state_resets_stale_cancel_cooldown_when_leaving_blocked(clocked
     assert strategy._last_stale_cancel_ns == 0
 
 
-def test_timer_enforces_stale_market_data_blocks_when_feed_goes_silent(clocked_strategy_factory) -> None:
+def test_timer_enforces_stale_market_data_blocks_when_feed_goes_silent(
+    clocked_strategy_factory,
+) -> None:
     strategy = clocked_strategy_factory([500_000_000])
     strategy._refresh_runtime_params = lambda **_kwargs: None
     strategy._effective_bot_on = lambda: True
@@ -270,8 +282,8 @@ def test_order_filled_reconciles_managed_tracking_without_cache_closed(strategy_
             client_order_id="A",
             trade_id="T1",
             order_side="BUY",
-            last_qty=Decimal("1"),
-            last_px=Decimal("100"),
+            last_qty=Decimal(1),
+            last_px=Decimal(100),
             ts_event=123,
         ),
     )
@@ -289,7 +301,9 @@ def test_quote_failure_circuit_breaker_triggers_stop(strategy_factory) -> None:
     canceled: list[tuple[str, bool]] = []
     states: list[str] = []
     stopped: list[bool] = []
-    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: canceled.append((reason, force))
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: canceled.append(
+        (reason, force),
+    )
     strategy._publish_state = lambda state, **_kwargs: states.append(state)
     strategy.stop = lambda: stopped.append(True)
 
@@ -326,7 +340,7 @@ def test_on_stop_clears_tracked_ids_without_cancel_all_by_default(strategy_facto
     strategy = strategy_factory()
 
     strategy._managed_client_order_ids = {"RESTING-1"}
-    strategy._managed_orders = lambda: []
+    strategy._managed_orders = list
 
     canceled_all: list[str] = []
     states: list[str] = []
@@ -341,9 +355,11 @@ def test_on_stop_clears_tracked_ids_without_cancel_all_by_default(strategy_facto
     assert states == ["on_stop", "on_stop"]
 
 
-def test_cancel_managed_quotes_honors_cancel_all_escape_hatch_without_local_state(strategy_factory) -> None:
+def test_cancel_managed_quotes_honors_cancel_all_escape_hatch_without_local_state(
+    strategy_factory,
+) -> None:
     strategy = strategy_factory(cancel_all_instrument_orders=True)
-    strategy._managed_orders = lambda: []
+    strategy._managed_orders = list
     strategy._managed_client_order_ids = set()
 
     canceled_all: list[str] = []

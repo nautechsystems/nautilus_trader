@@ -46,6 +46,6 @@ def test_resolve_bind_host_defaults_to_localhost_when_missing() -> None:
 
 
 def test_resolve_bind_host_prefers_cli_override() -> None:
-    host = _resolve_bind_host({"api": {"host": "127.0.0.1"}}, Namespace(host="0.0.0.0"))
+    host = _resolve_bind_host({"api": {"host": "127.0.0.1"}}, Namespace(host="0.0.0.0"))  # noqa: S104
 
-    assert host == "0.0.0.0"
+    assert host == "0.0.0.0"  # noqa: S104

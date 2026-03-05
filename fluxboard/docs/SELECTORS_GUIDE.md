@@ -70,6 +70,7 @@ Explain how to use Zustand selectors in Fluxboard so components subscribe only t
 ## Why Selectors?
 
 **Without selectors (re-renders on ANY store change):**
+
 ```typescript
 // ❌ Component re-renders whenever ANYTHING in the store changes
 const { rows, loading, auto } = useAlertsStore();

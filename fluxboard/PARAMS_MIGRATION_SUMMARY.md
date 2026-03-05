@@ -74,6 +74,7 @@ Successfully extracted reusable hooks and domain components from the monolithic 
 **Original Request:** Migrate Params panel to use DataTable and InlineEditCell with comprehensive tests.
 
 **Analysis Result:** After analyzing the current implementation, we determined that:
+
 1. Params.tsx is already well-optimized with custom ParamCell components (Numeric, Select, Toggle)
 2. DataTable would lose critical features (sticky columns, drag-to-reorder, multi-row selection)
 3. InlineEditCell is simpler but less feature-rich than existing ParamCell
@@ -85,9 +86,11 @@ Successfully extracted reusable hooks and domain components from the monolithic 
 ### 1. State Management Hooks
 
 #### `/hooks/useDirtyState.ts` (128 lines)
+
 Tracks dirty params across strategies with per-cell granularity.
 
 **API:**
+
 ```typescript
 const dirty = useDirtyState();
 

@@ -24,13 +24,12 @@ from nautilus_trader.flux.api.payloads import StrategyMetadata
 
 
 __all__ = [
-    "ContractCatalogEntry",
     "DEFAULT_PARAMS_DEFAULTS",
     "DEFAULT_PARAMS_SCHEMA",
+    "ContractCatalogEntry",
     "FluxApiStore",
     "ParamsStoreValidationError",
     "ParamsUpdateValidationError",
     "StrategyMetadata",
     "create_flux_api_app",
 ]
-

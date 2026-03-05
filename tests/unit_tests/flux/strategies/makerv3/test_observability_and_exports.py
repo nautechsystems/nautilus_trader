@@ -28,10 +28,10 @@ def test_quote_cycle_skipped_event_has_envelope_and_reason_code(clocked_strategy
             return
 
         def best_bid_price(self) -> Decimal:
-            return Decimal("100")
+            return Decimal(100)
 
         def best_ask_price(self) -> Decimal:
-            return Decimal("101")
+            return Decimal(101)
 
     strategy._books = {strategy.config.maker_instrument_id: _Book()}
     strategy._last_bbo = {strategy.config.maker_instrument_id: None}
@@ -62,12 +62,14 @@ def test_quote_cycle_skipped_event_has_envelope_and_reason_code(clocked_strategy
 
 
 def test_quote_cycle_blocked_event_has_transition_details(clocked_strategy_factory) -> None:
-    strategy = clocked_strategy_factory([1_000_000_001, 1_000_000_002, 1_000_000_003, 1_000_000_004])
+    strategy = clocked_strategy_factory(
+        [1_000_000_001, 1_000_000_002, 1_000_000_003, 1_000_000_004],
+    )
     strategy._publish_event = MakerV3Strategy._publish_event.__get__(strategy, MakerV3Strategy)
     strategy._publish_alert = lambda *_args, **_kwargs: None
     strategy._cancel_managed_quotes = lambda *_args, **_kwargs: None
-    strategy._managed_orders = lambda: []
-    strategy._best_bid_ask = lambda _instrument_id: (Decimal("100"), Decimal("101"))
+    strategy._managed_orders = list
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 1_000_000_000 - 200_000_000
     strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 1_000_000_000 - 10_000_000
 
@@ -89,17 +91,19 @@ def test_quote_cycle_blocked_event_has_transition_details(clocked_strategy_facto
 
 
 def test_quote_cycle_completed_event_contains_action_counts(clocked_strategy_factory) -> None:
-    strategy = clocked_strategy_factory([1_000_000_001, 1_000_000_002, 1_000_000_003, 1_000_000_004])
+    strategy = clocked_strategy_factory(
+        [1_000_000_001, 1_000_000_002, 1_000_000_003, 1_000_000_004],
+    )
     strategy._publish_event = MakerV3Strategy._publish_event.__get__(strategy, MakerV3Strategy)
     strategy._maker_instrument = SimpleNamespace(
         price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
         make_price=lambda value: Decimal(str(value)),
     )
     strategy._order_qty = object()
-    strategy._best_bid_ask = lambda _instrument_id: (Decimal("100"), Decimal("101"))
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 1_000_000_000 - 10_000_000
     strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 1_000_000_000 - 10_000_000
-    strategy._managed_orders = lambda: []
+    strategy._managed_orders = list
     strategy._rebalance_side = lambda **_kwargs: 1
     strategy._place_missing_levels = lambda **_kwargs: 2
 
@@ -120,7 +124,9 @@ def test_quote_cycle_completed_event_contains_action_counts(clocked_strategy_fac
     assert quote_cycle_events[0]["place_count"] == 4
 
 
-def test_blocked_alerts_are_rate_limited_until_unblocked_transition(clocked_strategy_factory) -> None:
+def test_blocked_alerts_are_rate_limited_until_unblocked_transition(
+    clocked_strategy_factory,
+) -> None:
     strategy = clocked_strategy_factory(
         [
             1_000_000_000,
@@ -134,7 +140,7 @@ def test_blocked_alerts_are_rate_limited_until_unblocked_transition(clocked_stra
     strategy.STALE_CANCEL_COOLDOWN_MS = 0
     strategy._publish_event = MakerV3Strategy._publish_event.__get__(strategy, MakerV3Strategy)
     strategy._publish_alert = MakerV3Strategy._publish_alert.__get__(strategy, MakerV3Strategy)
-    strategy._managed_orders = lambda: []
+    strategy._managed_orders = list
     strategy._cancel_managed_quotes = lambda *_args, **_kwargs: None
 
     payloads: list[tuple[str, dict[str, object]]] = []
@@ -188,4 +194,3 @@ def test_publish_json_emits_canonical_topic() -> None:
     publish_json(TOPIC_EVENT, {"event": "compat"})
 
     assert published_topics == [TOPIC_EVENT]
-

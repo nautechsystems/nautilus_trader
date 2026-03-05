@@ -43,7 +43,9 @@ def _safe_float(value: Any) -> float | None:
 
 def transform_market_bbo(payload: Any, context: CorrelationContext) -> list[WriteOp]:
     row = as_dict(payload)
-    exchange = normalize_exchange(first_text(row.get("exchange"), row.get("venue"), row.get("market_exchange")))
+    exchange = normalize_exchange(
+        first_text(row.get("exchange"), row.get("venue"), row.get("market_exchange")),
+    )
     base, quote = normalize_symbol_parts(
         base=row.get("base"),
         quote=row.get("quote"),

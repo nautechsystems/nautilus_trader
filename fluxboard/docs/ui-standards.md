@@ -94,7 +94,7 @@ All panels MUST follow this standardized structure:
 
 ```tsx
 // Example: see examples/ui/MyPanel.example.tsx for full implementation.
-```text
+```
 
 ### DataTable Controlled State (New)
 
@@ -102,13 +102,14 @@ Use controlled props when you need to persist UI state across re-renders:
 
 ```tsx
 // Example: see examples/ui/DataTableControlledState.example.tsx for full implementation.
-```bash
+```
 
 This enables external persistence (e.g., localStorage) and synchronized UI across nested components.
 
 ### Panel Structure Rules
 
 **MUST:**
+
 - Use `PanelHeader` for all panels (no custom headers)
 - Use `TableFilter` for panels with column-based filtering
 - Use token system for ALL colors, spacing, typography
@@ -116,12 +117,14 @@ This enables external persistence (e.g., localStorage) and synchronized UI acros
 - Include `lastUpdate` timestamp for freshness tracking
 
 **SHOULD:**
+
 - Use `DataTable` for tabular data (unless performance requires custom table)
 - Use `usePolling` and `useWebSocket` hooks for live updates
 - Provide loading and empty states
 - Support keyboard navigation
 
 **MUST NOT:**
+
 - Use direct Tailwind color classes (`bg-neutral-900`, `text-red-400`, etc.)
 - Create custom header components
 - Implement custom filter UI (use TableFilter)
@@ -137,11 +140,12 @@ The design token system (`lib/tokens.ts`) provides centralized theming. **All co
 
 ```tsx
 import { colors, spacing, typography, severity } from '@/lib/tokens';
-```text
+```
 
 ### Color Tokens
 
 **Background Colors:**
+
 ```tsx
 // DO THIS ✅
 style={{ backgroundColor: colors.bg.base }}        // Main background
@@ -152,9 +156,10 @@ style={{ backgroundColor: colors.bg.active }}      // Active states
 // NOT THIS ❌
 className="bg-neutral-900"
 className="bg-neutral-800"
-```text
+```
 
 **Text Colors:**
+
 ```tsx
 // DO THIS ✅
 style={{ color: colors.text.primary }}    // Primary text (neutral-50)
@@ -165,9 +170,10 @@ style={{ color: colors.text.muted }}      // Muted text (neutral-500)
 // NOT THIS ❌
 className="text-neutral-50"
 className="text-neutral-400"
-```text
+```
 
 **Semantic Colors:**
+
 ```tsx
 // DO THIS ✅
 style={{ color: severity.critical }}  // Red (critical alerts, errors)
@@ -178,9 +184,10 @@ style={{ color: severity.success }}   // Emerald (success states)
 // NOT THIS ❌
 className="text-red-400"
 className="text-amber-400"
-```text
+```
 
 **Border Colors:**
+
 ```tsx
 // DO THIS ✅
 style={{ borderColor: colors.border.DEFAULT }}  // Default border
@@ -189,11 +196,12 @@ style={{ borderColor: colors.border.focus }}    // Focus border
 
 // NOT THIS ❌
 className="border-neutral-700"
-```text
+```
 
 ### Spacing Tokens
 
 **Row Heights:**
+
 ```tsx
 // DO THIS ✅
 style={{ height: spacing.row.compact }}  // 24px (dense mode)
@@ -203,9 +211,10 @@ style={{ height: spacing.row.header }}   // 36px (panel headers)
 // NOT THIS ❌
 className="h-6"
 className="h-7"
-```text
+```
 
 **Padding:**
+
 ```tsx
 // DO THIS ✅
 style={{ padding: spacing.padding.dense }}       // Dense mode: 4px
@@ -215,9 +224,10 @@ style={{ padding: spacing.padding.comfortable }} // Comfortable: 12px
 // NOT THIS ❌
 className="p-2"
 className="px-3 py-2"
-```text
+```
 
 **Gaps:**
+
 ```tsx
 // DO THIS ✅
 style={{ gap: spacing.gap.xs }}   // 4px
@@ -228,7 +238,7 @@ style={{ gap: spacing.gap.lg }}   // 16px
 // NOT THIS ❌
 className="gap-2"
 className="gap-4"
-```text
+```
 
 ### Typography Tokens
 
@@ -242,19 +252,22 @@ style={{
 
 // NOT THIS ❌
 className="text-xs font-medium"
-```text
+```
 
 ### Migration Strategy
 
 **Phase 1: New Code**
+
 - All new components MUST use token system
 - No exceptions for color/spacing values
 
 **Phase 2: Existing Code**
+
 - Use codemod script to migrate Tailwind classes
 - Migrate file-by-file during refactoring
 
 **Phase 3: Enforcement**
+
 - ESLint rule blocks direct Tailwind color classes
 - Pre-commit hook validates token usage
 
@@ -270,7 +283,7 @@ All panels MUST support density control via a single `dense` prop.
 interface PanelProps {
   dense?: boolean;  // Default: false
 }
-```text
+```
 
 ### Density Values
 
@@ -300,7 +313,7 @@ export function MyPanel({ dense = false }: { dense?: boolean }) {
     </div>
   );
 }
-```text
+```
 
 ### Dense Mode Checklist
 
@@ -320,6 +333,7 @@ All panels with dynamic data MUST use standardized live update hooks.
 ### Hook Usage
 
 **Polling Hook:**
+
 ```tsx
 import { usePolling } from '@/hooks';
 
@@ -332,9 +346,10 @@ usePolling({
   interval: 3000,           // 3 seconds
   enabled: !wsConnected     // Disable when WebSocket is active
 });
-```text
+```
 
 **WebSocket Hook:**
+
 ```tsx
 import { useWebSocket } from '@/hooks';
 
@@ -345,17 +360,17 @@ const { connected: wsConnected } = useWebSocket({
     setLastUpdate(Date.now());
   }
 });
-```text
+```
 
 ### Update Strategy Decision Tree
 
-```text
+```
 Is data available via WebSocket?
 ├─ YES: Use WebSocket primary + polling fallback
 │  └─ Pattern: Hybrid (WS + polling when disconnected)
 └─ NO: Use polling only
    └─ Pattern: Polling only
-```text
+```
 
 ### Standard Intervals
 
@@ -367,7 +382,7 @@ const INTERVALS = {
   SLOW: 5000,       // 5s - Balances, FX rates
   MANUAL: 10000     // 10s - PnL calculations, manual refresh
 };
-```bash
+```
 
 ### Freshness Indicators
 
@@ -379,9 +394,10 @@ All panels MUST show data freshness:
   lastUpdate={lastUpdate}
   staleThresholdMs={10000}  // 10 seconds
 />
-```text
+```
 
 **Freshness Rules:**
+
 - Green dot: Data fresh (< threshold)
 - Yellow dot: Data stale (> threshold, < 2x threshold)
 - Red dot: Data very stale (> 2x threshold)
@@ -407,16 +423,18 @@ All panels MUST show data freshness:
   onCollapse={setCollapsed}       // Optional: toggle collapse
   actions={<CustomActions />}     // Optional: custom action buttons
 />
-```bash
+```
 
 ### When to Use TableFilter
 
 **Use TableFilter when:**
+
 - Panel has 2+ filterable columns
 - Panel needs column-based filtering (text, select, date)
 - Panel has secondary controls (auto-refresh toggle, etc.)
 
 **Don't use TableFilter when:**
+
 - Panel has only one filter (use inline search instead)
 - Panel has no filterable data
 - Filtering is complex/custom (document exception)
@@ -435,16 +453,18 @@ All panels MUST show data freshness:
     </Switch>
   }
 />
-```text
+```
 
 ### When to Use DataTable
 
 **Use DataTable when:**
+
 - Data is tabular (rows x columns)
 - Need sorting, row selection, standard table features
 - Performance is acceptable (< 1000 rows without virtualization)
 
 **Use Custom Table when:**
+
 - Performance is critical (> 1000 rows, need virtualization)
 - Table has complex inline editing (e.g., Params panel)
 - Table has custom expand/collapse logic
@@ -467,15 +487,17 @@ All panels MUST show data freshness:
  * Future: Migrate to DataTable when virtualization added.
  */
 <TradesTable data={trades} dense={dense} />
-```text
+```
 
 ### When to Use Button vs IconButton
 
 **Button:**
+
 - Primary/secondary actions with labels
 - When text clarifies action ("Refresh", "Export", "Save All")
 
 **IconButton:**
+
 - Toolbar actions with clear icons
 - Space-constrained areas
 - MUST have tooltip/aria-label
@@ -495,7 +517,7 @@ All panels MUST show data freshness:
 
 // NOT THIS ❌
 <button className="px-3 py-1 bg-blue-500">Export</button>
-```text
+```
 
 ---
 
@@ -513,6 +535,7 @@ All panels MUST show data freshness:
 | Success states, positive trends | `severity.success` | Emerald (#34d399) | Successful operations, positive PnL |
 
 **Trade Side Colors:**
+
 ```tsx
 import { tradeSide } from '@/lib/tokens';
 
@@ -522,19 +545,21 @@ style={{ color: tradeSide.sell }}  // Red for sell side
 
 // NOT THIS ❌
 className="text-emerald-400"  // Wrong semantic mapping
-```text
+```
 
 **Background Hierarchy:**
+
 ```tsx
 colors.bg.base     // #171717 - Outermost container
 colors.bg.surface  // #262626 - Panel surface
 colors.bg.hover    // #404040 - Hover states
 colors.bg.active   // #525252 - Active/selected states
-```text
+```
 
 ### Typography Scale
 
 **Font Sizes:**
+
 ```tsx
 typography.fontSize['2xs']  // 10px - Tiny labels, timestamps
 typography.fontSize.xs      // 11px - Dense mode, secondary text
@@ -543,15 +568,16 @@ typography.fontSize.base    // 12px - Normal mode, primary text
 typography.fontSize.lg      // 14px - Section headers
 typography.fontSize.xl      // 16px - Panel titles
 typography.fontSize['2xl']  // 20px - Dashboard headers
-```text
+```
 
 **Font Weights:**
+
 ```tsx
 typography.fontWeight.normal   // 400 - Body text
 typography.fontWeight.medium   // 500 - Emphasized text, labels
 typography.fontWeight.semibold // 600 - Headers, important values
 typography.fontWeight.bold     // 700 - Critical values, alerts
-```text
+```
 
 ---
 
@@ -560,15 +586,18 @@ typography.fontWeight.bold     // 700 - Critical values, alerts
 ### Control Placement Standards
 
 **PanelHeader (Top Bar):**
+
 - Left: Panel title
 - Center: (empty, reserved for future breadcrumbs)
 - Right: Primary actions (Refresh, Export, Full-page, Remove)
 
 **TableFilter (Filter Bar):**
+
 - Left: Filter controls (dropdowns, search)
 - Right: Secondary controls (Auto-refresh toggle, density toggle)
 
 **Content Area:**
+
 - Scrollable content
 - Empty/loading states centered
 - No controls in content area (move to header/filter bar)
@@ -576,39 +605,45 @@ typography.fontWeight.bold     // 700 - Critical values, alerts
 ### Button Hierarchy
 
 **Primary Actions:**
+
 ```tsx
 <Button variant="primary" size="sm">Save Changes</Button>
-```text
+```
 
 **Secondary Actions:**
+
 ```tsx
 <Button variant="secondary" size="sm">Export CSV</Button>
-```text
+```
 
 **Danger Actions:**
+
 ```tsx
 <Button variant="danger" size="sm">Clear All</Button>
-```text
+```
 
 **Ghost Actions (icon-only):**
+
 ```tsx
 <Button variant="ghost" size="xs">
   <RefreshCw className="w-4 h-4" />
 </Button>
-```text
+```
 
 ### Loading States
 
 **Panel Loading:**
+
 ```tsx
 {isLoading ? (
   <LoadingState message="Loading panel data..." />
 ) : (
   <DataTable data={data} columns={columns} />
 )}
-```text
+```
 
 **Inline Loading (refresh):**
+
 ```tsx
 <Button
   variant="ghost"
@@ -618,20 +653,22 @@ typography.fontWeight.bold     // 700 - Critical values, alerts
 >
   <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
 </Button>
-```text
+```
 
 ### Empty States
 
 **Standard Empty:**
+
 ```tsx
 <EmptyState
   icon={Database}
   message="No data available"
   description="Data will appear here when available"
 />
-```text
+```
 
 **Empty with Action:**
+
 ```tsx
 <EmptyState
   icon={Filter}
@@ -639,7 +676,7 @@ typography.fontWeight.bold     // 700 - Critical values, alerts
   description="Try adjusting your filters"
   action={<Button onClick={clearFilters}>Clear Filters</Button>}
 />
-```text
+```
 
 ---
 
@@ -648,11 +685,13 @@ typography.fontWeight.bold     // 700 - Critical values, alerts
 ### Keyboard Navigation
 
 **All interactive elements MUST:**
+
 - Be focusable (tab order)
 - Have focus indicators (ring-2 ring-offset-2)
 - Support keyboard activation (Enter/Space for buttons)
 
 **Focus Management:**
+
 ```tsx
 // Auto-focus on panel open
 <input ref={autoFocusRef} />
@@ -661,11 +700,12 @@ typography.fontWeight.bold     // 700 - Critical values, alerts
 <Dialog open={open} onClose={onClose}>
   <Dialog.Content> {/* Focus trapped here */} </Dialog.Content>
 </Dialog>
-```text
+```
 
 ### ARIA Labels
 
 **Icon Buttons:**
+
 ```tsx
 <IconButton
   icon={RefreshCw}
@@ -673,9 +713,10 @@ typography.fontWeight.bold     // 700 - Critical values, alerts
   aria-label="Refresh panel data"  // Required for screen readers
   title="Refresh"                  // Tooltip for sighted users
 />
-```text
+```
 
 **Data Tables:**
+
 ```tsx
 <table aria-label="Balances table">
   <thead>
@@ -685,9 +726,10 @@ typography.fontWeight.bold     // 700 - Critical values, alerts
     </tr>
   </thead>
 </table>
-```text
+```
 
 **Live Regions:**
+
 ```tsx
 <div
   role="status"
@@ -696,11 +738,12 @@ typography.fontWeight.bold     // 700 - Critical values, alerts
 >
   {updateMessage}
 </div>
-```text
+```
 
 ### Color Contrast
 
 **Minimum Contrast Ratios (WCAG AA):**
+
 - Normal text: 4.5:1
 - Large text (>18px): 3:1
 - Interactive elements: 3:1
@@ -715,30 +758,35 @@ All token colors meet WCAG AA standards for their intended use.
 Use this checklist when migrating an existing panel:
 
 ### Phase 1: Structure
+
 - [ ] Replace custom header with `<PanelHeader />`
 - [ ] Replace custom filters with `<TableFilter />` (if applicable)
 - [ ] Ensure `dense` prop is accepted and passed through
 - [ ] Add `lastUpdate` state and freshness tracking
 
 ### Phase 2: Token Migration
+
 - [ ] Replace all `className` color classes with `style` + `colors.*`
 - [ ] Replace all spacing classes with `spacing.*`
 - [ ] Replace all font size/weight classes with `typography.*`
 - [ ] Remove all direct Tailwind color classes
 
 ### Phase 3: Components
+
 - [ ] Migrate to `DataTable` (if applicable, or document exception)
 - [ ] Use `Button` component for all buttons
 - [ ] Use `Badge` component for all badges
 - [ ] Use `Switch` for toggles, `Select` for dropdowns
 
 ### Phase 4: Live Updates
+
 - [ ] Replace direct `socket.on()` with `useWebSocket()` hook
 - [ ] Replace `setInterval` with `usePolling()` hook
 - [ ] Add connection state tracking
 - [ ] Use standard intervals from `INTERVALS` constant
 
 ### Phase 5: Testing
+
 - [ ] Visual test in normal mode
 - [ ] Visual test in dense mode
 - [ ] Keyboard navigation test
@@ -766,13 +814,13 @@ export function MinimalPanel({ dense = false }) {
     </div>
   );
 }
-```text
+```
 
 ### Full-Featured Panel
 
 ```tsx
 // Example: see examples/ui/FullFeaturedPanel.example.tsx for full implementation.
-```bash
+```
 
 ---
 
@@ -822,7 +870,7 @@ const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
     </tbody>
   </table>
 </PanelBody>
-```text
+```
 
 This keeps sticky headers intact, maintains accessibility (real `<table>` semantics), and ensures smooth auto-focus behavior because the spacer rows preserve total scroll height. See `fluxboard/Params.tsx` for a full implementation with density toggles and conflict banners.
 

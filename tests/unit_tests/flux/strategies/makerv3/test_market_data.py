@@ -4,7 +4,9 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 
-def test_on_order_book_deltas_stale_cancel_is_cooled_down_beyond_requote_throttle(clocked_strategy_factory) -> None:
+def test_on_order_book_deltas_stale_cancel_is_cooled_down_beyond_requote_throttle(
+    clocked_strategy_factory,
+) -> None:
     strategy = clocked_strategy_factory(
         [
             20_000_000_000,
@@ -15,7 +17,7 @@ def test_on_order_book_deltas_stale_cancel_is_cooled_down_beyond_requote_throttl
     )
     strategy.INTERNAL_REQUOTE_THROTTLE_MS = 100
     strategy.STALE_CANCEL_COOLDOWN_MS = 1_000
-    strategy._best_bid_ask = lambda _instrument_id: (Decimal("100"), Decimal("101"))
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
     strategy._publish_market_bbo = lambda *_args, **_kwargs: None
     strategy._recompute_and_publish_fv = lambda: None
     strategy._publish_state_if_due = lambda: None
@@ -27,16 +29,18 @@ def test_on_order_book_deltas_stale_cancel_is_cooled_down_beyond_requote_throttl
             return
 
         def best_bid_price(self) -> Decimal:
-            return Decimal("100")
+            return Decimal(100)
 
         def best_ask_price(self) -> Decimal:
-            return Decimal("101")
+            return Decimal(101)
 
     strategy._books = {strategy.config.maker_instrument_id: _Book()}
     strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 0
 
     cancels: list[str] = []
-    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: cancels.append(f"{reason}:{force}")
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: cancels.append(
+        f"{reason}:{force}",
+    )
 
     delta = SimpleNamespace(instrument_id=strategy.config.maker_instrument_id)
     strategy.on_order_book_deltas(delta)
@@ -46,7 +50,9 @@ def test_on_order_book_deltas_stale_cancel_is_cooled_down_beyond_requote_throttl
     assert strategy._last_requote_ns == 20_250_000_000
 
 
-def test_on_order_book_deltas_uses_decimal_bbo_without_string_conversions(clocked_strategy_factory) -> None:
+def test_on_order_book_deltas_uses_decimal_bbo_without_string_conversions(
+    clocked_strategy_factory,
+) -> None:
     strategy = clocked_strategy_factory([1_000_000_000])
 
     class _Price:
@@ -77,8 +83,8 @@ def test_on_order_book_deltas_uses_decimal_bbo_without_string_conversions(clocke
     strategy._recompute_and_publish_fv = lambda: None
 
     published: list[tuple[Decimal, Decimal]] = []
-    strategy._publish_market_bbo = (
-        lambda *, instrument_id, bid, ask, ts_ns: published.append((bid, ask))
+    strategy._publish_market_bbo = lambda *, instrument_id, bid, ask, ts_ns: published.append(
+        (bid, ask),
     )
 
     strategy.on_order_book_deltas(
@@ -86,10 +92,10 @@ def test_on_order_book_deltas_uses_decimal_bbo_without_string_conversions(clocke
     )
 
     assert strategy._last_bbo[strategy.config.reference_instrument_id] == (
-        Decimal("100"),
-        Decimal("101"),
+        Decimal(100),
+        Decimal(101),
     )
-    assert published == [(Decimal("100"), Decimal("101"))]
+    assert published == [(Decimal(100), Decimal(101))]
 
 
 def test_publish_market_bbo_formats_prices_with_instrument_precision(strategy_factory) -> None:
@@ -109,11 +115,10 @@ def test_publish_market_bbo_formats_prices_with_instrument_precision(strategy_fa
 
     strategy._publish_market_bbo(
         instrument_id=instrument_id,
-        bid=Decimal("100"),
+        bid=Decimal(100),
         ask=Decimal("100.1"),
         ts_ns=1_000_000_000,
     )
 
     assert payloads[-1]["bid"] == "100.00"
     assert payloads[-1]["ask"] == "100.10"
-

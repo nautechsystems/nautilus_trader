@@ -1,10 +1,13 @@
-"""Provide inventory extraction and skew computation helpers for MakerV3."""
+"""
+Provide inventory extraction and skew computation helpers for MakerV3.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Mapping
+from contextlib import suppress
 from decimal import Decimal
 from typing import Any
 
@@ -33,10 +36,8 @@ def _stringify_identifier(value: Any) -> str:
         return ""
     to_str = getattr(value, "to_str", None)
     if callable(to_str):
-        try:
+        with suppress(Exception):
             return str(to_str())
-        except Exception:
-            pass
     code = getattr(value, "code", None)
     if code is not None:
         return str(code)
@@ -44,7 +45,9 @@ def _stringify_identifier(value: Any) -> str:
 
 
 def normalize_contract_symbol(raw_symbol: str) -> tuple[str, str]:
-    """Normalize a raw symbol into uppercase base/quote components."""
+    """
+    Normalize a raw symbol into uppercase base/quote components.
+    """
     symbol = str(raw_symbol).strip()
     if not symbol:
         return "", ""
@@ -62,8 +65,14 @@ def normalize_contract_symbol(raw_symbol: str) -> tuple[str, str]:
     return symbol.upper(), ""
 
 
-def maker_base_currency_code(*, instrument: Instrument | None, instrument_id: InstrumentId) -> str | None:
-    """Return the maker instrument base currency code when available."""
+def maker_base_currency_code(
+    *,
+    instrument: Instrument | None,
+    instrument_id: InstrumentId,
+) -> str | None:
+    """
+    Return the maker instrument base currency code when available.
+    """
     if instrument is None:
         return None
 
@@ -76,8 +85,10 @@ def maker_base_currency_code(*, instrument: Instrument | None, instrument_id: In
 
 
 def position_signed_qty(positions: Iterable[Position]) -> Decimal | None:
-    """Aggregate signed position quantity across open positions."""
-    total = Decimal("0")
+    """
+    Aggregate signed position quantity across open positions.
+    """
+    total = Decimal(0)
     found = False
     for position in positions:
         signed_qty = to_decimal_or_none(getattr(position, "signed_qty", None))
@@ -94,20 +105,21 @@ def position_signed_qty(positions: Iterable[Position]) -> Decimal | None:
 
 
 def spot_balance_total(*, accounts: Iterable[Account], currency_code: str) -> Decimal | None:
-    """Aggregate total spot balance for a currency across accounts."""
+    """
+    Aggregate total spot balance for a currency across accounts.
+    """
     code = str(currency_code).strip().upper()
     if not code:
         return None
-    total = Decimal("0")
+    total = Decimal(0)
     found = False
     for account in accounts:
         balances_total_fn = getattr(account, "balances_total", None)
         if not callable(balances_total_fn):
             continue
-        try:
+        balances_total: Any = None
+        with suppress(Exception):
             balances_total = balances_total_fn()
-        except Exception:
-            continue
         if not isinstance(balances_total, dict):
             continue
         for currency, amount in balances_total.items():
@@ -128,7 +140,9 @@ def compute_inventory_skew(
     base_currency: str | None,
     runtime_params: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Compute inventory skew context from balances and runtime parameters."""
+    """
+    Compute inventory skew context from balances and runtime parameters.
+    """
     if position_qty is not None:
         inventory_qty = position_qty
         inventory_source = "maker_position"
@@ -152,20 +166,20 @@ def compute_inventory_skew(
     if inventory_qty is not None and max_qty_global > 0:
         global_ratio = clamp_decimal(
             (inventory_qty - des_qty_global) / max_qty_global,
-            Decimal("-1"),
-            Decimal("1"),
+            Decimal(-1),
+            Decimal(1),
         )
-        global_skew_bps = global_ratio * max(Decimal("0"), max_skew_bps_global)
+        global_skew_bps = global_ratio * max(Decimal(0), max_skew_bps_global)
 
     local_ratio: Decimal | None = None
     local_skew_bps: Decimal | None = None
     if inventory_qty is not None and max_qty_local > 0:
         local_ratio = clamp_decimal(
             (inventory_qty - des_qty_local) / max_qty_local,
-            Decimal("-1"),
-            Decimal("1"),
+            Decimal(-1),
+            Decimal(1),
         )
-        local_skew_bps = local_ratio * max(Decimal("0"), max_skew_bps_local)
+        local_skew_bps = local_ratio * max(Decimal(0), max_skew_bps_local)
 
     total_skew_bps = linear_offset_bps
     if global_skew_bps is not None:
@@ -195,20 +209,28 @@ def compute_inventory_skew(
 
 
 class InventorySkewCache:
-    """Cache computed inventory skew for a short TTL."""
+    """
+    Cache computed inventory skew for a short TTL.
+    """
 
     def __init__(self, ttl_ms: int) -> None:
-        """Initialize the cache with a TTL in milliseconds."""
+        """
+        Initialize the cache with a TTL in milliseconds.
+        """
         self._ttl_ms = max(0, int(ttl_ms))
         self._cache: dict[str, Any] | None = None
         self._cache_ts_ns = 0
 
     def set_ttl_ms(self, ttl_ms: int) -> None:
-        """Update the cache TTL in milliseconds."""
+        """
+        Update the cache TTL in milliseconds.
+        """
         self._ttl_ms = max(0, int(ttl_ms))
 
     def invalidate(self) -> None:
-        """Drop any cached skew snapshot immediately."""
+        """
+        Drop any cached skew snapshot immediately.
+        """
         self._cache = None
         self._cache_ts_ns = 0
 
@@ -219,7 +241,9 @@ class InventorySkewCache:
         runtime_params: Mapping[str, Any],
         compute: Callable[[Mapping[str, Any]], dict[str, Any]],
     ) -> dict[str, Any]:
-        """Return cached skew when fresh, otherwise recompute and cache it."""
+        """
+        Return cached skew when fresh, otherwise recompute and cache it.
+        """
         ttl_ns = self._ttl_ms * 1_000_000
         if self._cache is not None and ttl_ns > 0 and now_ns - self._cache_ts_ns < ttl_ns:
             return self._cache
