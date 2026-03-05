@@ -36,6 +36,8 @@ cdef class TopicCache:
     cdef dict[tuple[DataType, bint], str] _topic_cache_custom_simple
     cdef dict[tuple[BarType, bint], str] _topic_cache_bars
     cdef dict[str, str] _topic_cache_signal
+    cdef dict[tuple[InstrumentId, bint], str] _topic_cache_option_greeks
+    cdef dict[str, str] _topic_cache_option_chain
 
     cpdef str get_instrument_topic(self, InstrumentId instrument_id, bint historical = *)
     cpdef str get_instruments_topic(self, Venue venue)
@@ -53,5 +55,7 @@ cdef class TopicCache:
     cpdef str get_custom_data_topic(self, DataType data_type, InstrumentId instrument_id = *, bint historical = *)
     cpdef str get_bars_topic(self, BarType bar_type, bint historical = *)
     cpdef str get_signal_topic(self, str name)
+    cpdef str get_option_greeks_topic(self, InstrumentId instrument_id, bint historical = *)
+    cpdef str get_option_chain_topic(self, str series_id_str)
 
     cpdef void clear_cache(self)
