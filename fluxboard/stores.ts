@@ -179,7 +179,7 @@ function normalizeTrade(event: TradeEvent): TradeRow | null {
     decision: (event as any).decision,
     decision_timestamp: (event as any).decision_timestamp,
     gas_used: (event as any).gas_used ?? (event as any).gas,
-    gas_units: gas_units ?? null,
+    gas_units: gas_units ?? undefined,
     notes: (event as any).notes,
     explorer_url: (event as any).explorer_url,
     placeholder: Boolean(event.placeholder),
@@ -465,7 +465,7 @@ export const useTradesStore = create<TradesStore>((set) => ({
       const nextTs = Date.now();
       const cap = Math.min(limit ?? STORE_LIMITS.TRADES, STORE_LIMITS.TRADES);
       const candidates = new Map<string, TradeRow>();
-      let maxSeq = state.lastSeq;
+      let maxSeq = 0;
       const incomingResyncId = resolveIncomingResyncId(resyncId, events);
       const floorResyncId = getTradesResyncFloor(state.appliedResyncId);
       if (isStaleIncomingResync(incomingResyncId, floorResyncId)) {

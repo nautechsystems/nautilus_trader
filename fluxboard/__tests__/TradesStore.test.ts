@@ -122,6 +122,23 @@ describe('useTradesStore', () => {
     expect(rows[0].version).toBe(2);
   });
 
+  it('setSnapshot resets lastSeq to snapshot max seq', () => {
+    const store = useTradesStore.getState();
+    store.applyDelta([
+      { op: 'upsert', row_id: 'old-high', seq: 14536, version: 1 } as any,
+    ]);
+    expect(useTradesStore.getState().lastSeq).toBe(14536);
+
+    store.setSnapshot([
+      { op: 'upsert', row_id: 'new-low-a', seq: 666, version: 1 } as any,
+      { op: 'upsert', row_id: 'new-low-b', seq: 667, version: 1 } as any,
+    ]);
+
+    const state = useTradesStore.getState();
+    expect(state.rows.map((row) => row.row_id)).toEqual(['new-low-b', 'new-low-a']);
+    expect(state.lastSeq).toBe(667);
+  });
+
   it('rejects stale deltas from older resync epochs', () => {
     const store = useTradesStore.getState() as any;
     store.setSnapshot(
