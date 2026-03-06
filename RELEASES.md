@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Fixed Betfair order modify `Quantity` serialization for partial cancel size reduction
 - Fixed Binance algo order update (#3665), thanks @qu1zzyboy
 - Fixed Binance SBE price/quantity precision derivation (#3670), thanks @husariancom
+- Fixed dYdX WebSocket handler repeatedly emitting `NewInstrumentDiscovered` for uncached instruments on every `v4_markets` update
 - Fixed Kraken post-only order rejection not setting `due_post_only` on `OrderRejected` events (Spot and Futures)
 
 ### Internal Improvements
