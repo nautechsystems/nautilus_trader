@@ -3773,6 +3773,25 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `df -h /home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` (pass: `/dev/root` `108G` available)
     - `cargo test -p nautilus-pyo3 --features defi` (pass)
 
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `b39bac7362ea119e6417f1b213c6637980d9be04`) - status: ready
+  - Committed `Fix Python signer_route default binding`, pushed the new PR13 head, and force-pushed the rebased PR6b through PR13 stack so GitHub now reflects the current lineage.
+  - Verified both Python-feature cargo suites pass locally on the committed PR13 head; current GitHub state is `CLEAN` for PR6b through PR13 and PR16, with PR2 still `UNSTABLE` due the external billing blocker.
+  - Tests run:
+    - `cargo test -p nautilus-pyo3 --features defi` (pass)
+    - `cargo test -p nautilus-blockchain --features python` (pass)
+    - `rustfmt --check --edition 2024 /home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface/crates/adapters/blockchain/src/python/config.rs` (pass)
+    - `gh pr list --state open --limit 100 --json number,title,headRefName,baseRefName,url,mergeStateStatus` (pass)
+    - `gh pr view 22 --json number,headRefName,baseRefName,mergeStateStatus,url` (pass: `mergeStateStatus=CLEAN`)
+
+- 2026-03-06 - Orchestrator handoff (`docs/plans/2026-03-06-pcs-orchestrator-handoff.md`) - status: updated
+  - Refreshed the handoff after force-pushing PR6b through PR13 so the remote PR stack, current PR13 head, and continuation steps match the live GitHub state.
+  - Recorded the residual inherited `cargo fmt --all -- --check` note separately from the now-passing PR13 verification commands.
+  - Tests run:
+    - `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
@@ -3803,3 +3822,5 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - The earlier `nautilus-model` Python compile blocker in `crates/model/src/python/defi/data.rs` is resolved on pushed PR6a head `a03049858ea7f7ed0c32afa565c32a0b05f122eb`, but the downstream rebases for PR6b through PR13 are still local-only and have not been force-pushed yet.
 - The dirty PR13 worktree currently contains the uncommitted `crates/adapters/blockchain/src/python/config.rs` `signer_route` fix; `cargo test -p nautilus-blockchain --features python` now passes locally, but `cargo test -p nautilus-pyo3 --features defi` is blocked by local disk exhaustion (`No space left on device` while building `libnautilus_persistence.a`).
 - The earlier PR13 local disk-exhaustion blocker is resolved after cleaning stale worktree build artifacts; current remaining local work is to commit the verified PR13 changes and force-push the rebased PR6b through PR13 branches.
+- PR6b through PR13 are now force-pushed and GitHub currently reports PR17 through PR22 plus PR23 through PR26 `mergeStateStatus=CLEAN`; the only remaining documented remote blocker inside the PCS stack is PR2 staying `UNSTABLE` while GitHub Actions billing remains broken.
+- `cargo fmt --all -- --check` in the rebased PR13 worktree still reports inherited formatting drift in `crates/model/src/python/defi/data.rs` from the rebased PR6a lineage; the touched PR13 file `crates/adapters/blockchain/src/python/config.rs` passes targeted `rustfmt --check`.

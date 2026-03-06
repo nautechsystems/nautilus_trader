@@ -46,12 +46,14 @@ Implementation status:
 - The earlier `nautilus-model` Python compile blocker was fixed and pushed on PR6a
   head `a03049858ea7f7ed0c32afa565c32a0b05f122eb`; PR16 currently reports
   `mergeStateStatus=CLEAN`.
-- PR6b through PR13 have been rebased locally onto that PR6a fix, but those rebases
-  have not been force-pushed yet.
-- The dirty PR13 worktree contains an uncommitted `signer_route` PyO3 fix in
-  `crates/adapters/blockchain/src/python/config.rs`; `cargo test -p
-  nautilus-blockchain --features python` and `cargo test -p nautilus-pyo3
-  --features defi` now both pass locally.
+- PR6b through PR13 have now been force-pushed on top of that PR6a fix, and GitHub
+  currently reports PR17 through PR22 plus PR23 through PR26 `mergeStateStatus=CLEAN`.
+- PR13 head `b39bac7362ea119e6417f1b213c6637980d9be04` includes the `signer_route`
+  PyO3 fix in `crates/adapters/blockchain/src/python/config.rs`, and both
+  `cargo test -p nautilus-blockchain --features python` and `cargo test -p
+  nautilus-pyo3 --features defi` now pass locally on that committed head.
+- The main remaining wave blocker is external GitHub Actions billing, which still
+  leaves PR2 `UNSTABLE`.
 
 ## Open PR Stack
 
@@ -62,27 +64,22 @@ Implementation status:
 | PR4 | `pr4/dextype-pancakeswapv2` | `pr3/feature-gating-metadata-store` | `355bcdd08110027278db4dec1f80bfa22a83d064` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr4-dextype-pancakeswapv2` | <https://github.com/clickconfirm/nautilus-trader/pull/14> | `CLEAN` |
 | PR5a | `pr5a/instrument-provider-minimal` | `pr4/dextype-pancakeswapv2` | `c2cae97f394a0dba7aad1625dc72a9c33a7bee8d` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr5a-instrument-provider-minimal` | <https://github.com/clickconfirm/nautilus-trader/pull/15> | `CLEAN` |
 | PR6a | `pr6a/rpc-types-models` | `pr5a/instrument-provider-minimal` | `a03049858ea7f7ed0c32afa565c32a0b05f122eb` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr6a-rpc-types-models` | <https://github.com/clickconfirm/nautilus-trader/pull/16> | `CLEAN` |
-| PR6b | `pr6b/rpc-http-methods` | `pr6a/rpc-types-models` | `a72e362dce8f297f10d4d57c7ff04a83f024ec90` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr6b-rpc-http-methods` | <https://github.com/clickconfirm/nautilus-trader/pull/17> | `LOCAL-REBASSED` |
-| PR7 | `pr7/remote-signer-client` | `pr6b/rpc-http-methods` | `df7c2dc81af25fd1cf68e1f2b749a4c0dc6a1c49` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr7-remote-signer-client` | <https://github.com/clickconfirm/nautilus-trader/pull/18> | `LOCAL-REBASSED` |
-| PR8 | `pr8/erc20-allowance` | `pr7/remote-signer-client` | `aab2191336545cdc33f099a44b7c9843b9adeb99` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr8-erc20-allowance` | <https://github.com/clickconfirm/nautilus-trader/pull/19> | `LOCAL-REBASSED` |
-| PR9 | `pr9/defi-wallet` | `pr8/erc20-allowance` | `7420641d9c734c15ff1269e422622dd57dce681f` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr9-defi-wallet` | <https://github.com/clickconfirm/nautilus-trader/pull/23> | `LOCAL-REBASSED` |
-| PR10 | `pr10/pcs-v2-router` | `pr9/defi-wallet` | `8aa14d45149c290a95dfbf626509ce2e52b5ba12` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr10-pcs-v2-router` | <https://github.com/clickconfirm/nautilus-trader/pull/24> | `LOCAL-REBASSED` |
-| PR11 | `pr11/receipt-fills` | `pr10/pcs-v2-router` | `6eb35aab063597a69fae12d8eaa866926cc3707f` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr11-receipt-fills` | <https://github.com/clickconfirm/nautilus-trader/pull/25> | `LOCAL-REBASSED` |
-| PR12a | `pr12a/journal-idempotency` | `pr11/receipt-fills` | `ca2d452afb14d0ffcba0862dda57bc4f9d4f60f5` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12a-journal-idempotency` | <https://github.com/clickconfirm/nautilus-trader/pull/26> | `LOCAL-REBASSED` |
-| PR12b | `pr12b/happy-path-exec` | `pr12a/journal-idempotency` | `af578114208714ff134e4f654a9fb2e911029719` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12b-happy-path-exec` | <https://github.com/clickconfirm/nautilus-trader/pull/20> | `LOCAL-REBASSED` |
-| PR12c | `pr12c/ambiguous-retry-reorg` | `pr12b/happy-path-exec` | `b268cdee846fcc39b6a186d5e4d8cac9bee3d6c5` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12c-ambiguous-retry-reorg` | <https://github.com/clickconfirm/nautilus-trader/pull/21> | `LOCAL-REBASSED` |
-| PR13 | `pr13/python-surface` | `pr12c/ambiguous-retry-reorg` | `5ae717af96751b99d0fb30265f33e6d36cd6809e` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` | <https://github.com/clickconfirm/nautilus-trader/pull/22> | `LOCAL-DIRTY` |
+| PR6b | `pr6b/rpc-http-methods` | `pr6a/rpc-types-models` | `a72e362dce8f297f10d4d57c7ff04a83f024ec90` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr6b-rpc-http-methods` | <https://github.com/clickconfirm/nautilus-trader/pull/17> | `CLEAN` |
+| PR7 | `pr7/remote-signer-client` | `pr6b/rpc-http-methods` | `df7c2dc81af25fd1cf68e1f2b749a4c0dc6a1c49` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr7-remote-signer-client` | <https://github.com/clickconfirm/nautilus-trader/pull/18> | `CLEAN` |
+| PR8 | `pr8/erc20-allowance` | `pr7/remote-signer-client` | `aab2191336545cdc33f099a44b7c9843b9adeb99` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr8-erc20-allowance` | <https://github.com/clickconfirm/nautilus-trader/pull/19> | `CLEAN` |
+| PR9 | `pr9/defi-wallet` | `pr8/erc20-allowance` | `7420641d9c734c15ff1269e422622dd57dce681f` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr9-defi-wallet` | <https://github.com/clickconfirm/nautilus-trader/pull/23> | `CLEAN` |
+| PR10 | `pr10/pcs-v2-router` | `pr9/defi-wallet` | `8aa14d45149c290a95dfbf626509ce2e52b5ba12` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr10-pcs-v2-router` | <https://github.com/clickconfirm/nautilus-trader/pull/24> | `CLEAN` |
+| PR11 | `pr11/receipt-fills` | `pr10/pcs-v2-router` | `6eb35aab063597a69fae12d8eaa866926cc3707f` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr11-receipt-fills` | <https://github.com/clickconfirm/nautilus-trader/pull/25> | `CLEAN` |
+| PR12a | `pr12a/journal-idempotency` | `pr11/receipt-fills` | `ca2d452afb14d0ffcba0862dda57bc4f9d4f60f5` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12a-journal-idempotency` | <https://github.com/clickconfirm/nautilus-trader/pull/26> | `CLEAN` |
+| PR12b | `pr12b/happy-path-exec` | `pr12a/journal-idempotency` | `af578114208714ff134e4f654a9fb2e911029719` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12b-happy-path-exec` | <https://github.com/clickconfirm/nautilus-trader/pull/20> | `CLEAN` |
+| PR12c | `pr12c/ambiguous-retry-reorg` | `pr12b/happy-path-exec` | `b268cdee846fcc39b6a186d5e4d8cac9bee3d6c5` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12c-ambiguous-retry-reorg` | <https://github.com/clickconfirm/nautilus-trader/pull/21> | `CLEAN` |
+| PR13 | `pr13/python-surface` | `pr12c/ambiguous-retry-reorg` | `b39bac7362ea119e6417f1b213c6637980d9be04` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` | <https://github.com/clickconfirm/nautilus-trader/pull/22> | `CLEAN` |
 
 Notes:
 
 - `CLEAN` here means GitHub currently reports mergeable stack state for that PR.
 - `UNSTABLE` on PR2 is not currently a code-quality signal by itself; see the
   external CI blocker below.
-- `LOCAL-REBASSED` means the local worktree branch has already been rebased onto PR6a
-  head `a03049858ea7f7ed0c32afa565c32a0b05f122eb`, but the rebased branch has not yet
-  been force-pushed to GitHub.
-- `LOCAL-DIRTY` means the worktree contains uncommitted continuation changes in
-  addition to the local-only rebase state.
 
 ## What Each PR Delivers
 
@@ -128,30 +125,31 @@ pushed PR6a head `a03049858ea7f7ed0c32afa565c32a0b05f122eb`.
 
 Current top-of-stack state in the PR13 worktree:
 
-- Dirty local fix file:
+- Pushed PR13 fix file:
   - `crates/adapters/blockchain/src/python/config.rs`
-- Current local fix shape:
+- Current pushed fix shape:
   - changes the PyO3 constructor parameter from `signer_route: String` to
     `signer_route: &str`
   - converts the borrowed route into the owned config field with
     `signer_route.to_string()`
   - adds focused Python constructor tests for default and custom `signer_route`
-- Verified locally:
+- Verified locally on PR13 head `b39bac7362ea119e6417f1b213c6637980d9be04`:
   - `cargo test -p nautilus-blockchain --features python` (pass)
   - `cargo test -p nautilus-pyo3 --features defi` (pass)
-- Local environment note:
-  - the earlier `No space left on device` failure was cleared by cleaning stale
-    `target/` directories from older clean worktrees; the current remaining local
-    work is commit/review/push, not blocker diagnosis
+  - `rustfmt --check --edition 2024 crates/adapters/blockchain/src/python/config.rs` (pass)
+- Residual note:
+  - `cargo fmt --all -- --check` in the rebased PR13 worktree still reports inherited
+    formatting drift in `crates/model/src/python/defi/data.rs` from the rebased PR6a
+    lineage, so only the touched PR13 file was formatting-verified directly here
 
 ## Continuation Instructions
 
 1. Restore GitHub Actions billing or otherwise get checks running again.
-2. Commit the local `signer_route` fix together with the updated plan/handoff docs in
-   `/home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface`.
-3. Force-push the rebased PR6b through PR13 branches with `--force-with-lease`.
-4. Re-run or re-trigger checks bottom-up from PR2 once GitHub Actions billing is
-   restored and the local PR13 fix is pushed.
+2. Re-run or re-trigger checks bottom-up from PR2 once GitHub Actions billing is
+   restored.
+3. If restored CI surfaces a formatting gate on the inherited
+   `crates/model/src/python/defi/data.rs` drift, fix it at PR6a and propagate
+   downstream; otherwise continue directly to sequential merges.
 5. Keep merges strictly sequential:
    - PR2 -> PR3 -> PR4 -> PR5a -> PR6a -> PR6b -> PR7 -> PR8 -> PR9 -> PR10 -> PR11 -> PR12a -> PR12b -> PR12c -> PR13
 6. After each human merge:
@@ -189,32 +187,23 @@ cargo test -p nautilus-blockchain --features python
 cargo test -p nautilus-pyo3 --features defi
 ```
 
-Commit the verified PR13 changes:
+Reconfirm the current PR13 head if needed:
 
 ```bash
 cd /home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface
-git add crates/adapters/blockchain/src/python/config.rs docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md
-git commit -m "Fix Python signer_route default binding"
+git status --short
+git rev-parse HEAD
+cargo test -p nautilus-blockchain --features python
+cargo test -p nautilus-pyo3 --features defi
+rustfmt --check --edition 2024 crates/adapters/blockchain/src/python/config.rs
 ```
 
-After the PR13 fix is committed, force-push the rebased stack:
+Refresh the current remote stack state:
 
 ```bash
 cd /home/ubuntu/nautilus-trader-dev
-for branch in \
-  pr6b/rpc-http-methods \
-  pr7/remote-signer-client \
-  pr8/erc20-allowance \
-  pr9/defi-wallet \
-  pr10/pcs-v2-router \
-  pr11/receipt-fills \
-  pr12a/journal-idempotency \
-  pr12b/happy-path-exec \
-  pr12c/ambiguous-retry-reorg \
-  pr13/python-surface
-do
-  git push --force-with-lease origin "$branch"
-done
+gh pr list --state open --limit 100 --json number,title,headRefName,baseRefName,url,mergeStateStatus
+gh pr view 22 --json number,headRefName,baseRefName,mergeStateStatus,url
 ```
 
 ## Plan Completion Definition
