@@ -3811,6 +3811,12 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
     - `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
 
+- 2026-03-06 - PCS merge closeout - status: merged
+  - Merged the remaining PCS stack to `main` sequentially in dependency order after retargeting each open PR from PR6a upward to `main`: PR6a (`#16`) at `2026-03-06T15:09:11Z`, PR6b (`#17`) at `2026-03-06T15:09:15Z`, PR7 (`#18`) at `2026-03-06T15:09:19Z`, PR8 (`#19`) at `2026-03-06T15:09:22Z`, PR9 (`#23`) at `2026-03-06T15:09:26Z`, PR10 (`#24`) at `2026-03-06T15:09:31Z`, PR11 (`#25`) at `2026-03-06T15:09:35Z`, PR12a (`#26`) at `2026-03-06T15:09:39Z`, PR12b (`#20`) at `2026-03-06T15:09:43Z`, PR12c (`#21`) at `2026-03-06T15:09:47Z`, and PR13 (`#22`) at `2026-03-06T15:09:51Z`.
+  - Landed the last three substantive review follow-ups before merge: PR6a `0a75cf19a` (`contractAddress` on `TransactionReceipt`), PR9 `4e956785e` (wallet currency precision collision handling), PR13 `773f9904f` + `f6b7963b8` (blockchain config repr URL redaction hardening).
+  - Resolved all previously open Gemini review threads across PCS PRs `#12` through `#26` with either landed fixes or explicit maintainer defer notes; a fresh thread query now returns zero unresolved PCS review threads.
+  - Current wave status: PCS implementation and merge orchestration are complete; there are no open PCS PRs remaining on GitHub.
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
