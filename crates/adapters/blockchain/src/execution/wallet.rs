@@ -376,32 +376,53 @@ impl WalletTracker {
 fn token_currency(token_balance: &TokenBalance) -> Currency {
     let token = &token_balance.token;
     let precision = token.decimals.min(16);
+    let address = token.address.to_string();
 
     let mut base_code = token.symbol.trim().to_ascii_uppercase();
     if base_code.is_empty() {
-        base_code = format!("TKN{}", &token.address.to_string()[2..8]).to_ascii_uppercase();
+        base_code = format!("TKN{}", &address[2..8]).to_ascii_uppercase();
     }
 
-    let mut code = base_code.clone();
-    if Currency::try_from_str(code.as_str()).is_some() {
-        code = format!("{base_code}{}", &token.address.to_string()[2..8]).to_ascii_uppercase();
+    for suffix_index in 0_u32.. {
+        let code = match suffix_index {
+            0 => base_code.clone(),
+            1 => format!("{base_code}{}", &address[2..8]).to_ascii_uppercase(),
+            2 => format!("TKN{}", &address[2..10]).to_ascii_uppercase(),
+            _ => format!("TKN{}{suffix_index}", &address[2..10]).to_ascii_uppercase(),
+        };
+
+        if let Some(existing) = Currency::try_from_str(code.as_str()) {
+            if existing.precision == precision {
+                return existing;
+            }
+            continue;
+        }
+
+        let name = if token.name.trim().is_empty() {
+            code.clone()
+        } else {
+            token.name.clone()
+        };
+
+        let currency = Currency::new(
+            code.as_str(),
+            precision,
+            0,
+            name.as_str(),
+            CurrencyType::Crypto,
+        );
+        if let Err(error) = Currency::register(currency, false) {
+            log::warn!("Failed to register token currency {code}: {error}");
+        }
+
+        match Currency::try_from_str(code.as_str()) {
+            Some(existing) if existing.precision == precision => return existing,
+            Some(_) => continue,
+            None => return currency,
+        }
     }
 
-    if Currency::try_from_str(code.as_str()).is_some() {
-        code = format!("TKN{}", &token.address.to_string()[2..10]).to_ascii_uppercase();
-    }
-
-    let name = if token.name.trim().is_empty() {
-        code.clone()
-    } else {
-        token.name.clone()
-    };
-
-    let currency = Currency::new(code.clone(), precision, 0, name, CurrencyType::Crypto);
-    if let Err(error) = Currency::register(currency, false) {
-        log::warn!("Failed to register token currency {code}: {error}");
-    }
-    Currency::try_from_str(code.as_str()).unwrap_or(currency)
+    unreachable!("token currency code generation should always terminate")
 }
 
 fn token_amount_to_money(
@@ -453,6 +474,8 @@ fn should_split_on_error(message: &str) -> bool {
 mod tests {
     use alloy::primitives::{Address, U256};
     use nautilus_model::{
+        currencies::CURRENCY_MAP,
+        enums::CurrencyType,
         defi::{chain::chains, wallet::TokenBalance},
         types::{Currency, Money, fixed::FIXED_PRECISION},
     };
@@ -490,6 +513,58 @@ mod tests {
         let currency_b = token_currency(&TokenBalance::new(U256::from(1u8), token_b));
 
         assert_ne!(currency_a.code, currency_b.code);
+    }
+
+    #[test]
+    fn test_token_currency_skips_registered_code_with_mismatched_precision() {
+        let address: Address = "0xaabbccddeeff00112233445566778899aabbccdd"
+            .parse()
+            .expect("valid token address");
+        let token = make_token(address, "PCSFIX", 6);
+
+        let base_code = "PCSFIX";
+        let second_code = format!("{base_code}{}", &address.to_string()[2..8]).to_ascii_uppercase();
+        let final_code = format!("TKN{}", &address.to_string()[2..10]).to_ascii_uppercase();
+
+        let base_currency = Currency::new(
+            base_code.to_string(),
+            18,
+            0,
+            format!("{base_code} existing"),
+            CurrencyType::Crypto,
+        );
+        Currency::register(base_currency, true).expect("should register base currency");
+
+        let second_currency = Currency::new(
+            second_code.clone(),
+            18,
+            0,
+            format!("{second_code} existing"),
+            CurrencyType::Crypto,
+        );
+        Currency::register(second_currency, true).expect("should register second currency");
+
+        let final_currency = Currency::new(
+            final_code.clone(),
+            18,
+            0,
+            format!("{final_code} existing"),
+            CurrencyType::Crypto,
+        );
+        Currency::register(final_currency, true).expect("should register final currency");
+
+        let currency = token_currency(&TokenBalance::new(U256::from(1u8), token));
+
+        assert_eq!(currency.precision, 6);
+        assert_ne!(currency.code.as_str(), final_code);
+
+        let map = CURRENCY_MAP.lock().expect("currency map lock should succeed");
+        assert_eq!(
+            map.get(currency.code.as_str())
+                .expect("generated currency should be registered")
+                .precision,
+            6
+        );
     }
 
     #[test]
