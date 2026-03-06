@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added option chains and greeks in Rust (#3637), thanks @filipmacek
+- Added custom data registration, persistence, and routing in Rust (#3542), thanks @faysou
 - Added Hyperliquid agent wallet support (#3668), thanks @oh92
 
 ### Breaking Changes
