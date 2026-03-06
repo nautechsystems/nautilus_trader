@@ -47,17 +47,6 @@ pub struct MacroYieldCurveData {
     pub ts_init: UnixNanos,
 }
 
-/// Another Rust-defined custom data type for roundtrip testing (e.g. "via rustimport" style).
-///
-/// Exposed to Python for a third roundtrip test alongside RustTestCustomData and MacroYieldCurveData.
-#[custom_data(pyo3)]
-pub struct RustImportTestCustomData {
-    pub label: String,
-    pub count: u64,
-    pub ts_event: UnixNanos,
-    pub ts_init: UnixNanos,
-}
-
 #[cfg(test)]
 mod tests {
     use nautilus_serialization::arrow::ArrowSchemaProvider;

@@ -57,16 +57,12 @@ fn intern_type_name_static(name: String) -> &'static str {
     }
 }
 
-/// A wrapper that allows custom data types from external .so files (e.g., rustimport)
-/// to work with the main nautilus registry and data pipeline.
+/// Wraps a Python custom data object so it can participate in the Rust data
+/// pipeline as an `Arc<dyn CustomDataTrait>`.
 ///
-/// Since Rust static registries are isolated per dynamic library, types compiled
-/// in separate .so files cannot directly register into the main extension's registry.
-/// This wrapper holds a reference to the Python object and delegates trait methods
-/// via the Python GIL, enabling external types to participate in the data system.
-///
-/// Performance: `ts_event`, `ts_init`, and `type_name` are cached at construction
-/// to avoid Python calls in the hot path (e.g., data sorting, message routing).
+/// Holds a reference to the Python object and delegates trait methods via the
+/// Python GIL. `ts_event`, `ts_init`, and `type_name` are cached at construction
+/// to avoid GIL acquisition in the hot path (e.g., data sorting, message routing).
 #[cfg(feature = "python")]
 pub struct PythonCustomDataWrapper {
     /// The Python object implementing the custom data interface.
