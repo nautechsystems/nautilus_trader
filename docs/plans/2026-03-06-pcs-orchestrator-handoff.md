@@ -64,7 +64,7 @@ Implementation status:
 | PR12a | `pr12a/journal-idempotency` | `pr11/receipt-fills` | `a3fbee1694d9256b4db8bcdc6ac19b5ef4dcc7ab` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12a-journal-idempotency` | <https://github.com/clickconfirm/nautilus-trader/pull/26> | `CLEAN` |
 | PR12b | `pr12b/happy-path-exec` | `pr12a/journal-idempotency` | `016513e28939223233ccb6d579440725788ae1c0` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12b-happy-path-exec` | <https://github.com/clickconfirm/nautilus-trader/pull/20> | `UNSTABLE` |
 | PR12c | `pr12c/ambiguous-retry-reorg` | `pr12b/happy-path-exec` | `d8710a3f1a5847c227ce07531d5818ab6db593a7` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12c-ambiguous-retry-reorg` | <https://github.com/clickconfirm/nautilus-trader/pull/21> | `UNSTABLE` |
-| PR13 | `pr13/python-surface` | `pr12c/ambiguous-retry-reorg` | `ce338d2563ac44aaa58176b1118ca916d445d32d` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` | <https://github.com/clickconfirm/nautilus-trader/pull/22> | `CLEAN` |
+| PR13 | `pr13/python-surface` | `pr12c/ambiguous-retry-reorg` | `57e657110eed4e5d2df31a7ddb86b96d10f8ab27` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` | <https://github.com/clickconfirm/nautilus-trader/pull/22> | `CLEAN` |
 
 Notes:
 
