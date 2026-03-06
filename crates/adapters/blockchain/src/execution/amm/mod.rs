@@ -17,7 +17,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use alloy::primitives::{Address, U256};
 use async_trait::async_trait;
-use nautilus_model::defi::{AmmType, DexType};
+use nautilus_model::defi::{AmmType, DexType, TransactionReceipt};
 use thiserror::Error;
 
 pub mod pancakeswap_v2;
@@ -38,6 +38,16 @@ pub struct AmmTxCall {
     pub to: Address,
     pub data: Vec<u8>,
     pub value: U256,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AmmFill {
+    pub token_in: Address,
+    pub token_out: Address,
+    pub amount_in: U256,
+    pub amount_out: U256,
+    pub tx_hash: String,
+    pub log_index: u64,
 }
 
 #[async_trait(?Send)]
@@ -77,6 +87,13 @@ pub trait AmmProtocolAdapter: std::fmt::Debug {
         recipient: Address,
         deadline: U256,
     ) -> anyhow::Result<AmmTxCall>;
+
+    fn decode_fills_from_receipt(
+        &self,
+        receipt: &TransactionReceipt,
+        expected_pool_address: Address,
+        expected_path: Vec<Address>,
+    ) -> anyhow::Result<Vec<AmmFill>>;
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

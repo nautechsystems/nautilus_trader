@@ -3646,6 +3646,16 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo test -p nautilus-blockchain pancakeswap_v2_router` (pass)
     - `cargo test -p nautilus-blockchain --lib --tests` (pass)
 
+- 2026-03-05 - PR11 (`pr11/receipt-fills`, head SHA `8b5d0065a94471d495ae5b85f38ade1045306e74`) - status: ready
+  - Added `contracts::uniswap_v2_pair` swap-log decoding with strict topic/data validation and deterministic amount direction mapping into protocol-agnostic token in/out fill legs, including ambiguous-shape rejection.
+  - Extended AMM execution trait with `AmmFill` and `decode_fills_from_receipt(...)`, and implemented PancakeSwap V2 receipt decode invariants: `status==1`, no `removed=true`, path len 2, expected pool+topic filter, exactly one matching swap log, recipient wallet match, and expected path direction match.
+  - Added milestone integration tests for V2 swap log decoding and receipt decode fail-closed paths (missing/multiple/wrong-pool swap logs, wrong recipient, bad path length) plus reverse pool-token-order regression coverage.
+  - Tests run:
+    - `cargo fmt --all` (pass)
+    - `cargo test -p nautilus-blockchain --test uniswap_v2_pair_swap_decode` (pass)
+    - `cargo test -p nautilus-blockchain --test pancakeswap_v2_receipt_decode` (pass)
+    - `cargo test -p nautilus-blockchain --lib --tests` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
@@ -3656,6 +3666,7 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - 2026-03-05 - PR9 decision: `query_account` now uses runtime-aware blocking bridge behavior and fails closed on Tokio current-thread runtimes instead of risking nested-runtime panic.
 - 2026-03-05 - PR9 deviation: milestone text lists preflight + post-receipt touched-token refresh triggers; PR9 delivers tracker infrastructure plus `connect`/`query_account` triggers, while execution-path preflight/post-receipt hook-up is deferred to PR12b where receipt/fill orchestration is implemented end-to-end.
 - 2026-03-05 - PR10 decision: PCS V2 AMM adapter is wallet-recipient only for MVP (`supports_recipient_override=false`) and now rejects zero deadlines fail-closed at calldata build time.
+- 2026-03-05 - PR11 decision: receipt decode attempts both pool-token order orientations when mapping swap amounts (because only expected path is provided), but still requires the resolved token_in/token_out to exactly match the expected path.
 
 ## Known Issues / Follow-ups
 
@@ -3667,3 +3678,4 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - `cargo test -p nautilus-blockchain --features python --test pyo3_exec_registry` and `cargo test -p nautilus-pyo3 --features defi` remain blocked by pre-existing `nautilus-model` Python compile errors in `crates/model/src/python/defi/data.rs` (`Option<Address>` parse/display mismatch).
 - PR9 leaves execution preflight/post-receipt touched-token refresh integration as a follow-up for PR12b; tracker and config surfaces are in place for that wiring.
 - PR10 quote classification currently relies on revert-string heuristics from `BlockchainRpcClientError` text; propagate structured RPC error fields through the client error type in a follow-up to reduce provider-format fragility.
+- PR11 taxed/rebasing-token decode rejection currently depends on the adapter unsupported-token denylist (`with_unsupported_tokens(...)`); wire this from production execution config before vertical-slice execution (PR12b) to avoid silent opt-in gaps.
