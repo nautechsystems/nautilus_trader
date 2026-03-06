@@ -201,9 +201,7 @@ impl BlockchainHttpRpcClient {
         match serde_json::from_slice::<RpcNodeHttpResponse<T>>(http_response.body.as_ref()) {
             Ok(parsed) => {
                 // Non-standard provider errors can place code/message at the top-level.
-                if parsed.jsonrpc.is_none()
-                    && let (Some(code), Some(message)) = (parsed.code, parsed.message)
-                {
+                if let (Some(code), Some(message)) = (parsed.code, parsed.message.as_deref()) {
                     anyhow::bail!("RPC provider error code={code} message={message}");
                 }
 
@@ -221,6 +219,13 @@ impl BlockchainHttpRpcClient {
 
                 if let Some(result) = parsed.result {
                     Ok(result)
+                } else if parsed.error.is_none()
+                    && parsed.code.is_none()
+                    && parsed.message.is_none()
+                    && has_explicit_null_result(http_response.body.as_ref())
+                {
+                    serde_json::from_value::<T>(serde_json::Value::Null)
+                        .map_err(|e| anyhow::anyhow!("Failed to decode null RPC result: {e}"))
                 } else {
                     Err(anyhow::anyhow!(
                         "RPC response missing both result and error fields"
@@ -582,6 +587,13 @@ fn body_preview(body: &[u8]) -> String {
         )
     } else {
         text.to_string()
+    }
+}
+
+fn has_explicit_null_result(body: &[u8]) -> bool {
+    match serde_json::from_slice::<serde_json::Value>(body) {
+        Ok(value) => value.get("result").is_some_and(serde_json::Value::is_null),
+        Err(_) => false,
     }
 }
 

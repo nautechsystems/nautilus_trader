@@ -260,6 +260,55 @@ async fn test_get_transaction_receipt_parses_status_logs_and_gas_fields() {
 }
 
 #[tokio::test]
+async fn test_get_transaction_receipt_null_result_returns_none() {
+    let state = MockRpcState::new();
+    state
+        .enqueue_json("eth_getTransactionReceipt", rpc_result(Value::Null))
+        .await;
+    let (client, state) = new_client(state).await;
+
+    let receipt = client
+        .get_transaction_receipt(
+            "0x6ba6dd4a82101d8a0387f4cb4ce57a2eb64a1e1bd0679a9d4ea8448a27004a57",
+        )
+        .await
+        .expect("receipt response");
+
+    assert!(receipt.is_none());
+    let request_log = state.request_log().await;
+    assert_eq!(request_log[0]["method"], "eth_getTransactionReceipt");
+}
+
+#[tokio::test]
+async fn test_get_transaction_receipt_top_level_error_with_null_result_is_error() {
+    let state = MockRpcState::new();
+    state
+        .enqueue_json(
+            "eth_getTransactionReceipt",
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": Value::Null,
+                "code": -32005,
+                "message": "rate limit exceeded"
+            }),
+        )
+        .await;
+    let (client, _state) = new_client(state).await;
+
+    let err = client
+        .get_transaction_receipt(
+            "0x6ba6dd4a82101d8a0387f4cb4ce57a2eb64a1e1bd0679a9d4ea8448a27004a57",
+        )
+        .await
+        .expect_err("top-level provider error must not be treated as missing receipt");
+
+    let err_text = err.to_string();
+    assert!(err_text.contains("RPC provider error code=-32005"));
+    assert!(err_text.contains("rate limit exceeded"));
+}
+
+#[tokio::test]
 async fn test_get_block_by_number_latest_parses_timestamp() {
     let state = MockRpcState::new();
     state
