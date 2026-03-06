@@ -3682,6 +3682,135 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo test -p nautilus-blockchain --test amm_execution_flow --test rpc_http_execution_methods` (pass)
     - `cargo test -p nautilus-blockchain` (pass)
 
+- 2026-03-05 - PR13 (`pr13/python-surface`, head SHA `d8710a3f1a5847c227ce07531d5818ab6db593a7`) - status: ready
+  - Added PancakeSwap V2 Python execution surface (`PancakeSwapV2ExecClientConfig`, `PancakeSwapV2ExecClientFactory`) plus integration docs/example for execution wiring.
+  - Exposed Rust-side PancakeSwap default address helper in blockchain PyO3 module and expanded Python/Rust tests around execution config/factory extraction and kwargs.
+  - Hardened non-`defi` behavior by lazy-loading execution symbols and returning explicit runtime errors when blockchain PyO3 bindings are unavailable, while keeping canonical BSC defaults available via Python fallback map.
+  - Tests run:
+    - `cargo fmt --all -- --check` (pass)
+    - `cargo test -p nautilus-blockchain` (pass)
+    - `cargo test -p nautilus-blockchain --features python` (fail: pre-existing `nautilus-model` Python compile errors in `crates/model/src/python/defi/data.rs` for `Option<Address>` parse/display)
+    - `cargo test -p nautilus-pyo3 --features defi` (fail: same pre-existing `nautilus-model` Python compile errors)
+    - `uv run --active --no-sync build.py` (pass)
+    - `ruff check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/config.py nautilus_trader/adapters/pancakeswap/constants.py nautilus_trader/adapters/pancakeswap/factories.py tests/integration_tests/adapters/pancakeswap/test_execution.py tests/integration_tests/adapters/pancakeswap/test_factories.py` (pass)
+    - `ruff format --check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/config.py nautilus_trader/adapters/pancakeswap/constants.py nautilus_trader/adapters/pancakeswap/factories.py tests/integration_tests/adapters/pancakeswap/test_execution.py tests/integration_tests/adapters/pancakeswap/test_factories.py` (pass)
+    - `uv run --active --no-sync pytest tests/integration_tests/adapters/pancakeswap -q` (pass: `17 passed, 6 skipped`)
+    - `uv run --active --no-sync python - <<'PY' ... PancakeSwapV2ExecClientConfig(...).to_pyo3() ... PY` (pass: explicit `RuntimeError` in non-`defi` build, no panic)
+
+- 2026-03-05 - PR13 (`pr13/python-surface`, head SHA `704c76ebd0d198bf5ff160b06576e11ae00d3d0d`) - status: ready
+  - Updated PR13 head SHA after committing Python surface/docs/tests changes and plan tracking entry.
+  - Tests run: none (plan tracking append-only update).
+
+- 2026-03-05 - PR13 (`pr13/python-surface`, head SHA `878f91c8051f8d8715bcd670f361f35e19ed23bb`) - status: ready
+  - Re-verified PR13 incremental scope (`origin/pr12c/ambiguous-retry-reorg..origin/pr13/python-surface`) and completed the requested extra review loop with two review agents plus one implementation agent; no additional code/docs changes were required.
+  - Confirmed PancakeSwap Python execution wrappers fail closed in non-`defi` builds via explicit runtime error rather than import-time panic.
+  - Tests run:
+    - `cargo fmt --all -- --check` (pass)
+    - `cargo test -p nautilus-blockchain` (pass)
+    - `cargo test -p nautilus-blockchain --features python` (fail: pre-existing `nautilus-model` Python compile errors in `crates/model/src/python/defi/data.rs` for `Option<Address>` parse/display)
+    - `cargo test -p nautilus-pyo3 --features defi` (fail: same pre-existing `nautilus-model` Python compile errors)
+    - `ruff check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/config.py nautilus_trader/adapters/pancakeswap/constants.py nautilus_trader/adapters/pancakeswap/factories.py tests/integration_tests/adapters/pancakeswap/test_execution.py tests/integration_tests/adapters/pancakeswap/test_factories.py` (pass)
+    - `ruff format --check nautilus_trader/adapters/pancakeswap/__init__.py nautilus_trader/adapters/pancakeswap/config.py nautilus_trader/adapters/pancakeswap/constants.py nautilus_trader/adapters/pancakeswap/factories.py tests/integration_tests/adapters/pancakeswap/test_execution.py tests/integration_tests/adapters/pancakeswap/test_factories.py` (pass)
+    - `uv run --active --no-sync pytest tests/integration_tests/adapters/pancakeswap -q` (pass: `17 passed, 6 skipped`)
+    - `uv run --active --no-sync python - <<'PY' ... PancakeSwapV2ExecClientConfig(...).to_pyo3() ... PY` (pass: explicit `RuntimeError` in non-`defi` build, no panic)
+
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `1327ddbebe1009f12df5414eb73605c2a653fbec`) - status: blocked (external)
+  - Opened missing wave PRs for milestones already implemented (`PR9`/`PR10`/`PR11`/`PR12a`) and restored sequential base-chain routing (`PR12b -> PR12a`, `PR12c -> PR12b`, `PR13 -> PR12c`) for reviewable wave ordering.
+  - Verified failing `pre-commit` checks on PR2/PR12b/PR12c/PR13 are external billing-start failures from GitHub Actions infrastructure, not repository hook/lint failures.
+  - Tests run:
+    - `gh pr list --state open --limit 100 --json number,title,headRefName,baseRefName,url,isDraft,mergeStateStatus,statusCheckRollup` (pass: confirmed failing jobs and PR topology)
+    - `gh api repos/clickconfirm/nautilus-trader/check-runs/65921349976/annotations` (pass: returned billing/spending-limit failure annotation)
+    - `gh api repos/clickconfirm/nautilus-trader/check-runs/65929009684/annotations` (pass: returned billing/spending-limit failure annotation)
+    - `gh api repos/clickconfirm/nautilus-trader/check-runs/65940672379/annotations` (pass: returned billing/spending-limit failure annotation)
+
+- 2026-03-06 - Orchestrator handoff (`docs/plans/2026-03-06-pcs-orchestrator-handoff.md`) - status: ready
+  - Added a durable handoff summary for the next orchestrator covering the full PR2->PR13 stack, worktree map, exact PR URLs/base refs, current blockers, and the required continuation/merge order.
+  - Captured both the external GitHub Actions billing blocker and the internal pre-existing `nautilus-model` Python compile blocker in one reviewable place.
+  - Tests run:
+    - `gh pr list --state open --limit 100 --json number,title,headRefName,baseRefName,url,mergeStateStatus` (pass)
+    - `git worktree list --porcelain` (pass)
+    - `gh api repos/clickconfirm/nautilus-trader/check-runs/65940672379/annotations` (pass)
+    - `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `57e657110eed4e5d2df31a7ddb86b96d10f8ab27`) - status: ready
+  - Added the orchestrator handoff document to the top-of-stack branch and aligned the plan ledger with the handoff state so the next orchestrator can continue directly from PR13.
+  - Tests run: `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass), `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass), `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass), `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+
+- 2026-03-06 - PR6a (`pr6a/rpc-types-models`, head SHA `a03049858ea7f7ed0c32afa565c32a0b05f122eb`) - status: ready
+  - Fixed the pre-existing Python `Transaction.to` binding blocker in `crates/model/src/python/defi/data.rs` by handling optional recipients correctly in the PyO3 surface and added two regression tests covering the constructor path.
+  - Pushed the new PR16 head, completed spec review with no findings, and completed quality review with no findings; GitHub currently reports PR16 `mergeStateStatus=CLEAN`.
+  - Tests run:
+    - `cargo test -p nautilus-model --features "python defi" py_transaction_new_` (pass: `2 passed`)
+    - `cargo test -p nautilus-blockchain --features python` (pass)
+    - `cargo test -p nautilus-pyo3 --features defi` (pass)
+    - `gh pr view 16 --json number,headRefName,baseRefName,mergeStateStatus,url` (pass: `mergeStateStatus=CLEAN`)
+
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `5ae717af96751b99d0fb30265f33e6d36cd6809e`) - status: blocked (local env)
+  - Rebased PR6b through PR13 locally onto PR6a head `a03049858ea7f7ed0c32afa565c32a0b05f122eb`, but intentionally did not force-push the downstream branches before re-verifying the top of the stack.
+  - The earlier `nautilus-model` Python compile blocker is no longer the top-of-stack issue in this worktree; the local PR13 fix in `crates/adapters/blockchain/src/python/config.rs` updates the PyO3 `signer_route="/sign/eth"` default to use the repo-standard `&str` parameter pattern and adds focused regression tests.
+  - Verified the dirty PR13 worktree with `cargo test -p nautilus-blockchain --features python` (pass), but `cargo test -p nautilus-pyo3 --features defi` is currently blocked by local disk exhaustion while building `libnautilus_persistence.a` (`No space left on device`, `/dev/root` at `100%` with `1.3G` available, PR13 `target/` at `30G`).
+
+- 2026-03-06 - Orchestrator handoff (`docs/plans/2026-03-06-pcs-orchestrator-handoff.md`) - status: updated
+  - Refreshed the handoff to capture the pushed PR6a blocker fix, the local-only rebased heads for PR6b through PR13, and the current PR13 dirty-worktree verification state.
+  - Recorded that the remaining incomplete top-of-stack verification is currently a local environment capacity issue rather than the earlier repository compile blocker.
+  - Tests run:
+    - `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `5ae717af96751b99d0fb30265f33e6d36cd6809e`) - status: ready (local)
+  - Cleared the transient local disk exhaustion by cleaning build artifacts from older clean worktrees and completed the previously blocked top-of-stack Python verification in the PR13 worktree.
+  - Verified the local `signer_route` fix end-to-end; the remaining PR13 work is now commit/review/push rather than additional blocker investigation.
+  - Tests run:
+    - `cargo clean --manifest-path /home/ubuntu/nautilus-trader-dev/.worktrees/pr6a-rpc-types-models/Cargo.toml` (pass: `Removed 33881 files, 61.6GiB total`)
+    - `cargo clean --manifest-path /home/ubuntu/nautilus-trader-dev/.worktrees/pr12c-ambiguous-retry-reorg/Cargo.toml` (pass: `Removed 20161 files, 21.5GiB total`)
+    - `cargo clean --manifest-path /home/ubuntu/nautilus-trader-dev/.worktrees/pr2-pyo3-execution-exposure/Cargo.toml` (pass: `Removed 9908 files, 15.7GiB total`)
+    - `cargo clean --manifest-path /home/ubuntu/nautilus-trader-dev/.worktrees/pr9-defi-wallet/Cargo.toml` (pass: `Removed 19045 files, 14.7GiB total`)
+    - `df -h /home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` (pass: `/dev/root` `108G` available)
+    - `cargo test -p nautilus-pyo3 --features defi` (pass)
+
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `b39bac7362ea119e6417f1b213c6637980d9be04`) - status: ready
+  - Committed `Fix Python signer_route default binding`, pushed the new PR13 head, and force-pushed the rebased PR6b through PR13 stack so GitHub now reflects the current lineage.
+  - Verified both Python-feature cargo suites pass locally on the committed PR13 head; current GitHub state is `CLEAN` for PR6b through PR13 and PR16, with PR2 still `UNSTABLE` due the external billing blocker.
+  - Tests run:
+    - `cargo test -p nautilus-pyo3 --features defi` (pass)
+    - `cargo test -p nautilus-blockchain --features python` (pass)
+    - `rustfmt --check --edition 2024 /home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface/crates/adapters/blockchain/src/python/config.rs` (pass)
+    - `gh pr list --state open --limit 100 --json number,title,headRefName,baseRefName,url,mergeStateStatus` (pass)
+    - `gh pr view 22 --json number,headRefName,baseRefName,mergeStateStatus,url` (pass: `mergeStateStatus=CLEAN`)
+
+- 2026-03-06 - Orchestrator handoff (`docs/plans/2026-03-06-pcs-orchestrator-handoff.md`) - status: updated
+  - Refreshed the handoff after force-pushing PR6b through PR13 so the remote PR stack, current PR13 head, and continuation steps match the live GitHub state.
+  - Recorded the residual inherited `cargo fmt --all -- --check` note separately from the now-passing PR13 verification commands.
+  - Tests run:
+    - `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `f350e8c191cb14776532e82ae3f2021923ac06be`) - status: ready
+  - Pushed the final docs-only follow-up on top of `b39bac7362ea119e6417f1b213c6637980d9be04`, so the live PR13 head now matches the latest plan/handoff status text.
+  - Confirmed GitHub currently reports PR17 through PR22 plus PR23 through PR26 `mergeStateStatus=CLEAN`; PR16 remains `CLEAN`, and PR2 remains `UNSTABLE` due the external billing blocker.
+  - Tests run:
+    - `git push --force-with-lease origin pr13/python-surface` (pass: `b39bac736..f350e8c19`)
+    - `git ls-remote --heads origin pr13/python-surface pr12c/ambiguous-retry-reorg pr12b/happy-path-exec pr12a/journal-idempotency pr11/receipt-fills pr10/pcs-v2-router pr9/defi-wallet pr8/erc20-allowance pr7/remote-signer-client pr6b/rpc-http-methods` (pass: remote heads match local rebased SHAs, PR13 at `f350e8c191cb14776532e82ae3f2021923ac06be`)
+    - `gh pr list --state open --limit 100 --json number,title,headRefName,baseRefName,url,mergeStateStatus` (pass)
+    - `gh pr view 22 --json number,headRefName,baseRefName,mergeStateStatus,url` (pass: `mergeStateStatus=CLEAN`)
+    - `cargo fmt --all -- --check` (pass)
+
+- 2026-03-06 - Orchestrator handoff (`docs/plans/2026-03-06-pcs-orchestrator-handoff.md`) - status: corrected
+  - Updated the handoff after the final PR13 push so the recorded head SHA, open-stack table, and continuation notes reflect the live remote state instead of the earlier intermediate `b39bac...` snapshot.
+  - Removed the stale inherited-formatting warning because `cargo fmt --all -- --check` now passes on the current PR13 head.
+  - Tests run:
+    - `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
@@ -3694,6 +3823,7 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - 2026-03-05 - PR10 decision: PCS V2 AMM adapter is wallet-recipient only for MVP (`supports_recipient_override=false`) and now rejects zero deadlines fail-closed at calldata build time.
 - 2026-03-05 - PR11 decision: receipt decode attempts both pool-token order orientations when mapping swap amounts (because only expected path is provided), but still requires the resolved token_in/token_out to exactly match the expected path.
 - 2026-03-05 - PR12a decision: when replay encounters conflicting same-sequence terminal updates, ordering is deterministic via explicit status discriminants (fail-closed bias toward terminal conflict determinism rather than input-order dependence).
+- 2026-03-06 - PR13 PyO3 decision: string-literal keyword defaults should continue to use `&str` constructor parameters and convert to owned `String` fields inside the config object, matching the existing Python surface and avoiding `expected String, found &str` compile mismatches.
 
 ## Known Issues / Follow-ups
 
@@ -3707,3 +3837,11 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - PR10 quote classification currently relies on revert-string heuristics from `BlockchainRpcClientError` text; propagate structured RPC error fields through the client error type in a follow-up to reduce provider-format fragility.
 - PR11 taxed/rebasing-token decode rejection currently depends on the adapter unsupported-token denylist (`with_unsupported_tokens(...)`); wire this from production execution config before vertical-slice execution (PR12b) to avoid silent opt-in gaps.
 - PR12a JSONL persistence currently assumes a single writer process/worker; add explicit file/process locking or a serialized append worker before enabling multi-writer execution pipelines in PR12b/PR12c.
+- Open PR check suites for PR2/PR12b/PR12c/PR13 are externally blocked by GitHub Actions billing (`The job was not started because recent account payments have failed or your spending limit needs to be increased`), so merge readiness cannot be validated in CI until billing is restored.
+- The earlier `nautilus-model` Python compile blocker in `crates/model/src/python/defi/data.rs` is resolved on pushed PR6a head `a03049858ea7f7ed0c32afa565c32a0b05f122eb`, but the downstream rebases for PR6b through PR13 are still local-only and have not been force-pushed yet.
+- The dirty PR13 worktree currently contains the uncommitted `crates/adapters/blockchain/src/python/config.rs` `signer_route` fix; `cargo test -p nautilus-blockchain --features python` now passes locally, but `cargo test -p nautilus-pyo3 --features defi` is blocked by local disk exhaustion (`No space left on device` while building `libnautilus_persistence.a`).
+- The earlier PR13 local disk-exhaustion blocker is resolved after cleaning stale worktree build artifacts; current remaining local work is to commit the verified PR13 changes and force-push the rebased PR6b through PR13 branches.
+- PR6b through PR13 are now force-pushed and GitHub currently reports PR17 through PR22 plus PR23 through PR26 `mergeStateStatus=CLEAN`; the only remaining documented remote blocker inside the PCS stack is PR2 staying `UNSTABLE` while GitHub Actions billing remains broken.
+- `cargo fmt --all -- --check` in the rebased PR13 worktree still reports inherited formatting drift in `crates/model/src/python/defi/data.rs` from the rebased PR6a lineage; the touched PR13 file `crates/adapters/blockchain/src/python/config.rs` passes targeted `rustfmt --check`.
+- The final pushed PR13 head is `f350e8c191cb14776532e82ae3f2021923ac06be`; the earlier `b39bac...` note captured an intermediate local head before the docs-only follow-up push.
+- `cargo fmt --all -- --check` now passes on the current PR13 head, so there is no remaining local formatting blocker recorded from the PR13 closeout work.
