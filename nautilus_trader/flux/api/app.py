@@ -74,6 +74,7 @@ DEFAULT_PARAMS_ORDER: tuple[str, ...] = MAKERV3_RUNTIME_PARAM_REGISTRY.names
 
 _LOG = logging.getLogger(__name__)
 TOKENMM_BALANCES_STALE_AFTER_MS = 30_000
+PARAMS_RUNNING_STALE_AFTER_MS = 3_000
 
 
 class RedisPipelineProtocol(Protocol):
@@ -319,6 +320,26 @@ class FluxApiStore:
             return manager.load()
         except ValueError as e:
             raise ParamsStoreValidationError(str(e)) from e
+
+    def load_running_state(self, strategy_id: str) -> bool | None:
+        keys = self._keys_for_strategy(strategy_id)
+        state_raw = self._redis.get(keys.state())
+        state_value = load_json(state_raw)
+        state = dict(state_value) if isinstance(state_value, dict) else {}
+        if not state:
+            return None
+
+        state_name = decode_text(state.get("state")).strip().lower()
+        if not state_name:
+            return None
+        if state_name == "on_stop":
+            return False
+
+        ts_ms = coerce_ts_ms(state.get("ts_ms") or state.get("ts_event"))
+        if ts_ms is not None and now_ms() - ts_ms > PARAMS_RUNNING_STALE_AFTER_MS:
+            return False
+
+        return True
 
     def _strategy_id_from_params_key(self, raw_key: Any, *, key_prefix: str) -> str | None:
         key = decode_text(raw_key).strip()
@@ -1130,6 +1151,7 @@ def create_flux_api_app(  # noqa: C901
                     strategy_id=strategy_id,
                     params=params,
                     schema=_ordered_params_schema(schema),
+                    running=store.load_running_state(strategy_id),
                 ),
             )
         return _ok(data=payloads)

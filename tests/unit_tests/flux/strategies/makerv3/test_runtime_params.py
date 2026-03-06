@@ -60,6 +60,21 @@ def test_initial_runtime_params_use_registry_defaults_when_config_omits_values()
         )
 
 
+def test_initial_runtime_params_seed_order_reject_alert_thresholds_from_config() -> None:
+    config = MakerV3StrategyConfig(
+        maker_instrument_id=InstrumentId.from_str("MAKER.SIM"),
+        reference_instrument_id=InstrumentId.from_str("REF.SIM"),
+        order_qty=Decimal(1),
+        order_reject_alert_after_count=5,
+        order_reject_alert_after_s=12.0,
+    )
+
+    runtime_params = runtime_params_mod.initial_runtime_params(config)
+
+    assert runtime_params["order_reject_alert_after_count"] == 5
+    assert runtime_params["order_reject_alert_after_s"] == Decimal("12")
+
+
 def test_apply_runtime_param_updates_rejects_unknown_keys(strategy_factory) -> None:
     strategy = strategy_factory()
 

@@ -508,6 +508,22 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
+        name="order_reject_alert_after_count",
+        schema_type="integer",
+        default=3,
+        description="Escalation count for repeated order rejections.",
+        minimum=0,
+        maximum=100,
+    ),
+    RuntimeParamSpec(
+        name="order_reject_alert_after_s",
+        schema_type="number",
+        default=60.0,
+        description="Escalation window for repeated order rejections.",
+        minimum=0.0,
+        maximum=3_600.0,
+    ),
+    RuntimeParamSpec(
         name="quote_fail_critical_after_count",
         schema_type="integer",
         default=3,

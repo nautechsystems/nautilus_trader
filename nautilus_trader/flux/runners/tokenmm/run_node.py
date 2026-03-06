@@ -63,6 +63,13 @@ def _optional_text(value: Any) -> str | None:
     return text or None
 
 
+def _client_order_id_config(instrument_id: InstrumentId) -> dict[str, bool]:
+    venue = str(instrument_id.venue).upper()
+    if venue == "OKX":
+        return {"use_hyphens_in_client_order_ids": False}
+    return {}
+
+
 def _load_config(path: Path) -> dict[str, Any]:
     with path.open("rb") as handle:
         data = tomllib.load(handle)
@@ -333,6 +340,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             quote_fail_critical_after_s=float(
                 strategy_cfg.get("quote_fail_critical_after_s", 60.0),
             ),
+            **_client_order_id_config(maker_instrument_id),
         ),
     )
     _attach_runtime_params_manager(

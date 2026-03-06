@@ -1673,11 +1673,10 @@ export const api = {
       const strategyId = String(candidate.strategy_id ?? '').trim();
       const params = normalizeParamsMap(candidate.params);
       const runningCandidate = candidate.running;
-      const normalizedBotOn = normalizeTradingFlag(params.bot_on);
       const running =
         typeof runningCandidate === 'boolean'
           ? runningCandidate
-          : (normalizedBotOn === undefined ? null : normalizedBotOn === '1');
+          : null;
       return {
         ...(row as ParamsResponse),
         strategy_id: strategyId,

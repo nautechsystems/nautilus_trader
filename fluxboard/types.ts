@@ -589,6 +589,7 @@ export type PricingAdjustment = {
   inv_skew_global?: number;
   inv_ratio_local?: number;
   inv_skew_local?: number;
+  curr_qty?: number | null;
   local_qty?: number | null;
   local_qty_key?: {
     venue_root?: string;

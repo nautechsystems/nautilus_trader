@@ -326,7 +326,49 @@ describe('Signal MakerV2 truth overlay', () => {
     expect(quotesCell?.textContent).not.toContain('H B');
   });
 
-  it('separates Run from Trading status in Signal', async () => {
+  it('renders explicit global and local inventory quantities', async () => {
+    const strategy: SignalStrategy = {
+      id: 'plumeusdt_bybit_perp_makerv3',
+      params: { bot_on: '1' } as any,
+      state: { state: 'running', ts_ms: Date.now() } as any,
+      pricing_adjustments: [
+        {
+          type: 'inventory_skew',
+          curr_qty: 41689,
+          local_qty: 150000,
+          local_qty_key: {
+            venue_root: 'bybit',
+            instrument_type: 'linear',
+            base: 'PLUME',
+          },
+          local_qty_matched_rows: 2,
+          local_qty_missing_snapshot: 0,
+        },
+      ],
+      legs: {
+        A: { coin: 'PLUME/USDT', exchange: 'bybit_perp', update_time: '2025-01-15 12:00:00' } as any,
+        B: { coin: 'PLUME/USDT', exchange: 'binance_spot', update_time: '2025-01-15 12:00:00' } as any,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    const { container } = renderSignalTable();
+    await screen.findByText('plumeusdt_bybit_perp_makerv3');
+
+    const globalQtyCell = container.querySelector('tbody tr td:nth-child(3)');
+    const localQtyCell = container.querySelector('tbody tr td:nth-child(4)');
+    expect(globalQtyCell?.textContent).toContain('41,689.0000');
+    expect(localQtyCell?.textContent).toContain('150,000.0000');
+  });
+
+  it('does not render a separate Run column in Signal', async () => {
     const nowMs = Date.now();
     const strategy: SignalStrategy = {
       id: 'plumeusdt_bybit_spot_makerv3',
@@ -353,8 +395,9 @@ describe('Signal MakerV2 truth overlay', () => {
     renderSignalTable();
 
     await screen.findByText('plumeusdt_bybit_spot_makerv3');
-    expect(screen.getByLabelText('Run is running for plumeusdt_bybit_spot_makerv3')).toBeInTheDocument();
     expect(screen.getByLabelText('Trading is paused for plumeusdt_bybit_spot_makerv3')).toBeInTheDocument();
+    expect(screen.queryByText('Run')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Run is running for plumeusdt_bybit_spot_makerv3')).not.toBeInTheDocument();
   });
 
   it('passes through contract_id keyed leg patches in signal_delta', async () => {

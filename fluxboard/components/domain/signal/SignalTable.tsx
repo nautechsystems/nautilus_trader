@@ -65,7 +65,6 @@ import { resolvePathProfile, type PathProfile } from '@/config/uiProfiles';
 import { EMPTY_SNAPSHOT_HOLD_MS, evaluateEmptySnapshotPolicy } from './emptySnapshotPolicy';
 import {
   deriveStrategyStatus,
-  describeRunState,
   describeTradingStatus,
   parseTradingEnabled,
   statusToFilterValue,
@@ -73,7 +72,6 @@ import {
   type TradingFilterValue,
   type TradingFlagInput,
 } from '@/utils/strategyStatus';
-import { deriveSignalRunState } from '@/utils/signalRunState';
 
 // =============================================================================
 // TYPES
@@ -85,6 +83,8 @@ type EnrichedRow = SignalStrategy & {
   _netEdge: number;
   _edge2: number | null;
   _spreadNet: number | null;
+  _globalQty: number | null;
+  _localQty: number | null;
   _riskDelta: number | null;
   _maxAge: number;  // staleness (oldest leg)
   _minAge: number; // recency (newest leg)
@@ -93,7 +93,6 @@ type EnrichedRow = SignalStrategy & {
   _legAAge?: number;
   _legBAge?: number;
   _recentSide?: 'A' | 'B';
-  run_state: StrategyStatus['runState'];
   trading_enabled: TradingFilterValue;
   exchange: string;  // Combined exchanges from legs
   coin: string;  // Combined coins from legs
@@ -116,13 +115,6 @@ const tradingSortingFn: SortingFn<EnrichedRow> = (rowA, rowB, columnId) => {
   return a - b;
 };
 
-const runSortingFn: SortingFn<EnrichedRow> = (rowA, rowB, columnId) => {
-  const order: Record<StrategyStatus['runState'], number> = { running: 2, unknown: 1, stopped: 0 };
-  const a = order[rowA.getValue(columnId) as StrategyStatus['runState']] ?? -1;
-  const b = order[rowB.getValue(columnId) as StrategyStatus['runState']] ?? -1;
-  return a - b;
-};
-
 // =============================================================================
 // CONSTANTS
 // =============================================================================
@@ -131,7 +123,6 @@ type BalanceStatus = 'OK' | 'WARN' | 'FAIL' | 'UNKNOWN';
 
 const SIGNAL_FILTERS: ColumnFilter[] = [
   { key: 'id', label: 'Strategy', type: 'text', placeholder: 'Strategy ID...' },
-  { key: 'run_state', label: 'Run', type: 'select', options: ['running', 'unknown', 'stopped'] },
   { key: 'trading_enabled', label: 'Trading', type: 'select', options: TRADING_FILTER_VALUES },
   { key: 'exchange', label: 'Exchange', type: 'text', placeholder: 'bybit, rooster...' },
   { key: 'coin', label: 'Coin', type: 'text', placeholder: 'BTC, ETH...' },
@@ -599,6 +590,13 @@ function buildInventorySkewSummary(adj?: InventorySkewAdjustment): string | null
     return `inv ${sign}${invSkew.toFixed(2)}`;
   }
   return null;
+}
+
+function resolveInventoryQuantities(row: SignalStrategy): { globalQty: number | null; localQty: number | null } {
+  const adj = findInventorySkewAdjustment(row.pricing_adjustments);
+  const globalQty = coerceFiniteNumber(adj?.curr_qty ?? row.risk_delta) ?? null;
+  const localQty = coerceFiniteNumber(adj?.local_qty) ?? null;
+  return { globalQty, localQty };
 }
 
 export function buildInventorySkewTooltip(
@@ -1986,7 +1984,6 @@ export default function SignalTable({
         return null;
       }
 
-      const runState = deriveSignalRunState(row, serverNowMs);
       const status = deriveStrategyStatus({ trading: resolveTradingValue(row as any) });
       const tradingFilter = statusToFilterValue(status);
       const orderedLegs = getOrderedLegEntries(row);
@@ -2007,6 +2004,7 @@ export default function SignalTable({
       const edge2 = row.edge2_bps ?? null;
       const spreadNet = coerceFiniteNumber((row as any).spread_net_bps) ?? null;
       const riskDelta = coerceFiniteNumber(row.risk_delta) ?? null;
+      const { globalQty, localQty } = resolveInventoryQuantities(row);
 
       // Extract filterable fields (exchange and coin from legs)
       const exchanges = orderedLegs
@@ -2031,6 +2029,8 @@ export default function SignalTable({
         _netEdge: netEdge,
         _edge2: typeof edge2 === 'number' ? edge2 : null,
         _spreadNet: typeof spreadNet === 'number' ? spreadNet : null,
+        _globalQty: typeof globalQty === 'number' ? globalQty : null,
+        _localQty: typeof localQty === 'number' ? localQty : null,
         _riskDelta: typeof riskDelta === 'number' ? riskDelta : null,
         _maxAge: ageData.displayAgeMs,
         _minAge: ageData.recentAgeMs ?? 0,
@@ -2039,7 +2039,6 @@ export default function SignalTable({
         _legAAge: ageData.perLeg.A?.ageMs,
         _legBAge: ageData.perLeg.B?.ageMs,
         _recentSide: ageData.mostRecentSide,
-        run_state: runState,
         // Filterable string fields
         trading_enabled: tradingFilter,
         exchange: exchanges,
@@ -2122,53 +2121,6 @@ export default function SignalTable({
         ),
       },
       {
-        accessorKey: 'run_state',
-        id: 'run_state',
-        header: () => (
-          <ColumnHeaderWithTooltip
-            label="Run"
-            tooltip={[
-              'Runner liveness from the strategy state heartbeat.',
-              'Running = fresh state updates from the node.',
-              'Stopped = explicit on_stop or stale/missing heartbeat.',
-              'Independent of bot_on.',
-            ].join('\n')}
-          />
-        ),
-        enableSorting: true,
-        sortingFn: runSortingFn,
-        cell: ({ row }) => {
-          const descriptor = describeRunState(row.original.run_state);
-          const state = row.original.state && typeof row.original.state === 'object'
-            ? row.original.state as Record<string, unknown>
-            : null;
-          const stateName = String(state?.state ?? '—');
-          const stateTsMs = coerceFiniteNumber(state?.ts_ms ?? state?.ts_event);
-          const tooltip = [
-            'Runner status:',
-            `- State: ${descriptor.label} (${descriptor.subLabel})`,
-            `- Latest strategy state: ${stateName || '—'}`,
-            `- State ts: ${stateTsMs != null ? formatAbsoluteTime(stateTsMs > 1_000_000_000_000_000 ? Math.trunc(stateTsMs / 1_000_000) : stateTsMs) : '—'}`,
-            '',
-            'Semantics:',
-            '  Running: node is publishing fresh state',
-            '  Stopped: on_stop or heartbeat stale',
-            '  Unknown: no runner signal yet',
-          ].join('\n');
-          return (
-            <StatusPill
-              variant={descriptor.variant}
-              label={descriptor.label}
-              subLabel={descriptor.subLabel}
-              tooltip={tooltip}
-              size="xs"
-              tone="subtle"
-              ariaLabel={`Run is ${descriptor.label.toLowerCase()} for ${row.original.id}`}
-            />
-          );
-        },
-      },
-      {
         accessorKey: 'trading_enabled',
         id: 'trading_enabled',
         header: () => (
@@ -2215,31 +2167,77 @@ export default function SignalTable({
         },
       },
       {
-        accessorFn: (row) => row._riskDelta,
-        id: 'risk_delta',
+        accessorFn: (row) => row._globalQty,
+        id: 'global_qty',
         header: () => (
           <ColumnHeaderWithTooltip
-            label="Risk Δ"
+            label="Global Qty"
             tooltip={[
-              'Current net risk delta for the strategy symbol.',
-              'Read from maker risk state and updated in real-time.',
-              'Positive means net long; negative means net short.',
+              'Global inventory quantity used for MakerV3 global skew.',
+              'Typically account-level/base inventory for the strategy asset.',
+              'Hover for timestamp and fallback source details.',
             ].join('\n')}
           />
         ),
         enableSorting: true,
         cell: ({ row }) => {
-          const riskDelta = row.original._riskDelta;
+          const globalQty = row.original._globalQty;
           const riskTsMs = coerceFiniteNumber(row.original.risk_delta_ts_ms);
           const tooltip = [
-            'Risk delta (net position):',
-            `value: ${riskDelta != null ? formatRiskDelta(riskDelta) : '—'}`,
+            'Global inventory quantity:',
+            `value: ${globalQty != null ? formatRiskDelta(globalQty) : '—'}`,
             `ts: ${riskTsMs != null ? formatAbsoluteTime(riskTsMs) : '—'}`,
+            '',
+            'Source: inventory_skew.curr_qty (fallback: risk_delta)',
           ].join('\n');
           return (
             <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
               <span className="text-right font-mono inline-flex w-full items-center justify-end cursor-help text-neutral-200">
-                {riskDelta != null ? formatRiskDelta(riskDelta) : '—'}
+                {globalQty != null ? formatRiskDelta(globalQty) : '—'}
+              </span>
+            </SimpleTooltip>
+          );
+        },
+      },
+      {
+        accessorFn: (row) => row._localQty,
+        id: 'local_qty',
+        header: () => (
+          <ColumnHeaderWithTooltip
+            label="Local Qty"
+            tooltip={[
+              'Local inventory quantity used for MakerV3 local skew.',
+              'Scoped to the strategy local bucket (venue/instrument/base key).',
+              'Hover for the bucket key and snapshot match details.',
+            ].join('\n')}
+          />
+        ),
+        enableSorting: true,
+        cell: ({ row }) => {
+          const adj = findInventorySkewAdjustment(row.original.pricing_adjustments);
+          const localQty = row.original._localQty;
+          const localQtyKey = adj?.local_qty_key;
+          const venueRoot = localQtyKey && typeof localQtyKey === 'object'
+            ? String(localQtyKey.venue_root ?? '').trim() || '—'
+            : '—';
+          const instrumentType = localQtyKey && typeof localQtyKey === 'object'
+            ? String(localQtyKey.instrument_type ?? '').trim() || '—'
+            : '—';
+          const base = localQtyKey && typeof localQtyKey === 'object'
+            ? String(localQtyKey.base ?? '').trim() || '—'
+            : '—';
+          const matched = coerceFiniteNumber(adj?.local_qty_matched_rows);
+          const missing = coerceFiniteNumber(adj?.local_qty_missing_snapshot);
+          const tooltip = [
+            'Local inventory quantity:',
+            `value: ${localQty != null ? formatRiskDelta(localQty) : '—'}`,
+            `key: ${venueRoot}/${instrumentType}/${base}`,
+            `matched_rows / missing_snapshot: ${matched != null ? Math.trunc(matched) : '—'} / ${missing != null ? Math.trunc(missing) : '—'}`,
+          ].join('\n');
+          return (
+            <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+              <span className="text-right font-mono inline-flex w-full items-center justify-end cursor-help text-neutral-200">
+                {localQty != null ? formatRiskDelta(localQty) : '—'}
               </span>
             </SimpleTooltip>
           );
@@ -2575,7 +2573,6 @@ const SignalMobileCard: FC<SignalMobileCardProps> = ({ row, showQuoted, nowProvi
     root: visibilityRoot,
   });
   const ageInfo = useMemo(() => computeStrategyAge(row, nowMs), [row, nowMs]);
-  const runDescriptor = describeRunState(row.run_state);
   const tradingDescriptor = describeTradingStatus(row.status);
   const balanceInfo = getBalanceStatus(row);
   const ageMs = ageInfo.displayAgeMs;
@@ -2605,13 +2602,6 @@ const SignalMobileCard: FC<SignalMobileCardProps> = ({ row, showQuoted, nowProvi
           <span className="text-xs text-zinc-500">{row.exchange}</span>
         </div>
         <div className="flex flex-col items-end gap-1 text-right">
-          <StatusPill
-            variant={runDescriptor.variant}
-            label={runDescriptor.label}
-            subLabel={runDescriptor.subLabel}
-            tooltip={`Run is ${runDescriptor.label.toLowerCase()} (${runDescriptor.subLabel})`}
-            layout="inline"
-          />
           <StatusPill
             variant={tradingDescriptor.variant}
             label={tradingDescriptor.label}

@@ -1129,6 +1129,12 @@ def _derive_pricing_adjustments(  # noqa: C901
     curr_qty = _first_valid_float(skew.get("inventory_qty"))
     if curr_qty is not None:
         adjustment["curr_qty"] = curr_qty
+    local_qty = _first_valid_float(
+        skew.get("local_inventory_qty"),
+        skew.get("local_qty"),
+    )
+    if local_qty is not None:
+        adjustment["local_qty"] = local_qty
 
     des_qty = _first_valid_float(
         skew.get("des_qty_global"),
@@ -1500,12 +1506,15 @@ def build_params_payload(
     strategy_id: str,
     params: dict[str, Any],
     schema: Mapping[str, Mapping[str, Any]],
+    running: bool | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "strategy_id": strategy_id,
         "params": params,
         "schema": {str(name): dict(spec) for name, spec in schema.items()},
     }
+    payload["running"] = running
+    return payload
 
 
 def build_trades_rows(  # noqa: C901

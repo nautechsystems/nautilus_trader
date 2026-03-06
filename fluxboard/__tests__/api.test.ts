@@ -114,8 +114,8 @@ describe('API Client - Param Methods', () => {
   describe('getParams', () => {
     it('fetches all strategy params successfully', async () => {
       const mockParams = [
-        { strategy_id: 'strat1', params: { bot_on: '1', qty: '10' } },
-        { strategy_id: 'strat2', params: { bot_on: '0', qty: '20' } }
+        { strategy_id: 'strat1', running: true, params: { bot_on: '1', qty: '10' } },
+        { strategy_id: 'strat2', running: false, params: { bot_on: '0', qty: '20' } }
       ];
 
       mockFetch.mockResolvedValueOnce({
@@ -134,6 +134,23 @@ describe('API Client - Param Methods', () => {
         { strategy_id: 'strat2', params: { bot_on: '0', qty: '20' }, running: false },
       ]);
       expect(result.length).toBe(2);
+    });
+
+    it('does not infer running from bot_on when params payload omits it', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          data: [{ strategy_id: 'strat1', params: { bot_on: '1', qty: '10' } }],
+          error: null,
+        }),
+      });
+
+      const result = await api.getParams();
+
+      expect(result).toEqual([
+        { strategy_id: 'strat1', params: { bot_on: '1', qty: '10' }, running: null },
+      ]);
     });
 
     it('handles empty array response', async () => {

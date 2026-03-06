@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from nautilus_trader.flux.runners.tokenmm import run_node
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class _DummyStrategy:
@@ -143,6 +144,21 @@ def test_redis_database_config_uses_redis_section_values() -> None:
     assert database.username == "alice"
     assert database.password == "secret"
     assert database.ssl is True
+
+
+def test_client_order_id_config_disables_hyphens_for_okx() -> None:
+    instrument_id = InstrumentId.from_str("PLUME-USDT-SWAP.OKX")
+
+    assert run_node._client_order_id_config(instrument_id) == {
+        "use_hyphens_in_client_order_ids": False,
+    }
+
+
+def test_client_order_id_config_leaves_non_okx_unchanged() -> None:
+    instrument_id = InstrumentId.from_str("PLUMEUSDT-PERP.BYBIT")
+
+    assert run_node._client_order_id_config(instrument_id) == {}
+
 
 def test_resolve_execution_filter_settings_defaults_disabled() -> None:
     assert run_node._resolve_execution_filter_settings({}) == (False, False)

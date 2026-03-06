@@ -560,6 +560,58 @@ def test_params_profile_tokenmm_uses_explicit_allowlist_without_discovery(
     assert [row["strategy_id"] for row in rows] == ["strategy_02"]
 
 
+def test_params_includes_running_from_fresh_state_heartbeat(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_010_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(
+        primary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "0", "max_age_ms": "10000"},
+    )
+    redis_client.set_hash_json(
+        secondary_keys.params_hash_key(),
+        {"qty": "2.0", "bot_on": "1", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(
+        primary_keys.state(),
+        {"state": "running", "bot_on": False, "managed_orders": 0, "ts_ms": 1_700_000_009_500},
+    )
+    redis_client.set_json(
+        secondary_keys.state(),
+        {"state": "running", "bot_on": True, "managed_orders": 0, "ts_ms": 1_700_000_000_000},
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id, "strategy_02"]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    by_id = {row["strategy_id"]: row for row in body["data"]}
+    assert by_id[flux_config.identity.strategy_id]["running"] is True
+    assert by_id["strategy_02"]["running"] is False
+
+
 def test_balances_profile_tokenmm_honors_explicit_required_subset(
     monkeypatch,
     flux_config,

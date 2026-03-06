@@ -332,6 +332,7 @@ def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_st
                 },
                 "skew": {
                     "inventory_qty": "25",
+                    "local_inventory_qty": "12",
                     "global_ratio": "0.5",
                     "global_skew_bps": "2.5",
                     "local_ratio": "-0.1",
@@ -364,6 +365,7 @@ def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_st
     assert skew["inv_ratio_global"] == 0.5
     assert skew["inv_skew_local"] == -0.5
     assert skew["curr_qty"] == 25.0
+    assert skew["local_qty"] == 12.0
     assert skew["delta_bid_edge_bps"] == -2.0
     assert skew["delta_ask_edge_bps"] == 2.0
 

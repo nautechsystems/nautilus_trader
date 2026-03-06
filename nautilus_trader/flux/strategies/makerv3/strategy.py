@@ -20,6 +20,10 @@ from nautilus_trader.flux.strategies.makerv3 import publisher as publisher_mod
 from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from nautilus_trader.flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_NAME
+from nautilus_trader.flux.strategies.makerv3.constants import (
+    ALERT_COOLDOWN_ORDER_REJECTED_BURST_MS,
+)
+from nautilus_trader.flux.strategies.makerv3.constants import ALERT_KEY_ORDER_REJECTED_BURST
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
@@ -56,6 +60,11 @@ _apply_inventory_skew_to_edges = pricing_mod.apply_inventory_skew_to_edges
 
 def _did_bot_turn_off(previous_bot_on: bool, current_bot_on: bool) -> bool:
     return bool(previous_bot_on) and (not bool(current_bot_on))
+
+
+def _normalized_reject_reason(reason: Any) -> str:
+    text = str(reason or "").strip()
+    return text or "unknown"
 
 
 _validate_three_band_input = pricing_mod.validate_three_band_input
@@ -121,6 +130,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
         place_edge3: NonNegativeFloat | None = None
         distance3: NonNegativeFloat | None = None
         n_orders3: NonNegativeInt | None = None
+        order_reject_alert_after_count: NonNegativeInt | None = None
+        order_reject_alert_after_s: NonNegativeFloat | None = None
         quote_fail_critical_after_count: NonNegativeInt | None = None
         quote_fail_critical_after_s: NonNegativeFloat | None = None
         cancel_all_instrument_orders: bool = False
@@ -177,6 +188,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._runtime_params_failed = False
             self._instruments: dict[InstrumentId, Instrument] = {}
             self._managed_client_order_ids: set[str] = set()
+            self._order_rejections_ns_by_reason: dict[str, list[int]] = {}
             self._quote_failures_ns: list[int] = []
             self._quote_failure_circuit_open = False
             self._last_stale_cancel_ns = 0
@@ -196,6 +208,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             """
             self._runtime_params_failed = False
             self._quote_failure_circuit_open = False
+            self._order_rejections_ns_by_reason.clear()
             self._quote_failures_ns.clear()
             self._last_stale_cancel_ns = 0
             self._last_state_name = None
@@ -533,14 +546,25 @@ if _NAUTILUS_IMPORT_ERROR is None:
             Handle order rejection events and reconcile managed tracking.
             """
             self._invalidate_inventory_skew_cache()
+            reason = _normalized_reject_reason(getattr(event, "reason", None))
             self._reconcile_managed_order(
                 getattr(event, "client_order_id", None),
                 lifecycle="rejected",
+                instrument_id=getattr(event, "instrument_id", None),
+                reason=reason,
+                due_post_only=getattr(event, "due_post_only", None),
             )
             self.log.warning(
                 f"Order rejected strategy_id={self._external_strategy_id} "
-                f"client_order_id={getattr(event, 'client_order_id', None)}",
+                f"client_order_id={getattr(event, 'client_order_id', None)} "
+                f"reason={reason}",
             )
+            now_ns = getattr(event, "ts_event", None)
+            if now_ns is None:
+                with suppress(Exception):
+                    now_ns = int(self.clock.timestamp_ns())
+            if now_ns is not None:
+                self._track_order_rejection_alert(now_ns=int(now_ns), reason=reason)
 
         def on_order_canceled(self, event: Any) -> None:
             """
@@ -567,6 +591,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             client_order_id: ClientOrderId | str | None,
             *,
             lifecycle: str,
+            instrument_id: Any | None = None,
+            reason: str | None = None,
+            due_post_only: bool | None = None,
         ) -> None:
             had_order = managed_orders_mod.reconcile_managed_order(
                 self._managed_client_order_ids,
@@ -575,12 +602,53 @@ if _NAUTILUS_IMPORT_ERROR is None:
             client_order_id_str = str(client_order_id or "")
             if not client_order_id_str:
                 return
-            self._publish_event(
-                "order_lifecycle",
-                lifecycle=lifecycle,
-                client_order_id=client_order_id_str,
-                tracked_before=had_order,
-                tracked_after=len(self._managed_client_order_ids),
+            event_payload: dict[str, Any] = {
+                "lifecycle": lifecycle,
+                "client_order_id": client_order_id_str,
+                "tracked_before": had_order,
+                "tracked_after": len(self._managed_client_order_ids),
+            }
+            if instrument_id is not None:
+                event_payload["instrument_id"] = str(instrument_id)
+            if reason is not None:
+                event_payload["reason"] = reason
+            if due_post_only is not None:
+                event_payload["due_post_only"] = bool(due_post_only)
+            self._publish_event("order_lifecycle", **event_payload)
+
+        def _track_order_rejection_alert(self, *, now_ns: int, reason: str) -> None:
+            count_threshold = max(0, int(self._runtime_int("order_reject_alert_after_count")))
+            if count_threshold <= 0:
+                return
+
+            window_seconds = max(Decimal(0), self._runtime_decimal("order_reject_alert_after_s"))
+            window_ns = int(window_seconds * Decimal(1_000_000_000))
+            reason_key = _normalized_reject_reason(reason)
+            reason_rejections = list(self._order_rejections_ns_by_reason.get(reason_key, ()))
+            reason_rejections.append(now_ns)
+            if window_ns > 0:
+                cutoff_ns = now_ns - window_ns
+                reason_rejections = [ts_ns for ts_ns in reason_rejections if ts_ns >= cutoff_ns]
+            elif count_threshold > 0:
+                reason_rejections = reason_rejections[-count_threshold:]
+            self._order_rejections_ns_by_reason[reason_key] = reason_rejections
+
+            rejection_count = len(reason_rejections)
+            if rejection_count < count_threshold:
+                return
+
+            self._publish_actionable_alert(
+                alert_key=ALERT_KEY_ORDER_REJECTED_BURST,
+                message=(
+                    "order_rejected_burst "
+                    f"reason={reason_key!r} count={rejection_count} "
+                    f"threshold={count_threshold} window_s={window_seconds}"
+                ),
+                level="error",
+                reason_code=ALERT_KEY_ORDER_REJECTED_BURST,
+                cooldown_ms=ALERT_COOLDOWN_ORDER_REJECTED_BURST_MS,
+                transition=reason_key,
+                now_ns=now_ns,
             )
 
         def _inventory_cache(self) -> Any | None:

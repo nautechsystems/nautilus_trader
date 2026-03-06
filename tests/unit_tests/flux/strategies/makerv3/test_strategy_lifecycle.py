@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+from nautilus_trader.flux.strategies.makerv3 import MakerV3Strategy
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -504,6 +505,115 @@ def test_lifecycle_handlers_reconcile_local_managed_order_state(strategy_factory
     strategy.on_order_expired(SimpleNamespace(client_order_id="C"))
 
     assert strategy._managed_client_order_ids == set()
+
+
+def test_order_rejected_enriches_event_and_alerts_after_threshold(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000, 2_000_000_000])
+    strategy._runtime_params["order_reject_alert_after_count"] = 2
+    strategy._runtime_params["order_reject_alert_after_s"] = Decimal("10")
+    strategy._managed_client_order_ids = {"A", "B"}
+    strategy._publish_actionable_alert = MakerV3Strategy._publish_actionable_alert.__get__(
+        strategy,
+        MakerV3Strategy,
+    )
+
+    events: list[tuple[str, dict[str, object]]] = []
+    alerts: list[dict[str, object]] = []
+    strategy._publish_event = lambda event, **payload: events.append((event, payload))
+    strategy._publish_alert = lambda **payload: alerts.append(payload)
+
+    strategy.on_order_rejected(
+        SimpleNamespace(
+            client_order_id="A",
+            instrument_id=strategy.config.maker_instrument_id,
+            reason="Parameter clOrdId error",
+            due_post_only=False,
+        ),
+    )
+
+    assert alerts == []
+    assert events[0] == (
+        "order_lifecycle",
+        {
+            "lifecycle": "rejected",
+            "client_order_id": "A",
+            "tracked_before": True,
+            "tracked_after": 1,
+            "instrument_id": str(strategy.config.maker_instrument_id),
+            "reason": "Parameter clOrdId error",
+            "due_post_only": False,
+        },
+    )
+
+    strategy.on_order_rejected(
+        SimpleNamespace(
+            client_order_id="B",
+            instrument_id=strategy.config.maker_instrument_id,
+            reason="Parameter clOrdId error",
+            due_post_only=False,
+        ),
+    )
+
+    assert len(alerts) == 1
+    assert alerts[0]["alert_key"] == "order_rejected_burst"
+    assert alerts[0]["reason_code"] == "order_rejected_burst"
+    assert alerts[0]["actionable"] is True
+    assert alerts[0]["level"] == "error"
+    assert "Parameter clOrdId error" in str(alerts[0]["message"])
+
+
+def test_order_rejected_alert_is_cooldown_gated_by_reason_transition(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory(
+        [
+            1_000_000_000,
+            2_000_000_000,
+            3_000_000_000,
+            4_000_000_000,
+            5_000_000_000,
+            6_000_000_000,
+        ],
+    )
+    strategy._runtime_params["order_reject_alert_after_count"] = 2
+    strategy._runtime_params["order_reject_alert_after_s"] = Decimal("10")
+    strategy._publish_actionable_alert = MakerV3Strategy._publish_actionable_alert.__get__(
+        strategy,
+        MakerV3Strategy,
+    )
+
+    alerts: list[dict[str, object]] = []
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_alert = lambda **payload: alerts.append(payload)
+
+    for client_order_id in ("A", "B", "C", "D"):
+        strategy.on_order_rejected(
+            SimpleNamespace(
+                client_order_id=client_order_id,
+                instrument_id=strategy.config.maker_instrument_id,
+                reason="Parameter clOrdId error",
+                due_post_only=False,
+            ),
+        )
+
+    for client_order_id in ("E", "F"):
+        strategy.on_order_rejected(
+            SimpleNamespace(
+                client_order_id=client_order_id,
+                instrument_id=strategy.config.maker_instrument_id,
+                reason="INSUFFICIENT_MARGIN",
+                due_post_only=False,
+            ),
+        )
+
+    assert [alert["reason_code"] for alert in alerts] == [
+        "order_rejected_burst",
+        "order_rejected_burst",
+    ]
+    assert "Parameter clOrdId error" in str(alerts[0]["message"])
+    assert "INSUFFICIENT_MARGIN" in str(alerts[1]["message"])
 
 
 def test_order_filled_reconciles_managed_tracking_without_cache_closed(strategy_factory) -> None:
