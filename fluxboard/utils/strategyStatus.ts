@@ -10,6 +10,7 @@ export type StrategyStatusInput = {
 
 export type TradingFilterValue = 'Live' | 'Pending' | 'Paused';
 export type TradingStatusVariant = 'live' | 'pending' | 'inactive';
+export type RunStatusVariant = 'live' | 'pending' | 'inactive';
 
 const TRUE_STRINGS = new Set(['1', 'true', 'on', 'yes', 'enabled', 'live']);
 
@@ -103,4 +104,18 @@ export function describeTradingStatus(status: StrategyStatus): {
   }
 
   return { variant, label, subLabel };
+}
+
+export function describeRunState(runState: StrategyRunState): {
+  variant: RunStatusVariant;
+  label: string;
+  subLabel: string;
+} {
+  if (runState === 'running') {
+    return { variant: 'live', label: 'Running', subLabel: 'Node' };
+  }
+  if (runState === 'stopped') {
+    return { variant: 'inactive', label: 'Stopped', subLabel: 'Node' };
+  }
+  return { variant: 'pending', label: 'Unknown', subLabel: 'Node' };
 }

@@ -202,13 +202,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._state_is_blocked = False
             self._last_actionable_alert_ns.clear()
             self._last_actionable_alert_transition.clear()
-            if self.config.maker_instrument_id == self.config.reference_instrument_id:
-                self._publish_alert(
-                    "maker_instrument_id and reference_instrument_id must be distinct",
-                    level="error",
-                )
-                self.stop()
-                return
             self._last_bot_on = self._runtime_bool("bot_on")
             start_ns = int(self.clock.timestamp_ns())
             self._run_id = f"{self._strategy_identity}:{start_ns // 1_000_000}"
@@ -255,28 +248,31 @@ if _NAUTILUS_IMPORT_ERROR is None:
             )
             self._price_precision = self._maker_instrument.price_precision
 
+            subscribed_instrument_ids: list[InstrumentId] = []
+            for instrument_id in (
+                self.config.maker_instrument_id,
+                self.config.reference_instrument_id,
+            ):
+                if instrument_id in subscribed_instrument_ids:
+                    continue
+                subscribed_instrument_ids.append(instrument_id)
+
             self._books = {
-                self.config.maker_instrument_id: OrderBook(
-                    instrument_id=self.config.maker_instrument_id,
+                instrument_id: OrderBook(
+                    instrument_id=instrument_id,
                     book_type=BookType.L2_MBP,
-                ),
-                self.config.reference_instrument_id: OrderBook(
-                    instrument_id=self.config.reference_instrument_id,
-                    book_type=BookType.L2_MBP,
-                ),
+                )
+                for instrument_id in subscribed_instrument_ids
             }
             self._last_bbo = dict.fromkeys(self._books)
             self._last_bbo_ts_ns = dict.fromkeys(self._books, 0)
             self._last_market_bbo_publish_ns = dict.fromkeys(self._books, 0)
 
-            self.subscribe_order_book_deltas(
-                instrument_id=self.config.maker_instrument_id,
-                book_type=BookType.L2_MBP,
-            )
-            self.subscribe_order_book_deltas(
-                instrument_id=self.config.reference_instrument_id,
-                book_type=BookType.L2_MBP,
-            )
+            for instrument_id in subscribed_instrument_ids:
+                self.subscribe_order_book_deltas(
+                    instrument_id=instrument_id,
+                    book_type=BookType.L2_MBP,
+                )
 
             self._publish_event("started")
             self._publish_balances()
@@ -298,8 +294,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 timer_names = set()
             if self._params_timer_name in timer_names:
                 self.clock.cancel_timer(self._params_timer_name)
-            self.unsubscribe_order_book_deltas(instrument_id=self.config.maker_instrument_id)
-            self.unsubscribe_order_book_deltas(instrument_id=self.config.reference_instrument_id)
+            unsubscribed_instrument_ids: list[InstrumentId] = []
+            for instrument_id in (
+                self.config.maker_instrument_id,
+                self.config.reference_instrument_id,
+            ):
+                if instrument_id in unsubscribed_instrument_ids:
+                    continue
+                unsubscribed_instrument_ids.append(instrument_id)
+                self.unsubscribe_order_book_deltas(instrument_id=instrument_id)
             self._publish_state("on_stop")
             self.log.info(
                 f"MakerV3 strategy stopped strategy_id={self._external_strategy_id}",

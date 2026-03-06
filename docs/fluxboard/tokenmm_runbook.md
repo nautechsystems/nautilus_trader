@@ -11,7 +11,7 @@ This runbook covers the two supported serving modes for the TokenMM Fluxboard su
 ```bash
 redis-server --port 6380
 python -m nautilus_trader.flux.runners.tokenmm.run_node \
-  --config deploy/tokenmm/strategies/bybit_linear_plumeusdt_makerv3_01.toml \
+  --config deploy/tokenmm/strategies/plumeusdt_bybit_perp_makerv3.toml \
   --shared-config deploy/tokenmm/tokenmm.live.toml \
   --mode paper
 python -m nautilus_trader.flux.runners.tokenmm.run_bridge --config deploy/tokenmm/tokenmm.live.toml --mode paper --all-strategies
@@ -27,7 +27,8 @@ scripts/deploy/tokenmm_stack.sh start
 ```
 
 The stack script can load credentials from AWS Secrets Manager by default:
-`/nautilus/tokenmm/bybit` and `/nautilus/tokenmm/binance` (`TOKENMM_*_SECRET_ID` overrides).
+`/nautilus/tokenmm/bybit`, `/nautilus/tokenmm/binance`, and `/nautilus/tokenmm/okx`
+(`TOKENMM_*_SECRET_ID` overrides).
 2. Install frontend dependencies once:
 
 ```bash

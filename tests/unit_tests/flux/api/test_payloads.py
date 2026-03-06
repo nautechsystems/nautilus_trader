@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from nautilus_trader.flux.api.payloads import ContractCatalogEntry
 from nautilus_trader.flux.api.payloads import StrategyMetadata
 from nautilus_trader.flux.api.payloads import build_balances_rows
@@ -22,6 +24,8 @@ from nautilus_trader.flux.api.payloads import build_envelope
 from nautilus_trader.flux.api.payloads import build_legs_payload
 from nautilus_trader.flux.api.payloads import build_signals_payload
 from nautilus_trader.flux.api.payloads import build_trades_rows
+from nautilus_trader.flux.api.payloads import enrich_balances_rows
+from nautilus_trader.flux.api.payloads import filter_balance_rows_for_contract_scope
 from nautilus_trader.flux.api.payloads import extract_stream_rows
 from nautilus_trader.flux.api.payloads import merge_portfolio_balances_rows
 
@@ -122,6 +126,107 @@ def test_merge_portfolio_balances_rows_nets_same_instrument_across_strategies() 
     assert position["signed_qty"] == "1"
     assert position["quantity"] == "1"
     assert position["side"] == "LONG"
+
+
+def test_enrich_balances_rows_marks_cash_assets_and_positions_from_market_rows() -> None:
+    rows = [
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "bybit",
+            "account": "main",
+            "asset": "PLUME",
+            "total": "5434.35191",
+            "row_id": "strategy_01:acc:0",
+        },
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "bybit",
+            "account": "main",
+            "asset": "USDT",
+            "total": "100",
+            "row_id": "strategy_01:acc:1",
+        },
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "bybit",
+            "kind": "position",
+            "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+            "signed_qty": "2",
+            "quantity": "2",
+            "row_id": "strategy_01:pos:0",
+        },
+    ]
+    contracts = (ContractCatalogEntry(exchange="bybit", symbol="PLUME/USDT"),)
+    market_rows = {"bybit:PLUME/USDT": {"bid": 0.0104, "ask": 0.0106}}
+
+    enriched = enrich_balances_rows(
+        rows,
+        contracts=contracts,
+        market_rows=market_rows,
+    )
+
+    by_row_id = {row["row_id"]: row for row in enriched}
+    plume_cash = by_row_id["strategy_01:acc:0"]
+    usdt_cash = by_row_id["strategy_01:acc:1"]
+    plume_perp = by_row_id["strategy_01:pos:0"]
+
+    assert plume_cash["mark_raw"] == pytest.approx(0.0105)
+    assert plume_cash["mv_raw"] == pytest.approx(57.060695055)
+    assert usdt_cash["mark_raw"] == pytest.approx(1.0)
+    assert usdt_cash["mv_raw"] == pytest.approx(100.0)
+    assert plume_perp["asset"] == "PLUME"
+    assert plume_perp["mark_raw"] == pytest.approx(0.0105)
+    assert plume_perp["mv_raw"] == pytest.approx(0.021)
+
+
+def test_filter_balance_rows_for_contract_scope_excludes_unrelated_assets() -> None:
+    rows = [
+        {
+            "row_id": "cash-plume",
+            "exchange": "bybit",
+            "asset": "PLUME",
+            "total": "10",
+        },
+        {
+            "row_id": "cash-usdt",
+            "exchange": "bybit",
+            "asset": "USDT",
+            "total": "100",
+        },
+        {
+            "row_id": "cash-zent",
+            "exchange": "bybit",
+            "asset": "ZENT",
+            "total": "500",
+        },
+        {
+            "row_id": "pos-plume",
+            "exchange": "bybit",
+            "kind": "position",
+            "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+            "asset": "PLUME",
+            "signed_qty": "2",
+        },
+        {
+            "row_id": "pos-btc",
+            "exchange": "bybit",
+            "kind": "position",
+            "instrument_id": "BTCUSDT-LINEAR.BYBIT",
+            "asset": "BTC",
+            "signed_qty": "1",
+        },
+    ]
+
+    filtered = filter_balance_rows_for_contract_scope(
+        rows,
+        contracts=(ContractCatalogEntry(exchange="bybit", symbol="PLUME/USDT"),),
+    )
+
+    assert [row["row_id"] for row in filtered] == [
+        "cash-plume",
+        "cash-usdt",
+        "pos-plume",
+    ]
 
 
 def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog) -> None:

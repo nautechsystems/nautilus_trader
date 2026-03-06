@@ -15,9 +15,9 @@ CONFIRM_LIVE="${TOKENMM_CONFIRM_LIVE:-0}"
 ENABLE_EXECUTION="${TOKENMM_ENABLE_EXECUTION:-0}"
 ALLOW_MISSING_KEYS="${TOKENMM_ALLOW_MISSING_KEYS:-0}"
 MANAGE_REDIS="${TOKENMM_MANAGE_REDIS:-1}"
-API_HOST="${TOKENMM_API_HOST:-127.0.0.1}"
-API_PORT="${TOKENMM_API_PORT:-5022}"
-EXPECTED_NODES="${TOKENMM_EXPECTED_NODES:-5}"
+API_HOST="${TOKENMM_API_HOST:-}"
+API_PORT="${TOKENMM_API_PORT:-}"
+EXPECTED_NODES="${TOKENMM_EXPECTED_NODES:-0}"
 START_TIMEOUT_SECS="${TOKENMM_START_TIMEOUT_SECS:-90}"
 BALANCES_READY_TIMEOUT_SECS="${TOKENMM_BALANCES_READY_TIMEOUT_SECS:-90}"
 SKIP_FLUXBOARD_BUILD="${TOKENMM_SKIP_FLUXBOARD_BUILD:-0}"
@@ -28,9 +28,14 @@ LOAD_AWS_SECRETS="${TOKENMM_LOAD_AWS_SECRETS:-0}"
 AWS_REGION="${TOKENMM_AWS_REGION:-ap-southeast-1}"
 BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-/nautilus/tokenmm/bybit}"
 BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-/nautilus/tokenmm/binance}"
+OKX_SECRET_ID="${TOKENMM_OKX_SECRET_ID:-/nautilus/tokenmm/okx}"
 
 REDIS_HOST="127.0.0.1"
 REDIS_PORT="6380"
+REDIS_DB="0"
+REDIS_USERNAME=""
+REDIS_PASSWORD=""
+REDIS_SSL="0"
 
 declare -a STRATEGY_CONFIGS=()
 readonly ROOT_DIR RUN_DIR LOG_DIR PID_DIR
@@ -57,7 +62,7 @@ Environment overrides:
   TOKENMM_BALANCES_READY_TIMEOUT_SECS
   TOKENMM_STRICT_PROFILE_CHECK, TOKENMM_STRICT_BALANCES_READY_CHECK
   TOKENMM_LOAD_AWS_SECRETS, TOKENMM_AWS_REGION
-  TOKENMM_BYBIT_SECRET_ID, TOKENMM_BINANCE_SECRET_ID
+  TOKENMM_BYBIT_SECRET_ID, TOKENMM_BINANCE_SECRET_ID, TOKENMM_OKX_SECRET_ID
 USAGE
 }
 
@@ -72,7 +77,7 @@ require_cmd() {
 is_allowed_env_key() {
   local key="$1"
   case "${key}" in
-    TOKENMM_* | BYBIT_* | BINANCE_*)
+    TOKENMM_* | BYBIT_* | BINANCE_* | OKX_*)
       return 0
       ;;
     *)
@@ -156,6 +161,7 @@ load_env_file() {
   AWS_REGION="${TOKENMM_AWS_REGION:-${AWS_REGION}}"
   BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-${BYBIT_SECRET_ID}}"
   BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-${BINANCE_SECRET_ID}}"
+  OKX_SECRET_ID="${TOKENMM_OKX_SECRET_ID:-${OKX_SECRET_ID}}"
 }
 
 resolve_redis_target_from_config() {
@@ -171,16 +177,67 @@ resolve_redis_target_from_config() {
 import sys
 from pathlib import Path
 import tomllib
+import os
 
 path = Path(sys.argv[1])
 data = tomllib.load(path.open("rb"))
 redis_cfg = data.get("redis") or {}
-host = str(redis_cfg.get("host", "127.0.0.1")).strip() or "127.0.0.1"
-port = int(redis_cfg.get("port", 6380))
-print(f"{host} {port}")
+host = str(os.getenv("TOKENMM_REDIS_HOST") or redis_cfg.get("host", "127.0.0.1")).strip() or "127.0.0.1"
+port = int(os.getenv("TOKENMM_REDIS_PORT") or redis_cfg.get("port", 6380))
+db = int(os.getenv("TOKENMM_REDIS_DB") or redis_cfg.get("db", 0))
+username = str(os.getenv("TOKENMM_REDIS_USERNAME") or redis_cfg.get("username", "")).strip()
+password = str(os.getenv("TOKENMM_REDIS_PASSWORD") or redis_cfg.get("password", "")).strip()
+ssl_raw = str(os.getenv("TOKENMM_REDIS_SSL") or redis_cfg.get("ssl", False)).strip().lower()
+ssl = "1" if ssl_raw in {"1", "true", "yes", "on"} else "0"
+print(host)
+print(port)
+print(db)
+print(username)
+print(password)
+print(ssl)
 PY
   )"
-  read -r REDIS_HOST REDIS_PORT <<< "${output}"
+  mapfile -t redis_runtime <<< "${output}"
+  REDIS_HOST="${redis_runtime[0]}"
+  REDIS_PORT="${redis_runtime[1]}"
+  REDIS_DB="${redis_runtime[2]}"
+  REDIS_USERNAME="${redis_runtime[3]}"
+  REDIS_PASSWORD="${redis_runtime[4]}"
+  REDIS_SSL="${redis_runtime[5]}"
+}
+
+resolve_api_bind_from_config() {
+  local pybin="$1"
+  if [[ ! -f "${CONFIG_PATH}" ]]; then
+    echo "[tokenmm-stack] config not found: ${CONFIG_PATH}" >&2
+    exit 1
+  fi
+
+  local output
+  output="$(
+    "${pybin}" - "${CONFIG_PATH}" "${API_HOST}" "${API_PORT}" <<'PY'
+import sys
+import tomllib
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+host_override = sys.argv[2].strip()
+port_override = sys.argv[3].strip()
+
+data = tomllib.load(config_path.open("rb"))
+api_cfg = data.get("api") or {}
+if not isinstance(api_cfg, dict):
+    raise SystemExit("invalid [api] config")
+
+host = host_override or str(api_cfg.get("host", "127.0.0.1")).strip() or "127.0.0.1"
+port = port_override or str(api_cfg.get("port", 5022)).strip() or "5022"
+print(host)
+print(port)
+PY
+  )"
+  mapfile -t api_runtime <<< "${output}"
+  API_HOST="${api_runtime[0]}"
+  API_PORT="${api_runtime[1]}"
 }
 
 load_secret_into_env() {
@@ -200,10 +257,18 @@ load_secret_into_env() {
 
   while IFS='=' read -r key value; do
     [[ -z "${key}" ]] && continue
-    if [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-      printf -v "${key}" "%s" "${value}"
-      export "${key?}"
+    if [[ ! "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      continue
     fi
+    case "${key}" in
+      BYBIT_*|BINANCE_*|OKX_*)
+        printf -v "${key}" "%s" "${value}"
+        export "${key?}"
+        ;;
+      *)
+        echo "[tokenmm-stack] warning: skipping unsupported secret key ${key}" >&2
+        ;;
+    esac
   done < <(printf '%s' "${raw}" | jq -r 'to_entries[] | "\(.key)=\(.value|tostring)"')
 }
 
@@ -215,6 +280,7 @@ load_aws_secrets_if_enabled() {
   require_cmd jq
   load_secret_into_env "${BYBIT_SECRET_ID}"
   load_secret_into_env "${BINANCE_SECRET_ID}"
+  load_secret_into_env "${OKX_SECRET_ID}"
 }
 
 validate_mode() {
@@ -226,6 +292,24 @@ validate_mode() {
     echo "[tokenmm-stack] refusing live startup: set TOKENMM_CONFIRM_LIVE=1" >&2
     exit 1
   fi
+}
+
+api_request_host() {
+  if [[ "${API_HOST}" == "0.0.0.0" ]]; then
+    echo "127.0.0.1"
+    return
+  fi
+  if [[ "${API_HOST}" == "::" ]]; then
+    echo "::1"
+    return
+  fi
+  echo "${API_HOST}"
+}
+
+api_request_base_url() {
+  local request_host
+  request_host="$(api_request_host)"
+  echo "http://${request_host}:${API_PORT}"
 }
 
 log_runtime_intent() {
@@ -251,6 +335,9 @@ validate_config_and_keys() {
   [[ -z "${BYBIT_API_SECRET:-}" ]] && missing+=("BYBIT_API_SECRET")
   [[ -z "${BINANCE_API_KEY:-}" ]] && missing+=("BINANCE_API_KEY")
   [[ -z "${BINANCE_API_SECRET:-}" ]] && missing+=("BINANCE_API_SECRET")
+  [[ -z "${OKX_API_KEY:-}" ]] && missing+=("OKX_API_KEY")
+  [[ -z "${OKX_API_SECRET:-}" ]] && missing+=("OKX_API_SECRET")
+  [[ -z "${OKX_API_PASSPHRASE:-}" ]] && missing+=("OKX_API_PASSPHRASE")
   if ((${#missing[@]} > 0)); then
     echo "[tokenmm-stack] missing required live credentials: ${missing[*]}" >&2
     echo "[tokenmm-stack] set TOKENMM_ALLOW_MISSING_KEYS=1 only for market-data smoke." >&2
@@ -326,7 +413,8 @@ validate_strategy_registry_alignment() {
 
   mapfile -t registry_ids < <(read_tokenmm_registry_ids "${pybin}" "${CONFIG_PATH}")
   if ((${#registry_ids[@]} == 0)); then
-    return
+    echo "[tokenmm-stack] [api].tokenmm_strategy_ids must be non-empty" >&2
+    exit 1
   fi
 
   declare -A registry_map=()
@@ -365,12 +453,15 @@ assert_tokenmm_profile_params_alignment() {
   local -a expected_ids=()
   mapfile -t expected_ids < <(read_tokenmm_registry_ids "${pybin}" "${CONFIG_PATH}")
   if ((${#expected_ids[@]} == 0)); then
-    echo "[tokenmm-stack] skipping TokenMM profile assertions: [api].tokenmm_strategy_ids is empty"
-    return
+    echo "[tokenmm-stack] [api].tokenmm_strategy_ids must be non-empty" >&2
+    exit 1
   fi
 
+  local request_host
+  request_host="$(api_request_host)"
+
   local response
-  response="$(curl -fsS "http://${API_HOST}:${API_PORT}/api/v1/params?profile=tokenmm")"
+  response="$(curl -fsS "http://${request_host}:${API_PORT}/api/v1/params?profile=tokenmm")"
 
   local expected_joined
   expected_joined="$(printf '%s\n' "${expected_ids[@]}")"
@@ -432,9 +523,11 @@ assert_tokenmm_profile_balances_readiness() {
 
   local deadline=$((SECONDS + BALANCES_READY_TIMEOUT_SECS))
   local last_error="waiting_for_balances"
+  local request_host
+  request_host="$(api_request_host)"
   while ((SECONDS < deadline)); do
     local response
-    if ! response="$(curl -fsS "http://${API_HOST}:${API_PORT}/api/v1/balances?profile=tokenmm" 2> /dev/null)"; then
+    if ! response="$(curl -fsS "http://${request_host}:${API_PORT}/api/v1/balances?profile=tokenmm" 2> /dev/null)"; then
       last_error="request_failed"
       sleep 1
       continue
@@ -466,7 +559,6 @@ if not isinstance(components, list) or not components:
 required_ids: list[str] = []
 required_missing: list[str] = []
 required_stale: list[str] = []
-required_stale_without_ts: list[str] = []
 for component in components:
     if not isinstance(component, dict):
         continue
@@ -478,18 +570,6 @@ for component in components:
         required_missing.append(strategy_id)
     if not bool(component.get("stale")):
         continue
-
-    latest_ts_ms = component.get("latest_ts_ms")
-    snapshot_present = bool(component.get("snapshot_present"))
-    rows_raw = component.get("rows")
-    try:
-        rows_count = int(rows_raw or 0)
-    except (TypeError, ValueError):
-        rows_count = 0
-
-    if latest_ts_ms is None and snapshot_present and rows_count > 0:
-        required_stale_without_ts.append(strategy_id)
-        continue
     required_stale.append(strategy_id)
 
 if not required_ids:
@@ -499,10 +579,7 @@ if required_missing:
 if required_stale:
     raise SystemExit(f"required_stale={sorted(set(required_stale))}")
 
-ready_detail = f"required_ready={len(required_ids)}"
-if required_stale_without_ts:
-    ready_detail += f" stale_without_ts={sorted(set(required_stale_without_ts))}"
-print(ready_detail)
+print(f"required_ready={len(required_ids)}")
 PY
     )"; then
       echo "[tokenmm-stack] TokenMM balances readiness check passed (${detail})"
@@ -665,9 +742,42 @@ wait_for_url() {
   exit 1
 }
 
+can_ping_redis_target() {
+  local pybin="$1"
+  REDIS_HOST="${REDIS_HOST}" \
+  REDIS_PORT="${REDIS_PORT}" \
+  REDIS_DB="${REDIS_DB}" \
+  REDIS_USERNAME="${REDIS_USERNAME}" \
+  REDIS_PASSWORD="${REDIS_PASSWORD}" \
+  REDIS_SSL="${REDIS_SSL}" \
+  "${pybin}" - << 'PY'
+import os
+import sys
+
+import redis
+
+client = redis.Redis(
+    host=os.environ["REDIS_HOST"],
+    port=int(os.environ["REDIS_PORT"]),
+    db=int(os.environ.get("REDIS_DB", "0") or "0"),
+    username=(os.environ.get("REDIS_USERNAME") or None),
+    password=(os.environ.get("REDIS_PASSWORD") or None),
+    ssl=os.environ.get("REDIS_SSL", "0") == "1",
+    socket_connect_timeout=3.0,
+    socket_timeout=3.0,
+    decode_responses=True,
+)
+try:
+    ok = client.ping()
+except Exception:
+    raise SystemExit(1)
+raise SystemExit(0 if ok else 1)
+PY
+}
+
 start_redis_if_needed() {
-  require_cmd redis-cli
-  if redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" ping > /dev/null 2>&1; then
+  local pybin="$1"
+  if can_ping_redis_target "${pybin}"; then
     echo "[tokenmm-stack] redis already reachable at ${REDIS_HOST}:${REDIS_PORT}"
     return
   fi
@@ -714,7 +824,25 @@ start_nodes() {
     strategy_flux_id="$(strategy_flux_id "${pybin}" "${config_path}")"
     local svc="node_$(slugify "${strategy_flux_id}")"
     echo "[tokenmm-stack] node config=${config_path} flux_strategy_id=${strategy_flux_id} service=${svc}"
-    local -a cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" -m nautilus_trader.flux.runners.tokenmm.run_node --config "${config_path}" --shared-config "${CONFIG_PATH}" --mode "${MODE}")
+    local -a cmd=(
+      env
+      "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}"
+      "TOKENMM_REDIS_HOST=${REDIS_HOST}"
+      "TOKENMM_REDIS_PORT=${REDIS_PORT}"
+      "TOKENMM_REDIS_DB=${REDIS_DB}"
+      "TOKENMM_REDIS_USERNAME=${REDIS_USERNAME}"
+      "TOKENMM_REDIS_PASSWORD=${REDIS_PASSWORD}"
+      "TOKENMM_REDIS_SSL=${REDIS_SSL}"
+      "${pybin}"
+      -m
+      nautilus_trader.flux.runners.tokenmm.run_node
+      --config
+      "${config_path}"
+      --shared-config
+      "${CONFIG_PATH}"
+      --mode
+      "${MODE}"
+    )
     if [[ -n "${live_flag}" ]]; then
       cmd+=("${live_flag}")
     fi
@@ -731,6 +859,7 @@ start_stack() {
   pybin="$(resolve_python_bin)"
 
   load_env_file
+  resolve_api_bind_from_config "${pybin}"
   load_aws_secrets_if_enabled
   validate_mode
   log_runtime_intent
@@ -740,7 +869,7 @@ start_stack() {
   ensure_dirs
 
   resolve_redis_target_from_config "${pybin}"
-  start_redis_if_needed
+  start_redis_if_needed "${pybin}"
   build_fluxboard
   start_nodes "${pybin}"
 
@@ -749,21 +878,57 @@ start_stack() {
     live_flag="--confirm-live"
   fi
 
-  local -a bridge_cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" -m nautilus_trader.flux.runners.tokenmm.run_bridge --config "${CONFIG_PATH}" --mode "${MODE}" --all-strategies)
+  local -a bridge_cmd=(
+    env
+    "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}"
+    "TOKENMM_REDIS_HOST=${REDIS_HOST}"
+    "TOKENMM_REDIS_PORT=${REDIS_PORT}"
+    "TOKENMM_REDIS_DB=${REDIS_DB}"
+    "TOKENMM_REDIS_USERNAME=${REDIS_USERNAME}"
+    "TOKENMM_REDIS_PASSWORD=${REDIS_PASSWORD}"
+    "TOKENMM_REDIS_SSL=${REDIS_SSL}"
+    "${pybin}"
+    -m
+    nautilus_trader.flux.runners.tokenmm.run_bridge
+    --config
+    "${CONFIG_PATH}"
+    --mode
+    "${MODE}"
+    --all-strategies
+  )
   if [[ -n "${live_flag}" ]]; then
     bridge_cmd+=("${live_flag}")
   fi
   start_process "bridge" "${bridge_cmd[@]}"
 
-  local -a api_cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" -m nautilus_trader.flux.runners.tokenmm.run_api --config "${CONFIG_PATH}" --mode "${MODE}")
+  local -a api_cmd=(
+    env
+    "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}"
+    "TOKENMM_REDIS_HOST=${REDIS_HOST}"
+    "TOKENMM_REDIS_PORT=${REDIS_PORT}"
+    "TOKENMM_REDIS_DB=${REDIS_DB}"
+    "TOKENMM_REDIS_USERNAME=${REDIS_USERNAME}"
+    "TOKENMM_REDIS_PASSWORD=${REDIS_PASSWORD}"
+    "TOKENMM_REDIS_SSL=${REDIS_SSL}"
+    "${pybin}"
+    -m
+    nautilus_trader.flux.runners.tokenmm.run_api
+    --config
+    "${CONFIG_PATH}"
+    --mode
+    "${MODE}"
+  )
   if [[ -n "${live_flag}" ]]; then
     api_cmd+=("${live_flag}")
   fi
   api_cmd+=(--host "${API_HOST}" --port "${API_PORT}" --serve-fluxboard)
   start_process "api" "${api_cmd[@]}"
 
-  wait_for_url "http://${API_HOST}:${API_PORT}/api/v1/healthz" "flux api"
-  wait_for_url "http://${API_HOST}:${API_PORT}/tokenmm" "fluxboard tokenmm"
+  local request_base_url
+  request_base_url="$(api_request_base_url)"
+
+  wait_for_url "${request_base_url}/api/v1/healthz" "flux api"
+  wait_for_url "${request_base_url}/tokenmm" "fluxboard tokenmm"
   assert_tokenmm_profile_params_alignment "${pybin}"
   assert_tokenmm_profile_balances_readiness "${pybin}"
   echo "[tokenmm-stack] stack started"
@@ -816,6 +981,9 @@ service_status_line() {
 
 status_stack() {
   load_env_file
+  local pybin
+  pybin="$(resolve_python_bin)"
+  resolve_api_bind_from_config "${pybin}"
   echo "[tokenmm-stack] status"
   service_status_line "redis"
 
@@ -845,17 +1013,20 @@ health_stack() {
   require_cmd curl
   local pybin
   pybin="$(resolve_python_bin)"
+  resolve_api_bind_from_config "${pybin}"
+  local request_base_url
+  request_base_url="$(api_request_base_url)"
   echo "[tokenmm-stack] API health"
-  curl -fsS "http://${API_HOST}:${API_PORT}/api/v1/healthz" | sed -n '1,4p'
+  curl -fsS "${request_base_url}/api/v1/healthz" | sed -n '1,4p'
   echo
   echo "[tokenmm-stack] TokenMM (GET)"
   local tokenmm_status
-  tokenmm_status="$(curl -fsS -o /dev/null -w "%{http_code}" "http://${API_HOST}:${API_PORT}/tokenmm")"
+  tokenmm_status="$(curl -fsS -o /dev/null -w "%{http_code}" "${request_base_url}/tokenmm")"
   echo "HTTP ${tokenmm_status}"
   echo
   echo "[tokenmm-stack] Socket.IO polling handshake"
   local handshake
-  handshake="$(curl -fsS "http://${API_HOST}:${API_PORT}/socket.io/?EIO=4&transport=polling")"
+  handshake="$(curl -fsS "${request_base_url}/socket.io/?EIO=4&transport=polling")"
   echo "${handshake}" | sed -n '1,2p'
   if [[ "${handshake}" != *"sid"* ]]; then
     echo "[tokenmm-stack] socket handshake missing sid field" >&2

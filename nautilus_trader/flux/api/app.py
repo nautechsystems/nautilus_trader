@@ -45,7 +45,9 @@ from nautilus_trader.flux.api.payloads import build_trades_rows
 from nautilus_trader.flux.api.payloads import coerce_ts_ms
 from nautilus_trader.flux.api.payloads import contract_id_for_leg
 from nautilus_trader.flux.api.payloads import decode_text
+from nautilus_trader.flux.api.payloads import enrich_balances_rows
 from nautilus_trader.flux.api.payloads import extract_stream_rows
+from nautilus_trader.flux.api.payloads import filter_balance_rows_for_contract_scope
 from nautilus_trader.flux.api.payloads import load_json
 from nautilus_trader.flux.api.payloads import merge_portfolio_balances_rows
 from nautilus_trader.flux.api.payloads import normalize_symbol_parts
@@ -455,9 +457,36 @@ class FluxApiStore:
 
     def load_balances_rows_with_presence(self, strategy_id: str) -> tuple[list[dict[str, Any]], bool]:
         keys = self._keys_for_strategy(strategy_id)
-        raw_snapshot = self._redis.get(keys.balances_snapshot())
-        raw = load_json(raw_snapshot)
-        return build_balances_rows(raw_snapshot=raw, strategy_id=strategy_id), raw_snapshot is not None
+        market_pairs = self._market_keys(strategy_id)
+        pipe = self._redis.pipeline(transaction=False)
+        pipe.get(keys.balances_snapshot())
+        for _, market_key in market_pairs:
+            pipe.get(market_key)
+        raw = pipe.execute()
+        expected_length = 1 + len(market_pairs)
+        if len(raw) != expected_length:
+            raise RuntimeError(
+                f"Balances pipeline returned {len(raw)} rows, expected {expected_length}",
+            )
+
+        raw_snapshot = raw[0]
+        balances_raw = load_json(raw_snapshot)
+        rows = build_balances_rows(raw_snapshot=balances_raw, strategy_id=strategy_id)
+
+        market_rows: dict[str, dict[str, Any]] = {}
+        for (contract, _), market_raw in zip(market_pairs, raw[1:], strict=True):
+            parsed = load_json(market_raw)
+            contract_id = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
+            market_rows[contract_id] = dict(parsed) if isinstance(parsed, dict) else {}
+
+        return (
+            enrich_balances_rows(
+                rows,
+                contracts=self._contracts,
+                market_rows=market_rows,
+            ),
+            raw_snapshot is not None,
+        )
 
     def load_trades_rows(
         self,
@@ -1418,6 +1447,10 @@ def create_flux_api_app(  # noqa: C901
             rows = merge_portfolio_balances_rows(
                 rows_by_strategy=rows_by_strategy,
                 portfolio_id="tokenmm",
+            )
+            rows = filter_balance_rows_for_contract_scope(
+                rows,
+                contracts=store._contracts,
             )
             missing_required = sorted(
                 component["strategy_id"]

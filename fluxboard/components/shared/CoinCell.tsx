@@ -54,6 +54,13 @@ function shortenAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+function isAddressLike(value: string): boolean {
+  const text = value.trim();
+  if (!text) return false;
+  if (text.startsWith('0x')) return true;
+  return /^[A-Fa-f0-9]{24,}$/.test(text);
+}
+
 /**
  * Copy text to clipboard
  */
@@ -90,6 +97,8 @@ export function CoinCell({
   className = '',
 }: CoinCellProps) {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const contractText = String(contract ?? '').trim();
+  const contractIsAddress = isAddressLike(contractText);
 
   // Build tooltip content with metadata (memoized)
   const tooltipContent = React.useMemo(() => {
@@ -147,11 +156,12 @@ export function CoinCell({
         <span className="text-xs text-neutral-400">
           {venue}
           {walletLabel && ` (${walletLabel})`}
+          {!contractIsAddress && contractText && ` ${contractText}`}
         </span>
       )}
 
       {/* Contract address (click to copy) */}
-      {contract && (
+      {contractIsAddress && contractText && (
         <button
           onClick={handleContractClick}
           className="
@@ -170,7 +180,7 @@ export function CoinCell({
               {copyFeedback}
             </span>
           ) : (
-            shortenAddress(contract)
+            shortenAddress(contractText)
           )}
         </button>
       )}

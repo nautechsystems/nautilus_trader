@@ -16,9 +16,11 @@
 from __future__ import annotations
 
 from argparse import Namespace
+from pathlib import Path
 
 import pytest
 
+from nautilus_trader.flux.runners.tokenmm.run_bridge import _load_config
 from nautilus_trader.flux.runners.tokenmm.run_bridge import _parse_args
 from nautilus_trader.flux.runners.tokenmm.run_bridge import _resolve_strategy_scope
 
@@ -71,3 +73,26 @@ def test_parse_args_requires_explicit_config(monkeypatch) -> None:
 
     with pytest.raises(SystemExit, match="2"):
         _parse_args()
+
+
+def test_load_config_applies_redis_env_overrides(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "bridge.toml"
+    config_path.write_text(
+        """
+[redis]
+host = "127.0.0.1"
+port = 6380
+db = 0
+ssl = false
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TOKENMM_REDIS_HOST", "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com")
+    monkeypatch.setenv("TOKENMM_REDIS_PORT", "6379")
+    monkeypatch.setenv("TOKENMM_REDIS_SSL", "true")
+
+    config = _load_config(config_path)
+
+    assert config["redis"]["host"] == "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com"
+    assert config["redis"]["port"] == 6379
+    assert config["redis"]["ssl"] is True

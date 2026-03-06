@@ -702,8 +702,176 @@ def merge_portfolio_balances_rows(
 
     merged_cash = [item[1] for item in cash_latest.values()]
     merged_rows = [*merged_positions, *merged_cash, *passthrough_rows]
-    merged_rows.sort(key=lambda row: decode_text(row.get("row_id")).strip())
+    merged_rows.sort(key=_portfolio_balance_sort_key)
     return merged_rows
+
+
+_STABLE_BALANCE_ASSETS = frozenset({"USD", "USDT", "USDC", "DAI", "FDUSD", "USDE"})
+
+
+def _normalized_symbol_signature(symbol: Any) -> str:
+    text = decode_text(symbol).strip().upper()
+    if not text:
+        return ""
+    return "".join(ch for ch in text if ch.isalnum())
+
+
+def _contract_market_mid(row: Mapping[str, Any]) -> float | None:
+    mid = safe_float(row.get("mid"))
+    if mid is not None:
+        return mid
+    bid = safe_float(row.get("bid"))
+    ask = safe_float(row.get("ask"))
+    if bid is not None and ask is not None:
+        return (bid + ask) / 2.0
+    return bid if bid is not None else ask
+
+
+def _row_exchange_hint(row: Mapping[str, Any]) -> str:
+    exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
+    if exchange:
+        return exchange
+    instrument_id = decode_text(row.get("instrument_id") or row.get("symbol")).strip().upper()
+    if "." not in instrument_id:
+        return ""
+    suffix = instrument_id.split(".", maxsplit=1)[1]
+    return suffix.split("_", maxsplit=1)[0].lower()
+
+
+def _row_asset_hint(row: Mapping[str, Any]) -> str:
+    for key in ("asset", "coin", "base"):
+        asset = decode_text(row.get(key)).strip().upper()
+        if asset and all(token not in asset for token in ("PERP", "LINEAR")):
+            return asset
+    return ""
+
+
+def _row_contract_key(
+    row: Mapping[str, Any],
+    *,
+    contracts: Sequence[ContractCatalogEntry],
+) -> str | None:
+    exchange = _row_exchange_hint(row)
+    if not exchange:
+        return None
+
+    instrument_text = decode_text(row.get("instrument_id") or row.get("symbol")).strip().upper()
+    instrument_signature = _normalized_symbol_signature(
+        instrument_text.split(".", maxsplit=1)[0] if instrument_text else "",
+    )
+    asset_hint = _row_asset_hint(row)
+
+    for contract in contracts:
+        contract_exchange = decode_text(contract.exchange).strip().lower()
+        if contract_exchange != exchange:
+            continue
+        base_asset, _quote_asset = normalize_symbol_parts(symbol=contract.symbol)
+        contract_id = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
+        if instrument_signature:
+            contract_signature = _normalized_symbol_signature(contract.symbol)
+            if contract_signature and instrument_signature.startswith(contract_signature):
+                return contract_id
+        if asset_hint and base_asset == asset_hint:
+            return contract_id
+    return None
+
+
+def enrich_balances_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    contracts: Sequence[ContractCatalogEntry],
+    market_rows: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for source_row in rows:
+        row = dict(source_row)
+        if row.get("mark_raw") is not None and row.get("mv_raw") is not None:
+            enriched.append(row)
+            continue
+
+        qty = safe_float(
+            row.get("signed_qty")
+            if _is_position_row(row)
+            else row.get("total") or row.get("quantity") or row.get("signed_qty") or row.get("free"),
+        )
+        asset_hint = _row_asset_hint(row)
+        contract_key = _row_contract_key(row, contracts=contracts)
+        if contract_key:
+            for contract in contracts:
+                candidate_key = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
+                if candidate_key != contract_key:
+                    continue
+                base_asset, _quote_asset = normalize_symbol_parts(symbol=contract.symbol)
+                current_asset = decode_text(row.get("asset") or row.get("coin") or row.get("base")).strip().upper()
+                if base_asset and (
+                    current_asset in {"", "UNKNOWN"}
+                    or "PERP" in current_asset
+                    or "LINEAR" in current_asset
+                    or current_asset == decode_text(row.get("instrument_id")).strip().upper()
+                ):
+                    row["asset"] = base_asset
+                    row["coin"] = base_asset
+                    row["base"] = base_asset
+                break
+        mark = safe_float(row.get("mark_raw") or row.get("mark") or row.get("avg_px_open") or row.get("price"))
+
+        if mark is None and asset_hint in _STABLE_BALANCE_ASSETS:
+            mark = 1.0
+        if mark is None:
+            market_row = market_rows.get(contract_key or "") or {}
+            mark = _contract_market_mid(market_row)
+
+        if mark is not None:
+            row["mark_raw"] = mark
+        if qty is not None and mark is not None:
+            row["mv_raw"] = qty * mark
+
+        enriched.append(row)
+    return enriched
+
+
+def filter_balance_rows_for_contract_scope(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    contracts: Sequence[ContractCatalogEntry],
+) -> list[dict[str, Any]]:
+    allowed_assets: set[str] = set()
+    allowed_contracts: set[str] = set()
+    for contract in contracts:
+        base_asset, quote_asset = normalize_symbol_parts(symbol=contract.symbol)
+        if base_asset:
+            allowed_assets.add(base_asset)
+        if quote_asset:
+            allowed_assets.add(quote_asset)
+        allowed_contracts.add(contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol))
+
+    filtered: list[dict[str, Any]] = []
+    for source_row in rows:
+        row = dict(source_row)
+        if _is_position_row(row):
+            contract_key = _row_contract_key(row, contracts=contracts)
+            if contract_key in allowed_contracts:
+                filtered.append(row)
+            continue
+
+        asset = decode_text(row.get("asset") or row.get("coin") or row.get("base")).strip().upper()
+        if asset in allowed_assets:
+            filtered.append(row)
+    return filtered
+
+
+def _portfolio_balance_sort_key(row: Mapping[str, Any]) -> tuple[int, int, float, int, str]:
+    is_position = 0 if _is_position_row(row) else 1
+    total_value = abs(safe_float(row.get("total")) or 0.0)
+    qty_value = abs(
+        safe_float(row.get("signed_qty"))
+        or safe_float(row.get("quantity"))
+        or 0.0
+    )
+    is_zero = 1 if total_value == 0.0 and qty_value == 0.0 else 0
+    ts_value = -_row_ts_ms(row)
+    row_id = decode_text(row.get("row_id")).strip()
+    return (is_position, is_zero, -(max(total_value, qty_value)), ts_value, row_id)
 
 
 def build_legs_payload(

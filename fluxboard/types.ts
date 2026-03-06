@@ -649,6 +649,8 @@ export type MakerV2QuoteSnapshot = {
 export type SignalStrategy = {
   id: string;
   params: Record<string, string | undefined>;
+  running?: boolean | null;
+  state?: Record<string, unknown> | null;
   legs: Record<string, SignalLeg | null>;
   legs_order?: string[] | null;
   balances_ok: boolean;

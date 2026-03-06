@@ -36,6 +36,7 @@ from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_FV
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_MARKET_BBO
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_STATE
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_TRADE
+from nautilus_trader.flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
@@ -64,7 +65,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         data = tomllib.load(handle)
     if not isinstance(data, dict):
         raise ValueError(f"Config root must be a table: {path}")
-    return data
+    return apply_redis_env_overrides(data)
 
 
 def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -151,6 +152,7 @@ def main() -> None:
         db=int(redis_cfg.get("db", 0)),
         username=_optional_text(redis_cfg.get("username")),
         password=_optional_text(redis_cfg.get("password")),
+        ssl=bool(redis_cfg.get("ssl", False)),
         socket_connect_timeout=float(redis_cfg.get("connect_timeout_secs", 5.0)),
         socket_timeout=float(redis_cfg.get("read_timeout_secs", 5.0)),
         decode_responses=False,

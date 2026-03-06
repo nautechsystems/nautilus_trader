@@ -35,11 +35,13 @@ from nautilus_trader.adapters.okx import OKXExecClientConfig
 from nautilus_trader.adapters.okx import OKXLiveDataClientFactory
 from nautilus_trader.adapters.okx import OKXLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config import RoutingConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.core.nautilus_pyo3 import OKXVipLevel
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
 
 
 FieldCoercer = Callable[[Any, str], Any]
@@ -318,12 +320,17 @@ def _build_client_config(
     venue_cfg: dict[str, Any],
     instrument_id: InstrumentId,
     mode: str,
+    default_routing: bool,
 ) -> Any:
     parameter_names = _signature_parameter_names(config_cls)
     kwargs: dict[str, Any] = {}
 
     if "instrument_provider" in parameter_names:
         kwargs["instrument_provider"] = InstrumentProviderConfig(load_ids=frozenset([instrument_id]))
+    if "routing" in parameter_names:
+        kwargs["routing"] = RoutingConfig(default=default_routing, venues=frozenset([venue_name]))
+    if "venue" in parameter_names:
+        kwargs["venue"] = Venue(venue_name)
 
     for value_key, env_key in spec.secret_fields:
         if value_key not in parameter_names:
@@ -460,15 +467,16 @@ def resolve_strategy_venues(
         instrument_ids[venue_name] = instrument_id
 
         if _bool_value(venue_cfg.get("data"), default=True):
-            data_clients[spec.venue_key] = _build_client_config(
+            data_clients[venue_name] = _build_client_config(
                 spec=spec,
                 config_cls=spec.data_config_cls,
                 venue_name=venue_name,
                 venue_cfg=venue_cfg,
                 instrument_id=instrument_id,
                 mode=mode,
+                default_routing=venue_name == execution_venue_name,
             )
-            data_factories[spec.venue_key] = spec.data_factory_cls
+            data_factories[venue_name] = spec.data_factory_cls
             data_enabled_venues.add(venue_name)
 
         venue_execution_enabled = _bool_value(
@@ -480,15 +488,16 @@ def resolve_strategy_venues(
                 raise ValueError(
                     f"Adapter {adapter_id!r} does not support execution for node.venues.{venue_name}",
                 )
-            exec_clients[spec.venue_key] = _build_client_config(
+            exec_clients[venue_name] = _build_client_config(
                 spec=spec,
                 config_cls=spec.exec_config_cls,
                 venue_name=venue_name,
                 venue_cfg=venue_cfg,
                 instrument_id=instrument_id,
                 mode=mode,
+                default_routing=venue_name == execution_venue_name,
             )
-            exec_factories[spec.venue_key] = spec.exec_factory_cls
+            exec_factories[venue_name] = spec.exec_factory_cls
             exec_enabled_venues.add(venue_name)
 
     if execution_venue_name not in data_enabled_venues:

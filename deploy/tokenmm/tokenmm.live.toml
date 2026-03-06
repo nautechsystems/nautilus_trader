@@ -5,23 +5,24 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "bybit_linear_plumeusdt_makerv3_01"
-strategy_instance_id = "bybit_linear_plumeusdt_makerv3_01"
-trader_id = "MAKER-LIVE-001"
-external_strategy_id = "bybit_linear_plumeusdt_makerv3_01"
+strategy_id = "tokenmm_api"
+strategy_instance_id = "tokenmm_api"
+trader_id = "TOKENMM-API-001"
+external_strategy_id = "tokenmm_api"
 
 [redis]
-host = "127.0.0.1"
-port = 6380
+host = "master.tokenmm.wapqos.apse1.cache.amazonaws.com"
+port = 6379
 db = 0
-username = ""
+username = "default"
 password = ""
+ssl = true
 connect_timeout_secs = 5.0
 read_timeout_secs = 5.0
 
 [venues]
 execution_venue = "BYBIT"
-reference_venue = "BINANCE"
+reference_venue = "BINANCE_SPOT"
 execution_symbol = "PLUMEUSDT"
 reference_symbol = "PLUMEUSDT"
 
@@ -39,7 +40,7 @@ exec_reconciliation = true
 exec_reconciliation_lookback_mins = 15
 exec_reconciliation_startup_delay_secs = 10.0
 filter_unclaimed_external_orders = true
-filter_position_reports = true
+filter_position_reports = false
 # Optional cache persistence guardrail:
 # cache_flush_on_start = false
 
@@ -54,14 +55,15 @@ recv_window_ms = 20000
 testnet = false
 demo = false
 
-[node.venues.BINANCE]
-instrument_id = "PLUMEUSDT.BINANCE"
+[node.venues.BINANCE_SPOT]
+adapter = "binance"
+instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
 account_type = "SPOT"
 
 [strategy]
-strategy_id = "bybit_linear_plumeusdt_makerv3_01"
+strategy_id = "tokenmm_api"
 order_qty = "1000"
 qty = "1000"
 bot_on = false
@@ -99,7 +101,7 @@ read_count = 200
 start_id = "$"
 
 [api]
-host = "127.0.0.1"
+host = "0.0.0.0"
 port = 5022
 strategy_class = "maker_v3"
 strategy_groups = "tokenmm"
@@ -110,32 +112,34 @@ quote_asset = "USDT"
 # - `tokenmm_required_strategy_ids` are used for degraded/missing-required checks in API portfolio views.
 # - Keep this list to the 5 PLUME MakerV3 instances only.
 tokenmm_strategy_ids = [
-  "bybit_linear_plumeusdt_makerv3_01",
-  "bybit_linear_plumeusdt_makerv3_02",
-  "bybit_linear_plumeusdt_makerv3_03",
-  "bybit_linear_plumeusdt_makerv3_04",
-  "bybit_linear_plumeusdt_makerv3_05",
+  "plumeusdt_bybit_perp_makerv3",
+  "plumeusdt_bybit_spot_makerv3",
+  "plumeusdt_okx_perp_makerv3",
+  "plumeusdt_binance_spot_makerv3",
 ]
 tokenmm_required_strategy_ids = [
-  "bybit_linear_plumeusdt_makerv3_01",
-  "bybit_linear_plumeusdt_makerv3_02",
-  "bybit_linear_plumeusdt_makerv3_03",
-  "bybit_linear_plumeusdt_makerv3_04",
-  "bybit_linear_plumeusdt_makerv3_05",
+  "plumeusdt_bybit_perp_makerv3",
+  "plumeusdt_bybit_spot_makerv3",
+  "plumeusdt_okx_perp_makerv3",
+  "plumeusdt_binance_spot_makerv3",
 ]
 
 [portfolio]
 portfolio_id = "tokenmm"
 # Naming convention:
-# - Flux strategy IDs: bybit_linear_plumeusdt_makerv3_01 .. bybit_linear_plumeusdt_makerv3_05
-# - IDs encode the actual execution venue, product type, symbol, strategy family, and instance slot.
+# - Flux strategy IDs: <execution_venue>_<product>_plumeusdt_makerv3
+# - Reference pricing stays on Binance spot via the `BINANCE_SPOT` venue alias.
 # - TokenMM strategy file names match Flux strategy IDs exactly.
 # - Production deploy configs use descriptive Nautilus strategy IDs, not generic numeric tags.
 
 [[contracts]]
 exchange = "bybit"
-symbol = "PLUMEUSDT"
+symbol = "PLUME/USDT"
 
 [[contracts]]
-exchange = "binance"
-symbol = "PLUMEUSDT"
+exchange = "binance_spot"
+symbol = "PLUME/USDT"
+
+[[contracts]]
+exchange = "okx"
+symbol = "PLUME/USDT"

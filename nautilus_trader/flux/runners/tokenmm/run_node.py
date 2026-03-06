@@ -20,7 +20,10 @@ Run a live TokenMM trading node using canonical MakerV3 strategy exports.
 from __future__ import annotations
 
 import argparse
+import fcntl
+import os
 import tomllib
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -35,6 +38,7 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.flux.common.config import FLUX_DEFAULT_NAMESPACE
 from nautilus_trader.flux.common.config import FLUX_SCHEMA_VERSION
 from nautilus_trader.flux.runners.live import resolve_strategy_venues
+from nautilus_trader.flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 from nautilus_trader.flux.strategies import MakerV3Strategy
 from nautilus_trader.flux.strategies import MakerV3StrategyConfig
 from nautilus_trader.flux.strategies.makerv3 import runtime_params as runtime_params_mod
@@ -46,6 +50,10 @@ from nautilus_trader.model.identifiers import TraderId
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
 
 
 def _optional_text(value: Any) -> str | None:
@@ -60,7 +68,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         data = tomllib.load(handle)
     if not isinstance(data, dict):
         raise ValueError(f"Config root must be a table: {path}")
-    return data
+    return apply_redis_env_overrides(data)
 
 
 def _merge_shared_tables(
@@ -134,6 +142,7 @@ def _attach_runtime_params_manager(
         db=int(redis_cfg.get("db", 0)),
         username=_optional_text(redis_cfg.get("username")),
         password=_optional_text(redis_cfg.get("password")),
+        ssl=bool(redis_cfg.get("ssl", False)),
         socket_connect_timeout=float(redis_cfg.get("connect_timeout_secs", 5.0)),
         socket_timeout=float(redis_cfg.get("read_timeout_secs", 5.0)),
         decode_responses=False,
@@ -154,6 +163,7 @@ def _redis_database_config(redis_cfg: dict[str, Any]) -> DatabaseConfig:
         port=int(redis_cfg.get("port", 6380)),
         username=_optional_text(redis_cfg.get("username")),
         password=_optional_text(redis_cfg.get("password")),
+        ssl=bool(redis_cfg.get("ssl", False)),
     )
 
 
@@ -173,6 +183,45 @@ def _resolve_execution_filter_settings(node_cfg: dict[str, Any]) -> tuple[bool, 
     )
 
 
+def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
+    identity = _table(config, "identity")
+    return _optional_text(identity.get("strategy_id")) or "makerv3"
+
+
+@contextmanager
+def _strategy_startup_lock(
+    config: dict[str, Any],
+    *,
+    lock_dir: Path | None = None,
+):
+    strategy_id = _resolve_flux_strategy_id(config)
+    root = lock_dir or (_repo_root() / ".run" / "tokenmm-strategy-locks")
+    root.mkdir(parents=True, exist_ok=True)
+    lock_path = root / f"{strategy_id}.lock"
+    lock_handle = lock_path.open("a+", encoding="utf-8")
+    try:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            lock_handle.seek(0)
+            owner = lock_handle.read().strip()
+            detail = f" ({owner})" if owner else ""
+            raise RuntimeError(
+                f"TokenMM strategy `{strategy_id}` is already running{detail}",
+            ) from exc
+
+        lock_handle.seek(0)
+        lock_handle.truncate()
+        lock_handle.write(f"pid={os.getpid()}\n")
+        lock_handle.flush()
+        yield
+    finally:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_handle.close()
+
+
 def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: bool) -> TradingNode:
     """
     Build and return a configured trading node for TokenMM.
@@ -183,13 +232,13 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     node_cfg = _table(config, "node")
     strategy_cfg = _table(config, "strategy")
 
-    strategy_id = _optional_text(identity.get("strategy_id")) or "makerv3"
+    strategy_id = _resolve_flux_strategy_id(config)
     external_strategy_id = _optional_text(identity.get("external_strategy_id")) or strategy_id
     trader_id = _optional_text(identity.get("trader_id")) or "MAKER-PAPER-001"
     namespace = _optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE
     schema_version = _optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION
 
-    enable_execution = bool(node_cfg.get("enable_execution", False)) or force_enable_execution
+    enable_execution = bool(node_cfg.get("enable_execution", force_enable_execution))
     reconciliation_lookback_mins, reconciliation_startup_delay_secs = (
         _resolve_reconciliation_settings(mode=mode, node_cfg=node_cfg)
     )
@@ -317,10 +366,11 @@ def main() -> None:
         force_enable_execution=bool(args.enable_execution),
     )
 
-    try:
-        node.run()
-    finally:
-        node.dispose()
+    with _strategy_startup_lock(config):
+        try:
+            node.run()
+        finally:
+            node.dispose()
 
 
 if __name__ == "__main__":

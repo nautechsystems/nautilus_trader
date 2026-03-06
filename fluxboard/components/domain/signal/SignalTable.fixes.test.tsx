@@ -11,8 +11,9 @@
  */
 
 import { render, screen, waitFor, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import SignalTable from './SignalTable';
+import SignalTable, { buildInventorySkewTooltip } from './SignalTable';
 import { useSignalStore } from '../../../stores';
 import * as apiModule from '../../../api';
 import * as socketsModule from '../../../sockets';
@@ -34,6 +35,14 @@ vi.mock('../../../sockets', () => ({
   }
 }));
 
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<any>('react-router-dom');
+  return {
+    ...actual,
+    useLocation: () => ({ pathname: '/tokenmm/signal', search: '', hash: '', state: null, key: 'test' }),
+  };
+});
+
 // Mock stores (merge with actual to avoid breaking other store consumers)
 vi.mock('../../../stores', async () => {
   const actual = await vi.importActual<any>('../../../stores');
@@ -47,6 +56,7 @@ const initSignalState = (state: any) => {
   (useSignalStore as any).mockImplementation((selector?: any) =>
     selector ? selector(currentSignalState) : currentSignalState
   );
+  (useSignalStore as any).getState = () => currentSignalState;
 };
 
 describe('SignalTable Fixes', () => {
@@ -125,7 +135,11 @@ describe('SignalTable Fixes', () => {
 
       initSignalState({ rows: [strategyWithNullParams], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      render(
+        <MemoryRouter initialEntries={['/tokenmm/signal']}>
+          <SignalTable />
+        </MemoryRouter>
+      );
 
       // Should render without crashing
       expect(screen.getByText('null_params_strategy')).toBeInTheDocument();
@@ -665,6 +679,50 @@ describe('SignalTable Fixes', () => {
       // With SimpleTooltip, the title attribute should not be set directly
       // (though we can't easily test the Radix tooltip structure without more complex queries)
       expect(legACell).toBeInTheDocument();
+    });
+
+    it('renders MakerV3 inventory skew tooltip with clear global and local sections', async () => {
+      const tooltip = buildInventorySkewTooltip(
+        {
+          type: 'inventory_skew',
+          inv_ratio: 0.15,
+          inv_skew: 12,
+          inv_ratio_global: 0.1,
+          inv_skew_global: 8,
+          inv_ratio_local: 0.05,
+          inv_skew_local: 4,
+          local_qty: 1250,
+          local_qty_key: {
+            venue_root: 'bybit',
+            instrument_type: 'linear',
+            base: 'PLUME',
+          },
+          local_qty_matched_rows: 2,
+          local_qty_missing_snapshot: 0,
+          base_bid_edge_bps: 10,
+          base_ask_edge_bps: 10,
+          eff_bid_edge_bps: 22,
+          eff_ask_edge_bps: 22,
+          delta_bid_edge_bps: 12,
+          delta_ask_edge_bps: 12,
+        },
+        {
+          bot_on: '1',
+          des_qty_global: '1000',
+          max_qty_global: '40000',
+          max_skew_bps_global: '20',
+          des_qty_local: '250',
+          max_qty_local: '5000',
+          max_skew_bps_local: '8',
+        },
+      );
+      expect(tooltip).toContain('Inventory skew (MakerV3):');
+      expect(tooltip).toContain('Global inventory:');
+      expect(tooltip).toContain('qty / max / max_skew_bps: 1000 / 40000 / 20');
+      expect(tooltip).toContain('Local inventory:');
+      expect(tooltip).toContain('qty / max / max_skew_bps: 250 / 5000 / 8');
+      expect(tooltip).toContain('local_qty / key: 1250 / bybit/linear/PLUME');
+      expect(tooltip).toContain('matched_rows / missing_snapshot: 2 / 0');
     });
   });
 

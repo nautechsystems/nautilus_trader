@@ -87,6 +87,38 @@ def _resolve_instrument(strategy: Any, instrument_id: Any) -> Any | None:
     return None
 
 
+def _contract_role_id(strategy: Any, instrument_id: Any) -> str:
+    instrument = _resolve_instrument(strategy, instrument_id)
+    exchange = _stringify_identifier(getattr(instrument_id, "venue", None)).strip().lower()
+    symbol = _stringify_identifier(getattr(instrument, "raw_symbol", ""))
+    base = _stringify_identifier(getattr(instrument, "base_currency", None)).upper()
+    quote = _stringify_identifier(getattr(instrument, "quote_currency", None)).upper()
+    if (not base or not quote) and symbol:
+        parsed_base, parsed_quote = inventory_mod.normalize_contract_symbol(symbol)
+        base = base or parsed_base
+        quote = quote or parsed_quote
+    if not exchange:
+        return ""
+    if base and quote:
+        return f"{exchange}:{base}/{quote}"
+    if not symbol:
+        symbol = str(instrument_id).split(".", maxsplit=1)[0]
+    return f"{exchange}:{symbol}"
+
+
+def _maker_role_map_payload(strategy: Any) -> dict[str, str]:
+    maker_leg = _contract_role_id(strategy, strategy.config.maker_instrument_id)
+    ref_leg = _contract_role_id(strategy, strategy.config.reference_instrument_id)
+    payload: dict[str, str] = {}
+    if maker_leg:
+        payload["maker_leg"] = maker_leg
+    if ref_leg:
+        payload["ref_leg"] = ref_leg
+    if ref_leg:
+        payload["hedge_leg"] = ref_leg
+    return payload
+
+
 def _matching_base_positions(
     strategy: Any,
     positions: list[Any],
@@ -355,6 +387,9 @@ def publish_state(strategy: Any, state: str, *, managed_orders_count: int | None
         "ts_event": now_ns,
         "ts_ms": now_ns // 1_000_000,
     }
+    maker_role_map = _maker_role_map_payload(strategy)
+    if maker_role_map:
+        payload["maker_role_map"] = maker_role_map
     if strategy._last_pricing_debug:
         payload["pricing_debug"] = strategy._last_pricing_debug
     strategy._publish_json(

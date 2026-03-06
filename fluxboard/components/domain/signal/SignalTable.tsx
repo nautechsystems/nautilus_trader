@@ -65,6 +65,7 @@ import { resolvePathProfile, type PathProfile } from '@/config/uiProfiles';
 import { EMPTY_SNAPSHOT_HOLD_MS, evaluateEmptySnapshotPolicy } from './emptySnapshotPolicy';
 import {
   deriveStrategyStatus,
+  describeRunState,
   describeTradingStatus,
   parseTradingEnabled,
   statusToFilterValue,
@@ -72,6 +73,7 @@ import {
   type TradingFilterValue,
   type TradingFlagInput,
 } from '@/utils/strategyStatus';
+import { deriveSignalRunState } from '@/utils/signalRunState';
 
 // =============================================================================
 // TYPES
@@ -91,6 +93,7 @@ type EnrichedRow = SignalStrategy & {
   _legAAge?: number;
   _legBAge?: number;
   _recentSide?: 'A' | 'B';
+  run_state: StrategyStatus['runState'];
   trading_enabled: TradingFilterValue;
   exchange: string;  // Combined exchanges from legs
   coin: string;  // Combined coins from legs
@@ -113,6 +116,13 @@ const tradingSortingFn: SortingFn<EnrichedRow> = (rowA, rowB, columnId) => {
   return a - b;
 };
 
+const runSortingFn: SortingFn<EnrichedRow> = (rowA, rowB, columnId) => {
+  const order: Record<StrategyStatus['runState'], number> = { running: 2, unknown: 1, stopped: 0 };
+  const a = order[rowA.getValue(columnId) as StrategyStatus['runState']] ?? -1;
+  const b = order[rowB.getValue(columnId) as StrategyStatus['runState']] ?? -1;
+  return a - b;
+};
+
 // =============================================================================
 // CONSTANTS
 // =============================================================================
@@ -121,6 +131,7 @@ type BalanceStatus = 'OK' | 'WARN' | 'FAIL' | 'UNKNOWN';
 
 const SIGNAL_FILTERS: ColumnFilter[] = [
   { key: 'id', label: 'Strategy', type: 'text', placeholder: 'Strategy ID...' },
+  { key: 'run_state', label: 'Run', type: 'select', options: ['running', 'unknown', 'stopped'] },
   { key: 'trading_enabled', label: 'Trading', type: 'select', options: TRADING_FILTER_VALUES },
   { key: 'exchange', label: 'Exchange', type: 'text', placeholder: 'bybit, rooster...' },
   { key: 'coin', label: 'Coin', type: 'text', placeholder: 'BTC, ETH...' },
@@ -333,7 +344,9 @@ function coerceFiniteNumber(value: unknown): number | undefined {
 function deriveCoinFromSymbol(symbol: unknown): string | undefined {
   const text = String(symbol ?? '').trim().toUpperCase();
   if (!text) return undefined;
-  const base = text.split('.')[0]?.split('-')[0] || text;
+  const baseFromVenue = text.split('.')[0] || text;
+  const baseFromSlash = baseFromVenue.split('/')[0] || baseFromVenue;
+  const base = baseFromSlash.split('-')[0] || baseFromSlash;
   for (const quote of ['USDT', 'USDC', 'USD', 'PERP']) {
     if (base.endsWith(quote) && base.length > quote.length) {
       return base.slice(0, -quote.length);
@@ -588,7 +601,7 @@ function buildInventorySkewSummary(adj?: InventorySkewAdjustment): string | null
   return null;
 }
 
-function buildInventorySkewTooltip(
+export function buildInventorySkewTooltip(
   adj?: InventorySkewAdjustment,
   params?: Record<string, string | undefined>,
 ): string | null {
@@ -600,17 +613,6 @@ function buildInventorySkewTooltip(
   const desQtyLocal = params?.des_qty_local ?? params?.local_des_qty;
   const maxQtyLocal = params?.max_qty_local ?? params?.local_max_qty;
   const maxSkewLocal = params?.max_skew_bps_local ?? params?.local_max_skew_bps;
-  const lines: string[] = [
-    'Inventory skew (MakerV3 stacked global + local):',
-    `Total inv_ratio (r): ${formatSignedRatio(adj.inv_ratio)} (clamped to [-1, +1])`,
-    `Total inv_skew (s): ${formatSignedBps(adj.inv_skew)} bps`,
-    `Total skew_bps: ${skewBps !== undefined ? formatSignedBps(skewBps) : '—'} (signed; <0 shifts quotes down, >0 shifts quotes up)`,
-    '',
-    'Global params:',
-    `des_qty_global / max_qty_global / max_skew_bps_global: ${desQtyGlobal ?? '—'} / ${maxQtyGlobal ?? '—'} / ${maxSkewGlobal ?? '—'}`,
-    `des_qty_local / max_qty_local / max_skew_bps_local: ${desQtyLocal ?? '—'} / ${maxQtyLocal ?? '—'} / ${maxSkewLocal ?? '—'}`,
-  ];
-
   const globalRatio = coerceFiniteNumber(adj.inv_ratio_global);
   const globalSkew = coerceFiniteNumber(adj.inv_skew_global);
   const localRatio = coerceFiniteNumber(adj.inv_ratio_local);
@@ -619,43 +621,37 @@ function buildInventorySkewTooltip(
   const localMatchedRows = coerceFiniteNumber(adj.local_qty_matched_rows);
   const localMissingSnapshot = coerceFiniteNumber(adj.local_qty_missing_snapshot);
   const localQtyKey = adj.local_qty_key;
+  const lines: string[] = [
+    'Inventory skew (MakerV3):',
+    `total skew_bps: ${skewBps !== undefined ? formatSignedBps(skewBps) : '—'} (quote shift only)`,
+    `total inv_ratio: ${formatSignedRatio(adj.inv_ratio)} (clamped to [-1, +1])`,
+    `total inv_skew: ${formatSignedBps(adj.inv_skew)} bps`,
+    '',
+    'Global inventory:',
+    `qty / max / max_skew_bps: ${desQtyGlobal ?? '—'} / ${maxQtyGlobal ?? '—'} / ${maxSkewGlobal ?? '—'}`,
+    `inv_ratio / inv_skew: ${formatSignedRatio(globalRatio)} / ${formatSignedBps(globalSkew)} bps`,
+    '',
+    'Local inventory:',
+    `qty / max / max_skew_bps: ${desQtyLocal ?? '—'} / ${maxQtyLocal ?? '—'} / ${maxSkewLocal ?? '—'}`,
+    `inv_ratio / inv_skew: ${formatSignedRatio(localRatio)} / ${formatSignedBps(localSkew)} bps`,
+  ];
 
-  const hasBreakdown =
-    globalRatio !== undefined ||
-    globalSkew !== undefined ||
-    localRatio !== undefined ||
-    localSkew !== undefined ||
-    localQty !== undefined ||
-    localMatchedRows !== undefined ||
-    localMissingSnapshot !== undefined ||
-    !!localQtyKey;
-
-  if (hasBreakdown) {
-    lines.push('', 'Breakdown (if present from backend):');
-    if (globalRatio !== undefined || globalSkew !== undefined) {
-      lines.push(
-        `Global inv_ratio / inv_skew: ${formatSignedRatio(globalRatio)} / ${formatSignedBps(globalSkew)} bps`,
-      );
-    }
-    if (localRatio !== undefined || localSkew !== undefined) {
-      lines.push(
-        `Local inv_ratio / inv_skew: ${formatSignedRatio(localRatio)} / ${formatSignedBps(localSkew)} bps`,
-      );
-    }
-    if (localQty !== undefined) {
-      lines.push(`Local qty: ${localQty}`);
-    }
-    if (localQtyKey && typeof localQtyKey === 'object') {
-      const venueRoot = String(localQtyKey.venue_root ?? '').trim() || '—';
-      const instrumentType = String(localQtyKey.instrument_type ?? '').trim() || '—';
-      const base = String(localQtyKey.base ?? '').trim() || '—';
-      lines.push(`Local key: ${venueRoot}/${instrumentType}/${base}`);
-    }
-    if (localMatchedRows !== undefined || localMissingSnapshot !== undefined) {
-      const matched = localMatchedRows !== undefined ? String(Math.trunc(localMatchedRows)) : '—';
-      const missing = localMissingSnapshot !== undefined ? String(Math.trunc(localMissingSnapshot)) : '—';
-      lines.push(`Local matched_rows / missing_snapshot: ${matched} / ${missing}`);
-    }
+  if (localQty !== undefined || !!localQtyKey) {
+    const venueRoot = localQtyKey && typeof localQtyKey === 'object'
+      ? String(localQtyKey.venue_root ?? '').trim() || '—'
+      : '—';
+    const instrumentType = localQtyKey && typeof localQtyKey === 'object'
+      ? String(localQtyKey.instrument_type ?? '').trim() || '—'
+      : '—';
+    const base = localQtyKey && typeof localQtyKey === 'object'
+      ? String(localQtyKey.base ?? '').trim() || '—'
+      : '—';
+    lines.push(`local_qty / key: ${localQty ?? '—'} / ${venueRoot}/${instrumentType}/${base}`);
+  }
+  if (localMatchedRows !== undefined || localMissingSnapshot !== undefined) {
+    const matched = localMatchedRows !== undefined ? String(Math.trunc(localMatchedRows)) : '—';
+    const missing = localMissingSnapshot !== undefined ? String(Math.trunc(localMissingSnapshot)) : '—';
+    lines.push(`matched_rows / missing_snapshot: ${matched} / ${missing}`);
   }
 
   lines.push(
@@ -665,7 +661,7 @@ function buildInventorySkewTooltip(
     `eff bid/ask: ${formatBps(adj.eff_bid_edge_bps)} / ${formatBps(adj.eff_ask_edge_bps)}`,
     `delta bid/ask: ${formatSignedBps(adj.delta_bid_edge_bps)} / ${formatSignedBps(adj.delta_ask_edge_bps)}`,
     '',
-    'maker quoting adjustment only (hedge side remains global-only)',
+    'Local skew changes maker quotes only; hedge remains global-only.',
   );
   return lines.join('\n');
 }
@@ -990,21 +986,53 @@ function makerModeToVariant(mode?: string): BadgeVariant {
   return 'neutral';
 }
 
-function truthRowTagsForLeg(
-  row: EnrichedRow,
-  legKey: LegKey,
-  roleMap?: MakerRoleMap,
-): Array<'Maker' | 'Ref' | 'Hedge'> {
-  if (!roleMap) return [];
-  const tags: Array<'Maker' | 'Ref' | 'Hedge'> = [];
-  if (resolveRoleSlot(roleMap.maker_leg, row) === legKey) tags.push('Maker');
-  if (resolveRoleSlot(roleMap.ref_leg, row) === legKey) tags.push('Ref');
-  if (roleMap.hedge_leg && resolveRoleSlot(roleMap.hedge_leg, row) === legKey) tags.push('Hedge');
-  return tags;
-}
-
 function coerceSnapshotPx(v: unknown): number | undefined {
   return coerceFiniteNumber(v);
+}
+
+function matchesSnapshotLeg(
+  leg: SignalLeg | null | undefined,
+  {
+    exchange,
+    symbol,
+  }: {
+    exchange: string | undefined;
+    symbol: string | undefined;
+  },
+): boolean {
+  if (!leg) return false;
+  const legExchange = String(leg.exchange ?? '').trim().toLowerCase();
+  const targetExchange = String(exchange ?? '').trim().toLowerCase();
+  if (!legExchange || !targetExchange || legExchange !== targetExchange) return false;
+
+  const contractSymbol = String(leg.contract_id ?? '').split(':', 2)[1] ?? '';
+  const legSymbol = String(contractSymbol || leg.coin || '').trim().toUpperCase();
+  const targetSymbol = String(symbol ?? '').trim().toUpperCase();
+  if (!targetSymbol) return true;
+  return legSymbol === targetSymbol;
+}
+
+function resolveMakerAwareLeg(
+  row: EnrichedRow,
+  legKey: LegKey,
+  quoteSnapshot: MakerV2QuoteSnapshot,
+): SignalLeg | null {
+  const roleMap = row.maker_role_map;
+  const targetLegId = legKey === 'A' ? roleMap?.maker_leg : roleMap?.ref_leg;
+  if (targetLegId) {
+    const mappedLeg = row.legs?.[targetLegId] ?? null;
+    if (mappedLeg) return mappedLeg;
+  }
+
+  const targetExchange = legKey === 'A' ? quoteSnapshot.maker_exchange : quoteSnapshot.ref_exchange;
+  const targetSymbol = legKey === 'A' ? quoteSnapshot.maker_symbol : quoteSnapshot.ref_symbol;
+  for (const entry of getOrderedLegEntries(row)) {
+    if (matchesSnapshotLeg(entry.leg, { exchange: targetExchange, symbol: targetSymbol })) {
+      return entry.leg;
+    }
+  }
+
+  return getLegForSlot(row, legKey);
 }
 
 function buildMakerTruthRow(
@@ -1022,22 +1050,9 @@ function buildMakerTruthRow(
   mode?: string;
   reason?: string | null;
 } | null {
-  const roleMap = row.maker_role_map;
-  const leg = getLegForSlot(row, legKey);
-  const makerSlot = resolveRoleSlot(roleMap?.maker_leg, row);
-  const refSlot = resolveRoleSlot(roleMap?.ref_leg, row);
-
-  const isMakerLeg = makerSlot
-    ? makerSlot === legKey
-    : (leg?.exchange != null && quoteSnapshot.maker_exchange != null
-        ? leg.exchange === quoteSnapshot.maker_exchange
-        : false);
-
-  const isRefLeg = refSlot
-    ? refSlot === legKey
-    : (leg?.exchange != null && quoteSnapshot.ref_exchange != null
-        ? leg.exchange === quoteSnapshot.ref_exchange
-        : false);
+  const leg = resolveMakerAwareLeg(row, legKey, quoteSnapshot);
+  const isMakerLeg = legKey === 'A';
+  const isRefLeg = legKey === 'B';
 
   if (!isMakerLeg && !isRefLeg) return null;
 
@@ -1057,7 +1072,7 @@ function buildMakerTruthRow(
     bid,
     mid,
     ask,
-    tags: truthRowTagsForLeg(row, legKey, roleMap),
+    tags: isMakerLeg ? ['Maker'] : ['Ref'],
     isMakerLeg,
     isRefLeg,
     mode: quoteSnapshot.mode,
@@ -1310,9 +1325,9 @@ const MakerAwareLegCell: FC<{ row: EnrichedRow; legKey: LegKey; showQuoted: bool
   showQuoted,
   nowMs,
 }) => {
-  const leg = getLegForSlot(row, legKey);
   const quoteSnapshot = resolveQuoteSnapshot(row);
   const hasMakerOverlay = !!quoteSnapshot;
+  const leg = quoteSnapshot ? resolveMakerAwareLeg(row, legKey, quoteSnapshot) : getLegForSlot(row, legKey);
 
   if (!hasMakerOverlay) {
     return <LegCell leg={leg} showQuoted={showQuoted} />;
@@ -1971,6 +1986,7 @@ export default function SignalTable({
         return null;
       }
 
+      const runState = deriveSignalRunState(row, serverNowMs);
       const status = deriveStrategyStatus({ trading: resolveTradingValue(row as any) });
       const tradingFilter = statusToFilterValue(status);
       const orderedLegs = getOrderedLegEntries(row);
@@ -2023,6 +2039,7 @@ export default function SignalTable({
         _legAAge: ageData.perLeg.A?.ageMs,
         _legBAge: ageData.perLeg.B?.ageMs,
         _recentSide: ageData.mostRecentSide,
+        run_state: runState,
         // Filterable string fields
         trading_enabled: tradingFilter,
         exchange: exchanges,
@@ -2059,11 +2076,9 @@ export default function SignalTable({
     const buildQuotesInfo = (row: EnrichedRow) => {
       const counts = getQuoteCounts(row);
       const maker = counts.maker;
-      const hedge = counts.hedge;
-      if (!maker && !hedge) return null;
+      if (!maker) return null;
 
       const makerSummary = maker ? `B ${maker.bidOpen}/${maker.bidDepth} · A ${maker.askOpen}/${maker.askDepth}` : '—';
-      const hedgeSummary = hedge ? `H B ${hedge.bidOpen}/${hedge.bidDepth} · A ${hedge.askOpen}/${hedge.askDepth}` : null;
 
       const lines = [
         'Maker quoting status (best-effort).',
@@ -2074,17 +2089,13 @@ export default function SignalTable({
         lines.push(`Maker Bid: ${maker.bidOpen}/${maker.bidDepth} (blocked ${maker.bidBlocked})`);
         lines.push(`Maker Ask: ${maker.askOpen}/${maker.askDepth} (blocked ${maker.askBlocked})`);
       }
-      if (hedge) {
-        lines.push(`Hedge Bid: ${hedge.bidOpen}/${hedge.bidDepth} (blocked ${hedge.bidBlocked})`);
-        lines.push(`Hedge Ask: ${hedge.askOpen}/${hedge.askDepth} (blocked ${hedge.askBlocked})`);
-      }
       lines.push('');
       lines.push('open = active orders');
       lines.push('depth = unique price levels');
       lines.push('blocked = cooldown');
 
       return {
-        summaryLines: hedgeSummary ? [makerSummary, hedgeSummary] : [makerSummary],
+        summaryLines: [makerSummary],
         tooltip: lines.join('\n'),
       };
     };
@@ -2111,13 +2122,61 @@ export default function SignalTable({
         ),
       },
       {
+        accessorKey: 'run_state',
+        id: 'run_state',
+        header: () => (
+          <ColumnHeaderWithTooltip
+            label="Run"
+            tooltip={[
+              'Runner liveness from the strategy state heartbeat.',
+              'Running = fresh state updates from the node.',
+              'Stopped = explicit on_stop or stale/missing heartbeat.',
+              'Independent of bot_on.',
+            ].join('\n')}
+          />
+        ),
+        enableSorting: true,
+        sortingFn: runSortingFn,
+        cell: ({ row }) => {
+          const descriptor = describeRunState(row.original.run_state);
+          const state = row.original.state && typeof row.original.state === 'object'
+            ? row.original.state as Record<string, unknown>
+            : null;
+          const stateName = String(state?.state ?? '—');
+          const stateTsMs = coerceFiniteNumber(state?.ts_ms ?? state?.ts_event);
+          const tooltip = [
+            'Runner status:',
+            `- State: ${descriptor.label} (${descriptor.subLabel})`,
+            `- Latest strategy state: ${stateName || '—'}`,
+            `- State ts: ${stateTsMs != null ? formatAbsoluteTime(stateTsMs > 1_000_000_000_000_000 ? Math.trunc(stateTsMs / 1_000_000) : stateTsMs) : '—'}`,
+            '',
+            'Semantics:',
+            '  Running: node is publishing fresh state',
+            '  Stopped: on_stop or heartbeat stale',
+            '  Unknown: no runner signal yet',
+          ].join('\n');
+          return (
+            <StatusPill
+              variant={descriptor.variant}
+              label={descriptor.label}
+              subLabel={descriptor.subLabel}
+              tooltip={tooltip}
+              size="xs"
+              tone="subtle"
+              ariaLabel={`Run is ${descriptor.label.toLowerCase()} for ${row.original.id}`}
+            />
+          );
+        },
+      },
+      {
         accessorKey: 'trading_enabled',
         id: 'trading_enabled',
         header: () => (
           <ColumnHeaderWithTooltip
             label="Trading"
             tooltip={[
-              'Trading state derived from params.bot_on, state.bot_on, or tradeable.',
+              'Order-placement intent derived from bot_on.',
+              'Independent of runner liveness.',
               'Live = bot_on=1 (strategy allowed to place orders).',
               'Paused = bot_on=0.',
               'Pending = runner transition/cooldown.',
@@ -2223,10 +2282,10 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Adj/Skew"
             tooltip={[
-              'Quote-only pricing adjustments applied by the strategy.',
-              'Inventory skew shifts bid/ask edges based on current inventory.',
-              'Displayed as a single signed skew (bps): negative shifts quotes down; positive shifts quotes up.',
-              'Hover for effective vs base edges (bps).',
+              'MakerV3 quote adjustments.',
+              'Inventory skew combines global inventory and local inventory.',
+              'Shown as signed skew_bps: negative shifts quotes down, positive shifts quotes up.',
+              'Hover for global/local breakdown and edge deltas.',
             ].join('\n')}
           />
         ),
@@ -2516,6 +2575,7 @@ const SignalMobileCard: FC<SignalMobileCardProps> = ({ row, showQuoted, nowProvi
     root: visibilityRoot,
   });
   const ageInfo = useMemo(() => computeStrategyAge(row, nowMs), [row, nowMs]);
+  const runDescriptor = describeRunState(row.run_state);
   const tradingDescriptor = describeTradingStatus(row.status);
   const balanceInfo = getBalanceStatus(row);
   const ageMs = ageInfo.displayAgeMs;
@@ -2545,6 +2605,13 @@ const SignalMobileCard: FC<SignalMobileCardProps> = ({ row, showQuoted, nowProvi
           <span className="text-xs text-zinc-500">{row.exchange}</span>
         </div>
         <div className="flex flex-col items-end gap-1 text-right">
+          <StatusPill
+            variant={runDescriptor.variant}
+            label={runDescriptor.label}
+            subLabel={runDescriptor.subLabel}
+            tooltip={`Run is ${runDescriptor.label.toLowerCase()} (${runDescriptor.subLabel})`}
+            layout="inline"
+          />
           <StatusPill
             variant={tradingDescriptor.variant}
             label={tradingDescriptor.label}

@@ -6,14 +6,14 @@ schema_version = "v1"
 
 [identity]
 # Flux strategy ID used by bridge/API routing keys.
-strategy_id = "bybit_linear_plumeusdt_makerv3_01"
-strategy_instance_id = "bybit_linear_plumeusdt_makerv3_01"
-trader_id = "MAKER-LIVE-TMM-01"
-external_strategy_id = "bybit_linear_plumeusdt_makerv3_01"
+strategy_id = "plumeusdt_bybit_perp_makerv3"
+strategy_instance_id = "plumeusdt_bybit_perp_makerv3"
+trader_id = "TOKENMM-LIVE-BYBIT-PERP"
+external_strategy_id = "plumeusdt_bybit_perp_makerv3"
 
 [venues]
 execution_venue = "BYBIT"
-reference_venue = "BINANCE"
+reference_venue = "BINANCE_SPOT"
 execution_symbol = "PLUMEUSDT"
 reference_symbol = "PLUMEUSDT"
 
@@ -30,7 +30,7 @@ exec_reconciliation = true
 exec_reconciliation_lookback_mins = 15
 exec_reconciliation_startup_delay_secs = 10.0
 filter_unclaimed_external_orders = true
-filter_position_reports = true
+filter_position_reports = false
 
 [node.venues.BYBIT]
 instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
@@ -42,15 +42,16 @@ recv_window_ms = 20000
 testnet = false
 demo = false
 
-[node.venues.BINANCE]
-instrument_id = "PLUMEUSDT.BINANCE"
+[node.venues.BINANCE_SPOT]
+adapter = "binance"
+instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
 account_type = "SPOT"
 
 [strategy]
 # Nautilus StrategyId / order tag seed. Keep unique across all node processes.
-strategy_id = "bybit_linear_plumeusdt_makerv3_01"
+strategy_id = "plumeusdt_bybit_perp_makerv3"
 order_qty = "1000"
 qty = "1000"
 bot_on = false

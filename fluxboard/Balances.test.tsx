@@ -58,9 +58,10 @@ const buildPayload = () => ({
           parent_id: 'PLUME_LOGICAL',
           coin: 'PLUME',
           venue: 'bybit',
-          wallet: null,
+          wallet: 'bybit-unified',
           address: null,
           label: null,
+          contract: 'PLUMEUSDT-LINEAR.BYBIT',
           qty_display: '1,000',
           qty_raw: 1000,
           mv_display: '$50.00',
@@ -211,6 +212,23 @@ describe('Balances component', () => {
 
     await user.click(expandAllButton);
     expect(await screen.findByText('0xabc1…0000')).toBeInTheDocument();
+  });
+
+  it('renders full product contract inline for exchange balances', async () => {
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('PLUME')).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getAllByText((_, element) =>
+        String(element?.textContent ?? '').includes('bybit') &&
+        String(element?.textContent ?? '').includes('bybit-unified') &&
+        String(element?.textContent ?? '').includes('PLUMEUSDT-LINEAR.BYBIT')
+      ).length
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText('PLUMEU...YBIT')).not.toBeInTheDocument();
   });
 
   it('surfaces header actions when embedded in dashboard wrapper', async () => {

@@ -40,6 +40,7 @@ from nautilus_trader.flux.common.config import FluxIdentityConfig
 from nautilus_trader.flux.common.config import FluxRedisConfig
 from nautilus_trader.flux.common.config import FluxVenuesConfig
 from nautilus_trader.flux.common.config import validate_identifier_part
+from nautilus_trader.flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
@@ -66,7 +67,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         data = tomllib.load(handle)
     if not isinstance(data, dict):
         raise ValueError(f"Config root must be a table: {path}")
-    return data
+    return apply_redis_env_overrides(data)
 
 
 def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -168,6 +169,7 @@ def _build_flux_config(config: dict[str, Any], *, mode: str, confirm_live: bool)
         db=int(redis_cfg.get("db", 0)),
         username=_optional_text(redis_cfg.get("username")),
         password=_optional_text(redis_cfg.get("password")),
+        ssl=bool(redis_cfg.get("ssl", False)),
         connect_timeout_secs=float(redis_cfg.get("connect_timeout_secs", 5.0)),
         read_timeout_secs=float(redis_cfg.get("read_timeout_secs", 5.0)),
     )
@@ -190,7 +192,7 @@ def _build_flux_config(config: dict[str, Any], *, mode: str, confirm_live: bool)
 
 def _resolve_bind_host(config: dict[str, Any], args: argparse.Namespace) -> str:
     api_cfg = _table(config, "api")
-    return str(args.host or api_cfg.get("host", "127.0.0.1"))
+    return str(args.host or api_cfg.get("host", "127.0.0.1")).strip() or "127.0.0.1"
 
 
 def _coerce_strategy_ids(raw_value: Any, *, field_name: str) -> list[str]:
@@ -225,7 +227,10 @@ def _build_profile_strategy_maps(
         field_name="api.tokenmm_required_strategy_ids",
     )
 
-    if required_ids and strategy_ids:
+    if not strategy_ids:
+        raise ValueError("`api.tokenmm_strategy_ids` must be a non-empty TOML array")
+
+    if required_ids:
         strategy_id_set = set(strategy_ids)
         unknown = sorted(strategy_id for strategy_id in required_ids if strategy_id not in strategy_id_set)
         if unknown:
@@ -236,8 +241,7 @@ def _build_profile_strategy_maps(
 
     profile_strategy_map: dict[str, list[str]] = {}
     profile_required_strategy_map: dict[str, list[str]] = {}
-    if strategy_ids:
-        profile_strategy_map["tokenmm"] = strategy_ids
+    profile_strategy_map["tokenmm"] = strategy_ids
     if required_ids:
         profile_required_strategy_map["tokenmm"] = required_ids
     return profile_strategy_map, profile_required_strategy_map
@@ -391,6 +395,7 @@ def main() -> None:
         db=flux_config.redis.db,
         username=flux_config.redis.username,
         password=flux_config.redis.password,
+        ssl=flux_config.redis.ssl,
         socket_connect_timeout=flux_config.redis.connect_timeout_secs,
         socket_timeout=flux_config.redis.read_timeout_secs,
         decode_responses=False,

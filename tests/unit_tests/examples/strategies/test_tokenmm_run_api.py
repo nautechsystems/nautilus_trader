@@ -42,6 +42,21 @@ def test_example_config_builds_flux_config_with_strategy_identity_uniqueness() -
     assert flux_config.identity.strategy_instance_id == flux_config.identity.strategy_id
 
 
+def test_build_flux_config_reads_redis_ssl_flag() -> None:
+    flux_config = _build_flux_config(
+        {
+            "flux": {"mode": "paper"},
+            "identity": {"strategy_id": "tokenmm_api"},
+            "redis": {"host": "example", "port": 6379, "db": 0, "ssl": True},
+            "venues": {},
+        },
+        mode="paper",
+        confirm_live=True,
+    )
+
+    assert flux_config.redis.ssl is True
+
+
 def test_example_config_api_host_is_localhost() -> None:
     config = _load_config(_example_config_path())
 
@@ -57,9 +72,14 @@ def test_resolve_bind_host_defaults_to_localhost_when_missing() -> None:
 
 
 def test_resolve_bind_host_prefers_cli_override() -> None:
-    host = _resolve_bind_host({"api": {"host": "127.0.0.1"}}, Namespace(host="0.0.0.0"))  # noqa: S104
+    host = _resolve_bind_host({"api": {"host": "127.0.0.1"}}, Namespace(host="localhost"))
 
-    assert host == "0.0.0.0"  # noqa: S104
+    assert host == "localhost"
+
+
+def test_resolve_bind_host_allows_public_bind_targets_for_production_deploys() -> None:
+    assert _resolve_bind_host({"api": {"host": "0.0.0.0"}}, Namespace(host=None)) == "0.0.0.0"  # noqa: S104
+    assert _resolve_bind_host({"api": {"host": "127.0.0.1"}}, Namespace(host="10.0.0.8")) == "10.0.0.8"  # noqa: S104
 
 
 def test_build_profile_strategy_maps_reads_tokenmm_allowlist_and_required_subset() -> None:
@@ -72,6 +92,11 @@ def test_build_profile_strategy_maps_reads_tokenmm_allowlist_and_required_subset
 
     assert strategy_map == {"tokenmm": ["strategy_a", "strategy_b"]}
     assert required_map == {"tokenmm": ["strategy_a"]}
+
+
+def test_build_profile_strategy_maps_requires_non_empty_tokenmm_allowlist() -> None:
+    with pytest.raises(ValueError, match="non-empty"):
+        _build_profile_strategy_maps({})
 
 
 def test_build_profile_strategy_maps_rejects_required_ids_outside_allowlist() -> None:
@@ -118,3 +143,30 @@ def test_attach_fluxboard_tokenmm_routes_redirects_tokenm_aliases(tmp_path: Path
     response = client.get("/tokenm/alerts?foo=1")
     assert response.status_code == 302
     assert response.headers["Location"] == "/tokenmm/alerts?foo=1"
+
+
+def test_load_config_applies_redis_env_overrides(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "tokenmm.toml"
+    config_path.write_text(
+        """
+[redis]
+host = "127.0.0.1"
+port = 6380
+db = 0
+ssl = false
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TOKENMM_REDIS_HOST", "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com")
+    monkeypatch.setenv("TOKENMM_REDIS_PORT", "6379")
+    monkeypatch.setenv("TOKENMM_REDIS_USERNAME", "default")
+    monkeypatch.setenv("TOKENMM_REDIS_PASSWORD", "secret")
+    monkeypatch.setenv("TOKENMM_REDIS_SSL", "true")
+
+    config = _load_config(config_path)
+
+    assert config["redis"]["host"] == "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com"
+    assert config["redis"]["port"] == 6379
+    assert config["redis"]["username"] == "default"
+    assert config["redis"]["password"] == "secret"
+    assert config["redis"]["ssl"] is True

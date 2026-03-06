@@ -280,6 +280,83 @@ describe('Signal MakerV2 truth overlay', () => {
     expect(merged?.quote_stacks?.hedge?.ask?.depth).toBe(5);
   });
 
+  it('does not render a hedge summary row in Quotes', async () => {
+    const makerStrategy: SignalStrategy = {
+      id: 'plumeusdt_bybit_perp_makerv3',
+      params: { bot_on: '1' } as any,
+      state: {
+        state: 'running',
+        ts_ms: Date.now(),
+      } as any,
+      legs: {
+        A: { coin: 'PLUME/USDT', exchange: 'bybit_perp', update_time: '2025-01-15 12:00:00' } as any,
+        B: { coin: 'PLUME/USDT', exchange: 'binance_spot', update_time: '2025-01-15 12:00:00' } as any,
+      },
+      balances_ok: true,
+      quote_stacks: {
+        maker: {
+          bands: [
+            {
+              band: 1,
+              bid: { open: 1, depth: 2, blocked: 0, rows: [] },
+              ask: { open: 2, depth: 3, blocked: 1, rows: [] },
+            },
+          ],
+        },
+        hedge: {
+          bid: { open: 3, depth: 4, blocked: 1, rows: [] },
+          ask: { open: 4, depth: 5, blocked: 2, rows: [] },
+        },
+      } as any,
+      maker_role_map: { maker_leg: 'A', ref_leg: 'B' } as any,
+    } as any;
+
+    initSignalState({
+      rows: [makerStrategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    const { container } = renderSignalTable();
+    await screen.findByText('plumeusdt_bybit_perp_makerv3');
+
+    const quotesCell = container.querySelector('tbody tr td:nth-child(5)');
+    expect(quotesCell?.textContent).toContain('B 1/2 · A 2/3');
+    expect(quotesCell?.textContent).not.toContain('H B');
+  });
+
+  it('separates Run from Trading status in Signal', async () => {
+    const nowMs = Date.now();
+    const strategy: SignalStrategy = {
+      id: 'plumeusdt_bybit_spot_makerv3',
+      params: { bot_on: '0' } as any,
+      state: {
+        state: 'bot_off',
+        ts_ms: nowMs,
+        bot_on: false,
+      } as any,
+      legs: {
+        A: { coin: 'PLUME/USDT', exchange: 'bybit_spot', update_time: '2025-01-15 12:00:00' } as any,
+        B: { coin: 'PLUME/USDT', exchange: 'binance_spot', update_time: '2025-01-15 12:00:00' } as any,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    renderSignalTable();
+
+    await screen.findByText('plumeusdt_bybit_spot_makerv3');
+    expect(screen.getByLabelText('Run is running for plumeusdt_bybit_spot_makerv3')).toBeInTheDocument();
+    expect(screen.getByLabelText('Trading is paused for plumeusdt_bybit_spot_makerv3')).toBeInTheDocument();
+  });
+
   it('passes through contract_id keyed leg patches in signal_delta', async () => {
     const strategy: SignalStrategy = {
       id: 'contract_patch_strategy',
@@ -329,6 +406,60 @@ describe('Signal MakerV2 truth overlay', () => {
     const merged = mockMergeStrategy.mock.calls.at(-1)?.[0];
     expect(merged?.legs?.['BTCUSDT-PERP']).toBeDefined();
     expect(merged?.legs?.['BTCUSDT-SPOT']).toBeUndefined();
+  });
+
+  it('normalizes contract-keyed delta leg coin labels from slash symbols', async () => {
+    const strategy: SignalStrategy = {
+      id: 'plume_delta_coin_strategy',
+      params: { bot_on: '0' } as any,
+      legs_order: ['binance_spot:PLUME/USDT', 'okx:PLUME/USDT'],
+      legs: {
+        'binance_spot:PLUME/USDT': {
+          coin: 'PLUME',
+          exchange: 'binance_spot',
+          decision_bid: 0.01043,
+          decision_ask: 0.01044,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        'okx:PLUME/USDT': {
+          coin: 'PLUME',
+          exchange: 'okx',
+          decision_bid: 0.01041,
+          decision_ask: 0.01042,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    renderSignalTable();
+
+    const deltaHandler = (socketsModule.socket.on as any).mock.calls.find(
+      (call: any[]) => call[0] === 'signal_delta'
+    )?.[1];
+    expect(typeof deltaHandler).toBe('function');
+
+    deltaHandler({
+      id: 'plume_delta_coin_strategy',
+      legs: {
+        'binance_spot:PLUME/USDT': {
+          symbol: 'PLUME/USDT',
+          decision_bid: 0.01045,
+          decision_ask: 0.01046,
+        },
+      },
+    });
+
+    expect(mockMergeStrategy).toHaveBeenCalled();
+    const merged = mockMergeStrategy.mock.calls.at(-1)?.[0];
+    expect(merged?.legs?.['binance_spot:PLUME/USDT']?.coin).toBe('PLUME');
   });
 
   it('passes through legs_order explicit clear in signal_delta', async () => {
@@ -418,12 +549,88 @@ describe('Signal MakerV2 truth overlay', () => {
       expect(screen.getByText('same_exchange_strategy')).toBeInTheDocument();
     });
 
-    const legASlot = container.querySelector('tbody tr td:nth-child(6)');
-    const legBSlot = container.querySelector('tbody tr td:nth-child(7)');
+    const legASlot = container.querySelector('tbody tr td:nth-child(7)');
+    const legBSlot = container.querySelector('tbody tr td:nth-child(8)');
     expect(legASlot?.textContent).toContain('BTC-SPOT');
     expect(legBSlot?.textContent).toContain('BTC-PERP');
     expect(legASlot?.textContent).toContain('bybit_linear');
     expect(legBSlot?.textContent).toContain('bybit_linear');
+  });
+
+  it('renders maker and ref markets from maker_role_map even when extra legs precede them', async () => {
+    const strategy: SignalStrategy = {
+      id: 'plumeusdt_okx_perp_makerv3',
+      params: { bot_on: '0' } as any,
+      legs_order: ['bybit:PLUME/USDT', 'binance_spot:PLUME/USDT', 'okx:PLUME/USDT'],
+      legs: {
+        'bybit:PLUME/USDT': {
+          coin: 'PLUME',
+          symbol: 'PLUME/USDT',
+          exchange: 'bybit',
+          decision_bid: null,
+          decision_ask: null,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        'binance_spot:PLUME/USDT': {
+          coin: 'PLUME',
+          symbol: 'PLUME/USDT',
+          exchange: 'binance_spot',
+          decision_bid: 0.01050,
+          decision_ask: 0.01051,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        'okx:PLUME/USDT': {
+          coin: 'PLUME',
+          symbol: 'PLUME/USDT',
+          exchange: 'okx',
+          decision_bid: 0.01047,
+          decision_ask: 0.01048,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+      },
+      balances_ok: true,
+      maker_role_map: {
+        maker_leg: 'okx:PLUME/USDT',
+        ref_leg: 'binance_spot:PLUME/USDT',
+        hedge_leg: 'binance_spot:PLUME/USDT',
+      } as any,
+      maker_v3: {
+        quote_snapshot: {
+          ts_ms: Date.now(),
+          mode: 'OFF',
+          reason: 'bot_off',
+          maker_exchange: 'okx',
+          maker_symbol: 'PLUME/USDT',
+          ref_exchange: 'binance_spot',
+          ref_symbol: 'PLUME/USDT',
+          ref_bid: '0.01050',
+          ref_ask: '0.01051',
+          place_bid: '0.01047',
+          place_ask: '0.01048',
+        },
+      } as any,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    const { container } = renderSignalTable();
+
+    await waitFor(() => {
+      expect(screen.getByText('plumeusdt_okx_perp_makerv3')).toBeInTheDocument();
+    });
+
+    const legASlot = container.querySelector('tbody tr td:nth-child(7)');
+    const legBSlot = container.querySelector('tbody tr td:nth-child(8)');
+    expect(legASlot?.textContent).toContain('okx');
+    expect(legASlot?.textContent).toContain('PLUME');
+    expect(legBSlot?.textContent).toContain('binance_spot');
+    expect(legBSlot?.textContent).toContain('PLUME');
+    expect(legASlot?.textContent).not.toContain('bybit');
   });
 
   it('uses mergeStrategies once for market_update strategy arrays', async () => {

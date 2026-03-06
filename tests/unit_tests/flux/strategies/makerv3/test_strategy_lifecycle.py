@@ -85,7 +85,7 @@ def test_cancel_managed_quotes_escape_hatch_can_cancel_all_instrument_orders(
     assert events[0][1]["cancel_all_instrument"] is True
 
 
-def test_on_start_resets_restart_latches(strategy_factory) -> None:
+def test_on_start_resets_restart_latches(strategy_factory, monkeypatch) -> None:
     maker_id = strategy_factory().config.maker_instrument_id
     strategy = strategy_factory(reference_instrument_id=maker_id)
     strategy._runtime_params_failed = True
@@ -98,12 +98,37 @@ def test_on_start_resets_restart_latches(strategy_factory) -> None:
     strategy._last_actionable_alert_transition = {"alert": "old->new"}
 
     strategy._publish_alert = lambda *_args, **_kwargs: None
+    strategy._runtime_bool = lambda _name: False
+    strategy._refresh_runtime_params = lambda *args, **kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_balances = lambda: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    subscribed: list[str] = []
+    strategy.subscribe_order_book_deltas = lambda instrument_id, **_kwargs: subscribed.append(
+        str(instrument_id),
+    )
+    fake_cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        instrument=lambda instrument_id: SimpleNamespace(
+            price_precision=6,
+            raw_symbol=str(instrument_id).split(".", maxsplit=1)[0],
+            make_qty=lambda value: value,
+        ),
+    )
+    fake_clock = SimpleNamespace(
+        timestamp_ns=lambda: 1_700_000_000_000_000_000,
+        set_timer=lambda **_kwargs: None,
+        timer_names=set(),
+        cancel_timer=lambda _name: None,
+    )
+    monkeypatch.setattr(type(strategy), "cache", property(lambda _self: fake_cache))
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
     stopped: list[bool] = []
     strategy.stop = lambda: stopped.append(True)
 
     strategy.on_start()
 
-    assert stopped == [True]
+    assert stopped == []
     assert strategy._runtime_params_failed is False
     assert strategy._quote_failure_circuit_open is False
     assert strategy._quote_failures_ns == []
@@ -112,21 +137,56 @@ def test_on_start_resets_restart_latches(strategy_factory) -> None:
     assert strategy._state_is_blocked is False
     assert strategy._last_actionable_alert_ns == {}
     assert strategy._last_actionable_alert_transition == {}
+    assert len(strategy._books) == 1
+    assert subscribed == [str(maker_id)]
 
 
-def test_on_start_rejects_duplicate_instrument_ids(strategy_factory) -> None:
+def test_on_start_allows_duplicate_instrument_ids_without_duplicate_subscriptions(
+    strategy_factory,
+    monkeypatch,
+) -> None:
     maker_id = strategy_factory().config.maker_instrument_id
     strategy = strategy_factory(reference_instrument_id=maker_id)
-    published: list[str] = []
-    strategy._publish_alert = lambda message, **_kwargs: published.append(str(message))
+    strategy._publish_alert = lambda *_args, **_kwargs: None
+    strategy._runtime_bool = lambda _name: False
+    strategy._refresh_runtime_params = lambda *args, **kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_balances = lambda: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    subscribed: list[str] = []
+    unsubscribed: list[str] = []
+    strategy.subscribe_order_book_deltas = lambda instrument_id, **_kwargs: subscribed.append(
+        str(instrument_id),
+    )
+    strategy.unsubscribe_order_book_deltas = lambda instrument_id, **_kwargs: unsubscribed.append(
+        str(instrument_id),
+    )
+    fake_cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        instrument=lambda instrument_id: SimpleNamespace(
+            price_precision=6,
+            raw_symbol=str(instrument_id).split(".", maxsplit=1)[0],
+            make_qty=lambda value: value,
+        ),
+    )
+    fake_clock = SimpleNamespace(
+        timestamp_ns=lambda: 1_700_000_000_000_000_000,
+        set_timer=lambda **_kwargs: None,
+        timer_names=set(),
+        cancel_timer=lambda _name: None,
+    )
+    monkeypatch.setattr(type(strategy), "cache", property(lambda _self: fake_cache))
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
     stopped: list[bool] = []
     strategy.stop = lambda: stopped.append(True)
 
     strategy.on_start()
+    strategy.on_stop()
 
-    assert stopped == [True]
-    assert published
-    assert "distinct" in published[-1].lower()
+    assert stopped == []
+    assert len(strategy._books) == 1
+    assert subscribed == [str(maker_id)]
+    assert unsubscribed == [str(maker_id)]
 
 
 def test_cancel_managed_quotes_records_cancel_all_exception_fields(strategy_factory) -> None:

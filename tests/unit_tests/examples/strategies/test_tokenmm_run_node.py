@@ -74,6 +74,7 @@ def test_attach_runtime_params_manager_wires_redis_backed_factory(monkeypatch) -
         "db": 4,
         "username": "alice",
         "password": "secret",
+        "ssl": False,
         "socket_connect_timeout": 7.5,
         "socket_timeout": 8.5,
         "decode_responses": False,
@@ -132,6 +133,7 @@ def test_redis_database_config_uses_redis_section_values() -> None:
             "port": 6381,
             "username": "alice",
             "password": "secret",
+            "ssl": True,
         },
     )
 
@@ -140,6 +142,7 @@ def test_redis_database_config_uses_redis_section_values() -> None:
     assert database.port == 6381
     assert database.username == "alice"
     assert database.password == "secret"
+    assert database.ssl is True
 
 def test_resolve_execution_filter_settings_defaults_disabled() -> None:
     assert run_node._resolve_execution_filter_settings({}) == (False, False)
@@ -224,6 +227,42 @@ db = 0
     assert merged["redis"]["db"] == 0
 
 
+def test_load_runtime_config_applies_redis_env_overrides(tmp_path: Path, monkeypatch) -> None:
+    strategy_path = tmp_path / "strategy.toml"
+    strategy_path.write_text(
+        """
+[flux]
+mode = "paper"
+
+[identity]
+strategy_id = "strategy_a"
+
+[redis]
+host = "127.0.0.1"
+port = 6380
+db = 0
+ssl = false
+
+[node]
+enable_execution = false
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TOKENMM_REDIS_HOST", "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com")
+    monkeypatch.setenv("TOKENMM_REDIS_PORT", "6379")
+    monkeypatch.setenv("TOKENMM_REDIS_USERNAME", "default")
+    monkeypatch.setenv("TOKENMM_REDIS_PASSWORD", "secret")
+    monkeypatch.setenv("TOKENMM_REDIS_SSL", "true")
+
+    merged = run_node._load_runtime_config(strategy_path)
+
+    assert merged["redis"]["host"] == "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com"
+    assert merged["redis"]["port"] == 6379
+    assert merged["redis"]["username"] == "default"
+    assert merged["redis"]["password"] == "secret"
+    assert merged["redis"]["ssl"] is True
+
+
 def test_parse_args_accepts_optional_shared_config(monkeypatch, tmp_path: Path) -> None:
     config_path = tmp_path / "strategy.toml"
     shared_path = tmp_path / "shared.toml"
@@ -242,3 +281,27 @@ def test_parse_args_accepts_optional_shared_config(monkeypatch, tmp_path: Path) 
 
     assert args.config == config_path
     assert args.shared_config == shared_path
+
+
+def test_strategy_startup_lock_prevents_duplicate_flux_strategy_ids(tmp_path: Path) -> None:
+    config = {
+        "identity": {"strategy_id": "plumeusdt_bybit_perp_makerv3"},
+    }
+
+    with run_node._strategy_startup_lock(config, lock_dir=tmp_path):
+        with pytest.raises(RuntimeError, match="already running"):
+            with run_node._strategy_startup_lock(config, lock_dir=tmp_path):
+                pass
+
+
+def test_strategy_startup_lock_releases_after_context_exit(tmp_path: Path) -> None:
+    config = {
+        "identity": {"strategy_id": "plumeusdt_bybit_perp_makerv3"},
+    }
+
+    context = run_node._strategy_startup_lock(config, lock_dir=tmp_path)
+    with context:
+        pass
+
+    with run_node._strategy_startup_lock(config, lock_dir=tmp_path):
+        pass

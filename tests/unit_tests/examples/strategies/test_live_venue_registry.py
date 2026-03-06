@@ -4,6 +4,7 @@ import pytest
 
 from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
+from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
@@ -48,6 +49,46 @@ def test_resolve_strategy_venues_builds_clients_from_generic_node_venues_table()
     assert isinstance(resolved.data_clients[BYBIT], BybitDataClientConfig)
     assert isinstance(resolved.data_clients[BINANCE], BinanceDataClientConfig)
     assert isinstance(resolved.exec_clients[BYBIT], BybitExecClientConfig)
+
+
+def test_resolve_strategy_venues_supports_binance_spot_reference_and_binance_perp_execution() -> None:
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "BINANCE_PERP",
+                "reference_venue": "BINANCE_SPOT",
+            },
+            "node": {
+                "venues": {
+                    "BINANCE_PERP": {
+                        "adapter": "binance",
+                        "instrument_id": "PLUMEUSDT-PERP.BINANCE_PERP",
+                        "account_type": "USDT_FUTURES",
+                        "execution": True,
+                    },
+                    "BINANCE_SPOT": {
+                        "adapter": "binance",
+                        "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                        "account_type": "SPOT",
+                    },
+                },
+            },
+        },
+        mode="paper",
+        enable_execution=True,
+    )
+
+    assert resolved.execution_venue == "BINANCE_PERP"
+    assert resolved.reference_venue == "BINANCE_SPOT"
+    assert str(resolved.execution_instrument_id) == "PLUMEUSDT-PERP.BINANCE_PERP"
+    assert str(resolved.reference_instrument_id) == "PLUMEUSDT.BINANCE_SPOT"
+    assert set(resolved.data_clients) == {"BINANCE_PERP", "BINANCE_SPOT"}
+    assert set(resolved.exec_clients) == {"BINANCE_PERP"}
+    assert isinstance(resolved.data_clients["BINANCE_PERP"], BinanceDataClientConfig)
+    assert isinstance(resolved.data_clients["BINANCE_SPOT"], BinanceDataClientConfig)
+    assert isinstance(resolved.exec_clients["BINANCE_PERP"], BinanceExecClientConfig)
+    assert str(resolved.data_clients["BINANCE_PERP"].venue) == "BINANCE_PERP"
+    assert str(resolved.data_clients["BINANCE_SPOT"].venue) == "BINANCE_SPOT"
 
 
 def test_resolve_strategy_venues_rejects_unknown_adapter() -> None:

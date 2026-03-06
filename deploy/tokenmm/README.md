@@ -7,6 +7,12 @@ This directory is the production deployment root for the 5-node PLUME TokenMM st
 - `tokenmm.live.toml`: shared bridge/API config plus the canonical TokenMM allowlist.
 - `tokenmm_stack.env.example`: stack environment template for `scripts/deploy/tokenmm_stack.sh`.
 - `strategies/`: one complete node TOML per deployed strategy, named by exact strategy ID.
+- Production strategy topology:
+  - `plumeusdt_bybit_perp_makerv3`
+  - `plumeusdt_bybit_spot_makerv3`
+  - `plumeusdt_okx_perp_makerv3`
+  - `plumeusdt_binance_perp_makerv3`
+  - `plumeusdt_binance_spot_makerv3`
 - Runner modules:
   - `nautilus_trader.flux.runners.tokenmm.run_node`
   - `nautilus_trader.flux.runners.tokenmm.run_bridge`
@@ -18,6 +24,9 @@ This directory is the production deployment root for the 5-node PLUME TokenMM st
 - Runtime flags win over the TOML [flux]/[node] values.
 - Live trading is opt-in only when `TOKENMM_MODE=live`, `TOKENMM_CONFIRM_LIVE=1`, and `TOKENMM_ENABLE_EXECUTION=1` are all set together.
 - Redis stays in `tokenmm.live.toml`; per-strategy node deploy files inherit it through the node runner `--shared-config` overlay.
+- Production Redis is the dedicated `tokenmm` ElastiCache endpoint; keep the auth token out of git and inject it with `TOKENMM_REDIS_PASSWORD`.
+- All five strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
+- `plumeusdt_binance_perp_makerv3` uses `BINANCE_PERP` for execution plus `BINANCE_SPOT` for reference pricing in the same node.
 
 ## Startup
 
@@ -35,6 +44,7 @@ The copied env template already starts the stack in a non-trading profile:
 TOKENMM_MODE=paper \
 TOKENMM_CONFIRM_LIVE=0 \
 TOKENMM_ENABLE_EXECUTION=0 \
+TOKENMM_REDIS_PASSWORD=... \
 TOKENMM_ALLOW_MISSING_KEYS=1 \
 scripts/deploy/tokenmm_stack.sh start
 ```
@@ -68,5 +78,6 @@ Use an explicit one-shot override or set the same values in `deploy/tokenmm/toke
 TOKENMM_MODE=live \
 TOKENMM_CONFIRM_LIVE=1 \
 TOKENMM_ENABLE_EXECUTION=1 \
+TOKENMM_REDIS_PASSWORD=... \
 scripts/deploy/tokenmm_stack.sh start
 ```

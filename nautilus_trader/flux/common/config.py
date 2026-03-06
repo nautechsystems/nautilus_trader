@@ -131,6 +131,7 @@ class FluxRedisConfig(NautilusConfig, frozen=True):
     db: int
     username: str | None = None
     password: str | None = None
+    ssl: bool = False
     connect_timeout_secs: float = 5.0
     read_timeout_secs: float = 5.0
 
@@ -145,6 +146,8 @@ class FluxRedisConfig(NautilusConfig, frozen=True):
             raise TypeError("`username` must be `str | None`")
         if self.password is not None and not isinstance(self.password, str):
             raise TypeError("`password` must be `str | None`")
+        if not isinstance(self.ssl, bool):
+            raise TypeError("`ssl` must be `bool`")
 
         _validate_positive_finite_number(self.connect_timeout_secs, "connect_timeout_secs")
         _validate_positive_finite_number(self.read_timeout_secs, "read_timeout_secs")

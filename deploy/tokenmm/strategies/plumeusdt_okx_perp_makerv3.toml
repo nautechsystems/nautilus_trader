@@ -5,19 +5,19 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "bybit_linear_plumeusdt_makerv3_03"
-strategy_instance_id = "bybit_linear_plumeusdt_makerv3_03"
-trader_id = "MAKER-LIVE-TMM-03"
-external_strategy_id = "bybit_linear_plumeusdt_makerv3_03"
+strategy_id = "plumeusdt_okx_perp_makerv3"
+strategy_instance_id = "plumeusdt_okx_perp_makerv3"
+trader_id = "TOKENMM-LIVE-OKX-PERP"
+external_strategy_id = "plumeusdt_okx_perp_makerv3"
 
 [venues]
-execution_venue = "BYBIT"
-reference_venue = "BINANCE"
-execution_symbol = "PLUMEUSDT"
+execution_venue = "OKX"
+reference_venue = "BINANCE_SPOT"
+execution_symbol = "PLUME-USDT-SWAP"
 reference_symbol = "PLUMEUSDT"
 
 [node]
-enable_execution = false
+enable_execution = true
 log_level = "INFO"
 timeout_connection = 20.0
 timeout_reconciliation = 30.0
@@ -25,30 +25,31 @@ timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
 exec_reconciliation = true
-# Shared-account persisted-cache startup guardrail for multi-node live.
 exec_reconciliation_lookback_mins = 15
 exec_reconciliation_startup_delay_secs = 10.0
 filter_unclaimed_external_orders = true
-filter_position_reports = true
+filter_position_reports = false
 
-[node.venues.BYBIT]
-instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
+[node.venues.OKX]
+adapter = "okx"
+instrument_id = "PLUME-USDT-SWAP.OKX"
 execution = true
-api_key_env = "BYBIT_API_KEY"
-api_secret_env = "BYBIT_API_SECRET"
-product_type = "LINEAR"
-recv_window_ms = 20000
-testnet = false
-demo = false
+api_key_env = "OKX_API_KEY"
+api_secret_env = "OKX_API_SECRET"
+api_passphrase_env = "OKX_API_PASSPHRASE"
+instrument_type = "SWAP"
+contract_type = "LINEAR"
+is_demo = false
 
-[node.venues.BINANCE]
-instrument_id = "PLUMEUSDT.BINANCE"
+[node.venues.BINANCE_SPOT]
+adapter = "binance"
+instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
 account_type = "SPOT"
 
 [strategy]
-strategy_id = "bybit_linear_plumeusdt_makerv3_03"
+strategy_id = "plumeusdt_okx_perp_makerv3"
 order_qty = "1000"
 qty = "1000"
 bot_on = false
