@@ -48,7 +48,7 @@ Implementation status:
   `mergeStateStatus=CLEAN`.
 - PR6b through PR13 have now been force-pushed on top of that PR6a fix, and GitHub
   currently reports PR17 through PR22 plus PR23 through PR26 `mergeStateStatus=CLEAN`.
-- PR13 head `b39bac7362ea119e6417f1b213c6637980d9be04` includes the `signer_route`
+- PR13 head `f350e8c191cb14776532e82ae3f2021923ac06be` includes the `signer_route`
   PyO3 fix in `crates/adapters/blockchain/src/python/config.rs`, and both
   `cargo test -p nautilus-blockchain --features python` and `cargo test -p
   nautilus-pyo3 --features defi` now pass locally on that committed head.
@@ -73,7 +73,7 @@ Implementation status:
 | PR12a | `pr12a/journal-idempotency` | `pr11/receipt-fills` | `ca2d452afb14d0ffcba0862dda57bc4f9d4f60f5` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12a-journal-idempotency` | <https://github.com/clickconfirm/nautilus-trader/pull/26> | `CLEAN` |
 | PR12b | `pr12b/happy-path-exec` | `pr12a/journal-idempotency` | `af578114208714ff134e4f654a9fb2e911029719` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12b-happy-path-exec` | <https://github.com/clickconfirm/nautilus-trader/pull/20> | `CLEAN` |
 | PR12c | `pr12c/ambiguous-retry-reorg` | `pr12b/happy-path-exec` | `b268cdee846fcc39b6a186d5e4d8cac9bee3d6c5` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12c-ambiguous-retry-reorg` | <https://github.com/clickconfirm/nautilus-trader/pull/21> | `CLEAN` |
-| PR13 | `pr13/python-surface` | `pr12c/ambiguous-retry-reorg` | `b39bac7362ea119e6417f1b213c6637980d9be04` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` | <https://github.com/clickconfirm/nautilus-trader/pull/22> | `CLEAN` |
+| PR13 | `pr13/python-surface` | `pr12c/ambiguous-retry-reorg` | `f350e8c191cb14776532e82ae3f2021923ac06be` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` | <https://github.com/clickconfirm/nautilus-trader/pull/22> | `CLEAN` |
 
 Notes:
 
@@ -133,30 +133,23 @@ Current top-of-stack state in the PR13 worktree:
   - converts the borrowed route into the owned config field with
     `signer_route.to_string()`
   - adds focused Python constructor tests for default and custom `signer_route`
-- Verified locally on PR13 head `b39bac7362ea119e6417f1b213c6637980d9be04`:
+- Verified locally on PR13 head `f350e8c191cb14776532e82ae3f2021923ac06be`:
   - `cargo test -p nautilus-blockchain --features python` (pass)
   - `cargo test -p nautilus-pyo3 --features defi` (pass)
-  - `rustfmt --check --edition 2024 crates/adapters/blockchain/src/python/config.rs` (pass)
-- Residual note:
-  - `cargo fmt --all -- --check` in the rebased PR13 worktree still reports inherited
-    formatting drift in `crates/model/src/python/defi/data.rs` from the rebased PR6a
-    lineage, so only the touched PR13 file was formatting-verified directly here
+  - `cargo fmt --all -- --check` (pass)
 
 ## Continuation Instructions
 
 1. Restore GitHub Actions billing or otherwise get checks running again.
 2. Re-run or re-trigger checks bottom-up from PR2 once GitHub Actions billing is
    restored.
-3. If restored CI surfaces a formatting gate on the inherited
-   `crates/model/src/python/defi/data.rs` drift, fix it at PR6a and propagate
-   downstream; otherwise continue directly to sequential merges.
-5. Keep merges strictly sequential:
+3. Keep merges strictly sequential:
    - PR2 -> PR3 -> PR4 -> PR5a -> PR6a -> PR6b -> PR7 -> PR8 -> PR9 -> PR10 -> PR11 -> PR12a -> PR12b -> PR12c -> PR13
-6. After each human merge:
+4. After each human merge:
    - append a new `## Progress Log` entry with merged SHA and status `merged`
    - rebase the next branch if `main` or its base changed
    - remove the merged worktree and delete the merged branch
-7. Stop after PR13 unless the plan is explicitly extended for optional/post-MVP work.
+5. Stop after PR13 unless the plan is explicitly extended for optional/post-MVP work.
 
 ## Commands For The Next Orchestrator
 
@@ -195,7 +188,7 @@ git status --short
 git rev-parse HEAD
 cargo test -p nautilus-blockchain --features python
 cargo test -p nautilus-pyo3 --features defi
-rustfmt --check --edition 2024 crates/adapters/blockchain/src/python/config.rs
+cargo fmt --all -- --check
 ```
 
 Refresh the current remote stack state:

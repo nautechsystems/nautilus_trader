@@ -3792,6 +3792,25 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
     - `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
 
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `f350e8c191cb14776532e82ae3f2021923ac06be`) - status: ready
+  - Pushed the final docs-only follow-up on top of `b39bac7362ea119e6417f1b213c6637980d9be04`, so the live PR13 head now matches the latest plan/handoff status text.
+  - Confirmed GitHub currently reports PR17 through PR22 plus PR23 through PR26 `mergeStateStatus=CLEAN`; PR16 remains `CLEAN`, and PR2 remains `UNSTABLE` due the external billing blocker.
+  - Tests run:
+    - `git push --force-with-lease origin pr13/python-surface` (pass: `b39bac736..f350e8c19`)
+    - `git ls-remote --heads origin pr13/python-surface pr12c/ambiguous-retry-reorg pr12b/happy-path-exec pr12a/journal-idempotency pr11/receipt-fills pr10/pcs-v2-router pr9/defi-wallet pr8/erc20-allowance pr7/remote-signer-client pr6b/rpc-http-methods` (pass: remote heads match local rebased SHAs, PR13 at `f350e8c191cb14776532e82ae3f2021923ac06be`)
+    - `gh pr list --state open --limit 100 --json number,title,headRefName,baseRefName,url,mergeStateStatus` (pass)
+    - `gh pr view 22 --json number,headRefName,baseRefName,mergeStateStatus,url` (pass: `mergeStateStatus=CLEAN`)
+    - `cargo fmt --all -- --check` (pass)
+
+- 2026-03-06 - Orchestrator handoff (`docs/plans/2026-03-06-pcs-orchestrator-handoff.md`) - status: corrected
+  - Updated the handoff after the final PR13 push so the recorded head SHA, open-stack table, and continuation notes reflect the live remote state instead of the earlier intermediate `b39bac...` snapshot.
+  - Removed the stale inherited-formatting warning because `cargo fmt --all -- --check` now passes on the current PR13 head.
+  - Tests run:
+    - `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
@@ -3824,3 +3843,5 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - The earlier PR13 local disk-exhaustion blocker is resolved after cleaning stale worktree build artifacts; current remaining local work is to commit the verified PR13 changes and force-push the rebased PR6b through PR13 branches.
 - PR6b through PR13 are now force-pushed and GitHub currently reports PR17 through PR22 plus PR23 through PR26 `mergeStateStatus=CLEAN`; the only remaining documented remote blocker inside the PCS stack is PR2 staying `UNSTABLE` while GitHub Actions billing remains broken.
 - `cargo fmt --all -- --check` in the rebased PR13 worktree still reports inherited formatting drift in `crates/model/src/python/defi/data.rs` from the rebased PR6a lineage; the touched PR13 file `crates/adapters/blockchain/src/python/config.rs` passes targeted `rustfmt --check`.
+- The final pushed PR13 head is `f350e8c191cb14776532e82ae3f2021923ac06be`; the earlier `b39bac...` note captured an intermediate local head before the docs-only follow-up push.
+- `cargo fmt --all -- --check` now passes on the current PR13 head, so there is no remaining local formatting blocker recorded from the PR13 closeout work.
