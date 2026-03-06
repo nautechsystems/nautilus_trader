@@ -29,6 +29,7 @@ members = [
   "crates/infrastructure",
   "crates/live",
   "crates/model",
+  "crates/nautilus_macros",
   "crates/network",
   "crates/persistence",
   "crates/portfolio",
@@ -106,6 +107,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.55.0", default
 # -----------------------------------------------------------------------------
 # Core dependencies
 # -----------------------------------------------------------------------------
+abi_stable = "0.11.3"
 ahash = { version = "0.8.12", features = ["serde"] }
 alloy-primitives = { version = "1.5.7", default-features = false, features = [
   "std",
@@ -117,6 +119,7 @@ arrow = { version = "57.3.0", default-features = false, features = [
   "csv",
   "json",
   "ipc",
+  "ffi",
 ] }
 arrow-row = "57.3.0"
 async-stream = "0.3.6"
@@ -185,6 +188,7 @@ pyo3 = { version = "0.28.2", default-features = false, features = [
   "hashbrown",
   "indexmap",
   "macros",
+  "multiple-pymethods",
   "rust_decimal",
   "serde",
 ] }

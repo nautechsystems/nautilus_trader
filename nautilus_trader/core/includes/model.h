@@ -1449,10 +1449,10 @@ typedef struct InstrumentClose_t {
 } InstrumentClose_t;
 
 /**
- * A built-in Nautilus data type.
+ * A C-compatible representation of [`Data`] for FFI.
  *
- * Not recommended for storing large amounts of data, as the largest variant is significantly
- * larger (10x) than the smallest.
+ * This enum matches the standard variants of [`Data`] but excludes the `Custom`
+ * variant which is not FFI-safe.
  */
 typedef enum Data_t_Tag {
     DELTA,

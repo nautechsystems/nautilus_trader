@@ -23,16 +23,15 @@ mod serial_tests {
     use indexmap::indexmap;
     use nautilus_common::{
         cache::database::CacheDatabaseAdapter,
-        custom::CustomData,
         signal::Signal,
         testing::{wait_until, wait_until_async},
     };
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{Params, UnixNanos};
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
         data::{
-            DataType,
+            CustomData, DataType,
             stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buyer},
         },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
@@ -52,6 +51,8 @@ mod serial_tests {
         position::Position,
         types::{Currency, Price, Quantity},
     };
+    use nautilus_persistence::test_data::RustTestCustomData;
+    use nautilus_serialization::ensure_custom_data_registered;
     use serde::Serialize;
     use ustr::Ustr;
 
@@ -671,22 +672,29 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_custom_data() {
+        ensure_custom_data_registered::<RustTestCustomData>();
+
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
-        // Add custom data
-        let metadata =
-            indexmap! {"a".to_string() => "1".to_string(), "b".to_string() => "2".to_string()};
-        let data_type = DataType::new("TestData", Some(metadata));
-        let json_stub_value = r#"{"a":"1","b":"2"}"#;
-        let json_value: serde_json::Value = serde_json::from_str(json_stub_value).unwrap();
-        let serialized_bytes = serde_json::to_vec(&json_value).unwrap();
-
-        let data = CustomData::new(
-            data_type.clone(),
-            Bytes::from(serialized_bytes),
-            UnixNanos::default(),
-            UnixNanos::default(),
+        let instrument_id = InstrumentId::from("RUST.TEST");
+        let metadata = indexmap! {
+            "a".to_string() => serde_json::Value::String("1".to_string()),
+            "b".to_string() => serde_json::Value::String("2".to_string()),
+        };
+        let params = Params::from_index_map(metadata);
+        let data_type = DataType::new(
+            "RustTestCustomData",
+            Some(params),
+            Some("RUST.TEST".to_string()),
         );
+        let inner = RustTestCustomData {
+            instrument_id,
+            value: 42.0,
+            flag: true,
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+        };
+        let data = CustomData::new(std::sync::Arc::new(inner), data_type.clone());
 
         pg_cache.add_custom_data(&data).unwrap();
 
@@ -697,7 +705,13 @@ mod serial_tests {
 
         let datas = pg_cache.load_custom_data(&data_type).unwrap();
         assert_eq!(datas.len(), 1);
-        assert_eq!(datas[0], data);
+        assert_eq!(datas[0].data_type.type_name(), "RustTestCustomData");
+        assert_eq!(datas[0].data_type.identifier(), Some("RUST.TEST"));
+        // Full CustomData wrapper roundtrip: loaded value must equal original
+        assert_eq!(
+            datas[0], data,
+            "CustomData roundtrip through Postgres must preserve equality"
+        );
 
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();

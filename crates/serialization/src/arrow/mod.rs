@@ -17,6 +17,7 @@
 
 pub mod bar;
 pub mod close;
+pub mod custom;
 pub mod delta;
 pub mod depth;
 pub mod index_price;
@@ -31,7 +32,7 @@ use std::{
 };
 
 use arrow::{
-    array::{Array, ArrayRef, FixedSizeBinaryArray},
+    array::{Array, ArrayRef, FixedSizeBinaryArray, StringArray, StringViewArray},
     datatypes::{DataType, Schema},
     error::ArrowError,
     ipc::writer::StreamWriter,
@@ -289,7 +290,7 @@ where
 /// Decodes raw Data objects from Apache Arrow RecordBatch format.
 pub trait DecodeDataFromRecordBatch
 where
-    Self: Sized + Into<Data> + ArrowSchemaProvider,
+    Self: Sized + ArrowSchemaProvider,
 {
     /// Decodes a `RecordBatch` into raw `Data` values, using the provided metadata.
     ///
@@ -318,6 +319,55 @@ impl<T: Write> WriteStream for T {
         writer.write(record_batch)?;
         writer.finish()?;
         Ok(())
+    }
+}
+
+/// Extracts a string column, accepting both Utf8 (`StringArray`) and Utf8View (`StringViewArray`).
+/// Parquet may return Utf8View when reading, so this handles both formats.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `column_index` is out of range: `EncodingError::MissingColumn`.
+/// - The column type is neither Utf8 nor Utf8View: `EncodingError::InvalidColumnType`.
+pub fn extract_column_string<'a>(
+    cols: &'a [ArrayRef],
+    column_key: &'static str,
+    column_index: usize,
+) -> Result<StringColumnRef<'a>, EncodingError> {
+    let column_values = cols
+        .get(column_index)
+        .ok_or(EncodingError::MissingColumn(column_key, column_index))?;
+    let dt = column_values.data_type();
+    if let Some(arr) = column_values.as_any().downcast_ref::<StringArray>() {
+        Ok(StringColumnRef::Utf8(arr))
+    } else if let Some(arr) = column_values.as_any().downcast_ref::<StringViewArray>() {
+        Ok(StringColumnRef::Utf8View(arr))
+    } else {
+        Err(EncodingError::InvalidColumnType(
+            column_key,
+            column_index,
+            DataType::Utf8,
+            dt.clone(),
+        ))
+    }
+}
+
+/// Reference to a string column, either Utf8 or Utf8View.
+#[derive(Debug)]
+pub enum StringColumnRef<'a> {
+    Utf8(&'a StringArray),
+    Utf8View(&'a StringViewArray),
+}
+
+impl StringColumnRef<'_> {
+    /// Returns the string value at row `i`.
+    #[inline]
+    pub fn value(&self, i: usize) -> &str {
+        match self {
+            Self::Utf8(arr) => arr.value(i),
+            Self::Utf8View(arr) => arr.value(i),
+        }
     }
 }
 

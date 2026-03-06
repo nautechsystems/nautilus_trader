@@ -98,6 +98,13 @@ CORE_CRATES := nautilus-analysis nautilus-backtest nautilus-common nautilus-core
     nautilus-persistence nautilus-portfolio nautilus-risk nautilus-serialization \
     nautilus-system nautilus-testkit nautilus-trading
 
+# Non-core crates: adapters + root, macros, cli, pyo3 (cargo-test = cargo-test-core + cargo-test-adapters)
+NON_CORE_CRATES := nautilus-trader nautilus-macros nautilus-cli nautilus-pyo3 \
+    nautilus-architect-ax nautilus-binance nautilus-bitmex nautilus-blockchain \
+    nautilus-bybit nautilus-coinbase-intx nautilus-databento nautilus-deribit \
+    nautilus-dydx nautilus-hyperliquid nautilus-kraken nautilus-okx \
+    nautilus-sandbox nautilus-tardis
+
 # > Colors
 # Use ANSI escape codes directly for cross-platform compatibility (Git Bash on Windows doesn't have tput)
 RED    := \033[0;31m
@@ -508,6 +515,18 @@ ifeq ($(VERBOSE),true)
 else
 	$(info $(M) Running Rust tests for core crates (showing summary and failures only)...)
 	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --cargo-profile nextest --status-level fail --final-status-level flaky
+endif
+
+.PHONY: cargo-test-adapters
+cargo-test-adapters: export RUST_BACKTRACE=1
+cargo-test-adapters: check-nextest-installed
+cargo-test-adapters:  #-- Run Rust tests for non-core crates only (adapters, cli, pyo3, macros; cargo-test-core + cargo-test-adapters = cargo-test)
+ifeq ($(VERBOSE),true)
+	$(info $(M) Running Rust tests for non-core crates (adapters, cli, pyo3, macros)...)
+	cargo nextest run $(foreach crate,$(NON_CORE_CRATES),-p $(crate)) --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --cargo-profile nextest --verbose
+else
+	$(info $(M) Running Rust tests for non-core crates (showing summary and failures only)...)
+	cargo nextest run $(foreach crate,$(NON_CORE_CRATES),-p $(crate)) --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --cargo-profile nextest --status-level fail --final-status-level flaky
 endif
 
 .PHONY: cargo-test-core-debug

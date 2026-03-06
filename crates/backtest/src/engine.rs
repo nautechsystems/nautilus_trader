@@ -851,6 +851,9 @@ impl BacktestEngine {
                 Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) => {
                     // Not routed to exchange — processed by data engine only
                 }
+                Data::Custom(_) => {
+                    // Not routed to exchange — custom data sent to actors via data engine
+                }
             }
         } else {
             log::warn!("No exchange found for venue {venue}, data not routed");

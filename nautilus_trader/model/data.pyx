@@ -2016,8 +2016,10 @@ cdef class DataType:
     ----------
     type : type
         The `Data` type of the data.
-    metadata : dict
+    metadata : dict, optional
         The data types metadata.
+    identifier : str, optional
+        Optional catalog path identifier (can contain subdirs, e.g. "venue//symbol").
 
     Raises
     ------
@@ -2033,13 +2035,14 @@ cdef class DataType:
 
     """
 
-    def __init__(self, type type not None, dict metadata = None) -> None:  # noqa (shadows built-in type)
+    def __init__(self, type type not None, dict metadata = None, identifier = None) -> None:  # noqa (shadows built-in type)
         if not issubclass(type, Data):
             if not (hasattr(type, "ts_event") and hasattr(type, "ts_init")):
                 raise TypeError("`type` was not a subclass of `Data`")
 
         self.type = type
         self.metadata = metadata or {}
+        self.identifier = identifier
         self.topic = self.type.__name__ + '.' + '.'.join([
             f'{k}={v if v is not None else "*"}' for k, v in self.metadata.items()
         ]) if self.metadata else self.type.__name__ + "*"

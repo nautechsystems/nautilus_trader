@@ -77,6 +77,8 @@ cdef class DataType:
     """The data types metadata.\n\n:returns: `dict[str, object]`"""
     cdef readonly str topic
     """The data types topic string.\n\n:returns: `str`"""
+    cdef readonly object identifier
+    """Optional catalog path identifier (can contain subdirs).\n\n:returns: `str | None`"""
 
 
 cdef class CustomData(Data):

@@ -1826,6 +1826,36 @@ GreeksTestData(
 )
 ```
 
+#### Python-only custom data with the PyO3 catalog
+
+To use custom data with the Rust-backed catalog (`ParquetDataCatalogV2` from `nautilus_pyo3`), use the
+`@customdataclass_pyo3()` decorator instead of `@customdataclass`. This adds the methods the Rust catalog
+expects (JSON and Arrow IPC serialization). After defining your class, register it once. You can pass either
+the **type** (recommended) or a **sample instance**:
+
+```python
+from nautilus_trader.core.nautilus_pyo3 import ParquetDataCatalogV2
+from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
+from nautilus_trader.model.custom import customdataclass_pyo3
+
+
+@customdataclass_pyo3()
+class MarketTickPython:
+    symbol: str = ""
+    price: float = 0.0
+    volume: int = 0
+
+
+# Register by type (no instance needed; call once, e.g. at startup)
+register_custom_data_class(MarketTickPython)
+
+catalog = ParquetDataCatalogV2("/path/to/catalog")
+catalog.write_custom_data([MarketTickPython(1, 1, "AAPL", 150.5, 1000)])
+result = catalog.query("MarketTickPython", None, None, None, None, None, True)
+```
+
+See `nautilus_trader.model.custom.customdataclass_pyo3` for details.
+
 #### Custom data type stub
 
 For better IDE code suggestions, you can create a `.pyi`

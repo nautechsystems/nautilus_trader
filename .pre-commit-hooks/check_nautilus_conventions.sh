@@ -28,8 +28,10 @@ echo "Checking for fully qualified Nautilus types..."
 
 # Use rg with context (-B 5) to get surrounding lines in one pass
 # Format: file:line:content (with -- separators for context)
+# Exclude nautilus_macros: proc-macros generate code for other crates; fully qualified paths required
 output=$(rg -n -B 5 \
   --no-heading \
+  --glob '!crates/nautilus_macros/**' \
   'nautilus_[a-z_]+(?:::[a-z_]+)+::[A-Z][A-Za-z0-9_]+' \
   crates tests examples \
   --type rust \
