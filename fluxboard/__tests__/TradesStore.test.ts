@@ -122,6 +122,57 @@ describe('useTradesStore', () => {
     expect(rows[0].version).toBe(2);
   });
 
+  it('preserves canonical naming fields when normalizing trades into store rows', () => {
+    const store = useTradesStore.getState();
+    store.setSnapshot([
+      {
+        op: 'upsert',
+        row_id: 'trade-canonical',
+        seq: 100,
+        version: 1,
+        time: '2026-03-07T03:00:00.000Z',
+        coin: 'PLUME',
+        symbol: 'PLUME/USDT',
+        exchange: 'bybit',
+        side: 'buy',
+        price: '0.0106',
+        qty: '1000',
+        mv: '10.6',
+        fee: 0,
+        instrument_id: 'PLUMEUSDT-SPOT.BYBIT',
+        venue: 'BYBIT',
+        venue_root: 'bybit',
+        product_type: 'spot',
+        market_type: 'spot',
+        contract_type: 'spot',
+        raw_symbol: 'PLUMEUSDT',
+        base_asset: 'PLUME',
+        quote_asset: 'USDT',
+        pair: 'PLUME/USDT',
+        inventory_asset: 'PLUME',
+        display_name_short: 'PLUME Spot',
+        display_name_long: 'Bybit PLUME Spot',
+      } as any,
+    ]);
+
+    expect(useTradesStore.getState().rows[0]).toMatchObject({
+      symbol: 'PLUME/USDT',
+      instrument_id: 'PLUMEUSDT-SPOT.BYBIT',
+      venue: 'BYBIT',
+      venue_root: 'bybit',
+      product_type: 'spot',
+      market_type: 'spot',
+      contract_type: 'spot',
+      raw_symbol: 'PLUMEUSDT',
+      base_asset: 'PLUME',
+      quote_asset: 'USDT',
+      pair: 'PLUME/USDT',
+      inventory_asset: 'PLUME',
+      display_name_short: 'PLUME Spot',
+      display_name_long: 'Bybit PLUME Spot',
+    });
+  });
+
   it('setSnapshot resets lastSeq to snapshot max seq', () => {
     const store = useTradesStore.getState();
     store.applyDelta([

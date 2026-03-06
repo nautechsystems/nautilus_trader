@@ -134,6 +134,11 @@ function coerceTradeTsMs(value: unknown): number | undefined {
   return Math.trunc(ts);
 }
 
+function coerceOptionalText(value: unknown): string | undefined {
+  const text = String(value ?? '').trim();
+  return text || undefined;
+}
+
 function deriveCoinFromSymbol(symbolText: string): string | undefined {
   const symbol = symbolText.trim().toUpperCase();
   if (!symbol) return undefined;
@@ -208,6 +213,21 @@ function normalizeTrade(event: TradeEvent): TradeRow | null {
     time,
     coin,
     exchange,
+    venue: coerceOptionalText((event as any).venue),
+    symbol: coerceOptionalText((event as any).symbol),
+    instrument_uid: coerceOptionalText((event as any).instrument_uid),
+    instrument_id: instrumentId || undefined,
+    venue_root: coerceOptionalText((event as any).venue_root),
+    product_type: coerceOptionalText((event as any).product_type),
+    market_type: coerceOptionalText((event as any).market_type),
+    contract_type: coerceOptionalText((event as any).contract_type),
+    raw_symbol: coerceOptionalText((event as any).raw_symbol),
+    base_asset: coerceOptionalText((event as any).base_asset),
+    quote_asset: coerceOptionalText((event as any).quote_asset),
+    pair: coerceOptionalText((event as any).pair),
+    inventory_asset: coerceOptionalText((event as any).inventory_asset),
+    display_name_short: coerceOptionalText((event as any).display_name_short),
+    display_name_long: coerceOptionalText((event as any).display_name_long),
     side,
     price: price ?? null,
     qty: qty ?? null,
