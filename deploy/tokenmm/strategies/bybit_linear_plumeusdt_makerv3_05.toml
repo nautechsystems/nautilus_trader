@@ -5,10 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "tokenmm_plume_makerv3_01"
-strategy_instance_id = "tokenmm_plume_makerv3_01"
-trader_id = "MAKER-LIVE-TMM-01"
-external_strategy_id = "tokenmm_plume_makerv3_01"
+strategy_id = "bybit_linear_plumeusdt_makerv3_05"
+strategy_instance_id = "bybit_linear_plumeusdt_makerv3_05"
+trader_id = "MAKER-LIVE-TMM-05"
+external_strategy_id = "bybit_linear_plumeusdt_makerv3_05"
 
 [venues]
 execution_venue = "BYBIT"
@@ -48,7 +48,7 @@ api_secret_env = "BINANCE_API_SECRET"
 account_type = "SPOT"
 
 [strategy]
-strategy_id = "tokenmm_plume_makerv3_01"
+strategy_id = "bybit_linear_plumeusdt_makerv3_05"
 order_qty = "1000"
 qty = "1000"
 bot_on = false

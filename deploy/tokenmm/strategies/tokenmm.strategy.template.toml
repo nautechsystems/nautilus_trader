@@ -6,10 +6,10 @@ schema_version = "v1"
 
 [identity]
 # Flux strategy ID used by bridge/API routing keys.
-strategy_id = "tokenmm_plume_makerv3_01"
-strategy_instance_id = "tokenmm_plume_makerv3_01"
+strategy_id = "bybit_linear_plumeusdt_makerv3_01"
+strategy_instance_id = "bybit_linear_plumeusdt_makerv3_01"
 trader_id = "MAKER-LIVE-TMM-01"
-external_strategy_id = "tokenmm_plume_makerv3_01"
+external_strategy_id = "bybit_linear_plumeusdt_makerv3_01"
 
 [venues]
 execution_venue = "BYBIT"
@@ -50,7 +50,7 @@ account_type = "SPOT"
 
 [strategy]
 # Nautilus StrategyId / order tag seed. Keep unique across all node processes.
-strategy_id = "tokenmm_plume_makerv3_01"
+strategy_id = "bybit_linear_plumeusdt_makerv3_01"
 order_qty = "1000"
 qty = "1000"
 bot_on = false

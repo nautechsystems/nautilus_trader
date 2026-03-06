@@ -6,8 +6,8 @@ This directory holds one TOML file per TokenMM node process used by
 ## File naming
 
 - Use the exact Flux strategy ID as the file name: `<flux_strategy_id>.toml`.
-- Example: `tokenmm_plume_makerv3_03.toml`.
-- Use neutral clone IDs when the deployed nodes are otherwise identical; do not encode fake venue distinctions in the name.
+- Example: `bybit_linear_plumeusdt_makerv3_03.toml`.
+- Include the actual execution venue, product type, symbol, and strategy family in the strategy ID.
 - Keep exactly 5 strategy files for Phase 1 production (`TOKENMM_EXPECTED_NODES=5` default).
 
 ## Required TOML keys per file

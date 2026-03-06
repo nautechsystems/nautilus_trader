@@ -5,10 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "tokenmm_plume_makerv3_01"
-strategy_instance_id = "tokenmm_plume_makerv3_01"
+strategy_id = "bybit_linear_plumeusdt_makerv3_01"
+strategy_instance_id = "bybit_linear_plumeusdt_makerv3_01"
 trader_id = "MAKER-LIVE-001"
-external_strategy_id = "tokenmm_plume_makerv3_01"
+external_strategy_id = "bybit_linear_plumeusdt_makerv3_01"
 
 [redis]
 host = "127.0.0.1"
@@ -61,7 +61,7 @@ api_secret_env = "BINANCE_API_SECRET"
 account_type = "SPOT"
 
 [strategy]
-strategy_id = "tokenmm_plume_makerv3_01"
+strategy_id = "bybit_linear_plumeusdt_makerv3_01"
 order_qty = "1000"
 qty = "1000"
 bot_on = false
@@ -110,25 +110,25 @@ quote_asset = "USDT"
 # - `tokenmm_required_strategy_ids` are used for degraded/missing-required checks in API portfolio views.
 # - Keep this list to the 5 PLUME MakerV3 instances only.
 tokenmm_strategy_ids = [
-  "tokenmm_plume_makerv3_01",
-  "tokenmm_plume_makerv3_02",
-  "tokenmm_plume_makerv3_03",
-  "tokenmm_plume_makerv3_04",
-  "tokenmm_plume_makerv3_05",
+  "bybit_linear_plumeusdt_makerv3_01",
+  "bybit_linear_plumeusdt_makerv3_02",
+  "bybit_linear_plumeusdt_makerv3_03",
+  "bybit_linear_plumeusdt_makerv3_04",
+  "bybit_linear_plumeusdt_makerv3_05",
 ]
 tokenmm_required_strategy_ids = [
-  "tokenmm_plume_makerv3_01",
-  "tokenmm_plume_makerv3_02",
-  "tokenmm_plume_makerv3_03",
-  "tokenmm_plume_makerv3_04",
-  "tokenmm_plume_makerv3_05",
+  "bybit_linear_plumeusdt_makerv3_01",
+  "bybit_linear_plumeusdt_makerv3_02",
+  "bybit_linear_plumeusdt_makerv3_03",
+  "bybit_linear_plumeusdt_makerv3_04",
+  "bybit_linear_plumeusdt_makerv3_05",
 ]
 
 [portfolio]
 portfolio_id = "tokenmm"
 # Naming convention:
-# - Flux strategy IDs: tokenmm_plume_makerv3_01 .. tokenmm_plume_makerv3_05
-# - These are neutral clone IDs for the 5 deployed PLUME TokenMM nodes.
+# - Flux strategy IDs: bybit_linear_plumeusdt_makerv3_01 .. bybit_linear_plumeusdt_makerv3_05
+# - IDs encode the actual execution venue, product type, symbol, strategy family, and instance slot.
 # - TokenMM strategy file names match Flux strategy IDs exactly.
 # - Production deploy configs use descriptive Nautilus strategy IDs, not generic numeric tags.
 

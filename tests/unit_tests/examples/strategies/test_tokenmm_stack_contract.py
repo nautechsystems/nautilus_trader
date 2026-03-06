@@ -19,11 +19,11 @@ from pathlib import Path
 
 
 TOKENMM_STRATEGY_IDS = [
-    "tokenmm_plume_makerv3_01",
-    "tokenmm_plume_makerv3_02",
-    "tokenmm_plume_makerv3_03",
-    "tokenmm_plume_makerv3_04",
-    "tokenmm_plume_makerv3_05",
+    "bybit_linear_plumeusdt_makerv3_01",
+    "bybit_linear_plumeusdt_makerv3_02",
+    "bybit_linear_plumeusdt_makerv3_03",
+    "bybit_linear_plumeusdt_makerv3_04",
+    "bybit_linear_plumeusdt_makerv3_05",
 ]
 
 
@@ -241,15 +241,15 @@ def test_tokenmm_production_strategy_configs_use_descriptive_strategy_ids() -> N
         strategy_id = path.stem
         assert f'strategy_id = "{strategy_id}"' in config
         assert "MAKERV3-TMM-" not in config
-        assert "bybit_binance_plumeusdt" not in config
+        assert "tokenmm_plume_makerv3" not in config
 
 
-def test_tokenmm_registry_uses_neutral_clone_ids_not_venue_prefixed_ids() -> None:
+def test_tokenmm_registry_uses_execution_scoped_ids_not_tokenmm_clone_ids() -> None:
     config = _read(_repo_root() / "deploy/tokenmm/tokenmm.live.toml")
 
     for strategy_id in TOKENMM_STRATEGY_IDS:
         assert f'"{strategy_id}"' in config
-    assert "bybit_binance_plumeusdt_makerv3" not in config
+    assert "tokenmm_plume_makerv3" not in config
 
 
 def test_deploy_env_examples_default_to_safe_paper_profiles_and_explicit_live_opt_in() -> None:

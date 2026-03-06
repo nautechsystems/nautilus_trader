@@ -11,7 +11,7 @@ This runbook covers the two supported serving modes for the TokenMM Fluxboard su
 ```bash
 redis-server --port 6380
 python -m nautilus_trader.flux.runners.tokenmm.run_node \
-  --config deploy/tokenmm/strategies/tokenmm_plume_makerv3_01.toml \
+  --config deploy/tokenmm/strategies/bybit_linear_plumeusdt_makerv3_01.toml \
   --shared-config deploy/tokenmm/tokenmm.live.toml \
   --mode paper
 python -m nautilus_trader.flux.runners.tokenmm.run_bridge --config deploy/tokenmm/tokenmm.live.toml --mode paper --all-strategies
