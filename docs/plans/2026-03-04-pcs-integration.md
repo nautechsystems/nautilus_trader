@@ -3606,12 +3606,27 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo test -p nautilus-blockchain signer` (pass)
     - `cargo test -p nautilus-blockchain` (pass)
 
+- 2026-03-05 - PR8 (`pr8/erc20-allowance`, head SHA `e379a131cf459883dd0be48f417176dc5fa7ce24`) - status: ready
+  - Extended `contracts::erc20` with `allowance(owner, spender)` and `approve(spender, amount)` ABI support (encode helpers + allowance read helper) and added selector/encoding roundtrip tests.
+  - Added `execution::erc20_allowance` helper flow with policy-driven approve paths (`Exact`, `Unlimited`, `UnlimitedResetFirst`), router fail-closed enforcement, bounded receipt polling, `APPROVE_FAILED` / `ALLOWANCE_NOT_UPDATED` classification, and mandatory post-approve allowance re-check invariant.
+  - Added integration coverage in `tests/erc20_allowance_flow.rs` for sufficient/insufficient allowance paths, unlimited allowlist + cap guards, reset-first zero-then-max behavior, receipt failure handling, RPC nonce/gas error bubbling, and unrepresentable-notional fail-closed behavior.
+  - Tests run:
+    - `cargo fmt --all -- --check` (pass)
+    - `cargo test -p nautilus-blockchain erc20::tests` (pass)
+    - `cargo test -p nautilus-blockchain --test erc20_allowance_flow` (pass)
+    - `cargo test -p nautilus-blockchain execution::erc20_allowance::tests` (pass)
+    - `cargo test -p nautilus-blockchain` (pass)
+    - `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md` (pass)
+    - `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md` (pass)
+    - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
 - 2026-03-05 - Progress Log correction: entry at line 3491 recorded a mistyped SHA (`3edac0c621c59c1db0c4bc2b8d354ed17d8355fb`); correct SHA is `3edac0c626077c915da3260bb16f3f3b75f0f891`.
 - 2026-03-05 - PR2 scope reality: execution/factory ungating and token metadata caching changes have already landed in PR2; PR3 should be re-scoped to avoid duplicate churn while still delivering the remaining feature-gating/metadata boundary goals.
 - 2026-03-05 - PR7 decision: full ABI argument policy checks (recipient/spender/minOut/maxIn/deadline-arg parity) are deferred to swap/approve execution milestones (PR10/PR11/PR12) where operation-specific calldata intent fields are available; PR7 enforces fail-closed selector/value/deadline/notional preflight plus strict signed raw-tx field equality and sender recovery.
+- 2026-03-05 - PR8 decision: `ApprovalPolicy::Unlimited` now requires an explicit `unlimited_approval_max_amount` that remains signer-compatible for `expected_notional`; uncapped `U256::MAX` approvals are rejected fail-closed before nonce/gas/sign/send to avoid policy-underreporting or signer-preflight coercion.
 
 ## Known Issues / Follow-ups
 
@@ -3619,3 +3634,4 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - `docs/plans/2026-03-04-pcs-integration.md` contains existing trailing whitespace and possible spell-check terms from source import; text-lint hooks may fail in CI until normalized or explicitly exempted.
 - PR2 smoke check confirms `Venue("Bsc:PancakeSwapV2")` is still rejected (`dex 'PancakeSwapV2' not recognized`) until PR4 (`DexType::PancakeSwapV2` + venue parsing tests) lands; interim smoke used `Arbitrum:UniswapV3` to validate no-panic lifecycle wiring.
 - PR7 signer preflight currently validates selector-level intent and policy fields but does not yet ABI-decode operation-specific calldata arguments; implement fail-closed arg-level checks once swap/approve builders are integrated (PR10/PR11/PR12).
+- PR8 currently treats uncapped unlimited approvals (`U256::MAX`) as unsupported in fail-closed mode unless a signer-compatible cap is configured (`unlimited_approval_max_amount`), pending signer-side large-notional compatibility work.

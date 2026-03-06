@@ -33,6 +33,8 @@ sol! {
         function symbol() external view returns (string);
         function decimals() external view returns (uint8);
         function balanceOf(address account) external view returns (uint256);
+        function allowance(address owner, address spender) external view returns (uint256);
+        function approve(address spender, uint256 amount) external returns (bool);
     }
 }
 
@@ -278,6 +280,47 @@ impl Erc20Contract {
         ERC20::balanceOfCall::abi_decode_returns(&result)
             .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
     }
+
+    /// Encodes ERC20 `allowance(owner, spender)` call data.
+    #[must_use]
+    pub fn encode_allowance_call(owner: &Address, spender: &Address) -> Vec<u8> {
+        ERC20::allowanceCall {
+            owner: *owner,
+            spender: *spender,
+        }
+        .abi_encode()
+    }
+
+    /// Reads ERC20 allowance from the chain for (`owner`, `spender`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the ABI response cannot be decoded.
+    pub async fn allowance(
+        &self,
+        token_address: &Address,
+        owner: &Address,
+        spender: &Address,
+    ) -> Result<U256, BlockchainRpcClientError> {
+        let call_data = Self::encode_allowance_call(owner, spender);
+        let result = self
+            .base
+            .execute_call(token_address, &call_data, None)
+            .await?;
+
+        ERC20::allowanceCall::abi_decode_returns(&result)
+            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
+    }
+
+    /// Encodes ERC20 `approve(spender, amount)` call data.
+    #[must_use]
+    pub fn encode_approve_call(spender: &Address, amount: U256) -> Vec<u8> {
+        ERC20::approveCall {
+            spender: *spender,
+            amount,
+        }
+        .abi_encode()
+    }
 }
 
 /// Attempts to decode a revert reason from failed call data.
@@ -410,7 +453,7 @@ fn parse_batch_token_results(
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::{Bytes, address};
+    use alloy::primitives::{Bytes, U256, address};
     use rstest::{fixture, rstest};
 
     use super::*;
@@ -677,5 +720,53 @@ mod tests {
             }
             _ => panic!("Expected DecodingError"),
         }
+    }
+
+    #[rstest]
+    fn test_allowance_call_encoding_matches_selector_dd62ed3e() {
+        let owner = address!("1111111111111111111111111111111111111111");
+        let spender = address!("2222222222222222222222222222222222222222");
+        let call_data = Erc20Contract::encode_allowance_call(&owner, &spender);
+
+        assert_eq!(call_data.len(), 4 + 32 + 32);
+        assert_eq!(&call_data[..4], &[0xdd, 0x62, 0xed, 0x3e]);
+
+        let decoded = ERC20::allowanceCall::abi_decode(&call_data).unwrap();
+        assert_eq!(decoded.owner, owner);
+        assert_eq!(decoded.spender, spender);
+    }
+
+    #[rstest]
+    fn test_approve_call_encoding_matches_selector_095ea7b3() {
+        let spender = address!("3333333333333333333333333333333333333333");
+        let amount = U256::from(1_000_000u64);
+        let call_data = Erc20Contract::encode_approve_call(&spender, amount);
+
+        assert_eq!(call_data.len(), 4 + 32 + 32);
+        assert_eq!(&call_data[..4], &[0x09, 0x5e, 0xa7, 0xb3]);
+
+        let decoded = ERC20::approveCall::abi_decode(&call_data).unwrap();
+        assert_eq!(decoded.spender, spender);
+        assert_eq!(decoded.amount, amount);
+    }
+
+    #[rstest]
+    fn test_approve_call_encoding_matches_amount_and_spender() {
+        let spender = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let amount = U256::from_str_radix("1234567890abcdef", 16).unwrap();
+        let call_data = Erc20Contract::encode_approve_call(&spender, amount);
+
+        // spender is right-padded into the final 20 bytes of the first argument word.
+        let spender_word = &call_data[4..36];
+        assert_eq!(&spender_word[..12], &[0u8; 12]);
+        assert_eq!(&spender_word[12..], spender.as_slice());
+
+        let amount_word = &call_data[36..68];
+        assert_eq!(U256::from_be_slice(amount_word), amount);
+
+        // Decode roundtrip for encoded args.
+        let decoded = ERC20::approveCall::abi_decode(&call_data).unwrap();
+        assert_eq!(decoded.spender, spender);
+        assert_eq!(decoded.amount, amount);
     }
 }
