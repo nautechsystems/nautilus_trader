@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.strategies import MakerV3Strategy as MakerV3StrategyFromRoot
 from nautilus_trader.flux.strategies import MakerV3StrategyConfig as MakerV3StrategyConfigFromRoot
 from nautilus_trader.flux.strategies.makerv3 import MakerV3Strategy
@@ -15,7 +16,9 @@ from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REF
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_COMPLETED_REBALANCED
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_SKIPPED_REQUOTE_THROTTLED
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_ALERT
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_BALANCES
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_EVENT
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 def test_quote_cycle_skipped_event_has_envelope_and_reason_code(clocked_strategy_factory) -> None:
@@ -194,3 +197,58 @@ def test_publish_json_emits_canonical_topic() -> None:
     publish_json(TOPIC_EVENT, {"event": "compat"})
 
     assert published_topics == [TOPIC_EVENT]
+
+
+def test_publish_balances_filters_fallback_positions_to_maker_base_asset(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-PERP.BYBIT")
+    reference_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE")
+    other_base_id = InstrumentId.from_str("BTCUSDT.BYBIT")
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="PLUME"),
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        other_base_id: SimpleNamespace(
+            id=other_base_id,
+            base_currency=SimpleNamespace(code="BTC"),
+        ),
+    }
+    positions = [
+        SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal("2")),
+        SimpleNamespace(instrument_id=other_base_id, signed_qty=Decimal("9")),
+    ]
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        accounts=lambda: [],
+        positions_open=lambda instrument_id=None: (
+            positions if instrument_id is None else []
+        ),
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+
+    payloads: list[tuple[str, dict[str, object]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_balances()
+
+    balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
+    positions_payload = balances_payload["positions"]
+
+    assert len(positions_payload) == 1
+    assert positions_payload[0]["instrument_id"] == str(maker_instrument_id)
+
+    rows = build_balances_rows(
+        raw_snapshot=balances_payload["positions"],
+        strategy_id=strategy._external_strategy_id,
+    )
+    position_rows = [row for row in rows if str(row.get("kind")).lower() == "position"]
+    assert len(position_rows) == 1
+    assert position_rows[0]["instrument_id"] == str(maker_instrument_id)

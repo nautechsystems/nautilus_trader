@@ -153,7 +153,11 @@ describe('Trades recovery regressions', () => {
 
     await waitFor(() => expect(mockGetTradesDelta).toHaveBeenCalledTimes(1));
     expect(mockGetTradesDelta).toHaveBeenCalledWith(
-      expect.objectContaining({ afterMs: 1_700_000_001_999 }),
+      expect.objectContaining({
+        afterMs: 1_700_000_002_000,
+        afterRowId: 'tokenmm-b',
+        afterVersion: 1,
+      }),
       500,
     );
   });

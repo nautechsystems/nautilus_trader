@@ -658,6 +658,28 @@ def _extract_last_seq(rows: Sequence[Mapping[str, Any]], *, fallback: int = 0) -
     return best
 
 
+def _trade_replay_cursor(row: Mapping[str, Any]) -> tuple[int, str, int] | None:
+    ts_ms = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp"))
+    row_id = decode_text(row.get("row_id")).strip()
+    version = safe_int(row.get("version")) or 1
+    if ts_ms is None or not row_id:
+        return None
+    return (ts_ms, row_id, version)
+
+
+def _trade_replay_sort_key(row: Mapping[str, Any]) -> tuple[int, str, int, str]:
+    cursor = _trade_replay_cursor(row)
+    if cursor is None:
+        ts_ms = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp")) or 0
+        return (
+            ts_ms,
+            decode_text(row.get("row_id")).strip(),
+            safe_int(row.get("version")) or 1,
+            decode_text(row.get("strategy_id")).strip(),
+        )
+    return (*cursor, decode_text(row.get("strategy_id")).strip())
+
+
 def _trade_sort_key(row: Mapping[str, Any]) -> tuple[int, int, str, str]:
     return (
         coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp")) or 0,
@@ -681,6 +703,38 @@ def _rows_after_trade_ts(
             continue
         out.append(dict(row))
     out.sort(key=_trade_sort_key)
+    return out
+
+
+def _rows_after_trade_replay_cursor(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    after_ms: int | None,
+    after_row_id: str = "",
+    after_version: int | None = None,
+) -> list[dict[str, Any]]:
+    if after_ms is None:
+        out = [dict(row) for row in rows]
+        out.sort(key=_trade_replay_sort_key)
+        return out
+
+    cursor_after = (
+        (after_ms, after_row_id, int(after_version or 1))
+        if after_row_id
+        else None
+    )
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        replay_cursor = _trade_replay_cursor(row)
+        if cursor_after is not None and replay_cursor is not None:
+            if replay_cursor <= cursor_after:
+                continue
+        else:
+            ts_ms = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp"))
+            if ts_ms is None or ts_ms <= after_ms:
+                continue
+        out.append(dict(row))
+    out.sort(key=_trade_replay_sort_key)
     return out
 
 
@@ -814,7 +868,6 @@ def create_flux_api_app(  # noqa: C901
     resolved_profile_strategy_map: dict[str, list[str]] = {
         "tokenmm": [default_strategy_id],
     }
-    tokenmm_allowlist_explicit = False
     if profile_strategy_map is not None:
         for profile_name, raw_ids in profile_strategy_map.items():
             normalized = normalize_profile(profile_name)
@@ -822,8 +875,6 @@ def create_flux_api_app(  # noqa: C901
             if not ids:
                 continue
             resolved_profile_strategy_map[normalized] = ids
-            if normalized == "tokenmm":
-                tokenmm_allowlist_explicit = True
 
     resolved_profile_required_strategy_map: dict[str, list[str]] = {}
     if profile_required_strategy_map is not None:
@@ -847,24 +898,7 @@ def create_flux_api_app(  # noqa: C901
 
     def _strategy_ids_for_profile(profile: str) -> list[str]:
         normalized = normalize_profile(profile)
-        mapped_ids = _coerce_strategy_ids(resolved_profile_strategy_map.get(normalized))
-        if normalized != "tokenmm":
-            return mapped_ids
-        if tokenmm_allowlist_explicit and mapped_ids:
-            return mapped_ids
-        discovered_ids = store.discover_strategy_ids_from_params(limit=200, include_default=False)
-        if discovered_ids:
-            ordered: list[str] = []
-            seen: set[str] = set()
-            for strategy_id in [*discovered_ids, *mapped_ids]:
-                if strategy_id in seen:
-                    continue
-                seen.add(strategy_id)
-                ordered.append(strategy_id)
-            return ordered
-        if mapped_ids:
-            return mapped_ids
-        return store.discover_strategy_ids_from_params(limit=200, include_default=True)
+        return _coerce_strategy_ids(resolved_profile_strategy_map.get(normalized))
 
     def _required_strategy_ids_for_profile(
         profile: str,
@@ -1556,6 +1590,8 @@ def create_flux_api_app(  # noqa: C901
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         since_seq = safe_int(request.args.get("since_seq"))
         since_ms = None if since_seq is not None else coerce_ts_ms(request.args.get("after"))
+        after_row_id = decode_text(request.args.get("after_row_id")).strip()
+        after_version = safe_int(request.args.get("after_version"))
         fallback_seq = since_seq or 0
 
         if tokenmm_fanout:
@@ -1572,15 +1608,17 @@ def create_flux_api_app(  # noqa: C901
 
             rows: list[dict[str, Any]] = []
             for strategy_id in strategy_ids:
-                strategy_rows = _rows_after_trade_ts(
+                strategy_rows = _rows_after_trade_replay_cursor(
                     store.load_all_trades_rows(strategy_id),
-                    since_ms=since_ms,
+                    after_ms=since_ms,
+                    after_row_id=after_row_id,
+                    after_version=after_version,
                 )
                 for row in strategy_rows:
                     normalized_row = dict(row)
                     normalized_row.setdefault("strategy_id", strategy_id)
                     rows.append(normalized_row)
-            rows.sort(key=_trade_sort_key)
+            rows.sort(key=_trade_replay_sort_key)
             return _ok(
                 data={
                     "rows": rows[:limit],

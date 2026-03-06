@@ -54,19 +54,25 @@ export default function Alerts({
   const lastWebSocketDataRef = useRef<string>('');
   const lastAlertsSummaryRef = useRef<string>('');
   const pendingAlertsSummaryRef = useRef<string>('');
+  const summaryRefreshRequestIdRef = useRef(0);
   const hasLoadedRef = useRef(false);
 
   const refreshAlertsFromApi = useCallback(async (options?: { showLoading?: boolean; summaryKey?: string }) => {
     const shouldShowLoading = Boolean(options?.showLoading);
     const summaryKey = options?.summaryKey ?? '';
+    const summaryRequestId = summaryKey ? (summaryRefreshRequestIdRef.current + 1) : 0;
     if (shouldShowLoading) {
       setLoading(true);
     }
     if (summaryKey) {
+      summaryRefreshRequestIdRef.current = summaryRequestId;
       pendingAlertsSummaryRef.current = summaryKey;
     }
     try {
       const data = await api.getAlerts();
+      if (summaryKey && summaryRequestId !== summaryRefreshRequestIdRef.current) {
+        return;
+      }
       setRows(data);
       setLastUpdate(Date.now());
       hasLoadedRef.current = true;
@@ -78,7 +84,11 @@ export default function Alerts({
         console.error('[alerts] Failed to load:', e);
       }
     } finally {
-      if (summaryKey && pendingAlertsSummaryRef.current === summaryKey) {
+      if (
+        summaryKey
+        && summaryRequestId === summaryRefreshRequestIdRef.current
+        && pendingAlertsSummaryRef.current === summaryKey
+      ) {
         pendingAlertsSummaryRef.current = '';
       }
       if (shouldShowLoading) {

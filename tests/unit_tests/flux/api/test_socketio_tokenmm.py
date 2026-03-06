@@ -701,6 +701,7 @@ def test_trade_delete_event_emits_once_and_is_reconnect_safe(
     trade_payload = trade_packets[0]["args"][0]
     assert trade_payload["op"] == "delete"
     assert trade_payload["row_id"] == "trade-001"
+    assert trade_payload["seq"] == 2
     assert trade_payload["version"] == 2
     assert trade_payload["trade"] is None
 
@@ -717,6 +718,7 @@ def test_trade_delete_event_emits_once_and_is_reconnect_safe(
     reconnect_trade_payload = reconnect_trade_packets[0]["args"][0]
     assert reconnect_trade_payload["op"] == "delete"
     assert reconnect_trade_payload["row_id"] == "trade-001"
+    assert reconnect_trade_payload["seq"] == 2
     assert reconnect_trade_payload["version"] == 2
     assert reconnect_trade_payload["trade"] is None
     reconnect_client.disconnect()

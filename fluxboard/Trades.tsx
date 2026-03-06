@@ -887,7 +887,11 @@ export default function Trades({
         const usingTimestampFallback = deltaCursorModeRef.current === 'after';
         const replayCursor = latestTradeReplayCursorRef.current;
         const deltaCursor = usingTimestampFallback
-          ? { afterMs: Math.max(0, (replayCursor?.tsMs ?? latestTradeTsMsRef.current) - 1) }
+          ? {
+              afterMs: replayCursor?.tsMs ?? latestTradeTsMsRef.current,
+              afterRowId: replayCursor?.rowId,
+              afterVersion: replayCursor?.version,
+            }
           : requestedSinceSeq;
         const delta = await api.getTradesDelta(deltaCursor, DELTA_LIMIT);
 

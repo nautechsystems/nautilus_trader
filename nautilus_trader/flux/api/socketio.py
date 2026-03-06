@@ -619,7 +619,7 @@ class FluxSocketEmitter:
                 payload = build_trade_update_payload(
                     profile=profile,
                     strategy_id=row_strategy_id,
-                    seq=self._next_seq(profile),
+                    seq=int(cursor),
                     op="delete",
                     row_id=row_id,
                     version=version,

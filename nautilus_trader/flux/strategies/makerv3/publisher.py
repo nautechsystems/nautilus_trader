@@ -60,6 +60,51 @@ def _json_safe_or_none(value: Any) -> dict[str, Any] | None:
         return json.loads(to_json_safe(value))
     except Exception:
         return None
+    try:
+        return json.loads(to_json_safe(value))
+    except Exception:
+        return None
+
+
+def _strategy_cache(strategy: Any) -> Any | None:
+    cache = getattr(strategy, "_cache", None)
+    if cache is None:
+        cache = getattr(strategy, "cache", None)
+    return cache
+
+
+def _resolve_instrument(strategy: Any, instrument_id: Any) -> Any | None:
+    instruments = getattr(strategy, "_instruments", {})
+    instrument = instruments.get(instrument_id) if isinstance(instruments, dict) else None
+    if instrument is not None:
+        return instrument
+
+    cache = _strategy_cache(strategy)
+    instrument_lookup = getattr(cache, "instrument", None)
+    if callable(instrument_lookup):
+        with suppress(Exception):
+            return instrument_lookup(instrument_id)
+    return None
+
+
+def _matching_base_positions(
+    strategy: Any,
+    positions: list[Any],
+    *,
+    base_currency: str | None,
+) -> list[Any]:
+    if not base_currency:
+        return positions
+
+    filtered: list[Any] = []
+    for position in positions:
+        if inventory_mod.position_matches_base_currency(
+            position,
+            base_currency=base_currency,
+            instrument_lookup=lambda instrument_id: _resolve_instrument(strategy, instrument_id),
+        ):
+            filtered.append(position)
+    return filtered
 
 
 def _account_balances_rows(account: Any) -> list[dict[str, str]]:
@@ -419,14 +464,12 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
         "accounts": [],
         "positions": [],
     }
+    cache = _strategy_cache(strategy)
     try:
-        accounts = list(strategy.cache.accounts())
+        accounts_lookup = getattr(cache, "accounts", None)
+        accounts = list(accounts_lookup()) if callable(accounts_lookup) else []
     except Exception:
         accounts = []
-    if not accounts and hasattr(strategy, "cache"):
-        for account in getattr(strategy.cache, "accounts", list)():
-            if account is not None:
-                accounts.append(account)
 
     if not accounts and hasattr(strategy, "portfolio"):
         try:
@@ -443,15 +486,31 @@ def publish_balances(strategy: Any) -> None:  # noqa: C901
         payload["accounts"].append(_serialize_account_payload(account))
 
     positions: list[Any] = []
-    with suppress(Exception):
-        positions.extend(
-            strategy.cache.positions_open(
-                instrument_id=strategy.config.maker_instrument_id,
-            ),
-        )
-    if not positions and hasattr(strategy, "cache"):
+    positions_open = getattr(cache, "positions_open", None)
+    if callable(positions_open):
         with suppress(Exception):
-            positions.extend(strategy.cache.positions_open())
+            positions.extend(
+                positions_open(
+                    instrument_id=strategy.config.maker_instrument_id,
+                ),
+            )
+    if not positions and callable(positions_open):
+        maker_instrument = getattr(strategy, "_maker_instrument", None)
+        instruments = getattr(strategy, "_instruments", {})
+        if maker_instrument is None and isinstance(instruments, dict):
+            maker_instrument = instruments.get(strategy.config.maker_instrument_id)
+        maker_base_currency = inventory_mod.maker_base_currency_code(
+            instrument=maker_instrument,
+            instrument_id=strategy.config.maker_instrument_id,
+        )
+        with suppress(Exception):
+            positions.extend(
+                _matching_base_positions(
+                    strategy,
+                    list(positions_open()),
+                    base_currency=maker_base_currency,
+                ),
+            )
 
     for position in positions:
         payload["positions"].append(_serialize_position_payload(position))

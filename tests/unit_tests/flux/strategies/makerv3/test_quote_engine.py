@@ -262,10 +262,18 @@ def test_refresh_quotes_caches_inventory_skew_with_order_event_invalidation(
         calls["count"] += 1
         return {
             "inventory_qty": Decimal(0),
-            "inventory_source": "maker_position",
+            "inventory_source": "positions",
             "base_currency": "BTC",
             "position_qty": Decimal(0),
             "spot_qty": Decimal(0),
+            "global_position_qty": Decimal(0),
+            "global_spot_qty": Decimal(0),
+            "global_inventory_qty": Decimal(0),
+            "global_inventory_source": "positions",
+            "local_position_qty": Decimal(0),
+            "local_spot_qty": Decimal(0),
+            "local_inventory_qty": Decimal(0),
+            "local_inventory_source": "positions",
             "des_qty_global": Decimal(0),
             "max_qty_global": Decimal(1),
             "max_skew_bps_global": Decimal(0),
@@ -320,10 +328,18 @@ def test_refresh_quotes_recomputes_inventory_skew_after_ttl_expiry(
         calls["count"] += 1
         return {
             "inventory_qty": Decimal(0),
-            "inventory_source": "maker_position",
+            "inventory_source": "positions",
             "base_currency": "BTC",
             "position_qty": Decimal(0),
             "spot_qty": Decimal(0),
+            "global_position_qty": Decimal(0),
+            "global_spot_qty": Decimal(0),
+            "global_inventory_qty": Decimal(0),
+            "global_inventory_source": "positions",
+            "local_position_qty": Decimal(0),
+            "local_spot_qty": Decimal(0),
+            "local_inventory_qty": Decimal(0),
+            "local_inventory_source": "positions",
             "des_qty_global": Decimal(0),
             "max_qty_global": Decimal(1),
             "max_skew_bps_global": Decimal(0),
@@ -345,6 +361,64 @@ def test_refresh_quotes_recomputes_inventory_skew_after_ttl_expiry(
     strategy._refresh_quotes(now_ns=1_100_000_000)
 
     assert calls["count"] == 2
+
+
+def test_refresh_quotes_exposes_split_inventory_fields_in_pricing_debug(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_001])
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 1_000_000_000
+    strategy._managed_orders = list
+    strategy._rebalance_side = lambda **_kwargs: 0
+    strategy._place_missing_levels = lambda **_kwargs: 0
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._compute_inventory_skew = lambda *_args, **_kwargs: {
+        "inventory_qty": Decimal("1004"),
+        "inventory_source": "positions_plus_spot",
+        "base_currency": "PLUME",
+        "position_qty": Decimal("1"),
+        "spot_qty": Decimal("1003"),
+        "global_position_qty": Decimal("1"),
+        "global_spot_qty": Decimal("1003"),
+        "global_inventory_qty": Decimal("1004"),
+        "global_inventory_source": "positions_plus_spot",
+        "local_position_qty": Decimal("2"),
+        "local_spot_qty": Decimal("3"),
+        "local_inventory_qty": Decimal("5"),
+        "local_inventory_source": "positions_plus_spot",
+        "des_qty_global": Decimal(0),
+        "max_qty_global": Decimal("2000"),
+        "max_skew_bps_global": Decimal("5"),
+        "des_qty_local": Decimal(0),
+        "max_qty_local": Decimal("10"),
+        "max_skew_bps_local": Decimal("9"),
+        "linear_offset_bps": Decimal(0),
+        "global_ratio": Decimal("0.502"),
+        "global_skew_bps": Decimal("2.51"),
+        "local_ratio": Decimal("0.5"),
+        "local_skew_bps": Decimal("4.5"),
+        "total_skew_bps": Decimal("7.01"),
+    }
+
+    strategy._refresh_quotes(now_ns=1_000_000_000)
+
+    skew = strategy._last_pricing_debug["skew"]
+    assert skew["global_inventory_qty"] == "1004"
+    assert skew["global_inventory_source"] == "positions_plus_spot"
+    assert skew["local_inventory_qty"] == "5"
+    assert skew["local_inventory_source"] == "positions_plus_spot"
+    assert skew["global_position_qty"] == "1"
+    assert skew["global_spot_qty"] == "1003"
+    assert skew["local_position_qty"] == "2"
+    assert skew["local_spot_qty"] == "3"
 
 
 def test_refresh_quotes_calls_managed_orders_once_per_quote_cycle(clocked_strategy_factory) -> None:

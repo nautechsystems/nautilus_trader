@@ -23,10 +23,12 @@ def _runtime_params(**overrides: Decimal | float | str) -> dict[str, Decimal]:
     return params
 
 
-def test_compute_inventory_skew_prefers_position_and_clamps_ratios() -> None:
+def test_compute_inventory_skew_nets_global_and_local_components_and_clamps_ratios() -> None:
     skew = compute_inventory_skew(
-        position_qty=Decimal(5),
-        spot_qty=Decimal(9),
+        global_position_qty=Decimal(5),
+        global_spot_qty=Decimal(9),
+        local_position_qty=Decimal(2),
+        local_spot_qty=Decimal(1),
         base_currency="BTC",
         runtime_params=_runtime_params(
             max_qty_global=2,
@@ -37,30 +39,48 @@ def test_compute_inventory_skew_prefers_position_and_clamps_ratios() -> None:
         ),
     )
 
-    assert skew["inventory_source"] == "maker_position"
-    assert skew["inventory_qty"] == Decimal(5)
+    assert skew["inventory_source"] == "positions_plus_spot"
+    assert skew["inventory_qty"] == Decimal(14)
+    assert skew["global_position_qty"] == Decimal(5)
+    assert skew["global_spot_qty"] == Decimal(9)
+    assert skew["global_inventory_qty"] == Decimal(14)
+    assert skew["global_inventory_source"] == "positions_plus_spot"
+    assert skew["local_position_qty"] == Decimal(2)
+    assert skew["local_spot_qty"] == Decimal(1)
+    assert skew["local_inventory_qty"] == Decimal(3)
+    assert skew["local_inventory_source"] == "positions_plus_spot"
     assert skew["global_ratio"] == Decimal(1)
     assert skew["global_skew_bps"] == Decimal(10)
-    assert skew["local_ratio"] == Decimal("0.5")
-    assert skew["local_skew_bps"] == Decimal("2.5")
-    assert skew["total_skew_bps"] == Decimal("13.5")
+    assert skew["local_ratio"] == Decimal("0.3")
+    assert skew["local_skew_bps"] == Decimal("1.5")
+    assert skew["total_skew_bps"] == Decimal("12.5")
 
 
-def test_compute_inventory_skew_uses_spot_inventory_when_position_unavailable() -> None:
+def test_compute_inventory_skew_keeps_global_spot_out_of_local_when_local_inventory_is_absent() -> None:
     skew = compute_inventory_skew(
-        position_qty=None,
-        spot_qty=Decimal(3),
+        global_position_qty=None,
+        global_spot_qty=Decimal(1000),
+        local_position_qty=None,
+        local_spot_qty=None,
         base_currency="BTC",
         runtime_params=_runtime_params(
-            max_qty_global=6,
+            max_qty_global=2000,
             max_skew_bps_global=12,
+            max_qty_local=50,
+            max_skew_bps_local=9,
         ),
     )
 
-    assert skew["inventory_source"] == "maker_spot_balance"
-    assert skew["inventory_qty"] == Decimal(3)
+    assert skew["inventory_source"] == "spot_balance"
+    assert skew["inventory_qty"] == Decimal(1000)
+    assert skew["global_inventory_source"] == "spot_balance"
+    assert skew["global_inventory_qty"] == Decimal(1000)
+    assert skew["local_inventory_source"] == "unavailable"
+    assert skew["local_inventory_qty"] is None
     assert skew["global_ratio"] == Decimal("0.5")
     assert skew["global_skew_bps"] == Decimal(6)
+    assert skew["local_ratio"] is None
+    assert skew["local_skew_bps"] is None
 
 
 def test_inventory_skew_cache_honors_ttl_and_invalidation() -> None:
@@ -72,10 +92,18 @@ def test_inventory_skew_cache_honors_ttl_and_invalidation() -> None:
         value = Decimal(calls["count"])
         return {
             "inventory_qty": value,
-            "inventory_source": "maker_position",
+            "inventory_source": "positions",
             "base_currency": "BTC",
             "position_qty": value,
             "spot_qty": value,
+            "global_position_qty": value,
+            "global_spot_qty": value,
+            "global_inventory_qty": value + value,
+            "global_inventory_source": "positions_plus_spot",
+            "local_position_qty": value,
+            "local_spot_qty": None,
+            "local_inventory_qty": value,
+            "local_inventory_source": "positions",
             "des_qty_global": runtime_params["des_qty_global"],
             "max_qty_global": runtime_params["max_qty_global"],
             "max_skew_bps_global": runtime_params["max_skew_bps_global"],

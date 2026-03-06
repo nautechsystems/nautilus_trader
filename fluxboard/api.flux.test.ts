@@ -161,6 +161,26 @@ describe('api.getTrades', () => {
     expect(params.has('since_seq')).toBe(false);
     expect(params.get('limit')).toBe('50');
   });
+
+  it('sends replay cursor tie-breakers for tokenmm timestamp fallback', async () => {
+    await (api.getTradesDelta as any)(
+      {
+        afterMs: 1_700_000_000_000,
+        afterRowId: 'trade-b',
+        afterVersion: 2,
+      },
+      50,
+    );
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    const search = (path as string).split('?')[1] ?? '';
+    const params = new URLSearchParams(search);
+
+    expect(params.get('after')).toBe('1700000000000');
+    expect(params.get('after_row_id')).toBe('trade-b');
+    expect(params.get('after_version')).toBe('2');
+    expect(params.has('since_seq')).toBe(false);
+  });
 });
 
 describe('api.patchStrategyParams', () => {

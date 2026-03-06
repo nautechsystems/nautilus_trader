@@ -3,6 +3,23 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+from nautilus_trader.model.identifiers import InstrumentId
+
+
+def _inventory_runtime_params(**overrides: Decimal | float | str) -> dict[str, Decimal]:
+    params: dict[str, Decimal] = {
+        "des_qty_global": Decimal(0),
+        "max_qty_global": Decimal(1),
+        "max_skew_bps_global": Decimal(0),
+        "des_qty_local": Decimal(0),
+        "max_qty_local": Decimal(1),
+        "max_skew_bps_local": Decimal(0),
+        "linear_offset_bps": Decimal(0),
+    }
+    for name, value in overrides.items():
+        params[name] = Decimal(str(value))
+    return params
+
 
 def test_cancel_managed_quotes_idempotency_with_tracked_ids_and_cache_visibility(
     strategy_factory,
@@ -233,6 +250,131 @@ def test_publish_state_resets_stale_cancel_cooldown_when_leaving_blocked(
     assert strategy._last_stale_cancel_ns == 0
 
 
+def test_compute_inventory_skew_scopes_global_and_local_inventory_by_base_and_maker_venue(
+    strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-PERP.BYBIT")
+    reference_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE")
+    binance_perp_id = InstrumentId.from_str("PLUMEUSDT-PERP.BINANCE")
+    other_base_id = InstrumentId.from_str("BTCUSDT.BYBIT")
+
+    strategy = strategy_factory(
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="PLUME"),
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: SimpleNamespace(
+            id=reference_instrument_id,
+            base_currency=SimpleNamespace(code="PLUME"),
+        ),
+        binance_perp_id: SimpleNamespace(
+            id=binance_perp_id,
+            base_currency=SimpleNamespace(code="PLUME"),
+        ),
+        other_base_id: SimpleNamespace(
+            id=other_base_id,
+            base_currency=SimpleNamespace(code="BTC"),
+        ),
+    }
+
+    positions = [
+        SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal("2")),
+        SimpleNamespace(instrument_id=binance_perp_id, signed_qty=Decimal("-1")),
+        SimpleNamespace(instrument_id=other_base_id, signed_qty=Decimal("9")),
+    ]
+    accounts = [
+        SimpleNamespace(
+            id="BYBIT-001",
+            balances_total=lambda: {"PLUME": Decimal("3"), "USDT": Decimal("50")},
+        ),
+        SimpleNamespace(
+            id="BINANCE-001",
+            balances_total=lambda: {"PLUME": Decimal("1000")},
+        ),
+    ]
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        positions_open=lambda instrument_id=None: [
+            position
+            for position in positions
+            if instrument_id is None or position.instrument_id == instrument_id
+        ],
+        accounts=lambda: accounts,
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+
+    skew = strategy._compute_inventory_skew(
+        runtime_params=_inventory_runtime_params(
+            max_qty_global=2000,
+            max_qty_local=10,
+        ),
+    )
+
+    assert skew["global_position_qty"] == Decimal("1")
+    assert skew["global_spot_qty"] == Decimal("1003")
+    assert skew["global_inventory_qty"] == Decimal("1004")
+    assert skew["global_inventory_source"] == "positions_plus_spot"
+    assert skew["local_position_qty"] == Decimal("2")
+    assert skew["local_spot_qty"] == Decimal("3")
+    assert skew["local_inventory_qty"] == Decimal("5")
+    assert skew["local_inventory_source"] == "positions_plus_spot"
+    assert skew["inventory_qty"] == Decimal("1004")
+    assert skew["inventory_source"] == "positions_plus_spot"
+
+
+def test_compute_inventory_skew_treats_visible_maker_account_without_base_balance_as_local_zero(
+    strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT.BYBIT")
+    reference_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE")
+    strategy = strategy_factory(
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="PLUME"),
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: SimpleNamespace(
+            id=reference_instrument_id,
+            base_currency=SimpleNamespace(code="PLUME"),
+        ),
+    }
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        positions_open=lambda instrument_id=None: [],
+        accounts=lambda: [
+            SimpleNamespace(id="BYBIT-001", balances_total=lambda: {"USDT": Decimal("50")}),
+            SimpleNamespace(id="BINANCE-001", balances_total=lambda: {"PLUME": Decimal("1000")}),
+        ],
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+
+    skew = strategy._compute_inventory_skew(
+        runtime_params=_inventory_runtime_params(
+            max_qty_global=2000,
+            max_skew_bps_global=12,
+            max_qty_local=10,
+            max_skew_bps_local=8,
+        ),
+    )
+
+    assert skew["global_position_qty"] == Decimal(0)
+    assert skew["global_spot_qty"] == Decimal("1000")
+    assert skew["global_inventory_qty"] == Decimal("1000")
+    assert skew["local_position_qty"] == Decimal(0)
+    assert skew["local_spot_qty"] == Decimal(0)
+    assert skew["local_inventory_qty"] == Decimal(0)
+    assert skew["local_ratio"] == Decimal(0)
+
+
 def test_timer_enforces_stale_market_data_blocks_when_feed_goes_silent(
     clocked_strategy_factory,
 ) -> None:
@@ -410,3 +552,87 @@ def test_cancel_managed_quotes_honors_cancel_all_escape_hatch_without_local_stat
     assert events[0][1]["cancel_all_instrument"] is True
     assert events[0][1]["cancel_attempts"] == 0
     assert events[0][1]["tracked_count"] == 0
+
+
+def test_compute_inventory_skew_splits_global_and_local_inventory_by_base_and_maker_venue(
+    strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT.BYBIT")
+    reference_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE")
+    strategy = strategy_factory(
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        base_currency=SimpleNamespace(code="PLUME"),
+        id=maker_instrument_id,
+    )
+
+    bybit_position = SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal("2"))
+    binance_position = SimpleNamespace(
+        instrument_id=reference_instrument_id,
+        signed_qty=Decimal("-1"),
+    )
+    other_asset_instrument_id = InstrumentId.from_str("BTCUSDT.BYBIT")
+    other_asset_position = SimpleNamespace(
+        instrument_id=other_asset_instrument_id,
+        signed_qty=Decimal("9"),
+    )
+
+    bybit_account = SimpleNamespace(
+        balances_total=lambda: {
+            "PLUME": Decimal("3"),
+            "BTC": Decimal("7"),
+        },
+    )
+    binance_account = SimpleNamespace(
+        balances_total=lambda: {
+            "PLUME": Decimal("5"),
+        },
+    )
+    instrument_by_id = {
+        maker_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="PLUME"),
+            id=maker_instrument_id,
+        ),
+        reference_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="PLUME"),
+            id=reference_instrument_id,
+        ),
+        other_asset_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="BTC"),
+            id=other_asset_instrument_id,
+        ),
+    }
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda instrument_id=None: (
+            [bybit_position, binance_position, other_asset_position]
+            if instrument_id is None
+            else []
+        ),
+        instrument=lambda instrument_id: instrument_by_id.get(instrument_id),
+        accounts=lambda: [bybit_account, binance_account],
+        account_for_venue=lambda venue: bybit_account if str(venue) == "BYBIT" else None,
+    )
+
+    skew = strategy._compute_inventory_skew(
+        runtime_params={
+            "des_qty_global": Decimal(0),
+            "max_qty_global": Decimal(10),
+            "max_skew_bps_global": Decimal(20),
+            "des_qty_local": Decimal(0),
+            "max_qty_local": Decimal(10),
+            "max_skew_bps_local": Decimal(10),
+            "linear_offset_bps": Decimal(0),
+        },
+    )
+
+    assert skew["global_position_qty"] == Decimal("1")
+    assert skew["global_spot_qty"] == Decimal("8")
+    assert skew["global_inventory_qty"] == Decimal("9")
+    assert skew["local_position_qty"] == Decimal("2")
+    assert skew["local_spot_qty"] == Decimal("3")
+    assert skew["local_inventory_qty"] == Decimal("5")
+    assert skew["inventory_qty"] == Decimal("9")
+    assert skew["global_ratio"] == Decimal("0.9")
+    assert skew["local_ratio"] == Decimal("0.5")

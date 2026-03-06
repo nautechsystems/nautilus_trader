@@ -230,4 +230,68 @@ describe('Alerts wiring', () => {
       }),
     ]);
   });
+
+  it('ignores older summary refresh responses that resolve after a newer one', async () => {
+    storeState.auto = false;
+
+    let resolveOlder!: (rows: Alert[]) => void;
+    let resolveNewer!: (rows: Alert[]) => void;
+    mockGetAlerts
+      .mockReturnValueOnce(new Promise<Alert[]>((resolve) => {
+        resolveOlder = resolve;
+      }))
+      .mockReturnValueOnce(new Promise<Alert[]>((resolve) => {
+        resolveNewer = resolve;
+      }));
+
+    render(<Alerts />);
+
+    act(() => {
+      wsHandler?.({
+        alerts: {
+          count: 1,
+          latest_ts_ms: 1_700_000_004_000,
+        },
+      });
+      wsHandler?.({
+        alerts: {
+          count: 2,
+          latest_ts_ms: 1_700_000_005_000,
+        },
+      });
+    });
+
+    await waitFor(() => expect(mockGetAlerts).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveNewer([
+        createAlert({
+          id: 'newer-alert',
+          message: 'newer summary response',
+          timestamp: 1700000005,
+        }),
+      ]);
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(storeState.setRows).toHaveBeenCalledWith([
+        expect.objectContaining({ id: 'newer-alert' }),
+      ]),
+    );
+
+    await act(async () => {
+      resolveOlder([
+        createAlert({
+          id: 'older-alert',
+          message: 'older summary response',
+          timestamp: 1700000004,
+        }),
+      ]);
+      await Promise.resolve();
+    });
+
+    const latestRows = storeState.setRows.mock.calls.at(-1)?.[0] as Alert[] | undefined;
+    expect(latestRows?.map((alert) => alert.id)).toEqual(['newer-alert']);
+  });
 });

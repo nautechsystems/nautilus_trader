@@ -497,17 +497,41 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
         current = dict(row)
         sid = strategy_id_from_row(current, strategy_id)
         current["strategy_id"] = sid
+        flattened = 0
+        root_ts_ms = current.get("ts_ms")
 
         accounts = current.get("accounts")
         if isinstance(accounts, list) and accounts:
             for index, account in enumerate(accounts):
                 if isinstance(account, dict):
-                    out.append({**account, "strategy_id": sid, "row_id": f"{sid}:acc:{index}"})
-            continue
+                    flattened_row = {
+                        **account,
+                        "strategy_id": sid,
+                        "row_id": f"{sid}:acc:{index}",
+                    }
+                    if root_ts_ms is not None and flattened_row.get("ts_ms") is None:
+                        flattened_row["ts_ms"] = root_ts_ms
+                    out.append(flattened_row)
+                    flattened += 1
+
+        positions = current.get("positions")
+        if isinstance(positions, list) and positions:
+            for index, position in enumerate(positions):
+                if not isinstance(position, dict):
+                    continue
+                flattened_row = {
+                    **position,
+                    "strategy_id": sid,
+                    "row_id": f"{sid}:posraw:{index}",
+                }
+                flattened_row.setdefault("kind", "position")
+                if root_ts_ms is not None and flattened_row.get("ts_ms") is None:
+                    flattened_row["ts_ms"] = root_ts_ms
+                out.append(flattened_row)
+                flattened += 1
 
         events = current.get("events")
         if isinstance(events, list) and events:
-            flattened = 0
             for event_index, event in enumerate(events):
                 if not isinstance(event, dict):
                     continue
@@ -530,12 +554,14 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
                             "free": balance.get("free"),
                             "locked": balance.get("locked"),
                             "total": balance.get("total"),
+                            "ts_ms": event.get("ts_ms") if event.get("ts_ms") is not None else root_ts_ms,
                             "row_id": f"{sid}:evt:{event_index}:{balance_index}",
                         },
                     )
                     flattened += 1
-            if flattened > 0:
-                continue
+
+        if flattened > 0:
+            continue
 
         out.append(current)
 

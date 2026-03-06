@@ -580,33 +580,113 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 tracked_after=len(self._managed_client_order_ids),
             )
 
-        def _position_signed_qty(self) -> Decimal | None:
-            positions: list[Position] = []
-            with suppress(Exception):
-                positions.extend(
-                    self.cache.positions_open(
-                        instrument_id=self.config.maker_instrument_id,
-                    ),
-                )
-            return inventory_mod.position_signed_qty(positions)
+        def _inventory_cache(self) -> Any | None:
+            cache = getattr(self, "_cache", None)
+            if cache is None:
+                cache = getattr(self, "cache", None)
+            return cache
 
-        def _spot_balance_total(self, currency_code: str) -> Decimal | None:
-            accounts: list[Account] = []
+        def _resolve_instrument(self, instrument_id: Any) -> Any | None:
+            instrument = self._instruments.get(instrument_id)
+            if instrument is not None:
+                return instrument
+            cache = self._inventory_cache()
+            instrument_lookup = getattr(cache, "instrument", None)
+            if callable(instrument_lookup):
+                with suppress(Exception):
+                    return instrument_lookup(instrument_id)
+            return None
+
+        def _open_positions(self) -> list[Position] | None:
+            cache = self._inventory_cache()
+            positions_open = getattr(cache, "positions_open", None)
+            if not callable(positions_open):
+                return None
             with suppress(Exception):
-                accounts.extend(list(self.cache.accounts()))
+                return list(positions_open())
+            return None
+
+        def _position_inventory_qty(
+            self,
+            currency_code: str,
+            *,
+            venue: Any | None = None,
+        ) -> Decimal | None:
+            if not currency_code:
+                return None
+            positions = self._open_positions()
+            if positions is None:
+                return None
+            cache = self._inventory_cache()
+            quantity = inventory_mod.position_inventory_total(
+                positions,
+                base_currency=currency_code,
+                instrument_lookup=self._resolve_instrument if cache is not None else None,
+                venue=venue,
+            )
+            return Decimal(0) if quantity is None else quantity
+
+        def _spot_balance_total(
+            self,
+            currency_code: str,
+            *,
+            venue: Any | None = None,
+        ) -> Decimal | None:
+            if not currency_code:
+                return None
+
+            accounts: list[Account] = []
+            cache = self._inventory_cache()
+            if venue is not None:
+                account_for_venue = getattr(cache, "account_for_venue", None)
+                if callable(account_for_venue):
+                    with suppress(Exception):
+                        scoped_account = account_for_venue(venue=venue)
+                        if scoped_account is not None:
+                            return inventory_mod.spot_balance_total(
+                                accounts=[scoped_account],
+                                currency_code=currency_code,
+                            )
+                if hasattr(self, "portfolio"):
+                    with suppress(Exception):
+                        scoped_account = self.portfolio.account(venue=venue)
+                        if scoped_account is not None:
+                            return inventory_mod.spot_balance_total(
+                                accounts=[scoped_account],
+                                currency_code=currency_code,
+                            )
+
+            accounts_lookup = getattr(cache, "accounts", None)
+            if callable(accounts_lookup):
+                with suppress(Exception):
+                    accounts.extend(list(accounts_lookup()))
+
             if not accounts and hasattr(self, "portfolio"):
-                try:
-                    maker_venue = getattr(self.config.maker_instrument_id, "venue", None)
+                maker_venue = getattr(self.config.maker_instrument_id, "venue", None)
+                fallback_venue = maker_venue if venue is None else venue
+                with suppress(Exception):
                     account = (
-                        self.portfolio.account(venue=maker_venue)
-                        if maker_venue is not None
+                        self.portfolio.account(venue=fallback_venue)
+                        if fallback_venue is not None
                         else None
                     )
-                except Exception:
-                    account = None
-                if account is not None:
-                    accounts.append(account)
-            return inventory_mod.spot_balance_total(accounts=accounts, currency_code=currency_code)
+                    if account is not None:
+                        accounts.append(account)
+            scoped_accounts = accounts
+            if venue is not None:
+                venue_code = str(venue).strip().upper()
+                scoped_accounts = [
+                    account
+                    for account in accounts
+                    if inventory_mod.account_venue_code(account) == venue_code
+                ]
+            total = inventory_mod.spot_balance_total(
+                accounts=scoped_accounts,
+                currency_code=currency_code,
+            )
+            if total is None and scoped_accounts:
+                return Decimal(0)
+            return total
 
         def _maker_base_currency_code(self) -> str | None:
             instrument = self._maker_instrument
@@ -622,14 +702,31 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             runtime_params: Mapping[str, Any] | None = None,
         ) -> dict[str, Any]:
-            position_qty = self._position_signed_qty()
             base_currency = self._maker_base_currency_code()
-            spot_qty = self._spot_balance_total(base_currency) if base_currency else None
+            maker_venue = getattr(self.config.maker_instrument_id, "venue", None)
+            global_position_qty = (
+                self._position_inventory_qty(base_currency)
+                if base_currency
+                else None
+            )
+            global_spot_qty = self._spot_balance_total(base_currency) if base_currency else None
+            local_position_qty = (
+                self._position_inventory_qty(base_currency, venue=maker_venue)
+                if base_currency
+                else None
+            )
+            local_spot_qty = (
+                self._spot_balance_total(base_currency, venue=maker_venue)
+                if base_currency and maker_venue is not None
+                else None
+            )
             if runtime_params is None:
                 runtime_params = self._quote_runtime_params_snapshot()
             return inventory_mod.compute_inventory_skew(
-                position_qty=position_qty,
-                spot_qty=spot_qty,
+                global_position_qty=global_position_qty,
+                global_spot_qty=global_spot_qty,
+                local_position_qty=local_position_qty,
+                local_spot_qty=local_spot_qty,
                 base_currency=base_currency,
                 runtime_params=runtime_params,
             )

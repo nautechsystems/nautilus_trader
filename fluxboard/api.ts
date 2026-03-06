@@ -108,7 +108,12 @@ function appendProfileQuery(qs: URLSearchParams): void {
 const apiClient = new APIClient(base);
 
 type FluxEnvelope<T> = { ok: boolean; data: T; error?: unknown };
-type TradesDeltaCursor = number | { sinceSeq?: number; afterMs?: number };
+type TradesDeltaCursor = number | {
+  sinceSeq?: number;
+  afterMs?: number;
+  afterRowId?: string;
+  afterVersion?: number;
+};
 
 function isFluxEnvelope<T>(payload: unknown): payload is FluxEnvelope<T> {
   return Boolean(payload && typeof payload === 'object' && 'ok' in (payload as Record<string, unknown>));
@@ -1463,12 +1468,22 @@ export const api = {
       typeof resolvedCursor.afterMs === 'number' && Number.isFinite(resolvedCursor.afterMs)
         ? Math.max(0, Math.trunc(resolvedCursor.afterMs))
         : undefined;
+    const afterRowId =
+      typeof resolvedCursor.afterRowId === 'string' ? resolvedCursor.afterRowId.trim() : '';
+    const afterVersion =
+      typeof resolvedCursor.afterVersion === 'number' && Number.isFinite(resolvedCursor.afterVersion)
+        ? Math.max(1, Math.trunc(resolvedCursor.afterVersion))
+        : undefined;
     const sinceSeq =
       typeof resolvedCursor.sinceSeq === 'number' && Number.isFinite(resolvedCursor.sinceSeq)
         ? Math.max(0, Math.trunc(resolvedCursor.sinceSeq))
         : 0;
     if (afterMs !== undefined) {
       qs.set('after', String(afterMs));
+      if (afterRowId) {
+        qs.set('after_row_id', afterRowId);
+        qs.set('after_version', String(afterVersion ?? 1));
+      }
     } else {
       qs.set('since_seq', String(sinceSeq));
     }

@@ -53,6 +53,7 @@ def test_build_balances_rows_flattens_events_and_aggregates_positions() -> None:
             "events": [
                 {
                     "account_id": "venue_a-main",
+                    "ts_ms": 1_700_000_000_000,
                     "balances": [
                         {"currency": "abc", "free": "10", "locked": "0", "total": "10"},
                     ],
@@ -85,6 +86,7 @@ def test_build_balances_rows_flattens_events_and_aggregates_positions() -> None:
     assert len(spot_rows) == 1
     assert spot_rows[0]["exchange"] == "venue_a"
     assert spot_rows[0]["asset"] == "ABC"
+    assert spot_rows[0]["ts_ms"] == 1_700_000_000_000
 
 
 def test_merge_portfolio_balances_rows_nets_same_instrument_across_strategies() -> None:
