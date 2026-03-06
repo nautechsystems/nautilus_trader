@@ -52,7 +52,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::{consts::KRAKEN_VENUE, parse::truncate_cl_ord_id},
+    common::{
+        consts::{KRAKEN_SPOT_POST_ONLY_ERROR, KRAKEN_VENUE},
+        parse::truncate_cl_ord_id,
+    },
     config::KrakenExecClientConfig,
     http::KrakenSpotHttpClient,
     websocket::spot_v2::{client::KrakenSpotWebSocketClient, messages::NautilusWsMessage},
@@ -221,15 +224,18 @@ impl KrakenSpotExecutionClient {
 
             if let Err(e) = result {
                 let ts_event = clock.get_time_ns();
+                let error_msg = format!("{task_name} error: {e}");
+                let due_post_only = error_msg.contains("POST_ONLY_REJECTED")
+                    || error_msg.contains(KRAKEN_SPOT_POST_ONLY_ERROR);
                 emitter.emit_order_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
-                    &format!("{task_name} error: {e}"),
+                    &error_msg,
                     ts_event,
-                    false,
+                    due_post_only,
                 );
-                return Err(e);
+                return Ok(());
             }
 
             Ok(())

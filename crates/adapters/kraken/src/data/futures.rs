@@ -242,6 +242,7 @@ impl KrakenFuturesDataClient {
             }
             // Execution messages are handled by the execution client
             KrakenFuturesWsMessage::OrderAccepted(_)
+            | KrakenFuturesWsMessage::OrderRejected(_)
             | KrakenFuturesWsMessage::OrderCanceled(_)
             | KrakenFuturesWsMessage::OrderExpired(_)
             | KrakenFuturesWsMessage::OrderUpdated(_)

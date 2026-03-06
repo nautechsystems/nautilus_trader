@@ -125,12 +125,13 @@ impl Display for OrderRejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(instrument_id={}, client_order_id={}, account_id={}, reason='{}', ts_event={})",
+            "{}(instrument_id={}, client_order_id={}, account_id={}, reason='{}', due_post_only={}, ts_event={})",
             stringify!(OrderRejected),
             self.instrument_id,
             self.client_order_id,
             self.account_id,
             self.reason,
+            self.due_post_only != 0,
             self.ts_event
         )
     }
@@ -403,7 +404,7 @@ mod tests {
         assert_eq!(
             display,
             "OrderRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, \
-        account_id=SIM-001, reason='INSUFFICIENT_MARGIN', ts_event=0)"
+        account_id=SIM-001, reason='INSUFFICIENT_MARGIN', due_post_only=false, ts_event=0)"
         );
     }
 

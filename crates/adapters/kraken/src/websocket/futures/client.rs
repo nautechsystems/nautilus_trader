@@ -852,6 +852,15 @@ impl KrakenFuturesWebSocketClient {
         }
     }
 
+    /// Removes a client order from the handler cache.
+    pub fn uncache_client_order(&self, client_order_id: ClientOrderId) {
+        if let Ok(tx) = self.cmd_tx.try_read()
+            && let Err(e) = tx.send(HandlerCommand::UncacheClientOrder { client_order_id })
+        {
+            log::debug!("Failed to uncache client order: {e}");
+        }
+    }
+
     /// Caches a truncated cl_ord_id mapping for reverse lookup.
     pub fn cache_truncated_id(&self, truncated: String, original: ClientOrderId) {
         if let Ok(tx) = self.cmd_tx.try_read()

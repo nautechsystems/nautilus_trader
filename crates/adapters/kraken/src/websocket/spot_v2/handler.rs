@@ -51,6 +51,7 @@ use super::{
         parse_ws_order_status_report,
     },
 };
+use crate::common::consts::KRAKEN_SPOT_POST_ONLY_REJECT;
 
 /// Cached information about a client order needed for event generation.
 #[derive(Debug, Clone)]
@@ -709,12 +710,10 @@ impl SpotFeedHandler {
                                 // Order is now live - already accepted, skip
                             }
                             KrakenExecType::Canceled => {
-                                // Check if this is a post-only rejection based on reason
-                                // Kraken sends reason="Post only order" for post-only rejections
                                 let is_post_only_rejection = exec_data
                                     .reason
                                     .as_ref()
-                                    .is_some_and(|r| r.eq_ignore_ascii_case("Post only order"));
+                                    .is_some_and(|r| r == KRAKEN_SPOT_POST_ONLY_REJECT);
 
                                 if is_post_only_rejection {
                                     let reason = exec_data

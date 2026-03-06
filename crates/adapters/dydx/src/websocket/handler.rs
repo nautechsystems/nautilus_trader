@@ -30,7 +30,7 @@ use std::{
     },
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::{
     UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -127,6 +127,8 @@ pub struct FeedHandler {
     book_sequence: AHashMap<String, u64>,
     /// Pending (incomplete) bars per candle topic for emit-on-next logic.
     pending_bars: AHashMap<String, Bar>,
+    /// Tickers already emitted as discovered to prevent repeated discovery attempts.
+    seen_tickers: AHashSet<Ustr>,
     /// Whether to timestamp bars at close time (open + interval).
     bars_timestamp_on_close: bool,
     /// High-resolution clock for timestamps.
@@ -172,6 +174,7 @@ impl FeedHandler {
             message_buffer: VecDeque::new(),
             book_sequence: AHashMap::new(),
             pending_bars: AHashMap::new(),
+            seen_tickers: AHashSet::new(),
             bars_timestamp_on_close,
             clock: get_atomic_clock_realtime(),
         }
@@ -478,7 +481,7 @@ impl FeedHandler {
         }
     }
 
-    fn handle_markets_feed(&self, msg: DydxWsMarketsMessage) -> Vec<NautilusWsMessage> {
+    fn handle_markets_feed(&mut self, msg: DydxWsMarketsMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsMarketsMessage::Subscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Markets, &data.id);
@@ -634,7 +637,7 @@ impl FeedHandler {
         }
     }
 
-    fn parse_markets_from_data(&self, data: &DydxWsChannelDataMsg) -> Vec<NautilusWsMessage> {
+    fn parse_markets_from_data(&mut self, data: &DydxWsChannelDataMsg) -> Vec<NautilusWsMessage> {
         match self.parse_markets(data) {
             Ok(msgs) => msgs,
             Err(e) => {
@@ -739,12 +742,15 @@ impl FeedHandler {
         let buffer_count = self.message_buffer.len();
         let seq_count = self.book_sequence.len();
         let bars_count = self.pending_bars.len();
+        let seen_count = self.seen_tickers.len();
         self.message_buffer.clear();
         self.book_sequence.clear();
         self.pending_bars.clear();
+        self.seen_tickers.clear();
         log::debug!(
             "Cleared reconnect state: message_buffer={buffer_count}, \
-             book_sequence={seq_count}, pending_bars={bars_count}"
+             book_sequence={seq_count}, pending_bars={bars_count}, \
+             seen_tickers={seen_count}"
         );
     }
 
@@ -978,7 +984,10 @@ impl FeedHandler {
         Ok(vec![])
     }
 
-    fn parse_markets(&self, data: &DydxWsChannelDataMsg) -> DydxWsResult<Vec<NautilusWsMessage>> {
+    fn parse_markets(
+        &mut self,
+        data: &DydxWsChannelDataMsg,
+    ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         let contents: DydxMarketsContents = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse markets contents: {e}")))?;
 
@@ -1053,7 +1062,7 @@ impl FeedHandler {
     }
 
     fn parse_market_entries(
-        &self,
+        &mut self,
         entries: &HashMap<String, DydxMarketTradingUpdate>,
         ts_init: UnixNanos,
         messages: &mut Vec<NautilusWsMessage>,
@@ -1064,14 +1073,17 @@ impl FeedHandler {
             };
 
             if !self.instruments.contains_key(&instrument_id.symbol.inner()) {
-                // Only discover instruments that are active or have unknown status
+                // Only discover instruments that are active or have unknown status,
+                // and only emit once per ticker to avoid repeated fetch attempts
                 let is_active = trading_data
                     .status
                     .as_ref()
                     .is_none_or(|s| matches!(s, DydxMarketStatus::Active));
 
-                if is_active {
+                let symbol = Ustr::from(symbol_str.as_str());
+                if is_active && !self.seen_tickers.contains(&symbol) {
                     log::info!("New instrument discovered via WebSocket: {symbol_str}");
+                    self.seen_tickers.insert(symbol);
                     messages.push(NautilusWsMessage::NewInstrumentDiscovered {
                         ticker: symbol_str.clone(),
                     });

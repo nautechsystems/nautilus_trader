@@ -341,7 +341,7 @@ mod tests {
 
     #[rstest]
     fn test_get_custom_topic(mut switchboard: MessagingSwitchboard) {
-        let data_type = DataType::new("ExampleDataType", None);
+        let data_type = DataType::new("ExampleDataType", None, None);
         let expected_topic = "data.ExampleDataType".into();
         let result = switchboard.get_custom_topic(&data_type);
         assert_eq!(result, expected_topic);

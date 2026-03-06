@@ -215,10 +215,10 @@ repos:
 
       - id: check-docs-conventions
         name: check docs conventions
-        description: Enforces Rust documentation conventions
+        description: Enforces documentation conventions
         entry: bash .pre-commit-hooks/check_docs_conventions.sh
         language: system
-        files: '\.rs$'
+        files: '\.(rs|md)$'
         pass_filenames: false
 
       - id: check-cargo-conventions

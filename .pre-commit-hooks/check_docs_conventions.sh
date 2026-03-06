@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Enforces Rust documentation conventions:
+# Enforces documentation conventions:
 #
+# Rust (crates/**/*.rs):
 # 1. `# Panics` on Result-returning functions with no panic tokens in body
 # 2. `# Panics` sections that say "does not panic" (self-contradictory)
 # 3. `# Errors` on functions that don't return Result/Option
 #
 # Suppress with `// panics-doc-ok` above the doc block for transitive panics.
 # Suppress with `// errors-doc-ok` above the doc block for special cases.
+#
+# Markdown (docs/**/*.md):
+# 4. Hyphen-split words in table rows (e.g., "configu- ration")
+# 5. Soft hyphens (U+00AD)
+# 6. Table lines ending with a trailing hyphen on a word fragment
 
 set -euo pipefail
 
@@ -219,6 +225,36 @@ while IFS=: read -r file line_num match; do
   fi
 
 done < <(rg -n '/// # (Panics|Errors)' crates --type rust --sort path 2> /dev/null || true)
+
+# =============================================================================
+# Markdown table checks (docs/**/*.md)
+# =============================================================================
+
+while IFS= read -r md_file; do
+  [[ -f "$md_file" ]] || continue
+
+  # Hyphen-split words in table rows: "configu- ration"
+  while IFS= read -r match; do
+    [[ -z "$match" ]] && continue
+    echo -e "${RED}Error:${NC} Possible word split in ${md_file}:${match}"
+    VIOLATIONS=$((VIOLATIONS + 1))
+  done < <(rg -n '^\|.*[a-z]- [a-z]' "$md_file" 2> /dev/null || true)
+
+  # Soft hyphens (U+00AD)
+  while IFS= read -r match; do
+    [[ -z "$match" ]] && continue
+    echo -e "${RED}Error:${NC} Soft hyphen (U+00AD) in ${md_file}:${match}"
+    VIOLATIONS=$((VIOLATIONS + 1))
+  done < <(rg -n '\x{00AD}' "$md_file" 2> /dev/null || true)
+
+  # Table lines ending with a trailing hyphen on a word fragment
+  while IFS= read -r match; do
+    [[ -z "$match" ]] && continue
+    echo -e "${RED}Error:${NC} Trailing hyphen at end of table line in ${md_file}:${match}"
+    VIOLATIONS=$((VIOLATIONS + 1))
+  done < <(rg -n '^\|.*[a-z]-\s*$' "$md_file" 2> /dev/null || true)
+
+done < <(find docs -type f -name "*.md" 2> /dev/null || true)
 
 if [ $VIOLATIONS -gt 0 ]; then
   echo -e "${RED}Found $VIOLATIONS documentation convention violation(s)${NC}"

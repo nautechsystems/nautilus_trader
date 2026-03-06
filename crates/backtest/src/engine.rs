@@ -837,19 +837,27 @@ impl BacktestEngine {
     }
 
     fn route_data_to_exchange(&self, data: &Data) {
+        if matches!(
+            data,
+            Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) | Data::Custom(_)
+        ) {
+            return;
+        }
+
         let venue = data.instrument_id().venue;
         if let Some(exchange) = self.venues.get(&venue) {
-            let mut ex = exchange.borrow_mut();
+            let mut exchange = exchange.borrow_mut();
+
             match data {
-                Data::Delta(delta) => ex.process_order_book_delta(*delta),
-                Data::Deltas(deltas) => ex.process_order_book_deltas((**deltas).clone()),
-                Data::Quote(quote) => ex.process_quote_tick(quote),
-                Data::Trade(trade) => ex.process_trade_tick(trade),
-                Data::Bar(bar) => ex.process_bar(*bar),
-                Data::InstrumentClose(close) => ex.process_instrument_close(*close),
-                Data::Depth10(depth) => ex.process_order_book_depth10(depth),
-                Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) => {
-                    // Not routed to exchange — processed by data engine only
+                Data::Delta(delta) => exchange.process_order_book_delta(*delta),
+                Data::Deltas(deltas) => exchange.process_order_book_deltas((**deltas).clone()),
+                Data::Quote(quote) => exchange.process_quote_tick(quote),
+                Data::Trade(trade) => exchange.process_trade_tick(trade),
+                Data::Bar(bar) => exchange.process_bar(*bar),
+                Data::InstrumentClose(close) => exchange.process_instrument_close(*close),
+                Data::Depth10(depth) => exchange.process_order_book_depth10(depth),
+                Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) | Data::Custom(_) => {
+                    unreachable!("filtered by early return above")
                 }
             }
         } else {

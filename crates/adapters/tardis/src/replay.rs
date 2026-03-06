@@ -222,7 +222,8 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                     }
                     Data::MarkPriceUpdate(_)
                     | Data::IndexPriceUpdate(_)
-                    | Data::InstrumentClose(_) => {
+                    | Data::InstrumentClose(_)
+                    | Data::Custom(_) => {
                         log::debug!(
                             "Skipping unsupported data type for instrument {}",
                             msg.instrument_id()

@@ -26,12 +26,12 @@ use std::{
 use bytes::Bytes;
 use indexmap::IndexMap;
 use log::LevelFilter;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, python::to_pytype_err};
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
-        close::InstrumentClose, stubs::*,
+        Bar, BarType, BookOrder, CustomData, DataType, FundingRateUpdate, HasTsInit,
+        IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
+        QuoteTick, TradeTick, close::InstrumentClose, custom::CustomDataTrait, stubs::*,
     },
     enums::{BookAction, BookType, OrderSide},
     identifiers::{ClientId, TraderId, Venue},
@@ -42,6 +42,7 @@ use nautilus_model::{
 };
 use rstest::*;
 use rust_decimal_macros::dec;
+use serde::Serialize;
 use ustr::Ustr;
 #[cfg(feature = "defi")]
 use {
@@ -83,6 +84,59 @@ use crate::{
     testing::init_logger_for_testing,
     timer::TimeEvent,
 };
+
+/// Minimal custom data type for actor tests.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+struct TestActorCustomData {
+    label: String,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+}
+
+impl HasTsInit for TestActorCustomData {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl CustomDataTrait for TestActorCustomData {
+    fn type_name(&self) -> &'static str {
+        "TestActorCustomData"
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+    fn to_json(&self) -> anyhow::Result<String> {
+        Ok(serde_json::to_string(self)?)
+    }
+    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
+        Arc::new(self.clone())
+    }
+    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
+        if let Some(other) = other.as_any().downcast_ref::<Self>() {
+            self == other
+        } else {
+            false
+        }
+    }
+    #[cfg(feature = "python")]
+    fn to_pyobject(&self, _py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
+        Err(to_pytype_err(
+            "to_pyobject not implemented for TestActorCustomData",
+        ))
+    }
+}
+
+pub(crate) fn make_test_custom_data(label: &str) -> CustomData {
+    CustomData::from_arc(Arc::new(TestActorCustomData {
+        label: label.to_string(),
+        ts_event: UnixNanos::default(),
+        ts_init: UnixNanos::default(),
+    }))
+}
 
 #[derive(Debug)]
 struct TestDataActor {
@@ -140,8 +194,8 @@ impl DataActor for TestDataActor {
         Ok(())
     }
 
-    fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
-        self.received_data.push(format!("{data:?}"));
+    fn on_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
+        self.received_data.push(data.data_type.to_string());
         Ok(())
     }
 
@@ -418,13 +472,13 @@ fn test_subscribe_and_receive_custom_data(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let data_type = DataType::new(stringify!(String), None);
+    let data_type = DataType::new(TestActorCustomData::type_name_static(), None, None);
     actor.subscribe_data(data_type.clone(), None, None);
 
     let topic = get_custom_topic(&data_type);
-    let data = String::from("CustomData-01");
+    let data = make_test_custom_data("CustomData-01");
     msgbus::publish_any(topic, &data);
-    let data = String::from("CustomData-02");
+    let data = make_test_custom_data("CustomData-02");
     msgbus::publish_any(topic, &data);
 
     assert_eq!(actor.received_data.len(), 2);
@@ -440,21 +494,21 @@ fn test_unsubscribe_custom_data(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let data_type = DataType::new(stringify!(String), None);
+    let data_type = DataType::new(TestActorCustomData::type_name_static(), None, None);
     actor.subscribe_data(data_type.clone(), None, None);
 
     let topic = get_custom_topic(&data_type);
-    let data = String::from("CustomData-01");
+    let data = make_test_custom_data("CustomData-01");
     msgbus::publish_any(topic, &data);
-    let data = String::from("CustomData-02");
+    let data = make_test_custom_data("CustomData-02");
     msgbus::publish_any(topic, &data);
 
     actor.unsubscribe_data(data_type, None, None);
 
     // Publish more data
-    let data = String::from("CustomData-03");
+    let data = make_test_custom_data("CustomData-03");
     msgbus::publish_any(topic, &data);
-    let data = String::from("CustomData-04");
+    let data = make_test_custom_data("CustomData-04");
     msgbus::publish_any(topic, &data);
 
     // Actor should not receive new data
@@ -1479,7 +1533,7 @@ fn test_request_data(
     actor.start().unwrap();
 
     // Request custom data
-    let data_type = DataType::new("TestData", None);
+    let data_type = DataType::new("TestData", None, None);
     let client_id = ClientId::new("TestClient");
     let request_id = actor
         .request_data(data_type.clone(), client_id, None, None, None, None)
@@ -1802,13 +1856,13 @@ fn test_duplicate_subscribe_custom_data(
     actor.start().unwrap();
 
     // Subscribe twice to the same DataType
-    let data_type = DataType::new(stringify!(String), None);
+    let data_type = DataType::new(TestActorCustomData::type_name_static(), None, None);
     actor.subscribe_data(data_type.clone(), None, None);
     actor.subscribe_data(data_type.clone(), None, None);
 
     // Publish a single message
     let topic = get_custom_topic(&data_type);
-    let payload = String::from("Custom-XYZ");
+    let payload = make_test_custom_data("Custom-XYZ");
     msgbus::publish_any(topic, &payload);
 
     // Only a single handler should be active despite duplicate subscribe attempt
@@ -1825,13 +1879,13 @@ fn test_unsubscribe_before_subscribe_custom_data(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let data_type = DataType::new(stringify!(String), None);
+    let data_type = DataType::new(TestActorCustomData::type_name_static(), None, None);
 
     // Unsubscribe without prior subscription: should not panic and no data received
     actor.unsubscribe_data(data_type.clone(), None, None);
 
     let topic = get_custom_topic(&data_type);
-    let payload = String::from("Custom-ABC");
+    let payload = make_test_custom_data("Custom-ABC");
     msgbus::publish_any(topic, &payload);
 
     assert!(actor.received_data.is_empty());
