@@ -5,6 +5,7 @@ Publish and serialize MakerV3 strategy observability payloads.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from collections.abc import Mapping
 from contextlib import suppress
 from decimal import Decimal
@@ -20,6 +21,7 @@ from flux.strategies.makerv3.constants import TOPIC_EVENT
 from flux.strategies.makerv3.constants import TOPIC_MARKET_BBO
 from flux.strategies.makerv3.constants import TOPIC_STATE
 from flux.strategies.makerv3.wire import FluxBusPayload
+from nautilus_trader.model.enums import OrderSide
 
 
 _to_decimal_or_none = pricing_mod.to_decimal_or_none
@@ -413,7 +415,59 @@ def _pricing_debug_payload(strategy: Any) -> dict[str, Any] | None:
     return payload or None
 
 
-def publish_state(strategy: Any, state: str, *, managed_orders_count: int | None = None) -> None:
+def _quote_target_depth(strategy: Any) -> int:
+    runtime_params_snapshot = getattr(strategy, "_quote_runtime_params_snapshot", None)
+    if not callable(runtime_params_snapshot):
+        return 0
+
+    with suppress(Exception):
+        runtime_params = runtime_params_snapshot()
+        total = Decimal(0)
+        for key in ("n_orders1", "n_orders2", "n_orders3"):
+            value = _to_decimal_or_none(runtime_params.get(key))
+            if value is None:
+                continue
+            total += max(Decimal(0), value)
+        return max(0, int(total))
+    return 0
+
+
+def _maker_quote_status_payload(
+    strategy: Any,
+    *,
+    managed_orders: Sequence[Any],
+) -> dict[str, int] | None:
+    bid_open = 0
+    ask_open = 0
+    for order in managed_orders:
+        side = getattr(order, "side", None)
+        if side == OrderSide.BUY or _stringify_identifier(side).strip().upper() == "BUY":
+            bid_open += 1
+        elif side == OrderSide.SELL or _stringify_identifier(side).strip().upper() == "SELL":
+            ask_open += 1
+
+    bid_depth = _quote_target_depth(strategy)
+    ask_depth = bid_depth
+    if bid_depth <= 0 and ask_depth <= 0 and bid_open <= 0 and ask_open <= 0:
+        return None
+
+    return {
+        "bid_open": int(max(0, bid_open)),
+        "ask_open": int(max(0, ask_open)),
+        "bid_depth": int(max(0, bid_depth)),
+        "ask_depth": int(max(0, ask_depth)),
+        "bid_blocked": int(max(0, bid_depth - bid_open)),
+        "ask_blocked": int(max(0, ask_depth - ask_open)),
+    }
+
+
+def publish_state(
+    strategy: Any,
+    state: str,
+    *,
+    managed_orders_count: int | None = None,
+    managed_orders: Sequence[Any] | None = None,
+) -> None:
     """
     Publish a state snapshot and emit blocked/unblocked transition events.
     """
@@ -434,8 +488,11 @@ def publish_state(strategy: Any, state: str, *, managed_orders_count: int | None
     strategy._state_is_blocked = is_blocked
     strategy._last_state_name = state
     strategy._last_state_ns = now_ns
+    managed_orders_list = list(managed_orders) if managed_orders is not None else None
+    if managed_orders_list is None:
+        managed_orders_list = list(strategy._managed_orders())
     if managed_orders_count is None:
-        managed_orders_count = len(strategy._managed_orders())
+        managed_orders_count = len(managed_orders_list)
     payload: dict[str, Any] = {
         "strategy_id": strategy._external_strategy_id,
         "state": state,
@@ -444,6 +501,12 @@ def publish_state(strategy: Any, state: str, *, managed_orders_count: int | None
         "ts_event": now_ns,
         "ts_ms": now_ns // 1_000_000,
     }
+    maker_quote_status = _maker_quote_status_payload(
+        strategy,
+        managed_orders=managed_orders_list,
+    )
+    if maker_quote_status is not None:
+        payload["maker_quote_status"] = maker_quote_status
     maker_role_map = _maker_role_map_payload(strategy)
     if maker_role_map:
         payload["maker_role_map"] = maker_role_map

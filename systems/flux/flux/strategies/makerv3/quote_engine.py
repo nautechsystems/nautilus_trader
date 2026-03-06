@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import TYPE_CHECKING
+from typing import Any
 
 from flux.strategies.makerv3 import pricing as pricing_mod
 from flux.strategies.makerv3 import publisher as publisher_mod
@@ -61,7 +62,11 @@ def handle_stale_quote_block(
         strategy._last_stale_cancel_ns = now_ns
     from_state = getattr(strategy, "_last_state_name", None)
     blocked_transition = not bool(getattr(strategy, "_state_is_blocked", False))
-    strategy._publish_state(state, managed_orders_count=len(managed_orders))
+    strategy._publish_state(
+        state,
+        managed_orders_count=len(managed_orders),
+        managed_orders=managed_orders,
+    )
     strategy._publish_quote_cycle_event(
         now_ns=now_ns,
         quote_cycle_event=QUOTE_CYCLE_EVENT_BLOCKED,
@@ -92,13 +97,18 @@ def publish_recovery_state_if_blocked(
     strategy: MakerV3Strategy,
     *,
     managed_orders_count: int | None = None,
+    managed_orders: list[Any] | None = None,
 ) -> None:
     """
     Publish a recovery state transition when leaving a blocked state.
     """
     if not bool(getattr(strategy, "_state_is_blocked", False)):
         return
-    strategy._publish_state("running", managed_orders_count=managed_orders_count)
+    strategy._publish_state(
+        "running",
+        managed_orders_count=managed_orders_count,
+        managed_orders=managed_orders,
+    )
 
 
 def refresh_quotes(  # noqa: C901
@@ -193,7 +203,11 @@ def refresh_quotes(  # noqa: C901
     if bps_anchor <= 0:
         return
     active_orders = strategy._managed_orders()
-    publish_recovery_state_if_blocked(strategy, managed_orders_count=len(active_orders))
+    publish_recovery_state_if_blocked(
+        strategy,
+        managed_orders_count=len(active_orders),
+        managed_orders=active_orders,
+    )
 
     skew_ctx = strategy._cached_inventory_skew(now_ns=now_ns, runtime_params=runtime_params)
     total_skew_bps = _to_decimal(skew_ctx.get("total_skew_bps", Decimal(0)))
@@ -472,6 +486,7 @@ def refresh_quotes(  # noqa: C901
         strategy._publish_state(
             "quotes_replaced",
             managed_orders_count=len(active_buys) + len(active_sells),
+            managed_orders=[*active_buys, *active_sells],
         )
 
 

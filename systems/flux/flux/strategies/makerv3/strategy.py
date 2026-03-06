@@ -1002,10 +1002,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self,
             *,
             managed_orders_count: int | None = None,
+            managed_orders: list[Order] | None = None,
         ) -> None:
             quote_engine_mod.publish_recovery_state_if_blocked(
                 self,
                 managed_orders_count=managed_orders_count,
+                managed_orders=managed_orders,
             )
 
         def _refresh_quotes(self, now_ns: int, *, quote_cycle_id: str | None = None) -> None:
@@ -1232,8 +1234,19 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 ts_ns=ts_ns,
             )
 
-        def _publish_state(self, state: str, *, managed_orders_count: int | None = None) -> None:
-            publisher_mod.publish_state(self, state, managed_orders_count=managed_orders_count)
+        def _publish_state(
+            self,
+            state: str,
+            *,
+            managed_orders_count: int | None = None,
+            managed_orders: list[Order] | None = None,
+        ) -> None:
+            publisher_mod.publish_state(
+                self,
+                state,
+                managed_orders_count=managed_orders_count,
+                managed_orders=managed_orders,
+            )
 
         def _publish_event(self, name: str, *, ts_ns: int | None = None, **payload: Any) -> None:
             publisher_mod.publish_event(self, name, ts_ns=ts_ns, **payload)
