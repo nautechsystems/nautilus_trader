@@ -1207,7 +1207,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             return
 
-        size_reduction = existing_order.quantity - command.quantity
+        size_reduction = (existing_order.quantity - command.quantity).as_double()
 
         cancel_orders: CancelOrders = order_update_to_cancel_order_params(
             command=command,
