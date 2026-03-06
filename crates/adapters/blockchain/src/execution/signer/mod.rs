@@ -14,5 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod client;
-pub mod metadata_store;
-pub mod signer;
+pub mod types;
+
+pub use client::{
+    RemoteSignerClient, SignerPayloadMapper, assert_rpc_tx_hash_matches_computed,
+    tx_hash_hex_from_signer_raw_tx,
+};
+pub use types::{
+    OssSignEthRequest, OssSignEthResponse, RemoteSignerClientConfig, SignRequest, SignedTx,
+    SignerApiMode, SignerClientError, SignerMtlsConfig,
+};

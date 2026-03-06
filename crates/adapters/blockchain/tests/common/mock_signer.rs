@@ -28,27 +28,25 @@ use axum::{
     response::Response,
     routing::{get, post},
 };
-use nautilus_common::testing::wait_until_async;
-use nautilus_network::http::HttpClient;
 use serde_json::Value;
 use tokio::{net::TcpListener, sync::Mutex};
 
-pub mod mock_signer;
-
 #[derive(Clone, Debug)]
-pub struct MockRpcResponse {
+pub struct MockSignerResponse {
     pub status: u16,
     pub headers: HashMap<String, String>,
     pub body: String,
+    pub delay_ms: u64,
 }
 
-impl MockRpcResponse {
+impl MockSignerResponse {
     #[must_use]
     pub fn json(body: Value) -> Self {
         Self {
             status: StatusCode::OK.as_u16(),
             headers: HashMap::new(),
             body: body.to_string(),
+            delay_ms: 0,
         }
     }
 
@@ -63,63 +61,56 @@ impl MockRpcResponse {
         self.headers.insert(key.into(), value.into());
         self
     }
+
+    #[must_use]
+    pub fn with_delay_ms(mut self, delay_ms: u64) -> Self {
+        self.delay_ms = delay_ms;
+        self
+    }
 }
 
 #[derive(Clone, Default)]
-pub struct MockRpcState {
+pub struct MockSignerState {
     request_log: Arc<Mutex<Vec<Value>>>,
-    method_counts: Arc<Mutex<HashMap<String, usize>>>,
-    responses: Arc<Mutex<HashMap<String, VecDeque<MockRpcResponse>>>>,
+    call_count: Arc<Mutex<usize>>,
+    responses: Arc<Mutex<VecDeque<MockSignerResponse>>>,
 }
 
-impl MockRpcState {
+impl MockSignerState {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub async fn enqueue_json(&self, method: &str, body: Value) {
-        self.enqueue_response(method, MockRpcResponse::json(body))
-            .await;
-    }
-
-    pub async fn enqueue_response(&self, method: &str, response: MockRpcResponse) {
-        let mut responses = self.responses.lock().await;
-        responses
-            .entry(method.to_string())
-            .or_default()
-            .push_back(response);
+    pub async fn enqueue_response(&self, response: MockSignerResponse) {
+        self.responses.lock().await.push_back(response);
     }
 
     pub async fn request_log(&self) -> Vec<Value> {
         self.request_log.lock().await.clone()
     }
 
-    pub async fn method_count(&self, method: &str) -> usize {
-        *self.method_counts.lock().await.get(method).unwrap_or(&0)
+    pub async fn call_count(&self) -> usize {
+        *self.call_count.lock().await
     }
 
-    async fn pop_response(&self, method: &str) -> Option<MockRpcResponse> {
-        self.responses
-            .lock()
-            .await
-            .get_mut(method)
-            .and_then(VecDeque::pop_front)
+    async fn pop_response(&self) -> Option<MockSignerResponse> {
+        self.responses.lock().await.pop_front()
     }
 
-    async fn record_request(&self, method: &str, request: Value) {
+    async fn record_request(&self, request: Value) {
         self.request_log.lock().await.push(request);
-        let mut counts = self.method_counts.lock().await;
-        *counts.entry(method.to_string()).or_insert(0) += 1;
+        let mut count = self.call_count.lock().await;
+        *count += 1;
     }
 }
 
-pub async fn start_mock_rpc_server(state: MockRpcState) -> SocketAddr {
+pub async fn start_mock_signer_server(state: MockSignerState) -> SocketAddr {
     async fn health() -> &'static str {
         "OK"
     }
 
-    async fn rpc(State(state): State<MockRpcState>, body: Bytes) -> Response<Body> {
+    async fn sign_eth(State(state): State<MockSignerState>, body: Bytes) -> Response<Body> {
         let request: Value = match serde_json::from_slice(&body) {
             Ok(value) => value,
             Err(e) => {
@@ -130,29 +121,18 @@ pub async fn start_mock_rpc_server(state: MockRpcState) -> SocketAddr {
             }
         };
 
-        let method = request
-            .get("method")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
+        state.record_request(request).await;
 
-        state.record_request(method.as_str(), request.clone()).await;
+        let response = state.pop_response().await.unwrap_or_else(|| {
+            MockSignerResponse::json(serde_json::json!({
+                "error": "No mock signer response configured",
+            }))
+            .with_status(StatusCode::INTERNAL_SERVER_ERROR)
+        });
 
-        let response = state
-            .pop_response(method.as_str())
-            .await
-            .unwrap_or_else(|| {
-                let request_id = request.get("id").cloned().unwrap_or(Value::Null);
-                MockRpcResponse::json(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "error": {
-                        "code": -32000,
-                        "message": format!("No mock response configured for method {method}"),
-                    }
-                }))
-                .with_status(StatusCode::INTERNAL_SERVER_ERROR)
-            });
+        if response.delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(response.delay_ms)).await;
+        }
 
         let status =
             StatusCode::from_u16(response.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -165,46 +145,25 @@ pub async fn start_mock_rpc_server(state: MockRpcState) -> SocketAddr {
 
         builder
             .body(Body::from(response.body))
-            .expect("rpc response")
+            .expect("signer response")
     }
 
     let router = Router::new()
-        .route("/", post(rpc))
+        .route("/sign/eth", post(sign_eth))
         .route("/health", get(health))
         .with_state(state);
 
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
-        .expect("failed to bind mock server");
-    let addr = listener.local_addr().expect("mock server addr");
+        .expect("failed to bind mock signer server");
+    let addr = listener.local_addr().expect("mock signer server addr");
 
     tokio::spawn(async move {
         axum::serve(listener, router)
             .await
-            .expect("mock rpc server failed");
+            .expect("mock signer server failed");
     });
 
-    wait_for_server(addr).await;
+    super::wait_for_server(addr).await;
     addr
-}
-
-pub async fn wait_for_server(addr: SocketAddr) {
-    let url = format!("http://{addr}/health");
-    let client = HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None)
-        .expect("health client");
-
-    wait_until_async(
-        || {
-            let health_url = url.clone();
-            let http_client = client.clone();
-            async move {
-                http_client
-                    .get(health_url, None, None, Some(1), None)
-                    .await
-                    .is_ok()
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
 }
