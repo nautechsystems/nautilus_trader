@@ -3635,6 +3635,17 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
   - Updated PR9 head SHA after appending plan tracking sections for milestone progress/deviation/follow-up compliance.
   - Tests run: none (plan tracking append-only update).
 
+- 2026-03-05 - PR10 (`pr10/pcs-v2-router`, head SHA `b0f1673d8616d4fd415881095ef9e31ac251e371`) - status: ready
+  - Added PancakeSwap V2 router ABI wrapper and AMM adapter contract/registry support for single-hop ERC20 quote and swap calldata building (`getAmountsOut`, `getAmountsIn`, `swapExactTokensForTokens`, `swapTokensForExactTokens`).
+  - Enforced fail-closed adapter invariants for unsupported recipient override and zero-deadline swap calls, and tightened quote response validation to require `amounts.len() == path.len()`.
+  - Added selector/registry and mock-RPC integration coverage for eth_call payloads, quote error mapping, malformed quote response rejection, and swap calldata guardrails.
+  - Tests run:
+    - `cargo fmt --all` (pass)
+    - `cargo test -p nautilus-blockchain --test pancakeswap_v2_router_calls` (pass)
+    - `cargo test -p nautilus-blockchain --test amm_adapter_contract` (pass)
+    - `cargo test -p nautilus-blockchain pancakeswap_v2_router` (pass)
+    - `cargo test -p nautilus-blockchain --lib --tests` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
@@ -3644,6 +3655,7 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - 2026-03-05 - PR8 decision: `ApprovalPolicy::Unlimited` now requires an explicit `unlimited_approval_max_amount` that remains signer-compatible for `expected_notional`; uncapped `U256::MAX` approvals are rejected fail-closed before nonce/gas/sign/send to avoid policy-underreporting or signer-preflight coercion.
 - 2026-03-05 - PR9 decision: `query_account` now uses runtime-aware blocking bridge behavior and fails closed on Tokio current-thread runtimes instead of risking nested-runtime panic.
 - 2026-03-05 - PR9 deviation: milestone text lists preflight + post-receipt touched-token refresh triggers; PR9 delivers tracker infrastructure plus `connect`/`query_account` triggers, while execution-path preflight/post-receipt hook-up is deferred to PR12b where receipt/fill orchestration is implemented end-to-end.
+- 2026-03-05 - PR10 decision: PCS V2 AMM adapter is wallet-recipient only for MVP (`supports_recipient_override=false`) and now rejects zero deadlines fail-closed at calldata build time.
 
 ## Known Issues / Follow-ups
 
@@ -3654,3 +3666,4 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - PR8 currently treats uncapped unlimited approvals (`U256::MAX`) as unsupported in fail-closed mode unless a signer-compatible cap is configured (`unlimited_approval_max_amount`), pending signer-side large-notional compatibility work.
 - `cargo test -p nautilus-blockchain --features python --test pyo3_exec_registry` and `cargo test -p nautilus-pyo3 --features defi` remain blocked by pre-existing `nautilus-model` Python compile errors in `crates/model/src/python/defi/data.rs` (`Option<Address>` parse/display mismatch).
 - PR9 leaves execution preflight/post-receipt touched-token refresh integration as a follow-up for PR12b; tracker and config surfaces are in place for that wiring.
+- PR10 quote classification currently relies on revert-string heuristics from `BlockchainRpcClientError` text; propagate structured RPC error fields through the client error type in a follow-up to reduce provider-format fragility.
