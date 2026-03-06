@@ -201,7 +201,7 @@ impl BlockchainExecutionClientConfig {
         multicall_max_batch_size: u32,
         multicall_min_batch_size: u32,
         signer_endpoint: Option<String>,
-        signer_route: String,
+        signer_route: &str,
         signer_timeout_ms: u64,
         signer_require_tls: bool,
         signer_wallet_address: Option<String>,
@@ -238,7 +238,7 @@ impl BlockchainExecutionClientConfig {
         config.multicall_max_batch_size = multicall_max_batch_size;
         config.multicall_min_batch_size = multicall_min_batch_size;
         config.signer_endpoint = signer_endpoint;
-        config.signer_route = signer_route;
+        config.signer_route = signer_route.to_string();
         config.signer_timeout_ms = signer_timeout_ms;
         config.signer_require_tls = signer_require_tls;
         config.signer_wallet_address = signer_wallet_address;
@@ -478,5 +478,77 @@ impl BlockchainExecutionClientConfig {
             self.http_rpc_url,
             self.rpc_requests_per_second
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nautilus_model::{
+        defi::chain::chains,
+        identifiers::{AccountId, TraderId, Venue},
+        stubs::TestDefault,
+    };
+    use pyo3::{
+        Python,
+        types::{PyDict, PyModule},
+    };
+
+    fn signer_route_from_python_config(signer_route: Option<&str>) -> String {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = PyModule::new(py, "blockchain").expect("Module creation should succeed");
+            module
+                .add_class::<crate::config::BlockchainExecutionClientConfig>()
+                .expect("Execution config class should be added to test module");
+
+            let config_class = module
+                .getattr("BlockchainExecutionClientConfig")
+                .expect("Execution config class should be exposed");
+
+            let kwargs = signer_route.map(|signer_route| {
+                let kwargs = PyDict::new(py);
+                kwargs
+                    .set_item("signer_route", signer_route)
+                    .expect("Should set signer_route kwarg");
+                kwargs
+            });
+
+            let py_config = config_class
+                .call(
+                    (
+                        TraderId::test_default(),
+                        AccountId::test_default(),
+                        Venue::new("Bsc:PancakeSwapV2"),
+                        chains::BSC.clone(),
+                        String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"),
+                        String::from("https://bsc.example.com"),
+                        Option::<Vec<String>>::None,
+                        Option::<u32>::None,
+                    ),
+                    kwargs.as_ref(),
+                )
+                .expect("Execution config construction should succeed");
+
+            py_config
+                .getattr("signer_route")
+                .expect("Config should expose signer_route")
+                .extract()
+                .expect("signer_route should extract")
+        })
+    }
+
+    #[test]
+    fn test_blockchain_execution_config_python_constructor_uses_default_signer_route() {
+        let signer_route = signer_route_from_python_config(None);
+
+        assert_eq!(signer_route, "/sign/eth");
+    }
+
+    #[test]
+    fn test_blockchain_execution_config_python_constructor_preserves_custom_signer_route() {
+        let signer_route = signer_route_from_python_config(Some("/sign/custom"));
+
+        assert_eq!(signer_route, "/sign/custom");
     }
 }

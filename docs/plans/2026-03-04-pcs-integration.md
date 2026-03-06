@@ -3739,6 +3739,40 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
   - Added the orchestrator handoff document to the top-of-stack branch and aligned the plan ledger with the handoff state so the next orchestrator can continue directly from PR13.
   - Tests run: `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass), `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass), `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass), `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
 
+- 2026-03-06 - PR6a (`pr6a/rpc-types-models`, head SHA `a03049858ea7f7ed0c32afa565c32a0b05f122eb`) - status: ready
+  - Fixed the pre-existing Python `Transaction.to` binding blocker in `crates/model/src/python/defi/data.rs` by handling optional recipients correctly in the PyO3 surface and added two regression tests covering the constructor path.
+  - Pushed the new PR16 head, completed spec review with no findings, and completed quality review with no findings; GitHub currently reports PR16 `mergeStateStatus=CLEAN`.
+  - Tests run:
+    - `cargo test -p nautilus-model --features "python defi" py_transaction_new_` (pass: `2 passed`)
+    - `cargo test -p nautilus-blockchain --features python` (pass)
+    - `cargo test -p nautilus-pyo3 --features defi` (pass)
+    - `gh pr view 16 --json number,headRefName,baseRefName,mergeStateStatus,url` (pass: `mergeStateStatus=CLEAN`)
+
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `5ae717af96751b99d0fb30265f33e6d36cd6809e`) - status: blocked (local env)
+  - Rebased PR6b through PR13 locally onto PR6a head `a03049858ea7f7ed0c32afa565c32a0b05f122eb`, but intentionally did not force-push the downstream branches before re-verifying the top of the stack.
+  - The earlier `nautilus-model` Python compile blocker is no longer the top-of-stack issue in this worktree; the local PR13 fix in `crates/adapters/blockchain/src/python/config.rs` updates the PyO3 `signer_route="/sign/eth"` default to use the repo-standard `&str` parameter pattern and adds focused regression tests.
+  - Verified the dirty PR13 worktree with `cargo test -p nautilus-blockchain --features python` (pass), but `cargo test -p nautilus-pyo3 --features defi` is currently blocked by local disk exhaustion while building `libnautilus_persistence.a` (`No space left on device`, `/dev/root` at `100%` with `1.3G` available, PR13 `target/` at `30G`).
+
+- 2026-03-06 - Orchestrator handoff (`docs/plans/2026-03-06-pcs-orchestrator-handoff.md`) - status: updated
+  - Refreshed the handoff to capture the pushed PR6a blocker fix, the local-only rebased heads for PR6b through PR13, and the current PR13 dirty-worktree verification state.
+  - Recorded that the remaining incomplete top-of-stack verification is currently a local environment capacity issue rather than the earlier repository compile blocker.
+  - Tests run:
+    - `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `5ae717af96751b99d0fb30265f33e6d36cd6809e`) - status: ready (local)
+  - Cleared the transient local disk exhaustion by cleaning build artifacts from older clean worktrees and completed the previously blocked top-of-stack Python verification in the PR13 worktree.
+  - Verified the local `signer_route` fix end-to-end; the remaining PR13 work is now commit/review/push rather than additional blocker investigation.
+  - Tests run:
+    - `cargo clean --manifest-path /home/ubuntu/nautilus-trader-dev/.worktrees/pr6a-rpc-types-models/Cargo.toml` (pass: `Removed 33881 files, 61.6GiB total`)
+    - `cargo clean --manifest-path /home/ubuntu/nautilus-trader-dev/.worktrees/pr12c-ambiguous-retry-reorg/Cargo.toml` (pass: `Removed 20161 files, 21.5GiB total`)
+    - `cargo clean --manifest-path /home/ubuntu/nautilus-trader-dev/.worktrees/pr2-pyo3-execution-exposure/Cargo.toml` (pass: `Removed 9908 files, 15.7GiB total`)
+    - `cargo clean --manifest-path /home/ubuntu/nautilus-trader-dev/.worktrees/pr9-defi-wallet/Cargo.toml` (pass: `Removed 19045 files, 14.7GiB total`)
+    - `df -h /home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` (pass: `/dev/root` `108G` available)
+    - `cargo test -p nautilus-pyo3 --features defi` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
@@ -3751,6 +3785,7 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - 2026-03-05 - PR10 decision: PCS V2 AMM adapter is wallet-recipient only for MVP (`supports_recipient_override=false`) and now rejects zero deadlines fail-closed at calldata build time.
 - 2026-03-05 - PR11 decision: receipt decode attempts both pool-token order orientations when mapping swap amounts (because only expected path is provided), but still requires the resolved token_in/token_out to exactly match the expected path.
 - 2026-03-05 - PR12a decision: when replay encounters conflicting same-sequence terminal updates, ordering is deterministic via explicit status discriminants (fail-closed bias toward terminal conflict determinism rather than input-order dependence).
+- 2026-03-06 - PR13 PyO3 decision: string-literal keyword defaults should continue to use `&str` constructor parameters and convert to owned `String` fields inside the config object, matching the existing Python surface and avoiding `expected String, found &str` compile mismatches.
 
 ## Known Issues / Follow-ups
 
@@ -3765,3 +3800,6 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - PR11 taxed/rebasing-token decode rejection currently depends on the adapter unsupported-token denylist (`with_unsupported_tokens(...)`); wire this from production execution config before vertical-slice execution (PR12b) to avoid silent opt-in gaps.
 - PR12a JSONL persistence currently assumes a single writer process/worker; add explicit file/process locking or a serialized append worker before enabling multi-writer execution pipelines in PR12b/PR12c.
 - Open PR check suites for PR2/PR12b/PR12c/PR13 are externally blocked by GitHub Actions billing (`The job was not started because recent account payments have failed or your spending limit needs to be increased`), so merge readiness cannot be validated in CI until billing is restored.
+- The earlier `nautilus-model` Python compile blocker in `crates/model/src/python/defi/data.rs` is resolved on pushed PR6a head `a03049858ea7f7ed0c32afa565c32a0b05f122eb`, but the downstream rebases for PR6b through PR13 are still local-only and have not been force-pushed yet.
+- The dirty PR13 worktree currently contains the uncommitted `crates/adapters/blockchain/src/python/config.rs` `signer_route` fix; `cargo test -p nautilus-blockchain --features python` now passes locally, but `cargo test -p nautilus-pyo3 --features defi` is blocked by local disk exhaustion (`No space left on device` while building `libnautilus_persistence.a`).
+- The earlier PR13 local disk-exhaustion blocker is resolved after cleaning stale worktree build artifacts; current remaining local work is to commit the verified PR13 changes and force-push the rebased PR6b through PR13 branches.
