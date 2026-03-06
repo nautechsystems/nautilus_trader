@@ -501,9 +501,13 @@ impl TestClock {
     }
 
     fn replace_existing_timer_if_needed(&mut self, name: &Ustr) {
-        if self.timer_exists(name) {
-            self.cancel_timer(name.as_str());
-            log::warn!("Timer '{name}' replaced");
+        if let Some(timer) = self.timers.get(name) {
+            if timer.is_expired() {
+                self.timers.remove(name);
+            } else {
+                self.cancel_timer(name.as_str());
+                log::warn!("Timer '{name}' replaced");
+            }
         }
     }
 }
