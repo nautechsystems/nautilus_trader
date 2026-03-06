@@ -113,6 +113,45 @@ def test_merge_portfolio_balances_rows_nets_same_instrument_across_strategies() 
     assert position["side"] == "LONG"
 
 
+def test_merge_portfolio_balances_rows_retains_latest_known_mark_when_newer_cash_row_lacks_one() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "strategy_01": [
+                {
+                    "strategy_id": "strategy_01",
+                    "exchange": "bybit",
+                    "account": "main",
+                    "asset": "PLUME",
+                    "total": "3434.3519",
+                    "ts_ms": 1_700_000_000_000,
+                    "mark_raw": 0.0106,
+                    "mv_raw": 36.40413014,
+                    "row_id": "strategy_01:cash:0",
+                },
+            ],
+            "strategy_02": [
+                {
+                    "strategy_id": "strategy_02",
+                    "exchange": "bybit",
+                    "account": "main",
+                    "asset": "PLUME",
+                    "total": "3434.3519",
+                    "ts_ms": 1_700_000_000_100,
+                    "row_id": "strategy_02:cash:0",
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+    )
+
+    rows_by_id = {row["row_id"]: row for row in merged}
+    cash = rows_by_id["tokenmm:cash:bybit:main:PLUME"]
+
+    assert cash["strategy_id"] == "tokenmm"
+    assert cash["mark_raw"] == pytest.approx(0.0106)
+    assert cash["mv_raw"] == pytest.approx(36.40413014)
+
+
 def test_enrich_balances_rows_marks_cash_assets_and_positions_from_market_rows() -> None:
     rows = [
         {

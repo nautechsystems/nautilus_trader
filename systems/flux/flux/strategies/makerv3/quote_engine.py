@@ -319,6 +319,11 @@ def refresh_quotes(  # noqa: C901
                 ),
             )
 
+    l1_place_bid = _price_to_decimal(desired_buys[0][0]) if desired_buys else None
+    l1_cancel_bid = desired_buys[0][1] if desired_buys else None
+    l1_place_ask = _price_to_decimal(desired_sells[0][0]) if desired_sells else None
+    l1_cancel_ask = desired_sells[0][1] if desired_sells else None
+
     strategy._last_pricing_debug = {
         "pricing": {
             "anchor_source": anchor_source,
@@ -341,6 +346,11 @@ def refresh_quotes(  # noqa: C901
             "ask_edge1_cfg_bps": _decimal_to_json_str(runtime_params["ask_edge1"]),
             "bid_edge1_eff_bps": _decimal_to_json_str(bid_edge1_eff_bps),
             "ask_edge1_eff_bps": _decimal_to_json_str(ask_edge1_eff_bps),
+            "place_bid": _decimal_to_json_str(l1_place_bid),
+            "cancel_bid": _decimal_to_json_str(l1_cancel_bid),
+            "place_ask": _decimal_to_json_str(l1_place_ask),
+            "cancel_ask": _decimal_to_json_str(l1_cancel_ask),
+            "place_edge_bps": _decimal_to_json_str(runtime_params["place_edge1"]),
             "effective_skew_bps": _decimal_to_json_str(total_skew_bps),
             "total_skew_bps": _decimal_to_json_str(total_skew_bps),
         },

@@ -775,6 +775,37 @@ def _row_ts_ms(row: Mapping[str, Any]) -> int:
     return ts_ms if ts_ms is not None else 0
 
 
+def _balance_row_qty(row: Mapping[str, Any]) -> float | None:
+    return safe_float(
+        row.get("total")
+        or row.get("quantity")
+        or row.get("signed_qty")
+        or row.get("qty")
+        or row.get("free"),
+    )
+
+
+def _carry_forward_cash_mark(
+    row: dict[str, Any],
+    previous: tuple[int, dict[str, Any]] | None,
+) -> dict[str, Any]:
+    if previous is None or row.get("mark_raw") is not None:
+        return row
+
+    previous_row = previous[1]
+    previous_mark = safe_float(previous_row.get("mark_raw") or previous_row.get("mark"))
+    if previous_mark is None:
+        return row
+
+    row["mark_raw"] = previous_mark
+    qty = _balance_row_qty(row)
+    if qty is not None:
+        row["mv_raw"] = qty * previous_mark
+    elif previous_row.get("mv_raw") is not None:
+        row["mv_raw"] = previous_row.get("mv_raw")
+    return row
+
+
 def _cash_row_key(row: Mapping[str, Any]) -> tuple[str, str, str] | None:
     exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
     account = decode_text(
@@ -884,7 +915,7 @@ def merge_portfolio_balances_rows(
             row_ts_ms = _row_ts_ms(row)
             previous = cash_latest.get(cash_key)
             if previous is None or row_ts_ms >= previous[0]:
-                merged = dict(row)
+                merged = _carry_forward_cash_mark(dict(row), previous)
                 merged["strategy_id"] = portfolio_id
                 merged["row_id"] = f"{portfolio_id}:cash:{cash_key[0]}:{cash_key[1]}:{cash_key[2]}"
                 merged["exchange"] = cash_key[0]

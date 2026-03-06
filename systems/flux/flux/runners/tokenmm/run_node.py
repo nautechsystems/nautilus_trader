@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers import TraderId
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
+DEFAULT_LIVE_MESSAGE_BUS_AUTOTRIM_MINS = 30
 
 
 def _repo_root() -> Path:
@@ -208,6 +209,17 @@ def _resolve_execution_filter_settings(node_cfg: dict[str, Any]) -> tuple[bool, 
     )
 
 
+def _resolve_message_bus_autotrim_mins(*, mode: str, node_cfg: dict[str, Any]) -> int | None:
+    raw_value = node_cfg.get("message_bus_autotrim_mins")
+    if raw_value is None:
+        return DEFAULT_LIVE_MESSAGE_BUS_AUTOTRIM_MINS if mode == "live" else None
+
+    value = int(raw_value)
+    if value > 0:
+        return value
+    return DEFAULT_LIVE_MESSAGE_BUS_AUTOTRIM_MINS if mode == "live" else None
+
+
 def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
     identity = _table(config, "identity")
     return _optional_text(identity.get("strategy_id")) or "makerv3"
@@ -270,6 +282,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     filter_unclaimed_external_orders, filter_position_reports = _resolve_execution_filter_settings(
         node_cfg,
     )
+    message_bus_autotrim_mins = _resolve_message_bus_autotrim_mins(mode=mode, node_cfg=node_cfg)
     redis_database = _redis_database_config(redis_cfg)
     strategy_venues = resolve_strategy_venues(
         config=config,
@@ -300,6 +313,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
         message_bus=MessageBusConfig(
             database=redis_database,
             encoding="json",
+            autotrim_mins=message_bus_autotrim_mins,
             use_trader_prefix=False,
             use_trader_id=False,
             use_instance_id=False,

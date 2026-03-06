@@ -7,6 +7,7 @@ from typing import Any
 from flask import Flask
 
 from flux.pulse.api import PulseControlPlane
+from flux.pulse.api import _extract_active_since
 from flux.pulse.api import _extract_error_info
 
 
@@ -73,6 +74,12 @@ def test_extract_error_info_ignores_socketio_invalid_session_restart_noise() -> 
         "last_seen": None,
         "preview": None,
     }
+
+
+def test_extract_active_since_reads_current_systemd_activation_timestamp() -> None:
+    output = _status_output(state="active (running)", pid=1234, memory="45.2M")
+
+    assert _extract_active_since(output, status="active") == "Fri 2026-03-06 10:00:00 UTC"
 
 
 def test_list_jobs_returns_jobs_payload_with_grouping_and_error_counts(tmp_path: Path) -> None:
@@ -180,6 +187,58 @@ def test_list_jobs_returns_jobs_payload_with_grouping_and_error_counts(tmp_path:
         "failed": 1,
     }
     assert calls
+
+
+def test_list_jobs_scopes_active_job_errors_to_current_activation(tmp_path: Path) -> None:
+    env_dir = tmp_path / "etc" / "flux"
+    env_dir.mkdir(parents=True)
+    (env_dir / "tokenmm-api.env").write_text(
+        "\n".join(
+            [
+                "PULSE_ENABLED=1",
+                "PULSE_DESCRIPTION=TokenMM API",
+                "PULSE_GROUP_KEY=tokenmm",
+                "PULSE_GROUP_LABEL=TokenMM",
+                "PULSE_GROUP_ORDER=10",
+                "PORT=5022",
+                'CMD="python -m flux.runners.tokenmm.run_api"',
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    journal_commands: list[list[str]] = []
+
+    def runner(cmd: list[str], **_: Any) -> FakeCompletedProcess:
+        if cmd[:3] == ["systemctl", "status", "flux@tokenmm-api"]:
+            return FakeCompletedProcess(cmd, stdout=_status_output(state="active (running)", pid=1234, memory="45.2M"))
+        if cmd[:4] == ["sudo", "journalctl", "-u", "flux@tokenmm-api"]:
+            journal_commands.append(cmd)
+            assert "--since" in cmd
+            since_index = cmd.index("--since")
+            assert cmd[since_index + 1] == "Fri 2026-03-06 10:00:00 UTC"
+            return FakeCompletedProcess(cmd, stdout="INFO healthy\n")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    control_plane = PulseControlPlane(
+        env_dir=env_dir,
+        command_runner=runner,
+        sudo_prefix=["sudo"],
+    )
+    app = Flask(__name__)
+    control_plane.register_routes(app)
+
+    response = app.test_client().get("/api/pulse/jobs")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["jobs"][0]["status"] == "active"
+    assert payload["jobs"][0]["errors"] == {
+        "count": 0,
+        "last_seen": None,
+        "preview": None,
+    }
+    assert journal_commands
 
 
 def test_job_actions_and_logs_use_systemd_units_and_sudo_prefix(tmp_path: Path) -> None:

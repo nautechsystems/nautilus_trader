@@ -421,6 +421,33 @@ def test_refresh_quotes_exposes_split_inventory_fields_in_pricing_debug(
     assert skew["local_spot_qty"] == "3"
 
 
+def test_refresh_quotes_exposes_l1_quote_targets_in_pricing_debug(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_001])
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 1_000_000_000
+    strategy._managed_orders = list
+    strategy._rebalance_side = lambda **_kwargs: 0
+    strategy._place_missing_levels = lambda **_kwargs: 0
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    strategy._refresh_quotes(now_ns=1_000_000_000)
+
+    pricing = strategy._last_pricing_debug["pricing"]
+    assert pricing["place_bid"] == "99.88"
+    assert pricing["cancel_bid"] == "99.9"
+    assert pricing["place_ask"] == "101.13"
+    assert pricing["cancel_ask"] == "101.11"
+
+
 def test_refresh_quotes_calls_managed_orders_once_per_quote_cycle(clocked_strategy_factory) -> None:
     strategy = clocked_strategy_factory([1_000_000_001, 1_000_000_002, 1_000_000_003])
 

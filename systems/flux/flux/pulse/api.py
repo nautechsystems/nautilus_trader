@@ -117,6 +117,15 @@ def _extract_uptime(output: str, *, status: str) -> str | None:
     return match.group(1).strip() or None
 
 
+def _extract_active_since(output: str, *, status: str) -> str | None:
+    if status != "active":
+        return None
+    match = re.search(r"Active:\s+active(?:\s+\([^)]+\))?\s+since\s+([^;]+);", output)
+    if match is None:
+        return None
+    return match.group(1).strip() or None
+
+
 def _extract_error_info(logs_text: str) -> dict[str, Any]:
     matches = [
         line.strip()
@@ -288,18 +297,26 @@ class PulseControlPlane:
         )
         output = result.stdout or ""
         status = _normalize_status(output)
+        active_since = _extract_active_since(output, status=status)
         pid_match = re.search(r"Main PID:\s+(\d+)", output)
         memory_match = re.search(r"Memory:\s+([^\s]+)", output)
-        logs_result = self._run(
+        journal_cmd = [
+            *self._sudo_prefix,
+            "journalctl",
+            "-u",
+            self._unit_name(service.job_id),
+        ]
+        if active_since:
+            journal_cmd.extend(["--since", active_since])
+        journal_cmd.extend(
             [
-                *self._sudo_prefix,
-                "journalctl",
-                "-u",
-                self._unit_name(service.job_id),
                 "-n",
                 "300",
                 "--no-pager",
             ],
+        )
+        logs_result = self._run(
+            journal_cmd,
             capture_output=True,
             text=True,
             check=False,
