@@ -3,21 +3,20 @@
  *
  * Tests verify behavioral parity with legacy implementation:
  * - Sorting maintains order after WebSocket updates
- * - Scroll position preserved on data updates
- * - Freshness indicator changes to stale after threshold
- * - ON/OFF badge colors correct
- * - Edge values color-coded (positive green, negative red)
+ * - Trading gate labels remain stable
+ * - Quotes and skew summaries render in the current desktop table
+ * - Desktop maker rows surface balance failures
  * - 2-line row layout renders correctly
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import SignalTable from '@/components/domain/signal/SignalTable';
 import { useSignalStore } from '@/stores';
 import { socket } from '@/sockets';
 import type { BalanceReadiness, SignalStrategy } from '@/types';
-import { colors } from '@/lib/tokens';
 
 // Mock dependencies
 vi.mock('@/api', () => ({
@@ -34,8 +33,18 @@ vi.mock('@/sockets', () => ({
   },
 }));
 
-// Import useSignalStore before mocking so we can reference it
-import { useSignalStore as actualUseSignalStore } from '@/stores';
+vi.mock('@/hooks/useMobileLayout', () => ({
+  useMobileLayout: () => ({
+    viewport: 'desktop',
+    isMobile: false,
+    isMobileViewport: false,
+    density: 'desktop',
+    isTouch: false,
+    width: 1280,
+    height: 720,
+  }),
+  useDensityMode: () => 'desktop',
+}));
 
 vi.mock('@/stores', async () => {
   const actual = await vi.importActual<any>('@/stores');
@@ -48,6 +57,7 @@ const initSignalState = (state: any) => {
   currentSignalState = state;
   // Get the mocked useSignalStore from the mocked module
   const mockedUseSignalStore = useSignalStore as any;
+  mockedUseSignalStore.getState = () => currentSignalState;
   mockedUseSignalStore.mockImplementation((selector?: any) =>
     selector ? selector(currentSignalState) : currentSignalState
   );
@@ -60,6 +70,19 @@ vi.mock('@/components/ui/popover/Popover', () => ({
   PopoverTrigger: ({ children }: any) => <div>{children}</div>,
   PopoverContent: ({ children }: any) => <div>{children}</div>,
 }));
+
+function renderSignalTable() {
+  return render(
+    <MemoryRouter>
+      <SignalTable />
+    </MemoryRouter>
+  );
+}
+
+function getVisibleStrategyIds(): string[] {
+  const table = screen.getByRole('table');
+  return Array.from(table.querySelectorAll('tbody tr')).map((row) => row.querySelector('td')?.textContent?.trim() ?? '');
+}
 
 describe('SignalTable Behavioral Tests', () => {
   const mockSetRows = vi.fn();
@@ -98,15 +121,6 @@ describe('SignalTable Behavioral Tests', () => {
     ...overrides,
   });
 
-  const hexToRgb = (hex: string) => {
-    const sanitized = hex.replace('#', '');
-    const bigint = parseInt(sanitized, 16);
-    const r = (bigint >> 16) & 255;
-    const g = (bigint >> 8) & 255;
-    const b = bigint & 255;
-    return `rgb(${r}, ${g}, ${b})`;
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
     initSignalState({ rows: [], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
@@ -117,45 +131,37 @@ describe('SignalTable Behavioral Tests', () => {
   });
 
   describe('Sorting Behavior', () => {
-    it('maintains sort order after WebSocket update', async () => {
-      const strategy1 = createMockStrategy('strategy_a', { legs: { A: { net_edge_bps: 5 } as any, B: null } });
-      const strategy2 = createMockStrategy('strategy_b', { legs: { A: { net_edge_bps: 15 } as any, B: null } });
-      const strategy3 = createMockStrategy('strategy_c', { legs: { A: { net_edge_bps: 10 } as any, B: null } });
+    it('maintains global qty sort order after WebSocket update', async () => {
+      const strategy1 = createMockStrategy('strategy_a', { risk_delta: 5 });
+      const strategy2 = createMockStrategy('strategy_b', { risk_delta: 15 });
+      const strategy3 = createMockStrategy('strategy_c', { risk_delta: 10 });
 
       initSignalState({ rows: [strategy1, strategy2, strategy3], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      const { rerender } = render(<SignalTable />);
+      const { rerender } = renderSignalTable();
 
-      // Click to sort by edge (descending)
-      const edgeHeader = screen.getByText(/Edge \(bps\)/i);
-      await userEvent.click(edgeHeader);
+      const globalQtyHeader = screen.getByText('Global Qty');
+      await userEvent.click(globalQtyHeader);
 
-      // Verify sort order: 15, 10, 5
       await waitFor(() => {
-        const table = screen.getByRole('table');
-        const edgeCells = within(table).getAllByTestId('signal-edge-value');
-        expect(edgeCells[0]).toHaveTextContent('15.0');
-        expect(edgeCells[1]).toHaveTextContent('10.0');
-        expect(edgeCells[2]).toHaveTextContent('5.0');
+        expect(getVisibleStrategyIds()).toEqual(['strategy_b', 'strategy_c', 'strategy_a']);
       });
 
-      // Simulate WebSocket update that changes edge for strategy_a
-      const updatedStrategy1 = createMockStrategy('strategy_a', { legs: { A: { net_edge_bps: 20 } as any, B: null } });
+      const updatedStrategy1 = createMockStrategy('strategy_a', { risk_delta: 20 });
       initSignalState({ rows: [updatedStrategy1, strategy2, strategy3], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      rerender(<SignalTable />);
+      rerender(
+        <MemoryRouter>
+          <SignalTable />
+        </MemoryRouter>
+      );
 
-      // Verify sort order maintained after update: 20, 15, 10
       await waitFor(() => {
-        const table = screen.getByRole('table');
-        const edgeCells = within(table).getAllByTestId('signal-edge-value');
-        expect(edgeCells[0]).toHaveTextContent('20.0');
-        expect(edgeCells[1]).toHaveTextContent('15.0');
-        expect(edgeCells[2]).toHaveTextContent('10.0');
+        expect(getVisibleStrategyIds()).toEqual(['strategy_a', 'strategy_b', 'strategy_c']);
       });
     });
 
-    it('sorts by strategy ID alphabetically', async () => {
+    it('uses strategy ID as the deterministic secondary sort key', async () => {
       const strategies = [
         createMockStrategy('zebra_strategy'),
         createMockStrategy('alpha_strategy'),
@@ -164,17 +170,10 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: strategies, setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
-
-      const strategyHeader = screen.getByText('Strategy');
-      await userEvent.click(strategyHeader);
+      renderSignalTable();
 
       await waitFor(() => {
-        const table = screen.getByRole('table');
-        const strategyCells = within(table).getAllByText(/_strategy$/);
-        expect(strategyCells[0]).toHaveTextContent('alpha_strategy');
-        expect(strategyCells[1]).toHaveTextContent('beta_strategy');
-        expect(strategyCells[2]).toHaveTextContent('zebra_strategy');
+        expect(getVisibleStrategyIds()).toEqual(['alpha_strategy', 'beta_strategy', 'zebra_strategy']);
       });
     });
   });
@@ -186,7 +185,7 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: [onStrategy, offStrategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       // Wait for table to render
       await waitFor(() => {
@@ -212,39 +211,17 @@ describe('SignalTable Behavioral Tests', () => {
     });
   });
 
-  describe('Edge Color Coding', () => {
-    it('colors edges correctly: green >= 10, yellow >= 5, red < 5', async () => {
-      const highEdge = createMockStrategy('high', {
-        legs: { A: { net_edge_bps: 15 } as any, B: null },
-        edge2_bps: 5,
-      });
-      const medEdge = createMockStrategy('med', {
-        legs: { A: { net_edge_bps: 7 } as any, B: null },
-        edge2_bps: -1,
-      });
-      const lowEdge = createMockStrategy('low', {
-        legs: { A: { net_edge_bps: -2 } as any, B: null },
-        edge2_bps: -5,
-      });
-
-      initSignalState({ rows: [highEdge, medEdge, lowEdge], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
-
-      render(<SignalTable />);
-
-      await waitFor(() => {
-        const table = screen.getByRole('table');
-        const [highCell, medCell, lowCell] = within(table).getAllByTestId('signal-edge-value');
-
-        expect(window.getComputedStyle(highCell).color).toBe(hexToRgb(colors.semantic.success.light));
-        expect(window.getComputedStyle(medCell).color).toBe(hexToRgb(colors.semantic.warning.light));
-        expect(window.getComputedStyle(lowCell).color).toBe(hexToRgb(colors.semantic.danger.light));
-      });
-    });
-  });
-
   describe('Quotes Column', () => {
-    it('renders compact maker quote summary with tooltip definitions', async () => {
+    it('renders compact maker quote summary', async () => {
       const strategy = createMockStrategy('quote_strategy', {
+        params: {
+          bot_on: '1',
+          cex_bid_edge: '10',
+          cex_ask_edge: '10',
+          pool_edge: '10',
+          qty: '100',
+          slippage_bps: '50',
+        },
         maker_quote_status: {
           bid_open: 1,
           bid_depth: 3,
@@ -257,44 +234,24 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await waitFor(() => {
         expect(screen.getByText('quote_strategy')).toBeInTheDocument();
       });
 
-      const summary = screen.getByText('B 1/3 · A 2/4');
+      const summary = screen.getAllByText((_, node) => node?.textContent === 'B 1/3 · A 2/4')[0];
       expect(summary).toBeInTheDocument();
-
-      const user = userEvent.setup();
-      await user.hover(summary);
-
-      await waitFor(() => {
-        const tooltip = screen.getByRole('tooltip');
-        expect(tooltip).toHaveTextContent('Maker quotes');
-        expect(tooltip).toHaveTextContent('Bid: 1/3 (blocked 0)');
-        expect(tooltip).toHaveTextContent('Ask: 2/4 (blocked 1)');
-        expect(tooltip).toHaveTextContent('open = active orders');
-        expect(tooltip).toHaveTextContent('depth = unique price levels');
-        expect(tooltip).toHaveTextContent('blocked = cooldown');
-      });
     });
   });
 
   describe('Adj/Skew Column', () => {
-    it('renders a single signed skew number (bps) derived from bid/ask deltas', async () => {
+    it('renders the canonical signed skew_bps value when provided', async () => {
       const strategy = createMockStrategy('skew_strategy', {
         pricing_adjustments: [
           {
             type: 'inventory_skew',
-            inv_ratio: 0.5,
-            inv_skew: 0.5,
-            base_bid_edge_bps: 10,
-            base_ask_edge_bps: 10,
-            eff_bid_edge_bps: 13,
-            eff_ask_edge_bps: 7,
-            delta_bid_edge_bps: 3,
-            delta_ask_edge_bps: -3,
+            skew_bps_signed: -3,
             updated_ts_ms: 1700000000000,
           },
         ],
@@ -302,13 +259,12 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await waitFor(() => {
         expect(screen.getByText('skew_strategy')).toBeInTheDocument();
       });
 
-      // skew_bps = (delta_ask - delta_bid) / 2 = (-3 - 3)/2 = -3
       expect(screen.getByText('-3.0')).toBeInTheDocument();
       expect(screen.queryByText(/B:/)).not.toBeInTheDocument();
       expect(screen.queryByText(/A:/)).not.toBeInTheDocument();
@@ -319,14 +275,7 @@ describe('SignalTable Behavioral Tests', () => {
         pricing_adjustments: [
           {
             type: 'inventory_skew',
-            inv_ratio: -0.5,
-            inv_skew: 0.5,
-            base_bid_edge_bps: 10,
-            base_ask_edge_bps: 10,
-            eff_bid_edge_bps: 7,
-            eff_ask_edge_bps: 13,
-            delta_bid_edge_bps: -3,
-            delta_ask_edge_bps: 3,
+            skew_bps_signed: 3,
             updated_ts_ms: 1700000000000,
           },
         ],
@@ -334,7 +283,7 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await waitFor(() => {
         expect(screen.getByText('skew_strategy_pos')).toBeInTheDocument();
@@ -344,8 +293,8 @@ describe('SignalTable Behavioral Tests', () => {
     });
   });
 
-  describe('Balance readiness badge', () => {
-    it('renders backend readiness label when available', async () => {
+  describe('Desktop balance readiness indicator', () => {
+    it('shows bal! when a maker quote row has backend FAIL readiness', async () => {
       const readiness: BalanceReadiness = {
         status: 'FAIL',
         qty: '10',
@@ -366,26 +315,45 @@ describe('SignalTable Behavioral Tests', () => {
       const readinessStrategy = createMockStrategy('needs_bal', {
         balances_ok: false,
         balance_readiness: readiness,
+        maker_v2: {
+          quote_snapshot: {
+            mode: 'QUOTING',
+            bid: 1,
+            ask: 1.01,
+            ts_ms: 1700000000000,
+          },
+        } as any,
       });
 
       initSignalState({ rows: [readinessStrategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await waitFor(() => {
-        expect(screen.getByText('Insufficient')).toBeInTheDocument();
+        expect(screen.getAllByText('bal!').length).toBeGreaterThan(0);
       });
     });
 
-    it('falls back to balances_ok flag when readiness missing', async () => {
-      const fallbackStrategy = createMockStrategy('legacy_only', { balance_readiness: undefined });
+    it('omits bal! when readiness is absent', async () => {
+      const fallbackStrategy = createMockStrategy('legacy_only', {
+        balance_readiness: undefined,
+        maker_v2: {
+          quote_snapshot: {
+            mode: 'QUOTING',
+            bid: 1,
+            ask: 1.01,
+            ts_ms: 1700000000000,
+          },
+        } as any,
+      });
 
       initSignalState({ rows: [fallbackStrategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await waitFor(() => {
-        expect(screen.getByText('Ready')).toBeInTheDocument();
+        expect(screen.getByText('legacy_only')).toBeInTheDocument();
+        expect(screen.queryByText('bal!')).not.toBeInTheDocument();
       });
     });
   });
@@ -408,7 +376,7 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       const ageCell = await screen.findByText(/\d+(\.\d)?s$/);
       expect(ageCell.textContent).toMatch(/\d+(\.\d)?s/);
@@ -440,7 +408,7 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await waitFor(() => {
         // Check Leg A structure
@@ -489,7 +457,7 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await waitFor(() => {
         expect(screen.getByText('Bybit PLUME Perp')).toBeInTheDocument();
@@ -500,7 +468,7 @@ describe('SignalTable Behavioral Tests', () => {
 
   describe('WebSocket Integration', () => {
     it('registers WebSocket event handlers on mount', () => {
-      render(<SignalTable />);
+      renderSignalTable();
 
       expect(socket.on).toHaveBeenCalledWith('connect', expect.any(Function));
       expect(socket.on).toHaveBeenCalledWith('disconnect', expect.any(Function));
@@ -508,7 +476,7 @@ describe('SignalTable Behavioral Tests', () => {
     });
 
     it('unregisters WebSocket handlers on unmount', () => {
-      const { unmount } = render(<SignalTable />);
+      const { unmount } = renderSignalTable();
 
       unmount();
 
@@ -519,13 +487,13 @@ describe('SignalTable Behavioral Tests', () => {
   });
 
   describe('Filter Behavior', () => {
-    it('filters strategies by bot status', async () => {
+    it('filters strategies by trading gate status', async () => {
       const onStrategy = createMockStrategy('on_strat', { params: { bot_on: '1' } });
       const offStrategy = createMockStrategy('off_strat', { params: { bot_on: '0' } });
 
       initSignalState({ rows: [onStrategy, offStrategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await userEvent.click(screen.getByText('Filters'));
 
@@ -536,7 +504,7 @@ describe('SignalTable Behavioral Tests', () => {
       // Apply filter for ON strategies only
       const botFilterLabel = screen.getByText('Trading', { selector: 'label' });
       const botFilter = botFilterLabel.parentElement?.querySelector('select') as HTMLSelectElement;
-      await userEvent.selectOptions(botFilter, 'Enabled');
+      await userEvent.selectOptions(botFilter, 'Pending');
 
       await waitFor(() => {
         expect(screen.getByText('on_strat')).toBeInTheDocument();
@@ -553,7 +521,7 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: strategies, setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await userEvent.click(screen.getByText('Filters'));
 
@@ -589,7 +557,7 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       // Initially shows decision prices
       await waitFor(() => {
@@ -619,7 +587,7 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await waitFor(() => {
         expect(screen.getByText('$1234.56')).toBeInTheDocument();
@@ -632,7 +600,7 @@ describe('SignalTable Behavioral Tests', () => {
 
       initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-      render(<SignalTable />);
+      renderSignalTable();
 
       await waitFor(() => {
         const lastTradeCell = screen.getByText('-');

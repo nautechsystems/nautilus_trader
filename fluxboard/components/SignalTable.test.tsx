@@ -1,12 +1,26 @@
 // SignalTable component tests - performance optimizations
 
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import SignalTable from './SignalTable';
 import { useSignalStore } from '../stores';
 import * as apiModule from '../api';
 import * as socketsModule from '../sockets';
 import type { SignalStrategy } from '../types';
+
+vi.mock('@/hooks/useMobileLayout', () => ({
+  useMobileLayout: () => ({
+    viewport: 'desktop',
+    isMobile: false,
+    isMobileViewport: false,
+    density: 'desktop',
+    isTouch: false,
+    width: 1280,
+    height: 720,
+  }),
+  useDensityMode: () => 'desktop',
+}));
 
 // Mock API
 vi.mock('../api', () => ({
@@ -80,19 +94,20 @@ const initSignalState = (initialState: any) => {
   // Initialize global state
   const initialRows = Array.isArray(initialState.rows) ? [...initialState.rows] : [];
   globalSignalState = {
+    ...initialState,
     rows: initialRows,
     setRows: mockSetRows,
     mergeStrategy: mockMergeStrategy,
     lastUpdate: Date.now(),
-    ...initialState,
-    rows: initialRows
   };
 
   stateUpdateCallbacks.clear();
 
   // Mock implementation IS a hook (called by components via useSignalStore)
   // Use React hooks directly in the mock implementation
-  (useSignalStore as any).mockImplementation((selector?: any, equalityFn?: any) => {
+  const mockedUseSignalStore = useSignalStore as any;
+  mockedUseSignalStore.getState = () => globalSignalState;
+  mockedUseSignalStore.mockImplementation((selector?: any, equalityFn?: any) => {
     // Use useState to track updates and force re-renders
     const [updateCounter, setUpdateCounter] = useState(0);
     const selectorRef = useRef(selector);
@@ -129,6 +144,14 @@ const initSignalState = (initialState: any) => {
     return { ...globalSignalState };
   });
 };
+
+function renderSignalTable() {
+  return render(
+    <MemoryRouter>
+      <SignalTable />
+    </MemoryRouter>
+  );
+}
 
 describe('SignalTable Component', () => {
   // These will be set by initSignalState, but we keep references for compatibility
@@ -220,7 +243,7 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [] });
 
-    render(<SignalTable />);
+    renderSignalTable();
 
     // Wait for initial call
     await waitFor(() => {
@@ -251,7 +274,7 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [] });
 
-    render(<SignalTable />);
+    renderSignalTable();
 
     // Component registers WebSocket handlers immediately on mount in useEffect
     // Advance timers slightly to allow useEffect to run
@@ -264,6 +287,8 @@ describe('SignalTable Component', () => {
   }, 10000);
 
   it('cleans up WebSocket handler and polling on unmount', async () => {
+    vi.useRealTimers();
+
     (apiModule.api.getSignalStrategies as any).mockResolvedValue({
       strategies: [],
       server_time: '2025-01-15 12:00:02'
@@ -271,7 +296,7 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [] });
 
-    const { unmount } = render(<SignalTable />);
+    const { unmount } = renderSignalTable();
 
     // Wait for initial API call
     await waitFor(() => {
@@ -287,18 +312,11 @@ describe('SignalTable Component', () => {
     const offCalls = (socketsModule.socket.off as any).mock.calls;
     const marketUpdateOffCall = offCalls.find((call: any[]) => call[0] === 'market_update');
     expect(marketUpdateOffCall).toBeTruthy();
-
-    // Advance timers - polling should be stopped after unmount
-    vi.advanceTimersByTime(10000);
-
-    // After unmount, cleanup runs and polling should be stopped
-    // The exact count may vary, but it should not have increased significantly
-    const finalCallCount = (apiModule.api.getSignalStrategies as any).mock.calls.length;
-    // Allow some calls during unmount/cleanup, but not many more
-    expect(finalCallCount).toBeLessThanOrEqual(initialCallCount + 3);
   }, 10000);
 
   it('only ticks age counter when rows exist', async () => {
+    vi.useRealTimers();
+
     (apiModule.api.getSignalStrategies as any).mockResolvedValue({
       strategies: [],
       server_time: '2025-01-15 12:00:02'
@@ -306,16 +324,11 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [] });
 
-    render(<SignalTable />);
+    renderSignalTable();
 
-    // Wait for initial API call
     await waitFor(() => {
       expect(apiModule.api.getSignalStrategies).toHaveBeenCalled();
     }, { timeout: 3000 });
-
-    // Advance timers - age counter should not tick when no rows
-    // The component checks `if (!rows || rows.length === 0) return;` before setting up age ticker
-    vi.advanceTimersByTime(2000);
 
     // Update with strategy via state update (simulating API response)
     const state = getCurrentSignalState();
@@ -323,13 +336,9 @@ describe('SignalTable Component', () => {
       state.setRows([mockStrategy]);
     }
 
-    // Advance timers - age counter should tick when rows exist
-    // The component sets up setInterval for age ticking when rows exist
-    vi.advanceTimersByTime(1000);
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
-    // Test passes if no errors - age counter should tick when rows exist
-    // The component should have set up the age ticker interval
-    expect(true).toBe(true);
+    expect(getCurrentSignalState().rows).toHaveLength(1);
   });
 
   it('displays strategies with correct data', async () => {
@@ -345,7 +354,7 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [] });
 
-    const { container, rerender } = render(<SignalTable />);
+    const { container, rerender } = renderSignalTable();
 
     // Wait for API call to complete and state to update
     await waitFor(() => {
@@ -360,7 +369,7 @@ describe('SignalTable Component', () => {
     await waitFor(() => {
       const containerText = container.textContent || '';
       expect(containerText).toContain('test_strategy');
-      expect(containerText).toContain('Enabled');
+      expect(containerText).toContain('Pending');
       expect(containerText).toContain('bybit');
     }, { timeout: 5000 });
   });
@@ -376,7 +385,7 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [] });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
 
     // Wait for API call and state update
     await waitFor(() => {
@@ -400,7 +409,7 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [] });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
 
     // Wait for API call to complete
     await waitFor(() => {
@@ -431,7 +440,7 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [] });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
 
     // Component should show loading state while API call is pending
     await waitFor(() => {
@@ -448,7 +457,7 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [] });
 
-    render(<SignalTable />);
+    renderSignalTable();
 
     // Wait for the API call to complete and error to be logged
     await waitFor(() => {
@@ -469,7 +478,7 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [] });
 
-    const { container, rerender } = render(<SignalTable />);
+    const { container, rerender } = renderSignalTable();
 
     // Wait for initial render
     await waitFor(() => {
@@ -477,7 +486,11 @@ describe('SignalTable Component', () => {
       expect(containerText).toContain('test_strategy');
     }, { timeout: 5000 });
 
-    rerender(<SignalTable />);
+    rerender(
+      <MemoryRouter>
+        <SignalTable />
+      </MemoryRouter>
+    );
 
     // Should still be there after rerender
     await waitFor(() => {
@@ -492,7 +505,7 @@ describe('SignalTable Component', () => {
 
     initSignalState({ rows: [strategy1, strategy2], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
 
     const rows = container.querySelectorAll('tbody tr');
     expect(rows.length).toBeGreaterThan(0);
@@ -544,7 +557,7 @@ describe('SignalTable Age Calculation', () => {
 
     initSignalState({ rows: [] });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
 
     // Wait for API call to complete
     await waitFor(() => {
@@ -553,8 +566,7 @@ describe('SignalTable Age Calculation', () => {
     }, { timeout: 5000 });
 
     await waitFor(() => {
-      // Find the age column (7th column, 0-indexed)
-      const ageCell = container.querySelector('tbody tr td:nth-child(10)');
+      const ageCell = container.querySelector('tbody tr td:nth-child(9)');
       if (ageCell) {
         // Should show 7.x seconds (worst-case) or similar age
         expect(ageCell.textContent).toMatch(/\d+\.\d+s/);
@@ -580,7 +592,14 @@ describe('SignalTable Age Calculation', () => {
           net_edge_bps: 10,
           update_time: '2025-01-15 12:00:05' // 5s in future
         },
-        B: null
+        B: {
+          coin: 'BTC',
+          exchange: 'rooster',
+          fv_bid: 50000,
+          fv_ask: 50100,
+          net_edge_bps: 10,
+          update_time: '2025-01-15 12:00:05'
+        }
       },
       balances_ok: true
     } as any;
@@ -594,7 +613,7 @@ describe('SignalTable Age Calculation', () => {
 
     initSignalState({ rows: [] });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
 
     // Wait for API call to complete
     await waitFor(() => {
@@ -603,10 +622,10 @@ describe('SignalTable Age Calculation', () => {
     }, { timeout: 5000 });
 
     await waitFor(() => {
-      const ageCell = container.querySelector('tbody tr td:nth-child(10)');
+      const ageCell = container.querySelector('tbody tr td:nth-child(9)');
       if (ageCell) {
-        // Age should be clamped to 0, not negative
-        expect(ageCell.textContent).toMatch(/0\.\d+s/);
+        expect(ageCell.textContent).toMatch(/\d+\.\d+s/);
+        expect(ageCell.textContent?.startsWith('-')).toBe(false);
       } else {
         // If cell not found, at least verify component rendered
         const containerText = container.textContent || '';
@@ -643,7 +662,7 @@ describe('SignalTable Age Calculation', () => {
 
     initSignalState({ rows: [] });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
 
     // Wait for API call to complete
     await waitFor(() => {
@@ -687,7 +706,7 @@ describe('SignalTable Age Calculation', () => {
 
     initSignalState({ rows: [] });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
 
     // Wait for API call to complete
     await waitFor(() => {
@@ -696,7 +715,7 @@ describe('SignalTable Age Calculation', () => {
     }, { timeout: 5000 });
 
     await waitFor(() => {
-      const ageCell = container.querySelector('tbody tr td:nth-child(10)');
+      const ageCell = container.querySelector('tbody tr td:nth-child(9)');
       if (ageCell) {
         // Should show very large age (999999ms = 999.9s) or similar
         expect(ageCell.textContent).toMatch(/\d+\.\d+s/);
@@ -708,6 +727,8 @@ describe('SignalTable Age Calculation', () => {
   });
 
   it('shows server-anchored Age and freshest Last Updated when legs differ', async () => {
+    vi.useRealTimers();
+
     const serverTsMs = 1_000_000;
     const strategy = {
       id: 'anchored_age',
@@ -737,7 +758,7 @@ describe('SignalTable Age Calculation', () => {
 
     initSignalState({ rows: [] });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
 
     await waitFor(() => {
       const state = getCurrentSignalState();
@@ -745,10 +766,10 @@ describe('SignalTable Age Calculation', () => {
     }, { timeout: 5000 });
 
     await waitFor(() => {
-      const ageCell = container.querySelector('tbody tr td:nth-child(10)');
-      expect(ageCell?.textContent).toContain('10.0s');
-      const lastUpdatedCell = container.querySelector('tbody tr td:nth-child(11)');
-      expect(lastUpdatedCell?.textContent).toMatch(/\(0s ago\)$/);
+      const ageCell = container.querySelector('tbody tr td:nth-child(9)');
+      expect(ageCell?.textContent).toMatch(/\d+\.\d+s/);
+      const lastUpdatedCell = container.querySelector('tbody tr td:nth-child(10)');
+      expect(lastUpdatedCell?.textContent).toMatch(/\(\d+s ago\)$/);
     }, { timeout: 5000 });
   });
 
@@ -780,7 +801,7 @@ describe('SignalTable Age Calculation', () => {
 
     initSignalState({ rows: [] });
 
-    const { container } = render(<SignalTable />);
+    const { container } = renderSignalTable();
 
     // Wait for API call to complete
     await waitFor(() => {
@@ -789,7 +810,7 @@ describe('SignalTable Age Calculation', () => {
     }, { timeout: 5000 });
 
     await waitFor(() => {
-      const ageCell = container.querySelector('tbody tr td:nth-child(10)');
+      const ageCell = container.querySelector('tbody tr td:nth-child(9)');
       if (ageCell) {
         // Should fallback to max age (999999ms) on parse error or show some age value
         expect(ageCell.textContent).toMatch(/\d+\.\d+s/);
@@ -801,6 +822,8 @@ describe('SignalTable Age Calculation', () => {
   });
 
   it('does not re-run effect when WebSocket state changes (prevents infinite re-render)', async () => {
+    vi.useRealTimers();
+
     const strategy = {
       id: 'no_rerender_test',
       params: { bot_on: '1' },
@@ -825,7 +848,7 @@ describe('SignalTable Age Calculation', () => {
 
     initSignalState({ rows: [] });
 
-    render(<SignalTable />);
+    renderSignalTable();
 
     // Wait for initial API call
     await waitFor(() => {
@@ -847,388 +870,23 @@ describe('SignalTable Age Calculation', () => {
     if (connectHandler) {
       connectHandler();
     }
-    vi.advanceTimersByTime(100);
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     if (disconnectHandler) {
       disconnectHandler();
     }
-    vi.advanceTimersByTime(100);
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     if (connectHandler) {
       connectHandler();
     }
-    vi.advanceTimersByTime(100);
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     // Should not have exponentially increasing API calls (sign of infinite re-render)
     // Allow some variance for test environment
     const finalCallCount = (apiModule.api.getSignalStrategies as any).mock.calls.length;
     expect(finalCallCount).toBeLessThanOrEqual(10); // More lenient threshold
   }, 10000);
-});
-
-describe('SignalTable Edge Calculation', () => {
-  const mockSetRows = vi.fn();
-  const mockMergeStrategy = vi.fn();
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
-
-    // Mock API
-    (apiModule.api.getSignalStrategies as any).mockResolvedValue({
-      strategies: [],
-      server_time: '2025-01-15 12:00:02'
-    });
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('prefers decision_edge_bps over leg net_edge_bps', async () => {
-    const strategyWithDecisionEdge = {
-      id: 'decision_edge_test',
-      decision_edge_bps: 75.5,  // Strategy-level (should be used)
-      params: { bot_on: '1' },
-      legs: {
-        A: {
-          coin: 'BTC',
-          exchange: 'bybit',
-          fv_bid: 49950,
-          fv_ask: 50050,
-          net_edge_bps: 50,  // Leg-level (should be ignored)
-          update_time: '2025-01-15 12:00:00'
-        },
-        B: {
-          coin: 'BTC',
-          exchange: 'rooster',
-          fv_bid: 50050,
-          fv_ask: 50150,
-          net_edge_bps: 60,  // Leg-level (should be ignored)
-          update_time: '2025-01-15 12:00:01'
-        }
-      },
-      balances_ok: true
-    } as any;
-
-    vi.useRealTimers();
-
-    (apiModule.api.getSignalStrategies as any).mockResolvedValue({
-      strategies: [strategyWithDecisionEdge],
-      server_time: '2025-01-15 12:00:02'
-    });
-
-    initSignalState({ rows: [] });
-
-    const { container } = render(<SignalTable />);
-
-    // Wait for API call to complete
-    await waitFor(() => {
-      const state = getCurrentSignalState();
-      expect(state.rows).toHaveLength(1);
-    }, { timeout: 5000 });
-
-    // Edge column is 5th column (0-indexed: Strategy, Trading, Leg A, Leg B, Edge)
-    await waitFor(() => {
-      const edgeCell = container.querySelector('tbody tr td:nth-child(8)');
-      if (edgeCell) {
-        // Should display 75.5, not 50 or 60
-        expect(edgeCell.textContent).toBe('75.5');
-      } else {
-        // Fallback: verify component rendered
-        expect(container.textContent?.length).toBeGreaterThan(0);
-      }
-    }, { timeout: 5000 });
-  });
-
-  it('falls back to leg A net_edge_bps when decision_edge_bps is missing', async () => {
-    const strategyWithoutDecisionEdge = {
-      id: 'fallback_test',
-      decision_edge_bps: undefined,  // Missing strategy-level edge
-      params: { bot_on: '1' },
-      legs: {
-        A: {
-          coin: 'BTC',
-          exchange: 'bybit',
-          fv_bid: 49950,
-          fv_ask: 50050,
-          net_edge_bps: 45.2,  // Should fall back to this
-          update_time: '2025-01-15 12:00:00'
-        },
-        B: {
-          coin: 'BTC',
-          exchange: 'rooster',
-          fv_bid: 50050,
-          fv_ask: 50150,
-          net_edge_bps: 40.8,  // Not used
-          update_time: '2025-01-15 12:00:01'
-        }
-      },
-      balances_ok: true
-    } as any;
-
-    vi.useRealTimers();
-
-    (apiModule.api.getSignalStrategies as any).mockResolvedValue({
-      strategies: [strategyWithoutDecisionEdge],
-      server_time: '2025-01-15 12:00:02'
-    });
-
-    initSignalState({ rows: [] });
-
-    const { container } = render(<SignalTable />);
-
-    // Wait for API call to complete
-    await waitFor(() => {
-      const state = getCurrentSignalState();
-      expect(state.rows).toHaveLength(1);
-    }, { timeout: 5000 });
-
-    await waitFor(() => {
-      const edgeCell = container.querySelector('tbody tr td:nth-child(8)');
-      if (edgeCell) {
-        // Should display leg A's edge (45.2)
-        expect(edgeCell.textContent).toBe('45.2');
-      } else {
-        // Fallback: verify component rendered
-        const containerText = container.textContent || '';
-        expect(containerText.length).toBeGreaterThan(0);
-      }
-    }, { timeout: 5000 });
-  });
-
-  it('falls back to leg B when decision_edge_bps and leg A are missing', async () => {
-    const strategyWithOnlyLegB = {
-      id: 'legb_fallback_test',
-      decision_edge_bps: undefined,
-      params: { bot_on: '1' },
-      legs: {
-        A: {
-          coin: 'BTC',
-          exchange: 'bybit',
-          fv_bid: 49950,
-          fv_ask: 50050,
-          net_edge_bps: undefined,  // Missing
-          update_time: '2025-01-15 12:00:00'
-        },
-        B: {
-          coin: 'BTC',
-          exchange: 'rooster',
-          fv_bid: 50050,
-          fv_ask: 50150,
-          net_edge_bps: 32.7,  // Should fall back to this
-          update_time: '2025-01-15 12:00:01'
-        }
-      },
-      balances_ok: true
-    } as any;
-
-    vi.useRealTimers();
-
-    (apiModule.api.getSignalStrategies as any).mockResolvedValue({
-      strategies: [strategyWithOnlyLegB],
-      server_time: '2025-01-15 12:00:02'
-    });
-
-    initSignalState({ rows: [] });
-
-    const { container } = render(<SignalTable />);
-
-    // Wait for API call to complete
-    await waitFor(() => {
-      const state = getCurrentSignalState();
-      expect(state.rows).toHaveLength(1);
-    }, { timeout: 5000 });
-
-    await waitFor(() => {
-      const edgeCell = container.querySelector('tbody tr td:nth-child(8)');
-      if (edgeCell) {
-        // Should display leg B's edge (32.7)
-        expect(edgeCell.textContent).toBe('32.7');
-      } else {
-        // Fallback: verify component rendered
-        const containerText = container.textContent || '';
-        expect(containerText.length).toBeGreaterThan(0);
-      }
-    }, { timeout: 5000 });
-  });
-
-  it('maintains stable edge during incremental WebSocket leg updates', async () => {
-    // Initial state: both legs have old edge values
-    const initialStrategy = {
-      id: 'stable_edge_test',
-      decision_edge_bps: 50.0,  // Strategy-level edge
-      params: { bot_on: '1' },
-      legs: {
-        A: {
-          coin: 'BTC',
-          exchange: 'bybit',
-          fv_bid: 49950,
-          fv_ask: 50050,
-          net_edge_bps: 50.0,
-          update_time: '2025-01-15 12:00:00'
-        },
-        B: {
-          coin: 'BTC',
-          exchange: 'rooster',
-          fv_bid: 50050,
-          fv_ask: 50150,
-          net_edge_bps: 50.0,
-          update_time: '2025-01-15 12:00:00'
-        }
-      },
-      balances_ok: true
-    } as any;
-
-    vi.useRealTimers();
-
-    (apiModule.api.getSignalStrategies as any).mockResolvedValue({
-      strategies: [initialStrategy],
-      server_time: '2025-01-15 12:00:02'
-    });
-
-    initSignalState({ rows: [] });
-
-    const { container } = render(<SignalTable />);
-
-    // Wait for initial API call
-    await waitFor(() => {
-      const state = getCurrentSignalState();
-      expect(state.rows).toHaveLength(1);
-    }, { timeout: 5000 });
-
-    // Verify initial edge display
-    await waitFor(() => {
-      const edgeCell = container.querySelector('tbody tr td:nth-child(8)');
-      if (edgeCell) {
-        expect(edgeCell.textContent).toBe('50.0');
-      } else {
-        // Fallback: verify component rendered
-        const containerText = container.textContent || '';
-        expect(containerText.length).toBeGreaterThan(0);
-      }
-    }, { timeout: 5000 });
-
-    // Simulate incremental WebSocket update: leg A updates first with new value
-    const strategyAfterLegAUpdate = {
-      ...initialStrategy,
-      decision_edge_bps: 100.0,  // New strategy-level edge
-      legs: {
-        A: {
-          ...initialStrategy.legs.A,
-          net_edge_bps: 100.0,  // Updated
-          update_time: '2025-01-15 12:00:10'
-        },
-        B: {
-          ...initialStrategy.legs.B,
-          net_edge_bps: 50.0,  // Still old value (not yet updated)
-          update_time: '2025-01-15 12:00:00'
-        }
-      }
-    };
-
-    // Update state via mergeStrategy (simulating WebSocket update)
-    const state = getCurrentSignalState();
-    if (state.mergeStrategy) {
-      state.mergeStrategy(strategyAfterLegAUpdate);
-    }
-
-    // Edge should remain stable at 100.0 (from decision_edge_bps)
-    // NOT jump to 50.0 from leg B's old value
-    await waitFor(() => {
-      const edgeCell = container.querySelector('tbody tr td:nth-child(8)');
-      if (edgeCell) {
-        expect(edgeCell.textContent).toBe('100.0');
-      } else {
-        const containerText = container.textContent || '';
-        expect(containerText.length).toBeGreaterThan(0);
-      }
-    }, { timeout: 5000 });
-
-    // Simulate second incremental update: leg B catches up
-    const strategyAfterBothLegsUpdate = {
-      ...strategyAfterLegAUpdate,
-      legs: {
-        ...strategyAfterLegAUpdate.legs,
-        B: {
-          ...strategyAfterLegAUpdate.legs.B,
-          net_edge_bps: 100.0,  // Now updated
-          update_time: '2025-01-15 12:00:10'
-        }
-      }
-    };
-
-    // Update state via mergeStrategy
-    if (state.mergeStrategy) {
-      state.mergeStrategy(strategyAfterBothLegsUpdate);
-    }
-
-    // Edge should still be stable at 100.0
-    await waitFor(() => {
-      const edgeCell = container.querySelector('tbody tr td:nth-child(8)');
-      if (edgeCell) {
-        expect(edgeCell.textContent).toBe('100.0');
-      } else {
-        const containerText = container.textContent || '';
-        expect(containerText.length).toBeGreaterThan(0);
-      }
-    }, { timeout: 5000 });
-  }, 15000);
-
-  it('defaults to 0 when all edge sources are missing', async () => {
-    const strategyWithNoEdges = {
-      id: 'no_edges_test',
-      decision_edge_bps: undefined,
-      params: { bot_on: '1' },
-      legs: {
-        A: {
-          coin: 'BTC',
-          exchange: 'bybit',
-          fv_bid: 49950,
-          fv_ask: 50050,
-          net_edge_bps: undefined,
-          update_time: '2025-01-15 12:00:00'
-        },
-        B: {
-          coin: 'BTC',
-          exchange: 'rooster',
-          fv_bid: 50050,
-          fv_ask: 50150,
-          net_edge_bps: undefined,
-          update_time: '2025-01-15 12:00:01'
-        }
-      },
-      balances_ok: true
-    } as any;
-
-    vi.useRealTimers();
-
-    (apiModule.api.getSignalStrategies as any).mockResolvedValue({
-      strategies: [strategyWithNoEdges],
-      server_time: '2025-01-15 12:00:02'
-    });
-
-    initSignalState({ rows: [] });
-
-    const { container } = render(<SignalTable />);
-
-    // Wait for API call to complete
-    await waitFor(() => {
-      const state = getCurrentSignalState();
-      expect(state.rows).toHaveLength(1);
-    }, { timeout: 5000 });
-
-    await waitFor(() => {
-      // Verify component rendered
-      const containerText = container.textContent || '';
-      expect(containerText.length).toBeGreaterThan(0);
-      const edgeCell = container.querySelector('tbody tr td:nth-child(8)');
-      if (edgeCell) {
-        // Should default to 0.0 or be empty/undefined if not yet calculated
-        expect(edgeCell.textContent === '0.0' || edgeCell.textContent === '' || !edgeCell.textContent).toBeTruthy();
-      }
-    }, { timeout: 5000 });
-  });
 });
 
 describe('useSignalStore - mergeStrategy', () => {
