@@ -14,12 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use bytes::Bytes;
-use nautilus_common::{
-    cache::database::CacheDatabaseAdapter, custom::CustomData, live::get_runtime, signal::Signal,
-};
+use nautilus_common::{cache::database::CacheDatabaseAdapter, live::get_runtime, signal::Signal};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    data::{Bar, DataType, QuoteTick, TradeTick},
+    data::{Bar, CustomData, DataType, QuoteTick, TradeTick},
     events::{OrderSnapshot, PositionSnapshot},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     python::{
@@ -208,11 +206,9 @@ impl PostgresCacheDatabase {
 
     #[pyo3(name = "load_custom_data")]
     fn py_load_custom_data(&self, data_type: DataType) -> PyResult<Vec<CustomData>> {
-        get_runtime().block_on(async {
-            DatabaseQueries::load_custom_data(&self.pool, &data_type)
-                .await
-                .map_err(to_pyruntime_err)
-        })
+        get_runtime()
+            .block_on(async { DatabaseQueries::load_custom_data(&self.pool, &data_type).await })
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "load_order_snapshot")]

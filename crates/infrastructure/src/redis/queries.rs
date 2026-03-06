@@ -22,6 +22,7 @@ use futures::future::join_all;
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
+    data::{CustomData, DataType, HasTsInit},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
     orders::OrderAny,
@@ -46,6 +47,7 @@ const ORDERS: &str = "orders";
 const POSITIONS: &str = "positions";
 const ACTORS: &str = "actors";
 const STRATEGIES: &str = "strategies";
+const CUSTOM: &str = "custom";
 const REDIS_DELIMITER: char = ':';
 
 // Index keys
@@ -628,6 +630,71 @@ impl DatabaseQueries {
         log::debug!("Loaded {} position(s)", positions.len());
 
         Ok(positions)
+    }
+
+    /// Loads all custom data for `trader_key` matching the given `data_type`.
+    ///
+    /// Keys are stored as `custom:<ts_init_020>:<uuid>`; value is full CustomData JSON.
+    /// Scans all custom keys, deserializes, filters by type_name (full or short), metadata,
+    /// and identifier to match SQL semantics, then sorts by ts_init ascending.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning, bulk read, or deserialization fails.
+    pub async fn load_custom_data(
+        con: &ConnectionManager,
+        trader_key: &str,
+        data_type: &DataType,
+    ) -> anyhow::Result<Vec<CustomData>> {
+        let pattern = format!("{trader_key}{REDIS_DELIMITER}{CUSTOM}*");
+        log::debug!("Loading custom data {pattern}");
+
+        let mut con = con.clone();
+        let keys = Self::scan_keys(&mut con, pattern).await?;
+
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let values = Self::read_bulk(&con, &keys).await?;
+        let request_type_name = data_type.type_name();
+        let request_short = request_type_name
+            .rsplit([':', '.'])
+            .next()
+            .unwrap_or(request_type_name);
+        let request_identifier = data_type.identifier().unwrap_or("");
+
+        let mut results = Vec::new();
+        for value_opt in values {
+            let Some(value_bytes) = value_opt else {
+                continue;
+            };
+            let custom = match CustomData::from_json_bytes(value_bytes.as_ref()) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!("Failed to deserialize custom data from Redis: {e}");
+                    continue;
+                }
+            };
+            let stored_type_name = custom.data_type.type_name();
+            let type_match =
+                stored_type_name == request_type_name || stored_type_name == request_short;
+            let identifier_match =
+                custom.data_type.identifier().unwrap_or("") == request_identifier;
+            let metadata_match = match (data_type.metadata(), custom.data_type.metadata()) {
+                (None, None) => true,
+                (Some(a), Some(b)) => serde_json::to_value(a).ok() == serde_json::to_value(b).ok(),
+                _ => false,
+            };
+
+            if type_match && identifier_match && metadata_match {
+                results.push(custom);
+            }
+        }
+
+        results.sort_by_key(|c| c.ts_init());
+        log::debug!("Loaded {} custom data item(s)", results.len());
+        Ok(results)
     }
 
     /// Loads a single currency for `trader_key` and `code` using the specified `encoding`.

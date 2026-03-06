@@ -34,7 +34,7 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{AtmSource, OptionChainSlice, OptionGreeks, StrikeRange},
@@ -265,7 +265,7 @@ pub trait DataActor:
     ///
     /// Returns an error if handling the data fails.
     #[allow(unused_variables)]
-    fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+    fn on_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -581,7 +581,7 @@ pub trait DataActor:
     }
 
     /// Handles a received custom data point.
-    fn handle_data(&mut self, data: &dyn Any) {
+    fn handle_data(&mut self, data: &CustomData) {
         log_received(&data);
 
         if self.not_running() {
@@ -1015,7 +1015,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let handler = ShareableMessageHandler::from_any(move |data: &dyn Any| {
+        let handler = ShareableMessageHandler::from_typed(move |data: &CustomData| {
             get_actor_unchecked::<Self>(&actor_id).handle_data(data);
         });
 

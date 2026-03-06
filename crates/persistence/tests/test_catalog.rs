@@ -27,11 +27,14 @@ use nautilus_model::{
     instruments::{CurrencyPair, Instrument, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
-use nautilus_persistence::backend::{
-    catalog::ParquetDataCatalog,
-    session::{DataBackendSession, QueryResult},
+use nautilus_persistence::{
+    backend::{
+        catalog::ParquetDataCatalog,
+        session::{DataBackendSession, QueryResult},
+    },
+    test_data::{MacroYieldCurveData, RustTestCustomData},
 };
-use nautilus_serialization::arrow::ArrowSchemaProvider;
+use nautilus_serialization::{arrow::ArrowSchemaProvider, ensure_custom_data_registered};
 use nautilus_testkit::common::get_nautilus_test_data_file_path;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -42,6 +45,15 @@ fn create_temp_catalog() -> (TempDir, ParquetDataCatalog) {
     let temp_dir = TempDir::new().unwrap();
     let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
     (temp_dir, catalog)
+}
+
+/// Registers all test custom data types once so catalog decode can resolve them regardless of test order.
+fn ensure_test_custom_data_registered() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        ensure_custom_data_registered::<MacroYieldCurveData>();
+        ensure_custom_data_registered::<RustTestCustomData>();
+    });
 }
 
 fn audusd_sim_id() -> InstrumentId {
@@ -243,7 +255,7 @@ fn test_quote_tick_query() {
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<QuoteTick>("quote_005", file_path.as_str(), None)
+        .add_file::<QuoteTick>("quote_005", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -268,6 +280,7 @@ fn test_quote_tick_query_with_filter() {
             "quote_005",
             file_path.as_str(),
             Some("SELECT * FROM quote_005 WHERE ts_init >= 1701388832486000000 ORDER BY ts_init"),
+            None,
         )
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
@@ -283,10 +296,10 @@ fn test_quote_tick_multiple_query() {
     let file_path_trades = get_nautilus_test_data_file_path("trades.parquet");
 
     catalog
-        .add_file::<QuoteTick>("quote_tick", file_path_quotes.as_str(), None)
+        .add_file::<QuoteTick>("quote_tick", file_path_quotes.as_str(), None, None)
         .unwrap();
     catalog
-        .add_file::<TradeTick>("quote_tick_2", file_path_trades.as_str(), None)
+        .add_file::<TradeTick>("quote_tick_2", file_path_trades.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -302,7 +315,7 @@ fn test_trade_tick_query() {
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<TradeTick>("trade_001", file_path.as_str(), None)
+        .add_file::<TradeTick>("trade_001", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -324,7 +337,7 @@ fn test_bar_query() {
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<Bar>("bar_001", file_path.as_str(), None)
+        .add_file::<Bar>("bar_001", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -352,7 +365,7 @@ fn test_datafusion_parquet_round_trip() {
 
     let mut session = DataBackendSession::new(1000);
     session
-        .add_file::<QuoteTick>("test_data", file_path.as_str(), None)
+        .add_file::<QuoteTick>("test_data", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let quote_ticks: Vec<Data> = query_result.collect();
@@ -387,7 +400,7 @@ fn test_datafusion_parquet_round_trip() {
     // Read back from parquet
     let mut session = DataBackendSession::new(1000);
     session
-        .add_file::<QuoteTick>("test_data", temp_file_path.to_str().unwrap(), None)
+        .add_file::<QuoteTick>("test_data", temp_file_path.to_str().unwrap(), None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -624,7 +637,7 @@ fn test_register_object_store_from_uri_local_file() {
 
     // Add file using the registered object store
     session
-        .add_file::<TradeTick>("trade_ticks", &file_path, None)
+        .add_file::<TradeTick>("trade_ticks", &file_path, None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -1570,6 +1583,7 @@ fn test_to_object_path_trailing_slash() {
     );
 }
 
+#[cfg(feature = "cloud")]
 #[rstest]
 fn test_is_remote_uri() {
     // Test S3 URIs
@@ -1602,6 +1616,33 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
     assert_eq!(data_cls, Some("trades".to_string()));
     assert_eq!(identifier, None);
 
+    // Test custom data path with identifier
+    let path_custom_with_id = format!(
+        "{}/data/custom/RustTestCustomData/RUST.TEST",
+        base_dir.to_string_lossy()
+    );
+    let (data_cls, identifier) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_custom_with_id)
+        .unwrap();
+    assert_eq!(data_cls, Some("custom/RustTestCustomData".to_string()));
+    assert_eq!(identifier, Some("RUST.TEST".to_string()));
+
+    // Test custom data path with identifier subdirs
+    let path_custom_subdirs = format!("{}/data/custom/MyType/foo/bar", base_dir.to_string_lossy());
+    let (data_cls, identifier) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_custom_subdirs)
+        .unwrap();
+    assert_eq!(data_cls, Some("custom/MyType".to_string()));
+    assert_eq!(identifier, Some("foo/bar".to_string()));
+
+    // Test custom data path without identifier
+    let path_custom_no_id = format!("{}/data/custom/MyType", base_dir.to_string_lossy());
+    let (data_cls, identifier) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_custom_no_id)
+        .unwrap();
+    assert_eq!(data_cls, Some("custom/MyType".to_string()));
+    assert_eq!(identifier, None);
+
     // Test invalid path
     let invalid_path = "/invalid/path";
     let (data_cls, identifier) = catalog
@@ -1609,6 +1650,35 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
         .unwrap();
     assert_eq!(data_cls, None);
     assert_eq!(identifier, None);
+}
+
+/// Ensures custom data path built by make_path_custom_data (via custom module) matches
+/// the format expected by extract_data_cls_and_identifier_from_path (catalog behavior unchanged after extraction).
+#[rstest]
+fn test_make_path_custom_data_roundtrip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base_dir = tmp.path().join("catalog");
+    std::fs::create_dir_all(&base_dir).unwrap();
+
+    let catalog = ParquetDataCatalog::new(base_dir, None, None, None, None);
+
+    let path_no_id = catalog.make_path_custom_data("MyCustomType", None).unwrap();
+    assert!(path_no_id.contains("data/custom/MyCustomType"));
+    let (data_cls, identifier) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_no_id)
+        .unwrap();
+    assert_eq!(data_cls.as_deref(), Some("custom/MyCustomType"));
+    assert_eq!(identifier, None);
+
+    let path_with_id = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.TEST".to_string()))
+        .unwrap();
+    assert!(path_with_id.contains("data/custom/RustTestCustomData"));
+    let (data_cls2, identifier2) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_with_id)
+        .unwrap();
+    assert_eq!(data_cls2.as_deref(), Some("custom/RustTestCustomData"));
+    assert_eq!(identifier2.as_deref(), Some("RUST.TEST"));
 }
 
 #[rstest]
@@ -1731,6 +1801,7 @@ fn test_prepare_consolidation_queries_with_splits_moved() {
     assert!(!split_after.use_period_boundaries);
 }
 
+#[cfg(feature = "cloud")]
 #[rstest]
 fn test_is_remote_uri_extended_moved() {
     // Test GCS URIs
@@ -1784,6 +1855,7 @@ fn test_is_remote_uri_extended_moved() {
     assert!(!file_catalog.is_remote_uri());
 }
 
+#[cfg(feature = "cloud")]
 #[rstest]
 fn test_reconstruct_full_uri_moved() {
     // Test S3 URI reconstruction
@@ -2370,6 +2442,17 @@ fn test_make_local_path() {
 }
 
 #[rstest]
+fn test_safe_directory_identifier() {
+    use nautilus_persistence::backend::catalog::safe_directory_identifier;
+
+    assert_eq!(safe_directory_identifier("foo//bar"), "foo/bar");
+    assert_eq!(safe_directory_identifier("foo/bar"), "foo/bar");
+    assert_eq!(safe_directory_identifier("foo/../bar"), "foo/bar");
+    assert_eq!(safe_directory_identifier(""), "");
+    assert_eq!(safe_directory_identifier("RUST.TEST"), "RUST.TEST");
+}
+
+#[rstest]
 fn test_make_object_store_path() {
     use nautilus_persistence::backend::catalog::make_object_store_path;
 
@@ -2756,6 +2839,232 @@ fn test_query_directory_based_vs_file_based() {
 }
 
 #[rstest]
+fn test_rust_custom_data_roundtrip() {
+    use std::sync::Arc;
+
+    use nautilus_model::{
+        data::{CustomData, Data, DataType},
+        identifiers::InstrumentId,
+    };
+
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+
+    let original_data = [
+        RustTestCustomData {
+            instrument_id,
+            value: 1.23,
+            flag: true,
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        },
+        RustTestCustomData {
+            instrument_id,
+            value: 4.56,
+            flag: false,
+            ts_event: UnixNanos::from(2),
+            ts_init: UnixNanos::from(2),
+        },
+    ];
+
+    // Write as CustomData with identifier so path is custom/type/identifier
+    let custom_data: Vec<CustomData> = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    // Read back via dynamic custom data query
+    let loaded: Vec<Data> = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(vec![instrument_id.to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(loaded.len(), original_data.len());
+
+    for (expected, actual) in original_data.iter().zip(loaded.iter()) {
+        if let Data::Custom(custom) = actual {
+            assert_eq!(custom.data_type.type_name(), "RustTestCustomData");
+            assert_eq!(
+                custom.data_type.identifier(),
+                Some(instrument_id.to_string().as_str())
+            );
+            let rust: &RustTestCustomData = custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestCustomData>()
+                .expect("Expected RustTestCustomData");
+            assert_eq!(expected, rust);
+        } else {
+            panic!("Expected Data::Custom variant");
+        }
+    }
+}
+
+/// Regression: write_data_enum groups custom data by full DataType (type_name + identifier + metadata).
+/// Same type_name with different identifiers must produce separate batches and be readable back.
+#[rstest]
+fn test_write_data_enum_mixed_custom_data_identifiers() {
+    use std::sync::Arc;
+
+    use nautilus_model::{
+        data::{CustomData, Data, DataType},
+        identifiers::InstrumentId,
+    };
+
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let id_a = InstrumentId::from("RUST.A");
+    let id_b = InstrumentId::from("RUST.B");
+    let data_type_a = DataType::new("RustTestCustomData", None, Some(id_a.to_string()));
+    let data_type_b = DataType::new("RustTestCustomData", None, Some(id_b.to_string()));
+
+    let custom_a = [
+        RustTestCustomData {
+            instrument_id: id_a,
+            value: 1.0,
+            flag: true,
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        },
+        RustTestCustomData {
+            instrument_id: id_a,
+            value: 2.0,
+            flag: false,
+            ts_event: UnixNanos::from(2),
+            ts_init: UnixNanos::from(2),
+        },
+    ];
+    let custom_b = [RustTestCustomData {
+        instrument_id: id_b,
+        value: 10.0,
+        flag: true,
+        ts_event: UnixNanos::from(10),
+        ts_init: UnixNanos::from(10),
+    }];
+
+    let data: Vec<Data> = custom_a
+        .iter()
+        .cloned()
+        .map(|item| Data::Custom(CustomData::new(Arc::new(item), data_type_a.clone())))
+        .chain(
+            custom_b
+                .iter()
+                .cloned()
+                .map(|item| Data::Custom(CustomData::new(Arc::new(item), data_type_b.clone()))),
+        )
+        .collect();
+
+    catalog
+        .write_data_enum(data, None, None, Some(false))
+        .unwrap();
+
+    let loaded_a: Vec<Data> = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(vec![id_a.to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+    let loaded_b: Vec<Data> = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(vec![id_b.to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(loaded_a.len(), 2, "identifier A should have 2 items");
+    assert_eq!(loaded_b.len(), 1, "identifier B should have 1 item");
+}
+
+#[rstest]
+#[cfg(feature = "python")]
+fn test_macro_yield_curve_data_roundtrip() {
+    use std::sync::Arc;
+
+    use nautilus_model::data::{CustomData, Data, DataType};
+
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let data_type = DataType::new("MacroYieldCurveData", None, None);
+
+    let tenors = vec![0.25, 0.5, 1.0, 2.0, 5.0];
+    let interest_rates = vec![0.025, 0.03, 0.035, 0.04, 0.045];
+
+    let original_data = [
+        MacroYieldCurveData {
+            curve_name: "USD".to_string(),
+            tenors,
+            interest_rates,
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        },
+        MacroYieldCurveData {
+            curve_name: "EUR".to_string(),
+            tenors: vec![1.0, 2.0],
+            interest_rates: vec![0.02, 0.025],
+            ts_event: UnixNanos::from(2),
+            ts_init: UnixNanos::from(2),
+        },
+    ];
+
+    let custom_data: Vec<CustomData> = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let loaded: Vec<Data> = catalog
+        .query_custom_data_dynamic("MacroYieldCurveData", None, None, None, None, None, true)
+        .unwrap();
+
+    assert_eq!(loaded.len(), original_data.len());
+
+    for (expected, actual) in original_data.iter().zip(loaded.iter()) {
+        if let Data::Custom(custom) = actual {
+            assert_eq!(custom.data_type.type_name(), "MacroYieldCurveData");
+            let macro_curve: &MacroYieldCurveData = custom
+                .data
+                .as_any()
+                .downcast_ref::<MacroYieldCurveData>()
+                .expect("Expected MacroYieldCurveData");
+            assert_eq!(expected, macro_curve);
+        } else {
+            panic!("Expected Data::Custom variant");
+        }
+    }
+}
+
+#[rstest]
 #[cfg(feature = "cloud")]
 fn test_query_directory_based_registration_with_cloud_uri() {
     // Test that directory-based registration works with cloud storage URIs
@@ -2844,12 +3153,12 @@ fn test_duplicate_table_registration() {
 
     // First registration
     session
-        .add_file::<QuoteTick>("test_table", file_path.as_str(), None)
+        .add_file::<QuoteTick>("test_table", file_path.as_str(), None, None)
         .unwrap();
 
     // Second registration of the same table (should not add duplicate data)
     session
-        .add_file::<QuoteTick>("test_table", file_path.as_str(), None)
+        .add_file::<QuoteTick>("test_table", file_path.as_str(), None, None)
         .unwrap();
 
     let query_result: QueryResult = session.get_query_result();

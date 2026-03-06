@@ -40,6 +40,7 @@ python = [
   "nautilus-common/python",
   "nautilus-core/ffi",
   "nautilus-core/python",
+  "nautilus-model/ffi",
   "nautilus-model/python",
   "nautilus-serialization/python",
   "pyo3",
@@ -57,6 +58,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true, features = ["ffi"] }
+nautilus-macros = { path = "../nautilus_macros" }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
 
@@ -69,6 +71,7 @@ chrono-tz = { workspace = true }
 datafusion = { workspace = true }
 futures = { workspace = true }
 heck = { workspace = true }
+indexmap = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 object_store = { workspace = true }

@@ -145,8 +145,8 @@ impl<'de> Deserialize<'de> for InstrumentId {
     where
         D: Deserializer<'de>,
     {
-        let instrument_id_str: &str = Deserialize::deserialize(deserializer)?;
-        Self::from_str(instrument_id_str).map_err(serde::de::Error::custom)
+        let instrument_id_str: String = Deserialize::deserialize(deserializer)?;
+        Self::from_str(&instrument_id_str).map_err(serde::de::Error::custom)
     }
 }
 

@@ -56,6 +56,19 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Data
     m.add_function(wrap_pyfunction!(data::drop_cvec_pycapsule, m)?)?;
     m.add_class::<crate::data::DataType>()?;
+    m.add_class::<crate::data::CustomData>()?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        crate::python::data::deserialize_custom_from_json,
+        m
+    )?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        crate::python::data::register_custom_data_class,
+        m
+    )?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        crate::python::data::custom::custom_data_backend_kind,
+        m
+    )?)?;
     m.add_class::<crate::data::bar::BarSpecification>()?;
     m.add_class::<crate::data::bar::BarType>()?;
     m.add_class::<crate::data::bar::Bar>()?;

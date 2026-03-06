@@ -49,7 +49,6 @@ use nautilus_common::{
         CacheConfig,
         database::{CacheDatabaseAdapter, CacheMap},
     },
-    custom::CustomData,
     enums::SerializationEncoding,
     live::get_runtime,
     logging::{log_task_awaiting, log_task_started, log_task_stopped},
@@ -59,7 +58,7 @@ use nautilus_core::{UUID4, UnixNanos, correctness::check_slice_not_empty};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, DataType, FundingRateUpdate, QuoteTick, TradeTick},
+    data::{Bar, CustomData, DataType, FundingRateUpdate, HasTsInit, QuoteTick, TradeTick},
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
@@ -98,6 +97,7 @@ const ACTORS: &str = "actors";
 const STRATEGIES: &str = "strategies";
 const SNAPSHOTS: &str = "snapshots";
 const HEALTH: &str = "health";
+const CUSTOM: &str = "custom";
 
 // Index keys
 const INDEX_ORDER_IDS: &str = "index:order_ids";
@@ -327,11 +327,56 @@ impl RedisCacheDatabase {
     /// # Errors
     ///
     /// Returns an error if the command cannot be sent to the background task channel.
-    pub fn insert(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
+    pub fn insert(&self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
             Ok(()) => Ok(()),
             Err(e) => anyhow::bail!("{FAILED_TX_CHANNEL}: {e}"),
+        }
+    }
+
+    /// Stores custom data in Redis (key format: `custom:<ts_init_020>:<uuid>`, value: full JSON).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization fails or the insert command cannot be sent.
+    pub fn add_custom_data(&self, data: &CustomData) -> anyhow::Result<()> {
+        let json_bytes = serde_json::to_vec(data)
+            .map_err(|e| anyhow::anyhow!("CustomData serialization failed: {e}"))?;
+        let ts_init = data.ts_init().as_u64();
+        let key = format!(
+            "{CUSTOM}{REDIS_DELIMITER}{:020}{REDIS_DELIMITER}{}",
+            ts_init,
+            UUID4::new()
+        );
+        self.insert(key, Some(vec![Bytes::from(json_bytes)]))
+    }
+
+    /// Loads custom data from Redis matching the given `data_type` (blocking).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the async load fails.
+    pub fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
+        if tokio::runtime::Handle::try_current().is_ok() {
+            let con = self.con.clone();
+            let trader_key = self.trader_key.clone();
+            let data_type = data_type.clone();
+            let handle = tokio::runtime::Handle::current();
+            tokio::task::block_in_place(|| {
+                let join = tokio::task::spawn_blocking(move || {
+                    get_runtime().block_on(async move {
+                        DatabaseQueries::load_custom_data(&con, &trader_key, &data_type).await
+                    })
+                });
+                handle
+                    .block_on(join)
+                    .map_err(|e| anyhow::anyhow!("load_custom_data task join: {e}"))?
+            })
+        } else {
+            get_runtime().block_on(async {
+                DatabaseQueries::load_custom_data(&self.con, &self.trader_key, data_type).await
+            })
         }
     }
 
@@ -702,6 +747,10 @@ fn insert(
             Ok(())
         }
         HEALTH => {
+            insert_string(pipe, key, value[0].as_ref());
+            Ok(())
+        }
+        CUSTOM => {
             insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
@@ -1308,11 +1357,20 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn add_custom_data(&self, data: &CustomData) -> anyhow::Result<()> {
-        anyhow::bail!("Saving custom data for Redis cache adapter not supported")
+        let json_bytes = serde_json::to_vec(data)
+            .map_err(|e| anyhow::anyhow!("CustomData serialization failed: {e}"))?;
+        let ts_init = data.ts_init().as_u64();
+        let key = format!(
+            "{CUSTOM}{REDIS_DELIMITER}{:020}{REDIS_DELIMITER}{}",
+            ts_init,
+            UUID4::new()
+        );
+        self.database
+            .insert(key, Some(vec![Bytes::from(json_bytes)]))
     }
 
     fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
-        anyhow::bail!("Loading custom data from Redis cache adapter not supported")
+        self.database.load_custom_data(data_type)
     }
 
     fn load_order_snapshot(

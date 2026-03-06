@@ -48,8 +48,10 @@
 // #![deny(clippy::missing_errors_doc)]
 
 pub mod backend;
+#[cfg(feature = "python")]
 pub mod config;
 pub mod parquet;
+pub mod test_data;
 
 #[cfg(feature = "python")]
 pub mod python;

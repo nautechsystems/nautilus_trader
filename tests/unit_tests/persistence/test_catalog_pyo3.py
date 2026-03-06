@@ -14,9 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-import sys
-
-import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import Bar
 from nautilus_trader.core.nautilus_pyo3 import BarAggregation
@@ -37,8 +34,6 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
 
-
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 
 AUDUSD_SIM = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 ONE_MIN_BID = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)

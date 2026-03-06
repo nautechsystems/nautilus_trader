@@ -339,7 +339,7 @@ fn test_execute_subscribe_custom_data(
         &mut data_engine,
     );
 
-    let data_type = DataType::new(stringify!(String), None);
+    let data_type = DataType::new(stringify!(String), None, None);
     let sub = SubscribeCustomData::new(
         Some(client_id),
         Some(venue),
@@ -1156,7 +1156,7 @@ fn test_execute_request_data(
 
     let req = RequestCustomData {
         client_id,
-        data_type: DataType::new("X", None),
+        data_type: DataType::new("X", None, None),
         start: None,
         end: None,
         limit: None,
