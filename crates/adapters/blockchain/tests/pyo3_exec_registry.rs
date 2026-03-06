@@ -24,7 +24,10 @@ use nautilus_model::{
     stubs::TestDefault,
 };
 use nautilus_system::get_global_pyo3_registry;
-use pyo3::{prelude::*, types::PyModule};
+use pyo3::{
+    prelude::*,
+    types::{PyDict, PyModule},
+};
 
 #[test]
 fn test_pyo3_exec_factory_and_config_registry_roundtrip() {
@@ -78,6 +81,75 @@ fn test_pyo3_exec_factory_and_config_registry_roundtrip() {
                 .downcast_ref::<BlockchainExecutionClientConfig>()
                 .is_some(),
             "Extracted config should downcast to BlockchainExecutionClientConfig"
+        );
+
+        let config_class = module
+            .getattr("BlockchainExecutionClientConfig")
+            .expect("Execution config class should be exposed in blockchain pymodule");
+        let kwargs = PyDict::new(py);
+        kwargs
+            .set_item(
+                "wallet_extra_tokens",
+                vec![String::from("0x0000000000000000000000000000000000000001")],
+            )
+            .expect("Should set wallet_extra_tokens kwarg");
+        kwargs
+            .set_item(
+                "wallet_allowance_spenders",
+                vec![String::from("0x0000000000000000000000000000000000000002")],
+            )
+            .expect("Should set wallet_allowance_spenders kwarg");
+        kwargs
+            .set_item(
+                "wallet_wnative_address",
+                String::from("0x0000000000000000000000000000000000000003"),
+            )
+            .expect("Should set wallet_wnative_address kwarg");
+
+        let py_config = config_class
+            .call(
+                (
+                    TraderId::test_default(),
+                    AccountId::test_default(),
+                    Venue::new("Bsc:PancakeSwapV2"),
+                    chains::BSC.clone(),
+                    String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"),
+                    String::from("https://bsc.example.com"),
+                    Option::<Vec<String>>::None,
+                    Option::<u32>::None,
+                ),
+                Some(&kwargs),
+            )
+            .expect("Execution config should accept legacy positional args plus new keyword-only wallet args");
+
+        let wallet_extra_tokens: Vec<String> = py_config
+            .getattr("wallet_extra_tokens")
+            .expect("Config should expose wallet_extra_tokens")
+            .extract()
+            .expect("wallet_extra_tokens should extract");
+        assert_eq!(
+            wallet_extra_tokens,
+            vec![String::from("0x0000000000000000000000000000000000000001")]
+        );
+
+        let wallet_allowance_spenders: Vec<String> = py_config
+            .getattr("wallet_allowance_spenders")
+            .expect("Config should expose wallet_allowance_spenders")
+            .extract()
+            .expect("wallet_allowance_spenders should extract");
+        assert_eq!(
+            wallet_allowance_spenders,
+            vec![String::from("0x0000000000000000000000000000000000000002")]
+        );
+
+        let wallet_wnative_address: Option<String> = py_config
+            .getattr("wallet_wnative_address")
+            .expect("Config should expose wallet_wnative_address")
+            .extract()
+            .expect("wallet_wnative_address should extract");
+        assert_eq!(
+            wallet_wnative_address,
+            Some(String::from("0x0000000000000000000000000000000000000003"))
         );
     });
 }

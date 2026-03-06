@@ -160,6 +160,22 @@ pub struct BlockchainExecutionClientConfig {
     pub wallet_address: String,
     /// Token universe: set of ERC-20 token addresses to monitor for balance tracking.
     pub tokens: Option<Vec<String>>,
+    /// Additional ERC-20 token addresses tracked in wallet snapshots.
+    pub wallet_extra_tokens: Vec<String>,
+    /// Wrapped-native token contract address (e.g., WBNB/WETH) tracked in snapshots.
+    pub wallet_wnative_address: Option<String>,
+    /// Spenders for allowance snapshots (e.g. router, Permit2).
+    pub wallet_allowance_spenders: Vec<String>,
+    /// Maximum age for cached wallet snapshots before refresh.
+    pub wallet_snapshot_ttl_secs: u32,
+    /// Max number of tracked tokens allowed per wallet refresh cycle.
+    pub wallet_max_tokens_per_refresh: u32,
+    /// Refresh wallet state during client connect.
+    pub wallet_refresh_on_connect: bool,
+    /// Maximum ERC-20 calls batched per multicall during wallet refresh.
+    pub multicall_max_batch_size: u32,
+    /// Minimum ERC-20 calls per batch when adaptively splitting multicall failures.
+    pub multicall_min_batch_size: u32,
     /// The HTTP URL for the blockchain RPC endpoint.
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
@@ -184,6 +200,14 @@ impl BlockchainExecutionClientConfig {
             chain,
             wallet_address,
             tokens,
+            wallet_extra_tokens: Vec::new(),
+            wallet_wnative_address: None,
+            wallet_allowance_spenders: Vec::new(),
+            wallet_snapshot_ttl_secs: 30,
+            wallet_max_tokens_per_refresh: 256,
+            wallet_refresh_on_connect: true,
+            multicall_max_batch_size: 64,
+            multicall_min_batch_size: 4,
             http_rpc_url,
             rpc_requests_per_second,
         }

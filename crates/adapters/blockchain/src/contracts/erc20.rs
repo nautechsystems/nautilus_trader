@@ -281,6 +281,62 @@ impl Erc20Contract {
             .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
     }
 
+    /// Fetches balances for multiple ERC-20 tokens for a single account via multicall.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when multicall execution or decoding fails.
+    pub async fn batch_balance_of(
+        &self,
+        token_addresses: &[Address],
+        account: &Address,
+    ) -> Result<HashMap<Address, U256>, BlockchainRpcClientError> {
+        if token_addresses.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let calls: Vec<ContractCall> = token_addresses
+            .iter()
+            .map(|token_address| ContractCall {
+                target: *token_address,
+                allow_failure: true,
+                call_data: ERC20::balanceOfCall { account: *account }.abi_encode(),
+            })
+            .collect();
+
+        let results = self.base.execute_multicall(calls, None).await?;
+
+        if results.len() != token_addresses.len() {
+            return Err(BlockchainRpcClientError::AbiDecodingError(format!(
+                "Multicall balanceOf result count mismatch: expected {}, got {}",
+                token_addresses.len(),
+                results.len()
+            )));
+        }
+
+        let mut balances = HashMap::with_capacity(token_addresses.len());
+        for (idx, token_address) in token_addresses.iter().enumerate() {
+            let result = &results[idx];
+            if !result.success {
+                return Err(BlockchainRpcClientError::ClientError(format!(
+                    "balanceOf multicall failed for token {token_address} with return data {}",
+                    result.returnData
+                )));
+            }
+
+            let balance =
+                ERC20::balanceOfCall::abi_decode_returns(&result.returnData).map_err(|e| {
+                    BlockchainRpcClientError::AbiDecodingError(format!(
+                        "Failed to decode balanceOf for token {token_address}: {e}"
+                    ))
+                })?;
+
+            balances.insert(*token_address, balance);
+        }
+
+        Ok(balances)
+    }
+
     /// Encodes ERC20 `allowance(owner, spender)` call data.
     #[must_use]
     pub fn encode_allowance_call(owner: &Address, spender: &Address) -> Vec<u8> {
@@ -310,6 +366,63 @@ impl Erc20Contract {
 
         ERC20::allowanceCall::abi_decode_returns(&result)
             .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
+    }
+
+    /// Fetches allowances for multiple ERC-20 tokens for a single (`owner`, `spender`) pair via multicall.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when multicall execution or decoding fails.
+    pub async fn batch_allowance(
+        &self,
+        token_addresses: &[Address],
+        owner: &Address,
+        spender: &Address,
+    ) -> Result<HashMap<Address, U256>, BlockchainRpcClientError> {
+        if token_addresses.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let calls: Vec<ContractCall> = token_addresses
+            .iter()
+            .map(|token_address| ContractCall {
+                target: *token_address,
+                allow_failure: true,
+                call_data: Self::encode_allowance_call(owner, spender),
+            })
+            .collect();
+
+        let results = self.base.execute_multicall(calls, None).await?;
+
+        if results.len() != token_addresses.len() {
+            return Err(BlockchainRpcClientError::AbiDecodingError(format!(
+                "Multicall allowance result count mismatch: expected {}, got {}",
+                token_addresses.len(),
+                results.len()
+            )));
+        }
+
+        let mut allowances = HashMap::with_capacity(token_addresses.len());
+        for (idx, token_address) in token_addresses.iter().enumerate() {
+            let result = &results[idx];
+            if !result.success {
+                return Err(BlockchainRpcClientError::ClientError(format!(
+                    "allowance multicall failed for token {token_address} with return data {}",
+                    result.returnData
+                )));
+            }
+
+            let allowance =
+                ERC20::allowanceCall::abi_decode_returns(&result.returnData).map_err(|e| {
+                    BlockchainRpcClientError::AbiDecodingError(format!(
+                        "Failed to decode allowance for token {token_address}: {e}"
+                    ))
+                })?;
+
+            allowances.insert(*token_address, allowance);
+        }
+
+        Ok(allowances)
     }
 
     /// Encodes ERC20 `approve(spender, amount)` call data.

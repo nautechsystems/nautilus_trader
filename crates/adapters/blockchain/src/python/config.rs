@@ -147,7 +147,25 @@ impl BlockchainExecutionClientConfig {
     /// Creates a new `BlockchainExecutionClientConfig` instance.
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id, client_id, venue, chain, wallet_address, http_rpc_url, tokens=None, rpc_requests_per_second=None))]
+    #[pyo3(signature = (
+        trader_id,
+        client_id,
+        venue,
+        chain,
+        wallet_address,
+        http_rpc_url,
+        tokens=None,
+        rpc_requests_per_second=None,
+        *,
+        wallet_extra_tokens=None,
+        wallet_wnative_address=None,
+        wallet_allowance_spenders=None,
+        wallet_snapshot_ttl_secs=30,
+        wallet_max_tokens_per_refresh=256,
+        wallet_refresh_on_connect=true,
+        multicall_max_batch_size=64,
+        multicall_min_batch_size=4
+    ))]
     fn py_new(
         trader_id: TraderId,
         client_id: AccountId,
@@ -157,8 +175,16 @@ impl BlockchainExecutionClientConfig {
         http_rpc_url: String,
         tokens: Option<Vec<String>>,
         rpc_requests_per_second: Option<u32>,
+        wallet_extra_tokens: Option<Vec<String>>,
+        wallet_wnative_address: Option<String>,
+        wallet_allowance_spenders: Option<Vec<String>>,
+        wallet_snapshot_ttl_secs: u32,
+        wallet_max_tokens_per_refresh: u32,
+        wallet_refresh_on_connect: bool,
+        multicall_max_batch_size: u32,
+        multicall_min_batch_size: u32,
     ) -> Self {
-        Self::new(
+        let mut config = Self::new(
             trader_id,
             client_id,
             venue,
@@ -167,7 +193,18 @@ impl BlockchainExecutionClientConfig {
             tokens,
             http_rpc_url,
             rpc_requests_per_second,
-        )
+        );
+
+        config.wallet_extra_tokens = wallet_extra_tokens.unwrap_or_default();
+        config.wallet_wnative_address = wallet_wnative_address;
+        config.wallet_allowance_spenders = wallet_allowance_spenders.unwrap_or_default();
+        config.wallet_snapshot_ttl_secs = wallet_snapshot_ttl_secs;
+        config.wallet_max_tokens_per_refresh = wallet_max_tokens_per_refresh;
+        config.wallet_refresh_on_connect = wallet_refresh_on_connect;
+        config.multicall_max_batch_size = multicall_max_batch_size;
+        config.multicall_min_batch_size = multicall_min_batch_size;
+
+        config
     }
 
     /// Returns the trader ID.
@@ -206,6 +243,54 @@ impl BlockchainExecutionClientConfig {
         self.tokens.clone()
     }
 
+    /// Returns additional token addresses tracked in wallet snapshots.
+    #[getter]
+    fn wallet_extra_tokens(&self) -> Vec<String> {
+        self.wallet_extra_tokens.clone()
+    }
+
+    /// Returns wrapped-native token address tracked in snapshots.
+    #[getter]
+    fn wallet_wnative_address(&self) -> Option<String> {
+        self.wallet_wnative_address.clone()
+    }
+
+    /// Returns spender addresses tracked in allowance snapshots.
+    #[getter]
+    fn wallet_allowance_spenders(&self) -> Vec<String> {
+        self.wallet_allowance_spenders.clone()
+    }
+
+    /// Returns the wallet snapshot TTL in seconds.
+    #[getter]
+    const fn wallet_snapshot_ttl_secs(&self) -> u32 {
+        self.wallet_snapshot_ttl_secs
+    }
+
+    /// Returns the wallet refresh token cap.
+    #[getter]
+    const fn wallet_max_tokens_per_refresh(&self) -> u32 {
+        self.wallet_max_tokens_per_refresh
+    }
+
+    /// Returns whether connect triggers wallet refresh.
+    #[getter]
+    const fn wallet_refresh_on_connect(&self) -> bool {
+        self.wallet_refresh_on_connect
+    }
+
+    /// Returns multicall max batch size for wallet refresh.
+    #[getter]
+    const fn multicall_max_batch_size(&self) -> u32 {
+        self.multicall_max_batch_size
+    }
+
+    /// Returns multicall minimum adaptive batch size.
+    #[getter]
+    const fn multicall_min_batch_size(&self) -> u32 {
+        self.multicall_min_batch_size
+    }
+
     /// Returns the HTTP RPC URL.
     #[getter]
     fn http_rpc_url(&self) -> String {
@@ -221,13 +306,21 @@ impl BlockchainExecutionClientConfig {
     /// Returns a string representation of the configuration.
     fn __repr__(&self) -> String {
         format!(
-            "BlockchainExecutionClientConfig(trader_id={}, client_id={}, venue={}, chain={:?}, wallet_address={}, tokens={:?}, http_rpc_url={}, rpc_requests_per_second={:?})",
+            "BlockchainExecutionClientConfig(trader_id={}, client_id={}, venue={}, chain={:?}, wallet_address={}, tokens={:?}, wallet_extra_tokens={:?}, wallet_wnative_address={:?}, wallet_allowance_spenders={:?}, wallet_snapshot_ttl_secs={}, wallet_max_tokens_per_refresh={}, wallet_refresh_on_connect={}, multicall_max_batch_size={}, multicall_min_batch_size={}, http_rpc_url={}, rpc_requests_per_second={:?})",
             self.trader_id,
             self.client_id,
             self.venue,
             self.chain.name,
             self.wallet_address,
             self.tokens,
+            self.wallet_extra_tokens,
+            self.wallet_wnative_address,
+            self.wallet_allowance_spenders,
+            self.wallet_snapshot_ttl_secs,
+            self.wallet_max_tokens_per_refresh,
+            self.wallet_refresh_on_connect,
+            self.multicall_max_batch_size,
+            self.multicall_min_batch_size,
             self.http_rpc_url,
             self.rpc_requests_per_second
         )

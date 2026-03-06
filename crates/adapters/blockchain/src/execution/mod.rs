@@ -17,3 +17,4 @@ pub mod client;
 pub mod erc20_allowance;
 pub mod metadata_store;
 pub mod signer;
+pub mod wallet;

@@ -32,6 +32,9 @@ pub trait PoolMetadataStore {
     /// Returns pool metadata for the provided pool identifier.
     fn get_pool(&self, pool_identifier: &PoolIdentifier) -> Option<&SharedPool>;
 
+    /// Returns all known pools.
+    fn all_pools(&self) -> Vec<SharedPool>;
+
     /// Stores pool metadata.
     fn insert_pool(&mut self, pool: Pool);
 }
@@ -72,6 +75,10 @@ impl TokenMetadataStore for InMemoryMetadataStore {
 impl PoolMetadataStore for InMemoryMetadataStore {
     fn get_pool(&self, pool_identifier: &PoolIdentifier) -> Option<&SharedPool> {
         self.pools.get(pool_identifier)
+    }
+
+    fn all_pools(&self) -> Vec<SharedPool> {
+        self.pools.values().cloned().collect()
     }
 
     fn insert_pool(&mut self, pool: Pool) {
