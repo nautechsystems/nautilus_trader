@@ -28,8 +28,6 @@ pub mod funding;
 pub mod greeks;
 pub mod option_chain;
 pub mod order;
-#[cfg(feature = "python")]
-pub mod plugin;
 pub mod prices;
 pub mod quote;
 pub mod registry;
@@ -55,11 +53,13 @@ pub use bar::{Bar, BarSpecification, BarType};
 pub use black_scholes::Greeks;
 pub use close::InstrumentClose;
 #[cfg(feature = "python")]
-pub use custom::ExternalCustomDataWrapper;
-#[cfg(feature = "python")]
 pub use custom::PythonCustomDataWrapper;
 pub use custom::{
     CustomData, CustomDataTrait, ensure_custom_data_json_registered, register_custom_data_json,
+};
+#[cfg(feature = "python")]
+pub use custom::{
+    get_python_data_class, reconstruct_python_custom_data, register_python_data_class,
 };
 pub use delta::OrderBookDelta;
 pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
@@ -72,12 +72,6 @@ pub use greeks::{
 };
 pub use option_chain::{AtmSource, OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeRange};
 pub use order::{BookOrder, NULL_ORDER};
-#[cfg(feature = "python")]
-pub use plugin::{
-    ExternalCustomDataHandle, ExternalCustomDataPlugin, custom_data_handle_capsule,
-    get_python_data_class, handle_from_capsule, plugin_from_capsule,
-    reconstruct_python_custom_data, register_python_data_class,
-};
 pub use prices::{IndexPriceUpdate, MarkPriceUpdate};
 pub use quote::QuoteTick;
 pub use registry::{

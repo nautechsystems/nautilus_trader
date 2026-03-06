@@ -24,21 +24,12 @@
 
 use std::sync::Arc;
 
-#[cfg(feature = "python")]
-use abi_stable::std_types::{RResult, RString, RVec};
 use arrow::record_batch::RecordBatch;
-#[cfg(feature = "python")]
-use nautilus_model::data::plugin::{
-    ExternalCustomDataHandle, ExternalCustomDataPlugin, PluginMetadataEntry, err_value, ok,
-    record_batch_from_ipc_bytes, record_batch_to_ipc_bytes, schema_to_ipc_bytes,
-};
 use nautilus_model::data::{
     ArrowDecoder, ArrowEncoder, CustomData, CustomDataTrait, Data, DataType,
     decode_custom_from_arrow, ensure_arrow_registered, ensure_custom_data_json_registered,
     get_arrow_schema,
 };
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
 
 use super::{ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch};
 
@@ -126,162 +117,6 @@ where
 
     let _ = ensure_arrow_registered(type_name, schema, encoder, decoder);
 }
-
-#[cfg(feature = "python")]
-extern "C" fn plugin_type_name_impl<T>() -> RString
-where
-    T: CustomDataTrait + Clone + Send + Sync + 'static,
-{
-    RString::from(T::type_name_static())
-}
-
-#[cfg(feature = "python")]
-extern "C" fn plugin_schema_ipc_impl<T>() -> RResult<RVec<u8>, RString>
-where
-    T: CustomDataTrait + ArrowSchemaProvider + Clone + Send + Sync + 'static,
-{
-    match schema_to_ipc_bytes(&T::get_schema(None)) {
-        Ok(bytes) => ok(RVec::from(bytes)),
-        Err(e) => err_value(e),
-    }
-}
-
-#[cfg(feature = "python")]
-extern "C" fn plugin_from_json_impl<T>(json: RString) -> RResult<ExternalCustomDataHandle, RString>
-where
-    T: CustomDataTrait + Clone + Send + Sync + 'static,
-{
-    let value = match serde_json::from_str::<serde_json::Value>(&json.into_string()) {
-        Ok(value) => value,
-        Err(e) => return err_value(e),
-    };
-    let arc = match T::from_json(value) {
-        Ok(arc) => arc,
-        Err(e) => return err_value(e),
-    };
-    match arc.as_any().downcast_ref::<T>() {
-        Some(value) => ok(ExternalCustomDataHandle::new(value.clone())),
-        None => err_value(format!(
-            "from_json downcast failed for {}",
-            T::type_name_static()
-        )),
-    }
-}
-
-#[cfg(feature = "python")]
-extern "C" fn plugin_encode_batch_impl<T>(
-    handles: RVec<ExternalCustomDataHandle>,
-) -> RResult<RVec<u8>, RString>
-where
-    T: CustomDataTrait + ArrowSchemaProvider + EncodeToRecordBatch + Clone + Send + Sync + 'static,
-{
-    let typed: anyhow::Result<Vec<T>> = handles
-        .iter()
-        .map(ExternalCustomDataHandle::try_clone_as::<T>)
-        .collect();
-    let typed: Vec<T> = match typed {
-        Ok(typed) => typed,
-        Err(e) => return err_value(e),
-    };
-    let metadata = typed
-        .first()
-        .map(EncodeToRecordBatch::metadata)
-        .unwrap_or_default();
-    let batch = match EncodeToRecordBatch::encode_batch(&metadata, &typed) {
-        Ok(batch) => batch,
-        Err(e) => return err_value(e),
-    };
-    match record_batch_to_ipc_bytes(&batch) {
-        Ok(bytes) => ok(RVec::from(bytes)),
-        Err(e) => err_value(e),
-    }
-}
-
-#[cfg(feature = "python")]
-extern "C" fn plugin_decode_batch_impl<T>(
-    metadata: RVec<PluginMetadataEntry>,
-    bytes: RVec<u8>,
-) -> RResult<RVec<ExternalCustomDataHandle>, RString>
-where
-    T: CustomDataTrait + DecodeDataFromRecordBatch + Clone + Send + Sync + 'static,
-{
-    let metadata: std::collections::HashMap<String, String> = metadata
-        .into_iter()
-        .map(|entry| (entry.key.into_string(), entry.value.into_string()))
-        .collect();
-    let batch = match record_batch_from_ipc_bytes(bytes.as_slice()) {
-        Ok(batch) => batch,
-        Err(e) => return err_value(e),
-    };
-    let decoded = match T::decode_data_batch(&metadata, batch) {
-        Ok(items) => items,
-        Err(e) => return err_value(e),
-    };
-    let mut handles = Vec::with_capacity(decoded.len());
-    for item in decoded {
-        match item {
-            Data::Custom(custom) => match custom.data.as_any().downcast_ref::<T>() {
-                Some(value) => handles.push(ExternalCustomDataHandle::new(value.clone())),
-                None => {
-                    return err_value(format!(
-                        "Decoded custom data was not {}",
-                        T::type_name_static()
-                    ));
-                }
-            },
-            _ => return err_value("Expected Data::Custom variant"),
-        }
-    }
-    ok(RVec::from(handles))
-}
-
-#[cfg(feature = "python")]
-pub fn external_custom_data_plugin<T>() -> ExternalCustomDataPlugin
-where
-    T: CustomDataTrait
-        + ArrowSchemaProvider
-        + EncodeToRecordBatch
-        + DecodeDataFromRecordBatch
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-{
-    ExternalCustomDataPlugin {
-        abi_version: ExternalCustomDataPlugin::ABI_VERSION,
-        type_name: plugin_type_name_impl::<T>,
-        schema_ipc: plugin_schema_ipc_impl::<T>,
-        from_json: plugin_from_json_impl::<T>,
-        encode_batch: plugin_encode_batch_impl::<T>,
-        decode_batch: plugin_decode_batch_impl::<T>,
-    }
-}
-
-/// Wraps the plugin for type `T` in a PyCapsule.
-///
-/// # Errors
-///
-/// Returns a Python error if capsule creation fails.
-#[cfg(feature = "python")]
-pub fn custom_data_plugin_capsule<T>(py: Python<'_>) -> PyResult<Py<PyAny>>
-where
-    T: CustomDataTrait
-        + ArrowSchemaProvider
-        + EncodeToRecordBatch
-        + DecodeDataFromRecordBatch
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-{
-    let plugin = external_custom_data_plugin::<T>();
-    pyo3::types::PyCapsule::new_with_destructor(py, plugin, None, |_, _| {})
-        .map(|capsule| capsule.into_any().unbind())
-}
-
-// ---------------------------------------------------------------------------
-// Decoder (Python feature: used by catalog/session for dynamic custom data)
-// ---------------------------------------------------------------------------
 
 /// Decoder for custom data types that are identified at runtime by metadata (e.g. `type_name`).
 ///

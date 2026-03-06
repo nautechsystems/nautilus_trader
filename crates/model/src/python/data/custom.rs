@@ -20,9 +20,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyAny};
 
 use crate::data::{
     CustomData, DataType,
-    custom::{
-        ExternalCustomDataWrapper, PythonCustomDataWrapper, parse_custom_data_from_json_bytes,
-    },
+    custom::{PythonCustomDataWrapper, parse_custom_data_from_json_bytes},
     registry::try_extract_from_py,
 };
 
@@ -115,13 +113,6 @@ pub fn custom_data_backend_kind(custom: &CustomData) -> &'static str {
         .is_some()
     {
         "python"
-    } else if custom
-        .data
-        .as_any()
-        .downcast_ref::<ExternalCustomDataWrapper>()
-        .is_some()
-    {
-        "external"
     } else {
         "native"
     }

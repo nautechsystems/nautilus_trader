@@ -42,7 +42,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-core = { workspace = true }
 
-abi_stable = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }

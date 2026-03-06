@@ -45,14 +45,9 @@ use pyo3::{prelude::*, types::PyCapsule};
 #[cfg(feature = "cython-compat")]
 use crate::data::DataFFI;
 use crate::data::{
-    Bar, CustomData, Data, DataType, ExternalCustomDataWrapper, FundingRateUpdate,
-    IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
-    close::InstrumentClose,
-    is_monotonically_increasing_by_init,
-    plugin::{
-        ExternalCustomDataPlugin, handle_from_capsule, plugin_from_capsule,
-        register_python_data_class,
-    },
+    Bar, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+    OrderBookDelta, QuoteTick, TradeTick, close::InstrumentClose,
+    is_monotonically_increasing_by_init, register_python_data_class,
 };
 
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
@@ -487,123 +482,6 @@ fn py_decode_record_batch_to_custom_data(
     })
 }
 
-#[cfg(feature = "python")]
-fn try_register_external_custom_data_plugin(
-    type_name: &str,
-    data_class: &Bound<'_, PyAny>,
-) -> PyResult<bool> {
-    use std::sync::Arc;
-
-    use crate::data::{CustomDataTrait, registry};
-
-    if !data_class.hasattr("__nautilus_custom_data_plugin__")? {
-        return Ok(false);
-    }
-
-    let plugin_capsule = data_class.call_method0("__nautilus_custom_data_plugin__")?;
-    let plugin = plugin_from_capsule(&plugin_capsule)?;
-
-    if plugin.abi_version != ExternalCustomDataPlugin::ABI_VERSION {
-        return Err(to_pyruntime_err(format!(
-            "Unsupported custom data plugin ABI version for {type_name}: expected {}, found {}",
-            ExternalCustomDataPlugin::ABI_VERSION,
-            plugin.abi_version
-        )));
-    }
-
-    let plugin_type_name = plugin.type_name_string();
-    if plugin_type_name != type_name {
-        return Err(to_pyruntime_err(format!(
-            "Custom data plugin type mismatch: class is `{type_name}`, plugin is `{plugin_type_name}`"
-        )));
-    }
-
-    let extractor = Box::new(
-        move |obj: &Bound<'_, PyAny>| -> Option<Arc<dyn CustomDataTrait>> {
-            let handle_capsule = obj.call_method0("__nautilus_custom_data_handle__").ok()?;
-            let handle = handle_from_capsule(&handle_capsule).ok()?;
-            Some(Arc::new(ExternalCustomDataWrapper::new(
-                handle,
-                Some(obj.clone().unbind()),
-            )) as Arc<dyn CustomDataTrait>)
-        },
-    );
-
-    registry::ensure_py_extractor_registered(type_name, extractor).map_err(|e| {
-        to_pyruntime_err(format!(
-            "Failed to register Python extractor for external custom data {type_name}: {e}"
-        ))
-    })?;
-
-    let plugin_for_json = plugin.clone();
-    let json_deserializer = Box::new(
-        move |value: serde_json::Value| -> Result<Arc<dyn CustomDataTrait>, anyhow::Error> {
-            let json = serde_json::to_string(&value)?;
-            let handle = plugin_for_json.decode_from_json(json)?;
-            Ok(Arc::new(ExternalCustomDataWrapper::new(handle, None)) as Arc<dyn CustomDataTrait>)
-        },
-    );
-
-    registry::ensure_json_deserializer_registered(type_name, json_deserializer).map_err(|e| {
-        to_pyruntime_err(format!(
-            "Failed to register JSON deserializer for {type_name}: {e}"
-        ))
-    })?;
-
-    let schema = plugin.schema().map_err(|e| {
-        to_pyruntime_err(format!("Failed to load plugin schema for {type_name}: {e}"))
-    })?;
-
-    let plugin_for_encoder = plugin.clone();
-    let type_name_for_encoder = type_name.to_string();
-    let encoder = Box::new(
-        move |items: &[Arc<dyn crate::data::CustomDataTrait>]| -> Result<
-            arrow::record_batch::RecordBatch,
-            anyhow::Error,
-        > {
-            let handles: anyhow::Result<Vec<_>> = items
-                .iter()
-                .map(|item| {
-                    item.as_any()
-                        .downcast_ref::<ExternalCustomDataWrapper>()
-                        .ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "Expected ExternalCustomDataWrapper for {type_name_for_encoder}"
-                            )
-                        })
-                        .map(|wrapper| wrapper.handle().clone())
-                })
-                .collect();
-            plugin_for_encoder.encode_handles(handles?)
-        },
-    );
-
-    let plugin_for_decoder = plugin;
-    let decoder = Box::new(
-        move |metadata: &std::collections::HashMap<String, String>,
-              batch: arrow::record_batch::RecordBatch|
-              -> Result<Vec<crate::data::Data>, anyhow::Error> {
-            let handles = plugin_for_decoder.decode_handles(metadata, batch)?;
-            Ok(handles
-                .into_iter()
-                .map(|handle| {
-                    crate::data::Data::Custom(crate::data::CustomData::from_arc(Arc::new(
-                        ExternalCustomDataWrapper::new(handle, None),
-                    )))
-                })
-                .collect())
-        },
-    );
-
-    registry::ensure_arrow_registered(type_name, schema, encoder, decoder).map_err(|e| {
-        to_pyruntime_err(format!(
-            "Failed to register Arrow encoder/decoder for {type_name}: {e}"
-        ))
-    })?;
-
-    Ok(true)
-}
-
 /// Registers a custom data **type** (class) with the catalog registry.
 ///
 /// Use this when you prefer to pass the class instead of a sample instance.
@@ -665,8 +543,6 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
 
     if let Some(extractor) = registry::get_rust_extractor(&type_name) {
         let _ = registry::ensure_py_extractor_registered(&type_name, extractor);
-    } else if try_register_external_custom_data_plugin(&type_name, data_class)? {
-        return Ok(());
     }
 
     let data_class_for_json = data_class.clone().unbind();

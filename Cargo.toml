@@ -107,7 +107,6 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.55.0", default
 # -----------------------------------------------------------------------------
 # Core dependencies
 # -----------------------------------------------------------------------------
-abi_stable = "0.11.3"
 ahash = { version = "0.8.12", features = ["serde"] }
 alloy-primitives = { version = "1.5.7", default-features = false, features = [
   "std",

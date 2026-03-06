@@ -867,23 +867,6 @@ fn gen_pymethods_impl(ctx: &ExpansionContext<'_>) -> TokenStream {
                 Ok(pyo3::Py::new(py, inner.clone())?.into_any())
             }
 
-            /// Exports the ABI-stable plugin descriptor used by the main Nautilus binary.
-            #[classmethod]
-            fn __nautilus_custom_data_plugin__(
-                _cls: pyo3::Bound<'_, pyo3::types::PyType>,
-                py: pyo3::Python<'_>,
-            ) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-                nautilus_serialization::arrow::custom::custom_data_plugin_capsule::<#name>(py)
-            }
-
-            /// Exports an opaque native handle for this instance via PyCapsule.
-            fn __nautilus_custom_data_handle__(
-                &self,
-                py: pyo3::Python<'_>,
-            ) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-                nautilus_model::data::custom_data_handle_capsule(py, self)
-            }
-
             /// Decodes a RecordBatch from a PyArrow batch into a list of instances.
             /// Class method: call via MarketTickData.decode_record_batch_py(metadata, batch).
             #[pyo3(signature = (metadata, py_batch))]

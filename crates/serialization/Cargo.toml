@@ -51,7 +51,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
-abi_stable = { workspace = true }
 anyhow = { workspace = true }
 indexmap = { workspace = true }
 rust_decimal = { workspace = true }

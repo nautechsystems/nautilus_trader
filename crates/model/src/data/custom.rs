@@ -24,8 +24,6 @@ use nautilus_core::UnixNanos;
 use pyo3::{prelude::*, types::PyAny};
 use serde::{Serialize, Serializer};
 
-#[cfg(feature = "python")]
-use crate::data::plugin::{ExternalCustomDataHandle, reconstruct_python_custom_data};
 use crate::data::{
     Data, DataType, HasTsInit,
     registry::{ensure_json_deserializer_registered, register_json_deserializer},
@@ -154,124 +152,6 @@ impl Clone for PythonCustomDataWrapper {
     }
 }
 
-// ---------------------------------------------------------------------------
-// ExternalCustomDataWrapper - bridges external .so custom data types via ABI-stable handles
-// ---------------------------------------------------------------------------
-
-/// A wrapper for native custom data handles exported by external PyO3 modules.
-///
-/// Unlike [`PythonCustomDataWrapper`], this wrapper calls native Rust function pointers from the
-/// external module for timestamps, equality, JSON, and Arrow serialization. The Python object is
-/// only used for reconstruction back into Python when `.data` is accessed from the PyO3 API.
-#[cfg(feature = "python")]
-pub struct ExternalCustomDataWrapper {
-    handle: ExternalCustomDataHandle,
-    cached_py_object: Option<Py<PyAny>>,
-    cached_ts_event: UnixNanos,
-    cached_ts_init: UnixNanos,
-    cached_type_name: String,
-    cached_type_name_static: &'static str,
-}
-
-#[cfg(feature = "python")]
-impl ExternalCustomDataWrapper {
-    #[must_use]
-    pub fn new(handle: ExternalCustomDataHandle, py_object: Option<Py<PyAny>>) -> Self {
-        let type_name = handle.type_name();
-        let type_name_static = intern_type_name_static(type_name.clone());
-        let ts_event = UnixNanos::from(handle.ts_event());
-        let ts_init = UnixNanos::from(handle.ts_init());
-        Self {
-            handle,
-            cached_py_object: py_object,
-            cached_ts_event: ts_event,
-            cached_ts_init: ts_init,
-            cached_type_name: type_name,
-            cached_type_name_static: type_name_static,
-        }
-    }
-
-    #[must_use]
-    pub fn handle(&self) -> &ExternalCustomDataHandle {
-        &self.handle
-    }
-}
-
-#[cfg(feature = "python")]
-impl Clone for ExternalCustomDataWrapper {
-    fn clone(&self) -> Self {
-        let cached_py_object =
-            Python::attach(|py| self.cached_py_object.as_ref().map(|obj| obj.clone_ref(py)));
-        Self {
-            handle: self.handle.clone(),
-            cached_py_object,
-            cached_ts_event: self.cached_ts_event,
-            cached_ts_init: self.cached_ts_init,
-            cached_type_name: self.cached_type_name.clone(),
-            cached_type_name_static: self.cached_type_name_static,
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-impl Debug for ExternalCustomDataWrapper {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(ExternalCustomDataWrapper))
-            .field("type_name", &self.cached_type_name)
-            .field("ts_event", &self.cached_ts_event)
-            .field("ts_init", &self.cached_ts_init)
-            .finish()
-    }
-}
-
-#[cfg(feature = "python")]
-impl HasTsInit for ExternalCustomDataWrapper {
-    fn ts_init(&self) -> UnixNanos {
-        self.cached_ts_init
-    }
-}
-
-#[cfg(feature = "python")]
-impl CustomDataTrait for ExternalCustomDataWrapper {
-    fn type_name(&self) -> &'static str {
-        self.cached_type_name_static
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn ts_event(&self) -> UnixNanos {
-        self.cached_ts_event
-    }
-
-    fn to_json(&self) -> anyhow::Result<String> {
-        self.handle.to_json()
-    }
-
-    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
-        Arc::new(self.clone())
-    }
-
-    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .is_some_and(|other| self.handle.eq_handle(&other.handle))
-    }
-
-    fn to_pyobject(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        if let Some(obj) = &self.cached_py_object {
-            return Ok(obj.clone_ref(py));
-        }
-        let json = self
-            .handle
-            .to_json()
-            .map_err(nautilus_core::python::to_pyvalue_err)?;
-        reconstruct_python_custom_data(py, &self.cached_type_name, &json)
-    }
-}
-
 #[cfg(feature = "python")]
 impl Debug for PythonCustomDataWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -351,6 +231,49 @@ impl CustomDataTrait for PythonCustomDataWrapper {
         // Return the underlying Python object directly
         Ok(self.py_object.clone_ref(py))
     }
+}
+
+#[cfg(feature = "python")]
+fn python_data_classes() -> &'static dashmap::DashMap<String, Py<PyAny>> {
+    static PYTHON_DATA_CLASSES: std::sync::OnceLock<dashmap::DashMap<String, Py<PyAny>>> =
+        std::sync::OnceLock::new();
+    PYTHON_DATA_CLASSES.get_or_init(dashmap::DashMap::new)
+}
+
+#[cfg(feature = "python")]
+pub fn register_python_data_class(type_name: &str, data_class: &Bound<'_, PyAny>) {
+    python_data_classes().insert(type_name.to_string(), data_class.clone().unbind());
+}
+
+#[cfg(feature = "python")]
+pub fn get_python_data_class(py: Python<'_>, type_name: &str) -> Option<Py<PyAny>> {
+    python_data_classes()
+        .get(type_name)
+        .map(|entry| entry.value().clone_ref(py))
+}
+
+/// Reconstructs a Python custom data instance from type name and JSON.
+///
+/// # Errors
+///
+/// Returns a Python error if no class is registered for `type_name` or JSON parsing fails.
+#[cfg(feature = "python")]
+pub fn reconstruct_python_custom_data(
+    py: Python<'_>,
+    type_name: &str,
+    json: &str,
+) -> PyResult<Py<PyAny>> {
+    let data_class = get_python_data_class(py, type_name).ok_or_else(|| {
+        nautilus_core::python::to_pyruntime_err(format!(
+            "No registered Python class for custom data type `{type_name}`"
+        ))
+    })?;
+    let json_module = py.import("json")?;
+    let payload = json_module.call_method1("loads", (json,))?;
+    data_class
+        .bind(py)
+        .call_method1("from_json", (payload,))
+        .map(|obj| obj.unbind())
 }
 
 /// Trait for typed custom data that can be used within the Nautilus domain model.
