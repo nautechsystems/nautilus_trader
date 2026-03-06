@@ -60,6 +60,8 @@ fn create_engine() -> BacktestEngine {
             None,
             None,
             None,
+            None,
+            None,
         )
         .unwrap();
     engine

@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use ahash::AHashMap;
 use nautilus_common::{actor::data_actor::ImportableActorConfig, python::actor::PyDataActor};
 use nautilus_core::{
-    UnixNanos,
+    UUID4, UnixNanos,
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
 use nautilus_execution::models::{
@@ -31,6 +31,7 @@ use nautilus_execution::models::{
         ProbabilisticFillModel, SizeAwareFillModel, ThreeTierFillModel, TwoTierFillModel,
         VolumeSensitiveFillModel,
     },
+    latency::{LatencyModel, StaticLatencyModel},
 };
 use nautilus_model::{
     accounts::margin_model::{LeveragedMarginModel, MarginModelAny, StandardMarginModel},
@@ -38,8 +39,8 @@ use nautilus_model::{
         Bar, Data, IndexPriceUpdate, InstrumentClose, MarkPriceUpdate, OrderBookDelta,
         OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
-    enums::{AccountType, BookType, OmsType},
-    identifiers::{ActorId, ClientId, ComponentId, InstrumentId, StrategyId, Venue},
+    enums::{AccountType, BookType, OmsType, OtoTriggerMode},
+    identifiers::{ActorId, ClientId, ComponentId, InstrumentId, StrategyId, TraderId, Venue},
     python::instruments::pyobject_to_instrument_any,
     types::{Currency, Money},
 };
@@ -51,7 +52,12 @@ use pyo3::prelude::*;
 use rust_decimal::Decimal;
 
 use super::node::create_config_instance;
-use crate::{config::BacktestEngineConfig, engine::BacktestEngine, result::BacktestResult};
+use crate::{
+    config::BacktestEngineConfig,
+    engine::BacktestEngine,
+    modules::{FXRolloverInterestModule, SimulationModule},
+    result::BacktestResult,
+};
 
 /// PyO3 wrapper around [`BacktestEngine`].
 ///
@@ -87,6 +93,8 @@ impl PyBacktestEngine {
             margin_model = None,
             fill_model = None,
             fee_model = None,
+            latency_model = None,
+            modules = None,
             book_type = BookType::L1_MBP,
             routing = false,
             reject_stop_orders = true,
@@ -101,8 +109,10 @@ impl PyBacktestEngine {
             bar_adaptive_high_low_ordering = false,
             trade_execution = true,
             liquidity_consumption = false,
+            queue_position = false,
             allow_cash_borrowing = false,
             frozen_account = false,
+            oto_trigger_mode = OtoTriggerMode::Partial,
             price_protection_points = None,
         )
     )]
@@ -119,6 +129,8 @@ impl PyBacktestEngine {
         margin_model: Option<Py<PyAny>>,
         fill_model: Option<Py<PyAny>>,
         fee_model: Option<Py<PyAny>>,
+        latency_model: Option<Py<PyAny>>,
+        modules: Option<Vec<Py<PyAny>>>,
         book_type: BookType,
         routing: bool,
         reject_stop_orders: bool,
@@ -133,8 +145,10 @@ impl PyBacktestEngine {
         bar_adaptive_high_low_ordering: bool,
         trade_execution: bool,
         liquidity_consumption: bool,
+        queue_position: bool,
         allow_cash_borrowing: bool,
         frozen_account: bool,
+        oto_trigger_mode: OtoTriggerMode,
         price_protection_points: Option<u32>,
     ) -> PyResult<()> {
         let leverages: AHashMap<InstrumentId, Decimal> = leverages
@@ -151,6 +165,17 @@ impl PyBacktestEngine {
             .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(py, obj.bind(py))))
             .transpose()?
             .unwrap_or_default();
+        let latency_model = latency_model
+            .map(|obj| Python::attach(|py| pyobject_to_latency_model(py, obj.bind(py))))
+            .transpose()?;
+        let modules = modules
+            .map(|objs| {
+                objs.into_iter()
+                    .map(|obj| Python::attach(|py| pyobject_to_simulation_module(py, obj.bind(py))))
+                    .collect::<PyResult<Vec<_>>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
 
         self.0
             .add_venue(
@@ -163,10 +188,10 @@ impl PyBacktestEngine {
                 default_leverage,
                 leverages,
                 margin_model,
-                Vec::new(), // modules (not yet supported)
+                modules,
                 fill_model,
                 fee_model,
-                None, // latency_model (not yet supported)
+                latency_model,
                 Some(routing),
                 Some(reject_stop_orders),
                 Some(support_gtd_orders),
@@ -182,6 +207,8 @@ impl PyBacktestEngine {
                 Some(liquidity_consumption),
                 Some(allow_cash_borrowing),
                 Some(frozen_account),
+                Some(queue_position),
+                Some(oto_trigger_mode == OtoTriggerMode::Full),
                 price_protection_points,
             )
             .map_err(to_pyruntime_err)
@@ -561,6 +588,33 @@ impl PyBacktestEngine {
         self.0.sort_data();
     }
 
+    /// Returns the trader ID for this engine.
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.0.trader_id()
+    }
+
+    /// Returns the unique instance ID for this engine.
+    #[getter]
+    #[pyo3(name = "instance_id")]
+    fn py_instance_id(&self) -> UUID4 {
+        self.0.instance_id()
+    }
+
+    /// Returns the current iteration count.
+    #[getter]
+    #[pyo3(name = "iteration")]
+    fn py_iteration(&self) -> usize {
+        self.0.iteration()
+    }
+
+    /// Returns the list of registered venue identifiers.
+    #[pyo3(name = "list_venues")]
+    fn py_list_venues(&self) -> Vec<Venue> {
+        self.0.list_venues()
+    }
+
     fn __repr__(&self) -> String {
         format!("{:?}", self.0)
     }
@@ -646,6 +700,35 @@ fn pyobject_to_fee_model_any(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Fe
     let type_name = obj.get_type().name()?;
     Err(to_pytype_err(format!(
         "Cannot convert {type_name} to FeeModel"
+    )))
+}
+
+fn pyobject_to_simulation_module(
+    _py: Python,
+    obj: &Bound<'_, PyAny>,
+) -> PyResult<Box<dyn SimulationModule>> {
+    if let Ok(cell) = obj.cast::<FXRolloverInterestModule>() {
+        let module = cell.borrow().clone();
+        return Ok(Box::new(module));
+    }
+
+    let type_name = obj.get_type().name()?;
+    Err(to_pytype_err(format!(
+        "Cannot convert {type_name} to SimulationModule"
+    )))
+}
+
+fn pyobject_to_latency_model(
+    _py: Python,
+    obj: &Bound<'_, PyAny>,
+) -> PyResult<Box<dyn LatencyModel>> {
+    if let Ok(m) = obj.extract::<StaticLatencyModel>() {
+        return Ok(Box::new(m));
+    }
+
+    let type_name = obj.get_type().name()?;
+    Err(to_pytype_err(format!(
+        "Cannot convert {type_name} to LatencyModel"
     )))
 }
 

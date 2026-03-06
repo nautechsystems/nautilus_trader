@@ -43,7 +43,7 @@ use nautilus_model::{
     accounts::{Account, AccountAny, margin_model::MarginModelAny},
     data::{Data, HasTsInit},
     enums::{AccountType, BookType, OmsType},
-    identifiers::{AccountId, ClientId, InstrumentId, Venue},
+    identifiers::{AccountId, ClientId, InstrumentId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     position::Position,
@@ -156,6 +156,30 @@ impl BacktestEngine {
         &mut self.kernel
     }
 
+    /// Returns the trader ID for this engine.
+    #[must_use]
+    pub fn trader_id(&self) -> TraderId {
+        self.kernel.trader_id()
+    }
+
+    /// Returns the unique instance ID for this engine.
+    #[must_use]
+    pub fn instance_id(&self) -> UUID4 {
+        self.instance_id
+    }
+
+    /// Returns the current iteration count.
+    #[must_use]
+    pub fn iteration(&self) -> usize {
+        self.iteration
+    }
+
+    /// Returns the list of registered venue identifiers.
+    #[must_use]
+    pub fn list_venues(&self) -> Vec<Venue> {
+        self.venues.keys().copied().collect()
+    }
+
     /// # Errors
     ///
     /// Returns an error if initializing the simulated exchange for the venue fails.
@@ -190,6 +214,8 @@ impl BacktestEngine {
         liquidity_consumption: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
+        queue_position: Option<bool>,
+        oto_full_trigger: Option<bool>,
         price_protection_points: Option<u32>,
     ) -> anyhow::Result<()> {
         let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
@@ -230,6 +256,8 @@ impl BacktestEngine {
             use_market_order_acks,
             allow_cash_borrowing,
             frozen_account,
+            queue_position,
+            oto_full_trigger,
             price_protection_points,
         )?;
         let exchange = Rc::new(RefCell::new(exchange));

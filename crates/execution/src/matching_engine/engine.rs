@@ -1770,7 +1770,9 @@ impl OrderMatchingEngine {
                                 format!("Rejected OTO order from {parent_order_id}").into(),
                             );
                         } else if parent_order.status() == OrderStatus::Accepted
-                            && parent_order.status() == OrderStatus::Triggered
+                            || parent_order.status() == OrderStatus::Triggered
+                            || (self.config.oto_full_trigger
+                                && parent_order.status() == OrderStatus::PartiallyFilled)
                         {
                             log::info!(
                                 "Pending OTO order {} triggers from {parent_order_id}",

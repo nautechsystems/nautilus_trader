@@ -27,7 +27,7 @@ use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::{
     data::{BarSpecification, BarType},
-    enums::{AccountType, BookType, OmsType},
+    enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ClientId, InstrumentId, TraderId},
     types::Currency,
 };
@@ -333,6 +333,10 @@ pub struct BacktestVenueConfig {
     liquidity_consumption: bool,
     /// If negative cash balances are allowed (borrowing).
     allow_cash_borrowing: bool,
+    /// If limit order queue position tracking is enabled during trade execution.
+    queue_position: bool,
+    /// When OTO child orders are released relative to parent fills.
+    oto_trigger_mode: OtoTriggerMode,
     /// The account base currency for the exchange. Use `None` for multi-currency accounts.
     base_currency: Option<Currency>,
     /// The account default leverage (for margin accounts).
@@ -366,6 +370,8 @@ impl BacktestVenueConfig {
         use_market_order_acks: Option<bool>,
         liquidity_consumption: Option<bool>,
         allow_cash_borrowing: Option<bool>,
+        queue_position: Option<bool>,
+        oto_trigger_mode: Option<OtoTriggerMode>,
         starting_balances: Vec<String>,
         base_currency: Option<Currency>,
         default_leverage: Option<f64>,
@@ -391,6 +397,8 @@ impl BacktestVenueConfig {
             use_market_order_acks: use_market_order_acks.unwrap_or(false),
             liquidity_consumption: liquidity_consumption.unwrap_or(false),
             allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
+            queue_position: queue_position.unwrap_or(false),
+            oto_trigger_mode: oto_trigger_mode.unwrap_or_default(),
             starting_balances,
             base_currency,
             default_leverage,
@@ -492,6 +500,16 @@ impl BacktestVenueConfig {
     #[must_use]
     pub fn allow_cash_borrowing(&self) -> bool {
         self.allow_cash_borrowing
+    }
+
+    #[must_use]
+    pub fn queue_position(&self) -> bool {
+        self.queue_position
+    }
+
+    #[must_use]
+    pub fn oto_trigger_mode(&self) -> OtoTriggerMode {
+        self.oto_trigger_mode
     }
 
     #[must_use]

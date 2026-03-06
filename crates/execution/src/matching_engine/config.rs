@@ -28,6 +28,7 @@ pub struct OrderMatchingEngineConfig {
     pub use_reduce_only: bool,
     pub use_market_order_acks: bool,
     pub queue_position: bool,
+    pub oto_full_trigger: bool,
     pub price_protection_points: Option<u32>,
 }
 
@@ -47,6 +48,8 @@ impl OrderMatchingEngineConfig {
         use_random_ids: bool,
         use_reduce_only: bool,
         use_market_order_acks: bool,
+        queue_position: bool,
+        oto_full_trigger: bool,
     ) -> Self {
         Self {
             bar_execution,
@@ -60,7 +63,8 @@ impl OrderMatchingEngineConfig {
             use_random_ids,
             use_reduce_only,
             use_market_order_acks,
-            queue_position: false,
+            queue_position,
+            oto_full_trigger,
             price_protection_points: None,
         }
     }
@@ -93,6 +97,7 @@ impl Default for OrderMatchingEngineConfig {
             use_reduce_only: false,
             use_market_order_acks: false,
             queue_position: false,
+            oto_full_trigger: false,
             price_protection_points: None,
         }
     }

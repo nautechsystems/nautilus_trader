@@ -13,31 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from [PyO3](https://pyo3.rs).
+//! Python bindings for latency model types.
 
-pub mod config;
-pub mod engine;
-pub mod modules;
-pub mod node;
-pub mod result;
-
+use nautilus_core::UnixNanos;
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.backtest`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if registering any module components fails.
-#[pymodule]
-pub fn backtest(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<crate::config::BacktestEngineConfig>()?;
-    m.add_class::<crate::config::BacktestVenueConfig>()?;
-    m.add_class::<crate::config::BacktestDataConfig>()?;
-    m.add_class::<crate::config::BacktestRunConfig>()?;
-    m.add_class::<crate::result::BacktestResult>()?;
-    m.add_class::<crate::node::BacktestNode>()?;
-    m.add_class::<engine::PyBacktestEngine>()?;
-    m.add_class::<crate::modules::fx_rollover::InterestRateRecord>()?;
-    m.add_class::<crate::modules::fx_rollover::FXRolloverInterestModule>()?;
-    Ok(())
+use crate::models::latency::StaticLatencyModel;
+
+#[pymethods]
+impl StaticLatencyModel {
+    #[new]
+    #[pyo3(signature = (
+        base_latency_nanos = 0,
+        insert_latency_nanos = 0,
+        update_latency_nanos = 0,
+        cancel_latency_nanos = 0,
+    ))]
+    fn py_new(
+        base_latency_nanos: u64,
+        insert_latency_nanos: u64,
+        update_latency_nanos: u64,
+        cancel_latency_nanos: u64,
+    ) -> Self {
+        Self::new(
+            UnixNanos::from(base_latency_nanos),
+            UnixNanos::from(insert_latency_nanos),
+            UnixNanos::from(update_latency_nanos),
+            UnixNanos::from(cancel_latency_nanos),
+        )
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
 }

@@ -13,31 +13,36 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from [PyO3](https://pyo3.rs).
-
-pub mod config;
-pub mod engine;
-pub mod modules;
-pub mod node;
-pub mod result;
+//! Python bindings for simulation module types.
 
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.backtest`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if registering any module components fails.
-#[pymodule]
-pub fn backtest(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<crate::config::BacktestEngineConfig>()?;
-    m.add_class::<crate::config::BacktestVenueConfig>()?;
-    m.add_class::<crate::config::BacktestDataConfig>()?;
-    m.add_class::<crate::config::BacktestRunConfig>()?;
-    m.add_class::<crate::result::BacktestResult>()?;
-    m.add_class::<crate::node::BacktestNode>()?;
-    m.add_class::<engine::PyBacktestEngine>()?;
-    m.add_class::<crate::modules::fx_rollover::InterestRateRecord>()?;
-    m.add_class::<crate::modules::fx_rollover::FXRolloverInterestModule>()?;
-    Ok(())
+use crate::modules::fx_rollover::{FXRolloverInterestModule, InterestRateRecord};
+
+#[pymethods]
+impl InterestRateRecord {
+    #[new]
+    fn py_new(location: String, time: String, value: f64) -> Self {
+        Self {
+            location,
+            time,
+            value,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
+#[pymethods]
+impl FXRolloverInterestModule {
+    #[new]
+    fn py_new(records: Vec<InterestRateRecord>) -> Self {
+        Self::new(records)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
 }

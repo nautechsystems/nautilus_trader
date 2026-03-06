@@ -25,7 +25,7 @@ use nautilus_model::{
         Bar, Data, HasTsInit, IndexPriceUpdate, InstrumentClose, MarkPriceUpdate, OrderBookDelta,
         OrderBookDepth10, QuoteTick, TradeTick,
     },
-    enums::BookType,
+    enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
     types::Money,
 };
@@ -147,6 +147,8 @@ impl BacktestNode {
                     Some(venue_config.liquidity_consumption()),
                     Some(venue_config.allow_cash_borrowing()),
                     Some(venue_config.frozen_account()),
+                    Some(venue_config.queue_position()),
+                    Some(venue_config.oto_trigger_mode() == OtoTriggerMode::Full),
                     Some(venue_config.price_protection_points()),
                 )?;
             }

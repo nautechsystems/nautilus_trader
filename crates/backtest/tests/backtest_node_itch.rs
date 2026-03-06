@@ -94,6 +94,8 @@ fn xnas_venue_config() -> BacktestVenueConfig {
         None,
         None,
         None,
+        None,
+        None,
         vec!["1_000_000 USD".to_string()],
         Some(Currency::from("USD")),
         None,

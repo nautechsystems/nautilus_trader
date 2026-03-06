@@ -147,6 +147,8 @@ pub struct SimulatedExchange {
     use_market_order_acks: bool,
     _allow_cash_borrowing: bool,
     frozen_account: bool,
+    queue_position: bool,
+    oto_full_trigger: bool,
     price_protection_points: u32,
 }
 
@@ -198,6 +200,8 @@ impl SimulatedExchange {
         use_market_order_acks: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
+        queue_position: Option<bool>,
+        oto_full_trigger: Option<bool>,
         price_protection_points: Option<u32>,
     ) -> anyhow::Result<Self> {
         if starting_balances.is_empty() {
@@ -244,6 +248,8 @@ impl SimulatedExchange {
             use_market_order_acks: use_market_order_acks.unwrap_or(false),
             _allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
             frozen_account: frozen_account.unwrap_or(false),
+            queue_position: queue_position.unwrap_or(false),
+            oto_full_trigger: oto_full_trigger.unwrap_or(false),
             price_protection_points: price_protection_points.unwrap_or(0),
         })
     }
@@ -362,6 +368,8 @@ impl SimulatedExchange {
             self.use_random_ids,
             self.use_reduce_only,
             self.use_market_order_acks,
+            self.queue_position,
+            self.oto_full_trigger,
         )
         .with_price_protection_points(price_protection);
         let instrument_id = instrument.id();
@@ -1131,6 +1139,8 @@ mod tests {
                 None, // use_market_order_acks
                 None, // allow_cash_borrowing
                 None, // frozen_account
+                None, // queue_position
+                None, // oto_full_trigger
                 None, // price_protection_points
             )
             .unwrap(),
@@ -1920,6 +1930,8 @@ mod tests {
                 None, // use_market_order_acks
                 None, // allow_cash_borrowing
                 None, // frozen_account
+                None, // queue_position
+                None, // oto_full_trigger
                 None, // price_protection_points
             )
             .unwrap(),
