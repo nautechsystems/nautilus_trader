@@ -48,10 +48,10 @@ Implementation status:
   `mergeStateStatus=CLEAN`.
 - PR6b through PR13 have now been force-pushed on top of that PR6a fix, and GitHub
   currently reports PR17 through PR22 plus PR23 through PR26 `mergeStateStatus=CLEAN`.
-- PR13 head `08d080c02e8ea2a0a9eb2b11ff481cded8f74919` includes the `signer_route`
-  PyO3 fix in `crates/adapters/blockchain/src/python/config.rs`, and both
-  `cargo test -p nautilus-blockchain --features python` and `cargo test -p
-  nautilus-pyo3 --features defi` now pass locally on that committed head.
+- The current `origin/pr13/python-surface` head includes the `signer_route` PyO3
+  fix in `crates/adapters/blockchain/src/python/config.rs`, and both `cargo test -p
+  nautilus-blockchain --features python` and `cargo test -p nautilus-pyo3
+  --features defi` now pass locally on that committed head.
 - The main remaining wave blocker is external GitHub Actions billing, which still
   leaves PR2 `UNSTABLE`.
 
@@ -73,13 +73,15 @@ Implementation status:
 | PR12a | `pr12a/journal-idempotency` | `pr11/receipt-fills` | `ca2d452afb14d0ffcba0862dda57bc4f9d4f60f5` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12a-journal-idempotency` | <https://github.com/clickconfirm/nautilus-trader/pull/26> | `CLEAN` |
 | PR12b | `pr12b/happy-path-exec` | `pr12a/journal-idempotency` | `af578114208714ff134e4f654a9fb2e911029719` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12b-happy-path-exec` | <https://github.com/clickconfirm/nautilus-trader/pull/20> | `CLEAN` |
 | PR12c | `pr12c/ambiguous-retry-reorg` | `pr12b/happy-path-exec` | `b268cdee846fcc39b6a186d5e4d8cac9bee3d6c5` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr12c-ambiguous-retry-reorg` | <https://github.com/clickconfirm/nautilus-trader/pull/21> | `CLEAN` |
-| PR13 | `pr13/python-surface` | `pr12c/ambiguous-retry-reorg` | `08d080c02e8ea2a0a9eb2b11ff481cded8f74919` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` | <https://github.com/clickconfirm/nautilus-trader/pull/22> | `CLEAN` |
+| PR13 | `pr13/python-surface` | `pr12c/ambiguous-retry-reorg` | `see origin/pr13/python-surface` | `/home/ubuntu/nautilus-trader-dev/.worktrees/pr13-python-surface` | <https://github.com/clickconfirm/nautilus-trader/pull/22> | `CLEAN` |
 
 Notes:
 
 - `CLEAN` here means GitHub currently reports mergeable stack state for that PR.
 - `UNSTABLE` on PR2 is not currently a code-quality signal by itself; see the
   external CI blocker below.
+- PR13 may receive handoff-only docs commits while this wave is being orchestrated;
+  use `git rev-parse origin/pr13/python-surface` to confirm its exact live tip.
 
 ## What Each PR Delivers
 
@@ -133,7 +135,7 @@ Current top-of-stack state in the PR13 worktree:
   - converts the borrowed route into the owned config field with
     `signer_route.to_string()`
   - adds focused Python constructor tests for default and custom `signer_route`
-- Verified locally on PR13 head `08d080c02e8ea2a0a9eb2b11ff481cded8f74919`:
+- Verified locally on the current committed PR13 head:
   - `cargo test -p nautilus-blockchain --features python` (pass)
   - `cargo test -p nautilus-pyo3 --features defi` (pass)
   - `cargo fmt --all -- --check` (pass)
