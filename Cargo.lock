@@ -5090,6 +5090,7 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "turmoil",
+ "url",
  "ustr",
 ]
 

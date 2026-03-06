@@ -21,27 +21,21 @@ use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::defi::{Chain, DexType};
 use nautilus_model::identifiers::{AccountId, TraderId, Venue};
 use pyo3::prelude::*;
+use url::Url;
 
 use crate::config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig, DexPoolFilters};
 
 fn redact_url(url: &str) -> String {
-    let Some((scheme, remainder)) = url.split_once("://") else {
+    let Ok(parsed) = Url::parse(url) else {
         return String::from("<redacted>");
     };
-
-    let without_userinfo = remainder
-        .rsplit_once('@')
-        .map_or(remainder, |(_, tail)| tail);
-    let host = without_userinfo
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or_default();
-
-    if host.is_empty() {
-        String::from("<redacted>")
-    } else {
-        format!("{scheme}://{host}/...")
-    }
+    let Some(host) = parsed.host_str() else {
+        return String::from("<redacted>");
+    };
+    let authority = parsed
+        .port()
+        .map_or_else(|| host.to_string(), |port| format!("{host}:{port}"));
+    format!("{}://{authority}/...", parsed.scheme())
 }
 
 fn redact_optional_url(url: &Option<String>) -> Option<String> {
@@ -617,5 +611,25 @@ mod tests {
         assert!(!repr.contains("secret"));
         assert!(!repr.contains("api-key"));
         assert!(!repr.contains("token=abc"));
+    }
+
+    #[test]
+    fn test_blockchain_config_repr_redacts_at_signs_outside_userinfo() {
+        let config = BlockchainExecutionClientConfig::new(
+            TraderId::test_default(),
+            AccountId::test_default(),
+            Venue::new("Bsc:PancakeSwapV2"),
+            chains::BSC.clone(),
+            String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"),
+            None,
+            "https://rpc-user:secret@bsc.example.com/path?token=abc@LEAK".to_string(),
+            Some(10),
+        );
+
+        let repr = config.__repr__();
+        assert!(repr.contains("https://bsc.example.com/..."));
+        assert!(!repr.contains("secret"));
+        assert!(!repr.contains("token=abc"));
+        assert!(!repr.contains("LEAK"));
     }
 }
