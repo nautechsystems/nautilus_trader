@@ -83,6 +83,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
+axum = { workspace = true }
 rstest = { workspace = true }
 turmoil = { workspace = true }
 
