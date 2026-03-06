@@ -1,11 +1,11 @@
 [package]
-name = "nautilus-macros"
+name = "nautilus-persistence-macros"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Procedural macros for Nautilus (e.g. custom_data)"
+description = "Procedural macros for custom data types (e.g. #[custom_data])"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true

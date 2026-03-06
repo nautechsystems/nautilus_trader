@@ -29,7 +29,7 @@ members = [
   "crates/infrastructure",
   "crates/live",
   "crates/model",
-  "crates/nautilus_macros",
+  "crates/persistence/macros",
   "crates/network",
   "crates/persistence",
   "crates/portfolio",

@@ -31,7 +31,7 @@ echo "Checking for fully qualified Nautilus types..."
 # Exclude nautilus_macros: proc-macros generate code for other crates; fully qualified paths required
 output=$(rg -n -B 5 \
   --no-heading \
-  --glob '!crates/nautilus_macros/**' \
+  --glob '!crates/persistence/macros/**' \
   'nautilus_[a-z_]+(?:::[a-z_]+)+::[A-Z][A-Za-z0-9_]+' \
   crates tests examples \
   --type rust \

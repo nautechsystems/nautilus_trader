@@ -58,8 +58,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true, features = ["ffi"] }
-nautilus-macros = { path = "../nautilus_macros" }
 nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-persistence-macros = { path = "macros" }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
 
 ahash = { workspace = true }

@@ -19,8 +19,8 @@
 //! custom data write/query roundtrips.
 
 use nautilus_core::UnixNanos;
-use nautilus_macros::custom_data;
 use nautilus_model::identifiers::InstrumentId;
+use nautilus_persistence_macros::custom_data;
 
 /// A simple Rust custom data type for roundtrip testing.
 ///
