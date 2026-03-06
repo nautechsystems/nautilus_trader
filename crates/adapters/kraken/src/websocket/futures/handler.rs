@@ -35,7 +35,7 @@ use nautilus_model::{
     enums::{
         AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
     },
-    events::{OrderAccepted, OrderCanceled, OrderExpired, OrderUpdated},
+    events::{OrderAccepted, OrderCanceled, OrderExpired, OrderRejected, OrderUpdated},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
     },
@@ -61,16 +61,21 @@ use super::messages::{
     KrakenFuturesPrivateSubscribeRequest, KrakenFuturesTickerData, KrakenFuturesTradeData,
     KrakenFuturesWsMessage, classify_futures_message,
 };
-use crate::common::enums::KrakenOrderSide;
+use crate::common::{consts::KRAKEN_FUTURES_POST_ONLY_REJECT, enums::KrakenOrderSide};
 
 /// Parsed order event from a Kraken Futures WebSocket message.
 #[derive(Debug, Clone)]
 pub enum ParsedOrderEvent {
     Accepted(OrderAccepted),
+    Rejected(OrderRejected),
     Canceled(OrderCanceled),
     Expired(OrderExpired),
     Updated(OrderUpdated),
     StatusOnly(Box<OrderStatusReport>),
+}
+
+fn is_post_only_cancel_reason(reason: &str) -> bool {
+    reason == KRAKEN_FUTURES_POST_ONLY_REJECT
 }
 
 /// Cached order info for proper event generation.
@@ -115,6 +120,9 @@ pub enum HandlerCommand {
         instrument_id: InstrumentId,
         trader_id: TraderId,
         strategy_id: StrategyId,
+    },
+    UncacheClientOrder {
+        client_order_id: ClientOrderId,
     },
     CacheTruncatedId {
         truncated: String,
@@ -161,6 +169,10 @@ impl Debug for HandlerCommand {
                 .debug_struct(stringify!(CacheClientOrder))
                 .field("client_order_id", client_order_id)
                 .field("instrument_id", instrument_id)
+                .finish(),
+            Self::UncacheClientOrder { client_order_id } => f
+                .debug_struct(stringify!(UncacheClientOrder))
+                .field("client_order_id", client_order_id)
                 .finish(),
             Self::CacheTruncatedId {
                 truncated,
@@ -335,6 +347,9 @@ impl FuturesFeedHandler {
                             if let Some(venue_id) = venue_order_id {
                                 self.venue_order_cache.insert(venue_id, client_order_id);
                             }
+                        }
+                        HandlerCommand::UncacheClientOrder { client_order_id } => {
+                            self.client_order_cache.remove(&client_order_id);
                         }
                         HandlerCommand::CacheTruncatedId { truncated, original } => {
                             self.truncated_id_map.insert(truncated, original);
@@ -623,6 +638,10 @@ impl FuturesFeedHandler {
             ParsedOrderEvent::Accepted(accepted) => {
                 self.pending_messages
                     .push_back(KrakenFuturesWsMessage::OrderAccepted(accepted));
+            }
+            ParsedOrderEvent::Rejected(rejected) => {
+                self.pending_messages
+                    .push_back(KrakenFuturesWsMessage::OrderRejected(rejected));
             }
             ParsedOrderEvent::Canceled(canceled) => {
                 self.pending_messages
@@ -1100,21 +1119,47 @@ impl FuturesFeedHandler {
 
         let venue_order_id = VenueOrderId::new(&cancel.order_id);
 
-        let canceled = OrderCanceled::new(
-            info.trader_id,
-            info.strategy_id,
-            info.instrument_id,
-            client_order_id,
-            UUID4::new(),
-            ts_init,
-            ts_init,
-            false,
-            Some(venue_order_id),
-            Some(account_id),
-        );
+        let is_post_only_rejection = cancel
+            .reason
+            .as_deref()
+            .is_some_and(is_post_only_cancel_reason);
 
-        self.pending_messages
-            .push_back(KrakenFuturesWsMessage::OrderCanceled(canceled));
+        if is_post_only_rejection {
+            let reason = cancel
+                .reason
+                .as_deref()
+                .unwrap_or("Post-only order would have crossed");
+            let rejected = OrderRejected::new(
+                info.trader_id,
+                info.strategy_id,
+                info.instrument_id,
+                client_order_id,
+                account_id,
+                Ustr::from(reason),
+                UUID4::new(),
+                ts_init,
+                ts_init,
+                false,
+                true,
+            );
+            self.pending_messages
+                .push_back(KrakenFuturesWsMessage::OrderRejected(rejected));
+        } else {
+            let canceled = OrderCanceled::new(
+                info.trader_id,
+                info.strategy_id,
+                info.instrument_id,
+                client_order_id,
+                UUID4::new(),
+                ts_init,
+                ts_init,
+                false,
+                Some(venue_order_id),
+                Some(account_id),
+            );
+            self.pending_messages
+                .push_back(KrakenFuturesWsMessage::OrderCanceled(canceled));
+        }
     }
 
     fn handle_fills_delta_value(&mut self, value: Value, ts_init: UnixNanos) {
@@ -1221,15 +1266,29 @@ impl FuturesFeedHandler {
                 false,
             ))),
             OrderStatus::Canceled => {
-                // Detect expiry by cancel reason keywords
-                let is_expired = cancel_reason.is_some_and(|r| {
+                let is_post_only_rejection = cancel_reason.is_some_and(is_post_only_cancel_reason);
+
+                if is_post_only_rejection {
+                    let reason = cancel_reason.unwrap_or("Post-only order would have crossed");
+                    Some(ParsedOrderEvent::Rejected(OrderRejected::new(
+                        info.trader_id,
+                        info.strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        account_id,
+                        Ustr::from(reason),
+                        UUID4::new(),
+                        ts_event,
+                        ts_init,
+                        false,
+                        true,
+                    )))
+                } else if cancel_reason.is_some_and(|r| {
                     let r_lower = r.to_lowercase();
                     r_lower.contains("expir")
                         || r_lower.contains("gtd")
                         || r_lower.contains("timeout")
-                });
-
-                if is_expired {
+                }) {
                     Some(ParsedOrderEvent::Expired(OrderExpired::new(
                         info.trader_id,
                         info.strategy_id,
@@ -1553,6 +1612,134 @@ mod tests {
 
         assert_eq!(sell_deltas.len(), 1);
         assert_eq!(sell_deltas[0].order.price.as_f64(), 34912.0);
+    }
+
+    #[rstest]
+    fn test_is_post_only_cancel_reason_true() {
+        assert!(is_post_only_cancel_reason(KRAKEN_FUTURES_POST_ONLY_REJECT));
+    }
+
+    #[rstest]
+    fn test_is_post_only_cancel_reason_false() {
+        assert!(!is_post_only_cancel_reason("cancelled_by_user"));
+    }
+
+    fn setup_handler_with_cached_order(
+        handler: &mut FuturesFeedHandler,
+        client_order_id: &str,
+        venue_order_id: &str,
+    ) {
+        handler.account_id = Some(AccountId::from("KRAKEN-001"));
+
+        let instrument = create_test_instrument();
+        handler
+            .instruments_cache
+            .insert(Ustr::from("PI_XBTUSD"), instrument);
+
+        let client_id = ClientOrderId::from(client_order_id);
+        let venue_id = VenueOrderId::from(venue_order_id);
+        let info = CachedOrderInfo {
+            instrument_id: InstrumentId::from("PI_XBTUSD.KRAKEN"),
+            trader_id: TraderId::from("TESTER-001"),
+            strategy_id: StrategyId::from("S-001"),
+        };
+        handler.client_order_cache.insert(client_id, info);
+        handler.venue_order_cache.insert(venue_id, client_id);
+    }
+
+    #[rstest]
+    fn test_cancel_post_only_emits_order_rejected() {
+        let mut handler = create_test_handler();
+        setup_handler_with_cached_order(
+            &mut handler,
+            "O-20250306-001",
+            "770d7b34-9118-59d2-b8da-5a04e3683fa9",
+        );
+
+        let json = include_str!("../../../test_data/ws_futures_open_orders_cancel_post_only.json");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        handler.parse_message(json, ts_init);
+
+        assert_eq!(handler.pending_messages.len(), 1);
+        let msg = handler.pending_messages.pop_front().unwrap();
+        let KrakenFuturesWsMessage::OrderRejected(rejected) = msg else {
+            panic!("Expected OrderRejected, was {msg:?}");
+        };
+        assert_eq!(
+            rejected.client_order_id,
+            ClientOrderId::from("O-20250306-001")
+        );
+        assert_eq!(rejected.due_post_only, 1);
+    }
+
+    #[rstest]
+    fn test_cancel_by_user_emits_order_canceled() {
+        let mut handler = create_test_handler();
+        setup_handler_with_cached_order(
+            &mut handler,
+            "O-20250306-002",
+            "660c6b23-8007-48c1-a7c9-4893f4572e8c",
+        );
+
+        let json = include_str!("../../../test_data/ws_futures_open_orders_cancel.json");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        handler.parse_message(json, ts_init);
+
+        assert_eq!(handler.pending_messages.len(), 1);
+        let msg = handler.pending_messages.pop_front().unwrap();
+        let KrakenFuturesWsMessage::OrderCanceled(canceled) = msg else {
+            panic!("Expected OrderCanceled, was {msg:?}");
+        };
+        assert_eq!(
+            canceled.client_order_id,
+            ClientOrderId::from("O-20250306-002")
+        );
+    }
+
+    #[rstest]
+    fn test_delta_post_only_cancel_emits_order_rejected() {
+        let mut handler = create_test_handler();
+        setup_handler_with_cached_order(
+            &mut handler,
+            "O-20250306-003",
+            "59302619-41d2-4f0b-941f-7e7914760ad3",
+        );
+
+        let json = r#"{
+            "feed": "open_orders",
+            "order": {
+                "instrument": "PI_XBTUSD",
+                "time": 1567702877410,
+                "last_update_time": 1567702877410,
+                "qty": 100.0,
+                "filled": 0.0,
+                "limit_price": 10640.0,
+                "stop_price": 0.0,
+                "type": "limit",
+                "order_id": "59302619-41d2-4f0b-941f-7e7914760ad3",
+                "cli_ord_id": "O-20250306-003",
+                "direction": 1,
+                "reduce_only": false
+            },
+            "is_cancel": true,
+            "reason": "post_order_failed_because_it_would_filled"
+        }"#;
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        handler.parse_message(json, ts_init);
+
+        assert_eq!(handler.pending_messages.len(), 1);
+        let msg = handler.pending_messages.pop_front().unwrap();
+        let KrakenFuturesWsMessage::OrderRejected(rejected) = msg else {
+            panic!("Expected OrderRejected, was {msg:?}");
+        };
+        assert_eq!(
+            rejected.client_order_id,
+            ClientOrderId::from("O-20250306-003")
+        );
+        assert_eq!(rejected.due_post_only, 1);
     }
 
     #[rstest]

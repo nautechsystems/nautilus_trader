@@ -14,6 +14,7 @@ Released on TBD (UTC).
 - Fixed reconciliation when trigger_price is set for non-conditional orders (#3673), thanks @husariancom
 - Fixed Binance algo order update (#3665), thanks @qu1zzyboy
 - Fixed Binance SBE price/quantity precision derivation (#3670), thanks @husariancom
+- Fixed Kraken post-only order rejection not setting `due_post_only` on `OrderRejected` events (Spot and Futures)
 
 ### Internal Improvements
 - Added Python strategy support to `LiveNode` with `add_strategy_from_config`

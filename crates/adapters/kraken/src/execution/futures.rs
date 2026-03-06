@@ -224,15 +224,18 @@ impl KrakenFuturesExecutionClient {
                 }
                 Err(e) => {
                     let ts_event = clock.get_time_ns();
+                    let error_msg = format!("{task_name} error: {e}");
+                    let due_post_only = error_msg.contains("POST_ONLY_REJECTED");
                     emitter.emit_order_rejected_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
-                        &format!("{task_name} error: {e}"),
+                        &error_msg,
                         ts_event,
-                        false,
+                        due_post_only,
                     );
-                    Err(e)
+                    ws.uncache_client_order(client_order_id);
+                    Ok(())
                 }
             }
         });
@@ -321,6 +324,9 @@ impl KrakenFuturesExecutionClient {
         match msg {
             KrakenFuturesWsMessage::OrderAccepted(event) => {
                 emitter.send_order_event(OrderEventAny::Accepted(event));
+            }
+            KrakenFuturesWsMessage::OrderRejected(event) => {
+                emitter.send_order_event(OrderEventAny::Rejected(event));
             }
             KrakenFuturesWsMessage::OrderCanceled(event) => {
                 emitter.send_order_event(OrderEventAny::Canceled(event));
