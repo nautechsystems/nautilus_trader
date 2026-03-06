@@ -110,7 +110,7 @@ class OptionChainTester(Actor):
         self.log.info(f"Subscribing to option chain: {series_id}")
 
         # Build StrikeRange
-        strike_range = nautilus_pyo3.PyStrikeRange.atm_relative(
+        strike_range = nautilus_pyo3.StrikeRange.atm_relative(
             strikes_above=self._strikes_above,
             strikes_below=self._strikes_below,
         )

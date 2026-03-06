@@ -1428,8 +1428,8 @@ cdef class DataEngine(Component):
             self._log.warning(f"No option instruments found for series {series_key}")
             return
 
-        # Create PyOptionChainManager via PyO3
-        manager = nautilus_pyo3.PyOptionChainManager(
+        # Create OptionChainManager via PyO3
+        manager = nautilus_pyo3.OptionChainManager(
             series_id=command.series_id,
             strike_range=command.strike_range,
             instruments=resolved,

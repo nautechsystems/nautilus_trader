@@ -51,7 +51,10 @@ use crate::option_chains::{AtmTracker, OptionChainAggregator};
 ///
 /// ATM price is always derived from the exchange-provided forward price
 /// embedded in each option greeks/ticker update.
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.data")]
+#[pyclass(
+    name = "OptionChainManager",
+    module = "nautilus_trader.core.nautilus_pyo3.data"
+)]
 #[derive(Debug)]
 pub struct PyOptionChainManager {
     aggregator: OptionChainAggregator,
@@ -231,7 +234,7 @@ impl PyOptionChainManager {
 
     fn __repr__(&self) -> String {
         format!(
-            "PyOptionChainManager(series_id={}, bootstrapped={}, raw_mode={}, \
+            "OptionChainManager(series_id={}, bootstrapped={}, raw_mode={}, \
              active={}/{})",
             self.series_id,
             self.bootstrapped,
