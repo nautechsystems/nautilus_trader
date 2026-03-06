@@ -16,7 +16,10 @@
 use alloy_primitives::{Address, U256};
 use serde::{Deserialize, Deserializer};
 
-use crate::defi::{chain::Chain, hex::deserialize_hex_number};
+use crate::defi::{
+    chain::Chain,
+    hex::{deserialize_hex_number, deserialize_opt_hex_u64, deserialize_opt_hex_u256},
+};
 
 /// Represents a transaction on an EVM based blockchain.
 #[derive(Debug, Clone, Deserialize)]
@@ -38,8 +41,15 @@ pub struct Transaction {
     pub block_number: u64,
     /// The address of the sender (transaction originator).
     pub from: Address,
-    /// The address of the recipient.
-    pub to: Address,
+    /// The address of the recipient (`None` for contract creation transactions).
+    #[serde(default)]
+    pub to: Option<Address>,
+    /// The transaction nonce for the sender account.
+    #[serde(default, deserialize_with = "deserialize_opt_hex_u64")]
+    pub nonce: Option<u64>,
+    /// The transaction calldata.
+    #[serde(default)]
+    pub input: Option<String>,
     /// The amount of Ether transferred in the transaction, in wei.
     pub value: U256,
     /// The index of the transaction within its containing block.
@@ -49,18 +59,24 @@ pub struct Transaction {
     pub gas: U256,
     /// The price of gas in wei per gas unit.
     pub gas_price: U256,
+    /// The EIP-1559 max fee per gas in wei (if present on typed transactions).
+    #[serde(default, deserialize_with = "deserialize_opt_hex_u256")]
+    pub max_fee_per_gas: Option<U256>,
+    /// The EIP-1559 max priority fee per gas in wei (if present on typed transactions).
+    #[serde(default, deserialize_with = "deserialize_opt_hex_u256")]
+    pub max_priority_fee_per_gas: Option<U256>,
 }
 
 impl Transaction {
     /// Creates a new [`Transaction`] instance with the specified properties.
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         chain: Chain,
         hash: String,
         block_hash: String,
         block_number: u64,
         from: Address,
-        to: Address,
+        to: Option<Address>,
         gas: U256,
         gas_price: U256,
         transaction_index: u64,
@@ -73,10 +89,14 @@ impl Transaction {
             block_number,
             from,
             to,
+            nonce: None,
+            input: None,
             value,
             transaction_index,
             gas,
             gas_price,
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
         }
     }
 }
@@ -192,12 +212,18 @@ mod tests {
         );
         assert_eq!(
             tx.to,
-            "0x3c9af20c7b7809a825373881f61b5a69ef8bc6bd"
-                .parse::<Address>()
-                .unwrap()
+            Some(
+                "0x3c9af20c7b7809a825373881f61b5a69ef8bc6bd"
+                    .parse::<Address>()
+                    .unwrap()
+            )
         );
+        assert_eq!(tx.nonce, Some(0));
+        assert_eq!(tx.input, Some("0x".to_string()));
         assert_eq!(tx.gas, U256::from(21000));
         assert_eq!(tx.gas_price, U256::from(762999156));
+        assert_eq!(tx.max_fee_per_gas, None);
+        assert_eq!(tx.max_priority_fee_per_gas, None);
         assert_eq!(tx.transaction_index, 153);
         assert_eq!(tx.value, U256::from(100000000));
     }
@@ -227,12 +253,21 @@ mod tests {
         );
         assert_eq!(
             tx.to,
-            "0x8c0bfc04ada21fd496c55b8c50331f904306f564"
-                .parse::<Address>()
-                .unwrap()
+            Some(
+                "0x8c0bfc04ada21fd496c55b8c50331f904306f564"
+                    .parse::<Address>()
+                    .unwrap()
+            )
         );
+        assert_eq!(tx.nonce, Some(1221));
+        assert_eq!(tx.input, None);
         assert_eq!(tx.gas, U256::from(15000000));
         assert_eq!(tx.gas_price, U256::from(1399572700));
+        assert_eq!(tx.max_fee_per_gas, Some(U256::from(1_436_363_921u64)));
+        assert_eq!(
+            tx.max_priority_fee_per_gas,
+            Some(U256::from(1_000_000_000u64))
+        );
         assert_eq!(tx.transaction_index, 74);
         assert_eq!(tx.value, U256::ZERO);
     }
@@ -267,6 +302,8 @@ mod tests {
         assert_eq!(tx.gas_price, U256::from(1_000_000_000_000_000_000u64)); // 1 ETH in wei
         assert_eq!(tx.value, U256::from(1_000_000_000_000_000_000u64)); // 1 ETH in wei
         assert_eq!(tx.block_number, 16777216); // 0x1000000
+        assert_eq!(tx.nonce, None);
+        assert_eq!(tx.input, None);
     }
 
     #[rstest]
@@ -316,6 +353,35 @@ mod tests {
     }
 
     #[rstest]
+    fn test_transaction_parsing_contract_creation_with_null_to() {
+        let contract_creation_tx = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "blockHash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                "blockNumber": "0x1",
+                "chainId": "0x1",
+                "from": "0x0000000000000000000000000000000000000001",
+                "to": null,
+                "gas": "0x5208",
+                "gasPrice": "0x2d7a7174",
+                "hash": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                "transactionIndex": "0x0",
+                "value": "0x0"
+            }
+        }"#;
+
+        let tx = serde_json::from_str::<RpcNodeHttpResponse<Transaction>>(contract_creation_tx)
+            .expect("Should parse contract creation tx with null recipient")
+            .result
+            .expect("Missing transaction result");
+
+        assert!(tx.to.is_none());
+        assert_eq!(tx.nonce, None);
+        assert_eq!(tx.input, None);
+    }
+
+    #[rstest]
     fn test_transaction_creation_with_constructor() {
         use crate::defi::chain::chains;
 
@@ -333,7 +399,7 @@ mod tests {
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
             123456,
             from_addr,
-            to_addr,
+            Some(to_addr),
             U256::from(21_000),
             U256::from(20_000_000_000u64), // 20 gwei
             0,
@@ -341,9 +407,13 @@ mod tests {
         );
 
         assert_eq!(tx.from, from_addr);
-        assert_eq!(tx.to, to_addr);
+        assert_eq!(tx.to, Some(to_addr));
         assert_eq!(tx.gas, U256::from(21_000));
         assert_eq!(tx.gas_price, U256::from(20_000_000_000u64));
+        assert_eq!(tx.nonce, None);
+        assert_eq!(tx.input, None);
+        assert_eq!(tx.max_fee_per_gas, None);
+        assert_eq!(tx.max_priority_fee_per_gas, None);
         assert_eq!(tx.value, U256::from(1_000_000_000_000_000_000u64));
     }
 }
