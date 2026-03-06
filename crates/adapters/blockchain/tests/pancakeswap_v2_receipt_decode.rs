@@ -16,13 +16,13 @@
 use std::sync::Arc;
 
 use alloy::{
-    primitives::{address, Address, U256},
+    primitives::{Address, U256, address},
     sol,
     sol_types::SolValue,
 };
 use nautilus_blockchain::{
     contracts::uniswap_v2_pair::SWAP_EVENT_TOPIC0_HEX,
-    execution::amm::{pancakeswap_v2::PancakeSwapV2Adapter, AmmProtocolAdapter},
+    execution::amm::{AmmProtocolAdapter, pancakeswap_v2::PancakeSwapV2Adapter},
     rpc::http::BlockchainHttpRpcClient,
 };
 use nautilus_model::defi::{ReceiptLog, TransactionReceipt};
@@ -183,9 +183,10 @@ fn test_receipt_decode_rejects_if_no_swap_log_for_expected_pool() {
         )
         .expect_err("missing expected-pool swap log must fail closed");
 
-    assert!(err
-        .to_string()
-        .contains("no swap log found for expected pool"));
+    assert!(
+        err.to_string()
+            .contains("no swap log found for expected pool")
+    );
 }
 
 #[test]
@@ -231,9 +232,10 @@ fn test_receipt_decode_rejects_if_multiple_swap_logs_for_expected_pool() {
         )
         .expect_err("multiple expected-pool swap logs must fail closed");
 
-    assert!(err
-        .to_string()
-        .contains("expected exactly one swap log for pool"));
+    assert!(
+        err.to_string()
+            .contains("expected exactly one swap log for pool")
+    );
 }
 
 #[test]
@@ -268,9 +270,10 @@ fn test_receipt_decode_rejects_swap_log_from_other_pool_address() {
         )
         .expect_err("swap from non-expected pool must fail closed");
 
-    assert!(err
-        .to_string()
-        .contains("no swap log found for expected pool"));
+    assert!(
+        err.to_string()
+            .contains("no swap log found for expected pool")
+    );
 }
 
 #[test]

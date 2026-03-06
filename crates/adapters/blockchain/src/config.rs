@@ -180,6 +180,40 @@ pub struct BlockchainExecutionClientConfig {
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
+    /// Optional remote signer endpoint URL.
+    pub signer_endpoint: Option<String>,
+    /// Remote signer route path.
+    pub signer_route: String,
+    /// Remote signer request timeout in milliseconds.
+    pub signer_timeout_ms: u64,
+    /// Enforce HTTPS endpoint policy for signer requests.
+    pub signer_require_tls: bool,
+    /// Optional signer wallet override (defaults to wallet_address).
+    pub signer_wallet_address: Option<String>,
+    /// Optional router address override used for swap execution.
+    pub execution_router_address: Option<String>,
+    /// Slippage bound in basis points for exact-in swaps.
+    pub execution_default_slippage_bps: u32,
+    /// Deadline TTL in seconds for swap transaction intents.
+    pub execution_default_deadline_secs: u64,
+    /// Required block confirmations before terminalizing execution.
+    pub execution_confirmations_required: u64,
+    /// Maximum receipt polling attempts per transaction.
+    pub execution_receipt_max_polls: u32,
+    /// Receipt polling interval in milliseconds.
+    pub execution_receipt_poll_interval_ms: u64,
+    /// Per-wallet in-flight transaction budget (MVP currently enforces 1).
+    pub execution_max_inflight_txs_per_wallet: u32,
+    /// If true, skip automatic approve flow and require pre-approved allowance.
+    pub execution_require_preapproved_allowance: bool,
+    /// EIP-1559 max fee per gas used for swap transactions.
+    pub execution_max_fee_per_gas: u64,
+    /// EIP-1559 max priority fee per gas used for swap transactions.
+    pub execution_max_priority_fee_per_gas: u64,
+    /// Optional JSONL journal path for idempotency and replay state.
+    pub execution_journal_path: Option<String>,
+    /// Tokens that are explicitly blocked from fill decoding in MVP.
+    pub execution_unsupported_token_addresses: Vec<String>,
 }
 
 impl BlockchainExecutionClientConfig {
@@ -210,6 +244,23 @@ impl BlockchainExecutionClientConfig {
             multicall_min_batch_size: 4,
             http_rpc_url,
             rpc_requests_per_second,
+            signer_endpoint: None,
+            signer_route: "/sign/eth".to_string(),
+            signer_timeout_ms: 5_000,
+            signer_require_tls: true,
+            signer_wallet_address: None,
+            execution_router_address: None,
+            execution_default_slippage_bps: 100,
+            execution_default_deadline_secs: 120,
+            execution_confirmations_required: 1,
+            execution_receipt_max_polls: 60,
+            execution_receipt_poll_interval_ms: 1_000,
+            execution_max_inflight_txs_per_wallet: 1,
+            execution_require_preapproved_allowance: true,
+            execution_max_fee_per_gas: 1_000_000_000,
+            execution_max_priority_fee_per_gas: 1_000_000_000,
+            execution_journal_path: None,
+            execution_unsupported_token_addresses: Vec::new(),
         }
     }
 }
