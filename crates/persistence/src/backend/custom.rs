@@ -35,10 +35,6 @@ use nautilus_serialization::arrow::DecodeDataFromRecordBatch;
 #[cfg(feature = "python")]
 use nautilus_serialization::arrow::custom::CustomDataDecoder;
 
-// ---------------------------------------------------------------------------
-// Schema and batch helpers (Parquet/Feather)
-// ---------------------------------------------------------------------------
-
 /// Builds a schema that adds the `data_type` column and `type_name` metadata to a base schema.
 /// Used when creating a Feather buffer for custom data (single type per writer).
 #[must_use]
@@ -92,10 +88,6 @@ pub fn augment_batch_with_data_type_column(
         .map_err(|e| anyhow::anyhow!("Failed to merge custom data type metadata: {e}"))?;
     Ok(new_batch)
 }
-
-// ---------------------------------------------------------------------------
-// Path and write preparation
-// ---------------------------------------------------------------------------
 
 /// Normalizes a custom data identifier for use in directory paths.
 /// Replaces `//` with `/`, and filters out empty segments and `..` to prevent path traversal.
@@ -172,10 +164,6 @@ pub fn prepare_custom_data_batch(
 
     Ok((batch, type_name.to_string(), identifier, start_ts, end_ts))
 }
-
-// ---------------------------------------------------------------------------
-// Decode
-// ---------------------------------------------------------------------------
 
 /// Decodes a RecordBatch to Data objects based on metadata.
 ///

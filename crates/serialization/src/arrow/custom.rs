@@ -33,10 +33,6 @@ use nautilus_model::data::{
 
 use super::{ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch};
 
-// ---------------------------------------------------------------------------
-// CustomDataSerialize - Arrow/JSON serialization for custom data (serialization crate)
-// ---------------------------------------------------------------------------
-
 /// Trait for custom data types that support Arrow schema and record batch encoding.
 /// Used as a type bound by the `#[custom_data]` macro; catalog encoding goes through
 /// the registry, not this trait directly.
@@ -59,10 +55,6 @@ pub trait CustomDataSerialize: CustomDataTrait {
         items: &[Arc<dyn CustomDataTrait>],
     ) -> anyhow::Result<RecordBatch>;
 }
-
-// ---------------------------------------------------------------------------
-// Registration
-// ---------------------------------------------------------------------------
 
 /// Registers a custom data type in the JSON and Arrow registries. Call once per type
 /// (e.g. at catalog decode or before querying custom data).

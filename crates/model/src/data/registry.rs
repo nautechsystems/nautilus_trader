@@ -50,10 +50,6 @@ fn registries() -> &'static Registries {
     })
 }
 
-// ---------------------------------------------------------------------------
-// JSON registry (mirrors register_serializable_type / _OBJECT_FROM_DICT_MAP)
-// ---------------------------------------------------------------------------
-
 /// Registers a JSON deserializer for the given custom data type name.
 /// When `Data::deserialize` sees this type name, it will call this function.
 ///
@@ -146,10 +142,6 @@ pub fn deserialize_custom_from_json(
     Ok(Some(Data::Custom(custom)))
 }
 
-// ---------------------------------------------------------------------------
-// Arrow registry (mirrors register_arrow / _SCHEMAS, _ARROW_ENCODERS, _ARROW_DECODERS)
-// ---------------------------------------------------------------------------
-
 /// Registers Arrow schema, encoder, and decoder for the given custom data type name.
 ///
 /// # Errors
@@ -234,10 +226,6 @@ pub fn decode_custom_from_arrow(
     decoder(metadata, record_batch).map(Some)
 }
 
-// ---------------------------------------------------------------------------
-// PyExtractor registry (type_name -> extract PyAny to Arc<dyn CustomDataTrait>)
-// ---------------------------------------------------------------------------
-
 #[cfg(feature = "python")]
 pub type PyExtractor = Box<
     dyn for<'a> Fn(&pyo3::Bound<'a, pyo3::PyAny>) -> Option<Arc<dyn CustomDataTrait>> + Send + Sync,
@@ -300,11 +288,6 @@ pub fn try_extract_from_py(
     let extractor = entry.value();
     extractor(obj)
 }
-
-// ---------------------------------------------------------------------------
-// Rust extractor factory registry (type_name -> factory that produces PyExtractor)
-// Used by register_custom_data_class when a Rust pyclass is passed: call factory, register extractor.
-// ---------------------------------------------------------------------------
 
 #[cfg(feature = "python")]
 type RustExtractorFactory = Box<dyn Fn() -> PyExtractor + Send + Sync>;

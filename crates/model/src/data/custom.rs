@@ -29,10 +29,6 @@ use crate::data::{
     registry::{ensure_json_deserializer_registered, register_json_deserializer},
 };
 
-// ---------------------------------------------------------------------------
-// Type name interner - one static copy per distinct type name (avoids unbounded leak)
-// ---------------------------------------------------------------------------
-
 #[cfg(feature = "python")]
 fn intern_type_name_static(name: String) -> &'static str {
     static INTERNER: std::sync::OnceLock<RwLock<HashSet<&'static str>>> =
@@ -60,10 +56,6 @@ fn intern_type_name_static(name: String) -> &'static str {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// PythonCustomDataWrapper - bridges external .so custom data types
-// ---------------------------------------------------------------------------
 
 /// A wrapper that allows custom data types from external .so files (e.g., rustimport)
 /// to work with the main nautilus registry and data pipeline.

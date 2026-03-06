@@ -1247,7 +1247,7 @@ impl ParquetDataCatalog {
         // Remove all files that were processed
         for file in files_to_remove {
             if let Err(e) = self.delete_file(&file) {
-                eprintln!("Failed to delete file {file}: {e}");
+                log::warn!("Failed to delete file {file}: {e}");
             }
         }
 
@@ -1925,7 +1925,7 @@ impl ParquetDataCatalog {
             {
                 // Call the existing delete_data_range method
                 if let Err(e) = self.delete_data_range(&data_type, identifier, start, end) {
-                    eprintln!("Failed to delete data in directory {directory}: {e}");
+                    log::warn!("Failed to delete data in directory {directory}: {e}");
                     // Continue with other directories instead of failing completely
                 }
             }
@@ -2057,7 +2057,7 @@ impl ParquetDataCatalog {
         // Remove all files that were processed
         for file in files_to_remove {
             if let Err(e) = self.delete_file(&file) {
-                eprintln!("Failed to delete file {file}: {e}");
+                log::warn!("Failed to delete file {file}: {e}");
             }
         }
 
