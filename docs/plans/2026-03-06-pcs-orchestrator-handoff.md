@@ -9,6 +9,23 @@ This document is a continuity handoff for the next orchestrator on the PancakeSw
 The remaining work is review, blocker resolution, sequential merge coordination,
 and final closeout against the source-of-truth plan.
 
+## Closeout Update
+
+This handoff is now historical context only.
+
+- PR2 through PR13 merged to `main` on 2026-03-06.
+- Final merge window:
+  - PR2 merged at `2026-03-06T14:37:45Z`
+  - PR3 merged at `2026-03-06T14:42:06Z`
+  - PR4 merged at `2026-03-06T14:49:14Z`
+  - PR5a merged at `2026-03-06T14:49:24Z`
+  - PR6a through PR13 merged at `2026-03-06T15:09:11Z` through `2026-03-06T15:09:51Z`
+- The PR6a `contractAddress`, PR9 wallet currency precision, and PR13 blockchain config
+  URL-redaction follow-ups were landed before the final merge train.
+- All previously unresolved PCS Gemini review threads on PRs `#12` through `#26` were
+  resolved with either landed fixes or explicit maintainer defer notes.
+- There are no remaining open PCS PRs; operational next steps from this document are complete.
+
 ## Source Of Truth
 
 - Plan doc: `docs/plans/2026-03-04-pcs-integration.md`
