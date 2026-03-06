@@ -3723,6 +3723,18 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `gh api repos/clickconfirm/nautilus-trader/check-runs/65929009684/annotations` (pass: returned billing/spending-limit failure annotation)
     - `gh api repos/clickconfirm/nautilus-trader/check-runs/65940672379/annotations` (pass: returned billing/spending-limit failure annotation)
 
+- 2026-03-06 - Orchestrator handoff (`docs/plans/2026-03-06-pcs-orchestrator-handoff.md`) - status: ready
+  - Added a durable handoff summary for the next orchestrator covering the full PR2->PR13 stack, worktree map, exact PR URLs/base refs, current blockers, and the required continuation/merge order.
+  - Captured both the external GitHub Actions billing blocker and the internal pre-existing `nautilus-model` Python compile blocker in one reviewable place.
+  - Tests run:
+    - `gh pr list --state open --limit 100 --json number,title,headRefName,baseRefName,url,mergeStateStatus` (pass)
+    - `git worktree list --porcelain` (pass)
+    - `gh api repos/clickconfirm/nautilus-trader/check-runs/65940672379/annotations` (pass)
+    - `pre-commit run trailing-whitespace --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run typos --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run codespell --files docs/plans/2026-03-04-pcs-integration.md docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+    - `pre-commit run markdownlint-cli2 --files docs/plans/2026-03-06-pcs-orchestrator-handoff.md` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
