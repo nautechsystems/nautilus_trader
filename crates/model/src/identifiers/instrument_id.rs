@@ -209,6 +209,17 @@ mod tests {
 
     #[cfg(feature = "defi")]
     #[rstest]
+    fn test_blockchain_instrument_id_valid_pancakeswap_v2() {
+        let id = InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Bsc:PancakeSwapV2");
+        assert_eq!(
+            id.symbol.to_string(),
+            "0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443"
+        );
+        assert_eq!(id.venue.to_string(), "Bsc:PancakeSwapV2");
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
     #[should_panic(
         expected = "Error creating `Venue` from 'InvalidChain:UniswapV3': invalid blockchain venue 'InvalidChain:UniswapV3': chain 'InvalidChain' not recognized"
     )]
