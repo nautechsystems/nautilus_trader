@@ -82,8 +82,74 @@ class FluxRedisKeys:
     def balances_rows(self) -> str:
         return f"{self.prefix}:balances:rows:{self._strategy_id}"
 
-    def market_last(self, exchange: str, base: str, quote: str) -> str:
+    @classmethod
+    def portfolio_inventory_component(
+        cls,
+        *,
+        strategy_id: str,
+        portfolio_id: str,
+        base_currency: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        safe_namespace = validate_identifier_part(namespace, "namespace")
+        safe_schema_version = validate_schema_version(schema_version, "schema_version")
+        safe_strategy_id = validate_identifier_part(strategy_id, "strategy_id")
+        safe_portfolio_id = validate_identifier_part(portfolio_id, "portfolio_id")
+        safe_base_currency = validate_symbol_part(base_currency, "base_currency").upper()
+        return (
+            f"{safe_namespace}:{safe_schema_version}:portfolio:inventory:component:"
+            f"{safe_portfolio_id}:{safe_base_currency}:{safe_strategy_id}"
+        )
+
+    @classmethod
+    def portfolio_inventory(
+        cls,
+        *,
+        portfolio_id: str,
+        base_currency: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        safe_namespace = validate_identifier_part(namespace, "namespace")
+        safe_schema_version = validate_schema_version(schema_version, "schema_version")
+        safe_portfolio_id = validate_identifier_part(portfolio_id, "portfolio_id")
+        safe_base_currency = validate_symbol_part(base_currency, "base_currency").upper()
+        return (
+            f"{safe_namespace}:{safe_schema_version}:portfolio:inventory:"
+            f"{safe_portfolio_id}:{safe_base_currency}"
+        )
+
+    @classmethod
+    def portfolio_inventory_channel(
+        cls,
+        *,
+        portfolio_id: str,
+        base_currency: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        return (
+            cls.portfolio_inventory(
+                portfolio_id=portfolio_id,
+                base_currency=base_currency,
+                namespace=namespace,
+                schema_version=schema_version,
+            )
+            + ":changed"
+        )
+
+    def market_last(
+        self,
+        exchange: str,
+        base: str,
+        quote: str,
+        instrument_id: str | None = None,
+    ) -> str:
         safe_exchange = validate_identifier_part(exchange, "exchange").lower()
+        safe_instrument_id = validate_symbol_part(instrument_id, "instrument_id").upper() if instrument_id else ""
+        if safe_instrument_id:
+            return f"{self.prefix}:market:last:{self._strategy_id}:{safe_exchange}:{safe_instrument_id}"
         safe_base = validate_symbol_part(base, "base").upper()
         safe_quote = validate_symbol_part(quote, "quote").upper()
         return f"{self.prefix}:market:last:{self._strategy_id}:{safe_exchange}:{safe_base}_{safe_quote}"

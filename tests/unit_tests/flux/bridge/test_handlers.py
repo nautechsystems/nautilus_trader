@@ -126,6 +126,7 @@ def test_transform_market_bbo_writes_strategy_scoped_snapshot() -> None:
     payload = {
         "exchange": "BYBIT",
         "symbol": "PLUMEUSDT",
+        "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
         "bid": "1.0",
         "ask": "1.1",
         "timestamp": "1700000000",
@@ -133,16 +134,18 @@ def test_transform_market_bbo_writes_strategy_scoped_snapshot() -> None:
 
     ops = transform_market_bbo(payload, _context("market_bbo"))
 
-    assert len(ops) == 1
-    op = ops[0]
-    assert isinstance(op, SetJSONOp)
-    assert op.key == "flux:v1:market:last:maker_v3_01:bybit:PLUME_USDT"
-    assert op.ttl_seconds == 120
-    assert isinstance(op.value, dict)
-    assert op.value["strategy_id"] == "maker_v3_01"
-    assert op.value["topic"] == "market_bbo"
-    assert op.value["entry_id"] == "1700000001000-0"
-    assert op.value["ts_ms"] == 1700000000000
+    assert len(ops) == 2
+    instrument_op, legacy_op = ops
+    assert isinstance(instrument_op, SetJSONOp)
+    assert instrument_op.key == "flux:v1:market:last:maker_v3_01:bybit:PLUMEUSDT-LINEAR.BYBIT"
+    assert instrument_op.ttl_seconds == 120
+    assert isinstance(instrument_op.value, dict)
+    assert instrument_op.value["strategy_id"] == "maker_v3_01"
+    assert instrument_op.value["topic"] == "market_bbo"
+    assert instrument_op.value["entry_id"] == "1700000001000-0"
+    assert instrument_op.value["ts_ms"] == 1700000000000
+    assert isinstance(legacy_op, SetJSONOp)
+    assert legacy_op.key == "flux:v1:market:last:maker_v3_01:bybit:PLUME_USDT"
 
 
 def test_transform_market_bbo_supports_extended_quote_suffixes() -> None:

@@ -11,7 +11,7 @@ vi.mock('./apiClient', () => {
   return { APIClient: MockAPIClient };
 });
 
-import { api } from './api';
+import { api, deriveCanonicalNaming } from './api';
 
 function setPathname(pathname: string) {
   (window.location as unknown as { pathname?: string }).pathname = pathname;
@@ -81,6 +81,13 @@ describe('api.getTrades', () => {
     expect(path).toContain('offset=0');
   });
 
+  it('passes market_type param when present', async () => {
+    await api.getTrades(1, 50, { market_type: 'perp', sort: 'ts_desc' });
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('market_type=perp');
+  });
+
   it('translates ascending sort to the backend token instead of legacy ts_asc', async () => {
     await api.getTrades(1, 50, { sort: 'ts_asc' });
 
@@ -137,6 +144,130 @@ describe('api.getTrades', () => {
       side: 'buy',
     });
     expect(result.rows[0]?.mv).toBeCloseTo(9.685, 10);
+  });
+
+  it('preserves canonical trade naming fields from backend payloads', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            trade_id: 'trade-canonical',
+            ts_ms: 1772623943812,
+            strategy_id: 'makerv3',
+            instrument_id: 'PLUMEUSDT-LINEAR.BYBIT',
+            display_name_short: 'PLUME Perp',
+            display_name_long: 'Bybit PLUME Perp',
+            product_type: 'perp',
+            contract_type: 'linear',
+            venue_root: 'bybit',
+            side: '2',
+            price: '0.009685',
+            qty: '1000',
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      },
+    });
+
+    const result = await api.getTrades(1, 50, { sort: 'ts_desc' });
+    expect(result.rows[0]).toMatchObject({
+      display_name_short: 'PLUME Perp',
+      display_name_long: 'Bybit PLUME Perp',
+      product_type: 'perp',
+      contract_type: 'linear',
+      venue_root: 'bybit',
+    });
+  });
+
+  it('normalizes stale suffixed raw_symbol values into canonical naming fields', () => {
+    const naming = deriveCanonicalNaming(
+      {
+        instrument_id: 'PLUMEUSDT-LINEAR.BYBIT',
+        raw_symbol: 'PLUMEUSDT-LINEAR',
+      },
+      {
+        exchange: 'bybit',
+        symbol: 'PLUME/USDT',
+        asset: 'PLUME',
+      },
+    );
+
+    expect(naming).toMatchObject({
+      raw_symbol: 'PLUMEUSDT',
+      contract_type: 'linear',
+      product_type: 'perp',
+      base_asset: 'PLUME',
+      quote_asset: 'USDT',
+      pair: 'PLUME/USDT',
+      display_name_short: 'PLUME Perp',
+    });
+  });
+
+  it('derives stripped raw_symbol and alias exchange for instrument-only trade rows', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            trade_id: 'trade-derived',
+            ts_ms: 1772623943812,
+            strategy_id: 'makerv3',
+            instrument_id: 'PLUMEUSDT.BINANCE_SPOT',
+            side: '1',
+            price: '0.009685',
+            qty: '1000',
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      },
+    });
+
+    const result = await api.getTrades(1, 50, { sort: 'ts_desc' });
+    expect(result.rows[0]).toMatchObject({
+      exchange: 'binance_spot',
+      raw_symbol: 'PLUMEUSDT',
+      product_type: 'spot',
+      display_name_short: 'PLUME Spot',
+      base_asset: 'PLUME',
+      quote_asset: 'USDT',
+      pair: 'PLUME/USDT',
+    });
+  });
+
+  it('derives stripped raw_symbol and perp contract type for instrument-only bybit perp rows', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            trade_id: 'trade-derived-perp',
+            ts_ms: 1772623943812,
+            strategy_id: 'makerv3',
+            instrument_id: 'PLUMEUSDT-LINEAR.BYBIT',
+            side: '2',
+            price: '0.009685',
+            qty: '1000',
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      },
+    });
+
+    const result = await api.getTrades(1, 50, { sort: 'ts_desc' });
+    expect(result.rows[0]).toMatchObject({
+      exchange: 'bybit',
+      raw_symbol: 'PLUMEUSDT',
+      contract_type: 'linear',
+      product_type: 'perp',
+      display_name_short: 'PLUME Perp',
+    });
   });
 
   it('caps limit to 200 and re-bases offset using capped page size to avoid pagination gaps', async () => {
@@ -252,6 +383,9 @@ describe('profile-scoped read APIs', () => {
               'bybit:PLUMEUSDT': {
                 exchange: 'bybit',
                 symbol: 'PLUMEUSDT',
+                display_name_short: 'PLUME Perp',
+                display_name_long: 'Bybit PLUME Perp',
+                product_type: 'perp',
                 bid: 0.009701,
                 ask: 0.009702,
                 ts_ms: 1772623962721,
@@ -271,6 +405,9 @@ describe('profile-scoped read APIs', () => {
       fv_bid: 0.009701,
       fv_ask: 0.009702,
       coin: 'PLUME',
+      display_name_short: 'PLUME Perp',
+      display_name_long: 'Bybit PLUME Perp',
+      product_type: 'perp',
       update_ts_ms: 1772623962721,
     });
   });
@@ -444,14 +581,17 @@ describe('profile-scoped read APIs', () => {
     fetchJSONMock.mockResolvedValueOnce({
       ok: true,
       data: {
-        rows: [
-          {
-            exchange: 'bybit',
-            asset: 'UNKNOWN',
-            base_currency: 'PLUME',
-            total: '10',
-            ts_ms: 1700000000000,
-          },
+            rows: [
+              {
+                exchange: 'bybit',
+                asset: 'UNKNOWN',
+                base_currency: 'PLUME',
+                display_name_short: 'PLUME Spot',
+                display_name_long: 'Bybit PLUME Spot',
+                product_type: 'spot',
+                total: '10',
+                ts_ms: 1700000000000,
+              },
         ],
         total: 1,
       },
@@ -460,6 +600,8 @@ describe('profile-scoped read APIs', () => {
     const payload = await api.getBalances();
     expect(payload.rows).toHaveLength(1);
     expect(payload.rows[0]?.children[0]?.coin).toBe('PLUME');
+    expect(payload.rows[0]?.children[0]?.display_name_short).toBe('PLUME Spot');
+    expect(payload.rows[0]?.children[0]?.product_type).toBe('spot');
   });
 
   it('preserves alerts pagination metadata on getAlerts while keeping array return shape', async () => {

@@ -12,7 +12,24 @@ export type MarketSnapshot = {
   update_time: string;  // Server-formatted time (legacy), prefer timestamp_ms for rendering
 };
 
-export type Trade = {
+export type CanonicalNamingFields = {
+  instrument_uid?: string;
+  instrument_id?: string;
+  venue?: string;
+  venue_root?: string;
+  product_type?: 'spot' | 'perp' | string;
+  market_type?: 'spot' | 'perp' | string;
+  contract_type?: string;
+  raw_symbol?: string;
+  base_asset?: string;
+  quote_asset?: string;
+  pair?: string;
+  inventory_asset?: string;
+  display_name_short?: string;
+  display_name_long?: string;
+};
+
+export type Trade = CanonicalNamingFields & {
   time: string;  // Render exactly as delivered by API
   coin: string;
   exchange: string;
@@ -407,7 +424,7 @@ export type StrategyFxConfigResponse = {
 };
 
 // Balances types
-export type BalanceChildRow = {
+export type BalanceChildRow = CanonicalNamingFields & {
   id: string;
   parent_id: string;
   coin: string;
@@ -531,7 +548,7 @@ export type SignalStrategiesPayload = {
 };
 
 // Signal page types
-export type SignalLeg = {
+export type SignalLeg = CanonicalNamingFields & {
   contract_id?: string;
   coin?: string;
   exchange?: string;

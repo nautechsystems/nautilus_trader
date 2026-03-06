@@ -562,7 +562,7 @@ export default function Balances({
         const riskKey = riskKeyForCoin(child.coin);
         if (!riskKey) continue;
         const row: RiskSourceBreakdownRow = {
-          venue: child.venue,
+          venue: child.venue ?? '',
           coin: child.coin,
           qty_raw: child.qty_raw ?? 0,
           mv_raw: child.mv_raw ?? 0,
@@ -819,7 +819,7 @@ export default function Balances({
               <td className={cn("text-left", paddingClass)}>
                 <div className="ml-2 border-l border-zinc-800 pl-6">
                   <CoinCell
-                    symbol={child.coin}
+                    symbol={child.display_name_short ?? child.coin}
                     chain={(child as any).chain}
                     form={(child as any).form}
                     venue={child.venue}
@@ -830,7 +830,7 @@ export default function Balances({
                   {renderAddressButton(child.address)}
                   {isMobile && (
                     <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-zinc-500">
-                      <span>{renderMarkCell(child.coin, child.mark_raw)}</span>
+                      <span>{renderMarkCell(child.inventory_asset ?? child.base_asset ?? child.coin, child.mark_raw)}</span>
                       <span className="flex items-center gap-1">
                         <DataAgeCell timestamp={child.last_ts} />
                       </span>
@@ -840,7 +840,7 @@ export default function Balances({
           </td>
           <td className={cn("text-right font-mono tabular-nums", paddingClass)}>
             <span className="text-zinc-300">
-              {formatQty(child.coin, child.qty_raw, child.mark_raw)}
+              {formatQty(child.inventory_asset ?? child.base_asset ?? child.coin, child.qty_raw, child.mark_raw)}
             </span>
           </td>
           <td className={cn("text-right font-mono tabular-nums", paddingClass)}>
@@ -850,7 +850,7 @@ export default function Balances({
           </td>
               {!isMobile && (
                 <td className={cn("text-right font-mono tabular-nums", paddingClass)}>
-                  {renderMarkCell(child.coin, child.mark_raw)}
+                  {renderMarkCell(child.inventory_asset ?? child.base_asset ?? child.coin, child.mark_raw)}
                 </td>
               )}
               {!isMobile && (
@@ -876,7 +876,7 @@ export default function Balances({
         <td className={cn("text-left", paddingClass)}>
           <div className="ml-2 border-l border-zinc-800 pl-6">
           <CoinCell
-            symbol={child.coin}
+            symbol={child.display_name_short ?? child.coin}
             chain={(child as any).chain}
             form={(child as any).form}
             venue={child.venue}
@@ -887,7 +887,7 @@ export default function Balances({
           {renderAddressButton(child.address)}
           {isMobile && (
             <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-zinc-500">
-              <span>{renderMarkCell(child.coin, child.mark_raw)}</span>
+              <span>{renderMarkCell(child.inventory_asset ?? child.base_asset ?? child.coin, child.mark_raw)}</span>
               <span className="flex items-center gap-1">
                 <DataAgeCell timestamp={child.last_ts} />
               </span>
@@ -896,14 +896,14 @@ export default function Balances({
         </div>
       </td>
       <td className={cn("text-right font-mono tabular-nums text-zinc-300", paddingClass)}>
-        {formatQty(child.coin, child.qty_raw, child.mark_raw)}
+        {formatQty(child.inventory_asset ?? child.base_asset ?? child.coin, child.qty_raw, child.mark_raw)}
       </td>
       <td className={cn("text-right font-mono tabular-nums text-zinc-300", paddingClass)}>
         {child.mv_display}
       </td>
       {!isMobile && (
         <td className={cn("text-right font-mono tabular-nums", paddingClass)}>
-          {renderMarkCell(child.coin, child.mark_raw)}
+          {renderMarkCell(child.inventory_asset ?? child.base_asset ?? child.coin, child.mark_raw)}
         </td>
       )}
       {!isMobile && (

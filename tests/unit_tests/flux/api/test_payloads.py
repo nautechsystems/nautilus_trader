@@ -432,6 +432,56 @@ def test_build_legs_payload_uses_contract_id_keys_for_same_exchange_contracts() 
     assert legs["venue_a:XYZ/USDT"]["mid"] == 200.5
 
 
+def test_build_legs_payload_derives_canonical_naming_for_plume_spot_and_perp() -> None:
+    contracts = (
+        ContractCatalogEntry(
+            exchange="bybit",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+        ),
+        ContractCatalogEntry(
+            exchange="bybit",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT-SPOT.BYBIT",
+        ),
+        ContractCatalogEntry(
+            exchange="binance_spot",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT.BINANCE_SPOT",
+        ),
+        ContractCatalogEntry(
+            exchange="okx",
+            symbol="PLUME/USDT",
+            instrument_id="PLUME-USDT-SWAP.OKX",
+        ),
+    )
+
+    legs = build_legs_payload(
+        contracts=contracts,
+        market_rows={
+            "bybit:PLUMEUSDT-LINEAR.BYBIT": {"bid": 0.0104, "ask": 0.0106, "ts_ms": 1700000000000},
+            "bybit:PLUMEUSDT-SPOT.BYBIT": {"bid": 0.0105, "ask": 0.0107, "ts_ms": 1700000000001},
+            "binance_spot:PLUMEUSDT.BINANCE_SPOT": {"bid": 0.0105, "ask": 0.0106, "ts_ms": 1700000000002},
+            "okx:PLUME-USDT-SWAP.OKX": {"bid": 0.0103, "ask": 0.0105, "ts_ms": 1700000000003},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    assert set(legs) == {
+        "bybit:PLUMEUSDT-LINEAR.BYBIT",
+        "bybit:PLUMEUSDT-SPOT.BYBIT",
+        "binance_spot:PLUMEUSDT.BINANCE_SPOT",
+        "okx:PLUME-USDT-SWAP.OKX",
+    }
+    assert legs["bybit:PLUMEUSDT-LINEAR.BYBIT"]["product_type"] == "perp"
+    assert legs["bybit:PLUMEUSDT-LINEAR.BYBIT"]["display_name_short"] == "PLUME Perp"
+    assert legs["bybit:PLUMEUSDT-SPOT.BYBIT"]["product_type"] == "spot"
+    assert legs["bybit:PLUMEUSDT-SPOT.BYBIT"]["display_name_short"] == "PLUME Spot"
+    assert legs["binance_spot:PLUMEUSDT.BINANCE_SPOT"]["venue"] == "BINANCE_SPOT"
+    assert legs["okx:PLUME-USDT-SWAP.OKX"]["contract_type"] == "swap"
+    assert legs["okx:PLUME-USDT-SWAP.OKX"]["display_name_long"] == "Okx PLUME Perp"
+
+
 def test_build_trades_rows_enforces_row_contract_defaults() -> None:
     rows = build_trades_rows(
         rows=[
@@ -474,6 +524,168 @@ def test_build_trades_rows_uses_entry_id_as_seq_fallback_for_delta_filters() -> 
     assert len(rows) == 1
     assert rows[0]["seq"] == 7_260_942_837_084_160
     assert rows[0]["row_id"] == "strategy_01:trade:entry:1772691122335-0"
+
+
+def test_build_trades_rows_derives_canonical_naming_fields_for_plume_instruments() -> None:
+    rows = build_trades_rows(
+        rows=[
+            {
+                "strategy_id": "strategy_01",
+                "row_id": "trade-bybit-perp",
+                "ts_ms": 1700000000000,
+                "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                "exchange": "bybit",
+            },
+            {
+                "strategy_id": "strategy_01",
+                "row_id": "trade-bybit-spot",
+                "ts_ms": 1700000000001,
+                "instrument_id": "PLUMEUSDT-SPOT.BYBIT",
+                "exchange": "bybit",
+            },
+            {
+                "strategy_id": "strategy_01",
+                "row_id": "trade-binance-spot",
+                "ts_ms": 1700000000002,
+                "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "exchange": "binance_spot",
+            },
+            {
+                "strategy_id": "strategy_01",
+                "row_id": "trade-okx-perp",
+                "ts_ms": 1700000000003,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+            },
+        ],
+        strategy_id="strategy_01",
+        limit=10,
+        since_ms=None,
+        since_seq=None,
+    )
+
+    by_id = {row["row_id"]: row for row in rows}
+    assert by_id["trade-bybit-perp"]["product_type"] == "perp"
+    assert by_id["trade-bybit-perp"]["display_name_short"] == "PLUME Perp"
+    assert by_id["trade-bybit-perp"]["raw_symbol"] == "PLUMEUSDT"
+    assert by_id["trade-bybit-perp"]["contract_type"] == "linear"
+    assert by_id["trade-bybit-perp"]["instrument_uid"] == "bybit:linear:PLUMEUSDT-LINEAR.BYBIT"
+    assert by_id["trade-bybit-spot"]["product_type"] == "spot"
+    assert by_id["trade-bybit-spot"]["display_name_short"] == "PLUME Spot"
+    assert by_id["trade-bybit-spot"]["raw_symbol"] == "PLUMEUSDT"
+    assert by_id["trade-binance-spot"]["venue_root"] == "binance"
+    assert by_id["trade-binance-spot"]["contract_type"] == "spot"
+    assert by_id["trade-okx-perp"]["quote_asset"] == "USDT"
+    assert by_id["trade-okx-perp"]["display_name_long"] == "Okx PLUME Perp"
+
+
+def test_enrich_balances_rows_adds_canonical_naming_fields() -> None:
+    rows = [
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "bybit",
+            "account": "main",
+            "asset": "PLUME",
+            "total": "5434.35191",
+            "row_id": "strategy_01:acc:0",
+        },
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "bybit",
+            "kind": "position",
+            "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+            "signed_qty": "2",
+            "quantity": "2",
+            "row_id": "strategy_01:pos:0",
+        },
+    ]
+    contracts = (
+        ContractCatalogEntry(
+            exchange="bybit",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+        ),
+    )
+    market_rows = {"bybit:PLUMEUSDT-LINEAR.BYBIT": {"bid": 0.0104, "ask": 0.0106}}
+
+    enriched = enrich_balances_rows(
+        rows,
+        contracts=contracts,
+        market_rows=market_rows,
+    )
+
+    by_row_id = {row["row_id"]: row for row in enriched}
+    plume_cash = by_row_id["strategy_01:acc:0"]
+    plume_perp = by_row_id["strategy_01:pos:0"]
+
+    assert plume_cash["product_type"] == "spot"
+    assert plume_cash["contract_type"] == "cash"
+    assert plume_cash["display_name_short"] == "PLUME Spot"
+    assert plume_perp["product_type"] == "perp"
+    assert plume_perp["contract_type"] == "linear"
+    assert plume_perp["display_name_short"] == "PLUME Perp"
+    assert plume_perp["display_name_long"] == "Bybit PLUME Perp"
+    assert plume_perp["instrument_uid"] == "bybit:linear:PLUMEUSDT-LINEAR.BYBIT"
+
+
+def test_build_trades_rows_preserves_alias_exchange_when_derived_from_instrument_id() -> None:
+    rows = build_trades_rows(
+        rows=[
+            {
+                "strategy_id": "strategy_01",
+                "row_id": "trade-binance-spot",
+                "ts_ms": 1700000000000,
+                "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+            },
+        ],
+        strategy_id="strategy_01",
+        limit=10,
+        since_ms=None,
+        since_seq=None,
+    )
+
+    assert rows[0]["exchange"] == "binance_spot"
+    assert rows[0]["venue"] == "BINANCE_SPOT"
+
+
+def test_enrich_balances_rows_uses_spot_contract_metadata_for_cash_rows() -> None:
+    rows = [
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "bybit",
+            "account": "main",
+            "asset": "PLUME",
+            "total": "5434.35191",
+            "row_id": "strategy_01:acc:0",
+        },
+    ]
+    contracts = (
+        ContractCatalogEntry(
+            exchange="bybit",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT-SPOT.BYBIT",
+        ),
+        ContractCatalogEntry(
+            exchange="bybit",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+        ),
+    )
+    market_rows = {"bybit:PLUMEUSDT-SPOT.BYBIT": {"bid": 0.0104, "ask": 0.0106}}
+
+    enriched = enrich_balances_rows(
+        rows,
+        contracts=contracts,
+        market_rows=market_rows,
+    )
+
+    plume_cash = enriched[0]
+    assert plume_cash["instrument_id"] == "PLUMEUSDT-SPOT.BYBIT"
+    assert plume_cash["raw_symbol"] == "PLUMEUSDT"
+    assert plume_cash["base_asset"] == "PLUME"
+    assert plume_cash["quote_asset"] == "USDT"
+    assert plume_cash["pair"] == "PLUME/USDT"
+    assert plume_cash["display_name_short"] == "PLUME Spot"
 
 
 def test_extract_stream_rows_accepts_flat_field_entries_without_payload_wrapper() -> None:

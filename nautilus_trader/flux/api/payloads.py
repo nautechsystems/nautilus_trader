@@ -30,6 +30,7 @@ from typing import Any
 class ContractCatalogEntry:
     exchange: str
     symbol: str
+    instrument_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,9 +50,35 @@ class StrategyMetadata:
         }
 
 
-def contract_id_for_leg(*, exchange: Any, symbol: Any) -> str:
+_KNOWN_QUOTES = (
+    "USDT",
+    "USDC",
+    "PUSD",
+    "USDE",
+    "USD",
+    "BTC",
+    "ETH",
+    "EUR",
+    "GBP",
+    "JPY",
+    "BNB",
+)
+_PERP_CONTRACT_TYPES = frozenset({"perp", "linear", "swap", "inverse"})
+_CONTRACT_SUFFIXES = (
+    ("-LINEAR", "linear"),
+    ("-SWAP", "swap"),
+    ("-INVERSE", "inverse"),
+    ("-PERP", "perp"),
+    ("-SPOT", "spot"),
+)
+
+
+def contract_id_for_leg(*, exchange: Any, symbol: Any, instrument_id: Any = None) -> str:
     exchange_text = decode_text(exchange).strip().lower()
-    symbol_text = decode_text(symbol).strip().upper()
+    symbol_text = (
+        decode_text(instrument_id).strip().upper()
+        or decode_text(symbol).strip().upper()
+    )
     return f"{exchange_text}:{symbol_text}"
 
 
@@ -202,23 +229,209 @@ def normalize_symbol_parts(*, symbol: str) -> tuple[str, str]:
         base, quote = cleaned.split("_", maxsplit=1)
         return base, quote
 
-    known_quotes = (
-        "USDT",
-        "USDC",
-        "PUSD",
-        "USDE",
-        "USD",
-        "BTC",
-        "ETH",
-        "EUR",
-        "GBP",
-        "JPY",
-        "BNB",
-    )
-    for quote in known_quotes:
+    for quote in _KNOWN_QUOTES:
         if cleaned.endswith(quote) and len(cleaned) > len(quote):
             return cleaned[: -len(quote)], quote
     return cleaned, ""
+
+
+def _raw_symbol_from_instrument_id(instrument_id: Any) -> str:
+    text = decode_text(instrument_id).strip().upper()
+    if not text:
+        return ""
+    symbol_text = text.split(".", maxsplit=1)[0].strip().upper()
+    stripped_symbol, _contract_type = _strip_contract_suffix(symbol_text)
+    return stripped_symbol or symbol_text
+
+
+def _contract_type_from_instrument_id(instrument_id: Any) -> str:
+    text = decode_text(instrument_id).strip().upper()
+    if not text:
+        return ""
+    symbol_text = text.split(".", maxsplit=1)[0].strip().upper()
+    _stripped_symbol, contract_type = _strip_contract_suffix(symbol_text)
+    return contract_type
+
+
+def _strip_contract_suffix(raw_symbol: str) -> tuple[str, str]:
+    symbol_text = decode_text(raw_symbol).strip().upper()
+    if not symbol_text:
+        return "", ""
+    for suffix, contract_type in _CONTRACT_SUFFIXES:
+        if symbol_text.endswith(suffix) and len(symbol_text) > len(suffix):
+            return symbol_text[: -len(suffix)], contract_type
+    return symbol_text, ""
+
+
+def _derive_contract_type(
+    *,
+    explicit_contract_type: str = "",
+    raw_symbol: str,
+    venue: str,
+    is_position: bool,
+) -> str:
+    if explicit_contract_type:
+        return explicit_contract_type
+
+    stripped_symbol, explicit = _strip_contract_suffix(raw_symbol)
+    _ = stripped_symbol
+    if explicit:
+        return explicit
+
+    venue_text = decode_text(venue).strip().upper()
+    if venue_text.endswith("_SPOT"):
+        return "spot"
+    if venue_text.endswith("_PERP"):
+        return "perp"
+    if venue_text.endswith("_SWAP"):
+        return "swap"
+    if venue_text.endswith("_LINEAR"):
+        return "linear"
+    if is_position:
+        return "perp"
+    if raw_symbol:
+        return "spot"
+    return "cash"
+
+
+def _derive_pair_parts(*, instrument_id: Any, raw_symbol: str, fallback_symbol: Any) -> tuple[str, str, str]:
+    raw_symbol_text = decode_text(raw_symbol).strip().upper()
+    if not raw_symbol_text:
+        raw_symbol_text = _raw_symbol_from_instrument_id(instrument_id)
+    if not raw_symbol_text:
+        raw_symbol_text = decode_text(fallback_symbol).strip().upper()
+
+    pair_source, _explicit_contract_type = _strip_contract_suffix(raw_symbol_text)
+    base_asset, quote_asset = normalize_symbol_parts(symbol=pair_source or raw_symbol_text)
+    pair = f"{base_asset}/{quote_asset}" if base_asset and quote_asset else (pair_source or raw_symbol_text)
+    return raw_symbol_text, base_asset, quote_asset or ""
+
+
+def _derive_venue(exchange: Any, venue: Any, instrument_id: Any) -> tuple[str, str]:
+    venue_text = decode_text(venue).strip().upper()
+    if venue_text:
+        venue_root = venue_text.split("_", maxsplit=1)[0].lower()
+        return venue_text, venue_root
+
+    exchange_text = decode_text(exchange).strip().upper()
+    if exchange_text:
+        venue_root = exchange_text.split("_", maxsplit=1)[0].lower()
+        return exchange_text, venue_root
+
+    instrument_text = decode_text(instrument_id).strip().upper()
+    if "." in instrument_text:
+        venue_text = instrument_text.split(".", maxsplit=1)[1].strip().upper()
+        venue_root = venue_text.split("_", maxsplit=1)[0].lower()
+        return venue_text, venue_root
+
+    return "", ""
+
+
+def canonical_naming_fields(
+    *,
+    instrument_id: Any = None,
+    exchange: Any = None,
+    venue: Any = None,
+    symbol: Any = None,
+    asset: Any = None,
+    inventory_asset: Any = None,
+    is_position: bool = False,
+) -> dict[str, str]:
+    instrument_text = decode_text(instrument_id).strip().upper()
+    venue_text, venue_root = _derive_venue(exchange, venue, instrument_text)
+    explicit_contract_type = _contract_type_from_instrument_id(instrument_text)
+    raw_symbol, base_asset, quote_asset = _derive_pair_parts(
+        instrument_id=instrument_text,
+        raw_symbol=_raw_symbol_from_instrument_id(instrument_text),
+        fallback_symbol=symbol,
+    )
+    inventory_asset_text = (
+        decode_text(inventory_asset).strip().upper()
+        or decode_text(asset).strip().upper()
+        or base_asset
+    )
+    contract_type = _derive_contract_type(
+        explicit_contract_type=explicit_contract_type,
+        raw_symbol=raw_symbol,
+        venue=venue_text,
+        is_position=is_position,
+    )
+    product_type = "perp" if contract_type in _PERP_CONTRACT_TYPES else "spot"
+    if contract_type == "cash" and product_type != "spot":
+        product_type = "spot"
+    if not base_asset:
+        base_asset = inventory_asset_text or decode_text(asset).strip().upper()
+    pair = f"{base_asset}/{quote_asset}" if base_asset and quote_asset else (inventory_asset_text or raw_symbol)
+
+    display_asset = inventory_asset_text or base_asset or raw_symbol or decode_text(symbol).strip().upper()
+    if product_type == "perp":
+        display_name_short = f"{display_asset} Perp".strip()
+    else:
+        display_name_short = f"{display_asset} Spot".strip() if display_asset else "Spot"
+    if venue_root:
+        display_name_long = f"{venue_root.title()} {display_name_short}".strip()
+    else:
+        display_name_long = display_name_short
+
+    instrument_uid_source = instrument_text or raw_symbol or inventory_asset_text
+    instrument_uid = f"{venue_root}:{contract_type}:{instrument_uid_source}".strip(":")
+
+    return {
+        "instrument_uid": instrument_uid,
+        "instrument_id": instrument_text,
+        "venue": venue_text,
+        "venue_root": venue_root,
+        "product_type": product_type,
+        "market_type": product_type,
+        "contract_type": contract_type,
+        "raw_symbol": raw_symbol,
+        "base_asset": base_asset,
+        "quote_asset": quote_asset,
+        "pair": pair,
+        "inventory_asset": inventory_asset_text or base_asset,
+        "display_name_short": display_name_short,
+        "display_name_long": display_name_long,
+    }
+
+
+def enrich_row_with_canonical_naming(
+    row: Mapping[str, Any],
+    *,
+    instrument_id: Any = None,
+    exchange: Any = None,
+    venue: Any = None,
+    symbol: Any = None,
+    asset: Any = None,
+    inventory_asset: Any = None,
+    is_position: bool | None = None,
+) -> dict[str, Any]:
+    out = dict(row)
+    position = _is_position_row(out) if is_position is None else bool(is_position)
+    naming = canonical_naming_fields(
+        instrument_id=instrument_id if instrument_id is not None else out.get("instrument_id"),
+        exchange=exchange if exchange is not None else out.get("exchange"),
+        venue=venue if venue is not None else out.get("venue"),
+        symbol=symbol if symbol is not None else out.get("symbol"),
+        asset=asset if asset is not None else out.get("asset"),
+        inventory_asset=inventory_asset if inventory_asset is not None else (
+            out.get("inventory_asset")
+            or out.get("coin")
+            or out.get("base")
+            or out.get("asset")
+        ),
+        is_position=position,
+    )
+    out.update(naming)
+    if not decode_text(out.get("coin")).strip() and naming["inventory_asset"]:
+        out["coin"] = naming["inventory_asset"]
+    if not decode_text(out.get("asset")).strip() and naming["inventory_asset"]:
+        out["asset"] = naming["inventory_asset"]
+    if not decode_text(out.get("exchange")).strip():
+        if naming["venue"]:
+            out["exchange"] = naming["venue"].lower()
+        elif naming["venue_root"]:
+            out["exchange"] = naming["venue_root"]
+    return out
 
 
 def strategy_id_from_row(row: Any, fallback: str) -> str:
@@ -566,7 +779,10 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
         out.append(current)
 
     filtered = [row for row in out if strategy_id_from_row(row, strategy_id) == strategy_id]
-    return _aggregate_position_rows(filtered, strategy_id)
+    return [
+        enrich_row_with_canonical_naming(row)
+        for row in _aggregate_position_rows(filtered, strategy_id)
+    ]
 
 
 def _row_ts_ms(row: Mapping[str, Any]) -> int:
@@ -703,7 +919,7 @@ def merge_portfolio_balances_rows(
     merged_cash = [item[1] for item in cash_latest.values()]
     merged_rows = [*merged_positions, *merged_cash, *passthrough_rows]
     merged_rows.sort(key=_portfolio_balance_sort_key)
-    return merged_rows
+    return [enrich_row_with_canonical_naming(row) for row in merged_rows]
 
 
 _STABLE_BALANCE_ASSETS = frozenset({"USD", "USDT", "USDC", "DAI", "FDUSD", "USDE"})
@@ -735,7 +951,7 @@ def _row_exchange_hint(row: Mapping[str, Any]) -> str:
     if "." not in instrument_id:
         return ""
     suffix = instrument_id.split(".", maxsplit=1)[1]
-    return suffix.split("_", maxsplit=1)[0].lower()
+    return suffix.lower()
 
 
 def _row_asset_hint(row: Mapping[str, Any]) -> str:
@@ -760,20 +976,50 @@ def _row_contract_key(
         instrument_text.split(".", maxsplit=1)[0] if instrument_text else "",
     )
     asset_hint = _row_asset_hint(row)
+    asset_matches: list[ContractCatalogEntry] = []
 
     for contract in contracts:
         contract_exchange = decode_text(contract.exchange).strip().lower()
         if contract_exchange != exchange:
             continue
         base_asset, _quote_asset = normalize_symbol_parts(symbol=contract.symbol)
-        contract_id = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
+        contract_id = contract_id_for_leg(
+            exchange=contract.exchange,
+            symbol=contract.symbol,
+            instrument_id=contract.instrument_id,
+        )
         if instrument_signature:
-            contract_signature = _normalized_symbol_signature(contract.symbol)
+            contract_signature = _normalized_symbol_signature(
+                _raw_symbol_from_instrument_id(contract.instrument_id) or contract.symbol,
+            )
             if contract_signature and instrument_signature.startswith(contract_signature):
                 return contract_id
         if asset_hint and base_asset == asset_hint:
-            return contract_id
-    return None
+            asset_matches.append(contract)
+
+    if not asset_matches:
+        return None
+
+    want_product_type = "perp" if _is_position_row(dict(row)) else "spot"
+    for contract in asset_matches:
+        naming = canonical_naming_fields(
+            instrument_id=contract.instrument_id,
+            exchange=contract.exchange,
+            symbol=contract.symbol,
+            is_position=False,
+        )
+        if naming.get("product_type") == want_product_type:
+            return contract_id_for_leg(
+                exchange=contract.exchange,
+                symbol=contract.symbol,
+                instrument_id=contract.instrument_id,
+            )
+    first = asset_matches[0]
+    return contract_id_for_leg(
+        exchange=first.exchange,
+        symbol=first.symbol,
+        instrument_id=first.instrument_id,
+    )
 
 
 def enrich_balances_rows(
@@ -786,7 +1032,7 @@ def enrich_balances_rows(
     for source_row in rows:
         row = dict(source_row)
         if row.get("mark_raw") is not None and row.get("mv_raw") is not None:
-            enriched.append(row)
+            enriched.append(enrich_row_with_canonical_naming(row))
             continue
 
         qty = safe_float(
@@ -796,11 +1042,17 @@ def enrich_balances_rows(
         )
         asset_hint = _row_asset_hint(row)
         contract_key = _row_contract_key(row, contracts=contracts)
+        matched_contract: ContractCatalogEntry | None = None
         if contract_key:
             for contract in contracts:
-                candidate_key = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
+                candidate_key = contract_id_for_leg(
+                    exchange=contract.exchange,
+                    symbol=contract.symbol,
+                    instrument_id=contract.instrument_id,
+                )
                 if candidate_key != contract_key:
                     continue
+                matched_contract = contract
                 base_asset, _quote_asset = normalize_symbol_parts(symbol=contract.symbol)
                 current_asset = decode_text(row.get("asset") or row.get("coin") or row.get("base")).strip().upper()
                 if base_asset and (
@@ -826,7 +1078,35 @@ def enrich_balances_rows(
         if qty is not None and mark is not None:
             row["mv_raw"] = qty * mark
 
-        enriched.append(row)
+        naming_instrument_id: Any = None
+        naming_exchange: Any = None
+        naming_symbol: Any = None
+        if matched_contract is not None:
+            matched_product_type = canonical_naming_fields(
+                instrument_id=matched_contract.instrument_id,
+                exchange=matched_contract.exchange,
+                symbol=matched_contract.symbol,
+                is_position=False,
+            ).get("product_type")
+            if _is_position_row(row):
+                naming_exchange = matched_contract.exchange
+                naming_symbol = matched_contract.symbol
+                naming_instrument_id = matched_contract.instrument_id or None
+            elif matched_product_type == "spot":
+                naming_exchange = matched_contract.exchange
+                naming_symbol = matched_contract.symbol
+                naming_instrument_id = matched_contract.instrument_id or None
+
+        enriched.append(
+            enrich_row_with_canonical_naming(
+                row,
+                instrument_id=naming_instrument_id,
+                exchange=naming_exchange,
+                symbol=naming_symbol,
+                asset=row.get("asset"),
+                inventory_asset=row.get("coin") or row.get("asset") or row.get("base"),
+            ),
+        )
     return enriched
 
 
@@ -843,7 +1123,13 @@ def filter_balance_rows_for_contract_scope(
             allowed_assets.add(base_asset)
         if quote_asset:
             allowed_assets.add(quote_asset)
-        allowed_contracts.add(contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol))
+        allowed_contracts.add(
+            contract_id_for_leg(
+                exchange=contract.exchange,
+                symbol=contract.symbol,
+                instrument_id=contract.instrument_id,
+            ),
+        )
 
     filtered: list[dict[str, Any]] = []
     for source_row in rows:
@@ -883,13 +1169,17 @@ def build_legs_payload(
     current_ts_ms = now_ms() if now_ms_value is None else int(now_ms_value)
     out: dict[str, Any] = {}
     for contract in contracts:
-        contract_id = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
+        contract_id = contract_id_for_leg(
+            exchange=contract.exchange,
+            symbol=contract.symbol,
+            instrument_id=contract.instrument_id,
+        )
         row = market_rows.get(contract_id) or {}
         bid = safe_float(row.get("bid"))
         ask = safe_float(row.get("ask"))
         ts_ms = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp"))
         age_ms = (current_ts_ms - ts_ms) if ts_ms else None
-        out[contract_id] = {
+        leg = {
             "contract_id": contract_id,
             "exchange": contract.exchange,
             "symbol": contract.symbol,
@@ -900,6 +1190,18 @@ def build_legs_payload(
             "age_ms": age_ms,
             "state": row.get("state") or "",
         }
+        leg.update(
+            canonical_naming_fields(
+                instrument_id=row.get("instrument_id") or contract.instrument_id,
+                exchange=contract.exchange,
+                symbol=contract.symbol,
+                asset=None,
+                inventory_asset=None,
+                is_position=False,
+            ),
+        )
+        leg.setdefault("coin", leg.get("base_asset") or leg.get("inventory_asset") or "")
+        out[contract_id] = leg
     return out
 
 
@@ -1564,7 +1866,7 @@ def build_trades_rows(  # noqa: C901
             else:
                 row_id = row_id or f"{strategy_id}:trade:{out['ts_ms']}:{index}"
         out["row_id"] = row_id
-        filtered.append(out)
+        filtered.append(enrich_row_with_canonical_naming(out))
     if since_seq is not None:
         # Delta mode must stream oldest unseen seq first to avoid skipping rows.
         filtered.sort(key=lambda item: safe_int(item.get("seq")) or 0)

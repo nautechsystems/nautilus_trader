@@ -40,12 +40,14 @@ from nautilus_trader.flux.common.config import FluxIdentityConfig
 from nautilus_trader.flux.common.config import FluxRedisConfig
 from nautilus_trader.flux.common.config import FluxVenuesConfig
 from nautilus_trader.flux.common.config import validate_identifier_part
+from nautilus_trader.flux.pulse import PulseControlPlane
 from nautilus_trader.flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
 DEFAULT_TOKENMM_BASE_PATH = "/tokenmm"
 TOKENMM_ALIAS_BASE_PATH = "/tokenm"
+DEFAULT_PULSE_BASE_PATH = "/pulse"
 
 
 def _repo_root() -> Path:
@@ -53,6 +55,7 @@ def _repo_root() -> Path:
 
 
 DEFAULT_FLUXBOARD_DIST = _repo_root() / "fluxboard" / "dist"
+DEFAULT_PULSE_DIST = _repo_root() / "pulse-ui" / "dist"
 
 
 def _optional_text(value: Any) -> str | None:
@@ -95,6 +98,17 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Path to Fluxboard dist directory (defaults to repo-root/fluxboard/dist).",
     )
+    parser.add_argument(
+        "--serve-pulse",
+        action="store_true",
+        help="Serve built Pulse static assets at /pulse/* with SPA fallback.",
+    )
+    parser.add_argument(
+        "--pulse-dist",
+        type=Path,
+        default=None,
+        help="Path to Pulse dist directory (defaults to repo-root/pulse-ui/dist).",
+    )
     return parser.parse_args()
 
 
@@ -119,9 +133,16 @@ def _build_contract_catalog(config: dict[str, Any]) -> tuple[ContractCatalogEntr
             raise ValueError(f"contracts[{index}] must be a table")
         exchange = _optional_text(item.get("exchange"))
         symbol = _optional_text(item.get("symbol"))
+        instrument_id = _optional_text(item.get("instrument_id")) or ""
         if not exchange or not symbol:
             raise ValueError(f"contracts[{index}] requires non-empty exchange and symbol")
-        out.append(ContractCatalogEntry(exchange=exchange, symbol=symbol))
+        out.append(
+            ContractCatalogEntry(
+                exchange=exchange,
+                symbol=symbol,
+                instrument_id=instrument_id,
+            ),
+        )
 
     if not out:
         venues = _table(config, "venues")
@@ -138,10 +159,17 @@ def _build_contract_catalog(config: dict[str, Any]) -> tuple[ContractCatalogEntr
             ),
         )
 
-    deduped: dict[tuple[str, str], ContractCatalogEntry] = {}
+    deduped: dict[tuple[str, str, str], ContractCatalogEntry] = {}
     for contract in out:
-        key = (contract.exchange.strip().lower(), contract.symbol.strip().upper())
-        deduped[key] = ContractCatalogEntry(exchange=key[0], symbol=key[1])
+        exchange = contract.exchange.strip().lower()
+        symbol = contract.symbol.strip().upper()
+        instrument_id = contract.instrument_id.strip().upper()
+        key = (exchange, symbol, instrument_id)
+        deduped[key] = ContractCatalogEntry(
+            exchange=exchange,
+            symbol=symbol,
+            instrument_id=instrument_id,
+        )
 
     return tuple(deduped.values())
 
@@ -279,6 +307,18 @@ def _resolve_fluxboard_dist_path(args: argparse.Namespace, api_cfg: dict[str, An
     return DEFAULT_FLUXBOARD_DIST
 
 
+def _resolve_pulse_dist_path(args: argparse.Namespace, api_cfg: dict[str, Any]) -> Path:
+    if args.pulse_dist is not None:
+        return args.pulse_dist
+    env_path = _optional_text(os.getenv("PULSE_DIST"))
+    if env_path:
+        return Path(env_path)
+    config_path = _optional_text(api_cfg.get("pulse_dist"))
+    if config_path:
+        return Path(config_path)
+    return DEFAULT_PULSE_DIST
+
+
 def _is_within(parent: Path, candidate: Path) -> bool:
     try:
         candidate.relative_to(parent)
@@ -329,6 +369,39 @@ def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
 
     @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/<path:subpath>")
     def _tokenmm_asset_or_spa(subpath: str) -> Any:
+        normalized = subpath.strip().lstrip("/")
+        candidate = (dist_root / normalized).resolve()
+        if candidate.is_file() and _is_within(dist_root, candidate):
+            return send_from_directory(str(dist_root), normalized)
+        if normalized.startswith("assets/"):
+            abort(404)
+        return _serve_index()
+
+
+def _attach_pulse_routes(app: Any, *, dist_dir: Path) -> None:
+    dist_root = dist_dir.resolve()
+    index_path = dist_root / "index.html"
+    if not index_path.is_file():
+        raise FileNotFoundError(f"Pulse index not found at {index_path}")
+
+    def _serve_index() -> Any:
+        return send_from_directory(str(dist_root), "index.html")
+
+    @app.get(DEFAULT_PULSE_BASE_PATH)
+    @app.get(f"{DEFAULT_PULSE_BASE_PATH}/")
+    def _pulse_index() -> Any:
+        return _serve_index()
+
+    @app.get(f"{DEFAULT_PULSE_BASE_PATH}/assets/<path:asset_path>")
+    def _pulse_assets(asset_path: str) -> Any:
+        normalized = asset_path.strip().lstrip("/")
+        candidate = (dist_root / "assets" / normalized).resolve()
+        if not candidate.is_file() or not _is_within(dist_root, candidate):
+            abort(404)
+        return send_from_directory(str(dist_root / "assets"), normalized)
+
+    @app.get(f"{DEFAULT_PULSE_BASE_PATH}/<path:subpath>")
+    def _pulse_asset_or_spa(subpath: str) -> Any:
         normalized = subpath.strip().lstrip("/")
         candidate = (dist_root / normalized).resolve()
         if candidate.is_file() and _is_within(dist_root, candidate):
@@ -409,11 +482,16 @@ def main() -> None:
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
     )
+    PulseControlPlane().register_routes(app)
 
     serve_fluxboard = args.serve_fluxboard or _env_flag("FLUXBOARD_SERVE_DIST", default=False)
     if serve_fluxboard:
         dist_path = _resolve_fluxboard_dist_path(args, api_cfg)
         _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_path)
+    serve_pulse = args.serve_pulse or _env_flag("PULSE_SERVE_DIST", default=False)
+    if serve_pulse:
+        dist_path = _resolve_pulse_dist_path(args, api_cfg)
+        _attach_pulse_routes(app, dist_dir=dist_path)
 
     host = _resolve_bind_host(config, args)
     port = int(args.port or api_cfg.get("port", 5022))

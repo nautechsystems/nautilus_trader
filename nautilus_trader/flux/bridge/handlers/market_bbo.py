@@ -43,6 +43,7 @@ def _safe_float(value: Any) -> float | None:
 
 def transform_market_bbo(payload: Any, context: CorrelationContext) -> list[WriteOp]:
     row = as_dict(payload)
+    instrument_id = first_text(row.get("instrument_id"))
     exchange = normalize_exchange(
         first_text(row.get("exchange"), row.get("venue"), row.get("market_exchange")),
     )
@@ -71,10 +72,25 @@ def transform_market_bbo(payload: Any, context: CorrelationContext) -> list[Writ
         out["ask"] = ask
 
     keys = FluxRedisKeys(strategy_id=context.strategy_id)
-    return [
+    ops: list[WriteOp] = []
+    if instrument_id:
+        ops.append(
+            SetJSONOp(
+                key=keys.market_last(
+                    exchange=exchange,
+                    base=base,
+                    quote=quote,
+                    instrument_id=instrument_id,
+                ),
+                value=out,
+                ttl_seconds=MARKET_LAST_TTL_SECONDS,
+            ),
+        )
+    ops.append(
         SetJSONOp(
             key=keys.market_last(exchange=exchange, base=base, quote=quote),
             value=out,
             ttl_seconds=MARKET_LAST_TTL_SECONDS,
         ),
-    ]
+    )
+    return ops

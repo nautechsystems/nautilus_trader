@@ -57,6 +57,10 @@ const buildPayload = () => ({
           id: 'PLUME_LOGICAL:PLUME:bybit_plume',
           parent_id: 'PLUME_LOGICAL',
           coin: 'PLUME',
+          display_name_short: 'PLUME Perp',
+          display_name_long: 'Bybit PLUME Perp',
+          product_type: 'perp',
+          inventory_asset: 'PLUME',
           venue: 'bybit',
           wallet: 'bybit-unified',
           address: null,
@@ -229,6 +233,14 @@ describe('Balances component', () => {
       ).length
     ).toBeGreaterThan(0);
     expect(screen.queryByText('PLUMEU...YBIT')).not.toBeInTheDocument();
+  });
+
+  it('prefers canonical child display names for instrument rows', async () => {
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('PLUME Perp')).toBeInTheDocument();
+    });
   });
 
   it('surfaces header actions when embedded in dashboard wrapper', async () => {

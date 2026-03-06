@@ -57,7 +57,28 @@ def test_tokenmm_stack_script_defaults_to_safe_non_trading_runtime() -> None:
     assert 'ALLOW_MISSING_KEYS="${TOKENMM_ALLOW_MISSING_KEYS:-0}"' in script
     assert 'BALANCES_READY_TIMEOUT_SECS="${TOKENMM_BALANCES_READY_TIMEOUT_SECS:-90}"' in script
     assert 'STRICT_BALANCES_READY_CHECK="${TOKENMM_STRICT_BALANCES_READY_CHECK:-1}"' in script
+    assert "local smoke only; production service management belongs in Pulse" in script
+    assert "live deployments are not supported via tokenmm_stack.sh" in script
     assert '[tokenmm-stack] runtime intent: mode=${MODE} confirm_live=${CONFIRM_LIVE} enable_execution=${ENABLE_EXECUTION}' in script
+
+
+def test_tokenmm_stack_script_manages_portfolio_aggregator_service() -> None:
+    script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+
+    assert "nautilus_trader.flux.runners.tokenmm.run_portfolio" in script
+    assert 'start_process "portfolio"' in script
+    assert 'stop_process "portfolio"' in script
+    assert 'service_status_line "portfolio"' in script
+
+
+def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
+    script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+
+    assert 'SKIP_PULSE_BUILD="${TOKENMM_SKIP_PULSE_BUILD:-0}"' in script
+    assert "building pulse ui" in script
+    assert 'pnpm --dir "${ROOT_DIR}/pulse-ui" build' in script
+    assert "--serve-pulse" in script
+    assert '"PULSE_SERVE_DIST=1"' in script
 
 
 def test_tokenmm_stack_script_requires_explicit_tokenmm_env_and_never_falls_back_to_makerv3() -> None:
@@ -138,10 +159,9 @@ def test_tokenmm_stack_env_example_defaults_to_safe_paper_without_execution() ->
     assert "TOKENMM_API_HOST=127.0.0.1" in env_example
     assert "TOKENMM_EXPECTED_NODES=0" in env_example
     assert "deploy/tokenmm/tokenmm.live.toml" in env_example
-    assert "# Live trading opt-in (set all three together):" in env_example
-    assert "# TOKENMM_MODE=live" in env_example
-    assert "# TOKENMM_CONFIRM_LIVE=1" in env_example
-    assert "# TOKENMM_ENABLE_EXECUTION=1" in env_example
+    assert "Production/live service management is unsupported through this env file." in env_example
+    assert "/etc/flux/common.env" in env_example
+    assert "/pulse" in env_example
 
 
 def test_tokenmm_stack_script_rolls_back_partial_startup_on_failure() -> None:
@@ -287,6 +307,45 @@ def test_tokenmm_live_configs_use_generic_node_venues_contract() -> None:
         assert "[node.binance]" not in config
 
 
+def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
+    repo_root = _repo_root()
+    service_template = _read(repo_root / "deploy/systemd/flux@.service")
+    target_unit = _read(repo_root / "deploy/tokenmm/systemd/flux-tokenmm.target")
+    install_script = _read(repo_root / "scripts/deploy/install_tokenmm_systemd.sh")
+    common_env = _read(repo_root / "deploy/tokenmm/systemd/common.env.example")
+    sudoers = _read(repo_root / "deploy/tokenmm/systemd/flux-pulse.sudoers")
+
+    assert "EnvironmentFile=-/etc/flux/common.env" in service_template
+    assert "EnvironmentFile=/etc/flux/%i.env" in service_template
+    assert 'ExecStart=/bin/bash -lc \'cd "${WORKDIR:?}" && exec ${CMD}\'' in service_template
+    assert 'if [ -n "${PORT:-}" ]; then' in service_template
+    assert "SyslogIdentifier=flux-%i" in service_template
+
+    assert "Wants=flux@tokenmm-api.service" in target_unit
+    assert "Wants=flux@tokenmm-portfolio.service" in target_unit
+    assert "Wants=flux@tokenmm-bridge.service" in target_unit
+    assert "Wants=flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in target_unit
+    assert "Wants=flux@tokenmm-node-plumeusdt_bybit_spot_makerv3.service" in target_unit
+    assert "Wants=flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service" in target_unit
+    assert "Wants=flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service" in target_unit
+
+    assert "deploy/tokenmm/tokenmm.live.toml" in install_script
+    assert "/etc/flux" in install_script
+    assert "/etc/sudoers.d/flux-pulse" in install_script
+    assert "tokenmm-portfolio" in install_script
+    assert 'service_id="tokenmm-node-${strategy_id}"' in install_script
+    assert "tokenmm-api" in install_script
+
+    assert "TOKENMM_REDIS_PASSWORD=" in common_env
+    assert "BYBIT_API_KEY=" in common_env
+    assert "BINANCE_API_KEY=" in common_env
+    assert "OKX_API_KEY=" in common_env
+
+    assert "/usr/bin/systemctl start flux@*" in sudoers
+    assert "/usr/bin/systemctl stop flux@*" in sudoers
+    assert "/usr/bin/systemctl restart flux@*" in sudoers
+    assert "/usr/bin/journalctl -u flux@*" in sudoers
+
 def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_bounded_lookback() -> None:
     repo_root = _repo_root()
     config_paths = [
@@ -329,6 +388,15 @@ def test_tokenmm_registry_uses_execution_scoped_ids_not_tokenmm_clone_ids() -> N
         assert f'"{strategy_id}"' in config
     assert "tokenmm_plume_makerv3" not in config
     assert 'host = "0.0.0.0"' in config
+
+
+def test_tokenmm_api_contract_catalog_lists_distinct_plume_spot_and_perp_instruments() -> None:
+    config = _read(_repo_root() / "deploy/tokenmm/tokenmm.live.toml")
+
+    assert 'instrument_id = "PLUMEUSDT-LINEAR.BYBIT"' in config
+    assert 'instrument_id = "PLUMEUSDT-SPOT.BYBIT"' in config
+    assert 'instrument_id = "PLUMEUSDT.BINANCE_SPOT"' in config
+    assert 'instrument_id = "PLUME-USDT-SWAP.OKX"' in config
 
 
 def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets() -> None:
@@ -374,15 +442,15 @@ def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets(
             assert line in config
 
 
-def test_deploy_env_examples_default_to_safe_paper_profiles_and_explicit_live_opt_in() -> None:
+def test_deploy_env_examples_default_to_safe_paper_profiles_and_direct_prod_rejection() -> None:
     tokenmm_env = _read(_repo_root() / "deploy/tokenmm/tokenmm_stack.env.example")
 
     assert "TOKENMM_MODE=paper" in tokenmm_env
     assert "TOKENMM_CONFIRM_LIVE=0" in tokenmm_env
     assert "TOKENMM_ENABLE_EXECUTION=0" in tokenmm_env
-    assert "# TOKENMM_MODE=live" in tokenmm_env
-    assert "# TOKENMM_CONFIRM_LIVE=1" in tokenmm_env
-    assert "# TOKENMM_ENABLE_EXECUTION=1" in tokenmm_env
+    assert "Production/live service management is unsupported through this env file." in tokenmm_env
+    assert "sudo scripts/deploy/install_tokenmm_systemd.sh" in tokenmm_env
+    assert "http://127.0.0.1:5022/pulse" in tokenmm_env
 
 
 def test_deploy_stack_scripts_use_package_runner_entrypoints() -> None:
@@ -411,35 +479,36 @@ def test_deploy_docs_make_runtime_intent_and_reconciliation_guardrails_explicit(
     strategies_readme = _read(_repo_root() / "deploy/tokenmm/strategies/README.md")
     examples_readme = _read(_repo_root() / "examples/live/makerv3/README.md")
 
-    assert "defaults to paper mode with execution disabled" in readme
-    assert "Runtime flags win over the TOML [flux]/[node] values." in readme
+    assert "Supported production lifecycle: install with systemd, then manage jobs from Pulse." in readme
+    assert "tokenmm_stack.sh` is local smoke only" in readme
     assert "TOKENMM_MODE=paper" in readme
     assert "TOKENMM_CONFIRM_LIVE=0" in readme
     assert "TOKENMM_ENABLE_EXECUTION=0" in readme
-    assert "TOKENMM_MODE=live" in readme
-    assert "TOKENMM_CONFIRM_LIVE=1" in readme
-    assert "TOKENMM_ENABLE_EXECUTION=1" in readme
     assert "TOKENMM_ALLOW_MISSING_KEYS=1" in readme
     assert "GET /api/v1/params?profile=tokenmm" in readme
     assert "GET /api/v1/balances?profile=tokenmm" in readme
     assert "GET /api/v1/trades?profile=tokenmm" in readme
+    assert "POST /api/pulse/jobs/group/tokenmm/restart" in readme
     assert "nautilus_trader.flux.runners.tokenmm.run_node" in readme
+    assert "nautilus_trader.flux.runners.tokenmm.run_portfolio" in readme
     assert "nautilus_trader.flux.runners.tokenmm.run_bridge" in readme
     assert "nautilus_trader.flux.runners.tokenmm.run_api" in readme
     assert "deploy/makerv3" not in readme
     assert "runners.makerv3" not in readme
 
-    assert "paper mode with execution disabled" in strategies_readme
+    assert "Production node lifecycle is managed from Pulse via flux@ units." in strategies_readme
     assert "`exec_reconciliation_lookback_mins`" in strategies_readme
     assert "`15`" in strategies_readme
     assert "filter_unclaimed_external_orders = true" in strategies_readme
     assert "filter_position_reports = false" in strategies_readme
     assert "nautilus_trader.flux.runners.tokenmm.run_node" in strategies_readme
+    assert "/etc/flux/tokenmm-node-" in strategies_readme
     assert "deploy/makerv3" not in strategies_readme
     assert "runners.makerv3" not in strategies_readme
 
     assert "Production deploy docs default to paper/no-exec smoke first." in examples_readme
     assert "`deploy/tokenmm/README.md`" in examples_readme
+    assert "Production management lives behind Pulse at `/pulse`." in examples_readme
     assert "deploy/makerv3" not in examples_readme
     assert "nautilus_trader.flux.runners.makerv3" not in examples_readme
 
@@ -456,6 +525,9 @@ def test_flux_prod_docs_reference_tokenmm_runner_namespace() -> None:
     assert "nautilus_trader.flux.runners.makerv3.run_bridge" not in bridge_doc
 
     assert "nautilus_trader.flux.runners.tokenmm.run_node" in runbook
+    assert "nautilus_trader.flux.runners.tokenmm.run_portfolio" in runbook
     assert "nautilus_trader.flux.runners.tokenmm.run_bridge" in runbook
     assert "nautilus_trader.flux.runners.tokenmm.run_api" in runbook
+    assert "supported production lifecycle is Pulse-first" in runbook
+    assert "bootstrap or disaster recovery only" in runbook
     assert "nautilus_trader.flux.runners.makerv3" not in runbook

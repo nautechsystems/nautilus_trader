@@ -96,6 +96,7 @@ type EnrichedRow = SignalStrategy & {
   trading_enabled: TradingFilterValue;
   exchange: string;  // Combined exchanges from legs
   coin: string;  // Combined coins from legs
+  market_type: string;
   // Flattened classification metadata for filtering/grouping
   class?: string;
   venue_prefix?: string;
@@ -126,6 +127,7 @@ const SIGNAL_FILTERS: ColumnFilter[] = [
   { key: 'trading_enabled', label: 'Trading', type: 'select', options: TRADING_FILTER_VALUES },
   { key: 'exchange', label: 'Exchange', type: 'text', placeholder: 'bybit, rooster...' },
   { key: 'coin', label: 'Coin', type: 'text', placeholder: 'BTC, ETH...' },
+  { key: 'market_type', label: 'Market', type: 'select', options: ['spot', 'perp'] },
   { key: 'class', label: 'Class', type: 'select', options: ['dex_cex_arb', 'equity_perp_arb'] },
   {
     key: 'venue_prefix',
@@ -226,6 +228,22 @@ function matchesSignalProfile(
 
 function defaultFamilyScopeForProfile(profile: PathProfile): SignalFamilyScope {
   return profile === 'tokenmm' ? 'maker_v3' : 'all';
+}
+
+function getLegDisplayLabel(leg: SignalLeg | null | undefined): string {
+  if (!leg) return 'N/A';
+  return String(
+    leg.display_name_long
+      ?? ([leg.exchange, leg.display_name_short ?? leg.coin].filter(Boolean).join(' ')),
+  ).trim() || 'N/A';
+}
+
+function getLegUnderlying(leg: SignalLeg | null | undefined): string {
+  return String(leg?.inventory_asset ?? leg?.base_asset ?? leg?.coin ?? '').trim();
+}
+
+function getLegMarketType(leg: SignalLeg | null | undefined): string {
+  return String(leg?.product_type ?? leg?.market_type ?? '').trim().toLowerCase();
 }
 
 function getBalanceStatus(row: EnrichedRow) {
@@ -848,7 +866,7 @@ const LegCell: FC<LegCellProps> = memo(({ leg, showQuoted, tooltipBehavior = 'ce
       <div className="max-w-[360px] flex flex-col gap-2">
         <div className="font-mono text-[11px] leading-4 tabular-nums">
           <div className="text-text-muted">
-            {leg.exchange} {leg.coin}
+            {getLegDisplayLabel(leg)}
             <span className="text-text-muted opacity-70"> (Market → Decision)</span>
           </div>
         </div>
@@ -934,7 +952,7 @@ const LegCell: FC<LegCellProps> = memo(({ leg, showQuoted, tooltipBehavior = 'ce
           onMouseLeave={handleMouseLeave}
         >
           <div className="text-text-muted text-xs flex items-center">
-            {leg.exchange} {leg.coin}
+            {getLegDisplayLabel(leg)}
             {fxBadge}
             {tooltipBehavior === 'icon' ? advancedIcon : null}
           </div>
@@ -2012,7 +2030,11 @@ export default function SignalTable({
         .filter((value): value is string => typeof value === 'string' && value.length > 0)
         .join(' ');
       const coins = orderedLegs
-        .map((entry) => entry.leg?.coin)
+        .map((entry) => getLegUnderlying(entry.leg))
+        .filter((value): value is string => typeof value === 'string' && value.length > 0)
+        .join(' ');
+      const marketTypes = orderedLegs
+        .map((entry) => getLegMarketType(entry.leg))
         .filter((value): value is string => typeof value === 'string' && value.length > 0)
         .join(' ');
       const ageData = computeStrategyAge(row, serverNowMs);
@@ -2043,6 +2065,7 @@ export default function SignalTable({
         trading_enabled: tradingFilter,
         exchange: exchanges,
         coin: coins,
+        market_type: marketTypes,
         class: meta.class,
         venue_prefix: meta.venue_prefix,
         chain: meta.chain,

@@ -460,6 +460,42 @@ describe('SignalTable Behavioral Tests', () => {
         expect(within(legBCell!).getByText(/1\.2611/)).toBeInTheDocument();  // Ask
       });
     });
+
+    it('prefers canonical long leg labels when provided', async () => {
+      const strategy = createMockStrategy('canonical_leg_labels', {
+        legs: {
+          A: {
+            exchange: 'bybit',
+            coin: 'PLUME',
+            display_name_short: 'PLUME Perp',
+            display_name_long: 'Bybit PLUME Perp',
+            product_type: 'perp',
+            decision_bid: 1.2345,
+            decision_ask: 1.2456,
+            update_time: '2024-01-01 12:00:00',
+          },
+          B: {
+            exchange: 'binance_spot',
+            coin: 'PLUME',
+            display_name_short: 'PLUME Spot',
+            display_name_long: 'Binance PLUME Spot',
+            product_type: 'spot',
+            decision_bid: 1.2500,
+            decision_ask: 1.2611,
+            update_time: '2024-01-01 12:00:00',
+          },
+        },
+      });
+
+      initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
+
+      render(<SignalTable />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Bybit PLUME Perp')).toBeInTheDocument();
+        expect(screen.getByText('Binance PLUME Spot')).toBeInTheDocument();
+      });
+    });
   });
 
   describe('WebSocket Integration', () => {

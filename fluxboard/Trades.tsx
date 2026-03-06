@@ -1,7 +1,7 @@
 // Trades blotter with server-side pagination, filtering, and live updates
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { api } from './api';
+import { api, deriveCanonicalNaming } from './api';
 import { socket } from './sockets';
 import {
   useTradesStore,
@@ -39,6 +39,7 @@ const DEV_TRADES_PERF_HARNESS = typeof import.meta !== 'undefined'
 
 const TRADE_FILTERS: ColumnFilter[] = [
   { key: 'coin', label: 'Coin', type: 'text', placeholder: 'BTC, ETH...' },
+  { key: 'market_type', label: 'Market', type: 'select', options: ['spot', 'perp'] },
   { key: 'exchange', label: 'Exchange', type: 'text', placeholder: 'bybit, rooster...' },
   { key: 'side', label: 'Side', type: 'select', options: ['buy', 'sell'] },
   { key: 'signal_id', label: 'Signal', type: 'text', placeholder: 'Strategy ID...' },
@@ -77,27 +78,6 @@ const normalizeTradeSide = (value: unknown): string => {
   if (text === '1' || text === 'buy' || text === 'bid') return 'buy';
   if (text === '2' || text === 'sell' || text === 'ask') return 'sell';
   return text;
-};
-
-const deriveCoinFromSymbol = (rawSymbol: unknown): string | undefined => {
-  const symbol = String(rawSymbol ?? '').trim().toUpperCase();
-  if (!symbol) return undefined;
-  const baseSymbolFromVenue = symbol.split('.')[0] || symbol;
-  const baseSymbolFromSlash = baseSymbolFromVenue.split('/')[0] || baseSymbolFromVenue;
-  const baseSymbol = baseSymbolFromSlash.split('-')[0] || baseSymbolFromSlash;
-  for (const quote of ['USDT', 'USDC', 'USD', 'PERP']) {
-    if (baseSymbol.endsWith(quote) && baseSymbol.length > quote.length) {
-      return baseSymbol.slice(0, -quote.length);
-    }
-  }
-  return baseSymbol || undefined;
-};
-
-const deriveExchangeFromInstrument = (instrumentId: unknown): string | undefined => {
-  const text = String(instrumentId ?? '').trim();
-  if (!text) return undefined;
-  const suffix = text.split('.').pop()?.trim().toLowerCase();
-  return suffix || undefined;
 };
 
 const coerceTradeTsMs = (value: unknown): number | undefined => {
@@ -197,19 +177,26 @@ const normalizeTradeEventLike = (candidate: any): any => {
 
   const instrumentId = String(row.instrument_id ?? '').trim();
   const symbol = String(row.symbol ?? instrumentId.split('.')[0] ?? '').trim();
-
-  const coinText = String(row.coin ?? row.asset ?? row.base_currency ?? '').trim();
-  if (!coinText) {
-    const derived = deriveCoinFromSymbol(symbol);
-    if (derived) row.coin = derived;
-  }
-
   const exchangeText = String(row.exchange ?? row.venue ?? '').trim();
-  if (!exchangeText) {
-    const derived = deriveExchangeFromInstrument(instrumentId);
-    if (derived) row.exchange = derived;
-  } else {
+  const coinText = String(row.coin ?? row.asset ?? row.base_currency ?? '').trim();
+  const naming = deriveCanonicalNaming(row, {
+    exchange: exchangeText,
+    symbol,
+    asset: coinText,
+    isPosition: false,
+  });
+
+  Object.assign(row, naming);
+
+  if (!coinText) {
+    const derivedCoin = String(naming.inventory_asset ?? naming.base_asset ?? '').trim().toUpperCase();
+    if (derivedCoin) row.coin = derivedCoin;
+  }
+  if (exchangeText) {
     row.exchange = exchangeText.toLowerCase();
+  } else {
+    const derivedExchange = String(naming.venue ?? naming.venue_root ?? '').trim().toLowerCase();
+    if (derivedExchange) row.exchange = derivedExchange;
   }
 
   row.side = normalizeTradeSide(row.side);
@@ -280,6 +267,7 @@ const normalizePageSize = (value: unknown): number => {
 const hasActiveFilters = (filters: FilterValues): boolean => {
   return Boolean(
     (filters.coin ?? '').trim()
+    || (filters.market_type ?? '').trim()
     || (filters.exchange ?? '').trim()
     || (filters.side ?? '').trim()
     || (filters.signal_id ?? '').trim(),
@@ -300,8 +288,16 @@ const rowMatchesFilters = (row: any, filters: FilterValues): boolean => {
 
   const exchangeFilter = (filters.exchange ?? '').trim().toLowerCase();
   if (exchangeFilter) {
-    const exchangeValue = String(row?.exchange ?? '').toLowerCase();
+    const exchangeValue = String(row?.venue ?? row?.exchange ?? '').toLowerCase();
     if (exchangeValue !== exchangeFilter) {
+      return false;
+    }
+  }
+
+  const marketTypeFilter = (filters.market_type ?? '').trim().toLowerCase();
+  if (marketTypeFilter) {
+    const marketTypeValue = String(row?.product_type ?? row?.market_type ?? '').toLowerCase();
+    if (marketTypeValue !== marketTypeFilter) {
       return false;
     }
   }
@@ -1123,6 +1119,20 @@ export default function Trades({
           time: normalizedEventCandidate?.time,
           coin: normalizedEventCandidate?.coin,
           exchange: normalizedEventCandidate?.exchange,
+          instrument_id: normalizedEventCandidate?.instrument_id,
+          instrument_uid: normalizedEventCandidate?.instrument_uid,
+          venue: normalizedEventCandidate?.venue,
+          venue_root: normalizedEventCandidate?.venue_root,
+          product_type: normalizedEventCandidate?.product_type,
+          market_type: normalizedEventCandidate?.market_type,
+          contract_type: normalizedEventCandidate?.contract_type,
+          raw_symbol: normalizedEventCandidate?.raw_symbol,
+          base_asset: normalizedEventCandidate?.base_asset,
+          quote_asset: normalizedEventCandidate?.quote_asset,
+          pair: normalizedEventCandidate?.pair,
+          inventory_asset: normalizedEventCandidate?.inventory_asset,
+          display_name_short: normalizedEventCandidate?.display_name_short,
+          display_name_long: normalizedEventCandidate?.display_name_long,
           side: normalizedEventCandidate?.side,
           price: normalizedEventCandidate?.price,
           qty: normalizedEventCandidate?.qty,
@@ -1372,6 +1382,9 @@ export default function Trades({
         const data = (rowsToRender || []).map((r) => ({
           time: r.time || '',
           coin: r.coin || '',
+          market_type: (r as any).product_type || (r as any).market_type || '',
+          display_name_short: (r as any).display_name_short || '',
+          instrument_id: (r as any).instrument_id || '',
           exchange: r.exchange || '',
           side: r.side || '',
           price: r.price ?? '',

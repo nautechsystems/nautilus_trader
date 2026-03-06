@@ -17,6 +17,7 @@ import type {
   BalancesResponse,
   BalanceParentRow,
   BalanceChildRow,
+  CanonicalNamingFields,
   Alert,
   RawStrategy,
   BalanceSummary,
@@ -178,9 +179,15 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
     const canonical = normalizeCoinHint(row);
     const parentId = `${canonical}_LOGICAL`;
     const venue = String(row.exchange ?? row.venue ?? 'unknown').trim().toLowerCase() || 'unknown';
+    const naming = deriveCanonicalNaming(row, {
+      exchange: venue,
+      symbol: String(row.symbol ?? '').trim(),
+      asset: canonical,
+      isPosition: String(row.kind ?? '').trim().toLowerCase() === 'position',
+    });
     const childCoin = (() => {
       const preferred = toUpperToken(
-        row.coin ?? row.base_currency ?? row.base ?? row.asset ?? canonical,
+        row.inventory_asset ?? row.base_asset ?? row.coin ?? row.base_currency ?? row.base ?? row.asset ?? canonical,
         canonical,
       );
       if (preferred === 'UNKNOWN' && canonical !== 'UNKNOWN') {
@@ -213,6 +220,7 @@ function normalizeFlatBalancesRows(rows: unknown[]): BalanceParentRow[] {
       id: String(row.row_id ?? `${parentId}:${venue}:${childCoin}:${index}`),
       parent_id: parentId,
       coin: childCoin,
+      ...naming,
       venue,
       wallet: String(row.account ?? row.account_id ?? '').trim() || null,
       address: String(row.address ?? '').trim() || null,
@@ -471,6 +479,146 @@ function deriveExchangeFromInstrument(instrumentId: unknown): string | undefined
   return suffix || undefined;
 }
 
+function deriveRawSymbolFromInstrument(instrumentId: unknown): string {
+  const text = String(instrumentId ?? '').trim().split('.')[0]?.trim().toUpperCase() || '';
+  return stripContractSuffix(text).symbol;
+}
+
+function deriveContractTypeFromInstrument(instrumentId: unknown): string | undefined {
+  const text = String(instrumentId ?? '').trim().split('.')[0]?.trim().toUpperCase() || '';
+  return stripContractSuffix(text).contractType;
+}
+
+function stripContractSuffix(rawSymbol: string): { symbol: string; contractType?: string } {
+  const text = rawSymbol.trim().toUpperCase();
+  if (!text) return { symbol: '' };
+  for (const [suffix, contractType] of [
+    ['-LINEAR', 'linear'],
+    ['-SWAP', 'swap'],
+    ['-INVERSE', 'inverse'],
+    ['-PERP', 'perp'],
+    ['-SPOT', 'spot'],
+  ] as const) {
+    if (text.endsWith(suffix) && text.length > suffix.length) {
+      return { symbol: text.slice(0, -suffix.length), contractType };
+    }
+  }
+  return { symbol: text };
+}
+
+function deriveQuoteAssetFromSymbol(rawSymbol: string): string | undefined {
+  const text = rawSymbol.trim().toUpperCase();
+  if (!text) return undefined;
+  const { symbol } = stripContractSuffix(text);
+  const pairText = symbol.replace(/-/g, '_');
+  if (pairText.includes('/')) {
+    return pairText.split('/', 2)[1]?.trim().toUpperCase() || undefined;
+  }
+  if (pairText.includes('_')) {
+    return pairText.split('_', 2)[1]?.trim().toUpperCase() || undefined;
+  }
+  for (const quote of ['USDT', 'USDC', 'PUSD', 'USDE', 'USD', 'BTC', 'ETH', 'EUR', 'GBP', 'JPY', 'BNB']) {
+    if (pairText.endsWith(quote) && pairText.length > quote.length) {
+      return quote;
+    }
+  }
+  return undefined;
+}
+
+function deriveVenueRoot(
+  rawVenueRoot: unknown,
+  venue: unknown,
+  exchange: unknown,
+  instrumentId: unknown,
+): string {
+  const explicit = String(rawVenueRoot ?? '').trim().toLowerCase();
+  if (explicit) return explicit;
+  const venueText = String(venue ?? '').trim().toLowerCase();
+  if (venueText) return venueText.split('_')[0] || venueText;
+  const exchangeText = String(exchange ?? '').trim().toLowerCase();
+  if (exchangeText) return exchangeText.split('_')[0] || exchangeText;
+  const derived = deriveExchangeFromInstrument(instrumentId);
+  return (derived ?? '').split('_')[0] || (derived ?? '');
+}
+
+export function deriveCanonicalNaming(
+  raw: Record<string, unknown>,
+  {
+    exchange,
+    symbol,
+    asset,
+    isPosition = false,
+  }: {
+    exchange?: string;
+    symbol?: string;
+    asset?: string;
+    isPosition?: boolean;
+  } = {},
+): CanonicalNamingFields {
+  const instrumentId = String(raw.instrument_id ?? '').trim().toUpperCase();
+  const venue = String(raw.venue ?? '').trim().toUpperCase()
+    || String(exchange ?? raw.exchange ?? deriveExchangeFromInstrument(instrumentId) ?? '').trim().toUpperCase();
+  const venueRoot = deriveVenueRoot(raw.venue_root, venue, exchange ?? raw.exchange, instrumentId);
+  const derivedRawSymbol = deriveRawSymbolFromInstrument(instrumentId);
+  const rawSymbolSource = raw.raw_symbol ?? (derivedRawSymbol || symbol || raw.symbol || '');
+  const stripped = stripContractSuffix(String(rawSymbolSource).trim().toUpperCase());
+  const rawSymbol = stripped.symbol;
+  const explicitContractType = String(raw.contract_type ?? '').trim().toLowerCase();
+  let contractType = explicitContractType || deriveContractTypeFromInstrument(instrumentId) || stripped.contractType || '';
+  if (!contractType) {
+    if (venue.endsWith('_SPOT')) contractType = 'spot';
+    else if (venue.endsWith('_PERP')) contractType = 'perp';
+    else if (isPosition) contractType = 'perp';
+    else if (rawSymbol) contractType = 'spot';
+    else contractType = 'cash';
+  }
+  const explicitProductType = String(raw.product_type ?? raw.market_type ?? '').trim().toLowerCase();
+  const productType = explicitProductType || (['linear', 'swap', 'inverse', 'perp'].includes(contractType) ? 'perp' : 'spot');
+  const pairText = String(raw.pair ?? symbol ?? raw.symbol ?? '').trim().toUpperCase();
+  const baseAsset = String(
+    raw.base_asset ??
+      raw.inventory_asset ??
+      deriveCoinFromSymbol(pairText || stripped.symbol || rawSymbol) ??
+      asset ??
+      raw.coin ??
+      raw.asset ??
+      '',
+  ).trim().toUpperCase();
+  const quoteAsset = String(raw.quote_asset ?? deriveQuoteAssetFromSymbol(pairText || rawSymbol) ?? '').trim().toUpperCase();
+  const pair = String(raw.pair ?? ((baseAsset && quoteAsset) ? `${baseAsset}/${quoteAsset}` : (pairText || stripped.symbol || rawSymbol))).trim();
+  const inventoryAsset = String(raw.inventory_asset ?? asset ?? raw.coin ?? raw.asset ?? baseAsset).trim().toUpperCase();
+  const displayAsset = inventoryAsset || baseAsset || rawSymbol;
+  const displayNameShort = String(
+    raw.display_name_short ??
+      (displayAsset ? `${displayAsset} ${productType === 'perp' ? 'Perp' : 'Spot'}` : ''),
+  ).trim();
+  const displayNameLong = String(
+    raw.display_name_long ??
+      ([venueRoot ? `${venueRoot[0]?.toUpperCase() ?? ''}${venueRoot.slice(1)}` : '', displayNameShort].filter(Boolean).join(' ')),
+  ).trim();
+  const instrumentUid = String(
+    raw.instrument_uid ??
+      ([venueRoot, contractType, instrumentId || rawSymbol || inventoryAsset].filter(Boolean).join(':')),
+  ).trim();
+
+  return {
+    instrument_uid: instrumentUid || undefined,
+    instrument_id: instrumentId || undefined,
+    venue: venue || undefined,
+    venue_root: venueRoot || undefined,
+    product_type: productType || undefined,
+    market_type: productType || undefined,
+    contract_type: contractType || undefined,
+    raw_symbol: rawSymbol || undefined,
+    base_asset: baseAsset || undefined,
+    quote_asset: quoteAsset || undefined,
+    pair: pair || undefined,
+    inventory_asset: inventoryAsset || undefined,
+    display_name_short: displayNameShort || undefined,
+    display_name_long: displayNameLong || undefined,
+  };
+}
+
 function normalizeLegacySignalLeg(contractId: string, candidate: unknown): Record<string, unknown> | null {
   if (candidate == null) return null;
   if (typeof candidate !== 'object') {
@@ -485,6 +633,12 @@ function normalizeLegacySignalLeg(contractId: string, candidate: unknown): Recor
   const symbol = String(raw.symbol ?? '').trim();
   const exchangeFromContract = String(contractId || '').split(':')[0]?.trim().toLowerCase() || '';
   const exchange = String(raw.exchange ?? exchangeFromContract).trim().toLowerCase();
+  const naming = deriveCanonicalNaming(raw, {
+    exchange,
+    symbol,
+    asset: String(raw.coin ?? '').trim(),
+    isPosition: false,
+  });
   const coin = String(raw.coin ?? deriveCoinFromSymbol(symbol) ?? '').trim().toUpperCase();
 
   if (!normalized.contract_id) normalized.contract_id = contractId;
@@ -506,6 +660,7 @@ function normalizeLegacySignalLeg(contractId: string, candidate: unknown): Recor
   if (normalized.md_age_ms == null && ageMs !== undefined) normalized.md_age_ms = ageMs;
   if (!normalized.exchange && exchange) normalized.exchange = exchange;
   if (!normalized.coin && coin) normalized.coin = coin;
+  Object.assign(normalized, naming);
   return normalized;
 }
 
@@ -614,6 +769,12 @@ function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed
       row.venue ??
       deriveExchangeFromInstrument(instrumentId),
   ).trim().toLowerCase();
+  const naming = deriveCanonicalNaming(row, {
+    exchange,
+    symbol,
+    asset: coin,
+    isPosition: false,
+  });
   const rowId = String(
     row.row_id ??
       row.trade_id ??
@@ -634,6 +795,7 @@ function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed
     side: normalizeTradeSide(row.side),
     coin,
     exchange,
+    ...naming,
     signal_id: String(row.signal_id ?? row.strategy_id ?? '').trim(),
     order_id: String(row.order_id ?? row.client_order_id ?? '').trim(),
     time:
@@ -1381,6 +1543,7 @@ export const api = {
       offset: String(offset),
       sort: normalizeTradesSortParam(params.sort as string | undefined),
       coin: (params.coin as string) || '',
+      market_type: (params.market_type as string) || '',
       exchange: (params.exchange as string) || '',
       side: (params.side as string) || '',
       signal_id: (params.signal_id as string) || '',
@@ -1673,9 +1836,14 @@ export const api = {
       const strategyId = String(candidate.strategy_id ?? '').trim();
       const params = normalizeParamsMap(candidate.params);
       const runningCandidate = candidate.running;
+      const runningFlag = normalizeTradingFlag(params.bot_on);
       const running =
         typeof runningCandidate === 'boolean'
           ? runningCandidate
+          : runningFlag === '1'
+            ? true
+            : runningFlag === '0'
+              ? false
           : null;
       return {
         ...(row as ParamsResponse),

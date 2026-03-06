@@ -126,6 +126,7 @@ tokenmm_required_strategy_ids = [
 
 [portfolio]
 portfolio_id = "tokenmm"
+inventory_stale_after_ms = 3000
 # Naming convention:
 # - Flux strategy IDs: <execution_venue>_<product>_plumeusdt_makerv3
 # - Reference pricing stays on Binance spot via the `BINANCE_SPOT` venue alias.
@@ -135,11 +136,19 @@ portfolio_id = "tokenmm"
 [[contracts]]
 exchange = "bybit"
 symbol = "PLUME/USDT"
+instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
+
+[[contracts]]
+exchange = "bybit"
+symbol = "PLUME/USDT"
+instrument_id = "PLUMEUSDT-SPOT.BYBIT"
 
 [[contracts]]
 exchange = "binance_spot"
 symbol = "PLUME/USDT"
+instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 
 [[contracts]]
 exchange = "okx"
 symbol = "PLUME/USDT"
+instrument_id = "PLUME-USDT-SWAP.OKX"

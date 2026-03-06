@@ -9,6 +9,7 @@ from contextlib import suppress
 from decimal import Decimal
 from typing import Any
 
+from nautilus_trader.flux.api.payloads import contract_id_for_leg
 from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
 from nautilus_trader.flux.strategies.makerv3 import pricing as pricing_mod
 from nautilus_trader.flux.strategies.makerv3.constants import BLOCKED_STATE_PREFIX
@@ -89,6 +90,7 @@ def _resolve_instrument(strategy: Any, instrument_id: Any) -> Any | None:
 
 def _contract_role_id(strategy: Any, instrument_id: Any) -> str:
     instrument = _resolve_instrument(strategy, instrument_id)
+    instrument_text = _stringify_identifier(instrument_id).strip().upper()
     exchange = _stringify_identifier(getattr(instrument_id, "venue", None)).strip().lower()
     symbol = _stringify_identifier(getattr(instrument, "raw_symbol", ""))
     base = _stringify_identifier(getattr(instrument, "base_currency", None)).upper()
@@ -99,11 +101,10 @@ def _contract_role_id(strategy: Any, instrument_id: Any) -> str:
         quote = quote or parsed_quote
     if not exchange:
         return ""
-    if base and quote:
-        return f"{exchange}:{base}/{quote}"
     if not symbol:
-        symbol = str(instrument_id).split(".", maxsplit=1)[0]
-    return f"{exchange}:{symbol}"
+        symbol = instrument_text.split(".", maxsplit=1)[0]
+    pair = f"{base}/{quote}" if base and quote else symbol
+    return contract_id_for_leg(exchange=exchange, symbol=pair, instrument_id=instrument_text)
 
 
 def _maker_role_map_payload(strategy: Any) -> dict[str, str]:

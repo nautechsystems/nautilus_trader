@@ -486,6 +486,36 @@ def test_create_app_rejects_duplicate_contract_catalog_entries_after_normalizati
         )
 
 
+def test_create_app_allows_same_exchange_pair_when_instrument_ids_differ(
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+            ),
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-SPOT.BYBIT",
+            ),
+        ),
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    assert app is not None
+
+
 def test_params_profile_fanout_returns_multiple_tokenmm_strategies(
     flux_config,
     redis_client,
@@ -1224,6 +1254,7 @@ def test_trades_endpoint_applies_supported_filters_and_sort(
                 "seq": 1,
                 "ts_ms": 1_000,
                 "coin": "AAA",
+                "instrument_id": "AAAUSDT-SPOT.VENUE_A",
                 "exchange": "venue_a",
                 "side": "buy",
             },
@@ -1234,6 +1265,7 @@ def test_trades_endpoint_applies_supported_filters_and_sort(
                 "seq": 2,
                 "ts_ms": 2_000,
                 "coin": "BBB",
+                "instrument_id": "BBBUSDT-LINEAR.VENUE_B",
                 "exchange": "venue_b",
                 "side": "sell",
             },
@@ -1244,6 +1276,7 @@ def test_trades_endpoint_applies_supported_filters_and_sort(
                 "seq": 3,
                 "ts_ms": 3_000,
                 "coin": "AAA",
+                "instrument_id": "AAAUSDT-LINEAR.VENUE_B",
                 "exchange": "venue_b",
                 "side": "buy",
             },
@@ -1270,6 +1303,8 @@ def test_trades_endpoint_applies_supported_filters_and_sort(
         side_body = side_response.get_json()
         signal_response = client.get("/api/v1/trades", query_string={"signal_id": "sig_b"})
         signal_body = signal_response.get_json()
+        market_type_response = client.get("/api/v1/trades", query_string={"market_type": "perp"})
+        market_type_body = market_type_response.get_json()
         sort_asc_response = client.get("/api/v1/trades", query_string={"sort": "asc"})
         sort_asc_body = sort_asc_response.get_json()
         sort_desc_response = client.get("/api/v1/trades", query_string={"sort": "desc"})
@@ -1291,6 +1326,10 @@ def test_trades_endpoint_applies_supported_filters_and_sort(
     assert [row["row_id"] for row in signal_body["data"]["rows"]] == ["t-2"]
     assert all(row["signal_id"] == "sig_b" for row in signal_body["data"]["rows"])
 
+    assert market_type_response.status_code == 200
+    assert [row["row_id"] for row in market_type_body["data"]["rows"]] == ["t-3", "t-2"]
+    assert all(row["product_type"] == "perp" for row in market_type_body["data"]["rows"])
+
     assert sort_asc_response.status_code == 200
     assert [row["row_id"] for row in sort_asc_body["data"]["rows"]] == ["t-1", "t-2", "t-3"]
     assert sort_asc_body["data"]["sort"] == "ts_ms_asc"
@@ -1298,6 +1337,53 @@ def test_trades_endpoint_applies_supported_filters_and_sort(
     assert sort_desc_response.status_code == 200
     assert [row["row_id"] for row in sort_desc_body["data"]["rows"]] == ["t-3", "t-2", "t-1"]
     assert sort_desc_body["data"]["sort"] == "ts_ms_desc"
+
+
+def test_trades_exchange_filter_uses_canonical_venue_for_instrument_only_rows(
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "row_id": "t-binance-spot",
+                "strategy_id": flux_config.identity.strategy_id,
+                "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "side": "BUY",
+                "price": "0.0105",
+                "qty": "1000",
+                "ts_ms": 1_700_000_000_100,
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="binance_spot",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+            ),
+        ),
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/trades", query_string={"exchange": "binance_spot"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert [row["row_id"] for row in body["data"]["rows"]] == ["t-binance-spot"]
+    assert body["data"]["rows"][0]["exchange"] == "binance_spot"
 
 
 def test_trades_response_reports_effective_limit_when_requested_limit_exceeds_cap(
@@ -1765,6 +1851,71 @@ def test_balances_mark_cash_assets_and_positions_from_market_data(
     assert rows[f"{flux_config.identity.strategy_id}:pos:{'venue_a'}:ABCUSDT-PERP.VENUE_A"]["asset"] == "ABC"
     assert rows[f"{flux_config.identity.strategy_id}:pos:{'venue_a'}:ABCUSDT-PERP.VENUE_A"]["mark_raw"] == pytest.approx(95.0)
     assert rows[f"{flux_config.identity.strategy_id}:pos:{'venue_a'}:ABCUSDT-PERP.VENUE_A"]["mv_raw"] == pytest.approx(-190.0)
+
+
+def test_instrument_catalog_reads_legacy_market_keys_for_signals_and_balances(
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    market_ts_ms = 1_700_000_000_000
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "kind": "position",
+                "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                "signed_qty": "3",
+                "quantity": "3",
+                "side": "LONG",
+                "ts_ms": 2_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        keys.market_last(exchange="bybit", base="PLUME", quote="USDT"),
+        {"bid": 0.01, "ask": 0.011, "ts_ms": market_ts_ms},
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+            ),
+        ),
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        signals_response = client.get("/api/v1/signals")
+        signals_body = signals_response.get_json()
+        balances_response = client.get("/api/v1/balances")
+        balances_body = balances_response.get_json()
+
+    assert signals_response.status_code == 200
+    leg = signals_body["data"]["strategies"][0]["legs"]["bybit:PLUMEUSDT-LINEAR.BYBIT"]
+    assert leg["bid"] == pytest.approx(0.01)
+    assert leg["ask"] == pytest.approx(0.011)
+    assert leg["mid"] == pytest.approx(0.0105)
+    assert leg["ts_ms"] == market_ts_ms
+
+    assert balances_response.status_code == 200
+    position = balances_body["data"]["rows"][0]
+    assert position["mark_raw"] == pytest.approx(0.0105)
+    assert position["mv_raw"] == pytest.approx(0.0315)
 
 
 def test_balances_with_strategy_query_keeps_per_strategy_debug_view(

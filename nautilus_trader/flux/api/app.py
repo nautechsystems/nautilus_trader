@@ -251,7 +251,7 @@ class FluxApiStore:
         contract_catalog: Sequence[ContractCatalogEntry],
     ) -> tuple[tuple[ContractCatalogEntry, str, str], ...]:
         keys = self._keys_for_strategy(self._config.identity.strategy_id)
-        seen: set[tuple[str, str, str]] = set()
+        seen: set[tuple[str, str, str, str]] = set()
         out: list[tuple[ContractCatalogEntry, str, str]] = []
         for index, contract in enumerate(contract_catalog):
             if not isinstance(contract, ContractCatalogEntry):
@@ -261,6 +261,7 @@ class FluxApiStore:
 
             exchange = decode_text(contract.exchange).strip().lower()
             symbol = decode_text(contract.symbol).strip().upper()
+            instrument_id = decode_text(contract.instrument_id).strip().upper()
             base, quote = normalize_symbol_parts(symbol=symbol)
             if not base or not quote:
                 raise ContractCatalogValidationError(
@@ -268,20 +269,41 @@ class FluxApiStore:
                 )
 
             try:
-                keys.market_last(exchange=exchange, base=base, quote=quote)
+                keys.market_last(
+                    exchange=exchange,
+                    base=base,
+                    quote=quote,
+                    instrument_id=instrument_id or None,
+                )
             except (TypeError, ValueError) as e:
                 raise ContractCatalogValidationError(
                     f"Invalid contract catalog entry exchange={exchange!r} symbol={symbol!r}: {e}",
                 ) from e
 
-            dedupe_key = (exchange, base, quote)
+            dedupe_key = (
+                exchange,
+                instrument_id or "",
+                "" if instrument_id else base,
+                "" if instrument_id else quote,
+            )
             if dedupe_key in seen:
                 raise ContractCatalogValidationError(
                     "Duplicate contract catalog entry after normalization: "
-                    f"exchange={exchange!r} symbol={symbol!r} (base={base!r} quote={quote!r})",
+                    f"exchange={exchange!r} symbol={symbol!r} "
+                    f"(instrument_id={instrument_id!r} base={base!r} quote={quote!r})",
                 )
             seen.add(dedupe_key)
-            out.append((ContractCatalogEntry(exchange=exchange, symbol=symbol), base, quote))
+            out.append(
+                (
+                    ContractCatalogEntry(
+                        exchange=exchange,
+                        symbol=symbol,
+                        instrument_id=instrument_id,
+                    ),
+                    base,
+                    quote,
+                ),
+            )
 
         if not out:
             raise ContractCatalogValidationError(
@@ -412,17 +434,45 @@ class FluxApiStore:
         params = self.load_params(strategy_id)
         return {"updated": sorted(applied_updates), "params": params}
 
-    def _market_keys(self, strategy_id: str) -> list[tuple[ContractCatalogEntry, str]]:
+    def _market_keys(self, strategy_id: str) -> list[tuple[ContractCatalogEntry, str, str | None]]:
         keys = self._keys_for_strategy(strategy_id)
-        out: list[tuple[ContractCatalogEntry, str]] = []
+        out: list[tuple[ContractCatalogEntry, str, str | None]] = []
         for contract, base, quote in self._contract_specs:
+            primary_key = keys.market_last(
+                exchange=contract.exchange,
+                base=base,
+                quote=quote,
+                instrument_id=contract.instrument_id or None,
+            )
+            fallback_key = None
+            if contract.instrument_id:
+                fallback_key = keys.market_last(
+                    exchange=contract.exchange,
+                    base=base,
+                    quote=quote,
+                )
             out.append(
                 (
                     contract,
-                    keys.market_last(exchange=contract.exchange, base=base, quote=quote),
+                    primary_key,
+                    fallback_key,
                 ),
             )
         return out
+
+    @staticmethod
+    def _decode_market_row(primary_raw: Any, fallback_raw: Any = None) -> dict[str, Any]:
+        primary = load_json(primary_raw)
+        primary_row = dict(primary) if isinstance(primary, dict) else {}
+        fallback = load_json(fallback_raw)
+        fallback_row = dict(fallback) if isinstance(fallback, dict) else {}
+        if not primary_row:
+            return fallback_row
+        if not fallback_row:
+            return primary_row
+        merged = dict(fallback_row)
+        merged.update(primary_row)
+        return merged
 
     def load_signals_payload(self, strategy_id: str, metadata: StrategyMetadata) -> dict[str, Any]:
         keys = self._keys_for_strategy(strategy_id)
@@ -432,10 +482,12 @@ class FluxApiStore:
         pipe.get(keys.state())
         pipe.xrevrange(keys.fv_stream(), count=50)
         pipe.get(keys.balances_snapshot())
-        for _, market_key in market_pairs:
+        for _, market_key, fallback_key in market_pairs:
             pipe.get(market_key)
+            if fallback_key:
+                pipe.get(fallback_key)
         raw = pipe.execute()
-        expected_length = 3 + len(market_pairs)
+        expected_length = 3 + sum(2 if fallback_key else 1 for _, _, fallback_key in market_pairs)
         if len(raw) != expected_length:
             raise RuntimeError(
                 f"Signals pipeline returned {len(raw)} rows, expected {expected_length}",
@@ -451,10 +503,21 @@ class FluxApiStore:
         balances = build_balances_rows(raw_snapshot=balances_raw, strategy_id=strategy_id)
 
         market_rows: dict[str, dict[str, Any]] = {}
-        for (contract, _), market_raw in zip(market_pairs, raw[3:], strict=True):
-            parsed = load_json(market_raw)
-            contract_id = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
-            market_rows[contract_id] = dict(parsed) if isinstance(parsed, dict) else {}
+        raw_index = 3
+        for contract, _market_key, fallback_key in market_pairs:
+            primary_raw = raw[raw_index]
+            raw_index += 1
+            fallback_raw = None
+            if fallback_key:
+                fallback_raw = raw[raw_index]
+                raw_index += 1
+            parsed = self._decode_market_row(primary_raw, fallback_raw)
+            contract_id = contract_id_for_leg(
+                exchange=contract.exchange,
+                symbol=contract.symbol,
+                instrument_id=contract.instrument_id,
+            )
+            market_rows[contract_id] = parsed
         legs = build_legs_payload(
             contracts=self._contracts,
             market_rows=market_rows,
@@ -481,10 +544,12 @@ class FluxApiStore:
         market_pairs = self._market_keys(strategy_id)
         pipe = self._redis.pipeline(transaction=False)
         pipe.get(keys.balances_snapshot())
-        for _, market_key in market_pairs:
+        for _, market_key, fallback_key in market_pairs:
             pipe.get(market_key)
+            if fallback_key:
+                pipe.get(fallback_key)
         raw = pipe.execute()
-        expected_length = 1 + len(market_pairs)
+        expected_length = 1 + sum(2 if fallback_key else 1 for _, _, fallback_key in market_pairs)
         if len(raw) != expected_length:
             raise RuntimeError(
                 f"Balances pipeline returned {len(raw)} rows, expected {expected_length}",
@@ -495,10 +560,21 @@ class FluxApiStore:
         rows = build_balances_rows(raw_snapshot=balances_raw, strategy_id=strategy_id)
 
         market_rows: dict[str, dict[str, Any]] = {}
-        for (contract, _), market_raw in zip(market_pairs, raw[1:], strict=True):
-            parsed = load_json(market_raw)
-            contract_id = contract_id_for_leg(exchange=contract.exchange, symbol=contract.symbol)
-            market_rows[contract_id] = dict(parsed) if isinstance(parsed, dict) else {}
+        raw_index = 1
+        for contract, _market_key, fallback_key in market_pairs:
+            primary_raw = raw[raw_index]
+            raw_index += 1
+            fallback_raw = None
+            if fallback_key:
+                fallback_raw = raw[raw_index]
+                raw_index += 1
+            parsed = self._decode_market_row(primary_raw, fallback_raw)
+            contract_id = contract_id_for_leg(
+                exchange=contract.exchange,
+                symbol=contract.symbol,
+                instrument_id=contract.instrument_id,
+            )
+            market_rows[contract_id] = parsed
 
         return (
             enrich_balances_rows(
@@ -1523,12 +1599,15 @@ def create_flux_api_app(  # noqa: C901
         offset = _clamp_offset(request.args.get("offset"), default=0)
         coin_filter = decode_text(request.args.get("coin")).strip().upper()
         exchange_filter = decode_text(request.args.get("exchange")).strip().lower()
+        market_type_filter = decode_text(request.args.get("market_type")).strip().lower()
         side_filter = _normalize_trade_side(request.args.get("side"))
         signal_id_filter = decode_text(request.args.get("signal_id")).strip()
         sort_raw = decode_text(request.args.get("sort")).strip().lower()
         sort_ascending = sort_raw in {"asc", "ts_ms_asc"}
         sort_label = "ts_ms_asc" if sort_ascending else "ts_ms_desc"
-        has_filters = bool(coin_filter or exchange_filter or side_filter or signal_id_filter)
+        has_filters = bool(
+            coin_filter or exchange_filter or market_type_filter or side_filter or signal_id_filter
+        )
 
         if requested_strategy:
             strategy_ids = [_resolve_strategy_id(requested_strategy, field_name="strategy")]
@@ -1579,8 +1658,11 @@ def create_flux_api_app(  # noqa: C901
             coin = decode_text(row.get("coin") or row.get("asset")).strip().upper()
             if coin_filter and coin != coin_filter:
                 continue
-            exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
+            exchange = decode_text(row.get("venue") or row.get("exchange")).strip().lower()
             if exchange_filter and exchange != exchange_filter:
+                continue
+            market_type = decode_text(row.get("product_type") or row.get("market_type")).strip().lower()
+            if market_type_filter and market_type != market_type_filter:
                 continue
             side = _normalize_trade_side(row.get("side"))
             if side_filter and side != side_filter:

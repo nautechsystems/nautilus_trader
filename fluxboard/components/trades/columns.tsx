@@ -71,6 +71,9 @@ export const createColumns = (
     enableSorting: false,
   }),
   columnHelper.accessor((row) => {
+    if (row.display_name_short) {
+      return row.display_name_short;
+    }
     const venue = (row.venue || '').toLowerCase();
     const exch = (row.exchange || '').toLowerCase();
     if (venue === 'cex' && ['bybit', 'bitget', 'binance', 'kraken', 'coinbase'].includes(exch)) {

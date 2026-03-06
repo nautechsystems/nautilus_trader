@@ -36,6 +36,34 @@ class TestFluxRedisKeys:
             keys.market_last(exchange="bybit", base="PLUME", quote="USDT")
             == "flux:v1:market:last:maker_v3_01:bybit:PLUME_USDT"
         )
+        assert (
+            keys.market_last(
+                exchange="bybit",
+                base="PLUME",
+                quote="USDT",
+                instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+            )
+            == "flux:v1:market:last:maker_v3_01:bybit:PLUMEUSDT-LINEAR.BYBIT"
+        )
+        assert (
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="maker_v3_01",
+                portfolio_id="tokenmm",
+                base_currency="PLUME",
+            )
+            == "flux:v1:portfolio:inventory:component:tokenmm:PLUME:maker_v3_01"
+        )
+        assert (
+            FluxRedisKeys.portfolio_inventory(portfolio_id="tokenmm", base_currency="PLUME")
+            == "flux:v1:portfolio:inventory:tokenmm:PLUME"
+        )
+        assert (
+            FluxRedisKeys.portfolio_inventory_channel(
+                portfolio_id="tokenmm",
+                base_currency="PLUME",
+            )
+            == "flux:v1:portfolio:inventory:tokenmm:PLUME:changed"
+        )
         assert keys.params_hash_key() == "flux:v1:params:maker_v3_01"
 
     def test_builds_namespace_scoped_keys_from_identity(self) -> None:
