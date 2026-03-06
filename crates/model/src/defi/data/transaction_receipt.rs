@@ -72,6 +72,9 @@ pub struct TransactionReceipt {
     /// Recipient address (None for contract-creation transactions).
     #[serde(default)]
     pub to: Option<Address>,
+    /// Contract address created by a contract-creation transaction.
+    #[serde(default)]
+    pub contract_address: Option<Address>,
     /// Cumulative gas used in the block after this transaction.
     #[serde(deserialize_with = "deserialize_hex_number")]
     pub cumulative_gas_used: u64,
@@ -161,6 +164,7 @@ mod tests {
                 "blockNumber": "0x1",
                 "from": "0x0000000000000000000000000000000000000001",
                 "to": null,
+                "contractAddress": "0x00000000000000000000000000000000000000aa",
                 "cumulativeGasUsed": "0x5208",
                 "gasUsed": "0x5208",
                 "status": "0x0",
@@ -175,8 +179,38 @@ mod tests {
 
         assert_eq!(receipt.status, 0);
         assert!(receipt.to.is_none());
+        assert_eq!(
+            receipt.contract_address,
+            Some(Address::from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xaa]))
+        );
         assert!(receipt.effective_gas_price.is_none());
         assert!(receipt.logs.is_empty());
+    }
+
+    #[rstest]
+    fn test_transaction_receipt_deserialize_with_missing_contract_address() {
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "transactionHash": "0x6ba6dd4a82101d8a0387f4cb4ce57a2eb64a1e1bd0679a9d4ea8448a27004a57",
+                "blockHash": "0xfdba50e306d1b0ebd1971ec0440799b324229841637d8c56afbd1d6950bb09f0",
+                "blockNumber": "0x154a1d6",
+                "from": "0x2b711ee00b50d67667c4439c28aeaf7b75cb6e0d",
+                "to": "0x8c0bfc04ada21fd496c55b8c50331f904306f564",
+                "cumulativeGasUsed": "0x992832",
+                "gasUsed": "0x2dc6c",
+                "status": "0x1",
+                "logs": []
+            }
+        }"#;
+
+        let receipt = serde_json::from_str::<RpcNodeHttpResponse<TransactionReceipt>>(json)
+            .expect("Failed to parse receipt")
+            .result
+            .expect("Missing receipt result");
+
+        assert!(receipt.contract_address.is_none());
     }
 
     #[rstest]
