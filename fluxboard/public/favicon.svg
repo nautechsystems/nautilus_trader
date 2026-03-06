@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Fluxboard: Real-time trading signals - Lightning bolt in flux field -->
+  <defs>
+    <linearGradient id="fluxGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00ff41;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00ccff;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="glowGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#00ff41;stop-opacity:0.5" />
+      <stop offset="100%" style="stop-color:#00ff41;stop-opacity:0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background glow -->
+  <circle cx="50" cy="50" r="48" fill="url(#glowGradient)" />
+
+  <!-- Circuit traces representing data flow -->
+  <path d="M 20 30 L 35 30 L 35 45 M 65 30 L 80 30 L 80 45" stroke="#00ff41" stroke-width="1.5" fill="none" opacity="0.4" />
+  <path d="M 20 70 L 35 70 L 35 55 M 65 70 L 80 70 L 80 55" stroke="#00ccff" stroke-width="1.5" fill="none" opacity="0.4" />
+
+  <!-- Lightning bolt - represents speed and real-time signals -->
+  <path d="M 55 15 L 35 50 L 48 50 L 42 85 L 70 45 L 56 45 Z"
+        fill="url(#fluxGradient)"
+        stroke="#0a0e27"
+        stroke-width="2"
+        stroke-linejoin="round" />
+
+  <!-- Small nodes at circuit junctions -->
+  <circle cx="35" cy="30" r="2" fill="#00ff41" />
+  <circle cx="80" cy="30" r="2" fill="#00ff41" />
+  <circle cx="35" cy="70" r="2" fill="#00ccff" />
+  <circle cx="80" cy="70" r="2" fill="#00ccff" />
+</svg>

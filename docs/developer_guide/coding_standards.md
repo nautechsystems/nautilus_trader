@@ -15,7 +15,7 @@ The following applies to **all** source files (Rust, Python, Cython, shell, etc.
 
 ### Shell script portability
 
-Shell scripts in this repository use **bash** (not POSIX sh) and must be portable across **Linux** and **macOS**. User-facing scripts (e.g., `scripts/cli/install.sh`) must also work on **Windows** via Git Bash or WSL.
+Shell scripts in this repository use **bash** (not POSIX sh) and must be portable across **Linux** and **macOS**. User-facing scripts (e.g., `tooling/release/install-cli.sh`) must also work on **Windows** via Git Bash or WSL.
 
 **Shebang**: Always use `#!/usr/bin/env bash` for portability.
 
@@ -38,7 +38,7 @@ Shell scripts in this repository use **bash** (not POSIX sh) and must be portabl
 | `readarray` / `mapfile`           | 4.0+         | Use `while read` loops           |
 | `${var,,}` / `${var^^}` (case)    | 4.0+         | Use `tr '[:upper:]' '[:lower:]'` |
 
-**CI scripts** (`scripts/ci/*`) run on Linux runners, so bash 4+ and GNU tools are acceptable there.
+**CI scripts** (`tooling/ci/*`) run on Linux runners, so bash 4+ and GNU tools are acceptable there.
 
 ### Comment conventions
 

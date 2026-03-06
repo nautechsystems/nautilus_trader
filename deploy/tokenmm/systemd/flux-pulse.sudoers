@@ -1,0 +1,8 @@
+# Allow the API service user to operate managed Flux services for Pulse.
+Cmnd_Alias FLUX_PULSE = \
+  /usr/bin/systemctl start flux@*, \
+  /usr/bin/systemctl stop flux@*, \
+  /usr/bin/systemctl restart flux@*, \
+  /usr/bin/journalctl -u flux@*
+
+ubuntu ALL=(root) NOPASSWD: FLUX_PULSE

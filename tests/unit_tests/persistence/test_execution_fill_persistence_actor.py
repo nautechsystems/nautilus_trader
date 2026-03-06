@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 
 import pytest
 
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.persistence.fills.actor import ExecutionFillPersistenceActor
+from nautilus_trader.persistence.fills.actor import _writer_startup_timeout_seconds
 from nautilus_trader.persistence.fills.config import ExecutionFillPersistenceActorConfig
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -61,6 +63,19 @@ def _row_count_for_trade_id(db_path: str, trade_id: str) -> int:
         conn.close()
 
 
+def _fetch_one(
+    db_path: str,
+    sql: str,
+    params: tuple[object, ...] = (),
+) -> sqlite3.Row | None:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return conn.execute(sql, params).fetchone()
+    finally:
+        conn.close()
+
+
 def _make_actor(
     tmp_path,
     *,
@@ -70,6 +85,7 @@ def _make_actor(
     flush_timeout_ms: int = 5_000,
     stop_timeout_ms: int = 5_000,
     strict_stop: bool = False,
+    propagate_errors_to_bus: bool = False,
     insert_fills_fn=None,
 ):
     clock = TestClock()
@@ -97,6 +113,7 @@ def _make_actor(
         on_error=on_error,
         stop_timeout_ms=stop_timeout_ms,
         strict_stop=strict_stop,
+        propagate_errors_to_bus=propagate_errors_to_bus,
     )
 
     actor_kwargs = {"run_writer_thread": run_writer_thread}
@@ -143,6 +160,72 @@ def test_actor_threaded_writer_mode_persists_without_thread_affinity_errors(tmp_
     actor.stop()
 
     assert _row_count(db_path) == 1
+
+
+def test_actor_threaded_publish_returns_before_fill_row_transform_runs(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nautilus_trader.persistence.fills import actor as fills_actor
+    from nautilus_trader.persistence.fills.sqlite import fill_to_row as _real_fill_to_row
+
+    transform_started = threading.Event()
+    release_transform = threading.Event()
+    publish_done = threading.Event()
+
+    def _fill_to_row_blocking(event, **kwargs):
+        transform_started.set()
+        if not release_transform.wait(timeout=1.0):
+            raise RuntimeError("test transform gate timeout")
+        return _real_fill_to_row(event, **kwargs)
+
+    monkeypatch.setattr(fills_actor, "fill_to_row", _fill_to_row_blocking)
+
+    actor, msgbus, db_path = _make_actor(tmp_path, run_writer_thread=True)
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(instrument=instrument, ts_event=150)
+
+    actor.start()
+
+    thread = threading.Thread(
+        target=lambda: (msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill), publish_done.set()),
+    )
+    thread.start()
+
+    assert publish_done.wait(timeout=0.1)
+    assert transform_started.wait(timeout=1.0)
+
+    release_transform.set()
+    actor.flush()
+    actor.stop()
+    thread.join(timeout=1.0)
+
+    assert not thread.is_alive()
+    assert _row_count(db_path) == 1
+
+
+def test_actor_snapshots_fill_info_before_background_transform(tmp_path) -> None:
+    actor, _, db_path = _make_actor(tmp_path, run_writer_thread=False)
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(instrument=instrument, ts_event=160)
+    fill.info["persisted"] = "before"
+
+    actor.start()
+    actor.on_order_filled(fill)
+
+    fill.info["persisted"] = "after"
+
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        "SELECT info_json FROM execution_fill WHERE event_id = ?",
+        (fill.id.value,),
+    )
+    assert row is not None
+    assert '"before"' in row["info_json"]
+    assert '"after"' not in row["info_json"]
 
 
 def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
@@ -301,12 +384,38 @@ def test_actor_enforces_idempotency_and_allows_trade_id_collision(tmp_path) -> N
     assert _row_count_for_trade_id(db_path, fill1.trade_id.value) == 2
 
 
-def test_actor_overflow_policy_tiny_queue_fails_immediately(tmp_path) -> None:
+def test_actor_overflow_policy_tiny_queue_disables_persistence_after_first_overflow_without_raising(
+    tmp_path,
+) -> None:
+    actor, _, db_path = _make_actor(
+        tmp_path,
+        on_error="buffer_until_full_then_fail",
+        max_queue_size=1,
+        run_writer_thread=False,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+
+    actor.start()
+    actor.on_order_filled(_make_fill(instrument=instrument, ts_event=1))
+    actor.on_order_filled(_make_fill(instrument=instrument, ts_event=2))
+    actor.on_order_filled(_make_fill(instrument=instrument, ts_event=3))
+
+    actor.flush()
+    actor.stop()
+
+    assert actor.dropped == 2
+    assert actor.persistence_disabled
+    assert actor._writer_error is None
+    assert _row_count(db_path) == 1
+
+
+def test_actor_overflow_policy_tiny_queue_fails_immediately_when_propagating_errors(tmp_path) -> None:
     actor, _, _ = _make_actor(
         tmp_path,
         on_error="buffer_until_full_then_fail",
         max_queue_size=1,
         run_writer_thread=False,
+        propagate_errors_to_bus=True,
     )
     instrument = TestInstrumentProvider.btcusdt_binance()
 
@@ -359,10 +468,10 @@ def test_actor_db_down_buffer_until_full_then_fail(tmp_path) -> None:
 
     actor.on_order_filled(_make_fill(instrument=instrument, ts_event=2))
     actor.on_order_filled(_make_fill(instrument=instrument, ts_event=3))
-    with pytest.raises(RuntimeError, match="queue is full"):
-        actor.on_order_filled(_make_fill(instrument=instrument, ts_event=4))
+    actor.on_order_filled(_make_fill(instrument=instrument, ts_event=4))
 
     assert actor.db_write_errors >= 1
+    assert actor.dropped == 1
     actor.stop()
 
 
@@ -387,6 +496,37 @@ def test_actor_db_down_log_and_drop_drops_rows(tmp_path) -> None:
     assert _row_count(db_path) == 0
 
 
+def test_actor_threaded_db_down_fail_fast_disables_persistence_without_raising_when_not_propagating(
+    tmp_path,
+) -> None:
+    def _insert_fail(_conn, _rows):
+        raise RuntimeError("db down")
+
+    actor, _, _ = _make_actor(
+        tmp_path,
+        on_error="fail_fast",
+        run_writer_thread=True,
+        insert_fills_fn=_insert_fail,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+
+    actor.start()
+    actor.on_order_filled(_make_fill(instrument=instrument, ts_event=1))
+
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline and actor.db_write_errors == 0:
+        time.sleep(0.01)
+
+    assert actor.db_write_errors >= 1
+
+    actor.on_order_filled(_make_fill(instrument=instrument, ts_event=2))
+    actor.stop()
+
+    assert actor.persistence_disabled
+    assert actor.dropped == 2
+    assert actor._writer_error is not None
+
+
 def test_actor_queue_full_log_and_drop_drops_without_raising(tmp_path) -> None:
     actor, _, db_path = _make_actor(
         tmp_path,
@@ -404,3 +544,121 @@ def test_actor_queue_full_log_and_drop_drops_without_raising(tmp_path) -> None:
 
     assert actor.dropped == 1
     assert _row_count(db_path) == 1
+
+
+def test_actor_pending_rows_respect_retry_backoff_before_retry_deadline(tmp_path) -> None:
+    from nautilus_trader.persistence.fills.sqlite import fill_to_row
+
+    actor, _, _ = _make_actor(tmp_path, run_writer_thread=False)
+    instrument = TestInstrumentProvider.btcusdt_binance()
+
+    actor.start()
+    actor._pending_rows.append(fill_to_row(_make_fill(instrument=instrument, ts_event=700)))
+    actor._next_retry_after = time.monotonic() + 60.0
+
+    assert actor._next_batch() == []
+    assert len(actor._pending_rows) == 1
+
+    actor._pending_rows.clear()
+    actor.stop()
+
+
+def test_actor_non_strict_stop_timeout_sets_error_and_releases_refs_after_writer_finishes(
+    tmp_path,
+) -> None:
+    from nautilus_trader.persistence.fills.sqlite import insert_fills as _real_insert_fills
+
+    write_started = threading.Event()
+    release_write = threading.Event()
+
+    def _insert_blocking(conn, rows):
+        write_started.set()
+        if not release_write.wait(timeout=5.0):
+            raise RuntimeError("test write gate timeout")
+        return _real_insert_fills(conn, rows)
+
+    actor, msgbus, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+        stop_timeout_ms=10,
+        strict_stop=False,
+        insert_fills_fn=_insert_blocking,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(instrument=instrument, ts_event=104)
+
+    actor.start()
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    assert write_started.wait(timeout=1.0)
+
+    actor.stop()
+    assert actor._writer_error is not None
+    assert "did not stop cleanly" in str(actor._writer_error)
+    assert actor._writer_thread is None
+    assert not actor._writer_cleanup_done.is_set()
+    assert actor._conn is not None
+
+    release_write.set()
+    assert actor._writer_cleanup_done.wait(timeout=1.0)
+    assert actor._conn is None
+
+
+def test_actor_strict_stop_timeout_allows_replacement_actor_restart_after_cleanup(tmp_path) -> None:
+    from nautilus_trader.persistence.fills.sqlite import insert_fills as _real_insert_fills
+
+    write_started = threading.Event()
+    release_write = threading.Event()
+
+    def _insert_blocking(conn, rows):
+        write_started.set()
+        if not release_write.wait(timeout=5.0):
+            raise RuntimeError("test write gate timeout")
+        return _real_insert_fills(conn, rows)
+
+    actor, msgbus, db_path = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+        stop_timeout_ms=10,
+        strict_stop=True,
+        insert_fills_fn=_insert_blocking,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill1 = _make_fill(instrument=instrument, ts_event=205)
+    fill2 = _make_fill(instrument=instrument, ts_event=206)
+
+    actor.start()
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill1)
+    assert write_started.wait(timeout=1.0)
+
+    with pytest.raises(RuntimeError, match="did not stop cleanly"):
+        actor.stop()
+
+    release_write.set()
+    assert actor._writer_cleanup_done.wait(timeout=1.0)
+
+    replacement_actor, replacement_msgbus, replacement_db_path = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+    )
+    assert replacement_db_path == db_path
+
+    replacement_actor.start()
+    replacement_msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill2)
+    replacement_actor.flush()
+    replacement_actor.stop()
+
+    assert _row_count(db_path) == 2
+
+
+def test_actor_startup_timeout_uses_flush_timeout_when_it_is_largest_budget() -> None:
+    config = ExecutionFillPersistenceActorConfig(
+        component_id="FILL-DB",
+        db_path="fills.sqlite",
+        flush_interval_ms=10,
+        flush_timeout_ms=2_000,
+        stop_timeout_ms=500,
+    )
+
+    timeout = _writer_startup_timeout_seconds(config)
+
+    assert timeout == 2.0

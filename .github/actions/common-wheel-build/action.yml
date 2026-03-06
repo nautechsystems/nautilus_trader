@@ -23,7 +23,7 @@ runs:
       if: ${{ inputs.github_ref != 'refs/heads/master' }}
       shell: bash
       run: |
-        bash ./scripts/ci/update-pyproject-version.sh
+        bash ./tooling/release/update-pyproject-version.sh
 
     - name: Generate updated lock file
       if: inputs.github_ref != 'refs/heads/master'
@@ -101,3 +101,32 @@ runs:
       run: |
         uv sync --all-groups --all-extras --no-install-package nautilus_trader
         uv pip install dist/*.whl
+
+    - name: Verify wheel visualization extra installs Plotly
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        wheel_path=$(ls dist/*.whl | head -n 1)
+
+        temp_dir="$(mktemp -d)"
+        trap 'rm -rf "$temp_dir"' EXIT
+        python -m venv "$temp_dir/venv"
+
+        if [ -x "$temp_dir/venv/bin/python" ]; then
+          venv_python="$temp_dir/venv/bin/python"
+        else
+          venv_python="$temp_dir/venv/Scripts/python.exe"
+        fi
+
+        wheel_uri=$(
+          "$venv_python" - "$wheel_path" <<'PY'
+        from pathlib import Path
+        import sys
+        print(Path(sys.argv[1]).resolve().as_uri())
+        PY
+        )
+
+        "$venv_python" -m pip install --upgrade pip
+        "$venv_python" -m pip install "nautilus_trader[visualization] @ $wheel_uri"
+        "$venv_python" -c "import plotly.graph_objects as go"

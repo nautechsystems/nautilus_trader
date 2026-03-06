@@ -81,6 +81,7 @@ def _make_actor(
     stop_timeout_ms: int = 5_000,
     strict_stop: bool = False,
     on_error: str = "buffer_until_full_then_fail",
+    propagate_errors_to_bus: bool = False,
     insert_many_fn=None,
     connect_fn=None,
     max_queue_size: int = 10_000,
@@ -110,6 +111,7 @@ def _make_actor(
         "on_error": on_error,
         "stop_timeout_ms": stop_timeout_ms,
         "strict_stop": strict_stop,
+        "propagate_errors_to_bus": propagate_errors_to_bus,
     }
     if event_types is not None:
         config_kwargs["event_types"] = event_types
@@ -254,6 +256,88 @@ def test_actor_threaded_flush_is_db_commit_barrier(tmp_path) -> None:
     assert flush_errors == []
     assert _row_count(db_path) == 1
     actor.stop()
+
+
+def test_actor_threaded_publish_returns_before_order_row_transform_runs(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nautilus_trader.persistence.orders import actor as orders_actor
+
+    transform_started = threading.Event()
+    release_transform = threading.Event()
+    publish_done = threading.Event()
+    real_order_event_to_row = orders_actor.order_event_to_row
+
+    def _order_event_to_row_blocking(*args, **kwargs):
+        transform_started.set()
+        if not release_transform.wait(timeout=1.0):
+            raise RuntimeError("test transform gate timeout")
+        return real_order_event_to_row(*args, **kwargs)
+
+    monkeypatch.setattr(orders_actor, "order_event_to_row", _order_event_to_row_blocking)
+
+    actor, msgbus, db_path, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=True,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+    accepted = TestEventStubs.order_accepted(order=order, ts_event=151)
+
+    actor.start()
+
+    thread = threading.Thread(
+        target=lambda: (
+            msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=accepted),
+            publish_done.set(),
+        ),
+    )
+    thread.start()
+
+    assert publish_done.wait(timeout=0.1)
+    assert transform_started.wait(timeout=1.0)
+
+    release_transform.set()
+    actor.flush()
+    actor.stop()
+    thread.join(timeout=1.0)
+
+    assert not thread.is_alive()
+    assert _row_count(db_path) == 1
+
+
+def test_actor_snapshots_order_initialized_tags_and_options_before_background_transform(tmp_path) -> None:
+    actor, _, db_path, _ = _make_actor(
+        tmp_path,
+        event_types=("OrderInitialized",),
+        run_writer_thread=False,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.limit_order(instrument=instrument, tags=[])
+    initialized = order.init_event
+    original_order_px = str(initialized.options["price"])
+
+    actor.start()
+    actor.on_order_event(initialized)
+
+    initialized.tags.append("nautilus.intent.action_id=act-mutated")
+    initialized.options["price"] = "999.99"
+
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT action_id, order_px
+        FROM order_action
+        WHERE event_type = 'OrderInitialized'
+        """,
+    )
+    assert row is not None
+    assert row["action_id"] is None
+    assert row["order_px"] == original_order_px
 
 
 def test_actor_ignores_order_filled_events_on_order_topic(tmp_path) -> None:
@@ -499,8 +583,8 @@ def test_actor_db_down_log_and_drop_drops_rows(tmp_path) -> None:
     assert actor._queue.unfinished_tasks == 0
 
 
-def test_actor_queue_full_raises_under_default_error_policy(tmp_path) -> None:
-    actor, _, _, _ = _make_actor(
+def test_actor_queue_full_disables_persistence_after_first_overflow_without_raising(tmp_path) -> None:
+    actor, _, db_path, _ = _make_actor(
         tmp_path,
         run_writer_thread=False,
         max_batch_size=1000,
@@ -513,11 +597,37 @@ def test_actor_queue_full_raises_under_default_error_policy(tmp_path) -> None:
 
     actor.start()
     actor.on_order_event(accepted1)
+    actor.on_order_event(accepted2)
+    actor.on_order_event(TestEventStubs.order_accepted(order=order, ts_event=903))
+    actor.flush()
+    actor.stop()
+
+    assert actor.dropped == 2
+    assert actor.persistence_disabled
+    assert actor._writer_error is None
+    assert _row_count(db_path) == 1
+
+
+def test_actor_queue_full_raises_when_propagating_errors(tmp_path) -> None:
+    actor, _, _, _ = _make_actor(
+        tmp_path,
+        run_writer_thread=False,
+        max_batch_size=1000,
+        max_queue_size=1,
+        propagate_errors_to_bus=True,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+    accepted1 = TestEventStubs.order_accepted(order=order, ts_event=901)
+    accepted2 = TestEventStubs.order_accepted(order=order, ts_event=902)
+
+    actor.start()
+    actor.on_order_event(accepted1)
     with pytest.raises(RuntimeError, match="queue is full"):
         actor.on_order_event(accepted2)
     actor.stop()
 
-    assert actor._writer_error is not None
+    assert actor._ingress_error is not None
 
 
 def test_actor_db_down_fail_fast_raises_and_sets_writer_error(tmp_path) -> None:

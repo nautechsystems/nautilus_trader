@@ -4,14 +4,9 @@ readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-authors.workspace = true
-license.workspace = true
 description = "Cryptographic primitives and management for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
-documentation.workspace = true
-repository.workspace = true
-homepage.workspace = true
 
 [lints]
 workspace = true

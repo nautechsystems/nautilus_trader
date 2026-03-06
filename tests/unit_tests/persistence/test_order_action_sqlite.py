@@ -220,3 +220,20 @@ def test_schema_default_signal_snapshot_json_is_json_literal_null_not_sql_null(t
     assert row["is_null"] == 0
 
     conn.close()
+
+
+def test_schema_creates_index_for_documented_recent_action_queries(tmp_path) -> None:
+    db_path = tmp_path / "orders.sqlite"
+    conn = connect(str(db_path))
+    ensure_schema(conn)
+
+    indexes = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'order_action'",
+        ).fetchall()
+    }
+
+    assert "order_action_trader_strategy_action_state_ts_event_idx" in indexes
+
+    conn.close()

@@ -100,6 +100,9 @@ def _encode_info_json(
 
 def fill_to_row(
     fill: OrderFilled,
+    *,
+    info_override: dict[str, Any] | None = None,
+    client_order_id_override: str | None = None,
     on_info_encode_error: Callable[[], None] | None = None,
 ) -> ExecutionFillRow:
     """
@@ -117,7 +120,11 @@ def fill_to_row(
     tuple
 
     """
-    info_json = _encode_info_json(fill.info, on_info_encode_error=on_info_encode_error)
+    info = fill.info if info_override is None else info_override
+    info_json = _encode_info_json(info, on_info_encode_error=on_info_encode_error)
+    client_order_id = fill.client_order_id.value
+    if client_order_id_override is not None:
+        client_order_id = client_order_id_override
 
     return (
         fill.trader_id.value,
@@ -126,7 +133,7 @@ def fill_to_row(
         fill.account_id.value,
         fill.instrument_id.value,
         fill.trade_id.value,
-        fill.client_order_id.value,
+        client_order_id,
         fill.venue_order_id.value,
         fill.position_id.value if fill.position_id else None,
         order_side_to_str(fill.order_side),

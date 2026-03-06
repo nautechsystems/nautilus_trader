@@ -292,9 +292,11 @@ Correlation:
 
 Reuse the fill persistence error policy shape:
 
-1. `buffer_until_full_then_fail` (default): retain for retry until queue full, then fail.
+1. `buffer_until_full_then_fail` (default): retain for retry with backoff until queue full, then
+   disable new ingress or raise immediately if `propagate_errors_to_bus=True`.
 1. `log_and_drop`: drop and log (best-effort).
-1. `fail_fast`: set writer error and raise.
+1. `fail_fast`: set persistence failed on the first write error; raise only when propagation is
+   enabled.
 
 ### Config surface (proposed)
 

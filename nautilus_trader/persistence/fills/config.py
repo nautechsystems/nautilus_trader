@@ -38,3 +38,4 @@ class ExecutionFillPersistenceActorConfig(ActorConfig, frozen=True):
     on_error: ErrorPolicy = "buffer_until_full_then_fail"
     stop_timeout_ms: PositiveInt = 5_000
     strict_stop: bool = False
+    propagate_errors_to_bus: bool = False

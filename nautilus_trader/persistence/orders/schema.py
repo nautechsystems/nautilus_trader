@@ -63,6 +63,9 @@ CREATE INDEX IF NOT EXISTS order_action_strategy_ts_event_idx
 
 CREATE INDEX IF NOT EXISTS order_action_client_order_ts_event_idx
   ON order_action (client_order_id, ts_event);
+
+CREATE INDEX IF NOT EXISTS order_action_trader_strategy_action_state_ts_event_idx
+  ON order_action (trader_id, strategy_id, action_type, action_state, ts_event);
 """
 
 

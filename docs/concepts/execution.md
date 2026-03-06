@@ -68,7 +68,8 @@ flowchart LR
 
 The persistence actor writes immutable rows into `execution_fill` using idempotency key
 `(trader_id, event_id)` and keeps `trade_id` as a query/index field (not unique). The hot path is
-non-blocking: the MessageBus handler only does `put_nowait` enqueue; DB I/O runs in buffered flushes.
+non-blocking: the MessageBus handler snapshots mutable fill fields and enqueues them; JSON encoding
+and DB I/O run in buffered flushes.
 
 ```python
 from nautilus_trader.config import ImportableActorConfig
@@ -89,6 +90,7 @@ config = TradingNodeConfig(
                 "flush_timeout_ms": 5000,
                 "max_queue_size": 10000,
                 "on_error": "buffer_until_full_then_fail",
+                "propagate_errors_to_bus": False,
                 "stop_timeout_ms": 5000,
                 "strict_stop": False,
             },
@@ -123,8 +125,8 @@ preserve idempotency across retries/replays.
 idempotency, attach the `OrderActionPersistenceActor` and subscribe to `events.order.*`.
 
 The persistence actor writes immutable rows into `order_action` using idempotency key
-`(trader_id, event_id)`. The hot path is non-blocking: the MessageBus handler normalizes each
-event and only does `put_nowait` enqueue; DB I/O runs in buffered flushes.
+`(trader_id, event_id)`. The hot path snapshots the event payload and enqueues it; tag parsing,
+JSON encoding, and DB I/O run in buffered flushes.
 
 `order_px` is a best-effort promoted column from `OrderInitialized.options` with key precedence
 `price` -> `trigger_price` -> `activation_price`. Treat `payload_json` as the canonical source for
@@ -161,6 +163,7 @@ config = TradingNodeConfig(
                 "flush_timeout_ms": 5000,
                 "max_queue_size": 10000,
                 "on_error": "buffer_until_full_then_fail",
+                "propagate_errors_to_bus": False,
                 "stop_timeout_ms": 5000,
                 "strict_stop": False,
             },
@@ -172,6 +175,13 @@ config = TradingNodeConfig(
 In this MVP, `OrderActionIntent` (cancel-intent stream persistence) is deferred to the Task 5
 follow-up. Cancel strategy intent metadata is not persisted as a separate intent stream in this
 phase.
+
+Error-policy note:
+
+- With `propagate_errors_to_bus=False`, `buffer_until_full_then_fail` will buffer/retry until the
+  queue fills, then disable new ingress while the writer drains or drops retained backlog in the
+  background.
+- With `propagate_errors_to_bus=True`, queue-full/fail-fast conditions raise back into the caller.
 
 Topic and stream notes:
 

@@ -44,8 +44,6 @@ members = [
 version = "0.54.0"
 edition = "2024"
 rust-version = "1.93.1"
-authors = ["Nautech Systems <info@nautechsystems.io>"]
-license = "LGPL-3.0-or-later"
 readme = "README.md"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 categories = ["finance", "simulation", "asynchronous"]
@@ -56,9 +54,6 @@ keywords = [
   "algorithmic-trading",
   "quantitative-finance",
 ]
-documentation = "https://nautilustrader.io/docs"
-repository = "https://github.com/nautechsystems/nautilus_trader"
-homepage = "https://nautilustrader.io"
 
 [workspace.dependencies]
 nautilus-analysis = { path = "crates/analysis", version = "0.54.0" }

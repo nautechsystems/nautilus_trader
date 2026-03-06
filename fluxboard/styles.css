@@ -1,0 +1,382 @@
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --bg-base: #0b0b0c;
+  --bg-surface: #101112;
+  --bg-surface-alt: #151618;
+  --bg-hover: #151618;
+  --bg-active: #1b1c1f;
+  --border: #1f2024;
+  --border-muted: #2a2c31;
+  --text-primary: #e6e7ea;
+  --text-secondary: #c2c4c8;
+  --text-muted: #80838b;
+  --accent: #2f9b74;
+  --accent-strong: #38a47c;
+  --status-success: #38a47c;
+  --status-danger: #d75f6a;
+  --status-warning: #d09a4a;
+  --params-header-height: 32px;
+}
+
+html, body, #root {
+  height: 100%;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: "IBM Plex Sans", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+}
+
+body {
+  margin: 0;
+  overflow: hidden; /* App-like behavior */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Kill all container constraints globally */
+.dashboard-root .container,
+.dashboard-root .container-fluid,
+.dashboard-root .wrap,
+.dashboard-root .page,
+.dashboard-root .app,
+.dashboard-root .dashboard-container {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* =============================================================================
+ * REACT GRID LAYOUT OVERRIDES
+ * ============================================================================= */
+.react-grid-layout {
+  margin: 0 !important;
+}
+
+.react-grid-item {
+  background: var(--bg-surface);
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.react-grid-item.react-grid-placeholder {
+  background: var(--bg-hover) !important;
+  opacity: 0.3 !important;
+  border-radius: 3px !important;
+}
+
+.layout {
+  /* Avoid forcing width; allow container to control sizing */
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+.dashboard-root .dashboard-panel .h-screen {
+  height: 100% !important;
+}
+
+.dashboard-root .dashboard-panel .min-h-screen {
+  min-height: 0 !important;
+}
+
+/* =============================================================================
+ * MODERN COMPACT SCROLLBARS
+ * =============================================================================
+ * Modern, compact scrollbar styling for webkit and Firefox browsers.
+ * Designed to be subtle but smooth, with hover feedback.
+ */
+
+/* =============================================================================
+ * SCROLLBARS (VSCode Style)
+ * ============================================================================= */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2b3242;
+  border: 2px solid var(--bg-base);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4357;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* =============================================================================
+ * STATUS PILL STYLES (ANIMATION DISABLED FOR COMPACT VISUAL DENSITY)
+ * ============================================================================= */
+.status-pill {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+
+/* Animation disabled for compact visual density
+.status-pill--animate {
+  animation: status-pill-pulse 2.4s ease-out infinite;
+  box-shadow: 0 0 0 0 var(--status-glow, rgba(16, 185, 129, 0.35));
+}
+
+@keyframes status-pill-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--status-glow, rgba(16, 185, 129, 0.35));
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(0, 0, 0, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  }
+}
+*/
+
+/* =============================================================================
+ * NAVIGATION LINK UTILITIES
+ * ============================================================================= */
+.nav-link {
+  color: var(--nav-link-color, #7c818c); /* text.muted */
+  font-size: var(--nav-link-font-size, 11px); /* fontSize.xs */
+  font-weight: var(--nav-link-font-weight, 500); /* fontWeight.medium */
+  border-radius: var(--nav-link-radius, 0.125rem); /* borderRadius.sm */
+  border: 1px solid transparent;
+  outline: none;
+  outline-offset: 2px;
+  text-decoration: none;
+  transition: color 150ms ease, opacity 150ms ease, background-color 150ms ease, border-color 150ms ease;
+  padding: 4px 8px; /* spacing.1 spacing.2 */
+}
+
+.nav-link--primary:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--border);
+}
+
+.nav-link--active {
+  color: var(--text-primary);
+  background: rgba(47, 155, 116, 0.12);
+  border-color: var(--border-muted);
+  border-bottom-color: var(--accent);
+}
+
+.nav-link--external {
+  color: var(--text-secondary);
+  border-style: dashed;
+  border-color: var(--border-muted);
+  background: rgba(95, 122, 195, 0.08);
+}
+
+.nav-link--external:hover {
+  color: var(--nav-link-hover-color, #17a67f); /* accent.hover */
+  border-color: var(--accent);
+  background: rgba(95, 122, 195, 0.14);
+}
+
+.nav-link-external-group {
+  border-left: 1px solid var(--border);
+}
+
+.nav-link:focus-visible {
+  outline: 2px solid var(--nav-link-focus-color, #0f8f6b); /* border.focus */
+}
+
+/* =============================================================================
+ * UTILITY CLASSES
+ * ============================================================================= */
+
+/* Subtlety Helpers */
+.text-mono-numeric {
+  font-family: JetBrains Mono, "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Table Reset */
+.flux-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.flux-table th,
+.terminal-table th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #111214;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: left;
+  padding: 6px 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+
+.flux-table td,
+.terminal-table td {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+
+.flux-table tr:last-child td,
+.terminal-table tr:last-child td {
+  border-bottom: none;
+}
+
+.flux-table tr:hover td,
+.terminal-table tr:hover td {
+  background-color: var(--bg-hover);
+}
+
+.terminal-table .numeric {
+  text-align: right;
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.terminal-table .mono {
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* =============================================================================
+ * PARAMS GRID STICKY ROWS
+ * ============================================================================= */
+.params-table {
+  --params-header-height: 32px;
+}
+
+.params-thead .params-header-row {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background-color: #111214;
+}
+
+.params-bulk-row {
+  position: sticky;
+  top: var(--params-header-height);
+  z-index: 39;
+  background-color: var(--bg-surface);
+}
+
+.flux-table tr:last-child td {
+  border-bottom: none;
+}
+
+.flux-table tr:hover td {
+  background-color: var(--bg-hover);
+}
+
+/* =============================================================================
+ * BALANCES TABLE HELPERS
+ * ============================================================================= */
+.balances-row {
+  transition: background-color 150ms ease;
+}
+
+.balances-row:hover {
+  background-color: var(--balances-row-hover, rgba(23, 23, 26, 0.45));
+}
+
+.balances-row--expanded {
+  background-color: var(--balances-row-active, rgba(23, 23, 26, 0.6));
+}
+
+/* =============================================================================
+ * HEDGER LAYOUT HELPERS
+ * ============================================================================= */
+.hedger-top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(0, 1.1fr);
+  column-gap: 16px;
+  row-gap: 0;
+  align-items: start;
+}
+
+.hedger-card {
+  background: var(--panel-bg, var(--bg-surface));
+  border: 1px solid var(--panel-border, var(--border));
+  border-radius: 3px;
+  padding: 12px 14px;
+  margin-bottom: 0 !important;
+}
+
+.hedger-recent-hedges {
+  margin-top: 16px;
+}
+
+.hedger-input {
+  width: 100%;
+}
+
+.hedger-input:focus-visible {
+  outline: 1px solid var(--hedger-input-focus, #2f9b74);
+  outline-offset: 2px;
+}
+
+/* =============================================================================
+ * DASHBOARD TOOLBAR HELPERS
+ * ============================================================================= */
+.dashboard-toolbar-button {
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.dashboard-toolbar-button:hover {
+  background-color: var(--toolbar-button-hover-bg, #151926);
+  border-color: var(--toolbar-button-hover-border, var(--border-muted));
+}
+
+/* =============================================================================
+ * TRADES TABLE HELPERS
+ * ============================================================================= */
+.trades-row {
+  transition: background-color 150ms ease;
+}
+
+.trades-row:hover {
+  background-color: var(--trades-row-hover, rgba(25, 29, 38, 0.55));
+}
+
+/* =============================================================================
+ * PAGE + CARD LAYOUT (FLAT)
+ * ============================================================================= */
+.page-shell {
+  min-height: 100%;
+  padding: 0;
+  background: var(--bg-base);
+}
+
+.surface-card {
+  background: var(--bg-base);
+  border: none;
+  border-radius: 0;
+}
