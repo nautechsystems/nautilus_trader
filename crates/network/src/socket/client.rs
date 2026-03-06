@@ -1193,7 +1193,7 @@ mod tests {
                     break;
                 }
                 Ok(_n) => {
-                    while let Some(idx) = buf.windows(2).position(|w| w == b"\r\n") {
+                    while let Some(idx) = buf.array_windows().position(|w| w == b"\r\n") {
                         let mut line = buf.drain(..idx + 2).collect::<Vec<u8>>();
                         // Remove trailing \r\n
                         line.truncate(line.len() - 2);
@@ -1359,7 +1359,7 @@ mod tests {
                 match socket.try_read_buf(&mut buf) {
                     Ok(0) => break,
                     Ok(_) => {
-                        while let Some(idx) = buf.windows(2).position(|w| w == b"\r\n") {
+                        while let Some(idx) = buf.array_windows().position(|w| w == b"\r\n") {
                             let mut line = buf.drain(..idx + 2).collect::<Vec<u8>>();
                             line.truncate(line.len() - 2);
                             received2.lock().await.push(line);

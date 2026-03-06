@@ -888,7 +888,10 @@ impl ParquetDataCatalog {
         data: &[T],
         type_name: &str,
     ) -> anyhow::Result<()> {
-        if !data.windows(2).all(|w| w[0].ts_init() <= w[1].ts_init()) {
+        if !data
+            .array_windows()
+            .all(|[a, b]| a.ts_init() <= b.ts_init())
+        {
             anyhow::bail!("{type_name} timestamps must be in ascending order");
         }
 

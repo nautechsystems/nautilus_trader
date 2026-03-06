@@ -486,7 +486,7 @@ needless_update = "warn"
 
 # Code simplification
 redundant_closure = "warn"
-# redundant_closure_for_method_calls = "warn" # Causes clippy ICE on Rust 1.93
+# redundant_closure_for_method_calls = "warn" # Causes clippy ICE on Rust 1.94
 collapsible_if = "warn"
 collapsible_else_if = "warn"
 useless_conversion = "warn"

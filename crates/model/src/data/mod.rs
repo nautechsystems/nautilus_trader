@@ -184,8 +184,8 @@ impl HasTsInit for Data {
 ///
 /// Returns `true` if each element's `ts_init` is less than or equal to the next element's `ts_init`.
 pub fn is_monotonically_increasing_by_init<T: HasTsInit>(data: &[T]) -> bool {
-    data.windows(2)
-        .all(|window| window[0].ts_init() <= window[1].ts_init())
+    data.array_windows()
+        .all(|[a, b]| a.ts_init() <= b.ts_init())
 }
 
 impl From<OrderBookDelta> for Data {

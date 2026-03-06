@@ -394,8 +394,8 @@ mod tests {
 
         let snapshot = events.lock().expect(MUTEX_POISONED).clone();
         let diffs: Vec<u64> = snapshot
-            .windows(2)
-            .map(|pair| pair[1].0.ts_event.as_u64() - pair[0].0.ts_event.as_u64())
+            .array_windows()
+            .map(|[a, b]| b.0.ts_event.as_u64() - a.0.ts_event.as_u64())
             .collect();
 
         assert!(!diffs.is_empty());
