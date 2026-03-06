@@ -24,6 +24,30 @@ use pyo3::prelude::*;
 
 use crate::config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig, DexPoolFilters};
 
+fn redact_url(url: &str) -> String {
+    let Some((scheme, remainder)) = url.split_once("://") else {
+        return String::from("<redacted>");
+    };
+
+    let without_userinfo = remainder
+        .rsplit_once('@')
+        .map_or(remainder, |(_, tail)| tail);
+    let host = without_userinfo
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+
+    if host.is_empty() {
+        String::from("<redacted>")
+    } else {
+        format!("{scheme}://{host}/...")
+    }
+}
+
+fn redact_optional_url(url: &Option<String>) -> Option<String> {
+    url.as_ref().map(|value| redact_url(value))
+}
+
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
 impl DexPoolFilters {
@@ -134,8 +158,8 @@ impl BlockchainDataClientConfig {
         format!(
             "BlockchainDataClientConfig(chain={:?}, http_rpc_url={}, wss_rpc_url={:?}, use_hypersync_for_live_data={}, from_block={:?})",
             self.chain.name,
-            self.http_rpc_url,
-            self.wss_rpc_url,
+            redact_url(&self.http_rpc_url),
+            redact_optional_url(&self.wss_rpc_url),
             self.use_hypersync_for_live_data,
             self.from_block
         )
@@ -475,7 +499,7 @@ impl BlockchainExecutionClientConfig {
             self.wallet_refresh_on_connect,
             self.multicall_max_batch_size,
             self.multicall_min_batch_size,
-            self.http_rpc_url,
+            redact_url(&self.http_rpc_url),
             self.rpc_requests_per_second
         )
     }
@@ -550,5 +574,48 @@ mod tests {
         let signer_route = signer_route_from_python_config(Some("/sign/custom"));
 
         assert_eq!(signer_route, "/sign/custom");
+    }
+
+    #[test]
+    fn test_blockchain_data_config_repr_redacts_rpc_urls() {
+        let config = BlockchainDataClientConfig::new(
+            Arc::new(chains::BSC.clone()),
+            vec![DexType::PancakeSwapV2],
+            "https://rpc-user:secret@bsc.example.com/v3/api-key?token=abc".to_string(),
+            Some(10),
+            Some(200),
+            Some("wss://ws-user:secret@bsc.example.com/socket?token=abc".to_string()),
+            true,
+            Some(123),
+            None,
+            None,
+        );
+
+        let repr = config.__repr__();
+        assert!(repr.contains("https://bsc.example.com/..."));
+        assert!(repr.contains("Some(\"wss://bsc.example.com/...\")"));
+        assert!(!repr.contains("secret"));
+        assert!(!repr.contains("api-key"));
+        assert!(!repr.contains("token=abc"));
+    }
+
+    #[test]
+    fn test_blockchain_execution_config_repr_redacts_rpc_urls() {
+        let config = BlockchainExecutionClientConfig::new(
+            TraderId::test_default(),
+            AccountId::test_default(),
+            Venue::new("Bsc:PancakeSwapV2"),
+            chains::BSC.clone(),
+            String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"),
+            None,
+            "https://rpc-user:secret@bsc.example.com/v3/api-key?token=abc".to_string(),
+            Some(10),
+        );
+
+        let repr = config.__repr__();
+        assert!(repr.contains("https://bsc.example.com/..."));
+        assert!(!repr.contains("secret"));
+        assert!(!repr.contains("api-key"));
+        assert!(!repr.contains("token=abc"));
     }
 }
