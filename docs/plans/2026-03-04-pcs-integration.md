@@ -3714,6 +3714,15 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `uv run --active --no-sync pytest tests/integration_tests/adapters/pancakeswap -q` (pass: `17 passed, 6 skipped`)
     - `uv run --active --no-sync python - <<'PY' ... PancakeSwapV2ExecClientConfig(...).to_pyo3() ... PY` (pass: explicit `RuntimeError` in non-`defi` build, no panic)
 
+- 2026-03-06 - PR13 (`pr13/python-surface`, head SHA `1327ddbebe1009f12df5414eb73605c2a653fbec`) - status: blocked (external)
+  - Opened missing wave PRs for milestones already implemented (`PR9`/`PR10`/`PR11`/`PR12a`) and restored sequential base-chain routing (`PR12b -> PR12a`, `PR12c -> PR12b`, `PR13 -> PR12c`) for reviewable wave ordering.
+  - Verified failing `pre-commit` checks on PR2/PR12b/PR12c/PR13 are external billing-start failures from GitHub Actions infrastructure, not repository hook/lint failures.
+  - Tests run:
+    - `gh pr list --state open --limit 100 --json number,title,headRefName,baseRefName,url,isDraft,mergeStateStatus,statusCheckRollup` (pass: confirmed failing jobs and PR topology)
+    - `gh api repos/clickconfirm/nautilus-trader/check-runs/65921349976/annotations` (pass: returned billing/spending-limit failure annotation)
+    - `gh api repos/clickconfirm/nautilus-trader/check-runs/65929009684/annotations` (pass: returned billing/spending-limit failure annotation)
+    - `gh api repos/clickconfirm/nautilus-trader/check-runs/65940672379/annotations` (pass: returned billing/spending-limit failure annotation)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
@@ -3739,3 +3748,4 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - PR10 quote classification currently relies on revert-string heuristics from `BlockchainRpcClientError` text; propagate structured RPC error fields through the client error type in a follow-up to reduce provider-format fragility.
 - PR11 taxed/rebasing-token decode rejection currently depends on the adapter unsupported-token denylist (`with_unsupported_tokens(...)`); wire this from production execution config before vertical-slice execution (PR12b) to avoid silent opt-in gaps.
 - PR12a JSONL persistence currently assumes a single writer process/worker; add explicit file/process locking or a serialized append worker before enabling multi-writer execution pipelines in PR12b/PR12c.
+- Open PR check suites for PR2/PR12b/PR12c/PR13 are externally blocked by GitHub Actions billing (`The job was not started because recent account payments have failed or your spending limit needs to be increased`), so merge readiness cannot be validated in CI until billing is restored.
