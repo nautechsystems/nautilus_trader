@@ -72,7 +72,7 @@ def test_initial_runtime_params_seed_order_reject_alert_thresholds_from_config()
     runtime_params = runtime_params_mod.initial_runtime_params(config)
 
     assert runtime_params["order_reject_alert_after_count"] == 5
-    assert runtime_params["order_reject_alert_after_s"] == Decimal("12")
+    assert runtime_params["order_reject_alert_after_s"] == Decimal(12)
 
 
 def test_apply_runtime_param_updates_rejects_unknown_keys(strategy_factory) -> None:

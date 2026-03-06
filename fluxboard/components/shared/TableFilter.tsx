@@ -292,8 +292,16 @@ export function applyFilters<T extends Record<string, any>>(
       const valueLower = normalizedValue.toLowerCase();
 
       const column = columnMap?.[key];
-      if (column?.type === 'select' || column?.type === 'date') {
+      if (column?.type === 'date') {
         return valueLower === searchLower;
+      }
+      if (column?.type === 'select') {
+        if (valueLower === searchLower) return true;
+        const tokens = valueLower
+          .split(/[\s,|]+/)
+          .map((token) => token.trim())
+          .filter(Boolean);
+        return tokens.includes(searchLower);
       }
 
       return valueLower.includes(searchLower);

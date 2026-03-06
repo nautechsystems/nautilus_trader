@@ -8,7 +8,7 @@ export type StrategyStatusInput = {
   coolingDown?: boolean;
 };
 
-export type TradingFilterValue = 'Live' | 'Pending' | 'Paused';
+export type TradingFilterValue = 'Enabled' | 'Pending' | 'Paused';
 export type TradingStatusVariant = 'live' | 'pending' | 'inactive';
 export type RunStatusVariant = 'live' | 'pending' | 'inactive';
 
@@ -51,59 +51,63 @@ export function deriveStrategyStatus(input: StrategyStatusInput): StrategyStatus
   const tradingEnabled = parseTradingEnabled(input.trading);
   const runState = deriveRunState(input.running);
 
-  let coolingDown = Boolean(input.coolingDown);
-  if (!coolingDown) {
-    // When trading intent and runner state disagree, treat as pending/cooling.
-    if (runState === 'running' && !tradingEnabled) {
-      coolingDown = true;
-    } else if (runState === 'stopped' && tradingEnabled) {
-      coolingDown = true;
-    }
-  }
-
   return {
     runState,
     tradingEnabled,
-    coolingDown: coolingDown || undefined
+    coolingDown: input.coolingDown ? true : undefined,
   };
 }
 
 export function statusToFilterValue(status: StrategyStatus): TradingFilterValue {
   if (status.coolingDown) return 'Pending';
-  return status.tradingEnabled ? 'Live' : 'Paused';
+  if (status.tradingEnabled && status.runState !== 'running') return 'Pending';
+  if (status.tradingEnabled) return 'Enabled';
+  return 'Paused';
+}
+
+function runnerSubLabel(runState: StrategyRunState): string {
+  if (runState === 'running') return 'Runner On';
+  if (runState === 'stopped') return 'Runner Off';
+  return 'Runner Unknown';
 }
 
 export function tradingFilterLabel(value: TradingFilterValue): string {
   return value;
 }
 
-export const TRADING_FILTER_VALUES: TradingFilterValue[] = ['Live', 'Pending', 'Paused'];
+export const TRADING_FILTER_VALUES: TradingFilterValue[] = ['Enabled', 'Pending', 'Paused'];
 
 export function describeTradingStatus(status: StrategyStatus): {
   variant: TradingStatusVariant;
   label: TradingFilterValue;
   subLabel: string;
 } {
-  const variant: TradingStatusVariant = status.coolingDown
-    ? 'pending'
-    : status.tradingEnabled
-      ? 'live'
-      : 'inactive';
-
-  let label: TradingFilterValue;
-  let subLabel: string;
-  if (variant === 'live') {
-    label = 'Live';
-    subLabel = 'Enabled';
-  } else if (variant === 'pending') {
-    label = 'Pending';
-    subLabel = status.tradingEnabled ? 'Syncing' : 'Cooling';
-  } else {
-    label = 'Paused';
-    subLabel = 'Disabled';
+  if (status.coolingDown) {
+    return {
+      variant: 'pending',
+      label: 'Pending',
+      subLabel: 'Cooling',
+    };
   }
-
-  return { variant, label, subLabel };
+  if (status.tradingEnabled) {
+    if (status.runState === 'running') {
+      return {
+        variant: 'live',
+        label: 'Enabled',
+        subLabel: 'Runner On',
+      };
+    }
+    return {
+      variant: 'pending',
+      label: 'Pending',
+      subLabel: runnerSubLabel(status.runState),
+    };
+  }
+  return {
+    variant: 'inactive',
+    label: 'Paused',
+    subLabel: runnerSubLabel(status.runState),
+  };
 }
 
 export function describeRunState(runState: StrategyRunState): {

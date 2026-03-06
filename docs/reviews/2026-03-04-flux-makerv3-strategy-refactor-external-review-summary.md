@@ -23,11 +23,11 @@ This change set productionizes the flux MakerV3 strategy by completing the strat
 
 ### 2) Canonical `makerv3` surface
 
-- Canonical implementation now lives in `nautilus_trader/flux/strategies/makerv3/strategy.py`.
+- Canonical implementation now lives in `systems/flux/flux/strategies/makerv3/strategy.py`.
 - Canonical exports are `MakerV3Strategy` and `MakerV3StrategyConfig` from:
-  - `nautilus_trader/flux/strategies/makerv3/__init__.py`
-  - `nautilus_trader/flux/strategies/__init__.py`
-- Legacy module `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` has been removed.
+  - `systems/flux/flux/strategies/makerv3/__init__.py`
+  - `systems/flux/flux/strategies/__init__.py`
+- Legacy module `systems/flux/flux/strategies/makerv3/single_leg_quoter.py` has been removed.
 - Canonical strategy topics are now `flux.makerv3.*` only.
 
 ### 3) Modularization

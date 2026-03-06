@@ -52,7 +52,7 @@ jobs:
           STAGE_DIR="stage-cli"
           mkdir -p "$STAGE_DIR" dist
           cp target/release/nautilus "$STAGE_DIR/nautilus"
-          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE" || cp -L LICENSE "$STAGE_DIR/LICENSE"
+          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE"
           cp crates/cli/README.md "$STAGE_DIR/README.md"
           tar -C "$STAGE_DIR" -czf "dist/nautilus-${TARGET_TRIPLE}.tar.gz" .
           rm -rf "$STAGE_DIR"
@@ -104,7 +104,7 @@ jobs:
           STAGE_DIR="stage-cli"
           mkdir -p "$STAGE_DIR" dist
           cp target/release/nautilus "$STAGE_DIR/nautilus"
-          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE" || cp -L LICENSE "$STAGE_DIR/LICENSE"
+          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE"
           cp crates/cli/README.md "$STAGE_DIR/README.md"
           tar -C "$STAGE_DIR" -czf "dist/nautilus-${TARGET_TRIPLE}.tar.gz" .
           rm -rf "$STAGE_DIR"
@@ -155,7 +155,7 @@ jobs:
           STAGE_DIR="stage-cli"
           mkdir -p "$STAGE_DIR" dist
           cp target/release/nautilus "$STAGE_DIR/nautilus"
-          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE" || cp -L LICENSE "$STAGE_DIR/LICENSE"
+          cp -L crates/cli/LICENSE "$STAGE_DIR/LICENSE"
           cp crates/cli/README.md "$STAGE_DIR/README.md"
           tar -C "$STAGE_DIR" -czf "dist/nautilus-${TARGET_TRIPLE}.tar.gz" .
           rm -rf "$STAGE_DIR"
@@ -208,7 +208,7 @@ jobs:
           if (Test-Path -LiteralPath crates\cli\LICENSE) {
             Copy-Item -LiteralPath crates\cli\LICENSE -Destination stage-cli\LICENSE -Force
           } else {
-            Copy-Item -LiteralPath LICENSE -Destination stage-cli\LICENSE -Force
+            throw "Missing crates\cli\LICENSE"
           }
           Compress-Archive -Path stage-cli\* -DestinationPath dist\nautilus-$target.zip -Force
           Remove-Item -Recurse -Force stage-cli
@@ -292,7 +292,8 @@ jobs:
         run: |
           CACHE_CONTROL="no-cache, max-age=60, must-revalidate"
           for i in {1..5}; do
-            if aws s3 cp scripts/cli/install.sh "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX}/install.sh" \
+            DEST="s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX}/install.sh"
+            if aws s3 cp tooling/release/install-cli.sh "$DEST" \
               --endpoint-url="${CLOUDFLARE_R2_URL}" \
               --content-type "text/x-shellscript" \
               --cache-control "$CACHE_CONTROL"; then
@@ -303,7 +304,7 @@ jobs:
             fi
           done
           for i in {1..5}; do
-            if aws s3 cp scripts/cli/install.sh \
+            if aws s3 cp tooling/release/install-cli.sh \
               "s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX}/latest/install.sh" \
               --endpoint-url="${CLOUDFLARE_R2_URL}" \
               --content-type "text/x-shellscript" \
@@ -318,14 +319,14 @@ jobs:
       - name: Publish CLI binaries to R2 (versioned + latest) and generate manifest
         shell: bash
         run: |
-          bash ./scripts/ci/publish-cli-r2-upload.sh
+          bash ./tooling/release/publish-cli-r2-upload.sh
 
       - name: Prune old CLI versions
         shell: bash
         run: |
-          bash ./scripts/ci/publish-cli-r2-prune.sh
+          bash ./tooling/release/publish-cli-r2-prune.sh
 
       - name: Verify uploaded files in R2
         shell: bash
         run: |
-          bash ./scripts/ci/publish-cli-r2-verify.sh
+          bash ./tooling/release/publish-cli-r2-verify.sh

@@ -571,4 +571,5 @@ describe('Trades pagination and snapshot loading', () => {
 
     await waitFor(() => expect(applyDelta).toHaveBeenCalled());
   });
+
 });

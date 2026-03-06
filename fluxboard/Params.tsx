@@ -4,7 +4,7 @@
  * Features:
  * - Dense single-row layout with all key params inline
  * - Strategy / Status / Dirty filters for fast scanning
- * - Read-only Run indicator + Trading toggle per strategy
+ * - Read-only Run indicator + Trading gate toggle per strategy
  * - Field-level validation on blur with dirty tracking per cell
  * - Row Save / Revert plus Save All with bounded concurrency
  * - Conflict detection + diff modal when backend changes collide with local edits
@@ -385,9 +385,11 @@ const MemoizedStrategyRow = memo(function StrategyRow({
   const runDotColors = RUN_DOT_COLORS[runState];
 
   const tradingTooltipLines = [
-    tradingEnabled ? 'Trading enabled' : 'Trading disabled',
-    tradingStatus.coolingDown ? 'Cooling: Yes' : 'Cooling: No',
-    `bot_on=${tradingValue ?? '—'}`
+    'Trading gate:',
+    tradingEnabled ? 'Enabled (new orders allowed)' : 'Paused (new orders blocked)',
+    runLabel,
+    `bot_on=${tradingValue ?? '—'}`,
+    'Independent of runner liveness.'
   ];
   const tradingTooltip = tradingTooltipLines.join('\n');
 
@@ -564,7 +566,7 @@ const MemoizedStrategyRow = memo(function StrategyRow({
         </SimpleTooltip>
       </td>
 
-      {/* Trading toggle – left/right switch */}
+      {/* Trading gate toggle – left/right switch */}
       <td
         className={`px-2 ${cellPadding} border-b text-center`}
         style={{ width: TRADE_COLUMN_WIDTH, minWidth: TRADE_COLUMN_WIDTH, borderColor: colors.border.DEFAULT }}
@@ -2951,7 +2953,7 @@ export default function Params({
             const stratErrors = errorParams.get(strategy.strategy_id) || EMPTY_ERRORS;
             const hotList = selectMobileParams(strategy.hot_params || (strategy.meta as any)?.hot_params);
             const tradingValue = stratParams['bot_on'] ?? strategy.params?.bot_on ?? '0';
-            const runChecked = tradingValue === '1';
+            const tradingChecked = tradingValue === '1';
 
             return (
               <div
@@ -2971,12 +2973,12 @@ export default function Params({
                     className="flex items-center gap-2 text-[11px] px-1 py-0.5"
                     style={{ color: colors.text.muted }}
                   >
-                    <span>Run</span>
+                    <span>Trading</span>
                     <input
                       type="checkbox"
                       className="w-4 h-4"
-                      aria-label={`Run ${strategy.strategy_id}`}
-                      checked={runChecked}
+                      aria-label={`Trading ${strategy.strategy_id}`}
+                      checked={tradingChecked}
                       onChange={(e) => {
                         const value = e.target.checked ? '1' : '0';
                         handleParamChange(strategy.strategy_id, 'bot_on', value);
@@ -3234,8 +3236,8 @@ export default function Params({
                   type="button"
                   onClick={() => handleSortToggle(SORT_KEYS.TRADING)}
                   className="flex items-center gap-1 font-semibold text-text-secondary hover:text-text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-border-focus rounded-[2px]"
-                  aria-label="Sort by trading toggle"
-                  title="Sort by trading toggle"
+                  aria-label="Sort by trading gate"
+                  title="Sort by trading gate"
                 >
                   <span>Trading</span>
                   <span className="text-text-muted">

@@ -1,17 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
 """
 Unit tests for MakerV3 pricing helpers.
 """
@@ -19,6 +5,7 @@ Unit tests for MakerV3 pricing helpers.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -53,9 +40,9 @@ def test_bps_to_price_offset_uses_1e4_denominator() -> None:
         float("-inf"),
     ],
 )
-def test_to_decimal_rejects_non_finite_values(value: object) -> None:
+def test_to_decimal_rejects_non_finite_values(value: Any) -> None:
     with pytest.raises(ValueError, match="finite"):
-        to_decimal(value)  # type: ignore[arg-type]
+        to_decimal(value)
 
 
 def test_round_price_to_tick_supports_out_and_in_modes() -> None:

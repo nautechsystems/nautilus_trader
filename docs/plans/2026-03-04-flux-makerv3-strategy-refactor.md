@@ -4,7 +4,7 @@
 >
 > **For executing agent (this repo):** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task (fresh implementer subagent per task, then spec review, then code-quality review).
 
-**Goal:** Productionize the `makerv3` quoting strategy currently implemented as a monolith in `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` by making it modular, safe (order lifecycle + cancellation), config-driven, and operationally observable. Standardize naming so the canonical strategy is `makerv3` (not `single_leg_quoter`) and remove legacy prototype naming from production interfaces.
+**Goal:** Productionize the `makerv3` quoting strategy currently implemented as a monolith in `systems/flux/flux/strategies/makerv3/single_leg_quoter.py` by making it modular, safe (order lifecycle + cancellation), config-driven, and operationally observable. Standardize naming so the canonical strategy is `makerv3` (not `single_leg_quoter`) and remove legacy prototype naming from production interfaces.
 
 **Architecture:** Thin `MakerV3Strategy` orchestrator plus pure modules for pricing/ladder math, rebalancing planning, managed-order reconciliation, runtime params registry, and wire/event payloads. Lock behavior with invariants tests first, then perform a staged refactor (canonical `flux.makerv3.*` topics; no compatibility shims in the final production surface).
 
@@ -30,12 +30,12 @@
 
 ## Key files (current)
 
-1. Strategy: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
+1. Strategy: `systems/flux/flux/strategies/makerv3/single_leg_quoter.py`
 2. Example strategy copy (parity/duplication risk): `nautilus_trader/examples/strategies/makerv3.py`
 3. Strategy tests: `tests/unit_tests/flux/strategies/makerv3/test_single_leg_quoter_math.py`, `tests/unit_tests/flux/strategies/makerv3/test_single_leg_quoter_strategy.py`
 4. Example tests: `tests/unit_tests/examples/strategies/test_makerv3_quoter.py`
-5. Params manager: `nautilus_trader/flux/params/manager.py`
-6. Key builders/config: `nautilus_trader/flux/common/keys.py`, `nautilus_trader/flux/common/config.py`
+5. Params manager: `systems/flux/flux/params/manager.py`
+6. Key builders/config: `systems/flux/flux/common/keys.py`, `systems/flux/flux/common/config.py`
 7. Logging guidance: `docs/concepts/logging.md`
 
 ---
@@ -67,26 +67,26 @@
 
 ### P0 (production blocking)
 
-1. Unsafe cancel boundary: `_cancel_managed_quotes` cancels strategy-managed orders, then unconditionally calls `cancel_all_orders(instrument)` which can cancel unrelated orders on the same instrument. This violates safety boundaries and can cause cross-strategy impact. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:1789`.
-2. Runtime params manager appears not to be wired by any in-repo callsite. `set_params_manager(...)` exists but strategy may never receive a manager instance, making live runtime param updates a no-op. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:1011`.
+1. Unsafe cancel boundary: `_cancel_managed_quotes` cancels strategy-managed orders, then unconditionally calls `cancel_all_orders(instrument)` which can cancel unrelated orders on the same instrument. This violates safety boundaries and can cause cross-strategy impact. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:1789`.
+2. Runtime params manager appears not to be wired by any in-repo callsite. `set_params_manager(...)` exists but strategy may never receive a manager instance, making live runtime param updates a no-op. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:1011`.
 
 ### P1 (high risk / high leverage)
 
-1. Monolithic strategy file (~2000 LOC) mixes quoting math, params, inventory, serialization, lifecycle, reconciliation, and event publishing; it is not maintainable at production trading quality. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:3`.
-2. Identity drift risk: Redis keyspace identity and published payload “strategy_id” appear to be different fields (`strategy_id` vs `_external_strategy_id`), creating fragmented control/visibility and incorrect operator mental model. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:800`, `nautilus_trader/flux/common/keys.py:45`.
-3. Stale data handling can trigger repeated cancel bursts because early-return paths do not update quote-throttle state. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:1392`.
+1. Monolithic strategy file (~2000 LOC) mixes quoting math, params, inventory, serialization, lifecycle, reconciliation, and event publishing; it is not maintainable at production trading quality. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:3`.
+2. Identity drift risk: Redis keyspace identity and published payload “strategy_id” appear to be different fields (`strategy_id` vs `_external_strategy_id`), creating fragmented control/visibility and incorrect operator mental model. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:800`, `systems/flux/flux/common/keys.py:45`.
+3. Stale data handling can trigger repeated cancel bursts because early-return paths do not update quote-throttle state. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:1392`.
 
 ### P2 (important hardening)
 
-1. Fill reconciliation depends on cache timing (`on_order_filled` only reconciles when cache order is closed), risking transient stale tracking and incorrect quote-stack decisions. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:1169`.
-2. Runtime quote depth is effectively unbounded via runtime `n_orders*` (non-negative only). A bad update can blow up CPU and allocations on hot path. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:122`.
-3. Topic naming is too generic (`flux.strategy.*`) for a specific strategy family and makes long-term evolution/versioning harder. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:12`.
-4. Hot-path performance issues: per-delta string conversions and repeated runtime param coercion; expensive inventory skew recomputation each refresh; repeated cache scans in `_managed_orders`. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:931`, `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:1299`, `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:1740`.
-5. Observability gaps: skipped quote cycles and cancellation outcomes are under-instrumented; stale-data warnings can spam. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:931`, `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:1789`, and `docs/concepts/logging.md`.
+1. Fill reconciliation depends on cache timing (`on_order_filled` only reconciles when cache order is closed), risking transient stale tracking and incorrect quote-stack decisions. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:1169`.
+2. Runtime quote depth is effectively unbounded via runtime `n_orders*` (non-negative only). A bad update can blow up CPU and allocations on hot path. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:122`.
+3. Topic naming is too generic (`flux.strategy.*`) for a specific strategy family and makes long-term evolution/versioning harder. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:12`.
+4. Hot-path performance issues: per-delta string conversions and repeated runtime param coercion; expensive inventory skew recomputation each refresh; repeated cache scans in `_managed_orders`. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:931`, `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:1299`, `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:1740`.
+5. Observability gaps: skipped quote cycles and cancellation outcomes are under-instrumented; stale-data warnings can spam. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:931`, `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:1789`, and `docs/concepts/logging.md`.
 
 ### P3 (cleanup / maintainability)
 
-1. Legacy payload type name `MakerPocBusPayload` appears in production strategy code; should be replaced with a `makerv3`-scoped payload schema. See `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py:30`.
+1. Legacy payload type name `MakerPocBusPayload` appears in production strategy code; should be replaced with a `makerv3`-scoped payload schema. See `systems/flux/flux/strategies/makerv3/single_leg_quoter.py:30`.
 2. Tests depend directly on underscored helpers in the strategy module, making refactors unnecessarily painful. See `tests/unit_tests/flux/strategies/makerv3/test_single_leg_quoter_math.py:20`.
 
 ---
@@ -95,7 +95,7 @@
 
 Goal: make `single_leg_quoter.py` disappear from canonical imports; retain a temporary compatibility shim only if needed.
 
-New/updated files under `nautilus_trader/flux/strategies/makerv3/`:
+New/updated files under `systems/flux/flux/strategies/makerv3/`:
 
 1. `constants.py`:
    - Topic names, timer names, interval constants.
@@ -116,7 +116,7 @@ New/updated files under `nautilus_trader/flux/strategies/makerv3/`:
 9. `__init__.py`:
    - Export canonical strategy/config names.
 
-Optional shared modules under `nautilus_trader/flux/common/`:
+Optional shared modules under `systems/flux/flux/common/`:
 
 1. `params.py`:
    - `RuntimeParamSpec` + `RuntimeParamRegistry` so API + strategy share one canonical schema/defaults/constraints.
@@ -134,7 +134,7 @@ Optional shared modules under `nautilus_trader/flux/common/`:
 
 **Compatibility (removed for this build)**
 
-1. Legacy module `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` is removed (no legacy/compat).
+1. Legacy module `systems/flux/flux/strategies/makerv3/single_leg_quoter.py` is removed (no legacy/compat).
 2. Canonical strategy topics are `flux.makerv3.*` only.
 3. No deprecated class/config aliases remain in production surfaces.
 
@@ -200,7 +200,7 @@ Progress log:
 - 2026-03-04: Approved deviation executed for Task 1 testability: pulled forward minimal stale-path throttle-state update (`_last_requote_ns = now_ns` on stale/unavailable market data early returns) from Task 3.
 - 2026-03-04: Task 2 completed (default `_cancel_managed_quotes` now cancels only strategy-owned managed orders, optional instrument `cancel_all_orders` is behind `cancel_all_instrument_orders=False` by default, and cancel exceptions are aggregated in one `quotes_canceled` event with coverage in strategy unit tests).
 - 2026-03-04: Task 3 completed (stale-triggered cancel now uses cooldown dedupe, stale blocked paths still update requote throttle state, and `state_transition` events emit only when crossing blocked/unblocked boundary).
-- 2026-03-04: Task 4 completed (added `nautilus_trader/flux/common/params.py` with canonical `RuntimeParamRegistry` for `makerv3`, bounded hot-path-sensitive params, and deterministic param diff-summary helper; covered by `tests/unit_tests/flux/common/test_params.py`).
+- 2026-03-04: Task 4 completed (added `systems/flux/flux/common/params.py` with canonical `RuntimeParamRegistry` for `makerv3`, bounded hot-path-sensitive params, and deterministic param diff-summary helper; covered by `tests/unit_tests/flux/common/test_params.py`).
 - 2026-03-04: Task 5 completed (API `DEFAULT_PARAMS_*` now aliases `MAKERV3_RUNTIME_PARAM_REGISTRY` schema/defaults to prevent drift, and params pubsub payloads now include `schema_version`, `param_set`, and deterministic schema `digest` metadata with coverage in flux params/api unit tests).
 - 2026-03-04: Task 6 completed (strategy runtime params now initialize/apply via `MAKERV3_RUNTIME_PARAM_REGISTRY`, bounded depth updates are rejected by registry constraints, a strategy-side `set_params_manager_factory(...)` hook was added for live/runtime wiring, params manager identity is enforced against the strategy runtime identity, and emitted payload `strategy_id` stays on one authoritative strategy identity; covered by strategy unit tests for unknown keys, depth bounds, manager identity mismatch, and stable factory/payload identity behavior).
 - 2026-03-04: Task 7 completed (hot path now stores BBO as typed tuples until publish boundary, `_refresh_quotes` uses a typed runtime-params snapshot, inventory skew uses a short TTL cache with invalidation on order/balance-affecting events, and managed-order scans are reduced to one per quote cycle path; covered by expanded strategy unit tests).
@@ -211,7 +211,7 @@ Progress log:
 - 2026-03-04: Task 11 completed (replaced `nautilus_trader/examples/strategies/makerv3.py` with a thin wrapper aliasing canonical strategy/config and removed duplicated example strategy logic; example strategy unit test now validates wrapper surface).
 - 2026-03-04: User-approved workflow deviation for Task 11: executed directly without spec/code-quality subagent review loop.
 - 2026-03-04: External-review summary published at `docs/reviews/2026-03-04-flux-makerv3-strategy-refactor-external-review-summary.md`.
-- 2026-03-04: User-requested compatibility removal completed by deleting `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`, removing legacy class exports, and switching live example runners to canonical `MakerV3Strategy` surfaces only.
+- 2026-03-04: User-requested compatibility removal completed by deleting `systems/flux/flux/strategies/makerv3/single_leg_quoter.py`, removing legacy class exports, and switching live example runners to canonical `MakerV3Strategy` surfaces only.
 - 2026-03-04: User-requested docstring coverage hardening completed for new `makerv3` production modules/exports and verified with targeted `ruff check --select D` against touched strategy files.
 - 2026-03-04: Task 12 completed (fill reconciliation determinism: `on_order_filled` reconciles managed tracking without cache-closed timing; covered by a new unit test).
 - 2026-03-04: Quality hardening (post-plan): extracted `quote_engine.py` to reduce `strategy.py` size, and split/renamed strategy unit tests to remove legacy `single_leg_quoter` naming.
@@ -247,7 +247,7 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Files:**
 
-- Modify: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
+- Modify: `systems/flux/flux/strategies/makerv3/single_leg_quoter.py`
 - Modify: `tests/unit_tests/flux/strategies/makerv3/test_single_leg_quoter_strategy.py`
 
 **Steps:**
@@ -264,7 +264,7 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Files:**
 
-- Modify: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
+- Modify: `systems/flux/flux/strategies/makerv3/single_leg_quoter.py`
 - Modify: `tests/unit_tests/flux/strategies/makerv3/test_single_leg_quoter_strategy.py`
 
 **Steps:**
@@ -281,7 +281,7 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Files:**
 
-- Create: `nautilus_trader/flux/common/params.py`
+- Create: `systems/flux/flux/common/params.py`
 
 **Steps:**
 
@@ -297,8 +297,8 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Files:**
 
-- Modify: `nautilus_trader/flux/api/app.py`
-- Modify: `nautilus_trader/flux/params/manager.py` (if needed to accept registry metadata)
+- Modify: `systems/flux/flux/api/app.py`
+- Modify: `systems/flux/flux/params/manager.py` (if needed to accept registry metadata)
 
 **Steps:**
 
@@ -314,8 +314,8 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Files:**
 
-- Modify: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
-- Modify: `nautilus_trader/flux/common/keys.py` (if identity scoping requires)
+- Modify: `systems/flux/flux/strategies/makerv3/single_leg_quoter.py`
+- Modify: `systems/flux/flux/common/keys.py` (if identity scoping requires)
 
 **Steps:**
 
@@ -335,7 +335,7 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Files:**
 
-- Modify: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
+- Modify: `systems/flux/flux/strategies/makerv3/single_leg_quoter.py`
 
 **Steps:**
 
@@ -352,9 +352,9 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Files:**
 
-- Create: `nautilus_trader/flux/strategies/makerv3/wire.py`
-- Create: `nautilus_trader/flux/strategies/makerv3/constants.py`
-- Modify: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
+- Create: `systems/flux/flux/strategies/makerv3/wire.py`
+- Create: `systems/flux/flux/strategies/makerv3/constants.py`
+- Modify: `systems/flux/flux/strategies/makerv3/single_leg_quoter.py`
 - Modify: `docs/concepts/logging.md`
 
 **Steps:**
@@ -371,11 +371,11 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Files:**
 
-- Create: `nautilus_trader/flux/strategies/makerv3/pricing.py`
-- Create: `nautilus_trader/flux/strategies/makerv3/rebalancing.py`
-- Create: `nautilus_trader/flux/strategies/makerv3/inventory.py`
-- Create: `nautilus_trader/flux/strategies/makerv3/managed_orders.py`
-- Modify: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py`
+- Create: `systems/flux/flux/strategies/makerv3/pricing.py`
+- Create: `systems/flux/flux/strategies/makerv3/rebalancing.py`
+- Create: `systems/flux/flux/strategies/makerv3/inventory.py`
+- Create: `systems/flux/flux/strategies/makerv3/managed_orders.py`
+- Modify: `systems/flux/flux/strategies/makerv3/single_leg_quoter.py`
 - Modify: tests under `tests/unit_tests/flux/strategies/makerv3/` to import from modules, not underscored strategy helpers
 
 **Steps:**
@@ -393,16 +393,16 @@ Note: each task is intentionally small. Execute with TDD where feasible and pref
 
 **Files:**
 
-- Create: `nautilus_trader/flux/strategies/makerv3/strategy.py`
-- Modify: `nautilus_trader/flux/strategies/makerv3/__init__.py`
-- Modify: `nautilus_trader/flux/strategies/__init__.py`
-- Delete: `nautilus_trader/flux/strategies/makerv3/single_leg_quoter.py` (no legacy/compat)
+- Create: `systems/flux/flux/strategies/makerv3/strategy.py`
+- Modify: `systems/flux/flux/strategies/makerv3/__init__.py`
+- Modify: `systems/flux/flux/strategies/__init__.py`
+- Delete: `systems/flux/flux/strategies/makerv3/single_leg_quoter.py` (no legacy/compat)
 - Modify: tests to import `MakerV3Strategy` from canonical module
 
 **Steps:**
 
 1. Introduce `MakerV3Strategy` and `MakerV3StrategyConfig` in `strategy.py`.
-2. Update exports so canonical import is `nautilus_trader.flux.strategies.makerv3.MakerV3Strategy`.
+2. Update exports so canonical import is `flux.strategies.makerv3.MakerV3Strategy`.
 3. Remove `single_leg_quoter.py` completely (no legacy/compat).
 4. Update topic constants to `flux.makerv3.*` only (no dual publish).
 

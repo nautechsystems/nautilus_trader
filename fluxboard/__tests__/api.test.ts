@@ -81,16 +81,16 @@ describe('API Client - Param Methods', () => {
         key: 'bot_on',
         type: 'select',
         default: '0',
-        label: 'bot_on',
-        description: 'bot_on',
+        label: 'Trading',
+        description: 'Trading gate. Controls whether the strategy may place new orders. Independent of runner state. 1 = Enabled, 0 = Paused.',
         deprecated: false,
         replacement: null,
         step: null,
         unit: null,
       });
       expect(result.params.bot_on.options).toEqual([
-        ['0', 'Off (0)'],
-        ['1', 'On (1)'],
+        ['0', 'Paused (0)'],
+        ['1', 'Enabled (1)'],
       ]);
     });
 

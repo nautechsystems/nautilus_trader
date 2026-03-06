@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 import pytest
@@ -25,8 +10,8 @@ from nautilus_trader.flux.api.payloads import build_legs_payload
 from nautilus_trader.flux.api.payloads import build_signals_payload
 from nautilus_trader.flux.api.payloads import build_trades_rows
 from nautilus_trader.flux.api.payloads import enrich_balances_rows
-from nautilus_trader.flux.api.payloads import filter_balance_rows_for_contract_scope
 from nautilus_trader.flux.api.payloads import extract_stream_rows
+from nautilus_trader.flux.api.payloads import filter_balance_rows_for_contract_scope
 from nautilus_trader.flux.api.payloads import merge_portfolio_balances_rows
 
 
@@ -461,7 +446,11 @@ def test_build_legs_payload_derives_canonical_naming_for_plume_spot_and_perp() -
         market_rows={
             "bybit:PLUMEUSDT-LINEAR.BYBIT": {"bid": 0.0104, "ask": 0.0106, "ts_ms": 1700000000000},
             "bybit:PLUMEUSDT-SPOT.BYBIT": {"bid": 0.0105, "ask": 0.0107, "ts_ms": 1700000000001},
-            "binance_spot:PLUMEUSDT.BINANCE_SPOT": {"bid": 0.0105, "ask": 0.0106, "ts_ms": 1700000000002},
+            "binance_spot:PLUMEUSDT.BINANCE_SPOT": {
+                "bid": 0.0105,
+                "ask": 0.0106,
+                "ts_ms": 1700000000002,
+            },
             "okx:PLUME-USDT-SWAP.OKX": {"bid": 0.0103, "ask": 0.0105, "ts_ms": 1700000000003},
         },
         now_ms_value=1700000001000,

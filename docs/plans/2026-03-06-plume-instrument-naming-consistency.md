@@ -153,10 +153,10 @@ Rules:
 
 **Files:**
 
-- Modify: `nautilus_trader/flux/common/keys.py`
-- Modify: `nautilus_trader/flux/api/app.py`
-- Modify: `nautilus_trader/flux/api/payloads.py`
-- Modify: `nautilus_trader/flux/runners/tokenmm/run_api.py`
+- Modify: `systems/flux/flux/common/keys.py`
+- Modify: `systems/flux/flux/api/app.py`
+- Modify: `systems/flux/flux/api/payloads.py`
+- Modify: `systems/flux/flux/runners/tokenmm/run_api.py`
 - Modify: `deploy/tokenmm/tokenmm.live.toml`
 - Test: `tests/unit_tests/flux/api/test_app.py`
 - Test: `tests/unit_tests/flux/api/test_payloads.py`
@@ -186,9 +186,9 @@ pytest tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py -q
 
 **Files:**
 
-- Modify: `nautilus_trader/flux/api/payloads.py`
-- Modify: `nautilus_trader/flux/strategies/makerv3/publisher.py`
-- Modify: `nautilus_trader/flux/strategies/makerv3/inventory.py`
+- Modify: `systems/flux/flux/api/payloads.py`
+- Modify: `systems/flux/flux/strategies/makerv3/publisher.py`
+- Modify: `systems/flux/flux/strategies/makerv3/inventory.py`
 - Test: `tests/unit_tests/flux/api/test_payloads.py`
 - Test: `tests/unit_tests/flux/api/test_app.py`
 - Test: `tests/unit_tests/flux/strategies/makerv3/test_observability_and_exports.py`

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -171,6 +171,73 @@ describe('Signal MakerV2 truth overlay', () => {
     expect(screen.getByText(/^Our(?: \(last-known\))?$/)).toBeInTheDocument();
     expect(screen.getByText(/^Ref(?: \(last-known\))?$/)).toBeInTheDocument();
     expect(screen.getAllByText('OFF').length).toBeGreaterThan(0);
+  });
+
+  it('keeps mixed spot/perp strategies when filtering by market type', async () => {
+    const mixedStrategy: SignalStrategy = {
+      id: 'mixed_market_strategy',
+      params: { bot_on: '1' } as any,
+      legs: {
+        A: {
+          exchange: 'bybit',
+          coin: 'PLUME',
+          product_type: 'perp',
+          decision_bid: 1.0,
+          decision_ask: 1.01,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        B: {
+          exchange: 'binance_spot',
+          coin: 'PLUME',
+          product_type: 'spot',
+          decision_bid: 1.0,
+          decision_ask: 1.01,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+      },
+      balances_ok: true,
+    } as any;
+    const spotOnlyStrategy: SignalStrategy = {
+      id: 'spot_only_strategy',
+      params: { bot_on: '1' } as any,
+      legs: {
+        A: {
+          exchange: 'binance_spot',
+          coin: 'PLUME',
+          product_type: 'spot',
+          decision_bid: 1.0,
+          decision_ask: 1.01,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        B: null,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({
+      rows: [mixedStrategy, spotOnlyStrategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    renderSignalTable();
+
+    await waitFor(() => expect(screen.getByText('mixed_market_strategy')).toBeInTheDocument());
+
+    const filtersToggle = screen.getByText('Filters');
+    fireEvent.click(filtersToggle);
+    await waitFor(() => {
+      expect(screen.getByText('Market')).toBeInTheDocument();
+    });
+    const marketFilterLabel = screen.getByText('Market', { selector: 'label' });
+    const marketFilter = marketFilterLabel.parentElement?.querySelector('select') as HTMLSelectElement;
+    fireEvent.change(marketFilter, { target: { value: 'perp' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('mixed_market_strategy')).toBeInTheDocument();
+      expect(screen.queryByText('spot_only_strategy')).not.toBeInTheDocument();
+    });
   });
 
   it('passes through maker_quote_status dict updates in signal_delta', async () => {
@@ -674,6 +741,127 @@ describe('Signal MakerV2 truth overlay', () => {
     expect(legBSlot?.textContent).toContain('binance_spot');
     expect(legBSlot?.textContent).toContain('PLUME');
     expect(legASlot?.textContent).not.toContain('bybit');
+  });
+
+  it('maps maker overlay legs by canonical symbol when maker_role_map is missing', async () => {
+    const strategy: SignalStrategy = {
+      id: 'maker_overlay_without_role_map',
+      params: { bot_on: '0' } as any,
+      legs: {
+        A: {
+          exchange: 'binance_spot',
+          coin: 'PLUME',
+          pair: 'PLUME/USDT',
+          display_name_long: 'Binance PLUME Spot',
+          decision_bid: 1.0,
+          decision_ask: 1.01,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        B: {
+          exchange: 'bybit',
+          coin: 'PLUME',
+          instrument_id: 'PLUMEUSDT-LINEAR.BYBIT',
+          raw_symbol: 'PLUMEUSDT',
+          pair: 'PLUME/USDT',
+          display_name_long: 'Bybit PLUME Perp',
+          decision_bid: 1.02,
+          decision_ask: 1.03,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+      },
+      balances_ok: true,
+      maker_role_map: undefined,
+      maker_v3: {
+        quote_snapshot: {
+          ts_ms: Date.now(),
+          mode: 'OFF',
+          maker_exchange: 'bybit',
+          maker_symbol: 'PLUME/USDT',
+          ref_exchange: 'binance_spot',
+          ref_symbol: 'PLUME/USDT',
+          ref_bid: '1.00',
+          ref_ask: '1.01',
+          place_bid: '1.02',
+          place_ask: '1.03',
+        },
+      } as any,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    const { container } = renderSignalTable();
+
+    await waitFor(() => expect(screen.getByText('maker_overlay_without_role_map')).toBeInTheDocument());
+
+    const legASlot = container.querySelector('tbody tr td:nth-child(7)');
+    const legBSlot = container.querySelector('tbody tr td:nth-child(8)');
+    expect(legASlot?.textContent).toContain('Bybit PLUME Perp');
+    expect(legBSlot?.textContent).toContain('Binance PLUME Spot');
+  });
+
+  it('matches maker overlay legs from canonical pair when contract_id carries instrument text', async () => {
+    const strategy: SignalStrategy = {
+      id: 'maker_overlay_contract_id_fallback',
+      params: { bot_on: '0' } as any,
+      legs: {
+        A: {
+          exchange: 'binance_spot',
+          coin: 'PLUME',
+          display_name_long: 'Binance PLUME Spot',
+          decision_bid: 1.0,
+          decision_ask: 1.01,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        B: {
+          exchange: 'bybit',
+          coin: 'PLUME',
+          contract_id: 'bybit:PLUMEUSDT-LINEAR.BYBIT',
+          instrument_id: 'PLUMEUSDT-LINEAR.BYBIT',
+          raw_symbol: 'PLUMEUSDT',
+          display_name_long: 'Bybit PLUME Perp',
+          decision_bid: 1.02,
+          decision_ask: 1.03,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+      },
+      balances_ok: true,
+      maker_role_map: undefined,
+      maker_v3: {
+        quote_snapshot: {
+          ts_ms: Date.now(),
+          mode: 'OFF',
+          maker_exchange: 'bybit',
+          maker_symbol: 'PLUME/USDT',
+          ref_exchange: 'binance_spot',
+          ref_symbol: 'PLUME/USDT',
+          ref_bid: '1.00',
+          ref_ask: '1.01',
+          place_bid: '1.02',
+          place_ask: '1.03',
+        },
+      } as any,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    const { container } = renderSignalTable();
+
+    await waitFor(() => expect(screen.getByText('maker_overlay_contract_id_fallback')).toBeInTheDocument());
+
+    const legASlot = container.querySelector('tbody tr td:nth-child(7)');
+    const legBSlot = container.querySelector('tbody tr td:nth-child(8)');
+    expect(legASlot?.textContent).toContain('Bybit PLUME Perp');
+    expect(legBSlot?.textContent).toContain('Binance PLUME Spot');
   });
 
   it('uses mergeStrategies once for market_update strategy arrays', async () => {

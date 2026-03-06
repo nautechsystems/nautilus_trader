@@ -55,11 +55,11 @@ Branch: PR #5 branch (worktree: `.worktrees/makerv3-mono-pr`)
 
 Major surfaces added/changed:
 
-1. `nautilus_trader/flux/common/*` (typed config + Redis key builders)
-2. `nautilus_trader/flux/params/*` (parameter manager + pub/sub semantics)
-3. `nautilus_trader/flux/bridge/*` (modular handlers + stream consumer + bounded retention)
-4. `nautilus_trader/flux/api/*` (app-factory API + payload builders + readiness/health)
-5. `nautilus_trader/flux/strategies/makerv3/*` (production strategy; further refactor tracked separately)
+1. `systems/flux/flux/common/*` (typed config + Redis key builders)
+2. `systems/flux/flux/params/*` (parameter manager + pub/sub semantics)
+3. `systems/flux/flux/bridge/*` (modular handlers + stream consumer + bounded retention)
+4. `systems/flux/flux/api/*` (app-factory API + payload builders + readiness/health)
+5. `systems/flux/flux/strategies/makerv3/*` (production strategy; further refactor tracked separately)
 6. `docs/flux/*` (durable schema/params/bridge/api docs)
 7. `scripts/ci/check-flux-leakage.sh` + CI/pre-commit wiring (`.github/workflows/build.yml`, `.pre-commit-config.yaml`)
 8. `examples/live/makerv3/*` (thin runners + config + README)
@@ -73,7 +73,7 @@ Production gaps identified in review (high-level) and status:
 3. Redis schema not versioned / multi-strategy contamination risk: resolved via `flux:v1` + strict strategy scoping (Tasks 1-4).
 4. Unbounded Redis growth paths: resolved via bounded retention defaults + docs (Tasks 2, 4).
 5. Strategy hot-path I/O and incomplete lifecycle reconciliation: resolved for production readiness baseline (Task 6); further modularization/refactor is tracked separately.
-6. Socket.IO emitter lifecycle/perf/observability gaps for Fluxboard realtime: resolved via explicit profile refcounts, idle wake/sleep behavior, bounded per-profile error backoff/logging, and zero-ref state cleanup in `nautilus_trader/flux/api/socketio.py`.
+6. Socket.IO emitter lifecycle/perf/observability gaps for Fluxboard realtime: resolved via explicit profile refcounts, idle wake/sleep behavior, bounded per-profile error backoff/logging, and zero-ref state cleanup in `systems/flux/flux/api/socketio.py`.
 
 ## Target module layout (proposed)
 
@@ -81,11 +81,11 @@ Goal: move reusable “flux integration” out of example runner entrypoints int
 
 Proposed layout:
 
-1. `nautilus_trader/flux/common/`
-2. `nautilus_trader/flux/params/`
-3. `nautilus_trader/flux/bridge/`
-4. `nautilus_trader/flux/api/`
-5. `nautilus_trader/flux/strategies/makerv3/`
+1. `systems/flux/flux/common/`
+2. `systems/flux/flux/params/`
+3. `systems/flux/flux/bridge/`
+4. `systems/flux/flux/api/`
+5. `systems/flux/flux/strategies/makerv3/`
 6. `examples/live/makerv3/` (thin wrappers only)
 
 ## Redis schema (decision required)
@@ -118,7 +118,7 @@ Phase 0: Review and plan
 
 Phase 1: Naming, layout, and cleanup
 
-- [x] Create `nautilus_trader/flux/` package and move reusable code out of legacy runner entrypoints
+- [x] Create `systems/flux/flux/` package and move reusable code out of legacy runner entrypoints
 - [x] Remove prototype and legacy naming from production code/durable docs
 - [x] Replace legacy prototype runner naming with `flux` naming
 
@@ -230,10 +230,10 @@ Notes:
 
 **Files:**
 
-- Create: `nautilus_trader/flux/__init__.py`
-- Create: `nautilus_trader/flux/common/__init__.py`
-- Create: `nautilus_trader/flux/common/keys.py`
-- Create: `nautilus_trader/flux/common/config.py`
+- Create: `systems/flux/flux/__init__.py`
+- Create: `systems/flux/flux/common/__init__.py`
+- Create: `systems/flux/flux/common/keys.py`
+- Create: `systems/flux/flux/common/config.py`
 
 **Steps:**
 
@@ -266,7 +266,7 @@ pytest tests/unit_tests -q
 
 **Files:**
 
-- Create: `nautilus_trader/flux/params/manager.py`
+- Create: `systems/flux/flux/params/manager.py`
 - Modify: strategy module (new location) to use `FluxParamsManager` via timer-based polling
 - Modify: API module to use batched reads (`HMGET`) not per-key `GET`
 
@@ -284,8 +284,8 @@ pytest tests/unit_tests -q
 
 **Files:**
 
-- Create: `nautilus_trader/flux/bridge/stream_consumer.py`
-- Create: `nautilus_trader/flux/bridge/handlers/*.py`
+- Create: `systems/flux/flux/bridge/stream_consumer.py`
+- Create: `systems/flux/flux/bridge/handlers/*.py`
 - Modify: replace deprecated bridge runner wiring with the production wrapper under `examples/live/makerv3/run_bridge.py`
 
 **Steps:**
@@ -303,8 +303,8 @@ pytest tests/unit_tests -q
 
 **Files:**
 
-- Create: `nautilus_trader/flux/api/app.py`
-- Create: `nautilus_trader/flux/api/payloads.py`
+- Create: `systems/flux/flux/api/app.py`
+- Create: `systems/flux/flux/api/payloads.py`
 - Modify: replace deprecated API runner wiring with the production wrapper under `examples/live/makerv3/run_api.py`
 
 **Steps:**
@@ -322,7 +322,7 @@ pytest tests/unit_tests -q
 
 **Files:**
 
-- Move: `nautilus_trader/examples/strategies/makerv3.py` -> `nautilus_trader/flux/strategies/makerv3/strategy.py`
+- Move: `nautilus_trader/examples/strategies/makerv3.py` -> `systems/flux/flux/strategies/makerv3/strategy.py`
 - Modify: tests to target new module path and add strategy-level tests
 
 **Steps (must-hit safety items):**
@@ -460,7 +460,7 @@ Migration policy:
 
 Recommended module:
 
-1. `nautilus_trader/flux/common/config.py`
+1. `systems/flux/flux/common/config.py`
 
 Required top-level fields (proposal):
 
@@ -487,9 +487,9 @@ Example config (TOML) path to create:
 
 Target layout:
 
-1. `nautilus_trader/flux/api/storage.py` for Redis access and batching
-2. `nautilus_trader/flux/api/payloads.py` for schema, validation, and canonical envelopes
-3. `nautilus_trader/flux/api/app.py` as Flask app factory + middleware + DI
+1. `systems/flux/flux/api/storage.py` for Redis access and batching
+2. `systems/flux/flux/api/payloads.py` for schema, validation, and canonical envelopes
+3. `systems/flux/flux/api/app.py` as Flask app factory + middleware + DI
 
 Required properties:
 
@@ -519,7 +519,7 @@ Required changes:
 4. Move runtime param ingestion out of `on_order_book_deltas` and into a timer/worker; callback reads only last-known in-memory params.
 5. Strengthen cancel-on-stop so it does not depend on `_managed_orders()` being visible.
 
-Suggested extraction targets under `nautilus_trader/flux/strategies/makerv3/`:
+Suggested extraction targets under `systems/flux/flux/strategies/makerv3/`:
 
 1. `quote_math.py` for pure ladder planning and actions
 2. `market_health.py` for staleness/block policies
@@ -557,16 +557,16 @@ python -m pytest tests/unit_tests -q
 ## Decisions
 
 1. Redis schema namespace for production modules is fixed to `flux:v1` with strategy-scoped keys by default; key builders allow namespace/schema injection only for controlled testing.
-2. Config contract starts with explicit typed config structs in `nautilus_trader/flux/common/config.py`; unsupported schema versions fail fast at construction time.
+2. Config contract starts with explicit typed config structs in `systems/flux/flux/common/config.py`; unsupported schema versions fail fast at construction time.
 3. Retention defaults are mandatory for high-churn streams; `docs/flux/redis_schema.md` is the single source of truth for numeric defaults and allowed tuning ranges.
 4. Migration policy is hard cutover: one clean production build with `flux:v1:*` reads/writes only and no runtime legacy-read path.
 5. Runtime parameter ingestion is centralized in `FluxParamsManager` and runs on timer-driven refresh paths; market-data callbacks must read in-memory params only.
 6. Bridge ingestion is modularized as topic handlers plus a stream consumer; handlers emit strategy-scoped `flux:v1` writes with bounded retention and normalized `ts_ms` at ingest.
 7. API contract is factory-based (`FluxConfig` + injected Redis client), with centralized envelopes (`api_version`, `request_id`, `timestamp_ms`) and explicit health/readiness schema checks.
-8. Production strategy implementation lives under `nautilus_trader/flux/strategies/makerv3/` with two-leg staleness gating, lifecycle reconciliation, and quote-failure circuit breaker fail-stop semantics.
+8. Production strategy implementation lives under `systems/flux/flux/strategies/makerv3/` with two-leg staleness gating, lifecycle reconciliation, and quote-failure circuit breaker fail-stop semantics.
 9. Production leakage policy is enforced via `scripts/ci/check-flux-leakage.sh`, which fails on legacy/prototype naming in production Flux paths and on absolute host paths in durable Flux docs.
-10. Follow-up gate policy keeps Redis key format unchanged while enforcing config-level identity uniqueness (`strategy_instance_id == strategy_id`) and explicitly forbids edits under `nautilus_trader/flux/strategies/*` in this wave to avoid worker-collision risk.
-11. Task 10 non-overlap wave boundaries remain strict: no edits under `nautilus_trader/flux/strategies/*` and no changes to untracked plan docs; `docs/flux/redis_schema.md` is scanned as a durable production doc and must not contain legacy naming.
+10. Follow-up gate policy keeps Redis key format unchanged while enforcing config-level identity uniqueness (`strategy_instance_id == strategy_id`) and explicitly forbids edits under `systems/flux/flux/strategies/*` in this wave to avoid worker-collision risk.
+11. Task 10 non-overlap wave boundaries remain strict: no edits under `systems/flux/flux/strategies/*` and no changes to untracked plan docs; `docs/flux/redis_schema.md` is scanned as a durable production doc and must not contain legacy naming.
 12. Durable Flux docs do not embed legacy key prefixes. Any Redis migration must be an explicit out-of-band cutover validated against `flux:v1:*` only; the leakage gate scans `docs/flux/redis_schema.md` directly (no allowlist markers).
 
 ## Progress log
@@ -574,9 +574,9 @@ python -m pytest tests/unit_tests -q
 1. 2026-03-04T00:47:15Z | Task 1 - Flux package skeleton (`FluxRedisKeys` + `FluxConfig` + tests) | SHAs: `8570583d3`, `11249bc3b61a` | Notes: Implemented with TDD and review loops; added strict schema/version and Redis validation; Task 1 spec review ✅ and code-quality review ✅.
 2. 2026-03-04T00:54:07Z | Task 2 - Redis schema decision + durable documentation | SHAs: `919df6857876f3ca64559936491a92797408e076`, `d916df85b` | Notes: Added `docs/flux/redis_schema.md` with canonical keys/channels, retention policy, `ts_ms` contract, and explicit hard cutover policy (no runtime legacy reads and no durable legacy mapping); Task 2 spec review ✅ and code-quality review ✅.
 3. 2026-03-04T01:18:14Z | Task 3 - Params subsystem extraction + hot-path polling removal | SHAs: `915772bd9160e5dcf2981b67a99f58f443b72653`, `6bf0fbc70084cb79f4c15af99e3f197bb2c4695d` | Notes: Added `FluxParamsManager` (`HMGET` load, strict unknown-key rejection, update+publish), moved strategy param refresh to timer path, removed market-data callback network polling, and switched API params read/write path to `flux:v1` hash/channel semantics; Task 3 spec review ✅ and code-quality review ✅.
-4. 2026-03-04T01:33:29Z | Task 4 - Bridge modularization + schema hardening | SHAs: `1ee44e2be39cce1688d886a5f66f8265252ebcbe`, `7c53ac9bf983689a872519a7cef2aa98dab06f8a` | Notes: Moved bridge ingestion into `nautilus_trader/flux/bridge/*` with topic handlers + consumer, replaced monolithic runner with thin wrapper, enforced strategy-scoped `flux:v1` outputs with bounded stream retention, normalized `ts_ms`, and added consumer boundary tests; Task 4 spec review ✅ and code-quality review ✅.
-5. 2026-03-04T01:52:58Z | Task 5 - API package refactor + envelope/readiness hardening | SHAs: `7b9c2deb8425171b956e5887cb9246ca7bd0d54d`, `8d93d0d5f2241e2678d3b1380f0d445f6c6fe345` | Notes: Moved API logic into `nautilus_trader/flux/api/*` with DI app factory, store/payload separation, batched feed reads, schema-based readiness/health endpoints, explicit validation/error envelopes, and thin example runner wiring; Task 5 spec review ✅ and code-quality review ✅.
-6. 2026-03-04T02:13:41Z | Task 6 - Strategy productionization safety/perf refactor | SHAs: `811339f6e4023296e5e11498c7fab28c259dfdd0`, `13295ccf0b91b74012a42276e92e164854b89231` | Notes: Added production strategy module under `nautilus_trader/flux/strategies/makerv3/`, implemented two-leg staleness gating + cancel, quote-failure circuit breaker fail-stop, lifecycle reconciliation for reject/cancel/expire, and stronger cancel-on-stop tracking semantics with new strategy-level tests; Task 6 spec review ✅ and code-quality review ✅.
+4. 2026-03-04T01:33:29Z | Task 4 - Bridge modularization + schema hardening | SHAs: `1ee44e2be39cce1688d886a5f66f8265252ebcbe`, `7c53ac9bf983689a872519a7cef2aa98dab06f8a` | Notes: Moved bridge ingestion into `systems/flux/flux/bridge/*` with topic handlers + consumer, replaced monolithic runner with thin wrapper, enforced strategy-scoped `flux:v1` outputs with bounded stream retention, normalized `ts_ms`, and added consumer boundary tests; Task 4 spec review ✅ and code-quality review ✅.
+5. 2026-03-04T01:52:58Z | Task 5 - API package refactor + envelope/readiness hardening | SHAs: `7b9c2deb8425171b956e5887cb9246ca7bd0d54d`, `8d93d0d5f2241e2678d3b1380f0d445f6c6fe345` | Notes: Moved API logic into `systems/flux/flux/api/*` with DI app factory, store/payload separation, batched feed reads, schema-based readiness/health endpoints, explicit validation/error envelopes, and thin example runner wiring; Task 5 spec review ✅ and code-quality review ✅.
+6. 2026-03-04T02:13:41Z | Task 6 - Strategy productionization safety/perf refactor | SHAs: `811339f6e4023296e5e11498c7fab28c259dfdd0`, `13295ccf0b91b74012a42276e92e164854b89231` | Notes: Added production strategy module under `systems/flux/flux/strategies/makerv3/`, implemented two-leg staleness gating + cancel, quote-failure circuit breaker fail-stop, lifecycle reconciliation for reject/cancel/expire, and stronger cancel-on-stop tracking semantics with new strategy-level tests; Task 6 spec review ✅ and code-quality review ✅.
 7. 2026-03-04T02:26:03Z | Task 7 - Replace legacy runner entrypoints with thin examples | SHAs: `6758d180f09eb607ee198667d23082c8b4e39ea2` | Notes: Added `examples/live/makerv3/*` (node/bridge/api runners + README + config), removed deprecated runner entrypoints, removed unsafe secret bootstrap patterns, and kept run modes explicit; Task 7 spec review ✅ and code-quality review ✅.
 8. 2026-03-04T03:04:17Z | Task 8 - PR cleanup + leakage enforcement | SHAs: `aa57547d5`, `689ec0b39`, `67d2fa1b9`, `32a2dcd97`, `c50489073`, `7ea168551` | Notes: Renamed production bus payload type to `FluxBusPayload`, removed legacy envelope compatibility from bridge, added durable Flux docs (`params.md`, `bridge.md`, `api.md`), replaced archived prototype plan doc with durable pointer, preserved `/.worktrees/` and `.run/` ignores, and hardened `scripts/ci/check-flux-leakage.sh` through spec/quality fix loops (case-insensitive legacy naming detection, generalized host-path checks, and URL-safe Windows path matching); Task 8 spec review ✅ and code-quality review ✅.
 9. 2026-03-04T03:08:07Z | Task 9 (P0) - Bridge offset semantics hardening | SHAs: `fb4f99e3b` | Notes: Moved offset advancement to post-write success only, advanced offsets past rejected decode/handler failures to avoid stream stalls, retained offsets on Redis write failures for retry, broadened write exception catch in run loop, and added run-loop regression tests for offset behavior.

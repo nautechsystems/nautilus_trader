@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import Any
 
 from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.strategies import MakerV3Strategy as MakerV3StrategyFromRoot
@@ -18,6 +19,7 @@ from nautilus_trader.flux.strategies.makerv3.constants import REASON_SKIPPED_REQ
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_ALERT
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_BALANCES
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_EVENT
+from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_STATE
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -44,7 +46,7 @@ def test_quote_cycle_skipped_event_has_envelope_and_reason_code(clocked_strategy
     strategy._publish_balances_if_due = lambda: None
     strategy._recompute_and_publish_fv = lambda: None
 
-    payloads: list[tuple[str, dict[str, object]]] = []
+    payloads: list[tuple[str, dict[str, Any]]] = []
     strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
 
     strategy.on_order_book_deltas(
@@ -76,7 +78,7 @@ def test_quote_cycle_blocked_event_has_transition_details(clocked_strategy_facto
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 1_000_000_000 - 200_000_000
     strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 1_000_000_000 - 10_000_000
 
-    payloads: list[tuple[str, dict[str, object]]] = []
+    payloads: list[tuple[str, dict[str, Any]]] = []
     strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
 
     strategy._refresh_quotes(now_ns=1_000_000_000)
@@ -110,7 +112,7 @@ def test_quote_cycle_completed_event_contains_action_counts(clocked_strategy_fac
     strategy._rebalance_side = lambda **_kwargs: 1
     strategy._place_missing_levels = lambda **_kwargs: 2
 
-    payloads: list[tuple[str, dict[str, object]]] = []
+    payloads: list[tuple[str, dict[str, Any]]] = []
     strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
 
     strategy._refresh_quotes(now_ns=1_000_000_000)
@@ -146,7 +148,7 @@ def test_blocked_alerts_are_rate_limited_until_unblocked_transition(
     strategy._managed_orders = list
     strategy._cancel_managed_quotes = lambda *_args, **_kwargs: None
 
-    payloads: list[tuple[str, dict[str, object]]] = []
+    payloads: list[tuple[str, dict[str, Any]]] = []
     strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
 
     strategy._handle_stale_quote_block(
@@ -222,19 +224,17 @@ def test_publish_balances_filters_fallback_positions_to_maker_base_asset(
         ),
     }
     positions = [
-        SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal("2")),
-        SimpleNamespace(instrument_id=other_base_id, signed_qty=Decimal("9")),
+        SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal(2)),
+        SimpleNamespace(instrument_id=other_base_id, signed_qty=Decimal(9)),
     ]
     strategy._cache = SimpleNamespace(
         order=lambda _client_order_id: None,
-        accounts=lambda: [],
-        positions_open=lambda instrument_id=None: (
-            positions if instrument_id is None else []
-        ),
+        accounts=list,
+        positions_open=lambda instrument_id=None: positions if instrument_id is None else [],
         instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
     )
 
-    payloads: list[tuple[str, dict[str, object]]] = []
+    payloads: list[tuple[str, dict[str, Any]]] = []
     strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
 
     strategy._publish_balances()
@@ -252,3 +252,61 @@ def test_publish_balances_filters_fallback_positions_to_maker_base_asset(
     position_rows = [row for row in rows if str(row.get("kind")).lower() == "position"]
     assert len(position_rows) == 1
     assert position_rows[0]["instrument_id"] == str(maker_instrument_id)
+
+
+def test_publish_state_backfills_inventory_skew_when_quote_cycle_has_not_run(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._managed_orders = list
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._quote_runtime_params_snapshot = lambda: {
+        "des_qty_global": Decimal(0),
+        "max_qty_global": Decimal(50000),
+        "max_skew_bps_global": Decimal(20),
+        "des_qty_local": Decimal(0),
+        "max_qty_local": Decimal(100000),
+        "max_skew_bps_local": Decimal(0),
+        "linear_offset_bps": Decimal(0),
+    }
+    strategy._compute_inventory_skew = lambda **_kwargs: {
+        "inventory_qty": Decimal("33317.3519"),
+        "inventory_source": "portfolio_component_sum",
+        "base_currency": "PLUME",
+        "position_qty": None,
+        "spot_qty": None,
+        "global_position_qty": None,
+        "global_spot_qty": None,
+        "global_inventory_qty": Decimal("33317.3519"),
+        "global_inventory_source": "portfolio_component_sum",
+        "local_position_qty": Decimal(-9806),
+        "local_spot_qty": None,
+        "local_inventory_qty": Decimal(-9806),
+        "local_inventory_source": "positions",
+        "des_qty_global": Decimal(0),
+        "max_qty_global": Decimal(50000),
+        "max_skew_bps_global": Decimal(20),
+        "des_qty_local": Decimal(0),
+        "max_qty_local": Decimal(100000),
+        "max_skew_bps_local": Decimal(0),
+        "linear_offset_bps": Decimal(0),
+        "global_ratio": Decimal("0.666347038"),
+        "global_skew_bps": Decimal("13.32694076"),
+        "local_ratio": Decimal("-0.09806"),
+        "local_skew_bps": Decimal(0),
+        "total_skew_bps": Decimal("13.32694076"),
+    }
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("bot_off")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["pricing_debug"]["skew"]["global_inventory_qty"] == "33317.3519"
+    assert (
+        state_payload["pricing_debug"]["skew"]["global_inventory_source"]
+        == "portfolio_component_sum"
+    )
+    assert state_payload["pricing_debug"]["skew"]["local_inventory_qty"] == "-9806"
+    assert state_payload["pricing_debug"]["skew"]["local_inventory_source"] == "positions"

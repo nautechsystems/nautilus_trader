@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -21,13 +6,14 @@ from pathlib import Path
 import pytest
 from flask import Flask
 
-from nautilus_trader.flux.runners.tokenmm.run_api import _attach_fluxboard_tokenmm_routes
-from nautilus_trader.flux.runners.tokenmm.run_api import _build_flux_config
-from nautilus_trader.flux.runners.tokenmm.run_api import _build_profile_strategy_maps
-from nautilus_trader.flux.runners.tokenmm.run_api import _load_config
-from nautilus_trader.flux.runners.tokenmm.run_api import _parse_args
-from nautilus_trader.flux.runners.tokenmm.run_api import _resolve_bind_host
-from nautilus_trader.flux.runners.tokenmm.run_api import _tokenmm_profile_summary
+from flux.runners.tokenmm.run_api import _attach_fluxboard_tokenmm_routes
+from flux.runners.tokenmm.run_api import _attach_pulse_routes
+from flux.runners.tokenmm.run_api import _build_flux_config
+from flux.runners.tokenmm.run_api import _build_profile_strategy_maps
+from flux.runners.tokenmm.run_api import _load_config
+from flux.runners.tokenmm.run_api import _parse_args
+from flux.runners.tokenmm.run_api import _resolve_bind_host
+from flux.runners.tokenmm.run_api import _tokenmm_profile_summary
 
 
 def _example_config_path() -> Path:
@@ -79,7 +65,9 @@ def test_resolve_bind_host_prefers_cli_override() -> None:
 
 def test_resolve_bind_host_allows_public_bind_targets_for_production_deploys() -> None:
     assert _resolve_bind_host({"api": {"host": "0.0.0.0"}}, Namespace(host=None)) == "0.0.0.0"  # noqa: S104
-    assert _resolve_bind_host({"api": {"host": "127.0.0.1"}}, Namespace(host="10.0.0.8")) == "10.0.0.8"  # noqa: S104
+    assert (
+        _resolve_bind_host({"api": {"host": "127.0.0.1"}}, Namespace(host="10.0.0.8")) == "10.0.0.8"
+    )
 
 
 def test_build_profile_strategy_maps_reads_tokenmm_allowlist_and_required_subset() -> None:
@@ -145,6 +133,30 @@ def test_attach_fluxboard_tokenmm_routes_redirects_tokenm_aliases(tmp_path: Path
     assert response.headers["Location"] == "/tokenmm/alerts?foo=1"
 
 
+def test_attach_pulse_routes_serves_index_assets_and_spa_fallback(tmp_path: Path) -> None:
+    dist_dir = tmp_path / "dist"
+    assets_dir = dist_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text("<html>pulse</html>", encoding="utf-8")
+    (assets_dir / "pulse.js").write_text("console.log('pulse')", encoding="utf-8")
+
+    app = Flask(__name__)
+    _attach_pulse_routes(app, dist_dir=dist_dir)
+    client = app.test_client()
+
+    response = client.get("/pulse")
+    assert response.status_code == 200
+    assert "pulse" in response.get_data(as_text=True)
+
+    response = client.get("/pulse/assets/pulse.js")
+    assert response.status_code == 200
+    assert "console.log('pulse')" in response.get_data(as_text=True)
+
+    response = client.get("/pulse/jobs/tokenmm-api")
+    assert response.status_code == 200
+    assert "pulse" in response.get_data(as_text=True)
+
+
 def test_load_config_applies_redis_env_overrides(monkeypatch, tmp_path: Path) -> None:
     config_path = tmp_path / "tokenmm.toml"
     config_path.write_text(
@@ -157,7 +169,10 @@ ssl = false
 """.strip(),
         encoding="utf-8",
     )
-    monkeypatch.setenv("TOKENMM_REDIS_HOST", "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com")
+    monkeypatch.setenv(
+        "TOKENMM_REDIS_HOST",
+        "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com",
+    )
     monkeypatch.setenv("TOKENMM_REDIS_PORT", "6379")
     monkeypatch.setenv("TOKENMM_REDIS_USERNAME", "default")
     monkeypatch.setenv("TOKENMM_REDIS_PASSWORD", "secret")
@@ -165,7 +180,10 @@ ssl = false
 
     config = _load_config(config_path)
 
-    assert config["redis"]["host"] == "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com"
+    assert (
+        config["redis"]["host"]
+        == "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com"
+    )
     assert config["redis"]["port"] == 6379
     assert config["redis"]["username"] == "default"
     assert config["redis"]["password"] == "secret"

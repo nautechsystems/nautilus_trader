@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 import json
@@ -516,6 +501,40 @@ def test_create_app_allows_same_exchange_pair_when_instrument_ids_differ(
     assert app is not None
 
 
+def test_market_keys_skip_legacy_fallback_when_exchange_pair_is_ambiguous(
+    flux_config,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    store = app_module.FluxApiStore(
+        flux_config=flux_config,
+        redis_client=redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+            ),
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-SPOT.BYBIT",
+            ),
+        ),
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    market_keys = store._market_keys(flux_config.identity.strategy_id)
+
+    assert [fallback for _contract, _primary, fallback in market_keys] == [None, None]
+    assert [primary for _contract, primary, _fallback in market_keys] == [
+        "flux:v1:market:last:strategy_01:bybit:PLUMEUSDT-LINEAR.BYBIT",
+        "flux:v1:market:last:strategy_01:bybit:PLUMEUSDT-SPOT.BYBIT",
+    ]
+
+
 def test_params_profile_fanout_returns_multiple_tokenmm_strategies(
     flux_config,
     redis_client,
@@ -653,11 +672,6 @@ def test_balances_profile_tokenmm_honors_explicit_required_subset(
 ) -> None:
     monkeypatch.setattr(app_module, "now_ms", lambda: 100_000)
     primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
-    secondary_keys = FluxRedisKeys(
-        strategy_id="strategy_02",
-        namespace=flux_config.identity.namespace,
-        schema_version=flux_config.identity.schema_version,
-    )
     redis_client.set_json(
         primary_keys.balances_snapshot(),
         [
@@ -1005,7 +1019,14 @@ def test_trades_with_strategy_query_keeps_per_strategy_debug_view_with_tokenmm_p
     )
     redis_client.add_stream_rows(
         primary_keys.trades_stream(),
-        [{"strategy_id": flux_config.identity.strategy_id, "row_id": "t-primary", "seq": 1, "ts_ms": 1_000}],
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-primary",
+                "seq": 1,
+                "ts_ms": 1_000,
+            },
+        ],
     )
     redis_client.add_stream_rows(
         alt_keys.trades_stream(),
@@ -1188,14 +1209,32 @@ def test_trades_delta_profile_tokenmm_after_supports_same_timestamp_replay_curso
     redis_client.add_stream_rows(
         strategy_02_keys.trades_stream(),
         [
-            {"strategy_id": "strategy_02", "row_id": "trade-a", "seq": 1, "version": 1, "ts_ms": shared_ts_ms},
-            {"strategy_id": "strategy_02", "row_id": "trade-c", "seq": 3, "version": 1, "ts_ms": shared_ts_ms},
+            {
+                "strategy_id": "strategy_02",
+                "row_id": "trade-a",
+                "seq": 1,
+                "version": 1,
+                "ts_ms": shared_ts_ms,
+            },
+            {
+                "strategy_id": "strategy_02",
+                "row_id": "trade-c",
+                "seq": 3,
+                "version": 1,
+                "ts_ms": shared_ts_ms,
+            },
         ],
     )
     redis_client.add_stream_rows(
         strategy_03_keys.trades_stream(),
         [
-            {"strategy_id": "strategy_03", "row_id": "trade-b", "seq": 1, "version": 1, "ts_ms": shared_ts_ms},
+            {
+                "strategy_id": "strategy_03",
+                "row_id": "trade-b",
+                "seq": 1,
+                "version": 1,
+                "ts_ms": shared_ts_ms,
+            },
         ],
     )
     app = create_flux_api_app(
@@ -1559,14 +1598,14 @@ def test_balances_profile_tokenmm_aggregates_cash_and_positions(
                 "total": "100",
                 "ts_ms": 1_000,
             },
-                {
-                    "strategy_id": flux_config.identity.strategy_id,
-                    "kind": "position",
-                    "exchange": "venue_a",
-                    "instrument_id": "ABCUSDT-LINEAR.BYBIT",
-                    "quantity": "2",
-                    "side": "LONG",
-                },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "kind": "position",
+                "exchange": "venue_a",
+                "instrument_id": "ABCUSDT-LINEAR.BYBIT",
+                "quantity": "2",
+                "side": "LONG",
+            },
         ],
     )
     redis_client.set_json(
@@ -1581,14 +1620,14 @@ def test_balances_profile_tokenmm_aggregates_cash_and_positions(
                 "total": "140",
                 "ts_ms": 2_000,
             },
-                {
-                    "strategy_id": "strategy_02",
-                    "kind": "position",
-                    "exchange": "venue_a",
-                    "instrument_id": "ABCUSDT-LINEAR.BYBIT",
-                    "quantity": "1",
-                    "side": "SHORT",
-                },
+            {
+                "strategy_id": "strategy_02",
+                "kind": "position",
+                "exchange": "venue_a",
+                "instrument_id": "ABCUSDT-LINEAR.BYBIT",
+                "quantity": "1",
+                "side": "SHORT",
+            },
         ],
     )
 
@@ -1848,9 +1887,16 @@ def test_balances_mark_cash_assets_and_positions_from_market_data(
     rows = {row["row_id"]: row for row in body["data"]["rows"]}
     assert rows["cash-abc"]["mark_raw"] == pytest.approx(100.0)
     assert rows["cash-abc"]["mv_raw"] == pytest.approx(1_000.0)
-    assert rows[f"{flux_config.identity.strategy_id}:pos:{'venue_a'}:ABCUSDT-PERP.VENUE_A"]["asset"] == "ABC"
-    assert rows[f"{flux_config.identity.strategy_id}:pos:{'venue_a'}:ABCUSDT-PERP.VENUE_A"]["mark_raw"] == pytest.approx(95.0)
-    assert rows[f"{flux_config.identity.strategy_id}:pos:{'venue_a'}:ABCUSDT-PERP.VENUE_A"]["mv_raw"] == pytest.approx(-190.0)
+    assert (
+        rows[f"{flux_config.identity.strategy_id}:pos:{'venue_a'}:ABCUSDT-PERP.VENUE_A"]["asset"]
+        == "ABC"
+    )
+    assert rows[f"{flux_config.identity.strategy_id}:pos:{'venue_a'}:ABCUSDT-PERP.VENUE_A"][
+        "mark_raw"
+    ] == pytest.approx(95.0)
+    assert rows[f"{flux_config.identity.strategy_id}:pos:{'venue_a'}:ABCUSDT-PERP.VENUE_A"][
+        "mv_raw"
+    ] == pytest.approx(-190.0)
 
 
 def test_instrument_catalog_reads_legacy_market_keys_for_signals_and_balances(

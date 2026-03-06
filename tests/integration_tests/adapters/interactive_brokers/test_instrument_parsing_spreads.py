@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-5 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #

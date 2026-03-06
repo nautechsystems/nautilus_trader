@@ -1,0 +1,28 @@
+[Unit]
+Description=Flux Service - %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+EnvironmentFile=-/etc/flux/common.env
+EnvironmentFile=/etc/flux/%i.env
+ExecStartPre=/bin/bash -lc 'if [ -n "${PORT:-}" ]; then ! lsof -Pi :"${PORT}" -sTCP:LISTEN -t >/dev/null 2>&1 || { echo "Port ${PORT} already in use"; exit 1; }; fi'
+ExecStart=/bin/bash -lc 'cd "${WORKDIR:?}" && exec ${CMD}'
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=60
+KillMode=mixed
+KillSignal=SIGTERM
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=flux-%i
+LimitNOFILE=65536
+LimitNPROC=4096
+PrivateTmp=true
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

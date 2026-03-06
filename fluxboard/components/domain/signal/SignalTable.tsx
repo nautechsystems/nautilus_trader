@@ -139,7 +139,7 @@ const SIGNAL_FILTERS: ColumnFilter[] = [
 ];
 
 const TRADING_SORT_ORDER: Record<TradingFilterValue, number> = {
-  Live: 2,
+  Enabled: 2,
   Pending: 1,
   Paused: 0,
 };
@@ -1006,6 +1006,25 @@ function coerceSnapshotPx(v: unknown): number | undefined {
   return coerceFiniteNumber(v);
 }
 
+function stripSnapshotContractSuffix(rawSymbol: string): string {
+  const text = rawSymbol.trim().toUpperCase();
+  if (!text) return '';
+  for (const suffix of ['-LINEAR', '-SWAP', '-INVERSE', '-PERP', '-SPOT']) {
+    if (text.endsWith(suffix) && text.length > suffix.length) {
+      return text.slice(0, -suffix.length);
+    }
+  }
+  return text;
+}
+
+function normalizeSnapshotSymbol(value: unknown): string {
+  const text = String(value ?? '').trim().toUpperCase();
+  if (!text) return '';
+  const contractText = text.includes(':') ? (text.split(':', 2)[1] ?? text) : text;
+  const instrumentText = contractText.split('.', 1)[0] ?? contractText;
+  return stripSnapshotContractSuffix(instrumentText).replace(/[/_-]/g, '');
+}
+
 function matchesSnapshotLeg(
   leg: SignalLeg | null | undefined,
   {
@@ -1021,11 +1040,17 @@ function matchesSnapshotLeg(
   const targetExchange = String(exchange ?? '').trim().toLowerCase();
   if (!legExchange || !targetExchange || legExchange !== targetExchange) return false;
 
-  const contractSymbol = String(leg.contract_id ?? '').split(':', 2)[1] ?? '';
-  const legSymbol = String(contractSymbol || leg.coin || '').trim().toUpperCase();
-  const targetSymbol = String(symbol ?? '').trim().toUpperCase();
+  const legSymbolCandidates = [
+    leg.pair,
+    leg.raw_symbol,
+    leg.instrument_id,
+    leg.contract_id,
+  ]
+    .map((candidate) => normalizeSnapshotSymbol(candidate))
+    .filter((candidate) => candidate.length > 0);
+  const targetSymbol = normalizeSnapshotSymbol(symbol);
   if (!targetSymbol) return true;
-  return legSymbol === targetSymbol;
+  return legSymbolCandidates.includes(targetSymbol);
 }
 
 function resolveMakerAwareLeg(
@@ -2150,11 +2175,11 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Trading"
             tooltip={[
-              'Order-placement intent derived from bot_on.',
-              'Independent of runner liveness.',
-              'Live = bot_on=1 (strategy allowed to place orders).',
-              'Paused = bot_on=0.',
-              'Pending = runner transition/cooldown.',
+              'Trading gate derived from bot_on.',
+              'Separate from runner liveness.',
+              'Enabled = bot_on=1 and runner confirmed.',
+              'Paused = bot_on=0 (runner may still be on).',
+              'Pending = gate enabled but runner not confirmed, or explicit cooling.',
             ].join('\n')}
           />
         ),
@@ -2165,14 +2190,15 @@ export default function SignalTable({
           const raw = resolveTradingValue(row.original as any);
           const rawStr = raw === undefined || raw === null ? 'undefined' : String(raw);
           const tooltip = [
-            'Trading status:',
-            `- State: ${descriptor.label} (${descriptor.subLabel})`,
+            'Trading gate status:',
+            `- State: ${descriptor.label}`,
+            `- Runner: ${descriptor.subLabel}`,
             `- Resolved: ${rawStr} (params.bot_on | state.bot_on | tradeable)`,
             '',
             'Semantics:',
-            '  Live: bot_on=1 (orders allowed)',
-            '  Paused: bot_on=0 (no orders)',
-            '  Pending: transition/cooldown (runner syncing)',
+            '  Enabled: bot_on=1 (new orders allowed)',
+            '  Paused: bot_on=0 (new orders blocked)',
+            '  Pending: gate enabled but runner not confirmed',
             '',
             'Change in Params → bot_on'
           ].join('\n');

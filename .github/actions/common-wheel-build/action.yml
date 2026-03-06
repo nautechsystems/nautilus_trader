@@ -23,7 +23,7 @@ runs:
       if: ${{ inputs.github_ref != 'refs/heads/master' }}
       shell: bash
       run: |
-        bash ./scripts/ci/update-pyproject-version.sh
+        bash ./tooling/release/update-pyproject-version.sh
 
     - name: Generate updated lock file
       if: inputs.github_ref != 'refs/heads/master'

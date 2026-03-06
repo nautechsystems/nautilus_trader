@@ -3,6 +3,9 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+from nautilus_trader.flux.common.keys import FluxRedisKeys
+from nautilus_trader.flux.common.portfolio_inventory import decode_component
+from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
 from nautilus_trader.flux.strategies.makerv3 import MakerV3Strategy
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -20,6 +23,18 @@ def _inventory_runtime_params(**overrides: Decimal | float | str) -> dict[str, D
     for name, value in overrides.items():
         params[name] = Decimal(str(value))
     return params
+
+
+class _FakeRedis:
+    def __init__(self) -> None:
+        self.values: dict[str, bytes] = {}
+
+    def get(self, key: str) -> bytes | None:
+        return self.values.get(key)
+
+    def set(self, key: str, value: str | bytes) -> bool:
+        self.values[key] = value.encode() if isinstance(value, str) else value
+        return True
 
 
 def test_cancel_managed_quotes_idempotency_with_tracked_ids_and_cache_visibility(
@@ -344,18 +359,18 @@ def test_compute_inventory_skew_scopes_global_and_local_inventory_by_base_and_ma
     }
 
     positions = [
-        SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal("2")),
-        SimpleNamespace(instrument_id=binance_perp_id, signed_qty=Decimal("-1")),
-        SimpleNamespace(instrument_id=other_base_id, signed_qty=Decimal("9")),
+        SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal(2)),
+        SimpleNamespace(instrument_id=binance_perp_id, signed_qty=Decimal(-1)),
+        SimpleNamespace(instrument_id=other_base_id, signed_qty=Decimal(9)),
     ]
     accounts = [
         SimpleNamespace(
             id="BYBIT-001",
-            balances_total=lambda: {"PLUME": Decimal("3"), "USDT": Decimal("50")},
+            balances_total=lambda: {"PLUME": Decimal(3), "USDT": Decimal(50)},
         ),
         SimpleNamespace(
             id="BINANCE-001",
-            balances_total=lambda: {"PLUME": Decimal("1000")},
+            balances_total=lambda: {"PLUME": Decimal(1000)},
         ),
     ]
     strategy._cache = SimpleNamespace(
@@ -376,15 +391,15 @@ def test_compute_inventory_skew_scopes_global_and_local_inventory_by_base_and_ma
         ),
     )
 
-    assert skew["global_position_qty"] == Decimal("1")
-    assert skew["global_spot_qty"] == Decimal("1003")
-    assert skew["global_inventory_qty"] == Decimal("1004")
+    assert skew["global_position_qty"] == Decimal(1)
+    assert skew["global_spot_qty"] == Decimal(1003)
+    assert skew["global_inventory_qty"] == Decimal(1004)
     assert skew["global_inventory_source"] == "positions_plus_spot"
-    assert skew["local_position_qty"] == Decimal("2")
-    assert skew["local_spot_qty"] == Decimal("3")
-    assert skew["local_inventory_qty"] == Decimal("5")
-    assert skew["local_inventory_source"] == "positions_plus_spot"
-    assert skew["inventory_qty"] == Decimal("1004")
+    assert skew["local_position_qty"] == Decimal(2)
+    assert skew["local_spot_qty"] is None
+    assert skew["local_inventory_qty"] == Decimal(2)
+    assert skew["local_inventory_source"] == "positions"
+    assert skew["inventory_qty"] == Decimal(1004)
     assert skew["inventory_source"] == "positions_plus_spot"
 
 
@@ -412,8 +427,8 @@ def test_compute_inventory_skew_treats_visible_maker_account_without_base_balanc
         order=lambda _client_order_id: None,
         positions_open=lambda instrument_id=None: [],
         accounts=lambda: [
-            SimpleNamespace(id="BYBIT-001", balances_total=lambda: {"USDT": Decimal("50")}),
-            SimpleNamespace(id="BINANCE-001", balances_total=lambda: {"PLUME": Decimal("1000")}),
+            SimpleNamespace(id="BYBIT-001", balances_total=lambda: {"USDT": Decimal(50)}),
+            SimpleNamespace(id="BINANCE-001", balances_total=lambda: {"PLUME": Decimal(1000)}),
         ],
         instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
     )
@@ -428,9 +443,9 @@ def test_compute_inventory_skew_treats_visible_maker_account_without_base_balanc
     )
 
     assert skew["global_position_qty"] == Decimal(0)
-    assert skew["global_spot_qty"] == Decimal("1000")
-    assert skew["global_inventory_qty"] == Decimal("1000")
-    assert skew["local_position_qty"] == Decimal(0)
+    assert skew["global_spot_qty"] == Decimal(1000)
+    assert skew["global_inventory_qty"] == Decimal(1000)
+    assert skew["local_position_qty"] is None
     assert skew["local_spot_qty"] == Decimal(0)
     assert skew["local_inventory_qty"] == Decimal(0)
     assert skew["local_ratio"] == Decimal(0)
@@ -512,7 +527,7 @@ def test_order_rejected_enriches_event_and_alerts_after_threshold(
 ) -> None:
     strategy = clocked_strategy_factory([1_000_000_000, 2_000_000_000])
     strategy._runtime_params["order_reject_alert_after_count"] = 2
-    strategy._runtime_params["order_reject_alert_after_s"] = Decimal("10")
+    strategy._runtime_params["order_reject_alert_after_s"] = Decimal(10)
     strategy._managed_client_order_ids = {"A", "B"}
     strategy._publish_actionable_alert = MakerV3Strategy._publish_actionable_alert.__get__(
         strategy,
@@ -578,7 +593,7 @@ def test_order_rejected_alert_is_cooldown_gated_by_reason_transition(
         ],
     )
     strategy._runtime_params["order_reject_alert_after_count"] = 2
-    strategy._runtime_params["order_reject_alert_after_s"] = Decimal("10")
+    strategy._runtime_params["order_reject_alert_after_s"] = Decimal(10)
     strategy._publish_actionable_alert = MakerV3Strategy._publish_actionable_alert.__get__(
         strategy,
         MakerV3Strategy,
@@ -738,26 +753,26 @@ def test_compute_inventory_skew_splits_global_and_local_inventory_by_base_and_ma
         id=maker_instrument_id,
     )
 
-    bybit_position = SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal("2"))
+    bybit_position = SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal(2))
     binance_position = SimpleNamespace(
         instrument_id=reference_instrument_id,
-        signed_qty=Decimal("-1"),
+        signed_qty=Decimal(-1),
     )
     other_asset_instrument_id = InstrumentId.from_str("BTCUSDT.BYBIT")
     other_asset_position = SimpleNamespace(
         instrument_id=other_asset_instrument_id,
-        signed_qty=Decimal("9"),
+        signed_qty=Decimal(9),
     )
 
     bybit_account = SimpleNamespace(
         balances_total=lambda: {
-            "PLUME": Decimal("3"),
-            "BTC": Decimal("7"),
+            "PLUME": Decimal(3),
+            "BTC": Decimal(7),
         },
     )
     binance_account = SimpleNamespace(
         balances_total=lambda: {
-            "PLUME": Decimal("5"),
+            "PLUME": Decimal(5),
         },
     )
     instrument_by_id = {
@@ -797,12 +812,147 @@ def test_compute_inventory_skew_splits_global_and_local_inventory_by_base_and_ma
         },
     )
 
-    assert skew["global_position_qty"] == Decimal("1")
-    assert skew["global_spot_qty"] == Decimal("8")
-    assert skew["global_inventory_qty"] == Decimal("9")
-    assert skew["local_position_qty"] == Decimal("2")
-    assert skew["local_spot_qty"] == Decimal("3")
-    assert skew["local_inventory_qty"] == Decimal("5")
-    assert skew["inventory_qty"] == Decimal("9")
+    assert skew["global_position_qty"] == Decimal(1)
+    assert skew["global_spot_qty"] == Decimal(8)
+    assert skew["global_inventory_qty"] == Decimal(9)
+    assert skew["local_position_qty"] is None
+    assert skew["local_spot_qty"] == Decimal(3)
+    assert skew["local_inventory_qty"] == Decimal(3)
+    assert skew["inventory_qty"] == Decimal(9)
     assert skew["global_ratio"] == Decimal("0.9")
-    assert skew["local_ratio"] == Decimal("0.5")
+    assert skew["local_ratio"] == Decimal("0.3")
+
+
+def test_compute_inventory_skew_uses_shared_portfolio_global_qty_and_maker_leg_local_only(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-LINEAR.BYBIT")
+    reference_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT")
+    strategy = clocked_strategy_factory(
+        [1_500_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        base_currency=SimpleNamespace(code="PLUME"),
+        id=maker_instrument_id,
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="PLUME"),
+            id=reference_instrument_id,
+        ),
+    }
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [
+            SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal(36689)),
+            SimpleNamespace(
+                instrument_id=InstrumentId.from_str("PLUME-USDT-SWAP.OKX"),
+                signed_qty=Decimal(-9806),
+            ),
+        ],
+        accounts=lambda: [
+            SimpleNamespace(id="BYBIT-001", balances_total=lambda: {"PLUME": Decimal("5434.3519")}),
+            SimpleNamespace(id="BINANCE_SPOT-001", balances_total=lambda: {"PLUME": Decimal(100)}),
+        ],
+        account_for_venue=lambda venue: (
+            SimpleNamespace(id="BYBIT-001", balances_total=lambda: {"PLUME": Decimal("5434.3519")})
+            if str(venue) == "BYBIT"
+            else None
+        ),
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    fake_redis = _FakeRedis()
+    aggregate_key = FluxRedisKeys.portfolio_inventory(
+        portfolio_id="tokenmm",
+        base_currency="PLUME",
+    )
+    fake_redis.set(
+        aggregate_key,
+        encode_portfolio_inventory(
+            {
+                "portfolio_id": "tokenmm",
+                "base_currency": "PLUME",
+                "global_qty": "32317.3519",
+                "ts_ms": 1_000,
+                "stale_after_ms": 3_000,
+                "components": [],
+                "missing_required": [],
+                "degraded": False,
+            },
+        ),
+    )
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="tokenmm",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    skew = strategy._compute_inventory_skew(
+        runtime_params=_inventory_runtime_params(max_qty_global=50_000),
+    )
+
+    assert skew["global_inventory_qty"] == Decimal("32317.3519")
+    assert skew["global_inventory_source"] == "portfolio_component_sum"
+    assert skew["local_position_qty"] == Decimal(36689)
+    assert skew["local_spot_qty"] is None
+    assert skew["local_inventory_qty"] == Decimal(36689)
+
+
+def test_publish_portfolio_inventory_component_uses_maker_leg_only(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-LINEAR.BYBIT")
+    reference_instrument_id = InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT")
+    strategy = clocked_strategy_factory(
+        [2_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        base_currency=SimpleNamespace(code="PLUME"),
+        id=maker_instrument_id,
+    )
+    strategy._instruments = {
+        maker_instrument_id: strategy._maker_instrument,
+        reference_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="PLUME"),
+            id=reference_instrument_id,
+        ),
+    }
+    strategy._cache = SimpleNamespace(
+        positions_open=lambda: [
+            SimpleNamespace(instrument_id=maker_instrument_id, signed_qty=Decimal(36689)),
+        ],
+        accounts=lambda: [
+            SimpleNamespace(id="BYBIT-001", balances_total=lambda: {"PLUME": Decimal("5434.3519")}),
+        ],
+        account_for_venue=lambda venue: (
+            SimpleNamespace(id="BYBIT-001", balances_total=lambda: {"PLUME": Decimal("5434.3519")})
+            if str(venue) == "BYBIT"
+            else None
+        ),
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    fake_redis = _FakeRedis()
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="tokenmm",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    strategy._publish_portfolio_inventory_component(state="running")
+
+    key = FluxRedisKeys.portfolio_inventory_component(
+        strategy_id=strategy._external_strategy_id,
+        portfolio_id="tokenmm",
+        base_currency="PLUME",
+    )
+    component = decode_component(fake_redis.get(key))
+
+    assert component is not None
+    assert component.local_qty == Decimal(36689)
+    assert component.maker_instrument_id == "PLUMEUSDT-LINEAR.BYBIT"

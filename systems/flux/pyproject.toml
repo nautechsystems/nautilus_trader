@@ -1,0 +1,14 @@
+[project]
+name = "flux"
+version = "0.1.0"
+description = "Flux strategy and runtime system built on top of nautilus_trader"
+requires-python = ">=3.12,<3.15"
+dependencies = ["nautilus_trader"]
+readme = "README.md"
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["flux"]

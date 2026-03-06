@@ -140,14 +140,6 @@ repos:
         types: [text]
         pass_filenames: false
 
-      - id: check-copyright-year
-        name: check copyright year
-        description: Ensures copyright headers have current year
-        entry: bash .pre-commit-hooks/check_copyright_year.sh
-        language: system
-        types_or: [rust, python]
-        pass_filenames: false
-
       - id: check-error-conventions
         name: check error conventions
         description: Enforces error variable naming conventions
@@ -159,7 +151,14 @@ repos:
       - id: check-flux-leakage
         name: check flux leakage
         description: Enforces no POC/chainsaw leakage in production Flux paths
-        entry: bash scripts/ci/check-flux-leakage.sh
+        entry: bash tooling/ci/check-flux-leakage.sh
+        language: system
+        pass_filenames: false
+
+      - id: check-repo-structure
+        name: check repo structure
+        description: Enforces canonical repo paths and compatibility boundaries
+        entry: bash tooling/ci/check-repo-structure.sh
         language: system
         pass_filenames: false
 

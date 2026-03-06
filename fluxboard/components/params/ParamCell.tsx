@@ -387,6 +387,11 @@ const DEFAULT_TOGGLE_OPTIONS: Array<[string, string]> = [
   ['0', 'Off']
 ];
 
+const BOT_ON_TOGGLE_OPTIONS: Array<[string, string]> = [
+  ['1', 'Enabled'],
+  ['0', 'Paused'],
+];
+
 export const ParamCellToggle = memo(function ParamCellToggle({
   value,
   paramDef,
@@ -402,7 +407,12 @@ export const ParamCellToggle = memo(function ParamCellToggle({
   options,
   density = 'relaxed'
 }: ToggleProps) {
-  const safeOptions = useMemo(() => options ?? paramDef.options ?? DEFAULT_TOGGLE_OPTIONS, [options, paramDef.options]);
+  const safeOptions = useMemo(() => {
+    if (options) return options;
+    if (paramDef.options) return paramDef.options;
+    if (paramDef.key === 'bot_on') return BOT_ON_TOGGLE_OPTIONS;
+    return DEFAULT_TOGGLE_OPTIONS;
+  }, [options, paramDef.key, paramDef.options]);
   const [localValue, setLocalValue] = useSyncedValue(value);
   const containerRef = useRef<HTMLDivElement>(null);
 

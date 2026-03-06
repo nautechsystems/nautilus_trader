@@ -270,6 +270,50 @@ describe('api.getTrades', () => {
     });
   });
 
+  it('derives perp naming from legacy _LINEAR venues without instrument_id', () => {
+    const naming = deriveCanonicalNaming(
+      {
+        venue: 'BYBIT_LINEAR',
+        raw_symbol: 'PLUMEUSDT',
+      },
+      {
+        exchange: 'bybit_linear',
+        asset: 'PLUME',
+      },
+    );
+
+    expect(naming).toMatchObject({
+      venue: 'BYBIT_LINEAR',
+      venue_root: 'bybit',
+      contract_type: 'linear',
+      product_type: 'perp',
+      market_type: 'perp',
+      display_name_short: 'PLUME Perp',
+    });
+  });
+
+  it('derives perp naming from legacy _SWAP venues without instrument_id', () => {
+    const naming = deriveCanonicalNaming(
+      {
+        venue: 'OKX_SWAP',
+        raw_symbol: 'PLUME-USDT',
+      },
+      {
+        exchange: 'okx_swap',
+        asset: 'PLUME',
+      },
+    );
+
+    expect(naming).toMatchObject({
+      venue: 'OKX_SWAP',
+      venue_root: 'okx',
+      contract_type: 'swap',
+      product_type: 'perp',
+      market_type: 'perp',
+      display_name_short: 'PLUME Perp',
+    });
+  });
+
   it('caps limit to 200 and re-bases offset using capped page size to avoid pagination gaps', async () => {
     await api.getTrades(3, 500, { sort: 'ts_desc' });
 

@@ -198,8 +198,8 @@ describe('SignalTable Behavioral Tests', () => {
         const onBadge = screen.queryByText('ON');
         const offBadge = screen.queryByText('OFF');
 
-        // New trading pills use Live/Paused labels with data-status
-        const liveBadge = screen.queryByText(/Live/i);
+        // Trading gate pills use Enabled/Paused labels with data-status
+        const liveBadge = screen.queryByText(/Enabled/i);
         const pausedBadge = screen.queryByText(/Paused/i);
         if (liveBadge && pausedBadge) {
           expect(liveBadge).toHaveAttribute('data-status', 'ok');
@@ -536,7 +536,7 @@ describe('SignalTable Behavioral Tests', () => {
       // Apply filter for ON strategies only
       const botFilterLabel = screen.getByText('Trading', { selector: 'label' });
       const botFilter = botFilterLabel.parentElement?.querySelector('select') as HTMLSelectElement;
-      await userEvent.selectOptions(botFilter, 'Live');
+      await userEvent.selectOptions(botFilter, 'Enabled');
 
       await waitFor(() => {
         expect(screen.getByText('on_strat')).toBeInTheDocument();

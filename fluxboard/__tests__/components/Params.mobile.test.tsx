@@ -116,8 +116,8 @@ describe('Params mobile layout', () => {
       screen.getByLabelText(/Ask Edge value for strat-1/i)
     ).toHaveValue('0.2');
 
-    const runToggle = screen.getByLabelText(/Run strat-1/i) as HTMLInputElement;
-    expect(runToggle.checked).toBe(true);
+    const tradingToggle = screen.getByLabelText(/Trading strat-1/i) as HTMLInputElement;
+    expect(tradingToggle.checked).toBe(true);
 
     await userEvent.click(screen.getByRole('button', { name: /Filters/i }));
     expect(screen.getByLabelText('Params family')).toBeInTheDocument();
@@ -146,7 +146,7 @@ describe('Params mobile layout', () => {
     const saveAll = screen.getByRole('button', { name: /Save All/ });
     expect(saveAll.textContent).toMatch(/Save All \(1\)/);
 
-    // Trading/run toggle present with aria label
-    expect(screen.getByLabelText(/Run strat-1/i)).toBeInTheDocument();
+    // Trading gate toggle present with aria label
+    expect(screen.getByLabelText(/Trading strat-1/i)).toBeInTheDocument();
   });
 });

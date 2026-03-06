@@ -362,9 +362,17 @@ function normalizeParamOptions(
 
   const typeText = String(rawType ?? '').trim().toLowerCase();
   if (key === 'bot_on' || typeText === 'boolean' || typeText === 'bool') {
-    return [['0', 'Off (0)'], ['1', 'On (1)']];
+    return [['0', 'Paused (0)'], ['1', 'Enabled (1)']];
   }
   return null;
+}
+
+function botOnLabel(): string {
+  return 'Trading';
+}
+
+function botOnDescription(): string {
+  return 'Trading gate. Controls whether the strategy may place new orders. Independent of runner state. 1 = Enabled, 0 = Paused.';
 }
 
 function normalizeParamDef(
@@ -375,11 +383,17 @@ function normalizeParamDef(
 ): ParamDef {
   const source = rawDef && typeof rawDef === 'object' ? (rawDef as Record<string, unknown>) : {};
   const type = normalizeParamType(key, source.type);
-  const description = String(source.description ?? source.label ?? key).trim() || key;
+  const description =
+    key === 'bot_on'
+      ? botOnDescription()
+      : (String(source.description ?? source.label ?? key).trim() || key);
   const preferKeyLabel = opts?.preferKeyLabel === true;
-  const label = preferKeyLabel
-    ? key
-    : (String(source.label ?? source.description ?? key).trim() || key);
+  const label =
+    key === 'bot_on'
+      ? botOnLabel()
+      : preferKeyLabel
+        ? key
+        : (String(source.label ?? source.description ?? key).trim() || key);
   const options = normalizeParamOptions(key, source.type, source.options);
   const step = toFiniteOptionalNumber(source.step);
   const minValue = toFiniteOptionalNumber(source.min_value ?? source.minimum);
@@ -489,6 +503,23 @@ function deriveContractTypeFromInstrument(instrumentId: unknown): string | undef
   return stripContractSuffix(text).contractType;
 }
 
+function deriveContractTypeFromVenue(venue: unknown): string | undefined {
+  const text = String(venue ?? '').trim().toUpperCase();
+  if (!text) return undefined;
+  for (const [suffix, contractType] of [
+    ['_LINEAR', 'linear'],
+    ['_SWAP', 'swap'],
+    ['_INVERSE', 'inverse'],
+    ['_PERP', 'perp'],
+    ['_SPOT', 'spot'],
+  ] as const) {
+    if (text.endsWith(suffix) && text.length > suffix.length) {
+      return contractType;
+    }
+  }
+  return undefined;
+}
+
 function stripContractSuffix(rawSymbol: string): { symbol: string; contractType?: string } {
   const text = rawSymbol.trim().toUpperCase();
   if (!text) return { symbol: '' };
@@ -564,7 +595,13 @@ export function deriveCanonicalNaming(
   const stripped = stripContractSuffix(String(rawSymbolSource).trim().toUpperCase());
   const rawSymbol = stripped.symbol;
   const explicitContractType = String(raw.contract_type ?? '').trim().toLowerCase();
-  let contractType = explicitContractType || deriveContractTypeFromInstrument(instrumentId) || stripped.contractType || '';
+  let contractType =
+    explicitContractType
+    || deriveContractTypeFromInstrument(instrumentId)
+    || stripped.contractType
+    || deriveContractTypeFromVenue(venue)
+    || deriveContractTypeFromVenue(exchange ?? raw.exchange)
+    || '';
   if (!contractType) {
     if (venue.endsWith('_SPOT')) contractType = 'spot';
     else if (venue.endsWith('_PERP')) contractType = 'perp';
@@ -1836,14 +1873,9 @@ export const api = {
       const strategyId = String(candidate.strategy_id ?? '').trim();
       const params = normalizeParamsMap(candidate.params);
       const runningCandidate = candidate.running;
-      const runningFlag = normalizeTradingFlag(params.bot_on);
       const running =
         typeof runningCandidate === 'boolean'
           ? runningCandidate
-          : runningFlag === '1'
-            ? true
-            : runningFlag === '0'
-              ? false
           : null;
       return {
         ...(row as ParamsResponse),

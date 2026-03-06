@@ -1,35 +1,23 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from __future__ import annotations
 
-from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
-from nautilus_trader.flux.runners.tokenmm import run_node
+from flux.runners.tokenmm import run_node
 from nautilus_trader.model.identifiers import InstrumentId
 
 
 class _DummyStrategy:
     def __init__(self) -> None:
         self.params_manager_factory = None
+        self.portfolio_inventory_feed: dict[str, object] | None = None
 
     def set_params_manager_factory(self, factory) -> None:
         self.params_manager_factory = factory
+
+    def configure_portfolio_inventory_feed(self, **kwargs) -> None:
+        self.portfolio_inventory_feed = kwargs
 
 
 def test_attach_runtime_params_manager_wires_redis_backed_factory(monkeypatch) -> None:
@@ -86,6 +74,35 @@ def test_attach_runtime_params_manager_wires_redis_backed_factory(monkeypatch) -
         "schema_version": "v2",
     }
     assert strategy.params_manager_factory is sentinel_factory
+
+
+def test_attach_portfolio_inventory_feed_wires_shared_portfolio_reader(monkeypatch) -> None:
+    strategy = _DummyStrategy()
+    redis_call: dict[str, object] = {}
+    redis_client = object()
+
+    def _fake_redis(**kwargs):
+        redis_call.update(kwargs)
+        return redis_client
+
+    monkeypatch.setattr(run_node.redis, "Redis", _fake_redis)
+
+    run_node._attach_portfolio_inventory_feed(
+        strategy=strategy,
+        config={"portfolio": {"portfolio_id": "tokenmm", "inventory_stale_after_ms": 2500}},
+        redis_cfg={"host": "127.0.0.10", "port": 6381, "db": 4},
+        namespace="fluxx",
+        schema_version="v2",
+    )
+
+    assert redis_call["host"] == "127.0.0.10"
+    assert strategy.portfolio_inventory_feed == {
+        "redis_client": redis_client,
+        "portfolio_id": "tokenmm",
+        "namespace": "fluxx",
+        "schema_version": "v2",
+        "stale_after_ms": 2500,
+    }
 
 
 def test_resolve_reconciliation_settings_enforces_live_minimum_startup_delay() -> None:
@@ -197,6 +214,20 @@ def test_merge_shared_tables_inherits_missing_redis_table() -> None:
     assert "api" not in merged
 
 
+def test_merge_shared_tables_can_inherit_portfolio_table() -> None:
+    merged = run_node._merge_shared_tables(
+        config={
+            "identity": {"strategy_id": "strategy_a"},
+        },
+        shared_config={
+            "portfolio": {"portfolio_id": "tokenmm"},
+        },
+        table_names=("portfolio",),
+    )
+
+    assert merged["portfolio"] == {"portfolio_id": "tokenmm"}
+
+
 def test_merge_shared_tables_keeps_node_specific_redis_override() -> None:
     merged = run_node._merge_shared_tables(
         config={
@@ -264,7 +295,10 @@ enable_execution = false
 """.strip(),
         encoding="utf-8",
     )
-    monkeypatch.setenv("TOKENMM_REDIS_HOST", "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com")
+    monkeypatch.setenv(
+        "TOKENMM_REDIS_HOST",
+        "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com",
+    )
     monkeypatch.setenv("TOKENMM_REDIS_PORT", "6379")
     monkeypatch.setenv("TOKENMM_REDIS_USERNAME", "default")
     monkeypatch.setenv("TOKENMM_REDIS_PASSWORD", "secret")
@@ -272,7 +306,10 @@ enable_execution = false
 
     merged = run_node._load_runtime_config(strategy_path)
 
-    assert merged["redis"]["host"] == "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com"
+    assert (
+        merged["redis"]["host"]
+        == "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com"
+    )
     assert merged["redis"]["port"] == 6379
     assert merged["redis"]["username"] == "default"
     assert merged["redis"]["password"] == "secret"
@@ -304,10 +341,15 @@ def test_strategy_startup_lock_prevents_duplicate_flux_strategy_ids(tmp_path: Pa
         "identity": {"strategy_id": "plumeusdt_bybit_perp_makerv3"},
     }
 
-    with run_node._strategy_startup_lock(config, lock_dir=tmp_path):
-        with pytest.raises(RuntimeError, match="already running"):
-            with run_node._strategy_startup_lock(config, lock_dir=tmp_path):
-                pass
+    with (
+        run_node._strategy_startup_lock(config, lock_dir=tmp_path),
+        pytest.raises(
+            RuntimeError,
+            match="already running",
+        ),
+        run_node._strategy_startup_lock(config, lock_dir=tmp_path),
+    ):
+        pass
 
 
 def test_strategy_startup_lock_releases_after_context_exit(tmp_path: Path) -> None:

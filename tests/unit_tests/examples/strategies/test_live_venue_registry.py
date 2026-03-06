@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from flux.runners.live.venues import resolve_strategy_venues
 from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
@@ -9,7 +10,6 @@ from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
 from nautilus_trader.adapters.bybit import BybitProductType
-from nautilus_trader.flux.runners.live.venues import resolve_strategy_venues
 
 
 def test_resolve_strategy_venues_builds_clients_from_generic_node_venues_table() -> None:
@@ -51,7 +51,9 @@ def test_resolve_strategy_venues_builds_clients_from_generic_node_venues_table()
     assert isinstance(resolved.exec_clients[BYBIT], BybitExecClientConfig)
 
 
-def test_resolve_strategy_venues_supports_binance_spot_reference_and_binance_perp_execution() -> None:
+def test_resolve_strategy_venues_supports_binance_spot_reference_and_binance_perp_execution() -> (
+    None
+):
     resolved = resolve_strategy_venues(
         config={
             "venues": {
@@ -118,7 +120,7 @@ def test_resolve_strategy_venues_rejects_unknown_adapter() -> None:
 
 
 def test_resolve_strategy_venues_rejects_non_positive_recv_window() -> None:
-    with pytest.raises(ValueError, match="node.venues.BYBIT.recv_window_ms"):
+    with pytest.raises(ValueError, match=r"node\.venues\.BYBIT\.recv_window_ms"):
         resolve_strategy_venues(
             config={
                 "venues": {

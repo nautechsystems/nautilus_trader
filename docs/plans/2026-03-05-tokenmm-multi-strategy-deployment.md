@@ -50,7 +50,7 @@ This plan **supersedes** the earlier “balances only” Phase 1 decision:
 ## Review notes to carry into implementation
 
 1. **Keep the scope tight.** The current tree has already drifted beyond the older Phase 1 note by widening non-requested `signals`/`alerts` profile behavior. Do not widen that further in this execution.
-2. **Known socket alert bug exists outside scope.** `nautilus_trader/flux/api/socketio.py` currently computes alerts from the first strategy only while REST alerts aggregate multiple strategies. Since alerts are out of scope here, do not pull that bug into this task unless your changes touch that code path.
+2. **Known socket alert bug exists outside scope.** `systems/flux/flux/api/socketio.py` currently computes alerts from the first strategy only while REST alerts aggregate multiple strategies. Since alerts are out of scope here, do not pull that bug into this task unless your changes touch that code path.
 3. **Live-default safety is a concern.** `scripts/deploy/tokenmm_stack.sh` and `deploy/tokenmm/tokenmm_stack.env.example` currently default to `live` + execution enabled. Do not make this more permissive, and use explicit paper/test overrides for smoke verification.
 4. **Shared-account uniqueness still matters.** If you touch the stack/config validation path, validate both `[identity].strategy_id` and `[strategy].strategy_id` uniqueness across `deploy/tokenmm/strategies/`.
 5. **Position merge assumption must remain explicit.** `balances` currently net positions by `(exchange, instrument)` across strategies. That is acceptable only if the published rows are strategy-scoped rather than full-account duplicates.
@@ -58,14 +58,14 @@ This plan **supersedes** the earlier “balances only” Phase 1 decision:
 ## Files that are likely in play
 
 - `deploy/tokenmm/tokenmm.live.toml`
-- `nautilus_trader/flux/runners/tokenmm/run_api.py`
-- `nautilus_trader/flux/runners/tokenmm/run_node.py`
+- `systems/flux/flux/runners/tokenmm/run_api.py`
+- `systems/flux/flux/runners/tokenmm/run_node.py`
 - `deploy/tokenmm/README.md`
 - `deploy/tokenmm/strategies/README.md`
 - `deploy/tokenmm/tokenmm_stack.env.example`
-- `nautilus_trader/flux/api/app.py`
-- `nautilus_trader/flux/api/payloads.py`
-- `nautilus_trader/flux/api/socketio.py`
+- `systems/flux/flux/api/app.py`
+- `systems/flux/flux/api/payloads.py`
+- `systems/flux/flux/api/socketio.py`
 - `scripts/deploy/tokenmm_stack.sh`
 - `tests/unit_tests/flux/api/test_app.py`
 - `tests/unit_tests/flux/api/test_payloads.py`
@@ -77,8 +77,8 @@ This plan **supersedes** the earlier “balances only” Phase 1 decision:
 
 **Files**
 
-- Modify: `nautilus_trader/flux/api/app.py`
-- Modify: `nautilus_trader/flux/runners/tokenmm/run_api.py`
+- Modify: `systems/flux/flux/api/app.py`
+- Modify: `systems/flux/flux/runners/tokenmm/run_api.py`
 - Modify: `tests/unit_tests/flux/api/test_app.py`
 - Modify: `tests/unit_tests/examples/strategies/test_tokenmm_run_api.py`
 - Modify: `deploy/tokenmm/README.md`
@@ -126,8 +126,8 @@ Expected: PASS.
 
 ```bash
 git add \
-  nautilus_trader/flux/api/app.py \
-  nautilus_trader/flux/runners/tokenmm/run_api.py \
+  systems/flux/flux/api/app.py \
+  systems/flux/flux/runners/tokenmm/run_api.py \
   tests/unit_tests/flux/api/test_app.py \
   tests/unit_tests/examples/strategies/test_tokenmm_run_api.py \
   deploy/tokenmm/README.md
@@ -138,8 +138,8 @@ git commit -m "feat: lock tokenmm params profile contract"
 
 **Files**
 
-- Modify: `nautilus_trader/flux/api/app.py`
-- Modify: `nautilus_trader/flux/api/payloads.py`
+- Modify: `systems/flux/flux/api/app.py`
+- Modify: `systems/flux/flux/api/payloads.py`
 - Modify: `tests/unit_tests/flux/api/test_app.py`
 - Modify: `tests/unit_tests/flux/api/test_payloads.py`
 - Modify: `deploy/tokenmm/README.md`
@@ -189,8 +189,8 @@ Expected: PASS.
 
 ```bash
 git add \
-  nautilus_trader/flux/api/app.py \
-  nautilus_trader/flux/api/payloads.py \
+  systems/flux/flux/api/app.py \
+  systems/flux/flux/api/payloads.py \
   tests/unit_tests/flux/api/test_app.py \
   tests/unit_tests/flux/api/test_payloads.py \
   deploy/tokenmm/README.md
@@ -201,8 +201,8 @@ git commit -m "feat: lock tokenmm balances portfolio contract"
 
 **Files**
 
-- Modify: `nautilus_trader/flux/api/app.py`
-- Modify: `nautilus_trader/flux/api/socketio.py` (only if required for the existing trades page)
+- Modify: `systems/flux/flux/api/app.py`
+- Modify: `systems/flux/flux/api/socketio.py` (only if required for the existing trades page)
 - Modify: `tests/unit_tests/flux/api/test_app.py`
 - Modify: `tests/unit_tests/flux/api/test_socketio_tokenmm.py` (only if Task 3 changes Socket.IO behavior)
 - Modify: `deploy/tokenmm/README.md`
@@ -263,8 +263,8 @@ Expected: PASS.
 
 ```bash
 git add \
-  nautilus_trader/flux/api/app.py \
-  nautilus_trader/flux/api/socketio.py \
+  systems/flux/flux/api/app.py \
+  systems/flux/flux/api/socketio.py \
   tests/unit_tests/flux/api/test_app.py \
   tests/unit_tests/flux/api/test_socketio_tokenmm.py \
   deploy/tokenmm/README.md

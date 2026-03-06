@@ -1,7 +1,7 @@
 # TokenMM `strategies` contract
 
-This directory holds one TOML file per TokenMM node process used by
-`scripts/deploy/tokenmm_stack.sh`.
+This directory holds one TOML file per TokenMM node process enrolled into the Pulse-managed
+`flux@tokenmm-node-*` services.
 
 ## File naming
 
@@ -10,10 +10,10 @@ This directory holds one TOML file per TokenMM node process used by
   - `plumeusdt_bybit_perp_makerv3.toml`
   - `plumeusdt_bybit_spot_makerv3.toml`
   - `plumeusdt_okx_perp_makerv3.toml`
-  - `plumeusdt_binance_perp_makerv3.toml`
   - `plumeusdt_binance_spot_makerv3.toml`
 - Include the actual execution venue, product type, symbol, and strategy family in the strategy ID.
-- Keep exactly 5 strategy files for Phase 1 production (`TOKENMM_EXPECTED_NODES=5` default).
+- Keep the active production set aligned with `deploy/tokenmm/tokenmm.live.toml`.
+- Disabled configs should use the `.toml.disabled` suffix until they are re-enrolled.
 
 ## Required TOML keys per file
 
@@ -29,15 +29,26 @@ This directory holds one TOML file per TokenMM node process used by
 - `[node.venues.BYBIT].recv_window_ms` is recommended at `20000` for live/demo startup reconciliation.
 - `[node.venues.OKX].api_passphrase_env` is required for OKX live execution/data auth.
 - Do not duplicate `[redis]` in per-node deploy files; nodes inherit it from `deploy/tokenmm/tokenmm.live.toml`.
+- Do not duplicate `[portfolio]` in per-node deploy files; nodes inherit the shared portfolio inventory feed
+  from `deploy/tokenmm/tokenmm.live.toml`.
 
-Each file is a complete node config consumed directly by `python -m nautilus_trader.flux.runners.tokenmm.run_node`.
+## Inventory semantics
+
+- `local_qty` is maker-leg inventory only for that strategy.
+- `global_qty` is the shared TokenMM portfolio aggregate for the base asset.
+- Each node publishes a maker-leg inventory component to Redis.
+- `flux.runners.tokenmm.run_portfolio` aggregates those components into the shared
+  portfolio inventory feed consumed by all TokenMM strategies.
+
+Each file is a complete node config consumed directly by `python -m flux.runners.tokenmm.run_node`.
 Start from `tokenmm.strategy.template.toml`.
 
 ## Env conventions
 
-- Secrets should be provided via `deploy/tokenmm/tokenmm_stack.env` or an explicit `TOKENMM_ENV_PATH`.
-- `scripts/deploy/tokenmm_stack.sh` defaults to paper mode with execution disabled.
-- Live trading is opt-in only with `TOKENMM_MODE=live`, `TOKENMM_CONFIRM_LIVE=1`, and `TOKENMM_ENABLE_EXECUTION=1`.
+- Production node lifecycle is managed from Pulse via flux@ units.
+- Production secrets should be provided through `/etc/flux/common.env` plus `/etc/flux/tokenmm-node-*.env`.
+- `deploy/tokenmm/tokenmm_stack.env` is for local paper/testnet smoke only.
 - Node files should reference env var names such as `BYBIT_API_KEY`, `BINANCE_API_KEY`, and `OKX_API_KEY`, not inline secrets.
 - Use the same `[flux].namespace` and `[flux].schema_version` as the shared API/bridge config.
-- The stack passes `--shared-config deploy/tokenmm/tokenmm.live.toml` so node runners inherit the shared `[redis]` table.
+- Pulse-managed node services pass `--shared-config deploy/tokenmm/tokenmm.live.toml` so node runners inherit
+  the shared `[redis]` and `[portfolio]` tables.

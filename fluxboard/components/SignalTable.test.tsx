@@ -360,7 +360,7 @@ describe('SignalTable Component', () => {
     await waitFor(() => {
       const containerText = container.textContent || '';
       expect(containerText).toContain('test_strategy');
-      expect(containerText).toContain('Live');
+      expect(containerText).toContain('Enabled');
       expect(containerText).toContain('bybit');
     }, { timeout: 5000 });
   });

@@ -85,7 +85,7 @@ function validateSelect(
     if (normalized !== '0' && normalized !== '1') {
       return {
         valid: false,
-        error: `${key} must be "0" (Off) or "1" (On), got "${valueStr}"`
+        error: `${key} must be "0" (Paused) or "1" (Enabled), got "${valueStr}"`
       };
     }
     return { valid: true };

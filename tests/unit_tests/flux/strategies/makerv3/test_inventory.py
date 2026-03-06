@@ -56,7 +56,9 @@ def test_compute_inventory_skew_nets_global_and_local_components_and_clamps_rati
     assert skew["total_skew_bps"] == Decimal("12.5")
 
 
-def test_compute_inventory_skew_keeps_global_spot_out_of_local_when_local_inventory_is_absent() -> None:
+def test_compute_inventory_skew_keeps_global_spot_out_of_local_when_local_inventory_is_absent() -> (
+    None
+):
     skew = compute_inventory_skew(
         global_position_qty=None,
         global_spot_qty=Decimal(1000),

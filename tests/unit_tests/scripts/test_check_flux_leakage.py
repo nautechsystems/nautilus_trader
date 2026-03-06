@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT_UNDER_TEST = Path("scripts/ci/check-flux-leakage.sh")
+SCRIPT_UNDER_TEST = Path("tooling/ci/check-flux-leakage.sh")
 REQUIRED_BINARIES = ("git", "bash", "rg")
 BINARIES = {binary: shutil.which(binary) for binary in REQUIRED_BINARIES}
 MISSING_BINARIES = [binary for binary, path in BINARIES.items() if path is None]
@@ -30,6 +30,16 @@ def _locate_source_repo_root() -> Path:
     )
 
 
+def _write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+
+
+def _symlink(path: Path, target: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.symlink_to(target)
+
+
 def _base_redis_schema_doc() -> str:
     return "# Redis Schema\nNo legacy mapping is supported.\n\n"
 
@@ -42,15 +52,19 @@ def _init_temp_repo(tmp_path: Path, redis_schema_doc: str) -> Path:
     script_contents = (source_repo_root / SCRIPT_UNDER_TEST).read_text()
 
     script_path = repo_root / SCRIPT_UNDER_TEST
-    script_path.parent.mkdir(parents=True)
-    script_path.write_text(script_contents)
+    _write(script_path, script_contents)
 
-    (repo_root / "nautilus_trader/flux").mkdir(parents=True)
-    (repo_root / "docs/flux").mkdir(parents=True)
-    (repo_root / "docs/flux/params.md").write_text("# Params\n")
-    (repo_root / "docs/flux/bridge.md").write_text("# Bridge\n")
-    (repo_root / "docs/flux/api.md").write_text("# API\n")
-    (repo_root / "docs/flux/redis_schema.md").write_text(redis_schema_doc)
+    _write(repo_root / "nautilus_trader/flux/__init__.py", '"""shim"""\n')
+    _write(repo_root / "systems/flux/docs/params.md", "# Params\n")
+    _write(repo_root / "systems/flux/docs/bridge.md", "# Bridge\n")
+    _write(repo_root / "systems/flux/docs/api.md", "# API\n")
+    _write(repo_root / "systems/flux/docs/redis_schema.md", redis_schema_doc)
+    _write(repo_root / "apps/fluxboard/docs/tokenmm_contract.md", "# Contract\n")
+    _write(repo_root / "apps/fluxboard/docs/tokenmm_socket_contract.md", "# Socket contract\n")
+    _write(repo_root / "apps/fluxboard/docs/tokenmm_runbook.md", "# Runbook\n")
+
+    _symlink(repo_root / "docs/flux", "../systems/flux/docs")
+    _symlink(repo_root / "docs/fluxboard", "../apps/fluxboard/docs")
 
     subprocess.run([GIT, "init", "-q"], cwd=repo_root, check=True)  # noqa: S603
     return repo_root

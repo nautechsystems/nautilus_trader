@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 import json
@@ -30,7 +15,7 @@ class _FakeRedis:
 
 def _consumer() -> FluxBridgeStreamConsumer:
     return FluxBridgeStreamConsumer(
-        redis_client=_FakeRedis(),  # type: ignore[arg-type]
+        redis_client=_FakeRedis(),
         environment="paper",
     )
 
@@ -157,7 +142,7 @@ def _build_run_consumer(
 ) -> tuple[FluxBridgeStreamConsumer, str, str]:
     raw_fields = fields or {"payload": json.dumps({"event": "refresh", "ts_event": "1700000010"})}
     consumer = FluxBridgeStreamConsumer(
-        redis_client=_RunLoopRedis(  # type: ignore[arg-type]
+        redis_client=_RunLoopRedis(
             stream_key=stream_key,
             entry_id=entry_id,
             fields=raw_fields,
@@ -168,8 +153,8 @@ def _build_run_consumer(
         topics=["event"],
     )
     consumer._stream_ids = {stream_key: "$"}
-    consumer._install_signals = lambda: None  # type: ignore[method-assign]
-    consumer._refresh_streams = lambda *, force=False: None  # type: ignore[method-assign]
+    consumer._install_signals = lambda: None
+    consumer._refresh_streams = lambda *, force=False: None
     return consumer, stream_key, entry_id
 
 
@@ -184,7 +169,7 @@ def test_run_does_not_advance_stream_offset_on_decode_failure() -> None:
         consumer._running = False
         raise ValueError("decode failed")
 
-    consumer._decode_entry = _decode_fail  # type: ignore[method-assign]
+    consumer._decode_entry = _decode_fail
     consumer.run()
 
     assert consumer._stream_ids[stream_key] == "$"
@@ -213,7 +198,7 @@ def test_run_does_not_advance_stream_offset_on_write_failure() -> None:
         consumer._running = False
         raise RuntimeError("write failed")
 
-    consumer._apply_write_ops = _write_fail  # type: ignore[method-assign]
+    consumer._apply_write_ops = _write_fail
     consumer.run()
 
     assert consumer._stream_ids[stream_key] == "$"
@@ -229,7 +214,7 @@ def test_run_advances_stream_offset_after_successful_write() -> None:
     def _write_ok(_ops):
         consumer._running = False
 
-    consumer._apply_write_ops = _write_ok  # type: ignore[method-assign]
+    consumer._apply_write_ops = _write_ok
     consumer.run()
 
     assert consumer._stream_ids[stream_key] == entry_id
@@ -261,7 +246,7 @@ def test_run_stops_processing_stream_batch_after_first_decode_failure() -> None:
             raise ValueError("decode failed")
         return decode_entry(stream_key=stream_key, entry_id=entry_id, fields=fields)
 
-    consumer._decode_entry = _decode_fail_first  # type: ignore[method-assign]
+    consumer._decode_entry = _decode_fail_first
     consumer.run()
 
     assert handled_entry_ids == []

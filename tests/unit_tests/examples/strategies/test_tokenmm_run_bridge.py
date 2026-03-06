@@ -1,18 +1,3 @@
-# -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
-#  https://nautechsystems.io
-#
-#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-#  You may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# -------------------------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -20,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from nautilus_trader.flux.runners.tokenmm.run_bridge import _load_config
-from nautilus_trader.flux.runners.tokenmm.run_bridge import _parse_args
-from nautilus_trader.flux.runners.tokenmm.run_bridge import _resolve_strategy_scope
+from flux.runners.tokenmm.run_bridge import _load_config
+from flux.runners.tokenmm.run_bridge import _parse_args
+from flux.runners.tokenmm.run_bridge import _resolve_strategy_scope
 
 
 def test_resolve_strategy_scope_prefers_cli_strategy_id() -> None:
@@ -87,12 +72,18 @@ ssl = false
 """.strip(),
         encoding="utf-8",
     )
-    monkeypatch.setenv("TOKENMM_REDIS_HOST", "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com")
+    monkeypatch.setenv(
+        "TOKENMM_REDIS_HOST",
+        "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com",
+    )
     monkeypatch.setenv("TOKENMM_REDIS_PORT", "6379")
     monkeypatch.setenv("TOKENMM_REDIS_SSL", "true")
 
     config = _load_config(config_path)
 
-    assert config["redis"]["host"] == "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com"
+    assert (
+        config["redis"]["host"]
+        == "master.maker-v2-client-redis-prod.wapqos.apse1.cache.amazonaws.com"
+    )
     assert config["redis"]["port"] == 6379
     assert config["redis"]["ssl"] is True

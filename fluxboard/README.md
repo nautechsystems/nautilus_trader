@@ -27,7 +27,7 @@ Modern React+TypeScript implementation of Fluxboard panels (Params, Trades, Mark
 
 - Node.js >= 18
 - pnpm installed (`npm install -g pnpm`)
-- FluxAPI running (see `examples/live/makerv3_single_leg/README.md` and `docs/fluxboard/tokenmm_runbook.md`)
+- FluxAPI running (see `examples/live/makerv3_single_leg/README.md` and `apps/fluxboard/docs/tokenmm_runbook.md`)
 
 ### Installation
 
@@ -42,7 +42,7 @@ pnpm --dir fluxboard exec playwright install chromium
 For TokenMM, follow:
 
 1. `examples/live/makerv3_single_leg/README.md` (end-to-end runner order + dev/prod-like serving modes)
-2. `docs/fluxboard/tokenmm_runbook.md` (serving/runbook + smoke checks)
+2. `apps/fluxboard/docs/tokenmm_runbook.md` (serving/runbook + smoke checks)
 
 ### Build
 
@@ -322,7 +322,7 @@ pnpm --dir fluxboard install --frozen-lockfile
 ## References
 
 - Core architecture: `docs/concepts/architecture.md`
-- Engine/FluxAPI backend: `nautilus_trader/flux/` and `docs/flux/api.md`
+- Engine/FluxAPI backend: `systems/flux/flux/` and `systems/flux/docs/api.md`
 - Fluxboard UI standards: `fluxboard/docs/ui-standards.md`
 - Zustand selector usage: `fluxboard/docs/SELECTORS_GUIDE.md`
 

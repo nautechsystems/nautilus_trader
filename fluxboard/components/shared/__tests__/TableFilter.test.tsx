@@ -170,6 +170,24 @@ describe('applyFilters Utility', () => {
     expect(result.every(row => row.status === 'active')).toBe(true);
   });
 
+  it('filters select fields against tokenized multi-value strings', () => {
+    const rows = [
+      { id: 1, market_type: 'perp spot' },
+      { id: 2, market_type: 'spot' },
+      { id: 3, market_type: 'perp' },
+    ];
+    const columns: ColumnFilter[] = [
+      { key: 'market_type', label: 'Market', type: 'select', options: ['spot', 'perp'] },
+    ];
+
+    const result = applyFilters(rows, { market_type: 'perp' }, { columns });
+
+    expect(result).toEqual([
+      { id: 1, market_type: 'perp spot' },
+      { id: 3, market_type: 'perp' },
+    ]);
+  });
+
   it('filters by multiple fields (AND logic)', () => {
     const filters: FilterValues = { status: 'active', category: 'work' };
     const result = applyFilters(mockRows, filters, { columns: mockColumns });

@@ -1,8 +1,8 @@
 from decimal import Decimal
 
+from flux.strategies.makerv3 import MakerV3Strategy
+from flux.strategies.makerv3 import MakerV3StrategyConfig
 from nautilus_trader.examples.strategies import makerv3 as example_wrapper
-from nautilus_trader.flux.strategies.makerv3 import MakerV3Strategy
-from nautilus_trader.flux.strategies.makerv3 import MakerV3StrategyConfig
 from nautilus_trader.model.identifiers import InstrumentId
 
 
