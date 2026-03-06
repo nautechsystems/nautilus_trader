@@ -3656,6 +3656,14 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
     - `cargo test -p nautilus-blockchain --test pancakeswap_v2_receipt_decode` (pass)
     - `cargo test -p nautilus-blockchain --lib --tests` (pass)
 
+- 2026-03-05 - PR12a (`pr12a/journal-idempotency`, head SHA `00e1dc71cf249ef9e9f6ecf88abf4ddbe71fddfd`) - status: ready
+  - Added `execution::journal` primitives for deterministic idempotency keys and durable JSONL event persistence (`append_event_jsonl` with flush+fsync, `load_events_jsonl` with partial-final-line tolerance).
+  - Added deterministic replay/sorting primitives (`stable_sort_events`, `replay_events`) and duplicate-submit disposition classification (`New`, `NoOpInFlight`, `RejectTerminal`) with monotonic intent/order state updates.
+  - Added integration coverage for deterministic key normalization, stable sorting, replay dedupe/monotonicity, multi-intent ordering, conflicting terminal replay determinism, duplicate-submit classification, and JSONL roundtrip/partial-line recovery.
+  - Tests run:
+    - `cargo test -p nautilus-blockchain --test execution_journal_primitives` (pass)
+    - `cargo test -p nautilus-blockchain --lib --tests` (pass)
+
 ## Deviations / Decisions
 
 - 2026-03-05 - Bootstrap decision: used a dedicated temporary external worktree for PR-preflight because `.worktrees/` was not yet ignored on `origin/main`; this avoids polluting repo status while adding the required ignore rule.
@@ -3667,6 +3675,7 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - 2026-03-05 - PR9 deviation: milestone text lists preflight + post-receipt touched-token refresh triggers; PR9 delivers tracker infrastructure plus `connect`/`query_account` triggers, while execution-path preflight/post-receipt hook-up is deferred to PR12b where receipt/fill orchestration is implemented end-to-end.
 - 2026-03-05 - PR10 decision: PCS V2 AMM adapter is wallet-recipient only for MVP (`supports_recipient_override=false`) and now rejects zero deadlines fail-closed at calldata build time.
 - 2026-03-05 - PR11 decision: receipt decode attempts both pool-token order orientations when mapping swap amounts (because only expected path is provided), but still requires the resolved token_in/token_out to exactly match the expected path.
+- 2026-03-05 - PR12a decision: when replay encounters conflicting same-sequence terminal updates, ordering is deterministic via explicit status discriminants (fail-closed bias toward terminal conflict determinism rather than input-order dependence).
 
 ## Known Issues / Follow-ups
 
@@ -3679,3 +3688,4 @@ MVP recommendation remains: integrate classic PCS V2 router first, then add Smar
 - PR9 leaves execution preflight/post-receipt touched-token refresh integration as a follow-up for PR12b; tracker and config surfaces are in place for that wiring.
 - PR10 quote classification currently relies on revert-string heuristics from `BlockchainRpcClientError` text; propagate structured RPC error fields through the client error type in a follow-up to reduce provider-format fragility.
 - PR11 taxed/rebasing-token decode rejection currently depends on the adapter unsupported-token denylist (`with_unsupported_tokens(...)`); wire this from production execution config before vertical-slice execution (PR12b) to avoid silent opt-in gaps.
+- PR12a JSONL persistence currently assumes a single writer process/worker; add explicit file/process locking or a serialized append worker before enabling multi-writer execution pipelines in PR12b/PR12c.
