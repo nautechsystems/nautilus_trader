@@ -4,12 +4,19 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added option chains and greeks in Rust (#3637), thanks @filipmacek
+- Added Hyperliquid agent wallet support (#3668), thanks @oh92
 
 ### Breaking Changes
 - None
 
+### Security
+- Upgraded HTTP to HTTPS URLs in crate README files (#3686), thanks @04cb
+
 ### Fixes
-- Fix Binance algo order update (#3665), thanks @qu1zzyboy
+- Fixed `RiskEngine` RefCell re-entrancy panic on order denial (#3680), thanks @husariancom
+- Fixed reconciliation when trigger_price is set for non-conditional orders (#3673), thanks @husariancom
+- Fixed Binance algo order update (#3665), thanks @qu1zzyboy
+- Fixed Binance SBE price/quantity precision derivation (#3670), thanks @husariancom
 
 ### Internal Improvements
 - Added Python strategy support to `LiveNode` with `add_strategy_from_config`
