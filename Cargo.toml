@@ -284,7 +284,7 @@ tracing-subscriber = { version = "0.3.22", default-features = false, features = 
 unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.21.0", features = ["v4", "serde"] }
+uuid = { version = "1.22.0", features = ["v4", "serde"] }
 webpki-roots = "1.0.6"
 
 # -----------------------------------------------------------------------------

@@ -67,7 +67,7 @@ repos:
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+    rev: v2.4.2
     hooks:
       - id: codespell
         description: Checks for common misspellings
@@ -289,7 +289,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.4
+    rev: v0.15.5
     hooks:
       - id: ruff
         name: ruff

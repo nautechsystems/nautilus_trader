@@ -35,6 +35,18 @@ criteria = "safe-to-deploy"
 delta = "2.6.0 -> 2.6.1"
 notes = "Better error messages for return-type mismatches, lint hygiene fix. Compile-time only."
 
+[[audits.uuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.21.0 -> 1.22.0"
+notes = "Version bump only: doc updates, bytemuck/rand dep bumps. No code changes."
+
+[[audits.winnow]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.7.14 -> 0.7.15"
+notes = "Doc fixes, lint renames, new unordered_seq macro, expression combinator updates. No unsafe changes."
+
 [[audits.zlib-rs]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
