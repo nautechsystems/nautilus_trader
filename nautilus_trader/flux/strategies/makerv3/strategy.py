@@ -321,6 +321,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             except Exception as e:
                 self._fail_fast_runtime_params(context="on_time_event", exc=e)
                 return
+            self._publish_balances_if_due()
             bot_on_now = self._effective_bot_on()
             if _did_bot_turn_off(self._last_bot_on, bot_on_now):
                 self._cancel_managed_quotes("bot_off_flip", force=True)

@@ -25,6 +25,8 @@ from typing import cast
 
 import redis
 from flask import abort
+from flask import redirect
+from flask import request
 from flask import send_from_directory
 
 from nautilus_trader.flux.api import ContractCatalogEntry
@@ -41,9 +43,15 @@ from nautilus_trader.flux.common.config import validate_identifier_part
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("config") / "makerv3.toml"
 DEFAULT_TOKENMM_BASE_PATH = "/tokenmm"
-DEFAULT_FLUXBOARD_DIST = Path(__file__).resolve().parents[3] / "fluxboard" / "dist"
+TOKENMM_ALIAS_BASE_PATH = "/tokenm"
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+DEFAULT_FLUXBOARD_DIST = _repo_root() / "fluxboard" / "dist"
 
 
 def _optional_text(value: Any) -> str | None:
@@ -69,8 +77,8 @@ def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Flux API app for MakerV3.")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    parser = argparse.ArgumentParser(description="Run Flux API app for TokenMM.")
+    parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
     parser.add_argument("--host", default=None)
@@ -235,6 +243,19 @@ def _build_profile_strategy_maps(
     return profile_strategy_map, profile_required_strategy_map
 
 
+def _tokenmm_profile_summary(
+    profile_strategy_map: dict[str, list[str]],
+    profile_required_strategy_map: dict[str, list[str]],
+) -> str:
+    strategy_ids = list(profile_strategy_map.get("tokenmm", []))
+    required_ids = list(profile_required_strategy_map.get("tokenmm", strategy_ids))
+    return (
+        f"tokenmm_strategy_count={len(strategy_ids)} "
+        f"tokenmm_strategy_ids={strategy_ids} "
+        f"tokenmm_required_strategy_ids={required_ids}"
+    )
+
+
 def _env_flag(name: str, *, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -270,6 +291,24 @@ def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
 
     def _serve_index() -> Any:
         return send_from_directory(str(dist_root), "index.html")
+
+    def _redirect_tokenm_alias(subpath: str | None = None) -> Any:
+        target = DEFAULT_TOKENMM_BASE_PATH
+        if subpath:
+            target = f"{target}/{subpath.strip().lstrip('/')}"
+        query = request.query_string.decode("utf-8").strip()
+        if query:
+            target = f"{target}?{query}"
+        return redirect(target, code=302)
+
+    @app.get(TOKENMM_ALIAS_BASE_PATH)
+    @app.get(f"{TOKENMM_ALIAS_BASE_PATH}/")
+    def _tokenm_alias_index() -> Any:
+        return _redirect_tokenm_alias()
+
+    @app.get(f"{TOKENMM_ALIAS_BASE_PATH}/<path:subpath>")
+    def _tokenm_alias_subpath(subpath: str) -> Any:
+        return _redirect_tokenm_alias(subpath)
 
     @app.get(DEFAULT_TOKENMM_BASE_PATH)
     @app.get(f"{DEFAULT_TOKENMM_BASE_PATH}/")
@@ -340,6 +379,11 @@ def main() -> None:
         quote_asset=str(api_cfg.get("quote_asset", "QUOTE")),
     )
     profile_strategy_map, profile_required_strategy_map = _build_profile_strategy_maps(api_cfg)
+    print(
+        "[tokenmm-run-api] "
+        + _tokenmm_profile_summary(profile_strategy_map, profile_required_strategy_map),
+        flush=True,
+    )
 
     redis_client = redis.Redis(
         host=flux_config.redis.host,

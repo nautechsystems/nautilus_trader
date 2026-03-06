@@ -5,10 +5,11 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 RUN_DIR="${RUN_DIR:-${ROOT_DIR}/.run/tokenmm-stack}"
 LOG_DIR="${RUN_DIR}/logs"
 PID_DIR="${RUN_DIR}/pids"
+DEFAULT_ENV_PATH="${ROOT_DIR}/deploy/tokenmm/tokenmm_stack.env"
 
-CONFIG_PATH="${TOKENMM_CONFIG_PATH:-${ROOT_DIR}/examples/live/makerv3/config/makerv3.live.toml}"
-STRATEGIES_DIR="${TOKENMM_STRATEGIES_DIR:-${ROOT_DIR}/examples/live/makerv3/config/strategies.d}"
-ENV_PATH="${TOKENMM_ENV_PATH:-${ROOT_DIR}/examples/live/makerv3/config/makerv3.live.env}"
+CONFIG_PATH="${TOKENMM_CONFIG_PATH:-${ROOT_DIR}/deploy/tokenmm/tokenmm.live.toml}"
+STRATEGIES_DIR="${TOKENMM_STRATEGIES_DIR:-${ROOT_DIR}/deploy/tokenmm/strategies}"
+ENV_PATH="${TOKENMM_ENV_PATH:-${DEFAULT_ENV_PATH}}"
 MODE="${TOKENMM_MODE:-paper}"
 CONFIRM_LIVE="${TOKENMM_CONFIRM_LIVE:-0}"
 ENABLE_EXECUTION="${TOKENMM_ENABLE_EXECUTION:-0}"
@@ -18,14 +19,22 @@ API_HOST="${TOKENMM_API_HOST:-127.0.0.1}"
 API_PORT="${TOKENMM_API_PORT:-5022}"
 EXPECTED_NODES="${TOKENMM_EXPECTED_NODES:-5}"
 START_TIMEOUT_SECS="${TOKENMM_START_TIMEOUT_SECS:-90}"
+BALANCES_READY_TIMEOUT_SECS="${TOKENMM_BALANCES_READY_TIMEOUT_SECS:-90}"
 SKIP_FLUXBOARD_BUILD="${TOKENMM_SKIP_FLUXBOARD_BUILD:-0}"
+STRICT_PROFILE_CHECK="${TOKENMM_STRICT_PROFILE_CHECK:-1}"
+STRICT_BALANCES_READY_CHECK="${TOKENMM_STRICT_BALANCES_READY_CHECK:-1}"
 PYTHON_BIN="${TOKENMM_PYTHON_BIN:-}"
+LOAD_AWS_SECRETS="${TOKENMM_LOAD_AWS_SECRETS:-0}"
+AWS_REGION="${TOKENMM_AWS_REGION:-ap-southeast-1}"
+BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-/nautilus/tokenmm/bybit}"
+BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-/nautilus/tokenmm/binance}"
 
 REDIS_HOST="127.0.0.1"
 REDIS_PORT="6380"
 
 declare -a STRATEGY_CONFIGS=()
 readonly ROOT_DIR RUN_DIR LOG_DIR PID_DIR
+STARTUP_CLEANUP_ON_EXIT=0
 
 usage() {
   cat << 'USAGE'
@@ -45,6 +54,10 @@ Environment overrides:
   TOKENMM_ALLOW_MISSING_KEYS, TOKENMM_MANAGE_REDIS
   TOKENMM_API_HOST, TOKENMM_API_PORT, TOKENMM_EXPECTED_NODES
   TOKENMM_SKIP_FLUXBOARD_BUILD, TOKENMM_START_TIMEOUT_SECS
+  TOKENMM_BALANCES_READY_TIMEOUT_SECS
+  TOKENMM_STRICT_PROFILE_CHECK, TOKENMM_STRICT_BALANCES_READY_CHECK
+  TOKENMM_LOAD_AWS_SECRETS, TOKENMM_AWS_REGION
+  TOKENMM_BYBIT_SECRET_ID, TOKENMM_BINANCE_SECRET_ID
 USAGE
 }
 
@@ -87,6 +100,11 @@ resolve_python_bin() {
 }
 
 load_env_file() {
+  if [[ -n "${TOKENMM_ENV_PATH:-}" && ! -f "${ENV_PATH}" ]]; then
+    echo "[tokenmm-stack] env file not found: ${ENV_PATH}" >&2
+    exit 1
+  fi
+
   if [[ -f "${ENV_PATH}" ]]; then
     while IFS= read -r line || [[ -n "${line}" ]]; do
       line="${line#"${line%%[![:space:]]*}"}"
@@ -130,7 +148,14 @@ load_env_file() {
   API_PORT="${TOKENMM_API_PORT:-${API_PORT}}"
   EXPECTED_NODES="${TOKENMM_EXPECTED_NODES:-${EXPECTED_NODES}}"
   START_TIMEOUT_SECS="${TOKENMM_START_TIMEOUT_SECS:-${START_TIMEOUT_SECS}}"
+  BALANCES_READY_TIMEOUT_SECS="${TOKENMM_BALANCES_READY_TIMEOUT_SECS:-${BALANCES_READY_TIMEOUT_SECS}}"
   SKIP_FLUXBOARD_BUILD="${TOKENMM_SKIP_FLUXBOARD_BUILD:-${SKIP_FLUXBOARD_BUILD}}"
+  STRICT_PROFILE_CHECK="${TOKENMM_STRICT_PROFILE_CHECK:-${STRICT_PROFILE_CHECK}}"
+  STRICT_BALANCES_READY_CHECK="${TOKENMM_STRICT_BALANCES_READY_CHECK:-${STRICT_BALANCES_READY_CHECK}}"
+  LOAD_AWS_SECRETS="${TOKENMM_LOAD_AWS_SECRETS:-${LOAD_AWS_SECRETS}}"
+  AWS_REGION="${TOKENMM_AWS_REGION:-${AWS_REGION}}"
+  BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-${BYBIT_SECRET_ID}}"
+  BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-${BINANCE_SECRET_ID}}"
 }
 
 resolve_redis_target_from_config() {
@@ -158,6 +183,40 @@ PY
   read -r REDIS_HOST REDIS_PORT <<< "${output}"
 }
 
+load_secret_into_env() {
+  local secret_id="$1"
+  if [[ -z "${secret_id}" ]]; then
+    return
+  fi
+  local raw
+  if ! raw="$(aws secretsmanager get-secret-value --region "${AWS_REGION}" --secret-id "${secret_id}" --query SecretString --output text 2> /dev/null)"; then
+    echo "[tokenmm-stack] warning: failed to load secret ${secret_id}" >&2
+    return
+  fi
+  if [[ -z "${raw}" || "${raw}" == "None" ]]; then
+    echo "[tokenmm-stack] warning: secret ${secret_id} is empty" >&2
+    return
+  fi
+
+  while IFS='=' read -r key value; do
+    [[ -z "${key}" ]] && continue
+    if [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      printf -v "${key}" "%s" "${value}"
+      export "${key?}"
+    fi
+  done < <(printf '%s' "${raw}" | jq -r 'to_entries[] | "\(.key)=\(.value|tostring)"')
+}
+
+load_aws_secrets_if_enabled() {
+  if [[ "${LOAD_AWS_SECRETS}" != "1" ]]; then
+    return
+  fi
+  require_cmd aws
+  require_cmd jq
+  load_secret_into_env "${BYBIT_SECRET_ID}"
+  load_secret_into_env "${BINANCE_SECRET_ID}"
+}
+
 validate_mode() {
   if [[ "${MODE}" != "paper" && "${MODE}" != "testnet" && "${MODE}" != "live" ]]; then
     echo "[tokenmm-stack] invalid TOKENMM_MODE=${MODE}; expected paper|testnet|live" >&2
@@ -167,6 +226,10 @@ validate_mode() {
     echo "[tokenmm-stack] refusing live startup: set TOKENMM_CONFIRM_LIVE=1" >&2
     exit 1
   fi
+}
+
+log_runtime_intent() {
+  echo "[tokenmm-stack] runtime intent: mode=${MODE} confirm_live=${CONFIRM_LIVE} enable_execution=${ENABLE_EXECUTION}"
 }
 
 validate_config_and_keys() {
@@ -209,6 +272,251 @@ load_strategy_configs() {
   fi
 }
 
+read_tokenmm_registry_ids() {
+  local pybin="$1"
+  local config_path="$2"
+  "${pybin}" - "${config_path}" << 'PY'
+import sys
+from pathlib import Path
+import tomllib
+
+data = tomllib.load(Path(sys.argv[1]).open("rb"))
+api_cfg = data.get("api") or {}
+raw_ids = api_cfg.get("tokenmm_strategy_ids") or []
+if isinstance(raw_ids, str):
+    raw_ids = [raw_ids]
+
+seen: set[str] = set()
+if isinstance(raw_ids, list | tuple):
+    for item in raw_ids:
+        text = str(item).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        print(text)
+PY
+}
+
+validate_strategy_registry_alignment() {
+  local pybin="$1"
+  declare -A seen_deployed_ids=()
+  declare -A seen_nautilus_strategy_ids=()
+  local -a deployed_ids=()
+  local -a registry_ids=()
+  local -a missing_from_configs=()
+  local -a unexpected_in_configs=()
+
+  for config_path in "${STRATEGY_CONFIGS[@]}"; do
+    local strategy_id
+    local nautilus_strategy_id
+    strategy_id="$(strategy_flux_id "${pybin}" "${config_path}")"
+    nautilus_strategy_id="$(strategy_nautilus_id "${pybin}" "${config_path}")"
+    if [[ -n "${seen_deployed_ids[${strategy_id}]:-}" ]]; then
+      echo "[tokenmm-stack] duplicate [identity].strategy_id in strategy configs: ${strategy_id}" >&2
+      exit 1
+    fi
+    if [[ -n "${seen_nautilus_strategy_ids[${nautilus_strategy_id}]:-}" ]]; then
+      echo "[tokenmm-stack] duplicate [strategy].strategy_id in strategy configs: ${nautilus_strategy_id}" >&2
+      exit 1
+    fi
+    seen_deployed_ids["${strategy_id}"]=1
+    seen_nautilus_strategy_ids["${nautilus_strategy_id}"]=1
+    deployed_ids+=("${strategy_id}")
+  done
+
+  mapfile -t registry_ids < <(read_tokenmm_registry_ids "${pybin}" "${CONFIG_PATH}")
+  if ((${#registry_ids[@]} == 0)); then
+    return
+  fi
+
+  declare -A registry_map=()
+  for strategy_id in "${registry_ids[@]}"; do
+    registry_map["${strategy_id}"]=1
+    if [[ -z "${seen_deployed_ids[${strategy_id}]:-}" ]]; then
+      missing_from_configs+=("${strategy_id}")
+    fi
+  done
+
+  for strategy_id in "${deployed_ids[@]}"; do
+    if [[ -z "${registry_map[${strategy_id}]:-}" ]]; then
+      unexpected_in_configs+=("${strategy_id}")
+    fi
+  done
+
+  if ((${#missing_from_configs[@]} > 0 || ${#unexpected_in_configs[@]} > 0)); then
+    echo "[tokenmm-stack] TokenMM registry mismatch between [api].tokenmm_strategy_ids and strategies.d configs" >&2
+    if ((${#missing_from_configs[@]} > 0)); then
+      echo "[tokenmm-stack] missing strategy configs for registry IDs: ${missing_from_configs[*]}" >&2
+    fi
+    if ((${#unexpected_in_configs[@]} > 0)); then
+      echo "[tokenmm-stack] strategies.d IDs not present in registry allowlist: ${unexpected_in_configs[*]}" >&2
+    fi
+    exit 1
+  fi
+}
+
+assert_tokenmm_profile_params_alignment() {
+  local pybin="$1"
+  if [[ "${STRICT_PROFILE_CHECK}" != "1" ]]; then
+    echo "[tokenmm-stack] skipping TokenMM profile assertions (TOKENMM_STRICT_PROFILE_CHECK=${STRICT_PROFILE_CHECK})"
+    return
+  fi
+
+  local -a expected_ids=()
+  mapfile -t expected_ids < <(read_tokenmm_registry_ids "${pybin}" "${CONFIG_PATH}")
+  if ((${#expected_ids[@]} == 0)); then
+    echo "[tokenmm-stack] skipping TokenMM profile assertions: [api].tokenmm_strategy_ids is empty"
+    return
+  fi
+
+  local response
+  response="$(curl -fsS "http://${API_HOST}:${API_PORT}/api/v1/params?profile=tokenmm")"
+
+  local expected_joined
+  expected_joined="$(printf '%s\n' "${expected_ids[@]}")"
+  EXPECTED_IDS_NL="${expected_joined}" \
+  EXPECTED_NODES="${EXPECTED_NODES}" \
+  "${pybin}" - "${response}" << 'PY'
+import json
+import os
+import sys
+
+payload = json.loads(sys.argv[1])
+items = payload.get("data")
+if not isinstance(items, list):
+    raise SystemExit("[tokenmm-stack] /api/v1/params payload missing list `data`")
+
+actual: list[str] = []
+seen: set[str] = set()
+for item in items:
+    if not isinstance(item, dict):
+        continue
+    strategy_id = str(item.get("strategy_id", "")).strip()
+    if not strategy_id or strategy_id in seen:
+        continue
+    seen.add(strategy_id)
+    actual.append(strategy_id)
+
+expected = [
+    line.strip()
+    for line in os.environ.get("EXPECTED_IDS_NL", "").splitlines()
+    if line.strip()
+]
+expected_count = int(os.environ.get("EXPECTED_NODES", "0") or "0")
+if expected_count <= 0:
+    expected_count = len(expected)
+
+actual_set = set(actual)
+expected_set = set(expected)
+if len(actual) != expected_count:
+    raise SystemExit(
+        f"[tokenmm-stack] /api/v1/params?profile=tokenmm returned {len(actual)} strategy IDs, expected {expected_count}: actual={actual}"
+    )
+if actual_set != expected_set:
+    missing = sorted(expected_set - actual_set)
+    unexpected = sorted(actual_set - expected_set)
+    raise SystemExit(
+        f"[tokenmm-stack] /api/v1/params?profile=tokenmm IDs mismatch: missing={missing} unexpected={unexpected} actual={actual}"
+    )
+PY
+
+  echo "[tokenmm-stack] TokenMM profile check passed: ${#expected_ids[@]} strategy IDs visible in /api/v1/params"
+}
+
+assert_tokenmm_profile_balances_readiness() {
+  local pybin="$1"
+  if [[ "${STRICT_BALANCES_READY_CHECK}" != "1" ]]; then
+    echo "[tokenmm-stack] skipping TokenMM balances readiness assertions (TOKENMM_STRICT_BALANCES_READY_CHECK=${STRICT_BALANCES_READY_CHECK})"
+    return
+  fi
+
+  local deadline=$((SECONDS + BALANCES_READY_TIMEOUT_SECS))
+  local last_error="waiting_for_balances"
+  while ((SECONDS < deadline)); do
+    local response
+    if ! response="$(curl -fsS "http://${API_HOST}:${API_PORT}/api/v1/balances?profile=tokenmm" 2> /dev/null)"; then
+      last_error="request_failed"
+      sleep 1
+      continue
+    fi
+
+    local detail
+    if detail="$(
+      "${pybin}" - "${response}" << 'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+data = payload.get("data")
+if not isinstance(data, dict):
+    raise SystemExit("missing `data` object")
+
+missing_required = data.get("missing_required") or []
+if not isinstance(missing_required, list):
+    raise SystemExit("`missing_required` is not a list")
+
+missing_required = sorted(str(item).strip() for item in missing_required if str(item).strip())
+if missing_required:
+    raise SystemExit(f"missing_required={missing_required}")
+
+components = data.get("components")
+if not isinstance(components, list) or not components:
+    raise SystemExit("missing `components` list")
+
+required_ids: list[str] = []
+required_missing: list[str] = []
+required_stale: list[str] = []
+required_stale_without_ts: list[str] = []
+for component in components:
+    if not isinstance(component, dict):
+        continue
+    strategy_id = str(component.get("strategy_id", "")).strip()
+    if not strategy_id or not bool(component.get("required")):
+        continue
+    required_ids.append(strategy_id)
+    if bool(component.get("missing")):
+        required_missing.append(strategy_id)
+    if not bool(component.get("stale")):
+        continue
+
+    latest_ts_ms = component.get("latest_ts_ms")
+    snapshot_present = bool(component.get("snapshot_present"))
+    rows_raw = component.get("rows")
+    try:
+        rows_count = int(rows_raw or 0)
+    except (TypeError, ValueError):
+        rows_count = 0
+
+    if latest_ts_ms is None and snapshot_present and rows_count > 0:
+        required_stale_without_ts.append(strategy_id)
+        continue
+    required_stale.append(strategy_id)
+
+if not required_ids:
+    raise SystemExit("no required components in balances payload")
+if required_missing:
+    raise SystemExit(f"required_missing={sorted(set(required_missing))}")
+if required_stale:
+    raise SystemExit(f"required_stale={sorted(set(required_stale))}")
+
+ready_detail = f"required_ready={len(required_ids)}"
+if required_stale_without_ts:
+    ready_detail += f" stale_without_ts={sorted(set(required_stale_without_ts))}"
+print(ready_detail)
+PY
+    )"; then
+      echo "[tokenmm-stack] TokenMM balances readiness check passed (${detail})"
+      return
+    fi
+
+    last_error="${detail}"
+    sleep 1
+  done
+
+  echo "[tokenmm-stack] timeout waiting for TokenMM balances readiness after ${BALANCES_READY_TIMEOUT_SECS}s: ${last_error}" >&2
+  exit 1
+}
+
 strategy_flux_id() {
   local pybin="$1"
   local config_path="$2"
@@ -222,6 +530,23 @@ identity = data.get("identity") or {}
 strategy_id = str(identity.get("strategy_id", "")).strip()
 if not strategy_id:
     raise SystemExit("missing [identity].strategy_id")
+print(strategy_id)
+PY
+}
+
+strategy_nautilus_id() {
+  local pybin="$1"
+  local config_path="$2"
+  "${pybin}" - "${config_path}" << 'PY'
+import sys
+from pathlib import Path
+import tomllib
+
+data = tomllib.load(Path(sys.argv[1]).open("rb"))
+strategy = data.get("strategy") or {}
+strategy_id = str(strategy.get("strategy_id", "")).strip()
+if not strategy_id:
+    raise SystemExit("missing [strategy].strategy_id")
 print(strategy_id)
 PY
 }
@@ -276,10 +601,16 @@ start_process() {
   rm -f "${file}"
   (
     cd "${ROOT_DIR}"
-    if command -v nohup > /dev/null 2>&1; then
-      nohup "$@" >> "${log}" 2>&1 &
+    if command -v setsid > /dev/null 2>&1; then
+      if command -v nohup > /dev/null 2>&1; then
+        setsid nohup "$@" >> "${log}" 2>&1 < /dev/null &
+      else
+        setsid "$@" >> "${log}" 2>&1 < /dev/null &
+      fi
+    elif command -v nohup > /dev/null 2>&1; then
+      nohup "$@" >> "${log}" 2>&1 < /dev/null &
     else
-      "$@" >> "${log}" 2>&1 &
+      "$@" >> "${log}" 2>&1 < /dev/null &
     fi
     echo $! > "${file}"
   )
@@ -383,7 +714,7 @@ start_nodes() {
     strategy_flux_id="$(strategy_flux_id "${pybin}" "${config_path}")"
     local svc="node_$(slugify "${strategy_flux_id}")"
     echo "[tokenmm-stack] node config=${config_path} flux_strategy_id=${strategy_flux_id} service=${svc}"
-    local -a cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" examples/live/makerv3/run_node.py --config "${config_path}" --mode "${MODE}")
+    local -a cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" -m nautilus_trader.flux.runners.tokenmm.run_node --config "${config_path}" --shared-config "${CONFIG_PATH}" --mode "${MODE}")
     if [[ -n "${live_flag}" ]]; then
       cmd+=("${live_flag}")
     fi
@@ -400,9 +731,12 @@ start_stack() {
   pybin="$(resolve_python_bin)"
 
   load_env_file
+  load_aws_secrets_if_enabled
   validate_mode
+  log_runtime_intent
   validate_config_and_keys
   load_strategy_configs
+  validate_strategy_registry_alignment "${pybin}"
   ensure_dirs
 
   resolve_redis_target_from_config "${pybin}"
@@ -415,13 +749,13 @@ start_stack() {
     live_flag="--confirm-live"
   fi
 
-  local -a bridge_cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" examples/live/makerv3/run_bridge.py --config "${CONFIG_PATH}" --mode "${MODE}" --all-strategies)
+  local -a bridge_cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" -m nautilus_trader.flux.runners.tokenmm.run_bridge --config "${CONFIG_PATH}" --mode "${MODE}" --all-strategies)
   if [[ -n "${live_flag}" ]]; then
     bridge_cmd+=("${live_flag}")
   fi
   start_process "bridge" "${bridge_cmd[@]}"
 
-  local -a api_cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" examples/live/makerv3/run_api.py --config "${CONFIG_PATH}" --mode "${MODE}")
+  local -a api_cmd=(env "PYTHONPATH=${ROOT_DIR}:${PYTHONPATH:-}" "${pybin}" -m nautilus_trader.flux.runners.tokenmm.run_api --config "${CONFIG_PATH}" --mode "${MODE}")
   if [[ -n "${live_flag}" ]]; then
     api_cmd+=("${live_flag}")
   fi
@@ -430,6 +764,8 @@ start_stack() {
 
   wait_for_url "http://${API_HOST}:${API_PORT}/api/v1/healthz" "flux api"
   wait_for_url "http://${API_HOST}:${API_PORT}/tokenmm" "fluxboard tokenmm"
+  assert_tokenmm_profile_params_alignment "${pybin}"
+  assert_tokenmm_profile_balances_readiness "${pybin}"
   echo "[tokenmm-stack] stack started"
   status_stack
 }
@@ -451,6 +787,15 @@ stop_stack() {
   stop_nodes
   stop_process "redis"
   echo "[tokenmm-stack] stack stopped"
+}
+
+cleanup_partial_startup_on_exit() {
+  local exit_code=$?
+  if [[ "${STARTUP_CLEANUP_ON_EXIT}" == "1" && "${exit_code}" != "0" ]]; then
+    echo "[tokenmm-stack] startup failed; stopping partial stack" >&2
+    STARTUP_CLEANUP_ON_EXIT=0
+    stop_stack || true
+  fi
 }
 
 service_status_line() {
@@ -498,6 +843,8 @@ status_stack() {
 health_stack() {
   load_env_file
   require_cmd curl
+  local pybin
+  pybin="$(resolve_python_bin)"
   echo "[tokenmm-stack] API health"
   curl -fsS "http://${API_HOST}:${API_PORT}/api/v1/healthz" | sed -n '1,4p'
   echo
@@ -514,6 +861,12 @@ health_stack() {
     echo "[tokenmm-stack] socket handshake missing sid field" >&2
     exit 1
   fi
+  echo
+  echo "[tokenmm-stack] TokenMM params profile assertions"
+  assert_tokenmm_profile_params_alignment "${pybin}"
+  echo
+  echo "[tokenmm-stack] TokenMM balances readiness assertions"
+  assert_tokenmm_profile_balances_readiness "${pybin}"
 }
 
 logs_stack() {
@@ -529,14 +882,18 @@ main() {
   local cmd="${1:-}"
   case "${cmd}" in
     start)
+      STARTUP_CLEANUP_ON_EXIT=1
       start_stack
+      STARTUP_CLEANUP_ON_EXIT=0
       ;;
     stop)
       stop_stack
       ;;
     restart)
       stop_stack
+      STARTUP_CLEANUP_ON_EXIT=1
       start_stack
+      STARTUP_CLEANUP_ON_EXIT=0
       ;;
     status)
       status_stack
@@ -558,5 +915,7 @@ main() {
       ;;
   esac
 }
+
+trap cleanup_partial_startup_on_exit EXIT
 
 main "$@"

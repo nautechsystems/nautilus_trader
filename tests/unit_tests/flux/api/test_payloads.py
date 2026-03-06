@@ -23,6 +23,7 @@ from nautilus_trader.flux.api.payloads import build_legs_payload
 from nautilus_trader.flux.api.payloads import build_signals_payload
 from nautilus_trader.flux.api.payloads import build_trades_rows
 from nautilus_trader.flux.api.payloads import extract_stream_rows
+from nautilus_trader.flux.api.payloads import merge_portfolio_balances_rows
 
 
 def test_build_envelope_includes_standard_fields() -> None:
@@ -84,6 +85,41 @@ def test_build_balances_rows_flattens_events_and_aggregates_positions() -> None:
     assert len(spot_rows) == 1
     assert spot_rows[0]["exchange"] == "venue_a"
     assert spot_rows[0]["asset"] == "ABC"
+
+
+def test_merge_portfolio_balances_rows_nets_same_instrument_across_strategies() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "strategy_01": [
+                {
+                    "strategy_id": "strategy_01",
+                    "kind": "position",
+                    "exchange": "bybit",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "quantity": "2",
+                    "side": "LONG",
+                },
+            ],
+            "strategy_02": [
+                {
+                    "strategy_id": "strategy_02",
+                    "kind": "position",
+                    "exchange": "bybit",
+                    "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                    "quantity": "1",
+                    "side": "SHORT",
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+    )
+
+    rows_by_id = {row["row_id"]: row for row in merged}
+    position = rows_by_id["tokenmm:pos:bybit:PLUMEUSDT-LINEAR.BYBIT"]
+    assert position["strategy_id"] == "tokenmm"
+    assert position["signed_qty"] == "1"
+    assert position["quantity"] == "1"
+    assert position["side"] == "LONG"
 
 
 def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog) -> None:

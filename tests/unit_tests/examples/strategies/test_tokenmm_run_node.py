@@ -15,7 +15,12 @@
 
 from __future__ import annotations
 
-from examples.live.makerv3 import run_node
+from argparse import Namespace
+from pathlib import Path
+
+import pytest
+
+from nautilus_trader.flux.runners.tokenmm import run_node
 
 
 class _DummyStrategy:
@@ -107,6 +112,19 @@ def test_resolve_reconciliation_settings_keeps_dev_values_in_paper_mode() -> Non
     assert startup_delay == 1.0
 
 
+def test_resolve_reconciliation_settings_keeps_positive_live_lookback() -> None:
+    lookback, startup_delay = run_node._resolve_reconciliation_settings(
+        mode="live",
+        node_cfg={
+            "exec_reconciliation_lookback_mins": 15,
+            "exec_reconciliation_startup_delay_secs": 12.0,
+        },
+    )
+
+    assert lookback == 15
+    assert startup_delay == 12.0
+
+
 def test_redis_database_config_uses_redis_section_values() -> None:
     database = run_node._redis_database_config(
         {
@@ -122,3 +140,105 @@ def test_redis_database_config_uses_redis_section_values() -> None:
     assert database.port == 6381
     assert database.username == "alice"
     assert database.password == "secret"
+
+def test_resolve_execution_filter_settings_defaults_disabled() -> None:
+    assert run_node._resolve_execution_filter_settings({}) == (False, False)
+
+
+def test_resolve_execution_filter_settings_honors_shared_account_flags() -> None:
+    assert run_node._resolve_execution_filter_settings(
+        {
+            "filter_unclaimed_external_orders": True,
+            "filter_position_reports": True,
+        },
+    ) == (True, True)
+
+
+def test_parse_args_requires_explicit_config(monkeypatch) -> None:
+    monkeypatch.setattr("sys.argv", ["run_node.py"])
+
+    with pytest.raises(SystemExit, match="2"):
+        run_node._parse_args()
+
+
+def test_merge_shared_tables_inherits_missing_redis_table() -> None:
+    merged = run_node._merge_shared_tables(
+        config={
+            "identity": {"strategy_id": "strategy_a"},
+            "node": {"enable_execution": False},
+        },
+        shared_config={
+            "redis": {"host": "127.0.0.1", "port": 6380, "db": 0},
+            "api": {"host": "127.0.0.1"},
+        },
+        table_names=("redis",),
+    )
+
+    assert merged["redis"] == {"host": "127.0.0.1", "port": 6380, "db": 0}
+    assert "api" not in merged
+
+
+def test_merge_shared_tables_keeps_node_specific_redis_override() -> None:
+    merged = run_node._merge_shared_tables(
+        config={
+            "redis": {"host": "127.0.0.2", "port": 6380, "db": 1},
+        },
+        shared_config={
+            "redis": {"host": "127.0.0.1", "port": 6380, "db": 0},
+        },
+        table_names=("redis",),
+    )
+
+    assert merged["redis"] == {"host": "127.0.0.2", "port": 6380, "db": 1}
+
+
+def test_load_runtime_config_merges_shared_redis_from_top_level_file(tmp_path: Path) -> None:
+    strategy_path = tmp_path / "strategy.toml"
+    shared_path = tmp_path / "shared.toml"
+    strategy_path.write_text(
+        """
+[flux]
+mode = "paper"
+
+[identity]
+strategy_id = "strategy_a"
+
+[node]
+enable_execution = false
+""".strip(),
+        encoding="utf-8",
+    )
+    shared_path.write_text(
+        """
+[redis]
+host = "127.0.0.1"
+port = 6380
+db = 0
+""".strip(),
+        encoding="utf-8",
+    )
+
+    merged = run_node._load_runtime_config(strategy_path, shared_config_path=shared_path)
+
+    assert merged["redis"]["host"] == "127.0.0.1"
+    assert merged["redis"]["db"] == 0
+
+
+def test_parse_args_accepts_optional_shared_config(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "strategy.toml"
+    shared_path = tmp_path / "shared.toml"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_node.py",
+            "--config",
+            str(config_path),
+            "--shared-config",
+            str(shared_path),
+        ],
+    )
+
+    args = run_node._parse_args()
+
+    assert args.config == config_path
+    assert args.shared_config == shared_path

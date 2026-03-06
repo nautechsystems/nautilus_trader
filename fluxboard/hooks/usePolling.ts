@@ -27,7 +27,7 @@ export type UsePollingOptions = {
  * ```
  */
 export function usePolling(
-  fetchFn: () => void | Promise<void>,
+  fetchFn: () => void | Promise<unknown>,
   interval: number,
   enabled: boolean = true,
   options?: UsePollingOptions
@@ -47,8 +47,8 @@ export function usePolling(
       try {
         const result = fetchFnRef.current();
         // Avoid leaking unhandled rejections when callers provide async functions.
-        if (result && typeof (result as Promise<void>).catch === 'function') {
-          (result as Promise<void>).catch((err) => {
+        if (result && typeof (result as Promise<unknown>).catch === 'function') {
+          (result as Promise<unknown>).catch((err) => {
             if (!isTestEnv && import.meta.env?.DEV) {
               console.error('[polling] poll callback failed', err);
             }

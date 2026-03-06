@@ -269,12 +269,14 @@ class FluxSocketEmitter:
         store: FluxSocketStoreProtocol,
         metadata_resolver: Callable[[str], Any],
         strategy_resolver: Callable[[str], str | None],
+        strategy_ids_resolver: Callable[[str], Sequence[str]] | None = None,
         poll_interval_s: float = SOCKETIO_DEFAULT_POLL_INTERVAL_S,
     ) -> None:
         self._socketio = socketio
         self._store = store
         self._metadata_resolver = metadata_resolver
         self._strategy_resolver = strategy_resolver
+        self._strategy_ids_resolver = strategy_ids_resolver
         self._poll_interval_s = max(0.25, float(poll_interval_s))
         self._lock = RLock()
         self._running = False
@@ -282,8 +284,8 @@ class FluxSocketEmitter:
         self._wake_event = Event()
         self._profile_refcounts: dict[str, int] = {}
         self._seq_by_profile: dict[str, int] = {}
-        self._signal_by_profile: dict[str, dict[str, Any]] = {}
-        self._trade_cursor_by_profile: dict[str, int] = {}
+        self._signal_by_profile: dict[str, dict[str, dict[str, Any]]] = {}
+        self._trade_cursor_by_profile: dict[str, dict[str, int]] = {}
         self._alerts_by_profile: dict[str, tuple[int, int | None, str]] = {}
         self._failure_streak_by_profile: dict[str, int] = {}
         self._backoff_until_by_profile: dict[str, float] = {}
@@ -407,17 +409,46 @@ class FluxSocketEmitter:
             self._seq_by_profile[profile] = seq
             return seq
 
+    def _resolve_profile_strategy_ids(self, profile: str) -> list[str]:
+        ids: list[str] = []
+        normalized_profile = normalize_profile(profile)
+        if normalized_profile == "tokenmm" and self._strategy_ids_resolver is not None:
+            raw_values = self._strategy_ids_resolver(profile)
+            if isinstance(raw_values, Sequence) and not isinstance(raw_values, str | bytes):
+                candidates = list(raw_values)
+            elif raw_values is None:
+                candidates = []
+            else:
+                candidates = [raw_values]
+            seen: set[str] = set()
+            for value in candidates:
+                strategy_id = decode_text(value).strip()
+                if not strategy_id or strategy_id in seen:
+                    continue
+                seen.add(strategy_id)
+                ids.append(strategy_id)
+        if ids:
+            return ids
+        strategy_id = self._strategy_resolver(profile)
+        return [strategy_id] if strategy_id else []
+
     def _emit_profile_safely(self, profile: str) -> None:
         if self._is_profile_backing_off(profile, now_s=monotonic()):
             return
 
-        strategy_id = self._strategy_resolver(profile)
-        if not strategy_id:
+        strategy_ids = self._resolve_profile_strategy_ids(profile)
+        if not strategy_ids:
             return
 
+        strategy_id = strategy_ids[0]
         room = profile_room(profile)
         try:
-            self._emit_profile(profile, strategy_id=strategy_id, room=room)
+            self._emit_profile(
+                profile,
+                strategy_id=strategy_id,
+                strategy_ids=strategy_ids,
+                room=room,
+            )
         except Exception as e:
             streak, backoff_s = self._record_profile_failure(profile)
             _LOG.exception(
@@ -436,102 +467,158 @@ class FluxSocketEmitter:
         profile: str,
         *,
         strategy_id: str,
+        strategy_ids: Sequence[str],
         room: str,
     ) -> None:
-        metadata = self._metadata_resolver(strategy_id)
-        signal_payload = build_stable_signal_view(
-            self._store.load_signals_payload(strategy_id, metadata),
-        )
+        signal_payloads_by_strategy: dict[str, dict[str, Any]] = {}
+        for current_strategy_id in strategy_ids:
+            metadata = self._metadata_resolver(current_strategy_id)
+            signal_payloads_by_strategy[current_strategy_id] = build_stable_signal_view(
+                self._store.load_signals_payload(current_strategy_id, metadata),
+            )
 
         with self._lock:
-            trade_cursor = self._trade_cursor_by_profile.get(profile, 0)
-            previous_signal = self._signal_by_profile.get(profile)
+            trade_cursors = dict(self._trade_cursor_by_profile.get(profile, {}))
+            previous_signals = self._signal_by_profile.get(profile, {})
             previous_alerts_signature = self._alerts_by_profile.get(profile)
 
-        scanned_trades = self._store.load_trades_rows(
-            strategy_id,
-            limit=self._trade_scan_limit,
-            since_ms=None,
-            since_seq=None,
-            scan_limit=self._trade_scan_limit,
-        )
-        alerts_rows = self._store.load_alerts_rows(strategy_id, limit=self._alerts_preview_limit)
-        alerts_total = self._store.alerts_stream_len(strategy_id)
+        next_trade_cursors = dict(trade_cursors)
+        for current_strategy_id in strategy_ids:
+            next_trade_cursors[current_strategy_id] = int(next_trade_cursors.get(current_strategy_id, 0))
 
-        trades_rows: list[dict[str, Any]] = []
-        trade_gap_cursor: int | None = None
-        if scanned_trades:
-            seq_values = [
-                safe_int(row.get("seq")) for row in scanned_trades if isinstance(row, Mapping)
-            ]
+        scanned_trade_entries: list[tuple[int, dict[str, Any]]] = []
+        trade_gap = False
+        for current_strategy_id in strategy_ids:
+            strategy_rows = self._store.load_trades_rows(
+                current_strategy_id,
+                limit=self._trade_scan_limit,
+                since_ms=None,
+                since_seq=None,
+                scan_limit=self._trade_scan_limit,
+            )
+            current_cursor = int(next_trade_cursors.get(current_strategy_id, 0))
+            seq_values = [safe_int(row.get("seq")) for row in strategy_rows if isinstance(row, Mapping)]
             parsed_seqs = [seq for seq in seq_values if seq is not None]
             if parsed_seqs:
                 min_seq = min(parsed_seqs)
                 max_seq = max(parsed_seqs)
-                if trade_cursor > 0 and trade_cursor < (min_seq - 1):
+                if current_cursor > 0 and current_cursor < (min_seq - 1):
                     _LOG.warning(
                         "Flux socket emitter detected trade replay boundary profile=%s strategy_id=%s cursor_seq=%s window_min_seq=%s window_max_seq=%s scan_limit=%s",
                         profile,
-                        strategy_id,
-                        trade_cursor,
+                        current_strategy_id,
+                        current_cursor,
                         min_seq,
                         max_seq,
                         self._trade_scan_limit,
                     )
-                    trade_gap_cursor = max(0, min_seq - 1)
-                elif trade_cursor > max_seq:
+                    trade_gap = True
+                    next_trade_cursors[current_strategy_id] = max(0, min_seq - 1)
+                    continue
+                if current_cursor > max_seq:
                     _LOG.warning(
                         "Flux socket emitter detected trade cursor overrun profile=%s strategy_id=%s cursor_seq=%s window_max_seq=%s scan_limit=%s",
                         profile,
-                        strategy_id,
-                        trade_cursor,
+                        current_strategy_id,
+                        current_cursor,
                         max_seq,
                         self._trade_scan_limit,
                     )
-                    trade_gap_cursor = int(max_seq)
-
-        if trade_gap_cursor is None and scanned_trades:
-            for row in scanned_trades:
+                    trade_gap = True
+                    next_trade_cursors[current_strategy_id] = int(max_seq)
+                    continue
+            for row in strategy_rows:
                 if not isinstance(row, Mapping):
                     continue
-                row_seq = safe_int(row.get("seq"))
-                if row_seq is None or row_seq <= trade_cursor:
+                normalized_row = dict(row)
+                normalized_row.setdefault("strategy_id", current_strategy_id)
+                row_seq = safe_int(normalized_row.get("seq"))
+                if row_seq is None or row_seq <= current_cursor:
                     continue
-                trades_rows.append(dict(row))
-            trades_rows.sort(key=lambda item: safe_int(item.get("seq")) or 0)
+                scanned_trade_entries.append((row_seq, normalized_row))
+        alerts_rows: list[dict[str, Any]] = []
+        alerts_total = 0
+        for current_strategy_id in strategy_ids:
+            strategy_alert_rows = self._store.load_alerts_rows(
+                current_strategy_id,
+                limit=self._alerts_preview_limit,
+            )
+            for row in strategy_alert_rows:
+                normalized_row = dict(row)
+                normalized_row.setdefault("strategy_id", current_strategy_id)
+                alerts_rows.append(normalized_row)
+
+            strategy_alert_total = self._store.alerts_stream_len(current_strategy_id)
+            if strategy_alert_total is None:
+                alerts_total += len(strategy_alert_rows)
+            else:
+                alerts_total += int(strategy_alert_total)
+        alerts_rows.sort(
+            key=lambda row: coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp"))
+            or 0,
+            reverse=True,
+        )
+        alerts_rows = alerts_rows[: self._alerts_preview_limit]
+
+        trades_rows: list[tuple[int, dict[str, Any]]] = []
+        if not trade_gap and scanned_trade_entries:
+            trades_rows.extend(scanned_trade_entries)
+            trades_rows.sort(
+                key=lambda item: (
+                    coerce_ts_ms(
+                        item[1].get("ts_ms") or item[1].get("ts") or item[1].get("timestamp")
+                    )
+                    or 0,
+                    safe_int(item[1].get("seq")) or 0,
+                    decode_text(item[1].get("strategy_id")).strip(),
+                    decode_text(item[1].get("row_id")).strip(),
+                ),
+            )
             trades_rows = trades_rows[: self._trade_poll_limit]
-        elif trade_gap_cursor is not None:
+        elif trade_gap:
             # Force a per-profile Socket.IO seq gap so clients trigger REST resync per contract.
             _ = self._next_seq(profile)
 
-        signal_patch = build_signal_delta_patch(previous_signal, signal_payload)
-        if signal_patch:
-            signal_event = {
-                "profile": profile,
-                "strategy_id": strategy_id,
-                "seq": self._next_seq(profile),
-                "server_ts_ms": now_ms(),
-                "patch": signal_patch,
-            }
-            self._socketio.emit("signal_delta", signal_event, to=room)
+        signal_changed_ids: list[str] = []
+        for current_strategy_id in strategy_ids:
+            signal_payload = signal_payloads_by_strategy[current_strategy_id]
+            previous_signal = previous_signals.get(current_strategy_id)
+            signal_patch = build_signal_delta_patch(previous_signal, signal_payload)
+            if signal_patch:
+                signal_event = {
+                    "profile": profile,
+                    "strategy_id": current_strategy_id,
+                    "seq": self._next_seq(profile),
+                    "server_ts_ms": now_ms(),
+                    "patch": signal_patch,
+                }
+                self._socketio.emit("signal_delta", signal_event, to=room)
+            if previous_signal != signal_payload:
+                signal_changed_ids.append(current_strategy_id)
 
-        latest_trade_seq = trade_cursor
-        for row in trades_rows:
+        for previous_strategy_id in previous_signals:
+            if previous_strategy_id in signal_payloads_by_strategy:
+                continue
+            signal_changed_ids.append(previous_strategy_id)
+
+        emitted_max_seq: dict[str, int] = {
+            current_strategy_id: int(next_trade_cursors.get(current_strategy_id, 0))
+            for current_strategy_id in strategy_ids
+        }
+        for cursor, row in trades_rows:
             if not isinstance(row, Mapping):
                 continue
-            row_seq = safe_int(row.get("seq"))
-            if row_seq is None:
-                continue
-            latest_trade_seq = max(latest_trade_seq, row_seq)
             row_id = decode_text(row.get("row_id")).strip()
             if not row_id:
                 continue
+            row_strategy_id = decode_text(row.get("strategy_id")).strip() or strategy_id
+            emitted_max_seq[row_strategy_id] = max(emitted_max_seq.get(row_strategy_id, 0), int(cursor))
             version = safe_int(row.get("version")) or 1
             operation = decode_text(row.get("op")).strip().lower() or "upsert"
             if operation == "delete":
                 payload = build_trade_update_payload(
                     profile=profile,
-                    strategy_id=strategy_id,
+                    strategy_id=row_strategy_id,
                     seq=self._next_seq(profile),
                     op="delete",
                     row_id=row_id,
@@ -545,7 +632,7 @@ class FluxSocketEmitter:
             normalized = _normalize_trade_row(row, row_id=row_id, version=version)
             payload = build_trade_update_payload(
                 profile=profile,
-                strategy_id=strategy_id,
+                strategy_id=row_strategy_id,
                 seq=self._next_seq(profile),
                 op="upsert",
                 row_id=row_id,
@@ -554,11 +641,16 @@ class FluxSocketEmitter:
                 server_ts_ms=now_ms(),
             )
             self._socketio.emit("trade_update", payload, to=room)
+        if not trade_gap:
+            for current_strategy_id, seq in emitted_max_seq.items():
+                next_trade_cursors[current_strategy_id] = max(
+                    int(next_trade_cursors.get(current_strategy_id, 0)),
+                    int(seq),
+                )
 
         alerts_signature = _alerts_signature(alerts_rows, total_count=alerts_total)
-        strategy_changed = previous_signal != signal_payload
+        strategy_changed = bool(signal_changed_ids)
         alerts_changed = previous_alerts_signature != alerts_signature
-        trade_gap = trade_gap_cursor is not None
         if trade_gap or strategy_changed or alerts_changed:
             market_payload = {
                 "profile": profile,
@@ -567,7 +659,7 @@ class FluxSocketEmitter:
                 "server_time": datetime.now(tz=UTC)
                 .isoformat(timespec="milliseconds")
                 .replace("+00:00", "Z"),
-                "strategies": {"changed": [strategy_id] if strategy_changed else []},
+                "strategies": {"changed": signal_changed_ids},
                 "alerts": {
                     "count": alerts_signature[0],
                     "latest_ts_ms": alerts_signature[1],
@@ -581,10 +673,13 @@ class FluxSocketEmitter:
             if self._profile_refcounts.get(profile, 0) <= 0:
                 self._cleanup_profile_state_locked(profile)
                 return
-            self._signal_by_profile[profile] = _copy_mapping(signal_payload)
-            self._trade_cursor_by_profile[profile] = (
-                int(trade_gap_cursor) if trade_gap_cursor is not None else latest_trade_seq
-            )
+            self._signal_by_profile[profile] = {
+                key: _copy_mapping(value) for key, value in signal_payloads_by_strategy.items()
+            }
+            self._trade_cursor_by_profile[profile] = {
+                current_strategy_id: int(next_trade_cursors.get(current_strategy_id, 0))
+                for current_strategy_id in strategy_ids
+            }
             self._alerts_by_profile[profile] = alerts_signature
 
 
@@ -607,6 +702,7 @@ def create_flux_socket_server(  # noqa: C901
     store: FluxSocketStoreProtocol,
     metadata_resolver: Callable[[str], Any],
     strategy_resolver: Callable[[str], str | None],
+    strategy_ids_resolver: Callable[[str], Sequence[str]] | None = None,
     path: str = SOCKETIO_DEFAULT_PATH,
     poll_interval_s: float = SOCKETIO_DEFAULT_POLL_INTERVAL_S,
 ) -> FluxSocketServer:
@@ -626,8 +722,21 @@ def create_flux_socket_server(  # noqa: C901
         store=store,
         metadata_resolver=metadata_resolver,
         strategy_resolver=strategy_resolver,
+        strategy_ids_resolver=strategy_ids_resolver,
         poll_interval_s=poll_interval_s,
     )
+
+    def _profile_supported(profile: str) -> bool:
+        normalized_profile = normalize_profile(profile)
+        if normalized_profile == "tokenmm" and strategy_ids_resolver is not None:
+            raw_values = strategy_ids_resolver(profile)
+            if isinstance(raw_values, Sequence) and not isinstance(raw_values, str | bytes):
+                for value in raw_values:
+                    if decode_text(value).strip():
+                        return True
+            elif raw_values is not None and decode_text(raw_values).strip():
+                return True
+        return strategy_resolver(profile) is not None
 
     sid_profiles: dict[str, str] = {}
     sid_lock = RLock()
@@ -638,7 +747,7 @@ def create_flux_socket_server(  # noqa: C901
         profile = normalize_profile(request.args.get("profile"))
         if not profile:
             return True
-        if strategy_resolver(profile) is None:
+        if not _profile_supported(profile):
             return True
         with sid_lock:
             sid_profiles[request.sid] = profile
@@ -684,7 +793,7 @@ def create_flux_socket_server(  # noqa: C901
                 "room": None,
             }
 
-        if strategy_resolver(next_profile) is None:
+        if not _profile_supported(next_profile):
             return {
                 "ok": False,
                 "profile": "",

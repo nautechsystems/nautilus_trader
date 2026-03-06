@@ -16,26 +16,34 @@
 from __future__ import annotations
 
 from argparse import Namespace
+from pathlib import Path
 
 import pytest
+from flask import Flask
 
-from examples.live.makerv3.run_api import DEFAULT_CONFIG_PATH
-from examples.live.makerv3.run_api import _build_flux_config
-from examples.live.makerv3.run_api import _build_profile_strategy_maps
-from examples.live.makerv3.run_api import _load_config
-from examples.live.makerv3.run_api import _resolve_bind_host
+from nautilus_trader.flux.runners.tokenmm.run_api import _attach_fluxboard_tokenmm_routes
+from nautilus_trader.flux.runners.tokenmm.run_api import _build_flux_config
+from nautilus_trader.flux.runners.tokenmm.run_api import _build_profile_strategy_maps
+from nautilus_trader.flux.runners.tokenmm.run_api import _load_config
+from nautilus_trader.flux.runners.tokenmm.run_api import _parse_args
+from nautilus_trader.flux.runners.tokenmm.run_api import _resolve_bind_host
+from nautilus_trader.flux.runners.tokenmm.run_api import _tokenmm_profile_summary
 
 
-def test_default_config_builds_flux_config_with_strategy_identity_uniqueness() -> None:
-    config = _load_config(DEFAULT_CONFIG_PATH)
+def _example_config_path() -> Path:
+    return Path(__file__).resolve().parents[4] / "examples/live/makerv3/config/makerv3.toml"
+
+
+def test_example_config_builds_flux_config_with_strategy_identity_uniqueness() -> None:
+    config = _load_config(_example_config_path())
 
     flux_config = _build_flux_config(config, mode="paper", confirm_live=True)
 
     assert flux_config.identity.strategy_instance_id == flux_config.identity.strategy_id
 
 
-def test_default_config_api_host_is_localhost() -> None:
-    config = _load_config(DEFAULT_CONFIG_PATH)
+def test_example_config_api_host_is_localhost() -> None:
+    config = _load_config(_example_config_path())
 
     host = _resolve_bind_host(config, Namespace(host=None))
 
@@ -74,3 +82,39 @@ def test_build_profile_strategy_maps_rejects_required_ids_outside_allowlist() ->
                 "tokenmm_required_strategy_ids": ["strategy_b"],
             },
         )
+
+
+def test_tokenmm_profile_summary_reports_effective_strategy_sets() -> None:
+    summary = _tokenmm_profile_summary(
+        {"tokenmm": ["strategy_a", "strategy_b"]},
+        {"tokenmm": ["strategy_a"]},
+    )
+
+    assert "tokenmm_strategy_count=2" in summary
+    assert "tokenmm_strategy_ids=['strategy_a', 'strategy_b']" in summary
+    assert "tokenmm_required_strategy_ids=['strategy_a']" in summary
+
+
+def test_parse_args_requires_explicit_config(monkeypatch) -> None:
+    monkeypatch.setattr("sys.argv", ["run_api.py"])
+
+    with pytest.raises(SystemExit, match="2"):
+        _parse_args()
+
+
+def test_attach_fluxboard_tokenmm_routes_redirects_tokenm_aliases(tmp_path: Path) -> None:
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir()
+    (dist_dir / "index.html").write_text("<html>tokenmm</html>", encoding="utf-8")
+
+    app = Flask(__name__)
+    _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_dir)
+    client = app.test_client()
+
+    response = client.get("/tokenm")
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/tokenmm"
+
+    response = client.get("/tokenm/alerts?foo=1")
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/tokenmm/alerts?foo=1"

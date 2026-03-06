@@ -81,6 +81,16 @@ describe('api.getTrades', () => {
     expect(path).toContain('offset=0');
   });
 
+  it('translates ascending sort to the backend token instead of legacy ts_asc', async () => {
+    await api.getTrades(1, 50, { sort: 'ts_asc' });
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    const search = (path as string).split('?')[1] ?? '';
+    const params = new URLSearchParams(search);
+
+    expect(params.get('sort')).toBe('asc');
+  });
+
   it('appends tokenmm profile for tokenmm routes', async () => {
     setPathname('/tokenmm/trades');
 
@@ -138,6 +148,18 @@ describe('api.getTrades', () => {
 
     expect(params.get('limit')).toBe('200');
     expect(params.get('offset')).toBe('400');
+  });
+
+  it('supports the documented trades delta timestamp fallback', async () => {
+    await (api.getTradesDelta as any)({ afterMs: 1_700_000_000_000 }, 50);
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    const search = (path as string).split('?')[1] ?? '';
+    const params = new URLSearchParams(search);
+
+    expect(params.get('after')).toBe('1700000000000');
+    expect(params.has('since_seq')).toBe(false);
+    expect(params.get('limit')).toBe('50');
   });
 });
 

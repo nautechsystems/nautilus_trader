@@ -257,6 +257,42 @@ def test_timer_enforces_stale_market_data_blocks_when_feed_goes_silent(
     assert states[-1] == "blocked_maker_md"
 
 
+def test_timer_triggers_balances_publish_check(clocked_strategy_factory) -> None:
+    strategy = clocked_strategy_factory([500_000_000])
+    strategy._refresh_runtime_params = lambda **_kwargs: None
+    strategy._last_bot_on = False
+    strategy._effective_bot_on = lambda: False
+
+    balance_checks: list[str] = []
+    strategy._publish_balances_if_due = lambda: balance_checks.append("called")
+
+    strategy.on_time_event(SimpleNamespace(name=strategy._params_timer_name))
+
+    assert balance_checks == ["called"]
+
+
+def test_timer_publishes_balances_when_due_after_startup_snapshot(clocked_strategy_factory) -> None:
+    interval_ns = 10_000 * 1_000_000
+    startup_publish_ns = 1_000_000_000
+    not_due_ns = startup_publish_ns + interval_ns - 1
+    due_ns = startup_publish_ns + interval_ns
+    strategy = clocked_strategy_factory([not_due_ns, not_due_ns, due_ns, due_ns])
+    strategy._refresh_runtime_params = lambda **_kwargs: None
+    strategy._last_bot_on = False
+    strategy._effective_bot_on = lambda: False
+
+    publish_calls: list[str] = []
+    strategy._last_balances_ns = startup_publish_ns
+    strategy._publish_balances = lambda: publish_calls.append("publish")
+    strategy.on_time_event(SimpleNamespace(name=strategy._params_timer_name))
+
+    assert publish_calls == []
+
+    strategy.on_time_event(SimpleNamespace(name=strategy._params_timer_name))
+
+    assert publish_calls == ["publish"]
+
+
 def test_lifecycle_handlers_reconcile_local_managed_order_state(strategy_factory) -> None:
     strategy = strategy_factory()
     strategy._managed_client_order_ids = {"A", "B", "C"}

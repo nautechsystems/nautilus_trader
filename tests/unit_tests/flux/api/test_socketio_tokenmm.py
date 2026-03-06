@@ -53,6 +53,31 @@ def _seed_required_schema_keys(redis_client, flux_config) -> None:
     )
 
 
+def _seed_required_schema_keys_for_strategy(redis_client, flux_config, strategy_id: str) -> None:
+    keys = FluxRedisKeys(
+        strategy_id=strategy_id,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        keys.state(),
+        {"bot_on": True, "managed_orders": 2, "ts_ms": 1700000000000},
+    )
+    redis_client.set_hash_json(
+        keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "bot_on": "1",
+            "max_age_ms": "10000",
+        },
+    )
+    redis_client.set_json(keys.balances_snapshot(), [])
+    redis_client.add_stream_rows(
+        keys.fv_stream(),
+        [{"strategy_id": strategy_id, "fv": 100.0}],
+    )
+
+
 def _seed_socket_rows(redis_client, flux_config, contract_catalog) -> None:
     keys = FluxRedisKeys.from_identity(flux_config.identity)
     for contract in contract_catalog:
@@ -384,6 +409,212 @@ def test_socket_emitter_emits_seq_less_trade_rows_via_ts_seq_fallback(
     assert trade_payload["op"] == "upsert"
     assert isinstance(trade_payload["trade"], dict)
     assert trade_payload["trade"]["seq"] == 1700000000200
+    client.disconnect()
+
+
+def test_socket_emitter_tokenmm_market_update_reports_changed_allowlisted_signals(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_required_schema_keys_for_strategy(redis_client, flux_config, "strategy_02")
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    strategy_02_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.add_stream_rows(
+        strategy_02_keys.trades_stream(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "row_id": "trade-002",
+                "seq": 2,
+                "version": 1,
+                "ts_ms": 1_700_000_000_250,
+                "exchange": "venue_a",
+                "symbol": "ABC/USDT",
+                "side": "SELL",
+                "price": 100.5,
+                "qty": 1.0,
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _ = client.emit("set_profile", {"profile": "tokenmm"}, callback=True)
+    emitter.stop()
+
+    emitter.emit_once(profile="tokenmm")
+    received = _take_socket_packets(client)
+    market_packets = [packet for packet in received if packet["name"] == "market_update"]
+    signal_packets = [packet for packet in received if packet["name"] == "signal_delta"]
+    trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
+
+    assert len(market_packets) == 1
+    market_payload = market_packets[0]["args"][0]
+    assert market_payload["strategies"]["changed"] == [
+        flux_config.identity.strategy_id,
+        "strategy_02",
+    ]
+    assert {packet["args"][0]["strategy_id"] for packet in signal_packets} == {
+        flux_config.identity.strategy_id,
+        "strategy_02",
+    }
+    assert {packet["args"][0]["strategy_id"] for packet in trade_packets} == {
+        flux_config.identity.strategy_id,
+        "strategy_02",
+    }
+    client.disconnect()
+
+
+def test_socket_emitter_tokenmm_market_update_reports_alert_changes_from_secondary_strategy(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_required_schema_keys_for_strategy(redis_client, flux_config, "strategy_02")
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    strategy_02_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _ = client.emit("set_profile", {"profile": "tokenmm"}, callback=True)
+    emitter.stop()
+
+    emitter.emit_once(profile="tokenmm")
+    _ = _take_socket_packets(client)
+
+    redis_client.add_stream_rows(
+        strategy_02_keys.alerts(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "row_id": "alert-002",
+                "ts_ms": 1_700_000_000_400,
+                "message": "secondary-alert",
+            },
+        ],
+    )
+
+    emitter.emit_once(profile="tokenmm")
+    received = _take_socket_packets(client)
+    market_packets = [packet for packet in received if packet["name"] == "market_update"]
+    signal_packets = [packet for packet in received if packet["name"] == "signal_delta"]
+    trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
+
+    assert len(market_packets) == 1
+    assert signal_packets == []
+    assert trade_packets == []
+    market_payload = market_packets[0]["args"][0]
+    assert market_payload["alerts"] == {
+        "count": 2,
+        "latest_ts_ms": 1_700_000_000_400,
+    }
+    assert market_payload["strategies"]["changed"] == []
+    client.disconnect()
+
+
+def test_socket_emitter_tokenmm_trade_fanout_keeps_same_seq_and_ts_across_strategies(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_required_schema_keys_for_strategy(redis_client, flux_config, "strategy_02")
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    strategy_02_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _ = client.emit("set_profile", {"profile": "tokenmm"}, callback=True)
+    emitter.stop()
+
+    emitter.emit_once(profile="tokenmm")
+    _ = _take_socket_packets(client)
+
+    redis_client.add_stream_rows(
+        strategy_02_keys.trades_stream(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "row_id": "trade-002-shared-seq",
+                "seq": 1,
+                "version": 1,
+                "ts_ms": 1_700_000_000_200,
+                "exchange": "venue_a",
+                "symbol": "ABC/USDT",
+                "side": "SELL",
+                "price": 100.5,
+                "qty": 1.0,
+            },
+        ],
+    )
+
+    emitter.emit_once(profile="tokenmm")
+    second_packets = _take_socket_packets(client)
+    second_trade_packets = [packet for packet in second_packets if packet["name"] == "trade_update"]
+    assert len(second_trade_packets) == 1
+    second_trade_payload = second_trade_packets[0]["args"][0]
+    assert second_trade_payload["row_id"] == "trade-002-shared-seq"
+    assert second_trade_payload["strategy_id"] == "strategy_02"
+    assert second_trade_payload["trade"]["seq"] == 1
+
     client.disconnect()
 
 

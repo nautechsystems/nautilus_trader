@@ -658,6 +658,32 @@ def _extract_last_seq(rows: Sequence[Mapping[str, Any]], *, fallback: int = 0) -
     return best
 
 
+def _trade_sort_key(row: Mapping[str, Any]) -> tuple[int, int, str, str]:
+    return (
+        coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp")) or 0,
+        safe_int(row.get("seq")) or 0,
+        decode_text(row.get("strategy_id")).strip(),
+        decode_text(row.get("row_id")).strip(),
+    )
+
+
+def _rows_after_trade_ts(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    since_ms: int | None,
+) -> list[dict[str, Any]]:
+    if since_ms is None:
+        return [dict(row) for row in rows]
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        ts_ms = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp"))
+        if ts_ms is None or ts_ms <= since_ms:
+            continue
+        out.append(dict(row))
+    out.sort(key=_trade_sort_key)
+    return out
+
+
 def _params_request_payload() -> dict[str, Any]:
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
@@ -807,6 +833,18 @@ def create_flux_api_app(  # noqa: C901
             if ids:
                 resolved_profile_required_strategy_map[normalized] = ids
 
+    for profile_name, required_ids in resolved_profile_required_strategy_map.items():
+        strategy_ids = _coerce_strategy_ids(resolved_profile_strategy_map.get(profile_name))
+        if not strategy_ids:
+            raise ValueError(
+                f"`profile_required_strategy_map[{profile_name!r}]` requires matching strategy IDs in `profile_strategy_map`",
+            )
+        missing_ids = sorted(set(required_ids) - set(strategy_ids))
+        if missing_ids:
+            raise ValueError(
+                f"`profile_required_strategy_map[{profile_name!r}]` must be a subset of `profile_strategy_map`; missing={missing_ids}",
+            )
+
     def _strategy_ids_for_profile(profile: str) -> list[str]:
         normalized = normalize_profile(profile)
         mapped_ids = _coerce_strategy_ids(resolved_profile_strategy_map.get(normalized))
@@ -862,6 +900,7 @@ def create_flux_api_app(  # noqa: C901
         store=store,
         metadata_resolver=_metadata_for_strategy,
         strategy_resolver=_strategy_for_profile,
+        strategy_ids_resolver=_strategy_ids_for_profile,
     )
     app.extensions["flux_profile_strategy_map"] = dict(resolved_profile_strategy_map)
     app.extensions["flux_profile_required_strategy_map"] = dict(resolved_profile_required_strategy_map)
@@ -1179,27 +1218,43 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/signals")
     def api_signals() -> Response:
-        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
-        try:
-            strategy_payload = store.load_signals_payload(
-                strategy_id,
-                _metadata_for_strategy(strategy_id),
-            )
-        except ParamsStoreValidationError as e:
-            return _error(
-                status=500,
-                code="params_store_invalid",
-                message=str(e),
-                details={"strategy_id": strategy_id},
-            )
-        except redis.RedisError as e:
-            return _error(
-                status=503,
-                code="store_unavailable",
-                message="Data store unavailable.",
-                details={"strategy_id": strategy_id, "error_type": type(e).__name__},
-            )
-        return _ok(data={"server_ts_ms": now_ms(), "strategies": [strategy_payload]})
+        requested_strategy = decode_text(request.args.get("strategy")).strip()
+        profile_text = decode_text(request.args.get("profile")).strip()
+        profile_normalized = normalize_profile(profile_text)
+
+        if requested_strategy:
+            strategy_ids = [_resolve_strategy_id(requested_strategy, field_name="strategy")]
+        elif profile_normalized == "tokenmm":
+            strategy_ids = _strategy_ids_for_profile(profile_text)
+            if not strategy_ids:
+                strategy_ids = [default_strategy_id]
+        else:
+            strategy_ids = [_resolve_strategy_id_for_request(field_name="strategy")]
+
+        strategy_payloads: list[dict[str, Any]] = []
+        for strategy_id in strategy_ids:
+            try:
+                strategy_payload = store.load_signals_payload(
+                    strategy_id,
+                    _metadata_for_strategy(strategy_id),
+                )
+            except ParamsStoreValidationError as e:
+                return _error(
+                    status=500,
+                    code="params_store_invalid",
+                    message=str(e),
+                    details={"strategy_id": strategy_id},
+                )
+            except redis.RedisError as e:
+                return _error(
+                    status=503,
+                    code="store_unavailable",
+                    message="Data store unavailable.",
+                    details={"strategy_id": strategy_id, "error_type": type(e).__name__},
+                )
+            strategy_payloads.append(strategy_payload)
+
+        return _ok(data={"server_ts_ms": now_ms(), "strategies": strategy_payloads})
 
     @app.get("/api/v1/strategies")
     def api_strategies() -> Response:
@@ -1370,7 +1425,9 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/trades")
     def api_trades() -> Response:
-        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+        requested_strategy = decode_text(request.args.get("strategy")).strip()
+        profile_text = decode_text(request.args.get("profile")).strip()
+        profile_normalized = normalize_profile(profile_text)
         requested_limit_raw = request.args.get("limit")
         requested_limit = safe_int(requested_limit_raw)
         limit = _clamp_limit(requested_limit_raw, default=50, minimum=1, maximum=200)
@@ -1384,17 +1441,49 @@ def create_flux_api_app(  # noqa: C901
         sort_label = "ts_ms_asc" if sort_ascending else "ts_ms_desc"
         has_filters = bool(coin_filter or exchange_filter or side_filter or signal_id_filter)
 
-        if has_filters or sort_ascending:
-            scan_limit = max(200, min(2_000, max(limit + offset, limit * 4)))
-            source_rows = store.load_trades_rows(
-                strategy_id,
-                limit=scan_limit,
-                since_ms=None,
-                since_seq=None,
-                scan_limit=scan_limit,
-            )
+        if requested_strategy:
+            strategy_ids = [_resolve_strategy_id(requested_strategy, field_name="strategy")]
+        elif profile_normalized == "tokenmm":
+            strategy_ids = _strategy_ids_for_profile(profile_text)
+            if not strategy_ids:
+                strategy_ids = [default_strategy_id]
         else:
-            source_rows = store.load_all_trades_rows(strategy_id)
+            strategy_ids = [_resolve_strategy_id_for_request(field_name="strategy")]
+
+        tokenmm_fanout = (
+            not requested_strategy
+            and profile_normalized == "tokenmm"
+            and len(strategy_ids) > 1
+        )
+
+        source_rows: list[dict[str, Any]] = []
+        total_count_override: int | None = None
+        if has_filters or sort_ascending:
+            for strategy_id in strategy_ids:
+                strategy_rows = store.load_all_trades_rows(strategy_id)
+                for row in strategy_rows:
+                    normalized_row = dict(row)
+                    normalized_row.setdefault("strategy_id", strategy_id)
+                    source_rows.append(normalized_row)
+        else:
+            total_count_override = 0
+            page_span = max(1, offset + limit)
+            for strategy_id in strategy_ids:
+                strategy_rows = store.load_trades_rows(
+                    strategy_id,
+                    limit=page_span,
+                    since_ms=None,
+                    since_seq=None,
+                )
+                for row in strategy_rows:
+                    normalized_row = dict(row)
+                    normalized_row.setdefault("strategy_id", strategy_id)
+                    source_rows.append(normalized_row)
+                strategy_total = store.trades_stream_len(strategy_id)
+                if strategy_total is None:
+                    total_count_override = None
+                elif total_count_override is not None:
+                    total_count_override += int(strategy_total)
 
         filtered_rows: list[dict[str, Any]] = []
         for row in source_rows:
@@ -1412,15 +1501,21 @@ def create_flux_api_app(  # noqa: C901
                 continue
             filtered_rows.append(row)
 
-        filtered_rows.sort(
-            key=lambda item: (
-                coerce_ts_ms(item.get("ts_ms") or item.get("ts") or item.get("timestamp")) or 0,
-                safe_int(item.get("seq")) or 0,
-            ),
-            reverse=not sort_ascending,
-        )
+        if tokenmm_fanout:
+            filtered_rows.sort(
+                key=_trade_sort_key,
+                reverse=not sort_ascending,
+            )
+            # Multi-strategy TokenMM trades do not expose a synthetic global sequence cursor.
+            last_seq = 0
+        else:
+            filtered_rows.sort(
+                key=_trade_sort_key,
+                reverse=not sort_ascending,
+            )
+            last_seq = _extract_last_seq(filtered_rows, fallback=0)
 
-        total = len(filtered_rows)
+        total = total_count_override if total_count_override is not None else len(filtered_rows)
         rows = filtered_rows[offset : offset + limit]
         has_more = (offset + len(rows)) < total
         payload: dict[str, Any] = {
@@ -1432,7 +1527,7 @@ def create_flux_api_app(  # noqa: C901
             "max_limit": 200,
             "offset": offset,
             "has_more": has_more,
-            "last_seq": _extract_last_seq(filtered_rows, fallback=0),
+            "last_seq": last_seq,
             "sort": sort_label,
         }
         if has_more:
@@ -1441,12 +1536,60 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/trades/delta")
     def api_trades_delta() -> Response:
-        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+        requested_strategy = decode_text(request.args.get("strategy")).strip()
+        profile_text = decode_text(request.args.get("profile")).strip()
+        profile_normalized = normalize_profile(profile_text)
+        if requested_strategy:
+            strategy_ids = [_resolve_strategy_id(requested_strategy, field_name="strategy")]
+        elif profile_normalized == "tokenmm":
+            strategy_ids = _strategy_ids_for_profile(profile_text)
+            if not strategy_ids:
+                strategy_ids = [default_strategy_id]
+        else:
+            strategy_ids = [_resolve_strategy_id_for_request(field_name="strategy")]
+
+        tokenmm_fanout = (
+            not requested_strategy
+            and profile_normalized == "tokenmm"
+            and len(strategy_ids) > 1
+        )
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         since_seq = safe_int(request.args.get("since_seq"))
         since_ms = None if since_seq is not None else coerce_ts_ms(request.args.get("after"))
         fallback_seq = since_seq or 0
 
+        if tokenmm_fanout:
+            if since_seq is not None:
+                # Safe Phase 1 behavior: multi-strategy TokenMM delta does not claim
+                # a synthetic global cursor; clients should resync to snapshot.
+                return _ok(
+                    data={
+                        "rows": [],
+                        "last_seq": 0,
+                        "reset_required": since_seq > 0,
+                    },
+                )
+
+            rows: list[dict[str, Any]] = []
+            for strategy_id in strategy_ids:
+                strategy_rows = _rows_after_trade_ts(
+                    store.load_all_trades_rows(strategy_id),
+                    since_ms=since_ms,
+                )
+                for row in strategy_rows:
+                    normalized_row = dict(row)
+                    normalized_row.setdefault("strategy_id", strategy_id)
+                    rows.append(normalized_row)
+            rows.sort(key=_trade_sort_key)
+            return _ok(
+                data={
+                    "rows": rows[:limit],
+                    "last_seq": 0,
+                    "reset_required": False,
+                },
+            )
+
+        strategy_id = strategy_ids[0]
         if since_seq is not None:
             scan_limit = 2_000
             scanned_rows = store.load_trades_rows(
@@ -1505,6 +1648,17 @@ def create_flux_api_app(  # noqa: C901
                 },
             )
 
+        if since_ms is not None:
+            rows = _rows_after_trade_ts(store.load_all_trades_rows(strategy_id), since_ms=since_ms)
+            rows = rows[:limit]
+            return _ok(
+                data={
+                    "rows": rows,
+                    "last_seq": _extract_last_seq(rows, fallback=fallback_seq),
+                    "reset_required": False,
+                },
+            )
+
         rows = store.load_trades_rows(strategy_id, limit=limit, since_ms=since_ms, since_seq=None)
         return _ok(
             data={
@@ -1516,10 +1670,32 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/alerts")
     def api_alerts() -> Response:
-        strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         offset = _clamp_offset(request.args.get("offset"), default=0)
-        all_rows = store.load_all_alerts_rows(strategy_id)
+        requested_strategy = decode_text(request.args.get("strategy")).strip()
+        profile_text = decode_text(request.args.get("profile")).strip()
+        profile_normalized = normalize_profile(profile_text)
+
+        if requested_strategy:
+            strategy_id = _resolve_strategy_id(requested_strategy, field_name="strategy")
+            all_rows = store.load_all_alerts_rows(strategy_id)
+        elif profile_normalized == "tokenmm":
+            strategy_ids = _strategy_ids_for_profile(profile_text)
+            if not strategy_ids:
+                strategy_ids = [default_strategy_id]
+            all_rows = []
+            for strategy_id in strategy_ids:
+                all_rows.extend(store.load_all_alerts_rows(strategy_id))
+            all_rows.sort(
+                key=lambda row: (
+                    coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp")) or 0
+                ),
+                reverse=True,
+            )
+        else:
+            strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+            all_rows = store.load_all_alerts_rows(strategy_id)
+
         total = len(all_rows)
         rows = all_rows[offset : offset + limit]
         has_more = (offset + len(rows)) < total
@@ -1536,6 +1712,44 @@ def create_flux_api_app(  # noqa: C901
 
     @app.delete("/api/v1/alerts")
     def api_alerts_delete() -> Response:
+        requested_strategy = decode_text(request.args.get("strategy")).strip()
+        profile_text = decode_text(request.args.get("profile")).strip()
+        profile_normalized = normalize_profile(profile_text)
+
+        if requested_strategy:
+            strategy_id = _resolve_strategy_id(requested_strategy, field_name="strategy")
+            deleted = store.clear_alerts(strategy_id)
+            remaining = len(store.load_all_alerts_rows(strategy_id))
+            payload: dict[str, Any] = {
+                "success": True,
+                "strategy_id": strategy_id,
+                "deleted": deleted,
+                "remaining": remaining,
+                "server_ts_ms": now_ms(),
+            }
+            return _ok(data=payload)
+
+        if profile_normalized == "tokenmm":
+            strategy_ids = _strategy_ids_for_profile(profile_text)
+            if not strategy_ids:
+                strategy_ids = [default_strategy_id]
+            deleted_total = 0
+            remaining_by_strategy: dict[str, int] = {}
+            for strategy_id in strategy_ids:
+                deleted_total += store.clear_alerts(strategy_id)
+                remaining_by_strategy[strategy_id] = len(store.load_all_alerts_rows(strategy_id))
+
+            payload = {
+                "success": True,
+                "profile": profile_normalized,
+                "strategy_ids": strategy_ids,
+                "deleted": deleted_total,
+                "remaining": sum(remaining_by_strategy.values()),
+                "remaining_by_strategy": remaining_by_strategy,
+                "server_ts_ms": now_ms(),
+            }
+            return _ok(data=payload)
+
         strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
         deleted = store.clear_alerts(strategy_id)
         remaining = len(store.load_all_alerts_rows(strategy_id))

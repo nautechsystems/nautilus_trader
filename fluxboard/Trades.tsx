@@ -27,6 +27,7 @@ import { usePanelHeaderSlots } from './components/layout/PanelWrapper';
 import { exportCSV, generateTimestampFilename } from './utils/export';
 import { isTradesDecisionDetailsEnabled } from './config/featureFlags';
 import { computeTradesRollups } from './components/trades/rollups';
+import { resolvePathnameProfile } from './config/uiProfiles';
 
 const PERF_RENDER_ENABLED = typeof import.meta !== 'undefined'
   && Boolean(import.meta.env?.DEV)
@@ -106,6 +107,88 @@ const coerceTradeTsMs = (value: unknown): number | undefined => {
   if (ts >= 1e18) return Math.trunc(ts / 1e6);
   if (ts >= 1e15) return Math.trunc(ts / 1e3);
   return Math.trunc(ts);
+};
+
+type TradeReplayCursor = {
+  tsMs: number;
+  rowId: string;
+  version: number;
+};
+
+const extractTradeTimestampMs = (value: any): number | undefined => {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  return (
+    coerceTradeTsMs(value.ts_ms) ??
+    coerceTradeTsMs(value.ts) ??
+    coerceTradeTsMs(value.timestamp) ??
+    coerceTradeTsMs(value.server_ts_ms) ??
+    (typeof value.time === 'string' && value.time ? coerceTradeTsMs(Date.parse(value.time)) : undefined)
+  );
+};
+
+const extractTradeReplayCursor = (value: any): TradeReplayCursor | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const tsMs = extractTradeTimestampMs(value);
+  const rowId = String(value.row_id ?? value.trade_id ?? value.entry_id ?? '').trim();
+  const versionValue = Number(value.version);
+  const version = Number.isFinite(versionValue) && versionValue > 0 ? Math.trunc(versionValue) : 1;
+  if (tsMs === undefined || !rowId) {
+    return null;
+  }
+  return { tsMs, rowId, version };
+};
+
+const compareTradeReplayCursor = (
+  left: TradeReplayCursor,
+  right: TradeReplayCursor,
+): number => {
+  if (left.tsMs !== right.tsMs) {
+    return left.tsMs - right.tsMs;
+  }
+  const rowIdOrder = left.rowId.localeCompare(right.rowId);
+  if (rowIdOrder !== 0) {
+    return rowIdOrder;
+  }
+  return left.version - right.version;
+};
+
+const getLatestTradeReplayCursor = (
+  rows: Array<any> | undefined | null,
+): TradeReplayCursor | null => {
+  if (!rows?.length) {
+    return null;
+  }
+  let latest: TradeReplayCursor | null = null;
+  for (const row of rows) {
+    const candidate = extractTradeReplayCursor(row);
+    if (!candidate) {
+      continue;
+    }
+    if (!latest || compareTradeReplayCursor(candidate, latest) > 0) {
+      latest = candidate;
+    }
+  }
+  return latest;
+};
+
+const filterTradeRowsAfterReplayCursor = (
+  rows: Array<any> | undefined | null,
+  cursor: TradeReplayCursor | null,
+): Array<any> => {
+  if (!rows?.length || !cursor) {
+    return rows ? [...rows] : [];
+  }
+  return rows.filter((row) => {
+    const candidate = extractTradeReplayCursor(row);
+    if (!candidate) {
+      return true;
+    }
+    return compareTradeReplayCursor(candidate, cursor) > 0;
+  });
 };
 
 const normalizeTradeEventLike = (candidate: any): any => {
@@ -403,6 +486,21 @@ export default function Trades({
   const resyncIdRef = useRef<number>(resyncId);
   const reconnectCatchupInFlightRef = useRef<boolean>(false);
   const lastReconnectCatchupAtRef = useRef<number>(0);
+  const latestTradeTsMsRef = useRef<number>(0);
+  const latestTradeReplayCursorRef = useRef<TradeReplayCursor | null>(null);
+  const deltaCursorModeRef = useRef<'since_seq' | 'after'>('since_seq');
+
+  const advanceTradeReplayCursor = useCallback((rows: Array<any> | undefined | null) => {
+    const latestCursor = getLatestTradeReplayCursor(rows);
+    if (!latestCursor) {
+      return;
+    }
+    const currentCursor = latestTradeReplayCursorRef.current;
+    if (!currentCursor || compareTradeReplayCursor(latestCursor, currentCursor) > 0) {
+      latestTradeReplayCursorRef.current = latestCursor;
+    }
+    latestTradeTsMsRef.current = Math.max(latestTradeTsMsRef.current, latestCursor.tsMs);
+  }, []);
 
   useEffect(() => {
     if (!PERF_RENDER_ENABLED) {
@@ -547,6 +645,17 @@ export default function Trades({
           setUnread(0);
         }
 
+        advanceTradeReplayCursor(response.rows);
+
+        const activeProfile = typeof window === 'undefined'
+          ? 'default'
+          : resolvePathnameProfile(window.location.pathname);
+        if (activeProfile === 'tokenmm' && (response.last_seq ?? 0) <= 0) {
+          deltaCursorModeRef.current = 'after';
+        } else {
+          deltaCursorModeRef.current = 'since_seq';
+        }
+
         if (typeof response.last_seq === 'number') {
           latestSeqRef.current = Math.max(latestSeqRef.current, response.last_seq);
         }
@@ -555,17 +664,6 @@ export default function Trades({
       } catch (e) {
         if ((e as any).name !== 'AbortError' && abortRef.current === ac) {
           console.error('[trades] load failed:', e);
-          if (!options.append) {
-            if (mountedRef.current) {
-              setSnapshot([], pageSizeRef.current);
-              if (!options.keepUnread) {
-                setUnread(0);
-              }
-              setTotal(0);
-              setHasMore(null);
-              setHasMorePage(null);
-            }
-          }
         }
       } finally {
         if (abortRef.current === ac) {
@@ -581,7 +679,7 @@ export default function Trades({
         }
       }
     },
-    [setSnapshot, setTotal, setUnread, setLoading, recomputeIsViewingLatest],
+    [setSnapshot, setTotal, setUnread, setLoading, recomputeIsViewingLatest, advanceTradeReplayCursor],
   );
 
   const handleTimeSortChange = useCallback((direction: 'ts_desc' | 'ts_asc') => {
@@ -786,7 +884,12 @@ export default function Trades({
       try {
         const pollResyncId = resyncIdRef.current;
         const requestedSinceSeq = latestSeqRef.current;
-        const delta = await api.getTradesDelta(requestedSinceSeq, DELTA_LIMIT);
+        const usingTimestampFallback = deltaCursorModeRef.current === 'after';
+        const replayCursor = latestTradeReplayCursorRef.current;
+        const deltaCursor = usingTimestampFallback
+          ? { afterMs: Math.max(0, (replayCursor?.tsMs ?? latestTradeTsMsRef.current) - 1) }
+          : requestedSinceSeq;
+        const delta = await api.getTradesDelta(deltaCursor, DELTA_LIMIT);
 
         if (!isActiveRef.current) {
           return;
@@ -796,8 +899,10 @@ export default function Trades({
         const deltaLastSeq = typeof delta.last_seq === 'number' ? delta.last_seq : null;
         const hasNumericLastSeq = deltaLastSeq !== null;
         const seqIsNonRegressive =
-          hasNumericLastSeq && deltaLastSeq >= requestedSinceSeq;
-        if (hasNumericLastSeq && !seqIsNonRegressive) {
+          !usingTimestampFallback
+          && hasNumericLastSeq
+          && deltaLastSeq >= requestedSinceSeq;
+        if (!usingTimestampFallback && hasNumericLastSeq && !seqIsNonRegressive) {
           console.warn(
             `[trades] Delta seq regression detected! Backend last_seq (${deltaLastSeq}) < ` +
             `frontend latestSeq (${requestedSinceSeq}). This suggests missed trades. ` +
@@ -834,7 +939,11 @@ export default function Trades({
         } else {
           let pollAcknowledgedCurrentEpoch = false;
           let appliedCurrentEpoch = false;
-          const rowsForView = filterEventsForFilters(delta.rows, filtersRef.current);
+          const replayRows = usingTimestampFallback
+            ? filterTradeRowsAfterReplayCursor(delta.rows, replayCursor)
+            : [...(delta.rows || [])];
+          advanceTradeReplayCursor(replayRows);
+          const rowsForView = filterEventsForFilters(replayRows, filtersRef.current);
           if (rowsForView.length) {
             const isLiveView = isViewingLatestRef.current && sortRef.current === 'ts_desc';
             let liveNewRows = 0;
@@ -860,7 +969,7 @@ export default function Trades({
             queueSnapshotRefreshRef.current?.(!isLiveView);
             emptyPollCountRef.current = 0; // Reset empty poll counter on successful sync
             setLastUpdate(Date.now());
-          } else if (delta.rows?.length) {
+          } else if (replayRows.length) {
             // Rows existed but did not match current filters; treat as successful sync for poll timing.
             emptyPollCountRef.current = 0;
             if (typeof delta.last_seq === 'number') {
@@ -871,7 +980,10 @@ export default function Trades({
             }
           } else {
             // DEFENSIVE FIX: Track consecutive empty polls
-            if (seqIsNonRegressive) {
+            if (usingTimestampFallback) {
+              emptyPollCountRef.current = 0;
+              pollAcknowledgedCurrentEpoch = true;
+            } else if (seqIsNonRegressive) {
               const lastSeq = delta.last_seq as number;
               // Empty rows with an advancing (or equal) sequence is a successful reconciliation.
               latestSeqRef.current = Math.max(latestSeqRef.current, lastSeq);
@@ -918,7 +1030,7 @@ export default function Trades({
         schedulePoll();
       }
     }, delay);
-  }, [applyDelta, fetchPage, queueSnapshotRefresh, playSoundForSeq, setLastUpdate]);
+  }, [applyDelta, fetchPage, queueSnapshotRefresh, playSoundForSeq, setLastUpdate, advanceTradeReplayCursor]);
 
   useEffect(() => {
     schedulePoll();
@@ -1002,6 +1114,7 @@ export default function Trades({
           row_id: rowId,
           version: versionFromMsg ?? 1,
           seq,
+          ts_ms: extractTradeTimestampMs(normalizedEventCandidate),
           ts: seq,
           time: normalizedEventCandidate?.time,
           coin: normalizedEventCandidate?.coin,
@@ -1023,10 +1136,20 @@ export default function Trades({
       }
 
       const messageResyncId = resyncIdRef.current;
+      const eventTsMs = extractTradeTimestampMs(event);
+      if (eventTsMs !== undefined) {
+        latestTradeTsMsRef.current = Math.max(latestTradeTsMsRef.current, eventTsMs);
+      }
+      advanceTradeReplayCursor([event]);
       const passesFilters = rowMatchesFilters(event, filtersRef.current);
+      const rowVisibleInCurrentStore = Array.isArray(storeRows)
+        && storeRows.some((row) => row?.row_id === event.row_id);
       if (!passesFilters) {
         if (typeof event.seq === 'number') {
           latestSeqRef.current = Math.max(latestSeqRef.current, event.seq);
+        }
+        if (rowVisibleInCurrentStore || event.op === 'delete') {
+          queueSnapshotRefreshRef.current?.(true);
         }
         return;
       }
@@ -1055,7 +1178,7 @@ export default function Trades({
     } catch (err) {
       console.error('[trades] socket trade_update error', err);
     }
-  }, [setLastUpdate, setUnread]);
+  }, [setLastUpdate, setUnread, advanceTradeReplayCursor, storeRows]);
 
   useEffect(() => {
     const pending: any[] = [];

@@ -26,8 +26,6 @@ execution_symbol = "PLUMEUSDT"
 reference_symbol = "PLUMEUSDT"
 
 [node]
-maker_instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
-reference_instrument_id = "PLUMEUSDT.BINANCE"
 enable_execution = false
 log_level = "INFO"
 timeout_connection = 20.0
@@ -40,14 +38,17 @@ exec_reconciliation = true
 exec_reconciliation_lookback_mins = 5
 exec_reconciliation_startup_delay_secs = 1.0
 
-[node.bybit]
+[node.venues.BYBIT]
+instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
+execution = true
 api_key_env = "BYBIT_API_KEY"
 api_secret_env = "BYBIT_API_SECRET"
 product_type = "LINEAR"
 testnet = true
 demo = false
 
-[node.binance]
+[node.venues.BINANCE]
+instrument_id = "PLUMEUSDT.BINANCE"
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
 account_type = "SPOT"

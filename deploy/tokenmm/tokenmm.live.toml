@@ -5,10 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "bybit_binance_plumeusdt_makerv3"
-strategy_instance_id = "bybit_binance_plumeusdt_makerv3"
+strategy_id = "tokenmm_plume_makerv3_01"
+strategy_instance_id = "tokenmm_plume_makerv3_01"
 trader_id = "MAKER-LIVE-001"
-external_strategy_id = "bybit_binance_plumeusdt_makerv3"
+external_strategy_id = "tokenmm_plume_makerv3_01"
 
 [redis]
 host = "127.0.0.1"
@@ -26,8 +26,6 @@ execution_symbol = "PLUMEUSDT"
 reference_symbol = "PLUMEUSDT"
 
 [node]
-maker_instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
-reference_instrument_id = "PLUMEUSDT.BINANCE"
 enable_execution = false
 log_level = "INFO"
 timeout_connection = 20.0
@@ -36,25 +34,34 @@ timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
 exec_reconciliation = true
-exec_reconciliation_lookback_mins = 0
+# Shared-account persisted-cache startup guardrail:
+# avoid full-history replay storms on busy venues.
+exec_reconciliation_lookback_mins = 15
 exec_reconciliation_startup_delay_secs = 10.0
+filter_unclaimed_external_orders = true
+filter_position_reports = true
 # Optional cache persistence guardrail:
 # cache_flush_on_start = false
 
-[node.bybit]
+[node.venues.BYBIT]
+instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
+execution = true
 api_key_env = "BYBIT_API_KEY"
 api_secret_env = "BYBIT_API_SECRET"
 product_type = "LINEAR"
+# Live/demo guardrail: increase receive window to reduce startup reconciliation timestamp skew failures (Bybit 10002).
+recv_window_ms = 20000
 testnet = false
 demo = false
 
-[node.binance]
+[node.venues.BINANCE]
+instrument_id = "PLUMEUSDT.BINANCE"
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
 account_type = "SPOT"
 
 [strategy]
-strategy_id = "MAKERV3-001"
+strategy_id = "tokenmm_plume_makerv3_01"
 order_qty = "1000"
 qty = "1000"
 bot_on = false
@@ -103,26 +110,27 @@ quote_asset = "USDT"
 # - `tokenmm_required_strategy_ids` are used for degraded/missing-required checks in API portfolio views.
 # - Keep this list to the 5 PLUME MakerV3 instances only.
 tokenmm_strategy_ids = [
-  "bybit_binance_plumeusdt_makerv3",
-  "bybit_binance_plumeusdt_makerv3_02",
-  "bybit_binance_plumeusdt_makerv3_03",
-  "bybit_binance_plumeusdt_makerv3_04",
-  "bybit_binance_plumeusdt_makerv3_05",
+  "tokenmm_plume_makerv3_01",
+  "tokenmm_plume_makerv3_02",
+  "tokenmm_plume_makerv3_03",
+  "tokenmm_plume_makerv3_04",
+  "tokenmm_plume_makerv3_05",
 ]
 tokenmm_required_strategy_ids = [
-  "bybit_binance_plumeusdt_makerv3",
-  "bybit_binance_plumeusdt_makerv3_02",
-  "bybit_binance_plumeusdt_makerv3_03",
-  "bybit_binance_plumeusdt_makerv3_04",
-  "bybit_binance_plumeusdt_makerv3_05",
+  "tokenmm_plume_makerv3_01",
+  "tokenmm_plume_makerv3_02",
+  "tokenmm_plume_makerv3_03",
+  "tokenmm_plume_makerv3_04",
+  "tokenmm_plume_makerv3_05",
 ]
 
 [portfolio]
 portfolio_id = "tokenmm"
 # Naming convention:
-# - Flux strategy IDs: bybit_binance_plumeusdt_makerv3[_NN]
-# - Base config default keeps `[strategy].strategy_id = "MAKERV3-001"` for single-node compatibility.
-# - Multi-node TokenMM deployments should use per-node unique order tags (for example `MAKERV3-TMM-NN`).
+# - Flux strategy IDs: tokenmm_plume_makerv3_01 .. tokenmm_plume_makerv3_05
+# - These are neutral clone IDs for the 5 deployed PLUME TokenMM nodes.
+# - TokenMM strategy file names match Flux strategy IDs exactly.
+# - Production deploy configs use descriptive Nautilus strategy IDs, not generic numeric tags.
 
 [[contracts]]
 exchange = "bybit"

@@ -1,0 +1,338 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+from __future__ import annotations
+
+from pathlib import Path
+
+
+TOKENMM_STRATEGY_IDS = [
+    "tokenmm_plume_makerv3_01",
+    "tokenmm_plume_makerv3_02",
+    "tokenmm_plume_makerv3_03",
+    "tokenmm_plume_makerv3_04",
+    "tokenmm_plume_makerv3_05",
+]
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def test_tokenmm_stack_script_defaults_to_safe_non_trading_runtime() -> None:
+    script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+
+    assert 'DEFAULT_ENV_PATH="${ROOT_DIR}/deploy/tokenmm/tokenmm_stack.env"' in script
+    assert 'CONFIG_PATH="${TOKENMM_CONFIG_PATH:-${ROOT_DIR}/deploy/tokenmm/tokenmm.live.toml}"' in script
+    assert 'STRATEGIES_DIR="${TOKENMM_STRATEGIES_DIR:-${ROOT_DIR}/deploy/tokenmm/strategies}"' in script
+    assert 'MODE="${TOKENMM_MODE:-paper}"' in script
+    assert 'CONFIRM_LIVE="${TOKENMM_CONFIRM_LIVE:-0}"' in script
+    assert 'ENABLE_EXECUTION="${TOKENMM_ENABLE_EXECUTION:-0}"' in script
+    assert 'ALLOW_MISSING_KEYS="${TOKENMM_ALLOW_MISSING_KEYS:-0}"' in script
+    assert 'BALANCES_READY_TIMEOUT_SECS="${TOKENMM_BALANCES_READY_TIMEOUT_SECS:-90}"' in script
+    assert 'STRICT_BALANCES_READY_CHECK="${TOKENMM_STRICT_BALANCES_READY_CHECK:-1}"' in script
+    assert '[tokenmm-stack] runtime intent: mode=${MODE} confirm_live=${CONFIRM_LIVE} enable_execution=${ENABLE_EXECUTION}' in script
+
+
+def test_tokenmm_stack_script_requires_explicit_tokenmm_env_and_never_falls_back_to_makerv3() -> None:
+    script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+
+    assert "TOKENMM_* | BYBIT_* | BINANCE_*" in script
+    assert "MAKERV3_*" not in script
+    assert "SHARED_ENV_FALLBACK_PATH" not in script
+    assert "[tokenmm-stack] using shared env fallback:" not in script
+    assert 'if [[ -n "${TOKENMM_ENV_PATH:-}" && ! -f "${ENV_PATH}" ]]; then' in script
+    assert '[tokenmm-stack] env file not found: ${ENV_PATH}' in script
+    assert "MAKERV3_MODE" not in script
+    assert "MAKERV3_CONFIRM_LIVE" not in script
+    assert "MAKERV3_ENABLE_EXECUTION" not in script
+    assert "MAKERV3_ALLOW_MISSING_KEYS" not in script
+
+
+def test_tokenmm_stack_script_loads_aws_secrets_before_key_validation() -> None:
+    script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+
+    assert 'LOAD_AWS_SECRETS="${TOKENMM_LOAD_AWS_SECRETS:-0}"' in script
+    assert 'AWS_REGION="${TOKENMM_AWS_REGION:-ap-southeast-1}"' in script
+    assert 'BYBIT_SECRET_ID="${TOKENMM_BYBIT_SECRET_ID:-/nautilus/tokenmm/bybit}"' in script
+    assert 'BINANCE_SECRET_ID="${TOKENMM_BINANCE_SECRET_ID:-/nautilus/tokenmm/binance}"' in script
+    assert "load_aws_secrets_if_enabled()" in script
+
+    start_stack_idx = script.index("start_stack() {")
+    call_idx = script.index("  load_aws_secrets_if_enabled", start_stack_idx)
+    validate_idx = script.index("  validate_config_and_keys", start_stack_idx)
+    assert call_idx < validate_idx
+
+
+def test_tokenmm_stack_script_does_not_inherit_execution_toggle_from_makerv3_env() -> None:
+    script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+
+    assert "MAKERV3_ENABLE_EXECUTION" not in script
+    assert "MAKERV3_MODE" not in script
+    assert "MAKERV3_CONFIRM_LIVE" not in script
+    assert "MAKERV3_ALLOW_MISSING_KEYS" not in script
+
+
+def test_tokenmm_stack_env_example_defaults_to_safe_paper_without_execution() -> None:
+    env_example = _read(
+        _repo_root() / "deploy/tokenmm/tokenmm_stack.env.example",
+    )
+
+    assert "TOKENMM_MODE=paper" in env_example
+    assert "TOKENMM_CONFIRM_LIVE=0" in env_example
+    assert "TOKENMM_ENABLE_EXECUTION=0" in env_example
+    assert "TOKENMM_ALLOW_MISSING_KEYS=0" in env_example
+    assert "TOKENMM_LOAD_AWS_SECRETS=1" in env_example
+    assert "TOKENMM_AWS_REGION=ap-southeast-1" in env_example
+    assert "TOKENMM_BALANCES_READY_TIMEOUT_SECS=90" in env_example
+    assert "TOKENMM_STRICT_BALANCES_READY_CHECK=1" in env_example
+    assert "deploy/tokenmm/tokenmm.live.toml" in env_example
+    assert "# Live trading opt-in (set all three together):" in env_example
+    assert "# TOKENMM_MODE=live" in env_example
+    assert "# TOKENMM_CONFIRM_LIVE=1" in env_example
+    assert "# TOKENMM_ENABLE_EXECUTION=1" in env_example
+
+
+def test_tokenmm_stack_script_rolls_back_partial_startup_on_failure() -> None:
+    script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+
+    assert "STARTUP_CLEANUP_ON_EXIT=0" in script
+    assert "cleanup_partial_startup_on_exit() {" in script
+    assert "[tokenmm-stack] startup failed; stopping partial stack" in script
+    assert "trap cleanup_partial_startup_on_exit EXIT" in script
+
+    main_idx = script.index("main() {")
+    start_case_idx = script.index("    start)", main_idx)
+    start_arm_idx = script.index("      STARTUP_CLEANUP_ON_EXIT=1", start_case_idx)
+    start_call_idx = script.index("      start_stack", start_case_idx)
+    start_disarm_idx = script.index("      STARTUP_CLEANUP_ON_EXIT=0", start_call_idx)
+    assert start_arm_idx < start_call_idx < start_disarm_idx
+
+    restart_case_idx = script.index("    restart)", main_idx)
+    restart_stop_idx = script.index("      stop_stack", restart_case_idx)
+    restart_arm_idx = script.index("      STARTUP_CLEANUP_ON_EXIT=1", restart_case_idx)
+    restart_call_idx = script.index("      start_stack", restart_case_idx)
+    restart_disarm_idx = script.index("      STARTUP_CLEANUP_ON_EXIT=0", restart_call_idx)
+    assert restart_stop_idx < restart_arm_idx < restart_call_idx < restart_disarm_idx
+
+
+def test_tokenmm_stack_script_waits_for_balances_readiness_after_profile_alignment() -> None:
+    script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+
+    start_stack_idx = script.index("start_stack() {")
+    params_check_idx = script.index("  assert_tokenmm_profile_params_alignment", start_stack_idx)
+    balances_check_idx = script.index(
+        "  assert_tokenmm_profile_balances_readiness",
+        start_stack_idx,
+    )
+    assert params_check_idx < balances_check_idx
+    assert "missing_required" in script
+    assert "required_stale" in script
+
+
+def test_tokenmm_stack_script_validates_flux_and_nautilus_strategy_id_uniqueness() -> None:
+    script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+
+    assert "duplicate [identity].strategy_id in strategy configs" in script
+    assert "duplicate [strategy].strategy_id in strategy configs" in script
+
+
+def test_tokenmm_stack_script_prefers_setsid_detach_and_keeps_nohup_fallback() -> None:
+    script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+    start_process_idx = script.index("start_process() {")
+
+    assert 'if command -v setsid > /dev/null 2>&1; then' in script[start_process_idx:]
+    assert 'setsid nohup "$@" >> "${log}" 2>&1 < /dev/null &' in script[start_process_idx:]
+    assert 'setsid "$@" >> "${log}" 2>&1 < /dev/null &' in script[start_process_idx:]
+    assert 'nohup "$@" >> "${log}" 2>&1 < /dev/null &' in script[start_process_idx:]
+    assert '"$@" >> "${log}" 2>&1 < /dev/null &' in script[start_process_idx:]
+
+
+def test_tokenmm_live_configs_enable_shared_account_reconciliation_guardrails() -> None:
+    root = _repo_root()
+    config_paths = [
+        root / "deploy/tokenmm/tokenmm.live.toml",
+        root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
+    ]
+    config_paths.extend(root / "deploy/tokenmm/strategies" / f"{strategy_id}.toml" for strategy_id in TOKENMM_STRATEGY_IDS)
+
+    for path in config_paths:
+        text = _read(path)
+        assert "exec_reconciliation_lookback_mins = 15" in text
+        assert "filter_unclaimed_external_orders = true" in text
+        assert "filter_position_reports = true" in text
+
+
+def test_tokenmm_strategy_configs_inherit_redis_from_shared_top_level_config() -> None:
+    repo_root = _repo_root()
+    strategy_paths = [
+        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
+        *(repo_root / "deploy/tokenmm/strategies" / f"{strategy_id}.toml" for strategy_id in TOKENMM_STRATEGY_IDS),
+    ]
+
+    for path in strategy_paths:
+        config = _read(path)
+        assert "[redis]" not in config
+
+    shared_config = _read(repo_root / "deploy/tokenmm/tokenmm.live.toml")
+    assert "[redis]" in shared_config
+
+
+def test_tokenmm_live_configs_use_generic_node_venues_contract() -> None:
+    repo_root = _repo_root()
+    config_paths = [
+        repo_root / "deploy/tokenmm/tokenmm.live.toml",
+        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
+        repo_root / "examples/live/makerv3/config/makerv3.toml",
+    ]
+    config_paths.extend(
+        repo_root / "deploy/tokenmm/strategies" / f"{strategy_id}.toml" for strategy_id in TOKENMM_STRATEGY_IDS
+    )
+
+    for path in config_paths:
+        config = _read(path)
+        assert "[node.venues.BYBIT]" in config
+        assert "[node.venues.BINANCE]" in config
+        assert "instrument_id =" in config
+        assert "[node.bybit]" not in config
+        assert "[node.binance]" not in config
+
+
+def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_bounded_lookback() -> None:
+    repo_root = _repo_root()
+    config_paths = [
+        repo_root / "deploy/tokenmm/tokenmm.live.toml",
+        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
+        *(repo_root / "deploy/tokenmm/strategies" / f"{strategy_id}.toml" for strategy_id in TOKENMM_STRATEGY_IDS),
+    ]
+
+    for path in config_paths:
+        config = _read(path)
+        assert "exec_reconciliation_lookback_mins = 15" in config
+        assert "filter_unclaimed_external_orders = true" in config
+        assert "filter_position_reports = true" in config
+
+
+def test_tokenmm_production_strategy_configs_use_descriptive_strategy_ids() -> None:
+    repo_root = _repo_root()
+    strategy_paths = [
+        repo_root / "deploy/tokenmm/strategies" / f"{strategy_id}.toml" for strategy_id in TOKENMM_STRATEGY_IDS
+    ]
+
+    assert len(strategy_paths) == 5
+    for path in strategy_paths:
+        config = _read(path)
+        strategy_id = path.stem
+        assert f'strategy_id = "{strategy_id}"' in config
+        assert "MAKERV3-TMM-" not in config
+        assert "bybit_binance_plumeusdt" not in config
+
+
+def test_tokenmm_registry_uses_neutral_clone_ids_not_venue_prefixed_ids() -> None:
+    config = _read(_repo_root() / "deploy/tokenmm/tokenmm.live.toml")
+
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        assert f'"{strategy_id}"' in config
+    assert "bybit_binance_plumeusdt_makerv3" not in config
+
+
+def test_deploy_env_examples_default_to_safe_paper_profiles_and_explicit_live_opt_in() -> None:
+    tokenmm_env = _read(_repo_root() / "deploy/tokenmm/tokenmm_stack.env.example")
+
+    assert "TOKENMM_MODE=paper" in tokenmm_env
+    assert "TOKENMM_CONFIRM_LIVE=0" in tokenmm_env
+    assert "TOKENMM_ENABLE_EXECUTION=0" in tokenmm_env
+    assert "# TOKENMM_MODE=live" in tokenmm_env
+    assert "# TOKENMM_CONFIRM_LIVE=1" in tokenmm_env
+    assert "# TOKENMM_ENABLE_EXECUTION=1" in tokenmm_env
+
+
+def test_deploy_stack_scripts_use_package_runner_entrypoints() -> None:
+    tokenmm_script = _read(_repo_root() / "scripts/deploy/tokenmm_stack.sh")
+    assert '"${pybin}" -m nautilus_trader.flux.runners.tokenmm.run_node' in tokenmm_script
+    assert '--shared-config "${CONFIG_PATH}"' in tokenmm_script
+    assert '"${pybin}" -m nautilus_trader.flux.runners.tokenmm.run_bridge' in tokenmm_script
+    assert '"${pybin}" -m nautilus_trader.flux.runners.tokenmm.run_api' in tokenmm_script
+    assert "nautilus_trader.flux.runners.makerv3" not in tokenmm_script
+    assert "examples/live/makerv3/run_node.py" not in tokenmm_script
+    assert "examples/live/makerv3/run_bridge.py" not in tokenmm_script
+    assert "examples/live/makerv3/run_api.py" not in tokenmm_script
+
+
+def test_legacy_makerv3_production_surface_is_removed() -> None:
+    repo_root = _repo_root()
+
+    assert not (repo_root / "scripts/deploy/makerv3_stack.sh").exists()
+    assert not (repo_root / "deploy/makerv3").exists()
+    assert not (repo_root / "nautilus_trader/flux/runners/makerv3").exists()
+
+
+def test_deploy_docs_make_runtime_intent_and_reconciliation_guardrails_explicit() -> None:
+    readme = _read(_repo_root() / "deploy/tokenmm/README.md")
+    strategies_readme = _read(_repo_root() / "deploy/tokenmm/strategies/README.md")
+    examples_readme = _read(_repo_root() / "examples/live/makerv3/README.md")
+
+    assert "defaults to paper mode with execution disabled" in readme
+    assert "Runtime flags win over the TOML [flux]/[node] values." in readme
+    assert "TOKENMM_MODE=paper" in readme
+    assert "TOKENMM_CONFIRM_LIVE=0" in readme
+    assert "TOKENMM_ENABLE_EXECUTION=0" in readme
+    assert "TOKENMM_MODE=live" in readme
+    assert "TOKENMM_CONFIRM_LIVE=1" in readme
+    assert "TOKENMM_ENABLE_EXECUTION=1" in readme
+    assert "TOKENMM_ALLOW_MISSING_KEYS=1" in readme
+    assert "GET /api/v1/params?profile=tokenmm" in readme
+    assert "GET /api/v1/balances?profile=tokenmm" in readme
+    assert "GET /api/v1/trades?profile=tokenmm" in readme
+    assert "nautilus_trader.flux.runners.tokenmm.run_node" in readme
+    assert "nautilus_trader.flux.runners.tokenmm.run_bridge" in readme
+    assert "nautilus_trader.flux.runners.tokenmm.run_api" in readme
+    assert "deploy/makerv3" not in readme
+    assert "runners.makerv3" not in readme
+
+    assert "paper mode with execution disabled" in strategies_readme
+    assert "`exec_reconciliation_lookback_mins`" in strategies_readme
+    assert "`15`" in strategies_readme
+    assert "filter_unclaimed_external_orders = true" in strategies_readme
+    assert "filter_position_reports = true" in strategies_readme
+    assert "nautilus_trader.flux.runners.tokenmm.run_node" in strategies_readme
+    assert "deploy/makerv3" not in strategies_readme
+    assert "runners.makerv3" not in strategies_readme
+
+    assert "Production deploy docs default to paper/no-exec smoke first." in examples_readme
+    assert "`deploy/tokenmm/README.md`" in examples_readme
+    assert "deploy/makerv3" not in examples_readme
+    assert "nautilus_trader.flux.runners.makerv3" not in examples_readme
+
+
+def test_flux_prod_docs_reference_tokenmm_runner_namespace() -> None:
+    api_doc = _read(_repo_root() / "docs/flux/api.md")
+    bridge_doc = _read(_repo_root() / "docs/flux/bridge.md")
+    runbook = _read(_repo_root() / "docs/fluxboard/tokenmm_runbook.md")
+
+    assert "nautilus_trader.flux.runners.tokenmm.run_api" in api_doc
+    assert "nautilus_trader.flux.runners.makerv3.run_api" not in api_doc
+
+    assert "nautilus_trader.flux.runners.tokenmm.run_bridge" in bridge_doc
+    assert "nautilus_trader.flux.runners.makerv3.run_bridge" not in bridge_doc
+
+    assert "nautilus_trader.flux.runners.tokenmm.run_node" in runbook
+    assert "nautilus_trader.flux.runners.tokenmm.run_bridge" in runbook
+    assert "nautilus_trader.flux.runners.tokenmm.run_api" in runbook
+    assert "nautilus_trader.flux.runners.makerv3" not in runbook

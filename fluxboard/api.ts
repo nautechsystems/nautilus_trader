@@ -108,6 +108,7 @@ function appendProfileQuery(qs: URLSearchParams): void {
 const apiClient = new APIClient(base);
 
 type FluxEnvelope<T> = { ok: boolean; data: T; error?: unknown };
+type TradesDeltaCursor = number | { sinceSeq?: number; afterMs?: number };
 
 function isFluxEnvelope<T>(payload: unknown): payload is FluxEnvelope<T> {
   return Boolean(payload && typeof payload === 'object' && 'ok' in (payload as Record<string, unknown>));
@@ -137,6 +138,13 @@ function toUpperToken(value: unknown, fallback = 'UNKNOWN'): string {
 function formatMoneyDisplay(value: number): string {
   const safe = Number.isFinite(value) ? value : 0;
   return `${safe < 0 ? '-$' : '$'}${Math.abs(safe).toFixed(2)}`;
+}
+
+function normalizeTradesSortParam(sort: string | undefined): string {
+  if (sort === 'ts_asc') {
+    return 'asc';
+  }
+  return sort || 'ts_desc';
 }
 
 function normalizeCoinHint(raw: Record<string, unknown>): string {
@@ -1366,7 +1374,7 @@ export const api = {
     const qs = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
-      sort: (params.sort as string) || 'ts_desc',
+      sort: normalizeTradesSortParam(params.sort as string | undefined),
       coin: (params.coin as string) || '',
       exchange: (params.exchange as string) || '',
       side: (params.side as string) || '',
@@ -1440,14 +1448,30 @@ export const api = {
   },
 
   getTradesDelta: async (
-    sinceSeq: number,
+    cursor: TradesDeltaCursor,
     limit = 2000,
     init?: RequestInit
   ): Promise<{ rows: TradeEvent[]; last_seq?: number; reset_required?: boolean }> => {
+    const resolvedCursor =
+      typeof cursor === 'number'
+        ? { sinceSeq: cursor }
+        : (cursor ?? {});
     const qs = new URLSearchParams({
-      since_seq: String(sinceSeq),
       limit: String(limit),
     });
+    const afterMs =
+      typeof resolvedCursor.afterMs === 'number' && Number.isFinite(resolvedCursor.afterMs)
+        ? Math.max(0, Math.trunc(resolvedCursor.afterMs))
+        : undefined;
+    const sinceSeq =
+      typeof resolvedCursor.sinceSeq === 'number' && Number.isFinite(resolvedCursor.sinceSeq)
+        ? Math.max(0, Math.trunc(resolvedCursor.sinceSeq))
+        : 0;
+    if (afterMs !== undefined) {
+      qs.set('after', String(afterMs));
+    } else {
+      qs.set('since_seq', String(sinceSeq));
+    }
     appendProfileQuery(qs);
     const r = await fetchJSON<FluxEnvelope<{ rows: TradeEvent[]; last_seq?: number; reset_required?: boolean }>>(`/api/v1/trades/delta?${qs.toString()}`, init);
     const data = unwrapFluxEnvelope(r);

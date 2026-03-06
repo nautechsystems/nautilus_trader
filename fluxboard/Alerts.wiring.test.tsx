@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Alerts from './Alerts';
@@ -59,6 +59,9 @@ function createAlert(overrides: Partial<Alert> = {}): Alert {
 describe('Alerts wiring', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetAlerts.mockReset();
+    mockUsePolling.mockReset();
+    mockUseWebSocket.mockReset();
     wsHandler = null;
 
     storeState = {
@@ -138,5 +141,93 @@ describe('Alerts wiring', () => {
     });
 
     expect(storeState.setRows).not.toHaveBeenCalled();
+  });
+
+  it('refreshes alerts from REST when market_update ships summary metadata only', async () => {
+    storeState.auto = false;
+    mockGetAlerts.mockResolvedValueOnce([
+      createAlert({
+        id: 'fresh-alert',
+        level: 'CRITICAL',
+        message: 'socket summary triggered reload',
+        timestamp: 1700000002,
+      }),
+    ]);
+
+    render(<Alerts />);
+
+    act(() => {
+      wsHandler?.({
+        alerts: {
+          count: 1,
+          latest_ts_ms: 1_700_000_002_000,
+        },
+      });
+    });
+
+    await waitFor(() => expect(mockGetAlerts).toHaveBeenCalledTimes(1));
+    expect(storeState.setRows).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'fresh-alert',
+        message: 'socket summary triggered reload',
+      }),
+    ]);
+  });
+
+  it('keeps existing alerts when the REST refresh fails transiently', async () => {
+    storeState.rows = [createAlert({ id: 'existing-alert', message: 'keep me' })];
+    mockGetAlerts.mockRejectedValueOnce(new Error('temporary failure'));
+    mockUsePolling.mockImplementation((fn: () => Promise<void>) => {
+      void fn();
+    });
+
+    render(<Alerts />);
+
+    await waitFor(() => expect(mockGetAlerts).toHaveBeenCalledTimes(1));
+    expect(storeState.setRows).not.toHaveBeenCalled();
+  });
+
+  it('retries the same summary metadata after a transient REST failure', async () => {
+    storeState.auto = false;
+    mockGetAlerts
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce([
+        createAlert({
+          id: 'recovered-alert',
+          level: 'WARNING',
+          message: 'retried summary reload',
+          timestamp: 1700000003,
+        }),
+      ]);
+
+    render(<Alerts />);
+
+    act(() => {
+      wsHandler?.({
+        alerts: {
+          count: 1,
+          latest_ts_ms: 1_700_000_003_000,
+        },
+      });
+    });
+
+    await waitFor(() => expect(mockGetAlerts).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      wsHandler?.({
+        alerts: {
+          count: 1,
+          latest_ts_ms: 1_700_000_003_000,
+        },
+      });
+    });
+
+    await waitFor(() => expect(mockGetAlerts).toHaveBeenCalledTimes(2));
+    expect(storeState.setRows).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'recovered-alert',
+        message: 'retried summary reload',
+      }),
+    ]);
   });
 });

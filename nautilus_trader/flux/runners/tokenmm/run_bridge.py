@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Run the flux bridge consumer for MakerV3 strategy topics.
+Run the flux bridge consumer for TokenMM strategy topics.
 """
 
 from __future__ import annotations
@@ -39,7 +39,6 @@ from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_TRADE
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("config") / "makerv3.toml"
 
 
 FULL_TO_SUFFIX_TOPICS: dict[str, str] = {
@@ -76,8 +75,8 @@ def _table(data: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Flux bridge consumer for MakerV3.")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    parser = argparse.ArgumentParser(description="Run Flux bridge consumer for TokenMM.")
+    parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
     parser.add_argument("--strategy-id", default=None)
@@ -123,7 +122,7 @@ def _resolve_strategy_scope(config: dict[str, Any], args: argparse.Namespace) ->
 
 def main() -> None:
     """
-    Parse CLI arguments and run the MakerV3 flux bridge consumer.
+    Parse CLI arguments and run the TokenMM flux bridge consumer.
     """
     args = _parse_args()
     config = _load_config(args.config)

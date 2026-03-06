@@ -5,19 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "bybit_binance_plumeusdt_makerv3"
-strategy_instance_id = "bybit_binance_plumeusdt_makerv3"
-trader_id = "MAKER-LIVE-TMM-01"
-external_strategy_id = "bybit_binance_plumeusdt_makerv3"
-
-[redis]
-host = "127.0.0.1"
-port = 6380
-db = 0
-username = ""
-password = ""
-connect_timeout_secs = 5.0
-read_timeout_secs = 5.0
+strategy_id = "tokenmm_plume_makerv3_02"
+strategy_instance_id = "tokenmm_plume_makerv3_02"
+trader_id = "MAKER-LIVE-TMM-02"
+external_strategy_id = "tokenmm_plume_makerv3_02"
 
 [venues]
 execution_venue = "BYBIT"
@@ -26,8 +17,6 @@ execution_symbol = "PLUMEUSDT"
 reference_symbol = "PLUMEUSDT"
 
 [node]
-maker_instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
-reference_instrument_id = "PLUMEUSDT.BINANCE"
 enable_execution = false
 log_level = "INFO"
 timeout_connection = 20.0
@@ -36,23 +25,30 @@ timeout_portfolio = 10.0
 timeout_disconnection = 10.0
 timeout_post_stop = 5.0
 exec_reconciliation = true
-exec_reconciliation_lookback_mins = 0
+# Shared-account persisted-cache startup guardrail for multi-node live.
+exec_reconciliation_lookback_mins = 15
 exec_reconciliation_startup_delay_secs = 10.0
+filter_unclaimed_external_orders = true
+filter_position_reports = true
 
-[node.bybit]
+[node.venues.BYBIT]
+instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
+execution = true
 api_key_env = "BYBIT_API_KEY"
 api_secret_env = "BYBIT_API_SECRET"
 product_type = "LINEAR"
+recv_window_ms = 20000
 testnet = false
 demo = false
 
-[node.binance]
+[node.venues.BINANCE]
+instrument_id = "PLUMEUSDT.BINANCE"
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
 account_type = "SPOT"
 
 [strategy]
-strategy_id = "MAKERV3-TMM-01"
+strategy_id = "tokenmm_plume_makerv3_02"
 order_qty = "1000"
 qty = "1000"
 bot_on = false

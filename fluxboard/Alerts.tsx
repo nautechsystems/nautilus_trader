@@ -52,39 +52,71 @@ export default function Alerts({
 
   // Track last WebSocket data to prevent redundant updates
   const lastWebSocketDataRef = useRef<string>('');
+  const lastAlertsSummaryRef = useRef<string>('');
+  const pendingAlertsSummaryRef = useRef<string>('');
   const hasLoadedRef = useRef(false);
 
-  // Load alerts from API (only show loading on first load)
-  const loadAlerts = useCallback(async () => {
-    const isFirstLoad = !hasLoadedRef.current;
-    if (isFirstLoad) {
+  const refreshAlertsFromApi = useCallback(async (options?: { showLoading?: boolean; summaryKey?: string }) => {
+    const shouldShowLoading = Boolean(options?.showLoading);
+    const summaryKey = options?.summaryKey ?? '';
+    if (shouldShowLoading) {
       setLoading(true);
+    }
+    if (summaryKey) {
+      pendingAlertsSummaryRef.current = summaryKey;
     }
     try {
       const data = await api.getAlerts();
       setRows(data);
       setLastUpdate(Date.now());
       hasLoadedRef.current = true;
+      if (summaryKey) {
+        lastAlertsSummaryRef.current = summaryKey;
+      }
     } catch (e) {
       if (import.meta.env?.DEV) {
         console.error('[alerts] Failed to load:', e);
       }
-      setRows([]);
     } finally {
-      if (isFirstLoad) {
+      if (summaryKey && pendingAlertsSummaryRef.current === summaryKey) {
+        pendingAlertsSummaryRef.current = '';
+      }
+      if (shouldShowLoading) {
         setLoading(false);
       }
     }
   }, [setRows, setLoading]);
 
+  // Load alerts from API (only show loading on first load)
+  const loadAlerts = useCallback(async () => {
+    const isFirstLoad = !hasLoadedRef.current;
+    await refreshAlertsFromApi({ showLoading: isFirstLoad });
+  }, [refreshAlertsFromApi]);
+
   // Auto-refresh polling with usePolling hook
   usePolling(loadAlerts, INTERVALS.ALERTS_POLL, auto);
 
   // Subscribe to live alert updates via WebSocket using useWebSocket hook
-  useWebSocket<{ alerts?: unknown[]; rows?: unknown[] }>(
+  useWebSocket<{ alerts?: unknown[] | { count?: number; latest_ts_ms?: number | null }; rows?: unknown[] }>(
     'market_update',
     useCallback(
       (payload) => {
+        const alertsSummary = payload && typeof payload === 'object' ? (payload as any).alerts : undefined;
+        if (
+          alertsSummary
+          && typeof alertsSummary === 'object'
+          && !Array.isArray(alertsSummary)
+        ) {
+          const summaryKey = `summary:${String((alertsSummary as any).count ?? '')}:${String((alertsSummary as any).latest_ts_ms ?? '')}`;
+          if (
+            lastAlertsSummaryRef.current !== summaryKey
+            && pendingAlertsSummaryRef.current !== summaryKey
+          ) {
+            void refreshAlertsFromApi({ summaryKey });
+          }
+          return;
+        }
+
         const hasSnapshotPayload = Boolean(
           payload
           && typeof payload === 'object'
@@ -134,7 +166,7 @@ export default function Alerts({
           }
         }
       },
-      [setRows, lastWebSocketDataRef]
+      [setRows, lastWebSocketDataRef, refreshAlertsFromApi]
     )
   );
 

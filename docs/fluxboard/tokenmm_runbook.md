@@ -6,25 +6,28 @@ This runbook covers the two supported serving modes for the TokenMM Fluxboard su
 
 ## Prerequisites
 
-1. Start Redis and the MakerV3 node/bridge stack if you need live data:
+1. Start Redis and the TokenMM stack if you need live data:
 
 ```bash
 redis-server --port 6380
-python examples/live/makerv3/run_node.py
-python examples/live/makerv3/run_bridge.py
+python -m nautilus_trader.flux.runners.tokenmm.run_node \
+  --config deploy/tokenmm/strategies/tokenmm_plume_makerv3_01.toml \
+  --shared-config deploy/tokenmm/tokenmm.live.toml \
+  --mode paper
+python -m nautilus_trader.flux.runners.tokenmm.run_bridge --config deploy/tokenmm/tokenmm.live.toml --mode paper --all-strategies
 ```
 
-   Or use the managed stack script:
+   Or use the managed TokenMM stack:
 
 ```bash
-cp examples/live/makerv3/config/makerv3.live.env.example \
-  examples/live/makerv3/config/makerv3.live.env
+cp deploy/tokenmm/tokenmm_stack.env.example \
+  deploy/tokenmm/tokenmm_stack.env
 # Fill credentials, then:
-scripts/deploy/makerv3_stack.sh start
+scripts/deploy/tokenmm_stack.sh start
 ```
 
 The stack script can load credentials from AWS Secrets Manager by default:
-`/nautilus/makerv3/bybit` and `/nautilus/makerv3/binance` (`MAKERV3_*_SECRET_ID` overrides).
+`/nautilus/tokenmm/bybit` and `/nautilus/tokenmm/binance` (`TOKENMM_*_SECRET_ID` overrides).
 2. Install frontend dependencies once:
 
 ```bash
@@ -47,9 +50,9 @@ Frontend variables (set in `fluxboard/.env`, template: `fluxboard/.env.example`)
 - `VITE_BACKEND_URL=/`: forces same-origin socket URL so Vite proxies `/socket.io` in dev.
 - `FLUXBOARD_BASE_PATH=/tokenmm/`: build base path for prod-like serving.
 
-Backend runner variables (export in shell before running `run_api.py`; also documented as comments in `fluxboard/.env.example`):
+Backend runner variables (export in shell before running `nautilus_trader.flux.runners.tokenmm.run_api`; also documented as comments in `fluxboard/.env.example`):
 
-- `FLUXBOARD_SERVE_DIST=1`: opt-in static serving in `run_api.py`.
+- `FLUXBOARD_SERVE_DIST=1`: opt-in static serving in the `run_api` module.
 - `FLUXBOARD_DIST`: optional override for built asset directory (default `<repo>/fluxboard/dist`).
 
 ## Option A (dev): Vite proxy mode
@@ -63,7 +66,10 @@ cp fluxboard/.env.example fluxboard/.env
 2. Run FluxAPI:
 
 ```bash
-python examples/live/makerv3/run_api.py --host 127.0.0.1 --port 5022
+python -m nautilus_trader.flux.runners.tokenmm.run_api \
+  --config deploy/tokenmm/tokenmm.live.toml \
+  --host 127.0.0.1 \
+  --port 5022
 ```
 
 3. Run Vite dev server:
@@ -92,13 +98,20 @@ pnpm --dir fluxboard build
 2. Run FluxAPI with static serving opt-in:
 
 ```bash
-python examples/live/makerv3/run_api.py --serve-fluxboard --host 127.0.0.1 --port 5022
+python -m nautilus_trader.flux.runners.tokenmm.run_api \
+  --config deploy/tokenmm/tokenmm.live.toml \
+  --serve-fluxboard \
+  --host 127.0.0.1 \
+  --port 5022
 ```
 
 Env equivalent:
 
 ```bash
-FLUXBOARD_SERVE_DIST=1 python examples/live/makerv3/run_api.py --host 127.0.0.1 --port 5022
+FLUXBOARD_SERVE_DIST=1 python -m nautilus_trader.flux.runners.tokenmm.run_api \
+  --config deploy/tokenmm/tokenmm.live.toml \
+  --host 127.0.0.1 \
+  --port 5022
 ```
 
 3. Open:
