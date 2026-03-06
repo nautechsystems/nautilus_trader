@@ -19,9 +19,10 @@ use std::sync::Arc;
 
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::defi::{Chain, DexType};
+use nautilus_model::identifiers::{AccountId, TraderId, Venue};
 use pyo3::prelude::*;
 
-use crate::config::{BlockchainDataClientConfig, DexPoolFilters};
+use crate::config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig, DexPoolFilters};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
@@ -137,6 +138,98 @@ impl BlockchainDataClientConfig {
             self.wss_rpc_url,
             self.use_hypersync_for_live_data,
             self.from_block
+        )
+    }
+}
+
+#[pymethods]
+impl BlockchainExecutionClientConfig {
+    /// Creates a new `BlockchainExecutionClientConfig` instance.
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (trader_id, client_id, venue, chain, wallet_address, http_rpc_url, tokens=None, rpc_requests_per_second=None))]
+    fn py_new(
+        trader_id: TraderId,
+        client_id: AccountId,
+        venue: Venue,
+        chain: Chain,
+        wallet_address: String,
+        http_rpc_url: String,
+        tokens: Option<Vec<String>>,
+        rpc_requests_per_second: Option<u32>,
+    ) -> Self {
+        Self::new(
+            trader_id,
+            client_id,
+            venue,
+            chain,
+            wallet_address,
+            tokens,
+            http_rpc_url,
+            rpc_requests_per_second,
+        )
+    }
+
+    /// Returns the trader ID.
+    #[getter]
+    const fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    /// Returns the account ID.
+    #[getter]
+    const fn client_id(&self) -> AccountId {
+        self.client_id
+    }
+
+    /// Returns the execution venue.
+    #[getter]
+    const fn venue(&self) -> Venue {
+        self.venue
+    }
+
+    /// Returns the chain configuration.
+    #[getter]
+    fn chain(&self) -> Chain {
+        self.chain.clone()
+    }
+
+    /// Returns the wallet address.
+    #[getter]
+    fn wallet_address(&self) -> String {
+        self.wallet_address.clone()
+    }
+
+    /// Returns the token addresses to monitor.
+    #[getter]
+    fn tokens(&self) -> Option<Vec<String>> {
+        self.tokens.clone()
+    }
+
+    /// Returns the HTTP RPC URL.
+    #[getter]
+    fn http_rpc_url(&self) -> String {
+        self.http_rpc_url.clone()
+    }
+
+    /// Returns the RPC requests per second limit.
+    #[getter]
+    const fn rpc_requests_per_second(&self) -> Option<u32> {
+        self.rpc_requests_per_second
+    }
+
+    /// Returns a string representation of the configuration.
+    fn __repr__(&self) -> String {
+        format!(
+            "BlockchainExecutionClientConfig(trader_id={}, client_id={}, venue={}, chain={:?}, wallet_address={}, tokens={:?}, http_rpc_url={}, rpc_requests_per_second={:?})",
+            self.trader_id,
+            self.client_id,
+            self.venue,
+            self.chain.name,
+            self.wallet_address,
+            self.tokens,
+            self.http_rpc_url,
+            self.rpc_requests_per_second
         )
     }
 }

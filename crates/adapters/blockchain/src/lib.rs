@@ -59,7 +59,6 @@ pub mod rpc;
 #[cfg(feature = "hypersync")]
 pub mod cache;
 
-#[cfg(feature = "hypersync")]
 pub mod execution;
 
 #[cfg(feature = "hypersync")]
@@ -68,7 +67,6 @@ pub mod data;
 #[cfg(feature = "hypersync")]
 pub mod exchanges;
 
-#[cfg(feature = "hypersync")]
 pub mod factories;
 
 #[cfg(feature = "hypersync")]

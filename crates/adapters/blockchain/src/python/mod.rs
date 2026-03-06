@@ -16,21 +16,19 @@
 //! Python bindings from [PyO3](https://pyo3.rs).
 
 pub mod config;
-
-#[cfg(feature = "hypersync")]
 pub mod factories;
 
-#[cfg(feature = "hypersync")]
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 #[cfg(feature = "hypersync")]
+use nautilus_system::factories::DataClientFactory;
 use nautilus_system::{
-    factories::{ClientConfig, DataClientFactory},
+    factories::{ClientConfig, ExecutionClientFactory},
     get_global_pyo3_registry,
 };
 use pyo3::prelude::*;
 
-/// Extractor function for `BlockchainDataClientFactory`.
 #[cfg(feature = "hypersync")]
+/// Extractor function for `BlockchainDataClientFactory`.
 fn extract_blockchain_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -39,6 +37,19 @@ fn extract_blockchain_factory(
         Ok(concrete_factory) => Ok(Box::new(concrete_factory)),
         Err(e) => Err(to_pyvalue_err(format!(
             "Failed to extract BlockchainDataClientFactory: {e}"
+        ))),
+    }
+}
+
+/// Extractor function for `BlockchainExecutionClientFactory`.
+fn extract_blockchain_execution_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn ExecutionClientFactory>> {
+    match factory.extract::<crate::factories::BlockchainExecutionClientFactory>(py) {
+        Ok(concrete_factory) => Ok(Box::new(concrete_factory)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract BlockchainExecutionClientFactory: {e}"
         ))),
     }
 }
@@ -54,6 +65,19 @@ fn extract_blockchain_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<
     }
 }
 
+/// Extractor function for `BlockchainExecutionClientConfig`.
+fn extract_blockchain_execution_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<crate::config::BlockchainExecutionClientConfig>(py) {
+        Ok(concrete_config) => Ok(Box::new(concrete_config)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract BlockchainExecutionClientConfig: {e}"
+        ))),
+    }
+}
+
 /// Loaded as `nautilus_pyo3.blockchain`.
 ///
 /// # Errors
@@ -61,32 +85,51 @@ fn extract_blockchain_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn blockchain(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<crate::config::BlockchainDataClientConfig>()?;
     m.add_class::<crate::config::DexPoolFilters>()?;
+    m.add_class::<crate::config::BlockchainDataClientConfig>()?;
+    m.add_class::<crate::config::BlockchainExecutionClientConfig>()?;
+    m.add_class::<crate::factories::BlockchainExecutionClientFactory>()?;
     #[cfg(feature = "hypersync")]
     m.add_class::<crate::factories::BlockchainDataClientFactory>()?;
 
     // Register extractors with the global registry
+    let registry = get_global_pyo3_registry();
+
     #[cfg(feature = "hypersync")]
+    if let Err(e) =
+        registry.register_factory_extractor("BLOCKCHAIN".to_string(), extract_blockchain_factory)
     {
-        let registry = get_global_pyo3_registry();
+        return Err(to_pyruntime_err(format!(
+            "Failed to register blockchain factory extractor: {e}"
+        )));
+    }
 
-        if let Err(e) = registry
-            .register_factory_extractor("BLOCKCHAIN".to_string(), extract_blockchain_factory)
-        {
-            return Err(to_pyruntime_err(format!(
-                "Failed to register blockchain factory extractor: {e}"
-            )));
-        }
+    if let Err(e) = registry.register_exec_factory_extractor(
+        "BLOCKCHAIN".to_string(),
+        extract_blockchain_execution_factory,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register blockchain execution factory extractor: {e}"
+        )));
+    }
 
-        if let Err(e) = registry.register_config_extractor(
-            "BlockchainDataClientConfig".to_string(),
-            extract_blockchain_config,
-        ) {
-            return Err(to_pyruntime_err(format!(
-                "Failed to register blockchain config extractor: {e}"
-            )));
-        }
+    #[cfg(feature = "hypersync")]
+    if let Err(e) = registry.register_config_extractor(
+        "BlockchainDataClientConfig".to_string(),
+        extract_blockchain_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register blockchain data config extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "BlockchainExecutionClientConfig".to_string(),
+        extract_blockchain_execution_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register blockchain execution config extractor: {e}"
+        )));
     }
 
     Ok(())

@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
@@ -41,8 +44,8 @@ use nautilus_model::{
 };
 
 use crate::{
-    cache::BlockchainCache, config::BlockchainExecutionClientConfig,
-    contracts::erc20::Erc20Contract, rpc::http::BlockchainHttpRpcClient,
+    config::BlockchainExecutionClientConfig, contracts::erc20::Erc20Contract,
+    rpc::http::BlockchainHttpRpcClient,
 };
 
 /// Execution client for blockchain interactions including balance tracking and order execution.
@@ -50,8 +53,8 @@ use crate::{
 pub struct BlockchainExecutionClient {
     /// Core execution client providing base functionality.
     core: ExecutionClientCore,
-    /// Cache for storing token metadata and other blockchain data.
-    cache: BlockchainCache,
+    /// In-memory cache for token metadata fetched via RPC calls.
+    token_cache: HashMap<Address, Token>,
     /// The blockchain network configuration.
     chain: SharedChain,
     /// The wallet address used for transactions and balance queries.
@@ -75,7 +78,6 @@ impl BlockchainExecutionClient {
         config: BlockchainExecutionClientConfig,
     ) -> anyhow::Result<Self> {
         let chain = Arc::new(config.chain);
-        let cache = BlockchainCache::new(chain.clone());
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
             config.http_rpc_url.clone(),
             config.rpc_requests_per_second,
@@ -98,7 +100,7 @@ impl BlockchainExecutionClient {
             core: core_client,
             wallet_balance,
             chain,
-            cache,
+            token_cache: HashMap::new(),
             erc20_contract,
             http_rpc_client,
             wallet_address,
@@ -126,7 +128,7 @@ impl BlockchainExecutionClient {
         token_address: &Address,
     ) -> anyhow::Result<TokenBalance> {
         // Get the cached token or fetch it from the blockchain and cache it.
-        let token = if let Some(token) = self.cache.get_token(token_address) {
+        let token = if let Some(token) = self.token_cache.get(token_address) {
             token.to_owned()
         } else {
             let token_info = self.erc20_contract.fetch_token_info(token_address).await?;
@@ -137,7 +139,7 @@ impl BlockchainExecutionClient {
                 token_info.symbol,
                 token_info.decimals,
             );
-            self.cache.add_token(token.clone()).await?;
+            self.token_cache.insert(*token_address, token.clone());
             token
         };
 
@@ -223,11 +225,32 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        todo!("implement start")
+        if self.core.is_started() {
+            return Ok(());
+        }
+
+        self.core.set_started();
+        log::info!(
+            "Blockchain execution client started: client_id={}, account_id={}, venue={}",
+            self.core.client_id,
+            self.core.account_id,
+            self.core.venue,
+        );
+        Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        todo!("implement stop")
+        if self.core.is_stopped() {
+            return Ok(());
+        }
+
+        self.core.set_stopped();
+        self.core.set_disconnected();
+        log::info!(
+            "Blockchain execution client stopped: client_id={}",
+            self.core.client_id
+        );
+        Ok(())
     }
 
     fn submit_order(&self, _cmd: &SubmitOrder) -> anyhow::Result<()> {
