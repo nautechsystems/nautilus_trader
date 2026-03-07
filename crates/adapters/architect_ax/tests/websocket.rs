@@ -827,65 +827,6 @@ async fn test_md_subscription_count_starts_at_zero() {
 
 #[rstest]
 #[tokio::test]
-async fn test_md_cache_instrument() {
-    let client = AxMdWebSocketClient::new(
-        "ws://localhost:9999/md/ws".to_string(),
-        "test_token".to_string(),
-        None,
-    );
-
-    let instrument = create_test_instrument("EURUSD-PERP");
-    client.cache_instrument(instrument);
-
-    let cached = client.get_cached_instrument(&Ustr::from("EURUSD-PERP"));
-    assert!(cached.is_some());
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_md_cache_multiple_instruments() {
-    let client = AxMdWebSocketClient::new(
-        "ws://localhost:9999/md/ws".to_string(),
-        "test_token".to_string(),
-        None,
-    );
-
-    client.cache_instrument(create_test_instrument("EURUSD-PERP"));
-    client.cache_instrument(create_test_instrument("ETHUSD-PERP"));
-    client.cache_instrument(create_test_instrument("EURUSD-PERP"));
-
-    assert!(
-        client
-            .get_cached_instrument(&Ustr::from("EURUSD-PERP"))
-            .is_some()
-    );
-    assert!(
-        client
-            .get_cached_instrument(&Ustr::from("ETHUSD-PERP"))
-            .is_some()
-    );
-    assert!(
-        client
-            .get_cached_instrument(&Ustr::from("EURUSD-PERP"))
-            .is_some()
-    );
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_md_get_cached_instrument_returns_none_for_unknown() {
-    let client = AxMdWebSocketClient::new(
-        "ws://localhost:9999/md/ws".to_string(),
-        "test_token".to_string(),
-        None,
-    );
-
-    let cached = client.get_cached_instrument(&Ustr::from("UNKNOWN-SYMBOL"));
-    assert!(cached.is_none());
-}
-
-#[rstest]
-#[tokio::test]
 async fn test_md_ping_pong() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
