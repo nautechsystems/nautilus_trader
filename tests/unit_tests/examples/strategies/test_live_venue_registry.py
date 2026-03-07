@@ -6,6 +6,7 @@ from flux.runners.live.venues import resolve_strategy_venues
 from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
@@ -13,6 +14,9 @@ from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
+from nautilus_trader.adapters.okx import OKX
+from nautilus_trader.adapters.okx import OKXDataClientConfig
+from nautilus_trader.adapters.okx import OKXExecClientConfig
 
 
 def test_resolve_strategy_venues_builds_clients_from_generic_node_venues_table() -> None:
@@ -94,6 +98,71 @@ def test_resolve_strategy_venues_supports_binance_spot_reference_and_binance_per
     assert isinstance(resolved.exec_clients["BINANCE_PERP"], BinanceExecClientConfig)
     assert str(resolved.data_clients["BINANCE_PERP"].venue) == "BINANCE_PERP"
     assert str(resolved.data_clients["BINANCE_SPOT"].venue) == "BINANCE_SPOT"
+
+
+def test_resolve_strategy_venues_sets_binance_testnet_defaults_in_paper() -> None:
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "BINANCE_PERP",
+                "reference_venue": "BINANCE_SPOT",
+            },
+            "node": {
+                "venues": {
+                    "BINANCE_PERP": {
+                        "adapter": "binance",
+                        "instrument_id": "PLUMEUSDT-PERP.BINANCE_PERP",
+                        "account_type": "USDT_FUTURES",
+                        "execution": True,
+                    },
+                    "BINANCE_SPOT": {
+                        "adapter": "binance",
+                        "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                        "account_type": "SPOT",
+                    },
+                },
+            },
+        },
+        mode="paper",
+        enable_execution=True,
+    )
+
+    assert isinstance(resolved.data_clients["BINANCE_PERP"], BinanceDataClientConfig)
+    assert isinstance(resolved.exec_clients["BINANCE_PERP"], BinanceExecClientConfig)
+    assert resolved.data_clients["BINANCE_PERP"].environment == BinanceEnvironment.TESTNET
+    assert resolved.exec_clients["BINANCE_PERP"].environment == BinanceEnvironment.TESTNET
+    assert resolved.data_clients["BINANCE_SPOT"].environment == BinanceEnvironment.TESTNET
+
+
+def test_resolve_strategy_venues_sets_okx_demo_defaults_in_testnet() -> None:
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "OKX",
+                "reference_venue": "OKX",
+            },
+            "node": {
+                "venues": {
+                    "OKX": {
+                        "adapter": "okx",
+                        "instrument_id": "PLUME-USDT-SWAP.OKX",
+                        "instrument_type": "SWAP",
+                        "contract_type": "LINEAR",
+                        "execution": True,
+                    },
+                },
+            },
+        },
+        mode="testnet",
+        enable_execution=True,
+    )
+
+    assert set(resolved.data_clients) == {OKX}
+    assert set(resolved.exec_clients) == {OKX}
+    assert isinstance(resolved.data_clients[OKX], OKXDataClientConfig)
+    assert isinstance(resolved.exec_clients[OKX], OKXExecClientConfig)
+    assert resolved.data_clients[OKX].is_demo is True
+    assert resolved.exec_clients[OKX].is_demo is True
 
 
 def test_resolve_strategy_venues_rejects_unknown_adapter() -> None:

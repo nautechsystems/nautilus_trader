@@ -26,6 +26,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -257,6 +258,38 @@ def test_client_init_tolerates_pre_registered_cash_borrowing(monkeypatch) -> Non
                 reset_cash_borrowing_registry=False,
             )
             await client._disconnect()
+        finally:
+            AccountFactory.deregister_cash_borrowing(BYBIT_VENUE.value)
+
+    asyncio.run(_run())
+
+
+def test_bybit_cash_borrowing_registration_does_not_leak_between_clients(monkeypatch) -> None:
+    async def _run() -> None:
+        AccountFactory.deregister_cash_borrowing(BYBIT_VENUE.value)
+
+        client_a, _ = _build_client(
+            monkeypatch,
+            asyncio.get_running_loop(),
+            allow_cash_borrowing=True,
+        )
+        await client_a._connect()
+        account_a = AccountFactory.create(
+            TestEventStubs.cash_account_state(account_id=client_a.account_id),
+        )
+        assert account_a.allow_borrowing is True
+        await client_a._disconnect()
+
+        client_b, _ = _build_client(
+            monkeypatch,
+            asyncio.get_running_loop(),
+            allow_cash_borrowing=False,
+        )
+        try:
+            account_b = AccountFactory.create(
+                TestEventStubs.cash_account_state(account_id=client_b.account_id),
+            )
+            assert account_b.allow_borrowing is False
         finally:
             AccountFactory.deregister_cash_borrowing(BYBIT_VENUE.value)
 

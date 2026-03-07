@@ -1,11 +1,22 @@
 import type { SignalStrategy, StrategyRunState } from '@/types';
 
+const SIGNAL_RUN_STATE_STALE_MS = 5_000;
+
+function toFiniteTimestampMs(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 export function resolveSignalRunning(
   strategy: Pick<SignalStrategy, 'running' | 'state'>,
   nowMs: number,
 ): boolean | null {
-  void nowMs;
-
   if (strategy.running === true || strategy.running === false) {
     return strategy.running;
   }
@@ -20,6 +31,13 @@ export function resolveSignalRunning(
     return null;
   }
   if (stateName === 'on_stop') {
+    return false;
+  }
+
+  const tsMs = toFiniteTimestampMs(
+    (state as Record<string, unknown>).ts_ms ?? (state as Record<string, unknown>).tsMs,
+  );
+  if (tsMs != null && nowMs - tsMs > SIGNAL_RUN_STATE_STALE_MS) {
     return false;
   }
 

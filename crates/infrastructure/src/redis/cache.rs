@@ -104,6 +104,7 @@ pub enum DatabaseOperation {
     Insert,
     Update,
     Delete,
+    DeleteAccountEvent,
     Flush(SyncSender<()>),
     Close,
 }
@@ -439,55 +440,12 @@ impl RedisCacheDatabase {
         account_id: &AccountId,
         event_id: &str,
     ) -> anyhow::Result<()> {
-        let mut con = self.con.clone();
-        let trader_key = self.trader_key.clone();
-        let encoding = self.encoding;
-        let account_id = account_id.to_owned();
-        let event_id = event_id.to_string();
-
-        get_runtime().block_on(async move {
-            let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
-            let full_key = format!("{trader_key}{REDIS_DELIMITER}{key}");
-            let result = DatabaseQueries::read(&con, &trader_key, &key).await?;
-
-            if result.is_empty() {
-                return Ok(());
-            }
-
-            let mut removed = 0usize;
-            let mut retained: Vec<Bytes> = Vec::with_capacity(result.len());
-
-            for payload in result {
-                let event: Value = DatabaseQueries::deserialize_payload(encoding, payload.as_ref())?;
-                let payload_event_id = event
-                    .get("event_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-
-                if payload_event_id == event_id {
-                    removed += 1;
-                    continue;
-                }
-
-                retained.push(payload);
-            }
-
-            if removed == 0 {
-                log::debug!("Account event {account_id}:{event_id} not found for deletion");
-                return Ok(());
-            }
-
-            let mut pipe = redis::pipe();
-            pipe.atomic();
-            pipe.del(&full_key);
-            for payload in &retained {
-                pipe.rpush(&full_key, payload.as_ref());
-            }
-            pipe.query_async::<()>(&mut con).await?;
-
-            log::debug!("Deleted {removed} account event(s) for {account_id}:{event_id}");
-            Ok(())
-        })
+        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
+        let payload = vec![Bytes::from(event_id.to_string())];
+        let op = DatabaseCommand::new(DatabaseOperation::DeleteAccountEvent, key, Some(payload));
+        self.tx
+            .send(op)
+            .map_err(|e| anyhow::anyhow!("Failed to send delete account event command: {e}"))
     }
 }
 
@@ -515,6 +473,7 @@ async fn process_commands(
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No database config"))?;
     let mut con = create_redis_connection(CACHE_WRITE, db_config.clone()).await?;
+    let encoding = config.encoding;
 
     // Buffering
     let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
@@ -536,6 +495,7 @@ async fn process_commands(
                     buffer_interval,
                     &mut con,
                     &trader_key,
+                    encoding,
                 ).await;
 
                 if result.is_break() {
@@ -543,14 +503,14 @@ async fn process_commands(
                 }
             }
             () = &mut flush_timer, if !buffer_interval.is_zero() => {
-                flush_buffer(&mut buffer, &mut con, &trader_key, &mut flush_timer, buffer_interval).await;
+                flush_buffer(&mut buffer, &mut con, &trader_key, encoding, &mut flush_timer, buffer_interval).await;
             }
         }
     }
 
     // Drain any remaining messages
     if !buffer.is_empty() {
-        drain_buffer(&mut con, &trader_key, &mut buffer).await;
+        drain_buffer(&mut con, &trader_key, encoding, &mut buffer).await;
     }
 
     log_task_stopped(CACHE_PROCESS);
@@ -563,6 +523,7 @@ async fn handle_command(
     buffer_interval: Duration,
     con: &mut ConnectionManager,
     trader_key: &str,
+    encoding: SerializationEncoding,
 ) -> ControlFlow<()> {
     let Some(cmd) = maybe_cmd else {
         log::debug!("Command channel closed");
@@ -574,13 +535,13 @@ async fn handle_command(
     match cmd.op_type {
         DatabaseOperation::Close => {
             if !buffer.is_empty() {
-                drain_buffer(con, trader_key, buffer).await;
+                drain_buffer(con, trader_key, encoding, buffer).await;
             }
             return ControlFlow::Break(());
         }
         DatabaseOperation::Flush(reply_tx) => {
             if !buffer.is_empty() {
-                drain_buffer(con, trader_key, buffer).await;
+                drain_buffer(con, trader_key, encoding, buffer).await;
             }
 
             if let Err(e) = redis::cmd(REDIS_FLUSHDB).query_async::<()>(con).await {
@@ -595,7 +556,7 @@ async fn handle_command(
     buffer.push_back(cmd);
 
     if buffer_interval.is_zero() {
-        drain_buffer(con, trader_key, buffer).await;
+        drain_buffer(con, trader_key, encoding, buffer).await;
     }
 
     ControlFlow::Continue(())
@@ -605,11 +566,12 @@ async fn flush_buffer(
     buffer: &mut VecDeque<DatabaseCommand>,
     con: &mut ConnectionManager,
     trader_key: &str,
+    encoding: SerializationEncoding,
     flush_timer: &mut Pin<&mut tokio::time::Sleep>,
     buffer_interval: Duration,
 ) {
     if !buffer.is_empty() {
-        drain_buffer(con, trader_key, buffer).await;
+        drain_buffer(con, trader_key, encoding, buffer).await;
     }
     flush_timer
         .as_mut()
@@ -619,19 +581,21 @@ async fn flush_buffer(
 async fn drain_buffer(
     conn: &mut ConnectionManager,
     trader_key: &str,
+    encoding: SerializationEncoding,
     buffer: &mut VecDeque<DatabaseCommand>,
 ) {
     let mut pipe = redis::pipe();
     pipe.atomic();
+    let mut has_pipeline_ops = false;
 
     for msg in buffer.drain(..) {
-        let key = if let Some(key) = msg.key {
+        let raw_key = if let Some(key) = msg.key {
             key
         } else {
             log::error!("Null key found for message: {msg:?}");
             continue;
         };
-        let collection = match get_collection_key(&key) {
+        let collection = match get_collection_key(&raw_key) {
             Ok(collection) => collection,
             Err(e) => {
                 log::error!("{e}");
@@ -639,7 +603,7 @@ async fn drain_buffer(
             }
         };
 
-        let key = format!("{trader_key}{REDIS_DELIMITER}{}", &key);
+        let key = format!("{trader_key}{REDIS_DELIMITER}{}", &raw_key);
 
         match msg.op_type {
             DatabaseOperation::Insert => {
@@ -647,6 +611,8 @@ async fn drain_buffer(
                     log::debug!("Processing INSERT for collection: {collection}, key: {key}");
                     if let Err(e) = insert(&mut pipe, collection, &key, payload) {
                         log::error!("{e}");
+                    } else {
+                        has_pipeline_ops = true;
                     }
                 } else {
                     log::error!("Null `payload` for `insert`");
@@ -657,6 +623,8 @@ async fn drain_buffer(
                     log::debug!("Processing UPDATE for collection: {collection}, key: {key}");
                     if let Err(e) = update(&mut pipe, collection, &key, payload) {
                         log::error!("{e}");
+                    } else {
+                        has_pipeline_ops = true;
                     }
                 } else {
                     log::error!("Null `payload` for `update`");
@@ -672,6 +640,29 @@ async fn drain_buffer(
                 // `payload` can be `None` for a delete operation
                 if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
                     log::error!("{e}");
+                } else {
+                    has_pipeline_ops = true;
+                }
+            }
+            DatabaseOperation::DeleteAccountEvent => {
+                if has_pipeline_ops {
+                    if let Err(e) = pipe.query_async::<()>(conn).await {
+                        log::error!("{e}");
+                    }
+                    pipe = redis::pipe();
+                    pipe.atomic();
+                    has_pipeline_ops = false;
+                }
+                if let Err(e) = delete_account_event(
+                    conn,
+                    trader_key,
+                    &raw_key,
+                    msg.payload,
+                    encoding,
+                )
+                .await
+                {
+                    log::error!("{e}");
                 }
             }
             DatabaseOperation::Close => panic!("Close command should not be drained"),
@@ -679,9 +670,62 @@ async fn drain_buffer(
         }
     }
 
-    if let Err(e) = pipe.query_async::<()>(conn).await {
-        log::error!("{e}");
+    if has_pipeline_ops {
+        if let Err(e) = pipe.query_async::<()>(conn).await {
+            log::error!("{e}");
+        }
     }
+}
+
+async fn delete_account_event(
+    con: &mut ConnectionManager,
+    trader_key: &str,
+    key: &str,
+    value: Option<Vec<Bytes>>,
+    encoding: SerializationEncoding,
+) -> anyhow::Result<()> {
+    let payload = value.ok_or_else(|| anyhow::anyhow!("Empty `payload` for `delete` '{key}'"))?;
+    let event_id = std::str::from_utf8(payload[0].as_ref())?.to_string();
+    let full_key = format!("{trader_key}{REDIS_DELIMITER}{key}");
+    let result = DatabaseQueries::read(con, trader_key, key).await?;
+
+    if result.is_empty() {
+        return Ok(());
+    }
+
+    let mut removed = 0usize;
+    let mut retained: Vec<Bytes> = Vec::with_capacity(result.len());
+
+    for payload in result {
+        let event: Value = DatabaseQueries::deserialize_payload(encoding, payload.as_ref())?;
+        let payload_event_id = event
+            .get("event_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        if payload_event_id == event_id {
+            removed += 1;
+            continue;
+        }
+
+        retained.push(payload);
+    }
+
+    if removed == 0 {
+        log::debug!("Account event {key}:{event_id} not found for deletion");
+        return Ok(());
+    }
+
+    let mut pipe = redis::pipe();
+    pipe.atomic();
+    pipe.del(&full_key);
+    for payload in &retained {
+        pipe.rpush(&full_key, payload.as_ref());
+    }
+    pipe.query_async::<()>(con).await?;
+
+    log::debug!("Deleted {removed} account event(s) for {key}:{event_id}");
+    Ok(())
 }
 
 fn insert(

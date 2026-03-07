@@ -162,3 +162,42 @@ def test_cash_borrowing_requires_capability_and_order_opt_in() -> None:
         assert exec_engine.command_count == 1
     finally:
         AccountFactory.deregister_cash_borrowing(venue.value)
+
+
+def test_legacy_is_leverage_intent_is_honored_by_risk_engine() -> None:
+    ctx = _build_context()
+    cache = ctx["cache"]
+    clock = ctx["clock"]
+    exec_engine = ctx["exec_engine"]
+    portfolio = ctx["portfolio"]
+    risk_engine = ctx["risk_engine"]
+    strategy = ctx["strategy"]
+    venue = ctx["venue"]
+    account_id = ctx["account_id"]
+
+    cache.add_quote_tick(TestDataStubs.quote_tick(AUDUSD_SIM))
+
+    AccountFactory.register_cash_borrowing(venue.value)
+    try:
+        portfolio.update_account(TestEventStubs.cash_account_state(account_id=account_id))
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            quantity=Quantity.from_int(10_000_000),
+        )
+        command = SubmitOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=clock.timestamp_ns(),
+            params={"is_leverage": True},
+        )
+
+        risk_engine.execute(command)
+
+        assert order.status == OrderStatus.INITIALIZED
+        assert exec_engine.command_count == 1
+    finally:
+        AccountFactory.deregister_cash_borrowing(venue.value)

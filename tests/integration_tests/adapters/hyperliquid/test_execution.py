@@ -42,7 +42,12 @@ def exec_client_builder(
     live_clock,
     mock_instrument_provider,
 ):
-    def builder(monkeypatch, *, config_kwargs: dict | None = None):
+    def builder(
+        monkeypatch,
+        *,
+        config_kwargs: dict | None = None,
+        http_client_setup=None,
+    ):
         ws_client = _create_ws_mock()
         ws_iter = iter([ws_client])
 
@@ -62,6 +67,8 @@ def exec_client_builder(
             return_value="0x1234567890abcdef1234567890abcdef12345678",
         )
         mock_http_client.get_spot_fill_coin_mapping = MagicMock(return_value={})
+        if http_client_setup is not None:
+            http_client_setup(mock_http_client)
         mock_instrument_provider.initialize.reset_mock()
         mock_instrument_provider.instruments_pyo3.reset_mock()
         mock_instrument_provider.instruments_pyo3.return_value = []
@@ -179,6 +186,45 @@ async def test_connect_uses_account_address_for_account_state_and_ws_updates(
             "vault_address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "dex": "xyz",
         },
+    )
+
+    # Act
+    await client._connect()
+
+    try:
+        # Assert
+        instrument_provider.initialize.assert_awaited_once()
+        http_client.request_account_state.assert_awaited_once_with(
+            account_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            dex="xyz",
+        )
+        ws_client.subscribe_order_updates.assert_awaited_once_with(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        ws_client.subscribe_user_events.assert_awaited_once_with(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_connect_uses_account_address_without_signer(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "account_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "dex": "xyz",
+        },
+        http_client_setup=lambda http_client: setattr(
+            http_client,
+            "get_user_address",
+            MagicMock(side_effect=RuntimeError("No signer configured")),
+        ),
     )
 
     # Act

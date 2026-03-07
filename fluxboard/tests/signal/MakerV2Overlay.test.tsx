@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -22,6 +22,25 @@ vi.mock('@/sockets', () => ({
     off: vi.fn(),
     connected: false
   }
+}));
+
+vi.mock('@/components/ui/tooltip', () => ({
+  TooltipProvider: ({ children }: any) => children,
+  Tooltip: ({ children }: any) => children,
+  SimpleTooltip: ({ children }: any) => children,
+  IconTooltip: ({ icon }: any) => icon,
+}));
+
+vi.mock('@/components/domain/signal/useVisibleNowMs', () => ({
+  useVisibleNowMs: () => ({
+    nowMs: Date.now(),
+    isVisible: true,
+    targetRef: () => undefined,
+  }),
+}));
+
+vi.mock('@/components/shared/FreshnessIndicator', () => ({
+  FreshnessIndicator: () => null,
 }));
 
 // Mock stores (merge with actual exports to avoid breaking other imports)
@@ -51,7 +70,10 @@ const initSignalState = (state: any) => {
 
 const renderSignalTable = () =>
   render(
-    <MemoryRouter initialEntries={['/signal']}>
+    <MemoryRouter
+      initialEntries={['/signal']}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <SignalTable />
     </MemoryRouter>
   );
@@ -64,11 +86,11 @@ describe('Signal MakerV2 truth overlay', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    (apiModule.api.getSignalStrategies as any).mockResolvedValue({
-      strategies: [],
+    (apiModule.api.getSignalStrategies as any).mockImplementation(async () => ({
+      strategies: currentSignalState?.rows ?? [],
       server_time: '2025-01-15 12:00:02',
-      server_ts_ms: Date.now()
-    });
+      server_ts_ms: Date.now(),
+    }));
 
     initSignalState({
       rows: [],
@@ -80,7 +102,7 @@ describe('Signal MakerV2 truth overlay', () => {
 
   const renderSignalTable = () =>
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <SignalTable />
       </MemoryRouter>
     );
@@ -129,6 +151,48 @@ describe('Signal MakerV2 truth overlay', () => {
 
     // Mode pill should exist (OFF).
     expect(screen.getAllByText('OFF').length).toBeGreaterThan(0);
+  });
+
+  it('does not emit React act warnings while the overlay stays mounted', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const makerStrategy: SignalStrategy = {
+      id: 'overlay_act_warning_check',
+      params: { bot_on: '0' } as any,
+      legs: {
+        A: { coin: 'XRP/USDT', exchange: 'bybit_linear', update_time: '2025-01-15 12:00:00' } as any,
+        B: { coin: 'XRP/USDT', exchange: 'binance_spot', update_time: '2025-01-15 12:00:00' } as any,
+      },
+      balances_ok: true,
+      maker_role_map: { maker_leg: 'A', ref_leg: 'B' } as any,
+      maker_v2: {
+        quote_snapshot: {
+          ts_ms: Date.now(),
+          mode: 'OFF',
+          maker_exchange: 'bybit_linear',
+          ref_exchange: 'binance_spot',
+        },
+      } as any,
+    } as any;
+
+    initSignalState({
+      rows: [makerStrategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    try {
+      renderSignalTable();
+      await screen.findByText('overlay_act_warning_check');
+      await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+      const actWarnings = errorSpy.mock.calls.filter(([message]) =>
+        typeof message === 'string' && message.includes('not wrapped in act')
+      );
+      expect(actWarnings).toEqual([]);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('renders quote truth row from maker_v3.quote_snapshot fallback', async () => {
@@ -268,16 +332,18 @@ describe('Signal MakerV2 truth overlay', () => {
     )?.[1];
     expect(typeof deltaHandler).toBe('function');
 
-    deltaHandler({
-      id: 'bybit_binance_xrpusdt_maker',
-      maker_quote_status: {
-        bid_open: 1,
-        ask_open: 2,
-        bid_blocked: 0,
-        ask_blocked: 0,
-        bid_depth: 1,
-        ask_depth: 1,
-      }
+    await act(async () => {
+      deltaHandler({
+        id: 'bybit_binance_xrpusdt_maker',
+        maker_quote_status: {
+          bid_open: 1,
+          ask_open: 2,
+          bid_blocked: 0,
+          ask_blocked: 0,
+          bid_depth: 1,
+          ask_depth: 1,
+        }
+      });
     });
 
     expect(mockMergeStrategy).toHaveBeenCalled();
@@ -321,23 +387,25 @@ describe('Signal MakerV2 truth overlay', () => {
     )?.[1];
     expect(typeof deltaHandler).toBe('function');
 
-    deltaHandler({
-      id: 'bybit_binance_plumeusdt_makerv3',
-      quote_stacks: {
-        maker: {
-          bands: [
-            {
-              band: 1,
-              bid: { open: 1, depth: 2, blocked: 0, rows: [] },
-              ask: { open: 2, depth: 3, blocked: 1, rows: [] },
-            }
-          ],
+    await act(async () => {
+      deltaHandler({
+        id: 'bybit_binance_plumeusdt_makerv3',
+        quote_stacks: {
+          maker: {
+            bands: [
+              {
+                band: 1,
+                bid: { open: 1, depth: 2, blocked: 0, rows: [] },
+                ask: { open: 2, depth: 3, blocked: 1, rows: [] },
+              }
+            ],
+          },
+          hedge: {
+            bid: { open: 3, depth: 4, blocked: 1, rows: [] },
+            ask: { open: 4, depth: 5, blocked: 2, rows: [] },
+          },
         },
-        hedge: {
-          bid: { open: 3, depth: 4, blocked: 1, rows: [] },
-          ask: { open: 4, depth: 5, blocked: 2, rows: [] },
-        },
-      },
+      });
     });
 
     expect(mockMergeStrategy).toHaveBeenCalled();
@@ -627,11 +695,13 @@ describe('Signal MakerV2 truth overlay', () => {
     )?.[1];
     expect(typeof deltaHandler).toBe('function');
 
-    deltaHandler({
-      id: 'contract_patch_strategy',
-      legs: {
-        'BTCUSDT-PERP': { decision_bid: 50025 },
-      },
+    await act(async () => {
+      deltaHandler({
+        id: 'contract_patch_strategy',
+        legs: {
+          'BTCUSDT-PERP': { decision_bid: 50025 },
+        },
+      });
     });
 
     expect(mockMergeStrategy).toHaveBeenCalled();
@@ -678,15 +748,17 @@ describe('Signal MakerV2 truth overlay', () => {
     )?.[1];
     expect(typeof deltaHandler).toBe('function');
 
-    deltaHandler({
-      id: 'plume_delta_coin_strategy',
-      legs: {
-        'binance_spot:PLUME/USDT': {
-          symbol: 'PLUME/USDT',
-          decision_bid: 0.01045,
-          decision_ask: 0.01046,
+    await act(async () => {
+      deltaHandler({
+        id: 'plume_delta_coin_strategy',
+        legs: {
+          'binance_spot:PLUME/USDT': {
+            symbol: 'PLUME/USDT',
+            decision_bid: 0.01045,
+            decision_ask: 0.01046,
+          },
         },
-      },
+      });
     });
 
     expect(mockMergeStrategy).toHaveBeenCalled();
@@ -730,12 +802,14 @@ describe('Signal MakerV2 truth overlay', () => {
     )?.[1];
     expect(typeof deltaHandler).toBe('function');
 
-    deltaHandler({
-      id: 'contract_order_clear_strategy',
-      legs_order: null,
-      legs: {
-        'BTCUSDT-PERP': null,
-      },
+    await act(async () => {
+      deltaHandler({
+        id: 'contract_order_clear_strategy',
+        legs_order: null,
+        legs: {
+          'BTCUSDT-PERP': null,
+        },
+      });
     });
 
     expect(mockMergeStrategy).toHaveBeenCalled();
@@ -1027,10 +1101,12 @@ describe('Signal MakerV2 truth overlay', () => {
     )?.[1];
     expect(typeof marketUpdateHandler).toBe('function');
 
-    marketUpdateHandler({
-      strategies: [strategyA, strategyB],
-      server_time: '2025-01-15 12:00:03',
-      server_ts_ms: Date.now(),
+    await act(async () => {
+      marketUpdateHandler({
+        strategies: [strategyA, strategyB],
+        server_time: '2025-01-15 12:00:03',
+        server_ts_ms: Date.now(),
+      });
     });
 
     expect(mockMergeStrategies).toHaveBeenCalledTimes(1);
@@ -1063,10 +1139,12 @@ describe('Signal MakerV2 truth overlay', () => {
     )?.[1];
     expect(typeof marketUpdateHandler).toBe('function');
 
-    marketUpdateHandler({
-      strategies: [strategyA],
-      server_time: '2025-01-15 12:00:03',
-      server_ts_ms: Date.now(),
+    await act(async () => {
+      marketUpdateHandler({
+        strategies: [strategyA],
+        server_time: '2025-01-15 12:00:03',
+        server_ts_ms: Date.now(),
+      });
     });
 
     expect(mockMergeStrategies).toHaveBeenCalledTimes(1);
@@ -1107,10 +1185,12 @@ describe('Signal MakerV2 truth overlay', () => {
     )?.[1];
     expect(typeof marketUpdateHandler).toBe('function');
 
-    marketUpdateHandler({
-      strategies: [strategyA, strategyB],
-      server_time: '2025-01-15 12:00:04',
-      server_ts_ms: Date.now(),
+    await act(async () => {
+      marketUpdateHandler({
+        strategies: [strategyA, strategyB],
+        server_time: '2025-01-15 12:00:04',
+        server_ts_ms: Date.now(),
+      });
     });
 
     expect(mockMergeStrategies).toHaveBeenCalledWith([strategyA, strategyB]);

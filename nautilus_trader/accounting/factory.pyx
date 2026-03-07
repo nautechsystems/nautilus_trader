@@ -8,7 +8,7 @@ from nautilus_trader.core.rust.model cimport AccountType
 
 cdef dict[str, type] _ISSUER_ACCOUNT_TYPE = {}
 cdef dict[str, bint] _ISSUER_ACCOUNT_CALCULATED = {}
-cdef dict[str, bint] _ISSUER_CASH_BORROWING = {}
+cdef dict[str, int] _ISSUER_CASH_BORROWING = {}
 
 
 cdef class AccountFactory:
@@ -75,7 +75,7 @@ cdef class AccountFactory:
 
         """
         Condition.not_none(issuer, "issuer")
-        _ISSUER_CASH_BORROWING[issuer] = True
+        _ISSUER_CASH_BORROWING[issuer] = _ISSUER_CASH_BORROWING.get(issuer, 0) + 1
 
     @staticmethod
     def deregister_cash_borrowing(str issuer):
@@ -91,8 +91,11 @@ cdef class AccountFactory:
 
         """
         Condition.not_none(issuer, "issuer")
-
-        _ISSUER_CASH_BORROWING.pop(issuer, None)
+        cdef int count = _ISSUER_CASH_BORROWING.get(issuer, 0)
+        if count <= 1:
+            _ISSUER_CASH_BORROWING.pop(issuer, None)
+        else:
+            _ISSUER_CASH_BORROWING[issuer] = count - 1
 
     @staticmethod
     cdef Account create_c(AccountState event):
@@ -104,7 +107,7 @@ cdef class AccountFactory:
         # Determine account settings
         cdef type account_cls = _ISSUER_ACCOUNT_TYPE.get(issuer)
         cdef bint calculated = _ISSUER_ACCOUNT_CALCULATED.get(issuer, False)
-        cdef bint allow_borrowing = _ISSUER_CASH_BORROWING.get(issuer, False)
+        cdef bint allow_borrowing = _ISSUER_CASH_BORROWING.get(issuer, 0) > 0
 
         # Create account
         if account_cls is not None:

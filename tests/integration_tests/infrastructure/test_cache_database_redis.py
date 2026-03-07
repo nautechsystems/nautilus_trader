@@ -120,11 +120,17 @@ class TestCacheDatabaseAdapter:
             config=CacheConfig(database=DatabaseConfig()),
         )
 
+    def setup_method(self) -> None:
+        self.setup()
+
     def teardown(self):
         # Tests will fail if Redis is not flushed on tear down
         time.sleep(0.2)
         self.database.flush()  # Comment this line out to preserve data between tests for debugging
         time.sleep(0.5)  # Ensure clean slate
+
+    def teardown_method(self) -> None:
+        self.teardown()
 
     @pytest.mark.asyncio
     async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
@@ -288,6 +294,41 @@ class TestCacheDatabaseAdapter:
 
         # Act
         self.database.delete_account_event(account.id, event_to_remove.id.value)
+
+        # Assert
+        await eventually(
+            lambda: (loaded := self.database.load_account(account.id)) is not None
+            and loaded.event_count == 2,
+        )
+
+        loaded_account = self.database.load_account(account.id)
+        assert loaded_account is not None
+        loaded_event_ids = [event.id.value for event in loaded_account.events]
+        assert loaded_event_ids == [initial_event_id, final_event.id.value]
+
+    @pytest.mark.asyncio
+    async def test_delete_account_event_uses_ordered_write_path(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+        self.database.add_account(account)
+
+        await eventually(
+            lambda: (loaded := self.database.load_account(account.id)) is not None
+            and loaded.event_count == 1,
+        )
+
+        initial_event_id = account.events[0].id.value
+        event_to_remove = TestEventStubs.cash_account_state(account_id=account.id)
+        final_event = TestEventStubs.cash_account_state(account_id=account.id)
+
+        account.apply(event_to_remove)
+        self.database.update_account(account)
+
+        # Do not wait here; deletion must remain ordered behind the queued update.
+        self.database.delete_account_event(account.id, event_to_remove.id.value)
+
+        account.apply(final_event)
+        self.database.update_account(account)
 
         # Assert
         await eventually(
@@ -1234,9 +1275,15 @@ class TestRedisCacheDatabaseIntegrity:
             config=CacheConfig(database=DatabaseConfig()),
         )
 
+    def setup_method(self) -> None:
+        self.setup()
+
     def teardown(self):
         # Tests will start failing if redis is not flushed on tear down
         self.database.flush()  # Comment this line out to preserve data between tests
+
+    def teardown_method(self) -> None:
+        self.teardown()
 
     @pytest.mark.asyncio
     async def test_rerunning_backtest_with_redis_db_builds_correct_index(self):

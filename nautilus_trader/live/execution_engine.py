@@ -3755,6 +3755,9 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
     def _publish_execution_alert_if_relevant(self, event: OrderEvent) -> None:
+        if event.reconciliation:
+            return
+
         strategy_id = self._owned_strategy_id_for_event(event)
         if strategy_id is None:
             return

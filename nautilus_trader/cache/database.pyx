@@ -883,6 +883,9 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         self._log.debug(f"Deleted account event {repr(account_id)}:{event_id}")
 
+    cpdef bint supports_account_event_deletion(self):
+        return True
+
     cpdef void add(self, str key, bytes value):
         """
         Add the given general object value to the database.

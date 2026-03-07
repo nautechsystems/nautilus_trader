@@ -18,7 +18,7 @@ describe('signalRunState', () => {
     expect(deriveSignalRunState(strategy, nowMs)).toBe('running');
   });
 
-  it('treats aged non-terminal state snapshots as still running when explicit running is absent', () => {
+  it('treats aged non-terminal state snapshots as no longer running when explicit running is absent', () => {
     const nowMs = 1_700_000_000_000;
     const strategy = {
       state: {
@@ -27,8 +27,8 @@ describe('signalRunState', () => {
       },
     } as Pick<SignalStrategy, 'running' | 'state'>;
 
-    expect(resolveSignalRunning(strategy, nowMs)).toBe(true);
-    expect(deriveSignalRunState(strategy, nowMs)).toBe('running');
+    expect(resolveSignalRunning(strategy, nowMs)).toBe(false);
+    expect(deriveSignalRunState(strategy, nowMs)).toBe('stopped');
   });
 
   it('honors explicit running flag when present', () => {

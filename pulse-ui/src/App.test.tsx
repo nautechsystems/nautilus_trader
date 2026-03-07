@@ -40,6 +40,11 @@ const jobsPayload = {
 };
 
 describe("App", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
   it("renders a Fluxboard-style shell with Pulse active and TokenMM cross-links", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -69,6 +74,34 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "Balances" })).toHaveAttribute("href", "/tokenmm/balances");
     expect(screen.getByRole("link", { name: "Trades" })).toHaveAttribute("href", "/tokenmm/trades");
     expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("href", "/tokenmm/alerts");
+  });
+
+  it("builds pulse nav links from configured base path", async () => {
+    vi.stubEnv("VITE_PULSE_UI_BASE_PATH", "/ops/pulse/");
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/pulse/jobs")) {
+        return new Response(JSON.stringify(jobsPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("flux")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Pulse" })).toHaveAttribute("href", "/ops/pulse/");
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/ops/tokenmm");
+    expect(screen.getByRole("link", { name: "Signal" })).toHaveAttribute("href", "/ops/tokenmm/signal");
+    expect(screen.getByRole("link", { name: "Params" })).toHaveAttribute("href", "/ops/tokenmm/params");
+    expect(screen.getByRole("link", { name: "Balances" })).toHaveAttribute("href", "/ops/tokenmm/balances");
+    expect(screen.getByRole("link", { name: "Trades" })).toHaveAttribute("href", "/ops/tokenmm/trades");
+    expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("href", "/ops/tokenmm/alerts");
   });
 
   it("loads process jobs, renders a grouped table, and exposes logs/actions", async () => {

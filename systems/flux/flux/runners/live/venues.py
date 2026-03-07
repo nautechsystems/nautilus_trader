@@ -11,6 +11,7 @@ from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
@@ -164,6 +165,12 @@ def _coerce_binance_account_type(raw_value: Any, venue_name: str) -> Any:
     )
 
 
+def _default_binance_environment(mode: str) -> Any:
+    if mode == "live":
+        return None
+    return BinanceEnvironment.TESTNET
+
+
 def _coerce_recv_window_ms(raw_value: Any, venue_name: str) -> int:
     return _positive_int(raw_value, field_name=f"node.venues.{venue_name}.recv_window_ms")
 
@@ -229,7 +236,7 @@ SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
             "account_type": _coerce_binance_account_type,
         },
         secret_fields=(("api_key", "api_key_env"), ("api_secret", "api_secret_env")),
-        mode_defaults={},
+        mode_defaults={"environment": _default_binance_environment},
     ),
     "bybit": VenueAdapterSpec(
         adapter_id="bybit",
@@ -299,7 +306,7 @@ SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
             ("api_secret", "api_secret_env"),
             ("api_passphrase", "api_passphrase_env"),
         ),
-        mode_defaults={},
+        mode_defaults={"is_demo": lambda mode: mode != "live"},
     ),
 }
 

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
@@ -1489,6 +1490,43 @@ async def test_submit_order_denied_when_cash_borrowing_requested_but_client_disa
         ws_trade_client.submit_order.assert_not_called()
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_cash_borrowing_registration_does_not_leak_between_clients(
+    exec_client_builder,
+    monkeypatch,
+):
+    AccountFactory.deregister_cash_borrowing(BYBIT_VENUE.value)
+
+    client_a, _, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "product_types": (nautilus_pyo3.BybitProductType.SPOT,),
+            "allow_cash_borrowing": True,
+        },
+    )
+    await client_a._connect()
+    account_a = client_a._cache.account(client_a.account_id)
+    assert account_a is not None
+    assert account_a.allow_borrowing is True
+    await client_a._disconnect()
+
+    client_b, _, _, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "product_types": (nautilus_pyo3.BybitProductType.SPOT,),
+            "allow_cash_borrowing": False,
+        },
+    )
+    await client_b._connect()
+    try:
+        account_b = client_b._cache.account(client_b.account_id)
+        assert account_b is not None
+        assert account_b.allow_borrowing is False
+    finally:
+        await client_b._disconnect()
+        AccountFactory.deregister_cash_borrowing(BYBIT_VENUE.value)
 
 
 @pytest.mark.asyncio

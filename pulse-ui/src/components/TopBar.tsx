@@ -1,6 +1,7 @@
 import { Activity, AlertTriangle, RefreshCw, Server } from "lucide-react";
 
 import type { JobStats } from "../api";
+import { buildPulseHref, buildShellHref } from "../basePath";
 import { REFRESH_INTERVAL_MS } from "../theme";
 import { StatusPill } from "./StatusPill";
 
@@ -13,12 +14,12 @@ interface TopBarProps {
 }
 
 const SUITE_LINKS = [
-  { href: "/tokenmm", label: "Dashboard" },
-  { href: "/tokenmm/signal", label: "Signal" },
-  { href: "/tokenmm/params", label: "Params" },
-  { href: "/tokenmm/balances", label: "Balances" },
-  { href: "/tokenmm/trades", label: "Trades" },
-  { href: "/tokenmm/alerts", label: "Alerts" },
+  { path: "tokenmm", label: "Dashboard" },
+  { path: "tokenmm/signal", label: "Signal" },
+  { path: "tokenmm/params", label: "Params" },
+  { path: "tokenmm/balances", label: "Balances" },
+  { path: "tokenmm/trades", label: "Trades" },
+  { path: "tokenmm/alerts", label: "Alerts" },
 ] as const;
 
 export function TopBar({
@@ -28,6 +29,8 @@ export function TopBar({
   onRefresh,
   onToggleAutoRefresh,
 }: TopBarProps) {
+  const pulseHref = buildPulseHref();
+
   return (
     <header className="topbar">
       <div className="suite-nav" aria-label="Primary">
@@ -37,11 +40,11 @@ export function TopBar({
 
         <div className="suite-nav__links">
           {SUITE_LINKS.map((link) => (
-            <a key={link.href} href={link.href} className="nav-link nav-link--primary">
+            <a key={link.path} href={buildShellHref(link.path)} className="nav-link nav-link--primary">
               {link.label}
             </a>
           ))}
-          <a href="/pulse/" className="nav-link nav-link--primary nav-link--active" aria-current="page">
+          <a href={pulseHref} className="nav-link nav-link--primary nav-link--active" aria-current="page">
             Pulse
           </a>
         </div>

@@ -619,7 +619,7 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
-  it('derives params running flag from bot_on when backend omits running', async () => {
+  it('does not derive params running flag from bot_on when backend omits running', async () => {
     setPathname('/tokenmm/params');
     fetchJSONMock.mockResolvedValueOnce({
       ok: true,
@@ -642,9 +642,9 @@ describe('profile-scoped read APIs', () => {
     const rows = await api.getParams();
     expect(rows).toHaveLength(2);
     expect(rows[0].strategy_id).toBe('run_on');
-    expect(rows[0].running).toBe(true);
+    expect(rows[0].running).toBeNull();
     expect(rows[1].strategy_id).toBe('run_off');
-    expect(rows[1].running).toBe(false);
+    expect(rows[1].running).toBeNull();
   });
 
   it('derives trade mv from price*qty when incoming notional/mv is zero', async () => {

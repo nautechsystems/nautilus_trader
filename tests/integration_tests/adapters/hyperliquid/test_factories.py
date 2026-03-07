@@ -2,6 +2,11 @@ import pytest
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
+from nautilus_trader.core import nautilus_pyo3
+
+
+TEST_PRIVATE_KEY = "0x" + ("11" * 32)
+TEST_VAULT_ADDRESS = "0x" + ("22" * 20)
 
 
 class TestHyperliquidDataClientConfig:
@@ -124,6 +129,28 @@ class TestHyperliquidExecClientConfig:
 
         # Assert
         assert config.base_url_ws == "wss://custom.ws.com"
+
+    def test_pyo3_positional_signature_is_backward_compatible(self):
+        # Arrange & Act
+        config = nautilus_pyo3.HyperliquidExecClientConfig(
+            TEST_PRIVATE_KEY,
+            TEST_VAULT_ADDRESS,
+            None,
+            True,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+
+        # Assert
+        config_repr = repr(config)
+        assert TEST_PRIVATE_KEY in config_repr
+        assert TEST_VAULT_ADDRESS in config_repr
+        assert "account_address: None" in config_repr
+        assert "is_testnet: true" in config_repr
+        assert "http_timeout_secs: 10" in config_repr
 
 
 class TestConfigValidation:

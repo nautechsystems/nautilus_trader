@@ -56,7 +56,6 @@ impl HyperliquidExecClientConfig {
     #[new]
     #[pyo3(signature = (
         private_key = None,
-        account_address = None,
         vault_address = None,
         dex = None,
         is_testnet = None,
@@ -69,11 +68,11 @@ impl HyperliquidExecClientConfig {
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
         normalize_prices = None,
+        account_address = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         private_key: Option<String>,
-        account_address: Option<String>,
         vault_address: Option<String>,
         dex: Option<String>,
         is_testnet: Option<bool>,
@@ -86,6 +85,7 @@ impl HyperliquidExecClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         normalize_prices: Option<bool>,
+        account_address: Option<String>,
     ) -> Self {
         let defaults = Self::default();
         Self {

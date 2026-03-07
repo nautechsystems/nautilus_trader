@@ -133,26 +133,26 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._terminal_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._pending_filled: set[str] = set()
 
-        # Get user address from HTTP client for WebSocket subscriptions
-        # Use vault address when vault trading, otherwise order/fill
-        # updates for the vault will be missed
-        self._user_address: str | None = None
-        try:
-            eoa_address = self._client.get_user_address()
-            self._user_address = config.account_address or config.vault_address or eoa_address
-            self._log.info(f"User address (EOA): {eoa_address}", LogColor.BLUE)
-            if config.account_address:
-                self._log.info(
-                    f"Account address (queries/WS subscriptions): {config.account_address}",
-                    LogColor.BLUE,
-                )
-            if config.vault_address:
-                self._log.info(
-                    f"Vault address (WS subscriptions): {config.vault_address}",
-                    LogColor.BLUE,
-                )
-        except Exception as e:
-            self._log.warning(f"Could not get user address: {e}")
+        # Use the configured query/subscription address directly when present.
+        # Only derive the signer EOA if no explicit account or vault address was supplied.
+        self._user_address: str | None = config.account_address or config.vault_address
+        if config.account_address:
+            self._log.info(
+                f"Account address (queries/WS subscriptions): {config.account_address}",
+                LogColor.BLUE,
+            )
+        if config.vault_address:
+            self._log.info(
+                f"Vault address (WS subscriptions): {config.vault_address}",
+                LogColor.BLUE,
+            )
+        if self._user_address is None:
+            try:
+                eoa_address = self._client.get_user_address()
+                self._user_address = eoa_address
+                self._log.info(f"User address (EOA): {eoa_address}", LogColor.BLUE)
+            except Exception as e:
+                self._log.warning(f"Could not get user address: {e}")
 
     @property
     def hyperliquid_instrument_provider(self) -> HyperliquidInstrumentProvider:

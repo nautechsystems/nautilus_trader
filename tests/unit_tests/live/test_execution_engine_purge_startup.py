@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
@@ -17,6 +18,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.test_kit.functions import eventually
+from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
@@ -24,6 +26,16 @@ from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+
+
+class UnsupportedAccountEventDeleteDatabase(MockCacheDatabase):
+    def __init__(self) -> None:
+        super().__init__()
+        self.delete_account_event_calls = 0
+
+    def delete_account_event(self, account_id, event_id) -> None:
+        self.delete_account_event_calls += 1
+        raise AssertionError("delete_account_event should not be called for unsupported backends")
 
 
 @pytest.mark.asyncio
@@ -168,6 +180,46 @@ async def test_start_does_not_run_startup_purges_inline(event_loop):
         assert engine._purge_closed_orders_task is not None
         assert engine._purge_closed_positions_task is not None
         assert engine._purge_account_events_task is not None
+    finally:
+        if not engine.is_stopped:
+            engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_purge_account_events_skips_unsupported_database_backend(event_loop):
+    clock = LiveClock()
+    trader_id = TraderId("TESTER-001")
+    msgbus = MessageBus(
+        trader_id=trader_id,
+        clock=clock,
+    )
+    database = UnsupportedAccountEventDeleteDatabase()
+    cache = Cache(database=database)
+
+    account = TestExecStubs.cash_account()
+    account.apply(TestEventStubs.cash_account_state(account_id=account.id))
+    account.apply(TestEventStubs.cash_account_state(account_id=account.id))
+    cache.add_account(account)
+
+    engine = LiveExecutionEngine(
+        loop=event_loop,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        config=LiveExecEngineConfig(
+            debug=True,
+            purge_account_events_interval_mins=10,
+            purge_account_events_lookback_mins=15,
+            purge_from_database=True,
+        ),
+    )
+
+    engine._run_startup_purges()
+    engine._run_startup_purges()
+
+    try:
+        await eventually(lambda: account.event_count == 1)
+        assert database.delete_account_event_calls == 0
     finally:
         if not engine.is_stopped:
             engine.stop()

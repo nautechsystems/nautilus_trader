@@ -653,6 +653,36 @@ class TestLiveExecutionEngine:
         assert published == []
 
     @pytest.mark.asyncio
+    async def test_reconciled_order_rejected_does_not_publish_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="Order failed. Insufficient account balance.",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=True,
+            due_post_only=False,
+        )
+
+        self.exec_engine._publish_execution_alert_if_relevant(event)
+
+        assert published == []
+
+    @pytest.mark.asyncio
     async def test_cancel_rejected_state_mismatch_for_external_order_does_not_publish_execution_alert(
         self,
     ):

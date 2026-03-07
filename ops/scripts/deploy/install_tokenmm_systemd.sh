@@ -32,7 +32,6 @@ build_service_ids() {
   local -n out_service_ids="$1"
   out_service_ids=(
     "tokenmm-api"
-    "tokenmm-pulse"
     "tokenmm-portfolio"
     "tokenmm-bridge"
   )
@@ -70,11 +69,11 @@ install_sudoers() {
 render_api_env() {
   strategy_stack_write_env \
     "${ENV_DIR}/tokenmm-api.env" \
-    "TokenMM API + Fluxboard" \
+    "TokenMM API + Fluxboard + Pulse" \
     "tokenmm" \
     "TokenMM" \
     "10" \
-    "env FLUXBOARD_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard" \
+    "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard --serve-pulse" \
     "5022" \
     "tokenmm-api"
 }
@@ -85,18 +84,6 @@ render_target() {
   strategy_stack_render_target "${TARGET_PATH}" "Flux TokenMM Stack" "${service_ids[@]}"
 }
 
-
-render_pulse_env() {
-  strategy_stack_write_env \
-    "${ENV_DIR}/tokenmm-pulse.env" \
-    "TokenMM Pulse" \
-    "tokenmm" \
-    "TokenMM" \
-    "10" \
-    "env PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5023 --serve-pulse" \
-    "5023" \
-    "tokenmm-pulse"
-}
 
 render_portfolio_env() {
   strategy_stack_write_env \
@@ -149,7 +136,6 @@ main() {
   install_units
   render_target
   render_api_env
-  render_pulse_env
   render_portfolio_env
   render_bridge_env
   render_node_envs

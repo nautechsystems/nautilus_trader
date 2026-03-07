@@ -1871,23 +1871,18 @@ export const api = {
     );
     const rows = unwrapFluxEnvelope(response) || [];
     if (!Array.isArray(rows)) return [];
-    const activeProfile = getActivePathProfile();
-    const deriveRunningFromTrading = activeProfile !== 'default';
     return rows.map((row) => {
       const candidate = row as Record<string, unknown>;
       const strategyId = String(candidate.strategy_id ?? '').trim();
       const params = normalizeParamsMap(candidate.params);
       const runningCandidate = candidate.running;
       const runningFlag = normalizeTradingFlag(runningCandidate);
-      const paramRunningFlag = normalizeTradingFlag(params.bot_on);
       const running =
         typeof runningCandidate === 'boolean'
           ? runningCandidate
           : runningFlag != null
             ? runningFlag === '1'
-            : deriveRunningFromTrading && paramRunningFlag != null
-              ? paramRunningFlag === '1'
-              : null;
+            : null;
       return {
         ...(row as ParamsResponse),
         strategy_id: strategyId,

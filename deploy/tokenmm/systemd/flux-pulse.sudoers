@@ -4,10 +4,6 @@ Cmnd_Alias FLUX_PULSE = \
   /usr/bin/systemctl stop flux@tokenmm-api.service, \
   /usr/bin/systemctl restart flux@tokenmm-api.service, \
   /usr/bin/journalctl -u flux@tokenmm-api.service, \
-  /usr/bin/systemctl start flux@tokenmm-pulse.service, \
-  /usr/bin/systemctl stop flux@tokenmm-pulse.service, \
-  /usr/bin/systemctl restart flux@tokenmm-pulse.service, \
-  /usr/bin/journalctl -u flux@tokenmm-pulse.service, \
   /usr/bin/systemctl start flux@tokenmm-portfolio.service, \
   /usr/bin/systemctl stop flux@tokenmm-portfolio.service, \
   /usr/bin/systemctl restart flux@tokenmm-portfolio.service, \

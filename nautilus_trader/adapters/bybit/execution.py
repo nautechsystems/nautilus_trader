@@ -115,11 +115,13 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if set(product_types) == {BybitProductType.SPOT}:
             self._account_type = AccountType.CASH
-            if config.allow_cash_borrowing:
+            self._registered_cash_borrowing = bool(config.allow_cash_borrowing)
+            if self._registered_cash_borrowing:
                 AccountFactory.register_cash_borrowing(BYBIT_VENUE.value)
         else:
             # UTA (Unified Trading Account) for derivatives or mixed products
             self._account_type = AccountType.MARGIN
+            self._registered_cash_borrowing = False
 
         super().__init__(
             loop=loop,
@@ -299,6 +301,10 @@ class BybitExecutionClient(LiveExecutionClient):
         # Cancel pending enqueuer tasks
         for enqueuer in self._repay_enqueuers.values():
             enqueuer.cancel_pending_tasks()
+
+        if self._registered_cash_borrowing:
+            AccountFactory.deregister_cash_borrowing(BYBIT_VENUE.value)
+            self._registered_cash_borrowing = False
 
     async def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct

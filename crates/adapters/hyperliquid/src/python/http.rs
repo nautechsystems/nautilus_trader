@@ -29,16 +29,16 @@ impl HyperliquidHttpClient {
     /// If no credentials are provided and no environment variables are set,
     /// creates an unauthenticated client for public endpoints only.
     #[new]
-    #[pyo3(signature = (private_key=None, account_address=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None, normalize_prices=true, dex=None))]
+    #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None, normalize_prices=true, dex=None, account_address=None))]
     fn py_new(
         private_key: Option<String>,
-        account_address: Option<String>,
         vault_address: Option<String>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
         normalize_prices: bool,
         dex: Option<String>,
+        account_address: Option<String>,
     ) -> PyResult<Self> {
         let mut client =
             Self::with_credentials(private_key, vault_address, is_testnet, timeout_secs, proxy_url)
@@ -56,15 +56,15 @@ impl HyperliquidHttpClient {
     }
 
     #[staticmethod]
-    #[pyo3(name = "from_credentials", signature = (private_key, account_address=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None, dex=None))]
+    #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None, dex=None, account_address=None))]
     fn py_from_credentials(
         private_key: &str,
-        account_address: Option<String>,
         vault_address: Option<&str>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
         dex: Option<String>,
+        account_address: Option<String>,
     ) -> PyResult<Self> {
         let mut client = Self::from_credentials(
             private_key,
