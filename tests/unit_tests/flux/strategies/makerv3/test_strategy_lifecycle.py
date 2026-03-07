@@ -898,6 +898,58 @@ def test_maker_local_position_summary_falls_back_to_cache_when_local_activity_is
     assert summary.base_qty == Decimal("197764")
 
 
+def test_maker_local_position_summary_uses_base_normalized_okx_report_without_double_conversion(
+    strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUME-USDT-SWAP.OKX")
+    strategy = strategy_factory(
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE"),
+    )
+    strategy._maker_instrument = _okx_linear_perpetual(maker_instrument_id)
+    stale_positions = [
+        SimpleNamespace(
+            instrument_id=maker_instrument_id,
+            signed_qty=Decimal("343"),
+            avg_px_open=Decimal("0.01099"),
+        ),
+    ]
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        positions_open=lambda instrument_id=None: (
+            stale_positions
+            if instrument_id is None or instrument_id == maker_instrument_id
+            else []
+        ),
+        instrument=lambda instrument_id: (
+            strategy._maker_instrument if instrument_id == maker_instrument_id else None
+        ),
+    )
+    strategy._last_maker_position_activity_ns = 100
+
+    report = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_decimal_qty=Decimal("-6570"),
+        avg_px_open=Decimal("0.0109378"),
+        ts_last=200,
+        ts_init=210,
+        venue_position_id=None,
+    )
+    strategy._handle_execution_report_message(
+        SimpleNamespace(position_reports={maker_instrument_id: [report]}, ts_init=210),
+    )
+
+    summary = strategy._maker_local_position_summary("PLUME")
+
+    assert summary.venue_qty == Decimal("-657")
+    assert summary.base_qty == Decimal("-6570")
+    assert summary.qty_conversion_status == "exact_multiplier"
+    assert (
+        summary.qty_conversion_source
+        == "instrument.info:base_exposure_mode=exact_multiplier"
+    )
+
+
 def test_timer_enforces_stale_market_data_blocks_when_feed_goes_silent(
     clocked_strategy_factory,
 ) -> None:

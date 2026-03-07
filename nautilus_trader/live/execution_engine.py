@@ -38,8 +38,8 @@ from nautilus_trader.execution.reports import ExecutionReport
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.flux.events import FluxBusPayload
-from nautilus_trader.flux.events import TOPIC_EXECUTION_ALERT
+from flux.events import FluxBusPayload
+from flux.events import TOPIC_EXECUTION_ALERT
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
 from nautilus_trader.live.reconciliation import adjust_fills_for_partial_window
 from nautilus_trader.live.reconciliation import calculate_reconciliation_price
@@ -63,6 +63,7 @@ from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
 from nautilus_trader.model.events import OrderEvent
 from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderModifyRejected
@@ -1633,6 +1634,7 @@ class LiveExecutionEngine(ExecutionEngine):
         coordinating reconciliation across all execution clients.
         """
         PyCondition.positive(timeout_secs, "timeout_secs")
+        deadline = self._loop.time() + timeout_secs
 
         try:
             for client_id in self._external_clients:
@@ -1666,7 +1668,20 @@ class LiveExecutionEngine(ExecutionEngine):
             mass_status_coros = [
                 c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
             ]
-            mass_status_all = await asyncio.gather(*mass_status_coros, return_exceptions=True)
+            mass_status_timeout = deadline - self._loop.time()
+            if mass_status_timeout <= 0:
+                self._log.error("Execution reconciliation timed out before mass-status generation started")
+                return False
+            try:
+                mass_status_all = await asyncio.wait_for(
+                    asyncio.gather(*mass_status_coros, return_exceptions=True),
+                    timeout=mass_status_timeout,
+                )
+            except asyncio.TimeoutError:
+                self._log.error(
+                    f"Execution reconciliation timed out after {timeout_secs}s while awaiting mass status reports",
+                )
+                return False
 
             # Reconcile each mass status with the execution engine
             for mass_status_or_exception in mass_status_all:
@@ -1731,10 +1746,27 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._log.info(f"Awaiting {len(report_tasks)} position reports for {client_id}")
 
                     position_results: list[bool] = []
-                    for task_result_or_exception in await asyncio.gather(
-                        *report_tasks,
-                        return_exceptions=True,
-                    ):
+                    position_reports_timeout = deadline - self._loop.time()
+                    if position_reports_timeout <= 0:
+                        self._log.error(
+                            f"Execution reconciliation timed out after {timeout_secs}s before awaiting position reports for {client_id}",
+                        )
+                        return False
+                    try:
+                        position_report_results = await asyncio.wait_for(
+                            asyncio.gather(
+                                *report_tasks,
+                                return_exceptions=True,
+                            ),
+                            timeout=position_reports_timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        self._log.error(
+                            f"Execution reconciliation timed out after {timeout_secs}s while awaiting position reports for {client_id}",
+                        )
+                        return False
+
+                    for task_result_or_exception in position_report_results:
                         if isinstance(task_result_or_exception, Exception):
                             self._log.error(
                                 f"Failed to generate position status reports: {task_result_or_exception}",
@@ -3703,10 +3735,13 @@ class LiveExecutionEngine(ExecutionEngine):
         return any(
             text in reason
             for text in (
+                "unknown order sent",
                 "s_code=51400",
                 "filled, canceled or does not exist",
+                "filled, cancelled or does not exist",
                 "already canceled",
                 "already cancelled",
+                "already canceled or matched",
                 "state mismatch",
                 "does not exist",
             )
@@ -3805,6 +3840,18 @@ class LiveExecutionEngine(ExecutionEngine):
 
         reason = self._normalize_alert_reason(getattr(event, "reason", None))
 
+        if isinstance(event, OrderDenied):
+            self._publish_execution_alert(
+                self._build_execution_alert_payload(
+                    event=event,
+                    strategy_id=strategy_id,
+                    alert_key="order_denied",
+                    message=f"Order denied before exchange submission on {event.instrument_id.venue}: {event.reason}",
+                    reason=event.reason,
+                ),
+            )
+            return
+
         if isinstance(event, OrderRejected):
             if event.due_post_only:
                 return
@@ -3818,27 +3865,30 @@ class LiveExecutionEngine(ExecutionEngine):
                         reason=event.reason,
                     ),
                 )
-            return
-
-        if isinstance(event, OrderCancelRejected):
-            if self._is_cancel_state_mismatch_reason(reason):
+            else:
                 self._publish_execution_alert(
                     self._build_execution_alert_payload(
                         event=event,
                         strategy_id=strategy_id,
-                        alert_key="exchange_order_cancel_state_mismatch",
-                        message=f"Exchange cancel state mismatch on {event.instrument_id.venue}: {event.reason}",
+                        alert_key="exchange_order_rejected",
+                        message=f"Exchange rejected order on {event.instrument_id.venue}: {event.reason}",
                         reason=event.reason,
                     ),
                 )
+            return
+
+        if isinstance(event, OrderCancelRejected):
+            if self._is_cancel_state_mismatch_reason(reason):
                 return
 
-            self._publish_burst_execution_alert_if_needed(
-                event=event,
-                strategy_id=strategy_id,
-                reason=event.reason,
-                alert_key="exchange_order_cancel_rejected_burst",
-                message=f"Repeated exchange cancel rejects on {event.instrument_id.venue}: {event.reason}",
+            self._publish_execution_alert(
+                self._build_execution_alert_payload(
+                    event=event,
+                    strategy_id=strategy_id,
+                    alert_key="exchange_order_cancel_rejected",
+                    message=f"Exchange cancel rejected on {event.instrument_id.venue}: {event.reason}",
+                    reason=event.reason,
+                ),
             )
             return
 
@@ -3853,15 +3903,16 @@ class LiveExecutionEngine(ExecutionEngine):
                         reason=event.reason,
                     ),
                 )
-                return
-
-            self._publish_burst_execution_alert_if_needed(
-                event=event,
-                strategy_id=strategy_id,
-                reason=event.reason,
-                alert_key="exchange_order_modify_rejected_burst",
-                message=f"Repeated exchange modify rejects on {event.instrument_id.venue}: {event.reason}",
-            )
+            else:
+                self._publish_execution_alert(
+                    self._build_execution_alert_payload(
+                        event=event,
+                        strategy_id=strategy_id,
+                        alert_key="exchange_order_modify_rejected",
+                        message=f"Exchange modify rejected on {event.instrument_id.venue}: {event.reason}",
+                        reason=event.reason,
+                    ),
+                )
 
     def _record_local_activity(self, event: OrderEvent | None) -> None:
         if event is None:

@@ -11,6 +11,9 @@ TokenMM API, portfolio, and startup-reconciliation surface already matches the c
 before Tasks 4-6 in `docs/plans/2026-03-07-tokenmm-risk-and-portfolio-productionization.md`
 and their remaining verification failures are resolved.
 
+Operator validation and rollout gates are maintained in
+`docs/runbooks/tokenmm-risk-validation.md`.
+
 
 ## Scope and Route Surface
 

@@ -574,6 +574,77 @@ def test_publish_balances_does_not_fallback_to_cache_when_fresh_flat_position_re
     assert balances_payload["positions"] == []
 
 
+def test_publish_balances_uses_base_normalized_okx_report_without_double_conversion(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUME-USDT-SWAP.OKX")
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE"),
+    )
+    maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="PLUME"),
+        multiplier=Quantity.from_str("10"),
+        info={
+            "okx_ct_val": "10",
+            "okx_ct_val_ccy": "PLUME",
+            "okx_ct_type": "linear",
+            "okx_lot_sz": "1",
+            "base_exposure_mode": "exact_multiplier",
+        },
+        make_qty=lambda value: Quantity.from_str(str(value)),
+        make_price=lambda value: Decimal(str(value)),
+        calculate_base_exposure_qty=lambda qty, _price=None: qty.as_decimal() * Decimal("10"),
+    )
+    strategy._maker_instrument = maker_instrument
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        accounts=list,
+        positions_open=lambda instrument_id=None: [],
+        instrument=lambda instrument_id: (
+            maker_instrument if instrument_id == maker_instrument_id else None
+        ),
+    )
+    strategy._last_maker_position_activity_ns = 100
+    report = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_decimal_qty=Decimal("-6570"),
+        avg_px_open=Decimal("0.0109378"),
+        ts_last=200,
+        ts_init=210,
+        venue_position_id=None,
+    )
+    strategy._handle_execution_report_message(
+        SimpleNamespace(position_reports={maker_instrument_id: [report]}, ts_init=210),
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_balances()
+
+    balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
+    position_payload = balances_payload["positions"][0]
+    assert position_payload["signed_qty"] == "-657"
+    assert position_payload["quantity"] == "657"
+    assert position_payload["signed_qty_venue"] == "-657"
+    assert position_payload["quantity_venue"] == "657"
+    assert position_payload["signed_qty_base"] == "-6570"
+    assert position_payload["quantity_base"] == "6570"
+
+    rows = build_balances_rows(
+        raw_snapshot=[balances_payload],
+        strategy_id=strategy._external_strategy_id,
+    )
+    position_rows = [row for row in rows if row.get("kind") == "position"]
+    assert len(position_rows) == 1
+    assert position_rows[0]["signed_qty"] == "-6570"
+    assert position_rows[0]["signed_qty_venue"] == "-657"
+    assert position_rows[0]["signed_qty_base"] == "-6570"
+
+
 def test_publish_state_backfills_inventory_skew_when_quote_cycle_has_not_run(
     clocked_strategy_factory,
 ) -> None:
