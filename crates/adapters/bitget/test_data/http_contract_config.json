@@ -9,7 +9,12 @@
       "symbolType": "perpetual",
       "baseCoin": "BTC",
       "quoteCoin": "USDT",
-      "deliveryTime": ""
+      "deliveryTime": "",
+      "pricePlace": "1",
+      "priceEndStep": "1",
+      "volumePlace": "3",
+      "sizeMultiplier": "0.001",
+      "minTradeNum": "0.001"
     },
     {
       "symbol": "ETHUSDT",
@@ -17,7 +22,12 @@
       "symbolType": "delivery",
       "baseCoin": "ETH",
       "quoteCoin": "USDT",
-      "deliveryTime": "1672531200000"
+      "deliveryTime": "1672531200000",
+      "pricePlace": "2",
+      "priceEndStep": "5",
+      "volumePlace": "4",
+      "sizeMultiplier": "0.0001",
+      "minTradeNum": "0.0001"
     }
   ]
 }

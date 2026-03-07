@@ -14,7 +14,7 @@ use nautilus_bitget::{
     },
 };
 use nautilus_core::UnixNanos;
-use nautilus_model::instruments::InstrumentAny;
+use nautilus_model::{instruments::InstrumentAny, types::{Money, Price, Quantity}};
 use serde::de::DeserializeOwned;
 
 fn manifest_path() -> PathBuf {
@@ -41,6 +41,10 @@ fn test_deserialize_spot_symbols() {
     assert_eq!(response.code, "00000");
     assert_eq!(response.data.len(), 2);
     assert_eq!(response.data[0].symbol, "BTCUSDT");
+    assert_eq!(response.data[0].price_precision, "2");
+    assert_eq!(response.data[0].quantity_precision, "5");
+    assert_eq!(response.data[0].min_trade_amount, "0.00001");
+    assert_eq!(response.data[0].min_trade_usdt, "5");
 }
 
 #[test]
@@ -51,6 +55,11 @@ fn test_deserialize_contract_config() {
     assert_eq!(response.code, "00000");
     assert_eq!(response.data.len(), 2);
     assert_eq!(response.data[1].symbol, "ETHUSDT");
+    assert_eq!(response.data[1].price_place.as_deref(), Some("2"));
+    assert_eq!(response.data[1].price_end_step.as_deref(), Some("5"));
+    assert_eq!(response.data[1].volume_place.as_deref(), Some("4"));
+    assert_eq!(response.data[1].size_multiplier.as_deref(), Some("0.0001"));
+    assert_eq!(response.data[1].min_trade_num.as_deref(), Some("0.0001"));
 }
 
 #[test]
@@ -113,6 +122,55 @@ fn test_build_instruments_from_fixture_responses() {
 
     let expected_future_symbol = nautilus_symbol_for_delivery("ETHUSDT", 1_672_531_200_000);
     assert_eq!(future_symbol, expected_future_symbol);
+
+    let spot = instruments
+        .iter()
+        .find_map(|instrument| match instrument {
+            InstrumentAny::CurrencyPair(pair) if pair.raw_symbol.to_string() == "BTCUSDT" => Some(pair),
+            _ => None,
+        })
+        .expect("BTCUSDT spot instrument should exist");
+    assert_eq!(spot.price_precision, 2);
+    assert_eq!(spot.size_precision, 5);
+    assert_eq!(spot.price_increment, Price::from("0.01"));
+    assert_eq!(spot.size_increment, Quantity::from("0.00001"));
+    assert_eq!(spot.min_quantity, Some(Quantity::from("0.00001")));
+    assert_eq!(spot.min_notional, Some(Money::from("5 USDT")));
+
+    let perpetual = instruments
+        .iter()
+        .find_map(|instrument| match instrument {
+            InstrumentAny::CryptoPerpetual(perp) if perp.raw_symbol.to_string() == "BTCUSDT-PERP" => Some(perp),
+            _ => None,
+        })
+        .expect("BTCUSDT perpetual instrument should exist");
+    assert_eq!(perpetual.price_precision, 1);
+    assert_eq!(perpetual.size_precision, 3);
+    assert_eq!(perpetual.price_increment, Price::from("0.1"));
+    assert_eq!(perpetual.size_increment, Quantity::from("0.001"));
+    assert_eq!(perpetual.min_quantity, Some(Quantity::from("0.001")));
+
+    let delivery = instruments
+        .iter()
+        .find_map(|instrument| match instrument {
+            InstrumentAny::CryptoFuture(future) if future.raw_symbol.to_string() == expected_future_symbol => Some(future),
+            _ => None,
+        })
+        .expect("ETHUSDT delivery instrument should exist");
+    assert_eq!(delivery.price_precision, 2);
+    assert_eq!(delivery.size_precision, 4);
+    assert_eq!(delivery.price_increment, Price::from("0.05"));
+    assert_eq!(delivery.size_increment, Quantity::from("0.0001"));
+    assert_eq!(delivery.min_quantity, Some(Quantity::from("0.0001")));
+
+    let spot_usdt_min = instruments
+        .iter()
+        .find_map(|instrument| match instrument {
+            InstrumentAny::CurrencyPair(pair) if pair.raw_symbol.to_string() == "BTCUSDT" => Some(pair),
+            _ => None,
+        })
+        .expect("BTCUSDT spot instrument should exist");
+    assert_eq!(spot_usdt_min.min_notional, Some(Money::from("5 USDT")));
 }
 
 #[test]

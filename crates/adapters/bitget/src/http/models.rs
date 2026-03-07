@@ -26,6 +26,14 @@ pub struct BitgetSpotSymbol {
     pub symbol: String,
     pub base_coin: String,
     pub quote_coin: String,
+    #[serde(default)]
+    pub price_precision: String,
+    #[serde(default)]
+    pub quantity_precision: String,
+    #[serde(default)]
+    pub min_trade_amount: String,
+    #[serde(default, rename = "minTradeUSDT")]
+    pub min_trade_usdt: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +54,16 @@ pub struct BitgetContractSymbol {
     pub quote_coin: Option<String>,
     #[serde(default)]
     pub delivery_time: Option<String>,
+    #[serde(default)]
+    pub price_place: Option<String>,
+    #[serde(default)]
+    pub price_end_step: Option<String>,
+    #[serde(default)]
+    pub volume_place: Option<String>,
+    #[serde(default)]
+    pub size_multiplier: Option<String>,
+    #[serde(default)]
+    pub min_trade_num: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

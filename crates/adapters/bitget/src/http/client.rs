@@ -21,7 +21,7 @@ use nautilus_model::{
     enums::{BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
-    types::{Currency, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 #[cfg(feature = "python")]
 use nautilus_model::{
@@ -1143,6 +1143,79 @@ impl BitgetHttpClient {
         trimmed.parse::<i64>().ok().filter(|v| *v > 0)
     }
 
+    fn parse_precision(value: &str) -> Option<u8> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        trimmed.parse::<u8>().ok()
+    }
+
+    fn decimal_step_string(precision: u8) -> String {
+        if precision == 0 {
+            "1".to_string()
+        } else {
+            format!("0.{}1", "0".repeat(usize::from(precision.saturating_sub(1))))
+        }
+    }
+
+    fn scaled_integer_step_string(step: &str, precision: u8) -> Option<String> {
+        let trimmed = step.trim();
+        if trimmed.is_empty() || !trimmed.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+
+        let digits = trimmed.trim_start_matches('0');
+        if digits.is_empty() {
+            return None;
+        }
+
+        let precision = usize::from(precision);
+        if precision == 0 {
+            return Some(digits.to_string());
+        }
+
+        if digits.len() > precision {
+            let split = digits.len() - precision;
+            Some(format!("{}.{}", &digits[..split], &digits[split..]))
+        } else {
+            Some(format!(
+                "0.{}{}",
+                "0".repeat(precision - digits.len()),
+                digits
+            ))
+        }
+    }
+
+    fn positive_money(value: &str, currency: Currency) -> Option<Money> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        let amount = trimmed.parse::<f64>().ok()?;
+        if amount <= 0.0 {
+            return None;
+        }
+
+        Some(Money::new(amount, currency))
+    }
+
+    fn positive_quantity(value: &str) -> Option<Quantity> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        let amount = trimmed.parse::<f64>().ok()?;
+        if amount <= 0.0 {
+            return None;
+        }
+
+        Some(Quantity::from(trimmed))
+    }
+
     fn is_perpetual_contract(symbol_type: &str) -> bool {
         let symbol_type = symbol_type.to_ascii_lowercase();
         matches!(symbol_type.as_str(), "perp" | "perpetual")
@@ -1162,22 +1235,32 @@ impl BitgetHttpClient {
         }
 
         let raw_symbol = nautilus_symbol_for_spot(&symbol.symbol);
+        let price_precision = Self::parse_precision(&symbol.price_precision)?;
+        let size_precision = Self::parse_precision(&symbol.quantity_precision)?;
+        let price_increment =
+            Price::from(Self::decimal_step_string(price_precision).as_str());
+        let size_increment =
+            Quantity::from(Self::decimal_step_string(size_precision).as_str());
+        let quote_currency = Currency::get_or_create_crypto_with_context(
+            &symbol.quote_coin,
+            Some("Bitget spot quote currency"),
+        );
 
         Some(InstrumentAny::CurrencyPair(CurrencyPair::new(
             self.to_instrument_id(&raw_symbol),
             Symbol::new(&raw_symbol),
             Currency::get_or_create_crypto_with_context(&symbol.base_coin, Some("Bitget spot base currency")),
-            Currency::get_or_create_crypto_with_context(&symbol.quote_coin, Some("Bitget spot quote currency")),
-            1,   // price_precision
-            1,   // size_precision
-            Price::from("0.1"),
-            Quantity::from("0.1"),
+            quote_currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
             None, // multiplier
             Some(Quantity::from("1")),
             None, // max_quantity
-            None, // min_quantity
+            Self::positive_quantity(&symbol.min_trade_amount),
             None, // max_notional
-            None, // min_notional
+            Self::positive_money(&symbol.min_trade_usdt, Currency::USDT()),
             None, // max_price
             None, // min_price
             None, // margin_init
@@ -1208,6 +1291,31 @@ impl BitgetHttpClient {
             Currency::get_or_create_crypto_with_context(base_coin, Some("Bitget perpetual base currency"));
         let quote_currency =
             Currency::get_or_create_crypto_with_context(quote_coin, Some("Bitget perpetual quote currency"));
+        let price_precision = symbol
+            .price_place
+            .as_deref()
+            .and_then(Self::parse_precision)?;
+        let size_precision = symbol
+            .volume_place
+            .as_deref()
+            .and_then(Self::parse_precision)?;
+        let price_increment_raw = Self::scaled_integer_step_string(
+            symbol
+                .price_end_step
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("1"),
+            price_precision,
+        )?;
+        let price_increment = Price::from(price_increment_raw.as_str());
+        let size_increment_raw = symbol
+            .size_multiplier
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(str::trim)
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| Self::decimal_step_string(size_precision));
+        let size_increment = Quantity::from(size_increment_raw.as_str());
         let product_type = Self::product_type_from_contract_symbol(symbol);
         let settlement_currency = if matches!(product_type, BitgetProductType::CoinFutures) {
             base_currency
@@ -1223,14 +1331,17 @@ impl BitgetHttpClient {
             quote_currency,
             settlement_currency,
             is_inverse,
-            1,
-            1,
-            Price::from("0.1"),
-            Quantity::from("0.1"),
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
             None,
             Some(Quantity::from("1")),
             None,
-            None,
+            symbol
+                .min_trade_num
+                .as_deref()
+                .and_then(Self::positive_quantity),
             None,
             None,
             None,
@@ -1269,6 +1380,31 @@ impl BitgetHttpClient {
             Currency::get_or_create_crypto_with_context(base_coin, Some("Bitget future base currency"));
         let quote_currency =
             Currency::get_or_create_crypto_with_context(quote_coin, Some("Bitget future quote currency"));
+        let price_precision = symbol
+            .price_place
+            .as_deref()
+            .and_then(Self::parse_precision)?;
+        let size_precision = symbol
+            .volume_place
+            .as_deref()
+            .and_then(Self::parse_precision)?;
+        let price_increment_raw = Self::scaled_integer_step_string(
+            symbol
+                .price_end_step
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("1"),
+            price_precision,
+        )?;
+        let price_increment = Price::from(price_increment_raw.as_str());
+        let size_increment_raw = symbol
+            .size_multiplier
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(str::trim)
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| Self::decimal_step_string(size_precision));
+        let size_increment = Quantity::from(size_increment_raw.as_str());
         let product_type = Self::product_type_from_contract_symbol(symbol);
         let settlement_currency = if matches!(product_type, BitgetProductType::CoinFutures) {
             base_currency
@@ -1286,14 +1422,17 @@ impl BitgetHttpClient {
             is_inverse,
             ts_init,
             delivery_time_ns,
-            1,
-            1,
-            Price::from("0.1"),
-            Quantity::from("0.1"),
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
             None,
             Some(Quantity::from("1")),
             None,
-            None,
+            symbol
+                .min_trade_num
+                .as_deref()
+                .and_then(Self::positive_quantity),
             None,
             None,
             None,
@@ -1394,6 +1533,11 @@ mod tests {
                 base_coin: Some("BTC".to_string()),
                 quote_coin: Some("USDT".to_string()),
                 delivery_time: None,
+                price_place: Some("1".to_string()),
+                price_end_step: Some("1".to_string()),
+                volume_place: Some("3".to_string()),
+                size_multiplier: Some("0.001".to_string()),
+                min_trade_num: Some("0.001".to_string()),
             },
             BitgetContractSymbol {
                 symbol: "ETHUSDT".to_string(),
@@ -1402,6 +1546,11 @@ mod tests {
                 base_coin: Some("ETH".to_string()),
                 quote_coin: Some("USDT".to_string()),
                 delivery_time: None,
+                price_place: Some("1".to_string()),
+                price_end_step: Some("1".to_string()),
+                volume_place: Some("3".to_string()),
+                size_multiplier: Some("0.001".to_string()),
+                min_trade_num: Some("0.001".to_string()),
             },
         ];
 
@@ -1418,6 +1567,34 @@ mod tests {
             symbols_contain_product_type(&instruments, "BTCUSDT-PERP")
                 && symbols_contain_product_type(&instruments, "ETHUSDT-PERP")
         );
+    }
+
+    #[test]
+    fn test_spot_min_trade_usdt_uses_usdt_not_quote_currency() {
+        let client = BitgetHttpClient::new(BitgetEnvironment::Mainnet);
+        let spot_symbols = vec![BitgetSpotSymbol {
+            symbol: "BTCUSDC".to_string(),
+            base_coin: "BTC".to_string(),
+            quote_coin: "USDC".to_string(),
+            price_precision: "2".to_string(),
+            quantity_precision: "5".to_string(),
+            min_trade_amount: "0.00001".to_string(),
+            min_trade_usdt: "5".to_string(),
+        }];
+        let contract_symbols: Vec<BitgetContractSymbol> = vec![];
+
+        let instruments = client.build_instruments(
+            &spot_symbols,
+            &contract_symbols,
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
+        );
+
+        let pair = match &instruments[0] {
+            InstrumentAny::CurrencyPair(pair) => pair,
+            instrument => panic!("expected CurrencyPair, got {instrument:?}"),
+        };
+
+        assert_eq!(pair.min_notional, Some(Money::from("5 USDT")));
     }
 
     #[test]
