@@ -243,7 +243,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     namespace = _optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE
     schema_version = _optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION
 
-    enable_execution = bool(force_enable_execution or node_cfg.get("enable_execution", False))
+    enable_execution = bool(node_cfg.get("enable_execution", force_enable_execution))
     reconciliation_lookback_mins, reconciliation_startup_delay_secs = (
         _resolve_reconciliation_settings(mode=mode, node_cfg=node_cfg)
     )

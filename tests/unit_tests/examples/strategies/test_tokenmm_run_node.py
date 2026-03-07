@@ -370,7 +370,7 @@ def test_build_node_honors_explicit_message_bus_autotrim_override(monkeypatch) -
     assert config.message_bus.autotrim_mins == 12
 
 
-def test_build_node_force_enable_execution_overrides_disabled_node_flag(monkeypatch) -> None:
+def test_build_node_explicit_enable_execution_false_overrides_force_flag(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     class _CapturedNode:
@@ -430,7 +430,7 @@ def test_build_node_force_enable_execution_overrides_disabled_node_flag(monkeypa
         force_enable_execution=True,
     )
 
-    assert captured["enable_execution"] is True
+    assert captured["enable_execution"] is False
 
 
 def test_build_node_wires_exec_engine_purge_settings(monkeypatch) -> None:
