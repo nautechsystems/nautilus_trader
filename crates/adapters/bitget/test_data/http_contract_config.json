@@ -1,0 +1,23 @@
+{
+  "code": "00000",
+  "msg": "success",
+  "requestTime": 1700000000000,
+  "data": [
+    {
+      "symbol": "BTCUSDT",
+      "productType": "USDT-FUTURES",
+      "symbolType": "perpetual",
+      "baseCoin": "BTC",
+      "quoteCoin": "USDT",
+      "deliveryTime": ""
+    },
+    {
+      "symbol": "ETHUSDT",
+      "productType": "USDT-FUTURES",
+      "symbolType": "delivery",
+      "baseCoin": "ETH",
+      "quoteCoin": "USDT",
+      "deliveryTime": "1672531200000"
+    }
+  ]
+}
