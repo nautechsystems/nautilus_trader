@@ -301,7 +301,7 @@ async def test_generate_position_status_reports_spot_margin_uses_margin_inst_typ
 
 
 @pytest.mark.asyncio
-async def test_generate_position_status_reports_scales_swap_contract_qty_to_base(
+async def test_generate_position_status_reports_keeps_swap_contract_qty_venue_native(
     exec_client_builder,
     monkeypatch,
 ):
@@ -371,8 +371,8 @@ async def test_generate_position_status_reports_scales_swap_contract_qty_to_base
     reports = await client.generate_position_status_reports(command)
 
     assert len(reports) == 1
-    assert reports[0].quantity == Quantity.from_int(6570)
-    assert reports[0].signed_decimal_qty == Decimal("-6570")
+    assert reports[0].quantity == Quantity.from_int(657)
+    assert reports[0].signed_decimal_qty == Decimal("-657")
 
 
 @pytest.mark.asyncio

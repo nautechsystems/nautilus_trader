@@ -25,6 +25,7 @@ from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_EVENT
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_STATE
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Quantity
 
 
 def test_makerv3_role_map_payload_keeps_ref_as_hedge_leg(monkeypatch) -> None:
@@ -574,7 +575,7 @@ def test_publish_balances_does_not_fallback_to_cache_when_fresh_flat_position_re
     assert balances_payload["positions"] == []
 
 
-def test_publish_balances_uses_base_normalized_okx_report_without_double_conversion(
+def test_publish_balances_converts_okx_venue_report_to_base_once(
     clocked_strategy_factory,
 ) -> None:
     maker_instrument_id = InstrumentId.from_str("PLUME-USDT-SWAP.OKX")
@@ -610,7 +611,7 @@ def test_publish_balances_uses_base_normalized_okx_report_without_double_convers
     strategy._last_maker_position_activity_ns = 100
     report = SimpleNamespace(
         instrument_id=maker_instrument_id,
-        signed_decimal_qty=Decimal("-6570"),
+        signed_decimal_qty=Decimal("-657"),
         avg_px_open=Decimal("0.0109378"),
         ts_last=200,
         ts_init=210,

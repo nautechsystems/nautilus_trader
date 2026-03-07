@@ -4993,6 +4993,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-bitget"
+version = "0.54.0"
+dependencies = [
+ "anyhow",
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "chrono",
+ "crc32fast",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-system",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "url",
+]
+
+[[package]]
 name = "nautilus-bitmex"
 version = "0.54.0"
 dependencies = [
@@ -5812,6 +5836,7 @@ dependencies = [
  "nautilus-architect-ax",
  "nautilus-backtest",
  "nautilus-binance",
+ "nautilus-bitget",
  "nautilus-bitmex",
  "nautilus-blockchain",
  "nautilus-bybit",

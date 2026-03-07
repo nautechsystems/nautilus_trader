@@ -898,7 +898,7 @@ def test_maker_local_position_summary_falls_back_to_cache_when_local_activity_is
     assert summary.base_qty == Decimal("197764")
 
 
-def test_maker_local_position_summary_uses_base_normalized_okx_report_without_double_conversion(
+def test_maker_local_position_summary_converts_okx_venue_report_to_base_once(
     strategy_factory,
 ) -> None:
     maker_instrument_id = InstrumentId.from_str("PLUME-USDT-SWAP.OKX")
@@ -929,7 +929,7 @@ def test_maker_local_position_summary_uses_base_normalized_okx_report_without_do
 
     report = SimpleNamespace(
         instrument_id=maker_instrument_id,
-        signed_decimal_qty=Decimal("-6570"),
+        signed_decimal_qty=Decimal("-657"),
         avg_px_open=Decimal("0.0109378"),
         ts_last=200,
         ts_init=210,
