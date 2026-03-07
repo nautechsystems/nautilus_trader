@@ -410,6 +410,16 @@ impl DeribitWebSocketClient {
         self.index_price_subs = subs;
     }
 
+    /// Registers an instrument for option greeks emission from ticker messages.
+    pub fn add_option_greeks_sub(&self, instrument_id: InstrumentId) {
+        self.option_greeks_subs.insert(instrument_id);
+    }
+
+    /// Unregisters an instrument from option greeks emission.
+    pub fn remove_option_greeks_sub(&self, instrument_id: &InstrumentId) {
+        self.option_greeks_subs.remove(instrument_id);
+    }
+
     /// Connects to the Deribit WebSocket API.
     ///
     /// # Errors

@@ -14,32 +14,27 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Reactive ATM (at-the-money) price tracker for option chain subscriptions.
+//!
+//! ATM price is always derived from the exchange-provided forward price
+//! embedded in each option greeks/ticker update.
 
-use nautilus_model::{
-    data::{
-        IndexPriceUpdate, MarkPriceUpdate, QuoteTick,
-        option_chain::{AtmSource, OptionGreeks},
-    },
-    types::Price,
-};
+use nautilus_model::{data::option_chain::OptionGreeks, types::Price};
 
-/// Tracks the raw ATM price reactively from incoming market data events.
+/// Tracks the raw ATM price reactively from the forward price in option greeks.
 ///
 /// Does not interact with cache — receives updates via handler callbacks.
 /// Closest-strike resolution is delegated to `StrikeRange::resolve()`.
 #[derive(Debug)]
 pub struct AtmTracker {
-    source: AtmSource,
     atm_price: Option<Price>,
     /// Precision used when converting forward prices from f64 to Price.
     forward_precision: u8,
 }
 
 impl AtmTracker {
-    /// Creates a new [`AtmTracker`] for the given ATM source.
-    pub fn new(source: AtmSource) -> Self {
+    /// Creates a new [`AtmTracker`].
+    pub fn new() -> Self {
         Self {
-            source,
             atm_price: None,
             forward_precision: 2,
         }
@@ -56,39 +51,6 @@ impl AtmTracker {
         self.atm_price
     }
 
-    /// Returns the configured ATM source.
-    #[must_use]
-    pub fn source(&self) -> &AtmSource {
-        &self.source
-    }
-
-    /// Updates from a quote tick (for `UnderlyingQuoteMid` source).
-    ///
-    /// Returns `true` if the ATM price was updated.
-    pub fn update_from_quote(&mut self, quote: &QuoteTick) -> bool {
-        if let AtmSource::UnderlyingQuoteMid(id) = self.source
-            && quote.instrument_id == id
-        {
-            let mid = (quote.bid_price.as_f64() + quote.ask_price.as_f64()) / 2.0;
-            self.atm_price = Some(Price::new(mid, quote.bid_price.precision));
-            return true;
-        }
-        false
-    }
-
-    /// Updates from a mark price event (for `MarkPrice` source).
-    ///
-    /// Returns `true` if the ATM price was updated.
-    pub fn update_from_mark_price(&mut self, mark: &MarkPriceUpdate) -> bool {
-        if let AtmSource::MarkPrice(id) = self.source
-            && mark.instrument_id == id
-        {
-            self.atm_price = Some(mark.value);
-            return true;
-        }
-        false
-    }
-
     /// Sets the initial ATM price (e.g. from a forward price fetched via HTTP).
     ///
     /// This allows instant bootstrap without waiting for the first WebSocket tick.
@@ -97,27 +59,12 @@ impl AtmTracker {
         self.atm_price = Some(price);
     }
 
-    /// Updates from an index price event (for `IndexPrice` source).
-    ///
-    /// Returns `true` if the ATM price was updated.
-    pub fn update_from_index_price(&mut self, index: &IndexPriceUpdate) -> bool {
-        if let AtmSource::IndexPrice(id) = self.source
-            && index.instrument_id == id
-        {
-            self.atm_price = Some(index.value);
-            return true;
-        }
-        false
-    }
-
-    /// Updates from an option greeks event (for `ForwardPrice` source).
+    /// Updates from an option greeks event.
     ///
     /// Extracts `underlying_price` from the greeks — the exchange-provided
     /// forward price for this expiry. Returns `true` if the ATM price was updated.
     pub fn update_from_option_greeks(&mut self, greeks: &OptionGreeks) -> bool {
-        if self.source == AtmSource::ForwardPrice
-            && let Some(fwd) = greeks.underlying_price
-        {
+        if let Some(fwd) = greeks.underlying_price {
             self.atm_price = Some(Price::new(fwd, self.forward_precision));
             return true;
         }
@@ -125,109 +72,30 @@ impl AtmTracker {
     }
 }
 
+impl Default for AtmTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use nautilus_core::UnixNanos;
     use nautilus_model::{
-        identifiers::InstrumentId,
-        types::{Price, Quantity},
+        data::option_chain::OptionGreeks, identifiers::InstrumentId, types::Price,
     };
     use rstest::*;
 
     use super::*;
 
-    fn btc_perp() -> InstrumentId {
-        InstrumentId::from("BTC-PERPETUAL.DERIBIT")
-    }
-
-    fn eth_perp() -> InstrumentId {
-        InstrumentId::from("ETH-PERPETUAL.DERIBIT")
-    }
-
     #[rstest]
     fn test_atm_tracker_initial_none() {
-        let tracker = AtmTracker::new(AtmSource::MarkPrice(btc_perp()));
+        let tracker = AtmTracker::new();
         assert!(tracker.atm_price().is_none());
-    }
-
-    #[rstest]
-    fn test_atm_tracker_update_from_quote_mid() {
-        let mut tracker = AtmTracker::new(AtmSource::UnderlyingQuoteMid(btc_perp()));
-        let quote = QuoteTick::new(
-            btc_perp(),
-            Price::from("50000.00"),
-            Price::from("50100.00"),
-            Quantity::from("1.0"),
-            Quantity::from("1.0"),
-            UnixNanos::from(1u64),
-            UnixNanos::from(1u64),
-        );
-        assert!(tracker.update_from_quote(&quote));
-        let atm = tracker.atm_price().unwrap();
-        // Mid = (50000.00 + 50100.00) / 2 = 50050.00
-        assert_eq!(atm, Price::from("50050.00"));
-    }
-
-    #[rstest]
-    fn test_atm_tracker_ignores_wrong_instrument() {
-        let mut tracker = AtmTracker::new(AtmSource::UnderlyingQuoteMid(btc_perp()));
-        let quote = QuoteTick::new(
-            eth_perp(),
-            Price::from("3000.00"),
-            Price::from("3001.00"),
-            Quantity::from("1.0"),
-            Quantity::from("1.0"),
-            UnixNanos::from(1u64),
-            UnixNanos::from(1u64),
-        );
-        assert!(!tracker.update_from_quote(&quote));
-        assert!(tracker.atm_price().is_none());
-    }
-
-    #[rstest]
-    fn test_atm_tracker_update_from_mark_price() {
-        let mut tracker = AtmTracker::new(AtmSource::MarkPrice(btc_perp()));
-        let mark = MarkPriceUpdate {
-            instrument_id: btc_perp(),
-            value: Price::from("50500.00"),
-            ts_event: UnixNanos::from(1u64),
-            ts_init: UnixNanos::from(1u64),
-        };
-        assert!(tracker.update_from_mark_price(&mark));
-        assert_eq!(tracker.atm_price().unwrap(), Price::from("50500.00"));
-    }
-
-    #[rstest]
-    fn test_atm_tracker_mark_ignores_wrong_source_type() {
-        let mut tracker = AtmTracker::new(AtmSource::IndexPrice(btc_perp()));
-        let mark = MarkPriceUpdate {
-            instrument_id: btc_perp(),
-            value: Price::from("50500.00"),
-            ts_event: UnixNanos::from(1u64),
-            ts_init: UnixNanos::from(1u64),
-        };
-        assert!(!tracker.update_from_mark_price(&mark));
-        assert!(tracker.atm_price().is_none());
-    }
-
-    #[rstest]
-    fn test_atm_tracker_update_from_index_price() {
-        let mut tracker = AtmTracker::new(AtmSource::IndexPrice(btc_perp()));
-        let index = IndexPriceUpdate {
-            instrument_id: btc_perp(),
-            value: Price::from("49900.00"),
-            ts_event: UnixNanos::from(1u64),
-            ts_init: UnixNanos::from(1u64),
-        };
-        assert!(tracker.update_from_index_price(&index));
-        assert_eq!(tracker.atm_price().unwrap(), Price::from("49900.00"));
     }
 
     #[rstest]
     fn test_atm_tracker_update_from_option_greeks() {
-        use nautilus_model::data::option_chain::OptionGreeks;
-
-        let mut tracker = AtmTracker::new(AtmSource::ForwardPrice);
+        let mut tracker = AtmTracker::new();
         let greeks = OptionGreeks {
             instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
             underlying_price: Some(50500.0),
@@ -239,9 +107,7 @@ mod tests {
 
     #[rstest]
     fn test_atm_tracker_forward_ignores_none_underlying() {
-        use nautilus_model::data::option_chain::OptionGreeks;
-
-        let mut tracker = AtmTracker::new(AtmSource::ForwardPrice);
+        let mut tracker = AtmTracker::new();
         let greeks = OptionGreeks {
             instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
             underlying_price: None,
@@ -252,16 +118,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_atm_tracker_non_forward_ignores_greeks() {
-        use nautilus_model::data::option_chain::OptionGreeks;
+    fn test_atm_tracker_set_initial_price() {
+        let mut tracker = AtmTracker::new();
+        tracker.set_initial_price(Price::from("50000.00"));
+        assert_eq!(tracker.atm_price().unwrap(), Price::from("50000.00"));
+    }
 
-        let mut tracker = AtmTracker::new(AtmSource::IndexPrice(btc_perp()));
+    #[rstest]
+    fn test_atm_tracker_set_forward_precision() {
+        let mut tracker = AtmTracker::new();
+        tracker.set_forward_precision(4);
         let greeks = OptionGreeks {
             instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
-            underlying_price: Some(50500.0),
+            underlying_price: Some(50500.1234),
             ..Default::default()
         };
-        assert!(!tracker.update_from_option_greeks(&greeks));
-        assert!(tracker.atm_price().is_none());
+        assert!(tracker.update_from_option_greeks(&greeks));
+        assert_eq!(tracker.atm_price().unwrap(), Price::from("50500.1234"));
     }
 }

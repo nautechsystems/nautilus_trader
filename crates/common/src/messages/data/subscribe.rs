@@ -17,10 +17,7 @@ use std::num::NonZeroUsize;
 
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
-    data::{
-        BarType, DataType,
-        option_chain::{AtmSource, StrikeRange},
-    },
+    data::{BarType, DataType, option_chain::StrikeRange},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
 };
@@ -593,7 +590,6 @@ impl SubscribeInstrumentClose {
 pub struct SubscribeOptionChain {
     pub series_id: OptionSeriesId,
     pub strike_range: StrikeRange,
-    pub atm_source: Option<AtmSource>,
     pub snapshot_interval_ms: Option<u64>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
@@ -607,7 +603,6 @@ impl SubscribeOptionChain {
     pub fn new(
         series_id: OptionSeriesId,
         strike_range: StrikeRange,
-        atm_source: Option<AtmSource>,
         snapshot_interval_ms: Option<u64>,
         command_id: UUID4,
         ts_init: UnixNanos,
@@ -618,7 +613,6 @@ impl SubscribeOptionChain {
         Self {
             series_id,
             strike_range,
-            atm_source,
             snapshot_interval_ms,
             command_id,
             ts_init,

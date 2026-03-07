@@ -92,6 +92,8 @@ impl DataActor for OptionChainTester {
 
         // Collect option instrument data from cache (owned copies to release borrow)
         // Each entry: (instrument_id, underlying, settlement_currency, expiry_ns)
+        // Filter out already-expired options.
+        let now_ns = self.clock().timestamp_ns().as_u64();
         let options: Vec<(InstrumentId, Ustr, Ustr, u64)> = {
             let cache = self.cache();
             let instruments = cache.instruments(&venue, Some(&underlying_filter));
@@ -102,6 +104,9 @@ impl DataActor for OptionChainTester {
                     // Only consider CryptoOption instruments
                     if let InstrumentAny::CryptoOption(opt) = inst {
                         let expiry = inst.expiration_ns()?.as_u64();
+                        if expiry <= now_ns {
+                            return None;
+                        }
                         Some((
                             inst.id(),
                             underlying_filter,
@@ -120,7 +125,7 @@ impl DataActor for OptionChainTester {
             return Ok(());
         }
 
-        // Find the nearest (soonest) expiry
+        // Find the nearest (soonest) future expiry
         let nearest_expiry = options.iter().map(|(_, _, _, exp)| *exp).min().unwrap();
 
         // Find settlement currency for nearest expiry (use BTC-settled by default)
@@ -169,7 +174,6 @@ impl DataActor for OptionChainTester {
         self.subscribe_option_chain(
             series_id,
             strike_range,
-            None, // auto-resolved to ForwardPrice (from option ticker underlying_price)
             snapshot_interval_ms,
             Some(client_id),
         );

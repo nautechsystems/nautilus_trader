@@ -15,19 +15,27 @@
 
 //! Python bindings for Deribit HTTP client.
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::{
+    UnixNanos,
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+};
 use nautilus_model::{
-    data::BarType,
-    identifiers::{AccountId, InstrumentId},
+    data::{BarType, forward::ForwardPrice},
+    identifiers::{AccountId, InstrumentId, Symbol},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
-use crate::http::{
-    client::DeribitHttpClient,
-    error::DeribitHttpError,
-    models::{DeribitCurrency, DeribitProductType},
+use crate::{
+    common::consts::DERIBIT_VENUE,
+    http::{
+        client::DeribitHttpClient,
+        error::DeribitHttpError,
+        models::{DeribitCurrency, DeribitProductType},
+    },
 };
 
 #[pymethods]
@@ -343,6 +351,81 @@ impl DeribitHttpClient {
                     .map(|report| report.into_py_any(py))
                     .collect();
                 let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
+    /// Request forward prices for option chain ATM determination.
+    ///
+    /// Single-instrument path (1 HTTP call) if `instrument_id` is provided,
+    /// otherwise bulk path via book summaries.
+    #[pyo3(name = "request_forward_prices")]
+    #[pyo3(signature = (currency, instrument_id=None))]
+    fn py_request_forward_prices<'py>(
+        &self,
+        py: Python<'py>,
+        currency: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let forward_prices = if let Some(inst_id) = instrument_id {
+                // Single-instrument path: 1 HTTP call to public/ticker
+                let instrument_name = inst_id.symbol.to_string();
+                let ticker = client
+                    .request_ticker(&instrument_name)
+                    .await
+                    .map_err(to_pyvalue_err)?;
+
+                let ts = UnixNanos::default();
+                ticker
+                    .underlying_price
+                    .map(|up| {
+                        vec![ForwardPrice::new(
+                            inst_id,
+                            up,
+                            ticker.underlying_index.filter(|s| !s.is_empty()),
+                            ts,
+                            ts,
+                        )]
+                    })
+                    .unwrap_or_default()
+            } else {
+                // Bulk path: fetch all book summaries
+                let summaries = client
+                    .request_book_summaries(&currency)
+                    .await
+                    .map_err(to_pyvalue_err)?;
+
+                let ts = nautilus_core::UnixNanos::default();
+                let mut seen_indices = HashSet::new();
+                summaries
+                    .into_iter()
+                    .filter_map(|s| {
+                        let up = s.underlying_price?;
+                        let idx = s.underlying_index.clone().unwrap_or_default();
+                        if !seen_indices.insert(idx.clone()) {
+                            return None;
+                        }
+                        Some(ForwardPrice::new(
+                            InstrumentId::new(Symbol::new(&s.instrument_name), *DERIBIT_VENUE),
+                            up,
+                            Some(idx).filter(|s| !s.is_empty()),
+                            ts,
+                            ts,
+                        ))
+                    })
+                    .collect()
+            };
+
+            Python::attach(|py| {
+                let py_prices: PyResult<Vec<_>> = forward_prices
+                    .into_iter()
+                    .map(|fp| Py::new(py, fp))
+                    .collect();
+                let pylist = PyList::new(py, py_prices?)?.into_any().unbind();
                 Ok(pylist)
             })
         })

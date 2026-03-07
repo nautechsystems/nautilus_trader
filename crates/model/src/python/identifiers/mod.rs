@@ -16,6 +16,7 @@
 //! Identifiers for the trading domain model.
 
 pub mod instrument_id;
+pub mod option_series_id;
 pub mod symbol;
 pub mod trade_id;
 

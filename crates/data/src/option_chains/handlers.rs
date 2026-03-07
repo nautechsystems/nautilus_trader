@@ -20,7 +20,7 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{msgbus::Handler, timer::TimeEvent};
 use nautilus_core::WeakCell;
 use nautilus_model::{
-    data::{IndexPriceUpdate, MarkPriceUpdate, QuoteTick, option_chain::OptionGreeks},
+    data::{QuoteTick, option_chain::OptionGreeks},
     identifiers::OptionSeriesId,
 };
 use ustr::Ustr;
@@ -54,64 +54,6 @@ impl Handler<QuoteTick> for OptionChainQuoteHandler {
     fn handle(&self, quote: &QuoteTick) {
         if let Some(mgr) = self.manager.upgrade() {
             mgr.borrow_mut().handle_quote(quote);
-        }
-    }
-}
-
-/// Routes incoming mark price updates to the `OptionChainManager` ATM tracker.
-#[derive(Debug)]
-pub struct OptionChainMarkPriceHandler {
-    manager: WeakCell<OptionChainManager>,
-    id: Ustr,
-}
-
-impl OptionChainMarkPriceHandler {
-    pub fn new(manager: Rc<RefCell<OptionChainManager>>, series_id: OptionSeriesId) -> Self {
-        let id = Ustr::from(&format!("OptionChainMarkPriceHandler({series_id})"));
-        Self {
-            manager: WeakCell::from(Rc::downgrade(&manager)),
-            id,
-        }
-    }
-}
-
-impl Handler<MarkPriceUpdate> for OptionChainMarkPriceHandler {
-    fn id(&self) -> Ustr {
-        self.id
-    }
-
-    fn handle(&self, mark: &MarkPriceUpdate) {
-        if let Some(mgr) = self.manager.upgrade() {
-            mgr.borrow_mut().handle_mark_price(mark);
-        }
-    }
-}
-
-/// Routes incoming index price updates to the `OptionChainManager` ATM tracker.
-#[derive(Debug)]
-pub struct OptionChainIndexPriceHandler {
-    manager: WeakCell<OptionChainManager>,
-    id: Ustr,
-}
-
-impl OptionChainIndexPriceHandler {
-    pub fn new(manager: Rc<RefCell<OptionChainManager>>, series_id: OptionSeriesId) -> Self {
-        let id = Ustr::from(&format!("OptionChainIndexPriceHandler({series_id})"));
-        Self {
-            manager: WeakCell::from(Rc::downgrade(&manager)),
-            id,
-        }
-    }
-}
-
-impl Handler<IndexPriceUpdate> for OptionChainIndexPriceHandler {
-    fn id(&self) -> Ustr {
-        self.id
-    }
-
-    fn handle(&self, index: &IndexPriceUpdate) {
-        if let Some(mgr) = self.manager.upgrade() {
-            mgr.borrow_mut().handle_index_price(index);
         }
     }
 }

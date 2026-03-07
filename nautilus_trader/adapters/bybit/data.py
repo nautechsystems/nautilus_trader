@@ -28,6 +28,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestForwardPrices
 from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
@@ -54,6 +55,7 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import MarkPriceUpdate
+from nautilus_trader.model.data import OptionGreeks
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
@@ -412,6 +414,44 @@ class BybitDataClient(LiveMarketDataClient):
             await ws_client.subscribe_ticker(pyo3_instrument_id)
         self._ticker_subscriptions[pyo3_instrument_id].add("funding")
 
+    async def _subscribe_option_greeks(self, command) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
+
+        if product_type != nautilus_pyo3.BybitProductType.OPTION:
+            self._log.warning(
+                f"Cannot subscribe to option greeks for non-OPTION instrument {command.instrument_id}",
+            )
+            return
+
+        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
+        # subscribe_option_greeks registers the instrument for greeks parsing
+        # in the Rust DashSet AND subscribes the ticker channel. Track in
+        # _ticker_subscriptions for ref counting with other ticker users.
+        if pyo3_instrument_id not in self._ticker_subscriptions:
+            self._ticker_subscriptions[pyo3_instrument_id] = set()
+        await ws_client.subscribe_option_greeks(pyo3_instrument_id)  # type: ignore[attr-defined]
+        self._ticker_subscriptions[pyo3_instrument_id].add("option_greeks")
+
+    async def _unsubscribe_option_greeks(self, command) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
+        if pyo3_instrument_id in self._ticker_subscriptions:
+            self._ticker_subscriptions[pyo3_instrument_id].discard("option_greeks")
+            if not self._ticker_subscriptions[pyo3_instrument_id]:
+                # Last ticker user — unsubscribe greeks (removes from DashSet
+                # and unsubscribes ticker channel)
+                await ws_client.unsubscribe_option_greeks(pyo3_instrument_id)  # type: ignore[attr-defined]
+                del self._ticker_subscriptions[pyo3_instrument_id]
+            else:
+                # Other ticker users remain — unsubscribe_option_greeks would
+                # kill the ticker channel, so just remove greeks registration
+                # and re-subscribe ticker to keep it alive
+                await ws_client.unsubscribe_option_greeks(pyo3_instrument_id)  # type: ignore[attr-defined]
+                await ws_client.subscribe_ticker(pyo3_instrument_id)
+
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
 
@@ -705,6 +745,28 @@ class BybitDataClient(LiveMarketDataClient):
             request.params,
         )
 
+    async def _request_forward_prices(self, request: RequestForwardPrices) -> None:
+        sample_id = request.sample_instrument_id
+        pyo3_inst_id = None
+        if sample_id is not None:
+            pyo3_inst_id = nautilus_pyo3.InstrumentId.from_str(str(sample_id))
+
+        try:
+            forward_prices = await self._http_client.request_forward_prices(  # type: ignore[attr-defined]
+                base_coin=request.underlying,
+                instrument_id=pyo3_inst_id,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to request forward prices for {request.underlying}: {e}")
+            # Send empty response so engine can fall back
+            self._handle_forward_prices([], request.id, request.params or {})
+            return
+
+        self._log.info(
+            f"Received {len(forward_prices)} forward prices for {request.underlying}",
+        )
+        self._handle_forward_prices(forward_prices, request.id, request.params or {})
+
     def _handle_msg(self, msg: Any) -> None:
         try:
             # Handle pycapsule data from Rust (market data)
@@ -728,6 +790,11 @@ class BybitDataClient(LiveMarketDataClient):
 
             if isinstance(msg, nautilus_pyo3.IndexPriceUpdate):
                 data = IndexPriceUpdate.from_pyo3(msg)
+                self._handle_data(data)
+                return
+
+            if isinstance(msg, nautilus_pyo3.OptionGreeks):
+                data = OptionGreeks.from_pyo3(msg)
                 self._handle_data(data)
                 return
 

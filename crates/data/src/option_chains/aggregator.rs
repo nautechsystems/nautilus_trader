@@ -270,8 +270,6 @@ impl OptionChainAggregator {
 
     /// Handles an incoming quote tick by updating the accumulator buffers.
     pub fn update_quote(&mut self, quote: &QuoteTick) {
-        self.atm_tracker.update_from_quote(quote);
-
         if !self.active_ids.contains(&quote.instrument_id) {
             return;
         }
@@ -542,11 +540,7 @@ impl OptionChainAggregator {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{
-        data::{greeks::OptionGreekValues, option_chain::AtmSource},
-        identifiers::Venue,
-        types::Quantity,
-    };
+    use nautilus_model::{data::greeks::OptionGreekValues, identifiers::Venue, types::Quantity};
     use rstest::*;
 
     use super::*;
@@ -558,10 +552,6 @@ mod tests {
             ustr::Ustr::from("BTC"),
             UnixNanos::from(1_700_000_000_000_000_000u64),
         )
-    }
-
-    fn btc_perp() -> InstrumentId {
-        InstrumentId::from("BTC-PERPETUAL.DERIBIT")
     }
 
     fn make_quote(instrument_id: InstrumentId, bid: &str, ask: &str) -> QuoteTick {
@@ -581,6 +571,16 @@ mod tests {
         UnixNanos::from(1_000_000_000_000_000_000u64)
     }
 
+    /// Sets ATM price on an aggregator via a synthetic OptionGreeks with the given forward price.
+    fn set_atm_via_greeks(agg: &mut OptionChainAggregator, price: f64) {
+        let greeks = OptionGreeks {
+            instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
+            underlying_price: Some(price),
+            ..Default::default()
+        };
+        agg.atm_tracker_mut().update_from_option_greeks(&greeks);
+    }
+
     fn make_aggregator() -> (OptionChainAggregator, InstrumentId, InstrumentId) {
         let call_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
         let put_id = InstrumentId::from("BTC-20240101-50000-P.DERIBIT");
@@ -590,7 +590,7 @@ mod tests {
         instrument_map.insert(call_id, (strike, OptionKind::Call));
         instrument_map.insert(put_id, (strike, OptionKind::Put));
 
-        let tracker = AtmTracker::new(AtmSource::UnderlyingQuoteMid(btc_perp()));
+        let tracker = AtmTracker::new();
         let agg = OptionChainAggregator::new(
             make_series_id(),
             StrikeRange::Fixed(vec![strike]),
@@ -694,7 +694,7 @@ mod tests {
             instruments.insert(put_id, (strike, OptionKind::Put));
         }
 
-        let tracker = AtmTracker::new(AtmSource::UnderlyingQuoteMid(btc_perp()));
+        let tracker = AtmTracker::new();
         let mut agg = OptionChainAggregator::new(
             make_series_id(),
             StrikeRange::AtmRelative {
@@ -714,8 +714,7 @@ mod tests {
     fn test_check_rebalance_fixed_always_none() {
         // Fixed range + ATM price set → still returns None
         let (mut agg, _, _) = make_aggregator();
-        let perp_quote = make_quote(btc_perp(), "50000.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         assert!(agg.check_rebalance(now()).is_none());
     }
 
@@ -730,15 +729,13 @@ mod tests {
     fn test_check_rebalance_atm_unchanged_returns_none() {
         let mut agg = make_multi_strike_aggregator();
         // Set ATM to 50000 and apply initial rebalance
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         // First check detects ATM shift (from None → 50000)
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
 
         // ATM moves slightly but stays closest to 50000
-        let perp_quote2 = make_quote(btc_perp(), "50100.00", "50300.00");
-        agg.update_quote(&perp_quote2);
+        set_atm_via_greeks(&mut agg, 50200.0);
         assert!(agg.check_rebalance(now()).is_none());
     }
 
@@ -746,16 +743,14 @@ mod tests {
     fn test_check_rebalance_detects_atm_shift() {
         let mut agg = make_multi_strike_aggregator();
         // Set ATM near 50000
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
         // Active: 47500, 50000, 52500 (ATM=50000, +-1 strike)
         assert_eq!(agg.instrument_ids().len(), 6); // 3 strikes × 2
 
         // Now shift ATM to 55000
-        let perp_quote2 = make_quote(btc_perp(), "54900.00", "55100.00");
-        agg.update_quote(&perp_quote2);
+        set_atm_via_greeks(&mut agg, 55000.0);
         let action2 = agg.check_rebalance(now()).unwrap();
         // Should have instruments to add (55000) and remove (47500)
         assert!(!action2.add.is_empty() || !action2.remove.is_empty());
@@ -765,8 +760,7 @@ mod tests {
     fn test_apply_rebalance_updates_instrument_map() {
         let mut agg = make_multi_strike_aggregator();
         // Set ATM near 50000
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
 
@@ -775,8 +769,7 @@ mod tests {
         assert_eq!(active_ids.len(), 6); // 3 strikes × 2 (call + put)
 
         // Now shift to 55000
-        let perp_quote2 = make_quote(btc_perp(), "54900.00", "55100.00");
-        agg.update_quote(&perp_quote2);
+        set_atm_via_greeks(&mut agg, 55000.0);
         let action2 = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action2, now());
 
@@ -789,8 +782,7 @@ mod tests {
     fn test_apply_rebalance_cleans_buffers() {
         let mut agg = make_multi_strike_aggregator();
         // Set ATM near 50000
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
 
@@ -801,8 +793,7 @@ mod tests {
         assert_eq!(agg.call_buffer_len(), 1);
 
         // Now shift ATM up so 47500 is out of range
-        let perp_quote2 = make_quote(btc_perp(), "54900.00", "55100.00");
-        agg.update_quote(&perp_quote2);
+        set_atm_via_greeks(&mut agg, 55000.0);
         let action2 = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action2, now());
 
@@ -822,8 +813,7 @@ mod tests {
     fn test_catalog_vs_active_separation() {
         let mut agg = make_multi_strike_aggregator();
         // Set ATM near 50000 to narrow active set
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
 
@@ -879,8 +869,7 @@ mod tests {
     fn test_add_instrument_available_for_rebalance() {
         let mut agg = make_multi_strike_aggregator();
         // Set ATM near 50000 and apply initial rebalance
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
         // Active: 47500, 50000, 52500 (6 instruments)
@@ -894,8 +883,7 @@ mod tests {
         assert!(!agg.active_ids().contains(&new_id));
 
         // Shift ATM to 57500 — rebalance should pick up the new instrument
-        let perp_quote2 = make_quote(btc_perp(), "57400.00", "57600.00");
-        agg.update_quote(&perp_quote2);
+        set_atm_via_greeks(&mut agg, 57500.0);
         let action2 = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action2, now());
 
@@ -913,7 +901,7 @@ mod tests {
             let call_id = InstrumentId::from(&format!("BTC-20240101-{s}-C.DERIBIT"));
             instruments.insert(call_id, (strike, OptionKind::Call));
         }
-        let tracker = AtmTracker::new(AtmSource::UnderlyingQuoteMid(btc_perp()));
+        let tracker = AtmTracker::new();
         let mut agg = OptionChainAggregator::new(
             make_series_id(),
             StrikeRange::AtmRelative {
@@ -927,16 +915,14 @@ mod tests {
         agg.set_cooldown_ns(0);
 
         // Set ATM to 50000
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
         assert_eq!(agg.last_atm_strike(), Some(Price::from("50000")));
 
         // Move ATM slightly toward 52500 — gap=2500, threshold=50000+0.6*2500=51500
-        // Mid at 51000 does NOT cross 51500
-        let perp_quote2 = make_quote(btc_perp(), "50900.00", "51100.00");
-        agg.update_quote(&perp_quote2);
+        // 51000 does NOT cross 51500
+        set_atm_via_greeks(&mut agg, 51000.0);
         assert!(agg.check_rebalance(now()).is_none());
     }
 
@@ -949,7 +935,7 @@ mod tests {
             let call_id = InstrumentId::from(&format!("BTC-20240101-{s}-C.DERIBIT"));
             instruments.insert(call_id, (strike, OptionKind::Call));
         }
-        let tracker = AtmTracker::new(AtmSource::UnderlyingQuoteMid(btc_perp()));
+        let tracker = AtmTracker::new();
         let mut agg = OptionChainAggregator::new(
             make_series_id(),
             StrikeRange::AtmRelative {
@@ -963,14 +949,12 @@ mod tests {
         agg.set_cooldown_ns(0);
 
         // Set ATM to 50000
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
 
-        // Move ATM well past threshold: mid=52000 > 51500
-        let perp_quote2 = make_quote(btc_perp(), "51900.00", "52100.00");
-        agg.update_quote(&perp_quote2);
+        // Move ATM well past threshold: 52000 > 51500
+        set_atm_via_greeks(&mut agg, 52000.0);
         assert!(agg.check_rebalance(now()).is_some());
     }
 
@@ -980,14 +964,12 @@ mod tests {
         agg.set_hysteresis(0.0);
         agg.set_cooldown_ns(0);
 
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
 
         // Any shift past the strike boundary triggers rebalance
-        let perp_quote2 = make_quote(btc_perp(), "52400.00", "52600.00");
-        agg.update_quote(&perp_quote2);
+        set_atm_via_greeks(&mut agg, 52500.0);
         assert!(agg.check_rebalance(now()).is_some());
     }
 
@@ -999,15 +981,13 @@ mod tests {
         agg.set_hysteresis(0.0);
         agg.set_cooldown_ns(5_000_000_000); // 5s
 
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let t0 = now();
         let action = agg.check_rebalance(t0).unwrap();
         agg.apply_rebalance(&action, t0);
 
         // Shift ATM immediately — cooldown blocks
-        let perp_quote2 = make_quote(btc_perp(), "54900.00", "55100.00");
-        agg.update_quote(&perp_quote2);
+        set_atm_via_greeks(&mut agg, 55000.0);
         let t1 = UnixNanos::from(t0.as_u64() + 1_000_000_000); // 1s later
         assert!(agg.check_rebalance(t1).is_none());
     }
@@ -1018,15 +998,13 @@ mod tests {
         agg.set_hysteresis(0.0);
         agg.set_cooldown_ns(5_000_000_000); // 5s
 
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let t0 = now();
         let action = agg.check_rebalance(t0).unwrap();
         agg.apply_rebalance(&action, t0);
 
         // Shift ATM after cooldown elapses
-        let perp_quote2 = make_quote(btc_perp(), "54900.00", "55100.00");
-        agg.update_quote(&perp_quote2);
+        set_atm_via_greeks(&mut agg, 55000.0);
         let t1 = UnixNanos::from(t0.as_u64() + 6_000_000_000); // 6s later
         assert!(agg.check_rebalance(t1).is_some());
     }
@@ -1037,15 +1015,13 @@ mod tests {
         agg.set_hysteresis(0.0);
         agg.set_cooldown_ns(0);
 
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let t0 = now();
         let action = agg.check_rebalance(t0).unwrap();
         agg.apply_rebalance(&action, t0);
 
         // Shift ATM immediately — no cooldown block
-        let perp_quote2 = make_quote(btc_perp(), "54900.00", "55100.00");
-        agg.update_quote(&perp_quote2);
+        set_atm_via_greeks(&mut agg, 55000.0);
         assert!(agg.check_rebalance(t0).is_some());
     }
 
@@ -1130,7 +1106,7 @@ mod tests {
             let call_id = InstrumentId::from(&format!("BTC-20240101-{s}-C.DERIBIT"));
             instruments.insert(call_id, (strike, OptionKind::Call));
         }
-        let tracker = AtmTracker::new(AtmSource::UnderlyingQuoteMid(btc_perp()));
+        let tracker = AtmTracker::new();
         let mut agg = OptionChainAggregator::new(
             make_series_id(),
             StrikeRange::AtmRelative {
@@ -1144,8 +1120,7 @@ mod tests {
         agg.set_cooldown_ns(0);
 
         // Set ATM to 50000, rebalance -> active: {47500, 50000, 52500}
-        let perp_quote = make_quote(btc_perp(), "49900.00", "50100.00");
-        agg.update_quote(&perp_quote);
+        set_atm_via_greeks(&mut agg, 50000.0);
         let action = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action, now());
         assert_eq!(agg.instrument_ids().len(), 3);
@@ -1172,8 +1147,7 @@ mod tests {
         assert_eq!(agg.call_buffer_len(), 3);
 
         // Move ATM slightly toward 52500 but within hysteresis band (no rebalance)
-        let perp_quote2 = make_quote(btc_perp(), "50900.00", "51100.00");
-        agg.update_quote(&perp_quote2);
+        set_atm_via_greeks(&mut agg, 51000.0);
         assert!(agg.check_rebalance(now()).is_none());
 
         // Snapshot must still include all 3 buffered strikes
