@@ -33,9 +33,9 @@ use crate::websocket::{
 impl HyperliquidWebSocketClient {
     #[new]
     #[pyo3(signature = (url=None, testnet=false, account_id=None))]
-    fn py_new(url: Option<String>, testnet: bool, account_id: Option<String>) -> PyResult<Self> {
+    fn py_new(url: Option<String>, testnet: bool, account_id: Option<String>) -> Self {
         let account_id = account_id.map(|s| AccountId::from(s.as_str()));
-        Ok(Self::new(url, testnet, account_id))
+        Self::new(url, testnet, account_id)
     }
 
     #[getter]

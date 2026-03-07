@@ -409,7 +409,7 @@ impl OKXExecutionClient {
         Ok(())
     }
 
-    fn cancel_ws_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_ws_order(&self, cmd: &CancelOrder) {
         let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
@@ -443,11 +443,9 @@ impl OKXExecutionClient {
 
             Ok(())
         });
-
-        Ok(())
     }
 
-    fn cancel_algo_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_algo_order(&self, cmd: &CancelOrder) {
         let http_client = self.http_client.clone();
         let command = cmd.clone();
         let emitter = self.emitter.clone();
@@ -517,17 +515,14 @@ impl OKXExecutionClient {
 
             Ok(())
         });
-
-        Ok(())
     }
 
-    fn mass_cancel_instrument(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn mass_cancel_instrument(&self, instrument_id: InstrumentId) {
         let ws_private = self.ws_private.clone();
         self.spawn_task("mass_cancel_orders", async move {
             ws_private.mass_cancel_orders(instrument_id).await?;
             Ok(())
         });
-        Ok(())
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -954,16 +949,18 @@ impl ExecutionClient for OKXExecutionClient {
         drop(cache);
 
         if is_pending_algo {
-            self.cancel_algo_order(cmd)
+            self.cancel_algo_order(cmd);
         } else {
-            self.cancel_ws_order(cmd)
+            self.cancel_ws_order(cmd);
         }
+        Ok(())
     }
 
     fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
         if self.config.use_mm_mass_cancel {
             // Use OKX's mass-cancel endpoint (requires market maker permissions)
-            self.mass_cancel_instrument(cmd.instrument_id)
+            self.mass_cancel_instrument(cmd.instrument_id);
+            Ok(())
         } else {
             // Cancel orders via batch cancel (works for all users)
             let cache = self.core.cache();

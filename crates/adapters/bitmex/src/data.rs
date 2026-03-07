@@ -178,7 +178,7 @@ impl BitmexDataClient {
     fn spawn_stream_task(
         &mut self,
         stream: impl futures_util::Stream<Item = BitmexWsMessage> + Send + 'static,
-    ) -> anyhow::Result<()> {
+    ) {
         let data_sender = self.data_sender.clone();
         let instruments = Arc::clone(&self.instruments);
         let cancellation = self.cancellation_token.clone();
@@ -224,7 +224,6 @@ impl BitmexDataClient {
         });
 
         self.tasks.push(handle);
-        Ok(())
     }
 
     fn handle_ws_message(
@@ -529,18 +528,18 @@ impl BitmexDataClient {
         !self.is_connected()
     }
 
-    fn maybe_spawn_instrument_refresh(&mut self) -> anyhow::Result<()> {
+    fn maybe_spawn_instrument_refresh(&mut self) {
         let Some(minutes) = self.config.update_instruments_interval_mins else {
-            return Ok(());
+            return;
         };
 
         if minutes == 0 || self.instrument_refresh_active {
-            return Ok(());
+            return;
         }
 
         let interval_secs = minutes.saturating_mul(60);
         if interval_secs == 0 {
-            return Ok(());
+            return;
         }
 
         let interval = Duration::from_secs(interval_secs);
@@ -592,7 +591,6 @@ impl BitmexDataClient {
 
         self.tasks.push(handle);
         self.instrument_refresh_active = true;
-        Ok(())
     }
 }
 
@@ -671,8 +669,8 @@ impl DataClient for BitmexDataClient {
             .context("BitMEX websocket did not become active")?;
 
         let stream = ws.stream();
-        self.spawn_stream_task(stream)?;
-        self.maybe_spawn_instrument_refresh()?;
+        self.spawn_stream_task(stream);
+        self.maybe_spawn_instrument_refresh();
 
         self.is_connected.store(true, Ordering::Relaxed);
         log::info!("Connected");

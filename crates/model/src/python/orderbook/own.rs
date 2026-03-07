@@ -49,8 +49,8 @@ impl OwnBookOrder {
         ts_submitted: u64,
         ts_init: u64,
         venue_order_id: Option<VenueOrderId>,
-    ) -> PyResult<Self> {
-        Ok(Self::new(
+    ) -> Self {
+        Self::new(
             trader_id,
             client_order_id,
             venue_order_id,
@@ -64,7 +64,7 @@ impl OwnBookOrder {
             ts_accepted.into(),
             ts_submitted.into(),
             ts_init.into(),
-        ))
+        )
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

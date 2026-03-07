@@ -350,12 +350,8 @@ impl Bar {
         bar_type: &BarType,
         price_precision: u8,
         size_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(
-            bar_type,
-            price_precision,
-            size_precision,
-        ))
+    ) -> HashMap<String, String> {
+        Self::get_metadata(bar_type, price_precision, size_precision)
     }
 
     #[staticmethod]

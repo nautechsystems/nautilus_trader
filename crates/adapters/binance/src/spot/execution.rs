@@ -306,7 +306,7 @@ impl BinanceSpotExecutionClient {
         Ok(())
     }
 
-    fn cancel_order_internal(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order_internal(&self, cmd: &CancelOrder) {
         let http_client = self.http_client.clone();
         let command = cmd.clone();
 
@@ -368,8 +368,6 @@ impl BinanceSpotExecutionClient {
 
             Ok(())
         });
-
-        Ok(())
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -822,7 +820,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 
     fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        self.cancel_order_internal(cmd)
+        self.cancel_order_internal(cmd);
+        Ok(())
     }
 
     fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {

@@ -346,6 +346,7 @@ impl BetfairHttpClient {
         ]
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn default_quota() -> Option<Quota> {
         Some(Quota::per_second(NonZeroU32::new(5).expect("non-zero")).expect("valid constant"))
     }

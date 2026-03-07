@@ -220,8 +220,8 @@ impl CryptoOption {
 
     #[getter]
     #[pyo3(name = "lot_size")]
-    fn py_lot_size(&self) -> Option<Quantity> {
-        Some(self.lot_size)
+    fn py_lot_size(&self) -> Quantity {
+        self.lot_size
     }
 
     #[getter]

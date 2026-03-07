@@ -324,9 +324,7 @@ fn sbe_mantissa_precision(mantissa: i64, exponent: i8) -> u8 {
 }
 
 /// Parses an SBE price filter into tick_size, max_price, min_price.
-fn parse_sbe_price_filter(
-    filter: &BinancePriceFilterSbe,
-) -> anyhow::Result<(Price, Option<Price>, Option<Price>)> {
+fn parse_sbe_price_filter(filter: &BinancePriceFilterSbe) -> (Price, Option<Price>, Option<Price>) {
     let precision = sbe_mantissa_precision(filter.tick_size, filter.price_exponent);
 
     let tick_size = mantissa_to_price(filter.tick_size, filter.price_exponent, precision);
@@ -351,13 +349,13 @@ fn parse_sbe_price_filter(
         None
     };
 
-    Ok((tick_size, max_price, min_price))
+    (tick_size, max_price, min_price)
 }
 
 /// Parses an SBE lot size filter into step_size, max_qty, min_qty.
 fn parse_sbe_lot_size_filter(
     filter: &BinanceLotSizeFilterSbe,
-) -> anyhow::Result<(Quantity, Option<Quantity>, Option<Quantity>)> {
+) -> (Quantity, Option<Quantity>, Option<Quantity>) {
     let precision = sbe_mantissa_precision(filter.step_size, filter.qty_exponent);
 
     let step_size = mantissa_to_quantity(filter.step_size, filter.qty_exponent, precision);
@@ -382,7 +380,7 @@ fn parse_sbe_lot_size_filter(
         None
     };
 
-    Ok((step_size, max_qty, min_qty))
+    (step_size, max_qty, min_qty)
 }
 
 /// Parses a Binance Spot SBE symbol into a Nautilus CurrencyPair instrument.
@@ -421,7 +419,7 @@ pub fn parse_spot_instrument_sbe(
         .as_ref()
         .context("Missing PRICE_FILTER in symbol filters")?;
 
-    let (tick_size, max_price, min_price) = parse_sbe_price_filter(price_filter)?;
+    let (tick_size, max_price, min_price) = parse_sbe_price_filter(price_filter);
 
     let lot_filter = symbol
         .filters
@@ -429,7 +427,7 @@ pub fn parse_spot_instrument_sbe(
         .as_ref()
         .context("Missing LOT_SIZE in symbol filters")?;
 
-    let (step_size, max_quantity, min_quantity) = parse_sbe_lot_size_filter(lot_filter)?;
+    let (step_size, max_quantity, min_quantity) = parse_sbe_lot_size_filter(lot_filter);
 
     // Spot has no leverage, use 1.0 margin
     let default_margin = Decimal::new(1, 0);
@@ -1235,7 +1233,7 @@ mod tests {
                 tick_size: 1_000_000,
             };
 
-            let (tick_size, max_price, min_price) = parse_sbe_price_filter(&filter).unwrap();
+            let (tick_size, max_price, min_price) = parse_sbe_price_filter(&filter);
 
             assert_eq!(tick_size.precision, 2, "tick_size precision");
             assert_eq!(tick_size.as_f64(), 0.01);
@@ -1252,7 +1250,7 @@ mod tests {
                 tick_size: 1,
             };
 
-            let (tick_size, _, _) = parse_sbe_price_filter(&filter).unwrap();
+            let (tick_size, _, _) = parse_sbe_price_filter(&filter);
 
             assert_eq!(tick_size.precision, 8);
             assert_eq!(tick_size.as_f64(), 0.00000001);
@@ -1267,7 +1265,7 @@ mod tests {
                 step_size: 10_000,
             };
 
-            let (step_size, max_qty, min_qty) = parse_sbe_lot_size_filter(&filter).unwrap();
+            let (step_size, max_qty, min_qty) = parse_sbe_lot_size_filter(&filter);
 
             assert_eq!(step_size.precision, 4, "step_size precision");
             assert_eq!(min_qty.unwrap().precision, 4);

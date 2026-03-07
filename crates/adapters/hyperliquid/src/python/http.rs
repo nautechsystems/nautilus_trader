@@ -99,10 +99,9 @@ impl HyperliquidHttpClient {
     }
 
     #[pyo3(name = "set_account_id")]
-    fn py_set_account_id(&mut self, account_id: &str) -> PyResult<()> {
+    fn py_set_account_id(&mut self, account_id: &str) {
         let account_id = AccountId::from(account_id);
         self.set_account_id(account_id);
-        Ok(())
     }
 
     #[pyo3(name = "get_user_address")]

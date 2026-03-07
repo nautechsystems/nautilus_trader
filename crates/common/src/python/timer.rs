@@ -180,9 +180,8 @@ mod tests {
     };
 
     #[pyfunction]
-    const fn receive_event(_py: Python, _event: TimeEvent) -> PyResult<()> {
+    const fn receive_event(_py: Python, _event: TimeEvent) {
         // TODO: Assert the length of a handler vec
-        Ok(())
     }
 
     #[derive(Debug)]

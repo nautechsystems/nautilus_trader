@@ -519,7 +519,7 @@ impl ParquetDataCatalog {
             self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
 
         if file_exists {
-            log::info!("File {path:?} already exists, skipping write");
+            log::info!("File {} already exists, skipping write", path.display());
             return Ok(path);
         }
 
@@ -538,8 +538,9 @@ impl ParquetDataCatalog {
         }
 
         log::info!(
-            "Writing {} batches of {type_name} data to {path:?}",
-            batches.len()
+            "Writing {} batches of {type_name} data to {}",
+            batches.len(),
+            path.display(),
         );
 
         self.execute_async(async {
@@ -605,7 +606,7 @@ impl ParquetDataCatalog {
             self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
 
         if file_exists {
-            log::info!("File {path:?} already exists, skipping write");
+            log::info!("File {} already exists, skipping write", path.display());
             return Ok(path);
         }
 
@@ -740,14 +741,18 @@ impl ParquetDataCatalog {
                 .execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
 
             if file_exists {
-                log::info!("Instrument file {path:?} already exists, skipping write");
+                log::info!(
+                    "Instrument file {} already exists, skipping write",
+                    path.display()
+                );
                 paths.push(path);
                 continue;
             }
 
             log::info!(
-                "Writing {} batches of instrument data for {instrument_id} to {path:?}",
-                batches.len()
+                "Writing {} batches of instrument data for {instrument_id} to {}",
+                batches.len(),
+                path.display(),
             );
 
             // ArrowWriter stores the full schema (including "class" metadata) in ARROW:schema.
@@ -944,14 +949,15 @@ impl ParquetDataCatalog {
         let json_path = directory.join(&filename);
 
         log::info!(
-            "Writing {} records of {type_name} data to {json_path:?}",
-            data.len()
+            "Writing {} records of {type_name} data to {}",
+            data.len(),
+            json_path.display(),
         );
 
         if write_metadata {
             let metadata = T::chunk_metadata(&data);
             let metadata_path = json_path.with_extension("metadata.json");
-            log::info!("Writing metadata to {metadata_path:?}");
+            log::info!("Writing metadata to {}", metadata_path.display());
 
             // Use object store for metadata file
             let metadata_object_path = ObjectPath::from(metadata_path.to_string_lossy().as_ref());

@@ -123,8 +123,8 @@ impl InstrumentClose {
     fn py_get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(instrument_id, price_precision))
+    ) -> HashMap<String, String> {
+        Self::get_metadata(instrument_id, price_precision)
     }
 
     #[staticmethod]

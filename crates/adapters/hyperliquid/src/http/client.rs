@@ -286,8 +286,8 @@ impl HyperliquidRawHttpClient {
         ])
     }
 
-    fn signer_id(&self) -> Result<SignerId> {
-        Ok(SignerId("hyperliquid:default".into()))
+    fn signer_id(&self) -> SignerId {
+        SignerId("hyperliquid:default".into())
     }
 
     fn parse_retry_after_simple(&self, headers: &HashMap<String, String>) -> Option<u64> {
@@ -516,7 +516,7 @@ impl HyperliquidRawHttpClient {
             .as_ref()
             .ok_or_else(|| Error::auth("nonce manager missing"))?;
 
-        let signer_id = self.signer_id()?;
+        let signer_id = self.signer_id();
         let time_nonce = nonce_manager.next(signer_id)?;
 
         let action_value = serde_json::to_value(action)
@@ -622,7 +622,7 @@ impl HyperliquidRawHttpClient {
             .as_ref()
             .ok_or_else(|| Error::auth("nonce manager missing"))?;
 
-        let signer_id = self.signer_id()?;
+        let signer_id = self.signer_id();
         let time_nonce = nonce_manager.next(signer_id)?;
         // No need to validate - next() guarantees a valid, unused nonce
 
@@ -2175,7 +2175,7 @@ impl HyperliquidHttpClient {
                 let ts_init = self.clock.get_time_ns();
 
                 match order_status {
-                    HyperliquidExecOrderStatus::Resting { resting } => self
+                    HyperliquidExecOrderStatus::Resting { resting } => Ok(self
                         .create_order_status_report(
                             instrument_id,
                             Some(client_order_id),
@@ -2191,13 +2191,13 @@ impl HyperliquidHttpClient {
                             &instrument,
                             account_id,
                             ts_init,
-                        ),
+                        )),
                     HyperliquidExecOrderStatus::Filled { filled } => {
                         let filled_qty = Quantity::new(
                             filled.total_sz.to_string().parse::<f64>().unwrap_or(0.0),
                             instrument.size_precision(),
                         );
-                        self.create_order_status_report(
+                        Ok(self.create_order_status_report(
                             instrument_id,
                             Some(client_order_id),
                             VenueOrderId::new(filled.oid.to_string()),
@@ -2212,7 +2212,7 @@ impl HyperliquidHttpClient {
                             &instrument,
                             account_id,
                             ts_init,
-                        )
+                        ))
                     }
                     HyperliquidExecOrderStatus::Error { error } => {
                         Err(Error::bad_request(format!("Order rejected: {error}")))
@@ -2262,7 +2262,7 @@ impl HyperliquidHttpClient {
         _instrument: &InstrumentAny,
         account_id: AccountId,
         ts_init: UnixNanos,
-    ) -> Result<OrderStatusReport> {
+    ) -> OrderStatusReport {
         let ts_accepted = self.clock.get_time_ns();
         let ts_last = ts_accepted;
         let report_id = UUID4::new();
@@ -2294,7 +2294,7 @@ impl HyperliquidHttpClient {
                 .with_trigger_type(TriggerType::Default);
         }
 
-        Ok(report)
+        report
     }
 
     /// Submit multiple orders to the Hyperliquid exchange in a single request.
@@ -2408,7 +2408,7 @@ impl HyperliquidHttpClient {
                                 &instrument,
                                 account_id,
                                 ts_init,
-                            )?
+                            )
                         }
                         HyperliquidExecOrderStatus::Filled { filled } => {
                             // Order was filled immediately
@@ -2431,7 +2431,7 @@ impl HyperliquidHttpClient {
                                 &instrument,
                                 account_id,
                                 ts_init,
-                            )?
+                            )
                         }
                         HyperliquidExecOrderStatus::Error { error } => {
                             return Err(Error::bad_request(format!(

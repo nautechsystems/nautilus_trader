@@ -188,7 +188,7 @@ impl DeribitDataClient {
     fn spawn_stream_task(
         &mut self,
         stream: impl futures_util::Stream<Item = NautilusWsMessage> + Send + 'static,
-    ) -> anyhow::Result<()> {
+    ) {
         let data_sender = self.data_sender.clone();
         let instruments = Arc::clone(&self.instruments);
         let cancellation = self.cancellation_token.clone();
@@ -216,7 +216,6 @@ impl DeribitDataClient {
         });
 
         self.tasks.push(handle);
-        Ok(())
     }
 
     /// Handles incoming WebSocket messages.
@@ -477,7 +476,7 @@ impl DataClient for DeribitDataClient {
 
         // Get the stream and spawn processing task
         let stream = self.ws_client_mut()?.stream()?;
-        self.spawn_stream_task(stream)?;
+        self.spawn_stream_task(stream);
 
         self.is_connected.store(true, Ordering::Release);
         let network = if self.config.use_testnet {

@@ -66,8 +66,8 @@ impl InstrumentId {
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::from_str("NULL.NULL").unwrap()) // Safe default
+    fn _safe_constructor() -> Self {
+        Self::from_str("NULL.NULL").unwrap() // Safe default
     }
 
     fn __richcmp__(&self, other: Py<PyAny>, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

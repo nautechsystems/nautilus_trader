@@ -483,17 +483,17 @@ pub fn topic_from_bar_spec(spec: BarSpecification) -> BitmexWsTopic {
     }
 }
 
-fn infer_order_type_from_msg(msg: &BitmexOrderMsg) -> Option<OrderType> {
+fn infer_order_type_from_msg(msg: &BitmexOrderMsg) -> OrderType {
     if msg.stop_px.is_some() {
         if msg.price.is_some() {
-            Some(OrderType::StopLimit)
+            OrderType::StopLimit
         } else {
-            Some(OrderType::StopMarket)
+            OrderType::StopMarket
         }
     } else if msg.price.is_some() {
-        Some(OrderType::Limit)
+        OrderType::Limit
     } else {
-        Some(OrderType::Market)
+        OrderType::Market
     }
 }
 
@@ -535,18 +535,13 @@ pub fn parse_order_msg(
         let client_order_id = ClientOrderId::new(client_order_id);
         if let Some(&cached) = order_type_cache.get(&client_order_id) {
             cached
-        } else if let Some(inferred) = infer_order_type_from_msg(msg) {
+        } else {
+            let inferred = infer_order_type_from_msg(msg);
             order_type_cache.insert(client_order_id, inferred);
             inferred
-        } else {
-            anyhow::bail!(
-                "Order type not found in cache for client_order_id: {client_order_id} (order missing ord_type field)"
-            );
         }
-    } else if let Some(inferred) = infer_order_type_from_msg(msg) {
-        inferred
     } else {
-        anyhow::bail!("Order missing both ord_type and cl_ord_id");
+        infer_order_type_from_msg(msg)
     };
 
     let time_in_force: TimeInForce = match msg.time_in_force {

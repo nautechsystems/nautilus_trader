@@ -77,18 +77,8 @@ impl MarkPriceUpdate {
 #[pymethods]
 impl MarkPriceUpdate {
     #[new]
-    fn py_new(
-        instrument_id: InstrumentId,
-        value: Price,
-        ts_event: u64,
-        ts_init: u64,
-    ) -> PyResult<Self> {
-        Ok(Self::new(
-            instrument_id,
-            value,
-            ts_event.into(),
-            ts_init.into(),
-        ))
+    fn py_new(instrument_id: InstrumentId, value: Price, ts_event: u64, ts_init: u64) -> Self {
+        Self::new(instrument_id, value, ts_event.into(), ts_init.into())
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -196,8 +186,8 @@ impl MarkPriceUpdate {
     fn py_get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(instrument_id, price_precision))
+    ) -> HashMap<String, String> {
+        Self::get_metadata(instrument_id, price_precision)
     }
 
     #[staticmethod]
@@ -281,18 +271,8 @@ impl IndexPriceUpdate {
 #[pymethods]
 impl IndexPriceUpdate {
     #[new]
-    fn py_new(
-        instrument_id: InstrumentId,
-        value: Price,
-        ts_event: u64,
-        ts_init: u64,
-    ) -> PyResult<Self> {
-        Ok(Self::new(
-            instrument_id,
-            value,
-            ts_event.into(),
-            ts_init.into(),
-        ))
+    fn py_new(instrument_id: InstrumentId, value: Price, ts_event: u64, ts_init: u64) -> Self {
+        Self::new(instrument_id, value, ts_event.into(), ts_init.into())
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -400,8 +380,8 @@ impl IndexPriceUpdate {
     fn py_get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(instrument_id, price_precision))
+    ) -> HashMap<String, String> {
+        Self::get_metadata(instrument_id, price_precision)
     }
 
     #[staticmethod]

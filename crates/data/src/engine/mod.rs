@@ -759,7 +759,8 @@ impl DataEngine {
             }
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd)?,
             SubscribeCommand::OptionChain(cmd) => {
-                return self.subscribe_option_chain(cmd);
+                self.subscribe_option_chain(cmd);
+                return Ok(());
             }
             _ => {} // Do nothing else
         }
@@ -793,15 +794,17 @@ impl DataEngine {
     /// Returns an error if the underlying client operation fails.
     pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
-            UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd)?,
-            UnsubscribeCommand::BookDepth10(cmd) => self.unsubscribe_book_depth10(cmd)?,
+            UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd),
+            UnsubscribeCommand::BookDepth10(cmd) => self.unsubscribe_book_depth10(cmd),
             UnsubscribeCommand::BookSnapshots(cmd) => {
                 // Handles client forwarding internally (forwards as BookDeltas)
-                return self.unsubscribe_book_snapshots(cmd);
+                self.unsubscribe_book_snapshots(cmd);
+                return Ok(());
             }
-            UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd)?,
+            UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
             UnsubscribeCommand::OptionChain(cmd) => {
-                return self.unsubscribe_option_chain(cmd);
+                self.unsubscribe_option_chain(cmd);
+                return Ok(());
             }
             _ => {} // Do nothing else
         }
@@ -1413,10 +1416,10 @@ impl DataEngine {
         Ok(())
     }
 
-    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
+    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) {
         if !self.subscribed_book_deltas().contains(&cmd.instrument_id) {
             log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
-            return Ok(());
+            return;
         }
 
         self.book_deltas_subs.remove(&cmd.instrument_id);
@@ -1429,14 +1432,12 @@ impl DataEngine {
 
         self.maintain_book_updater(&cmd.instrument_id, &topics);
         self.maintain_book_snapshotter(&cmd.instrument_id);
-
-        Ok(())
     }
 
-    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) {
         if !self.book_depth10_subs.contains(&cmd.instrument_id) {
             log::warn!("Cannot unsubscribe from `OrderBookDepth10` data: not subscribed");
-            return Ok(());
+            return;
         }
 
         self.book_depth10_subs.remove(&cmd.instrument_id);
@@ -1448,11 +1449,9 @@ impl DataEngine {
 
         self.maintain_book_updater(&cmd.instrument_id, &topics);
         self.maintain_book_snapshotter(&cmd.instrument_id);
-
-        Ok(())
     }
 
-    fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
+    fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) {
         let is_subscribed = self
             .book_intervals
             .values()
@@ -1460,7 +1459,7 @@ impl DataEngine {
 
         if !is_subscribed {
             log::warn!("Cannot unsubscribe from `OrderBook` snapshots: not subscribed");
-            return Ok(());
+            return;
         }
 
         // Remove instrument from interval tracking, and drop empty intervals
@@ -1492,7 +1491,7 @@ impl DataEngine {
             if let Some(client_id) = cmd.client_id.as_ref()
                 && self.external_clients.contains(client_id)
             {
-                return Ok(());
+                return;
             }
 
             if let Some(client) = self.get_client(cmd.client_id.as_ref(), cmd.venue.as_ref()) {
@@ -1508,17 +1507,15 @@ impl DataEngine {
                 client.execute_unsubscribe(&UnsubscribeCommand::BookDeltas(deltas_cmd));
             }
         }
-
-        Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) {
         let bar_type = cmd.bar_type;
 
         // Don't remove aggregator if other exact-topic subscribers still exist
         let topic = switchboard::get_bars_topic(bar_type.standard());
         if msgbus::exact_subscriber_count_bars(topic) > 0 {
-            return Ok(());
+            return;
         }
 
         if self.bar_aggregators.contains_key(&bar_type.standard())
@@ -1538,11 +1535,9 @@ impl DataEngine {
                 log::error!("Error stopping source bar aggregator for {source_type}: {e}");
             }
         }
-
-        Ok(())
     }
 
-    fn subscribe_option_chain(&mut self, cmd: &SubscribeOptionChain) -> anyhow::Result<()> {
+    fn subscribe_option_chain(&mut self, cmd: &SubscribeOptionChain) {
         let series_id = cmd.series_id;
 
         // Handle edits to existing subscriptions by tearing down and re-setting up the OptionChainManager.
@@ -1607,12 +1602,11 @@ impl DataEngine {
                     self.create_option_chain_manager(&cmd, None);
                 }
 
-                return Ok(());
+                return;
             }
         }
 
         self.create_option_chain_manager(cmd, None);
-        Ok(())
     }
 
     /// Creates and stores an `OptionChainManager` for the given subscription.
@@ -1649,12 +1643,12 @@ impl DataEngine {
         self.option_chain_managers.insert(series_id, manager_rc);
     }
 
-    fn unsubscribe_option_chain(&mut self, cmd: &UnsubscribeOptionChain) -> anyhow::Result<()> {
+    fn unsubscribe_option_chain(&mut self, cmd: &UnsubscribeOptionChain) {
         let series_id = cmd.series_id;
 
         let Some(manager_rc) = self.option_chain_managers.remove(&series_id) else {
             log::warn!("Cannot unsubscribe option chain for {series_id}: not subscribed");
-            return Ok(());
+            return;
         };
 
         // Extract info before teardown
@@ -1672,7 +1666,6 @@ impl DataEngine {
         self.forward_option_chain_unsubscribes(&all_ids, venue, cmd.client_id);
 
         log::info!("Unsubscribed option chain for {series_id}");
-        Ok(())
     }
 
     /// Forwards wire-level unsubscribe commands for all option chain instruments.

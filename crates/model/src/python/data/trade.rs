@@ -270,12 +270,8 @@ impl TradeTick {
         instrument_id: &InstrumentId,
         price_precision: u8,
         size_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(
-            instrument_id,
-            price_precision,
-            size_precision,
-        ))
+    ) -> HashMap<String, String> {
+        Self::get_metadata(instrument_id, price_precision, size_precision)
     }
 
     #[staticmethod]

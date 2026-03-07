@@ -42,8 +42,8 @@ impl PositionStatusReport {
         report_id: Option<UUID4>,
         venue_position_id: Option<PositionId>,
         avg_px_open: Option<Decimal>,
-    ) -> PyResult<Self> {
-        Ok(Self::new(
+    ) -> Self {
+        Self::new(
             account_id,
             instrument_id,
             position_side.as_specified(),
@@ -53,7 +53,7 @@ impl PositionStatusReport {
             report_id,
             venue_position_id,
             avg_px_open,
-        ))
+        )
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

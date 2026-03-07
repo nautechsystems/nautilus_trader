@@ -346,8 +346,8 @@ impl Money {
 
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    fn py_from_raw(raw: MoneyRaw, currency: Currency) -> PyResult<Self> {
-        Ok(Self::from_raw(raw, currency))
+    fn py_from_raw(raw: MoneyRaw, currency: Currency) -> Self {
+        Self::from_raw(raw, currency)
     }
 
     #[staticmethod]

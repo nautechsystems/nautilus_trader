@@ -61,9 +61,8 @@ use pyo3::{prelude::*, pyfunction};
 const RUNTIME_SHUTDOWN_TIMEOUT_SECS: u64 = 10;
 
 #[pyfunction]
-fn _shutdown_nautilus_runtime() -> PyResult<()> {
+fn _shutdown_nautilus_runtime() {
     shutdown_runtime(Duration::from_secs(RUNTIME_SHUTDOWN_TIMEOUT_SECS));
-    Ok(())
 }
 
 /// We modify sys modules so that submodule can be loaded directly as

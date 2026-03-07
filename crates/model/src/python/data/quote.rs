@@ -262,12 +262,8 @@ impl QuoteTick {
         instrument_id: &InstrumentId,
         price_precision: u8,
         size_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(
-            instrument_id,
-            price_precision,
-            size_precision,
-        ))
+    ) -> HashMap<String, String> {
+        Self::get_metadata(instrument_id, price_precision, size_precision)
     }
 
     #[staticmethod]
@@ -329,13 +325,13 @@ impl QuoteTick {
     }
 
     #[pyo3(name = "extract_price")]
-    fn py_extract_price(&self, price_type: PriceType) -> PyResult<Price> {
-        Ok(self.extract_price(price_type))
+    fn py_extract_price(&self, price_type: PriceType) -> Price {
+        self.extract_price(price_type)
     }
 
     #[pyo3(name = "extract_size")]
-    fn py_extract_size(&self, price_type: PriceType) -> PyResult<Quantity> {
-        Ok(self.extract_size(price_type))
+    fn py_extract_size(&self, price_type: PriceType) -> Quantity {
+        self.extract_size(price_type)
     }
 
     /// Creates a `PyCapsule` containing a raw pointer to a `Data::Quote` object.

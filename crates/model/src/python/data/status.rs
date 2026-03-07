@@ -214,8 +214,8 @@ impl InstrumentStatus {
 
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
-    fn py_get_metadata(instrument_id: &InstrumentId) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(instrument_id))
+    fn py_get_metadata(instrument_id: &InstrumentId) -> HashMap<String, String> {
+        Self::get_metadata(instrument_id)
     }
 
     #[staticmethod]

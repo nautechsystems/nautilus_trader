@@ -91,8 +91,8 @@ impl MarketToLimitOrder {
 
     #[staticmethod]
     #[pyo3(name = "create")]
-    fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(Self::from(init))
+    fn py_create(init: OrderInitialized) -> Self {
+        Self::from(init)
     }
 
     #[staticmethod]

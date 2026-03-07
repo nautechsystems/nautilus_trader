@@ -26,8 +26,8 @@ use crate::live::listener::MessageBusListener;
 #[pymethods]
 impl MessageBusListener {
     #[new]
-    fn py_new() -> PyResult<Self> {
-        Ok(Self::new())
+    fn py_new() -> Self {
+        Self::new()
     }
 
     #[pyo3(name = "is_active")]

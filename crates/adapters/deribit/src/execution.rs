@@ -248,10 +248,10 @@ impl DeribitExecutionClient {
     /// Submits a single order to Deribit.
     ///
     /// This is the core submission logic shared by `submit_order` and `submit_order_list`.
-    fn submit_single_order(&self, order: &OrderAny, task_name: &'static str) -> anyhow::Result<()> {
+    fn submit_single_order(&self, order: &OrderAny, task_name: &'static str) {
         if order.is_closed() {
             log::warn!("Cannot submit closed order {}", order.client_order_id());
-            return Ok(());
+            return;
         }
 
         let params = Self::build_order_params(order);
@@ -295,8 +295,6 @@ impl DeribitExecutionClient {
 
             Ok(())
         });
-
-        Ok(())
     }
 
     /// Spawns a stream handler to dispatch WebSocket messages to the execution engine.
@@ -726,7 +724,8 @@ impl ExecutionClient for DeribitExecutionClient {
             .order(&cmd.client_order_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
-        self.submit_single_order(&order, "submit_order")
+        self.submit_single_order(&order, "submit_order");
+        Ok(())
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
@@ -747,7 +746,7 @@ impl ExecutionClient for DeribitExecutionClient {
         // Deribit doesn't have native batch order submission
         // Loop through and submit each order individually using shared helper
         for order in &orders {
-            self.submit_single_order(order, "submit_order_list_item")?;
+            self.submit_single_order(order, "submit_order_list_item");
         }
 
         Ok(())

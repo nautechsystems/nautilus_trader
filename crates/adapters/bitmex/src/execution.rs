@@ -379,9 +379,9 @@ impl BitmexExecutionClient {
         }
     }
 
-    fn start_ws_stream(&mut self) -> anyhow::Result<()> {
+    fn start_ws_stream(&mut self) {
         if self.ws_stream_handle.is_some() {
-            return Ok(());
+            return;
         }
 
         let stream = self.ws_client.stream();
@@ -424,7 +424,6 @@ impl BitmexExecutionClient {
         });
 
         self.ws_stream_handle = Some(handle);
-        Ok(())
     }
 
     fn submit_cached_order(
@@ -434,10 +433,10 @@ impl BitmexExecutionClient {
         peg_price_type: Option<BitmexPegPriceType>,
         peg_offset_value: Option<f64>,
         task_label: &'static str,
-    ) -> anyhow::Result<()> {
+    ) {
         if order.is_closed() {
             log::warn!("Cannot submit closed order {}", order.client_order_id());
-            return Ok(());
+            return;
         }
 
         self.emitter.emit_order_submitted(&order);
@@ -543,8 +542,6 @@ impl BitmexExecutionClient {
             }
             Ok(())
         });
-
-        Ok(())
     }
 }
 
@@ -654,7 +651,7 @@ impl ExecutionClient for BitmexExecutionClient {
             log::debug!("Margin subscription unavailable: {e:?}");
         }
 
-        self.start_ws_stream()?;
+        self.start_ws_stream();
         self.refresh_account_state().await?;
         self.await_account_registered(30.0).await?;
 
@@ -904,7 +901,8 @@ impl ExecutionClient for BitmexExecutionClient {
             peg_price_type,
             peg_offset_value,
             "submit_order",
-        )
+        );
+        Ok(())
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
@@ -937,7 +935,7 @@ impl ExecutionClient for BitmexExecutionClient {
                 peg_price_type,
                 peg_offset_value,
                 "submit_order_list_item",
-            )?;
+            );
         }
 
         Ok(())

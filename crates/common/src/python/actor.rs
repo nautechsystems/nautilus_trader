@@ -855,8 +855,8 @@ impl DataActor for PyDataActorInner {
 impl PyDataActor {
     #[new]
     #[pyo3(signature = (config=None))]
-    fn py_new(config: Option<DataActorConfig>) -> PyResult<Self> {
-        Ok(Self::new(config))
+    fn py_new(config: Option<DataActorConfig>) -> Self {
+        Self::new(config)
     }
 
     #[getter]
@@ -975,9 +975,8 @@ impl PyDataActor {
 
     #[pyo3(name = "shutdown_system")]
     #[pyo3(signature = (reason=None))]
-    fn py_shutdown_system(&self, reason: Option<String>) -> PyResult<()> {
+    fn py_shutdown_system(&self, reason: Option<String>) {
         self.inner().core.shutdown_system(reason);
-        Ok(())
     }
 
     #[pyo3(name = "on_start")]
@@ -1334,16 +1333,14 @@ impl PyDataActor {
 
     #[pyo3(name = "subscribe_order_fills")]
     #[pyo3(signature = (instrument_id))]
-    fn py_subscribe_order_fills(&mut self, instrument_id: InstrumentId) -> PyResult<()> {
+    fn py_subscribe_order_fills(&mut self, instrument_id: InstrumentId) {
         DataActor::subscribe_order_fills(self.inner_mut(), instrument_id);
-        Ok(())
     }
 
     #[pyo3(name = "subscribe_order_cancels")]
     #[pyo3(signature = (instrument_id))]
-    fn py_subscribe_order_cancels(&mut self, instrument_id: InstrumentId) -> PyResult<()> {
+    fn py_subscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
         DataActor::subscribe_order_cancels(self.inner_mut(), instrument_id);
-        Ok(())
     }
 
     #[cfg(feature = "defi")]
@@ -1822,16 +1819,14 @@ impl PyDataActor {
 
     #[pyo3(name = "unsubscribe_order_fills")]
     #[pyo3(signature = (instrument_id))]
-    fn py_unsubscribe_order_fills(&mut self, instrument_id: InstrumentId) -> PyResult<()> {
+    fn py_unsubscribe_order_fills(&mut self, instrument_id: InstrumentId) {
         DataActor::unsubscribe_order_fills(self.inner_mut(), instrument_id);
-        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_order_cancels")]
     #[pyo3(signature = (instrument_id))]
-    fn py_unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId) -> PyResult<()> {
+    fn py_unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
         DataActor::unsubscribe_order_cancels(self.inner_mut(), instrument_id);
-        Ok(())
     }
 
     #[cfg(feature = "defi")]
@@ -1941,47 +1936,38 @@ impl PyDataActor {
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_historical_data")]
-    fn py_on_historical_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
+    fn py_on_historical_data(&mut self, data: Py<PyAny>) {
         // Default implementation - can be overridden in Python subclasses
-        Ok(())
     }
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_historical_quotes")]
-    fn py_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) -> PyResult<()> {
+    fn py_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) {
         // Default implementation - can be overridden in Python subclasses
-        Ok(())
     }
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_historical_trades")]
-    fn py_on_historical_trades(&mut self, trades: Vec<TradeTick>) -> PyResult<()> {
+    fn py_on_historical_trades(&mut self, trades: Vec<TradeTick>) {
         // Default implementation - can be overridden in Python subclasses
-        Ok(())
     }
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_historical_bars")]
-    fn py_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
+    fn py_on_historical_bars(&mut self, bars: Vec<Bar>) {
         // Default implementation - can be overridden in Python subclasses
-        Ok(())
     }
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_historical_mark_prices")]
-    fn py_on_historical_mark_prices(&mut self, mark_prices: Vec<MarkPriceUpdate>) -> PyResult<()> {
+    fn py_on_historical_mark_prices(&mut self, mark_prices: Vec<MarkPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
-        Ok(())
     }
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_historical_index_prices")]
-    fn py_on_historical_index_prices(
-        &mut self,
-        index_prices: Vec<IndexPriceUpdate>,
-    ) -> PyResult<()> {
+    fn py_on_historical_index_prices(&mut self, index_prices: Vec<IndexPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
-        Ok(())
     }
 }
 
@@ -2200,12 +2186,8 @@ mod tests {
     ) {
         let actor = create_registered_actor(clock, cache, trader_id);
 
-        assert!(
-            actor
-                .py_shutdown_system(Some("Test shutdown".to_string()))
-                .is_ok()
-        );
-        assert!(actor.py_shutdown_system(None).is_ok());
+        actor.py_shutdown_system(Some("Test shutdown".to_string()));
+        actor.py_shutdown_system(None);
     }
 
     #[rstest]

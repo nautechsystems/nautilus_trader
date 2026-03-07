@@ -371,7 +371,7 @@ impl FeatherWriter {
         let mut writer = self.writers.remove(path).unwrap();
         let bytes = writer.take_buffer()?;
         self.store.put(&path.path, bytes.into()).await?;
-        let new_path = self.regen_writer_path(path)?;
+        let new_path = self.regen_writer_path(path);
         self.writers.insert(new_path, writer);
         Ok(())
     }
@@ -531,10 +531,7 @@ impl FeatherWriter {
         false
     }
 
-    fn regen_writer_path(
-        &self,
-        path: &FileWriterPath,
-    ) -> Result<FileWriterPath, Box<dyn std::error::Error>> {
+    fn regen_writer_path(&self, path: &FileWriterPath) -> FileWriterPath {
         let type_str = path.type_str.clone();
         let instrument_id = path.instrument_id.clone();
         let timestamp = self.clock.borrow().timestamp_ns();
@@ -568,19 +565,15 @@ impl FeatherWriter {
             path = path.child(format!("{type_str}_{timestamp}.feather"));
         }
 
-        Ok(FileWriterPath {
+        FileWriterPath {
             path,
             type_str,
             instrument_id,
-        })
+        }
     }
 
     /// Builds `FileWriterPath` for custom data using DataType identifier as folder partition (catalog layout).
-    fn get_writer_path_custom(
-        &self,
-        type_name: &str,
-        identifier: Option<&str>,
-    ) -> Result<FileWriterPath, Box<dyn std::error::Error>> {
+    fn get_writer_path_custom(&self, type_name: &str, identifier: Option<&str>) -> FileWriterPath {
         let timestamp = self.clock.borrow().timestamp_ns();
         let type_str = format!("data/custom/{type_name}");
         let instrument_id = identifier.map(String::from);
@@ -602,11 +595,11 @@ impl FeatherWriter {
         let file_stem = identifier.unwrap_or(type_name);
         path = path.child(format!("{file_stem}_{timestamp}.feather"));
 
-        Ok(FileWriterPath {
+        FileWriterPath {
             path,
             type_str,
             instrument_id,
-        })
+        }
     }
 
     /// Generates a key for a `FileWriter` based on type T and optional instrument ID.
@@ -695,7 +688,7 @@ impl FeatherWriter {
             return Ok(());
         }
 
-        let path = self.get_writer_path_custom(type_name, identifier.as_deref())?;
+        let path = self.get_writer_path_custom(type_name, identifier.as_deref());
         if !self.writers.contains_key(&path) {
             self.create_custom_writer(path.clone(), type_name)?;
         }

@@ -185,7 +185,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
     // checksum record when it differs (e.g. after local regeneration).
     // This is intentionally lenient — download verification below is strict.
     if filepath.exists() {
-        println!("File already exists (local/cached): {filepath:?}");
+        println!("File already exists (local/cached): {}", filepath.display());
 
         if let Some(checksums_file) = checksums {
             let _guard = lock_large_checksums()?;
@@ -237,8 +237,8 @@ pub fn ensure_file_exists_or_download_http_with_config(
                 let actual = calculate_sha256(filepath)?;
                 remove_file(filepath)?;
                 anyhow::bail!(
-                    "Checksum mismatch after retry for {:?} (got {actual})",
-                    filepath.file_name().unwrap_or_default(),
+                    "Checksum mismatch after retry for {} (got {actual})",
+                    filepath.file_name().unwrap_or_default().display(),
                 );
             }
         }
@@ -261,7 +261,7 @@ fn download_file(
         anyhow::bail!("URL must use HTTPS protocol for security: {url}");
     }
 
-    println!("Downloading file from {url} to {filepath:?}");
+    println!("Downloading file from {url} to {}", filepath.display());
 
     if let Some(parent) = filepath.parent() {
         std::fs::create_dir_all(parent)?;
@@ -302,7 +302,7 @@ fn download_file(
                     // Stream the response body directly to disk to avoid large allocations
                     copy(&mut response, &mut out)
                         .map_err(|e| DownloadError::NonRetryable(e.to_string()))?;
-                    println!("File downloaded to {filepath:?}");
+                    println!("File downloaded to {}", filepath.display());
                     Ok(())
                 } else if status.is_server_error()
                     || status.as_u16() == 429

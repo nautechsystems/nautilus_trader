@@ -130,6 +130,7 @@ fn default_retry_delay_max_ms() -> u64 {
     10000
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn default_grpc_rate_limit_per_second() -> Option<u32> {
     Some(4)
 }

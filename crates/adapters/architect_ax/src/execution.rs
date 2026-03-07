@@ -292,7 +292,7 @@ impl AxExecutionClient {
         Ok(())
     }
 
-    fn cancel_order_internal(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order_internal(&self, cmd: &CancelOrder) {
         let ws_orders = self.ws_orders.clone();
 
         let emitter = self.emitter.clone();
@@ -323,8 +323,6 @@ impl AxExecutionClient {
 
             Ok(())
         });
-
-        Ok(())
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -674,7 +672,8 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        self.cancel_order_internal(cmd)
+        self.cancel_order_internal(cmd);
+        Ok(())
     }
 
     fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
@@ -706,7 +705,7 @@ impl ExecutionClient for AxExecutionClient {
                 ts_init,
                 params: None,
             };
-            self.cancel_order_internal(&cancel_cmd)?;
+            self.cancel_order_internal(&cancel_cmd);
         }
 
         Ok(())
@@ -714,7 +713,7 @@ impl ExecutionClient for AxExecutionClient {
 
     fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
         for cancel in &cmd.cancels {
-            self.cancel_order_internal(cancel)?;
+            self.cancel_order_internal(cancel);
         }
         Ok(())
     }

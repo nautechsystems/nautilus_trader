@@ -211,14 +211,14 @@ impl PoolSwap {
 
     #[getter]
     #[pyo3(name = "chain")]
-    fn py_chain(&self) -> PyResult<Chain> {
-        Ok(self.chain.as_ref().clone())
+    fn py_chain(&self) -> Chain {
+        self.chain.as_ref().clone()
     }
 
     #[getter]
     #[pyo3(name = "dex")]
-    fn py_dex(&self) -> PyResult<Dex> {
-        Ok(self.dex.as_ref().clone())
+    fn py_dex(&self) -> Dex {
+        self.dex.as_ref().clone()
     }
 
     #[getter]
@@ -355,14 +355,14 @@ impl PoolLiquidityUpdate {
 
     #[getter]
     #[pyo3(name = "chain")]
-    fn py_chain(&self) -> PyResult<Chain> {
-        Ok(self.chain.as_ref().clone())
+    fn py_chain(&self) -> Chain {
+        self.chain.as_ref().clone()
     }
 
     #[getter]
     #[pyo3(name = "dex")]
-    fn py_dex(&self) -> PyResult<Dex> {
-        Ok(self.dex.as_ref().clone())
+    fn py_dex(&self) -> Dex {
+        self.dex.as_ref().clone()
     }
 
     #[getter]
@@ -530,14 +530,14 @@ impl PoolFeeCollect {
 
     #[getter]
     #[pyo3(name = "chain")]
-    fn py_chain(&self) -> PyResult<Chain> {
-        Ok(self.chain.as_ref().clone())
+    fn py_chain(&self) -> Chain {
+        self.chain.as_ref().clone()
     }
 
     #[getter]
     #[pyo3(name = "dex")]
-    fn py_dex(&self) -> PyResult<Dex> {
-        Ok(self.dex.as_ref().clone())
+    fn py_dex(&self) -> Dex {
+        self.dex.as_ref().clone()
     }
 
     #[getter]
@@ -692,14 +692,14 @@ impl PoolFlash {
 
     #[getter]
     #[pyo3(name = "chain")]
-    fn py_chain(&self) -> PyResult<Chain> {
-        Ok(self.chain.as_ref().clone())
+    fn py_chain(&self) -> Chain {
+        self.chain.as_ref().clone()
     }
 
     #[getter]
     #[pyo3(name = "dex")]
-    fn py_dex(&self) -> PyResult<Dex> {
-        Ok(self.dex.as_ref().clone())
+    fn py_dex(&self) -> Dex {
+        self.dex.as_ref().clone()
     }
 
     #[getter]

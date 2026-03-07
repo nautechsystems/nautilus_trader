@@ -832,7 +832,7 @@ impl FeedHandler {
             .as_ref()
             .ok_or_else(|| DydxWsError::Parse("Missing id for trades channel".into()))?;
 
-        let instrument_id = self.parse_instrument_id(symbol)?;
+        let instrument_id = self.parse_instrument_id(symbol);
         let instrument = self.get_instrument(&instrument_id)?;
 
         let contents: DydxTradeContents = serde_json::from_value(data.contents.clone())
@@ -858,7 +858,7 @@ impl FeedHandler {
             .as_ref()
             .ok_or_else(|| DydxWsError::Parse("Missing id for orderbook channel".into()))?;
 
-        let instrument_id = self.parse_instrument_id(symbol)?;
+        let instrument_id = self.parse_instrument_id(symbol);
         let instrument = self.get_instrument(&instrument_id)?;
         let price_prec = instrument.price_precision();
         let size_prec = instrument.size_precision();
@@ -907,7 +907,7 @@ impl FeedHandler {
             .as_ref()
             .ok_or_else(|| DydxWsError::Parse("Missing id for orderbook batch channel".into()))?;
 
-        let instrument_id = self.parse_instrument_id(symbol)?;
+        let instrument_id = self.parse_instrument_id(symbol);
         let instrument = self.get_instrument(&instrument_id)?;
         let price_prec = instrument.price_precision();
         let size_prec = instrument.size_precision();
@@ -952,7 +952,7 @@ impl FeedHandler {
         let candle: DydxCandle = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse candle contents: {e}")))?;
 
-        let instrument_id = self.parse_instrument_id(&candle.ticker)?;
+        let instrument_id = self.parse_instrument_id(&candle.ticker);
         let instrument = self.get_instrument(&instrument_id)?;
 
         let ts_init = self.generate_ts_init();
@@ -1031,9 +1031,7 @@ impl FeedHandler {
         ts_init: UnixNanos,
         messages: &mut Vec<NautilusWsMessage>,
     ) {
-        let Ok(instrument_id) = self.parse_instrument_id(symbol_str) else {
-            return;
-        };
+        let instrument_id = self.parse_instrument_id(symbol_str);
         let Some(instrument) = self.instruments.get(&instrument_id.symbol.inner()) else {
             return;
         };
@@ -1068,9 +1066,7 @@ impl FeedHandler {
         messages: &mut Vec<NautilusWsMessage>,
     ) {
         for (symbol_str, trading_data) in entries {
-            let Ok(instrument_id) = self.parse_instrument_id(symbol_str) else {
-                continue;
-            };
+            let instrument_id = self.parse_instrument_id(symbol_str);
 
             if !self.instruments.contains_key(&instrument_id.symbol.inner()) {
                 // Only discover instruments that are active or have unknown status,
@@ -1166,11 +1162,11 @@ impl FeedHandler {
         Ok(vec![])
     }
 
-    fn parse_instrument_id(&self, symbol: &str) -> DydxWsResult<InstrumentId> {
+    fn parse_instrument_id(&self, symbol: &str) -> InstrumentId {
         // dYdX WS uses raw symbols (e.g., "BTC-USD")
         // Need to append "-PERP" to match Nautilus instrument IDs
         let symbol_with_perp = format!("{symbol}-PERP");
-        Ok(parse_instrument_id(&symbol_with_perp))
+        parse_instrument_id(&symbol_with_perp)
     }
 
     fn get_instrument(&self, instrument_id: &InstrumentId) -> DydxWsResult<&InstrumentAny> {

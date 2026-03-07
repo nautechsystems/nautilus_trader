@@ -133,7 +133,7 @@ impl FundingRateUpdate {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn py_to_dict(&self, py: Python<'_>) -> Py<PyAny> {
         let mut dict = HashMap::new();
         dict.insert(
             "type".to_string(),
@@ -162,7 +162,7 @@ impl FundingRateUpdate {
             "ts_init".to_string(),
             self.ts_init.as_u64().into_py_any_unwrap(py),
         );
-        Ok(dict.into_py_any_unwrap(py))
+        dict.into_py_any_unwrap(py)
     }
 
     #[staticmethod]
@@ -261,20 +261,20 @@ impl FundingRateUpdate {
         Ok(())
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
-        Ok((
+    fn __getstate__(&self, py: Python) -> Py<PyAny> {
+        (
             self.instrument_id.to_string(),
             self.rate.to_string(),
             self.next_funding_ns.map(|ts| ts.as_u64()),
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
         )
-            .into_py_any_unwrap(py))
+            .into_py_any_unwrap(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
+        let state = self.__getstate__(py);
         Ok((safe_constructor, PyTuple::empty(py), state).into_py_any_unwrap(py))
     }
 

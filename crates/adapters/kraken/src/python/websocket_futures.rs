@@ -43,7 +43,7 @@ impl KrakenFuturesWebSocketClient {
         heartbeat_secs: Option<u64>,
         api_key: Option<String>,
         api_secret: Option<String>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         let env = environment.unwrap_or(KrakenEnvironment::Mainnet);
         let demo = env == KrakenEnvironment::Demo;
         let url = base_url.unwrap_or_else(|| {
@@ -51,7 +51,7 @@ impl KrakenFuturesWebSocketClient {
         });
         let credential = KrakenCredential::resolve_futures(api_key, api_secret, demo);
 
-        Ok(Self::with_credentials(url, heartbeat_secs, credential))
+        Self::with_credentials(url, heartbeat_secs, credential)
     }
 
     #[getter]
