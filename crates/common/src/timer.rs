@@ -313,6 +313,11 @@ impl Ord for TimeEventHandler {
     }
 }
 
+pub(crate) trait Timer {
+    fn is_expired(&self) -> bool;
+    fn cancel(&mut self);
+}
+
 /// A test timer for user with a `TestClock`.
 ///
 /// `TestTimer` simulates time progression in a controlled environment,
@@ -412,6 +417,16 @@ impl TestTimer {
     ///
     /// Used to stop the timer before its scheduled stop time.
     pub const fn cancel(&mut self) {
+        self.is_expired = true;
+    }
+}
+
+impl Timer for TestTimer {
+    fn is_expired(&self) -> bool {
+        self.is_expired
+    }
+
+    fn cancel(&mut self) {
         self.is_expired = true;
     }
 }
