@@ -157,6 +157,7 @@ impl CryptoOption {
             stringify!(size_increment.precision),
         )?;
         check_positive_price(price_increment, stringify!(price_increment))?;
+        check_positive_quantity(size_increment, stringify!(size_increment))?;
 
         if let Some(multiplier) = multiplier {
             check_positive_quantity(multiplier, stringify!(multiplier))?;
@@ -400,6 +401,22 @@ impl Instrument for CryptoOption {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+
+    fn margin_init(&self) -> Decimal {
+        self.margin_init
+    }
+
+    fn margin_maint(&self) -> Decimal {
+        self.margin_maint
+    }
+
+    fn maker_fee(&self) -> Decimal {
+        self.maker_fee
+    }
+
+    fn taker_fee(&self) -> Decimal {
+        self.taker_fee
     }
 }
 

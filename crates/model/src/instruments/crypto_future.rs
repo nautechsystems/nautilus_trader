@@ -367,6 +367,22 @@ impl Instrument for CryptoFuture {
         self.ts_init
     }
 
+    fn margin_init(&self) -> Decimal {
+        self.margin_init
+    }
+
+    fn margin_maint(&self) -> Decimal {
+        self.margin_maint
+    }
+
+    fn maker_fee(&self) -> Decimal {
+        self.maker_fee
+    }
+
+    fn taker_fee(&self) -> Decimal {
+        self.taker_fee
+    }
+
     fn strike_price(&self) -> Option<Price> {
         None
     }
