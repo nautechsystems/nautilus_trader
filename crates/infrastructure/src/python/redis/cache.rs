@@ -214,7 +214,11 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "load_custom_data")]
-    fn py_load_custom_data(&mut self, data_type: DataType) -> PyResult<Vec<CustomData>> {
-        self.load_custom_data(&data_type).map_err(to_pyvalue_err)
+    fn py_load_custom_data(
+        &mut self,
+        py: Python<'_>,
+        data_type: DataType,
+    ) -> PyResult<Vec<CustomData>> {
+        py.detach(|| self.load_custom_data(&data_type).map_err(to_pyvalue_err))
     }
 }

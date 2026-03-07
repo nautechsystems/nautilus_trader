@@ -32,6 +32,11 @@ including their arithmetic behavior, precision handling, and type-specific const
 
 Built-in data types for the trading domain, and how to work with custom data.
 
+## Custom data
+
+How the custom data system works across Python and Rust: registration, persistence,
+Arrow encoding, and runtime routing through actors and strategies.
+
 ## Order Book
 
 The high-performance order book, own order tracking, filtered views for net liquidity, and binary market support.

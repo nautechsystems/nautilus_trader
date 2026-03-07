@@ -1,4 +1,4 @@
-# Custom data architecture
+# Custom Data
 
 Nautilus Trader supports custom data authored in Python and Rust, and moves
 that data through the same runtime, persistence, and query pipeline used
@@ -6,10 +6,10 @@ by the rest of the platform.
 
 This document explains how custom data is:
 
-- registered at runtime,
-- wrapped across the Python/Rust boundary,
-- serialized to and from Arrow/Parquet,
-- routed through actors and strategies.
+- Registered at runtime.
+- Wrapped across the Python/Rust boundary.
+- Serialized to and from Arrow/Parquet.
+- Routed through actors and strategies.
 
 ## Goals
 
@@ -27,10 +27,10 @@ The custom-data architecture satisfies the following requirements:
 
 There are two supported authoring modes:
 
-| Mode              | Example                                            | Registration path                                      | Encode/decode path     | Wrapper backend           |
-|-------------------|----------------------------------------------------|---------------------------------------------------------|------------------------|---------------------------|
-| Pure Python       | `@customdataclass_pyo3` class                      | `register_custom_data_class(...)`                       | Python callback + Arrow IPC bridge | `PythonCustomDataWrapper` |
-| Same-binary Rust  | `#[custom_data]` or `#[custom_data(pyo3)]` type    | `ensure_custom_data_registered::<T>()` and native extractor | Native Rust            | Native Rust payload       |
+| Mode              | Example                                            | Registration path                                       | Encode/decode path              | Wrapper backend           |
+|-------------------|----------------------------------------------------|---------------------------------------------------------|---------------------------------|---------------------------|
+| Pure Python       | `@customdataclass_pyo3` class                      | `register_custom_data_class(...)`                       | Python callback + Arrow C FFI   | `PythonCustomDataWrapper` |
+| Same-binary Rust  | `#[custom_data]` or `#[custom_data(pyo3)]` type    | `ensure_custom_data_registered::<T>()` and native extractor | Native Rust                 | Native Rust payload       |
 
 Both modes converge on the same outer PyO3 `CustomData` wrapper and the same
 `DataType` identity model.
@@ -69,17 +69,17 @@ sequenceDiagram
 
 ### `DataRegistry`
 
-`crates/model/src/data/registry.rs` is the central runtime registry for custom
-data in the main process. Registration uses atomic `DashMap::entry()` so that
-concurrent `register_*` and `ensure_*` calls do not race.
+`crates/model/src/data/registry.rs` is the central runtime registry module for
+custom data in the main process. Registration uses atomic `DashMap::entry()` so
+that concurrent `register_*` and `ensure_*` calls do not race.
 
-It stores:
+The module contains several `OnceLock`-initialized `DashMap` singletons:
 
 - JSON deserializers keyed by `type_name`.
-- Arrow schemas keyed by `type_name`.
-- Arrow encoders and decoders keyed by `type_name`.
-- Python extractors that can convert a Python object into
+- Arrow schemas, encoders, and decoders keyed by `type_name`.
+- Python extractors that convert a Python object into
   `Arc<dyn CustomDataTrait>`.
+- Rust extractor factories that produce Python extractors for same-binary types.
 
 Instead of hardcoding every type into the main binary, Nautilus resolves
 handlers at runtime using the `type_name` stored in `DataType` and Parquet
@@ -95,9 +95,12 @@ first, then the inner payload.
 
 It contains:
 
-- a `DataType`,
-- an inner custom payload implementing `CustomDataTrait`,
-- timestamps used for ordering, routing, and persistence.
+- A `DataType`.
+- An inner custom payload implementing `CustomDataTrait` (wrapped in
+  `Arc<dyn CustomDataTrait>`).
+
+Timestamps (`ts_event`, `ts_init`) are delegated to the inner
+`CustomDataTrait` implementation and exposed as properties on the wrapper.
 
 On the Python side, `CustomData` exposes value semantics: `__eq__` and
 `__repr__` are implemented (equality uses the Rust `PartialEq` logic).
@@ -107,19 +110,19 @@ the inner payload comparison.
 This wrapper is shared across both custom-data modes. User code interacts with
 one API even though the underlying payload may be:
 
-- a Python-backed wrapper,
-- a same-binary Rust value.
+- A Python-backed wrapper.
+- A same-binary Rust value.
 
-#### CustomData JSON envelope
+#### `CustomData` JSON envelope
 
 When serialized to JSON (e.g. for `to_json_bytes` / `from_json_bytes`, SQL
 cache, or Redis), `CustomData` uses a single canonical envelope so that
 deserialization does not depend on user payload field names:
 
-- `type`: the custom type name (from `CustomDataTrait::type_name`).
-- `data_type`: an object with `type_name`, `metadata`, and optional
+- `type`: The custom type name (from `CustomDataTrait::type_name`).
+- `data_type`: An object with `type_name`, `metadata`, and optional
   `identifier`.
-- `payload`: the inner payload only (the result of `CustomDataTrait::to_json`
+- `payload`: The inner payload only (the result of `CustomDataTrait::to_json`
   parsed as a value). Registered deserializers receive only this value in
   `from_json`, so user structs can use any field names (including `value`)
   without conflicting with wrapper metadata.
@@ -129,15 +132,22 @@ This envelope is produced by Rust `CustomData` serialization and consumed by
 
 ### `DataType`
 
-`DataType` is part of the identity of persisted and routed custom data.
+`DataType` identifies custom data for routing and persistence.
 
 Constructor: `DataType(type_name, metadata=None, identifier=None)`.
 
 It includes:
 
-- `type_name`,
-- optional `metadata`,
-- optional `identifier` (exposed as a property and used in catalog pathing).
+- `type_name`.
+- Optional `metadata`.
+- Optional `identifier` (used only for catalog pathing, not for routing or
+  equality).
+
+Equality, hashing, and topic routing are derived from `type_name` and
+`metadata` only. Two `DataType` values with the same type name and metadata but
+different identifiers compare equal and publish to the same message bus topic.
+The `identifier` affects only the storage path under
+`data/custom/<type_name>/<identifier...>`.
 
 Custom-data storage and queries use `DataType`, not just the bare Rust/Python
 class name. This allows the same logical type to be stored under different
@@ -194,8 +204,8 @@ This path stays fully native in Rust for encode/decode.
 
 `register_custom_data_class(...)` resolves types in the following order:
 
-1. same-binary native Rust registration,
-2. pure Python fallback registration.
+1. Same-binary native Rust registration.
+2. Pure Python fallback registration.
 
 That ordering preserves the fastest available path for types already known
 natively by the main binary.
@@ -211,10 +221,10 @@ Used for pure Python custom data.
 
 Responsibilities:
 
-- stores a reference to the Python object,
-- caches `ts_event`, `ts_init`, and `type_name`,
-- implements `CustomDataTrait`,
-- calls Python methods for JSON and Arrow-related operations under the GIL.
+- Stores a reference to the Python object.
+- Caches `ts_event`, `ts_init`, and `type_name`.
+- Implements `CustomDataTrait`.
+- Calls Python methods for JSON and Arrow-related operations under the GIL.
 
 This is the fallback path when the main process does not have a native Rust
 representation for the type.
@@ -240,12 +250,12 @@ custom data dynamically using the registered `type_name`.
 
 The custom-data write path:
 
-1. extracts `type_name`, `metadata`, and `identifier` from `DataType`,
-2. looks up the Arrow encoder in `DataRegistry`,
-3. encodes the values to a `RecordBatch`,
-4. appends a `data_type` column containing the persisted `DataType`,
-5. attaches `type_name` and metadata to the Arrow schema,
-6. writes the batch to Parquet under the custom-data path.
+1. Extracts `type_name`, `metadata`, and `identifier` from `DataType`.
+2. Looks up the Arrow encoder in `DataRegistry`.
+3. Encodes the values to a `RecordBatch`.
+4. Appends a `data_type` column containing the persisted `DataType`.
+5. Attaches `type_name` and metadata to the Arrow schema.
+6. Writes the batch to Parquet under the custom-data path.
 
 The path layout is:
 
@@ -257,11 +267,11 @@ Identifiers are normalized before becoming path segments.
 
 On query:
 
-1. the catalog reads matching Parquet files,
-2. extracts `type_name` from schema metadata,
-3. asks `DataRegistry` for the registered decoder,
-4. decodes the `RecordBatch` into `Vec<Data>`,
-5. reconstructs `CustomData` with the original `DataType`.
+1. The catalog reads matching Parquet files.
+2. Extracts `type_name` from schema metadata.
+3. Asks `DataRegistry` for the registered decoder.
+4. Decodes the `RecordBatch` into `Vec<Data>`.
+5. Reconstructs `CustomData` with the original `DataType`.
 
 This makes custom-data query resolution symmetric with write-time registration.
 When converting a Feather stream to Parquet (e.g. after a backtest), the
@@ -269,23 +279,23 @@ custom-data branch decodes batches and writes them via
 `write_custom_data_batch` so that custom data written through the Feather
 writer is correctly converted to Parquet.
 
-## The Feather bridge
+## The Arrow C FFI bridge
 
 Pure Python custom data cannot provide native Rust Arrow encode logic directly.
-For those types, Nautilus uses an Arrow IPC bridge.
+For those types, Nautilus uses the Arrow C FFI interface to pass `RecordBatch`
+data between Python and Rust without serialization overhead.
 
 ```mermaid
 sequenceDiagram
     participant R as Rust encoder
     participant P as Python custom class
-    participant A as Arrow IPC bytes
+    participant F as Arrow C FFI structs
     participant C as Parquet writer
 
     R->>P: encode_record_batch_py(items)
     P->>P: build pyarrow.RecordBatch
-    P-->>A: serialize IPC bytes
-    A-->>R: bytes
-    R->>R: rebuild native RecordBatch
+    P-->>F: _export_to_c (FFI_ArrowArray + FFI_ArrowSchema)
+    F-->>R: reconstruct native RecordBatch
     R->>C: write Parquet
 ```
 
@@ -294,15 +304,24 @@ sequenceDiagram
 For pure Python classes:
 
 1. Rust acquires the GIL.
-2. Rust calls `encode_record_batch_py(...)`.
-3. Python converts objects to `pyarrow.RecordBatch`.
-4. Python serializes the batch to Arrow IPC bytes.
-5. Rust reconstructs a native `RecordBatch` and writes it.
+2. Rust calls `encode_record_batch_py(...)` on the Python class.
+3. Python converts objects to a `pyarrow.RecordBatch`.
+4. Python exports the batch via `_export_to_c` into Arrow C FFI structs.
+5. Rust reconstructs a native `RecordBatch` from the FFI structs and writes it.
+
+### Pure Python decode path
+
+For the reverse direction:
+
+1. Rust converts its `RecordBatch` into Arrow C FFI structs.
+2. Python imports the batch via `RecordBatch._import_from_c`.
+3. Python calls `decode_record_batch_py(metadata, batch)` on the class.
+4. Rust wraps the returned Python objects in `PythonCustomDataWrapper`.
 
 ### Native paths
 
-The Feather bridge is not used for same-binary Rust custom data. Those types
-use native Rust encode/decode handlers registered in the main process.
+The Arrow C FFI bridge is not used for same-binary Rust custom data. Those
+types use native Rust encode/decode handlers registered in the main process.
 
 ## Reconstruction on query
 
@@ -359,10 +378,10 @@ Legacy Cython `@customdataclass` remains separate from this architecture.
 
 This document describes the PyO3 custom-data system:
 
-- PyO3 `CustomData`,
-- dynamic runtime registration,
-- Arrow/Parquet persistence,
-- native Rust execution paths.
+- PyO3 `CustomData`.
+- Dynamic runtime registration.
+- Arrow/Parquet persistence.
+- Native Rust execution paths.
 
 Legacy Cython support is intentionally left unchanged.
 
