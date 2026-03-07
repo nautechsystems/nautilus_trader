@@ -56,7 +56,7 @@ describe('Params single-strategy selection defaults', () => {
       expect(screen.getByText('makerv3')).toBeInTheDocument();
     });
 
-    expect(screen.queryByText('1 selected')).not.toBeInTheDocument();
+    expect(screen.queryAllByText('1 strategy selected')).toHaveLength(0);
   });
 
   it('does not re-select the only visible strategy after clearSelection', async () => {
@@ -69,7 +69,7 @@ describe('Params single-strategy selection defaults', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('1 selected')).toBeInTheDocument();
+      expect(screen.getAllByText('1 strategy selected')).toHaveLength(2);
     });
 
     act(() => {
@@ -77,7 +77,7 @@ describe('Params single-strategy selection defaults', () => {
     });
 
     await waitFor(() => {
-      expect(screen.queryByText('1 selected')).not.toBeInTheDocument();
+      expect(screen.queryAllByText('1 strategy selected')).toHaveLength(0);
     });
   });
 });
