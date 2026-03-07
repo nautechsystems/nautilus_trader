@@ -2441,23 +2441,6 @@ export default function Params({
   }, [familyScopedStrategies, selectedStrategies, setSelectedStrategies, clearSelection]);
 
   useEffect(() => {
-    if (visibleStrategies.length !== 1) {
-      return;
-    }
-    const onlyStrategyId = visibleStrategies[0]?.strategy_id;
-    if (!onlyStrategyId) {
-      return;
-    }
-    if (selectedStrategies.length === 1 && selectedStrategies[0] === onlyStrategyId) {
-      return;
-    }
-    selectionRef.current = [onlyStrategyId];
-    setSelectedStrategies([onlyStrategyId]);
-    setAnchorStrategyId(onlyStrategyId);
-    anchorIndexRef.current = 0;
-  }, [visibleStrategies, selectedStrategies, setSelectedStrategies, setAnchorStrategyId]);
-
-  useEffect(() => {
     const handleMouseUp = () => {
       if (dragSelectingRef.current) {
         dragSelectingRef.current = false;
@@ -2639,7 +2622,6 @@ export default function Params({
     ),
     [strategies]
   );
-
   const diffEntries = useMemo(() => {
     if (!diffStrategyId) return [];
     const keys = conflictRows.get(diffStrategyId);
@@ -2712,6 +2694,34 @@ export default function Params({
         >
           Refresh
         </Button>
+        {selectedCount > 0 && (
+          <div
+            className="flex items-center gap-2 rounded-full px-2 py-1"
+            style={{
+              backgroundColor: `${colors.semantic.success.DEFAULT}1a`,
+              border: `1px solid ${colors.semantic.success.DEFAULT}55`,
+            }}
+          >
+            <span className="text-[11px] font-medium" style={{ color: colors.semantic.success.light }}>
+              {`${selectedCount} ${selectedCount === 1 ? 'strategy' : 'strategies'} selected`}
+            </span>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={handleClearSelectionToolbar}
+            >
+              Clear
+            </Button>
+            <Button
+              variant="success"
+              size="xs"
+              onClick={saveAllSelected}
+              disabled={isSavingAll || selectedDirtyCount === 0}
+            >
+              Save Selected
+            </Button>
+          </div>
+        )}
         <Button
           variant={showAdvanced ? 'default' : 'secondary'}
           size="xs"
@@ -2768,7 +2778,33 @@ export default function Params({
         )}
       </div>
     );
-  }, [showHeader, handleSaveAll, hasDirtyParams, isSavingAll, hasErrors, dirtyCount, handleRevertAll, handleRefresh, loading, refreshing, handleToggleAdvanced, showAdvanced, customizeColumns, handleResetColumns, canResetColumns, handleClearSort, isSortActive, auto, autoRefreshActive, autoPauseLabel, setAuto]);
+  }, [
+    showHeader,
+    handleSaveAll,
+    hasDirtyParams,
+    isSavingAll,
+    hasErrors,
+    dirtyCount,
+    handleRevertAll,
+    handleRefresh,
+    loading,
+    refreshing,
+    selectedCount,
+    selectedDirtyCount,
+    handleClearSelectionToolbar,
+    saveAllSelected,
+    handleToggleAdvanced,
+    showAdvanced,
+    customizeColumns,
+    handleResetColumns,
+    canResetColumns,
+    handleClearSort,
+    isSortActive,
+    auto,
+    autoRefreshActive,
+    autoPauseLabel,
+    setAuto,
+  ]);
 
   const panelHeaderSlots = usePanelHeaderSlots();
 
@@ -3074,6 +3110,11 @@ export default function Params({
           autoRefreshIntervalSec={INTERVALS.PARAMS_POLL / 1000}
           lastFetchedAt={lastUpdate}
           isStale={lastUpdate ? Date.now() - lastUpdate > STALE_THRESHOLDS.FAST : false}
+          selectedCount={selectedCount}
+          selectedDirtyCount={selectedDirtyCount}
+          isSaveSelectedInProgress={isSavingAll}
+          onClearSelection={handleClearSelectionToolbar}
+          onSaveSelected={saveAllSelected}
           loading={loading}
           refreshing={refreshing}
           onRefresh={handleRefresh}
@@ -3082,63 +3123,6 @@ export default function Params({
       <span className="sr-only" aria-live="polite">
         {selectionAnnouncement}
       </span>
-
-      {/* Bulk Actions Toolbar (appears when strategies selected) */}
-      {selectedCount > 0 && (
-        <div
-          className="sticky top-12 z-20 flex items-center gap-3 px-4 py-2 border-b"
-          style={{
-            backgroundColor: colors.bg.surface,
-            borderBottomColor: colors.border.DEFAULT,
-          }}
-        >
-          <div
-            className="flex items-center gap-2 rounded-full px-3 py-1"
-            style={{
-              backgroundColor: `${colors.semantic.success.DEFAULT}1a`,
-              border: `1px solid ${colors.semantic.success.DEFAULT}55`,
-            }}
-            title="Shift-click to select range; Ctrl/Cmd-click to toggle rows"
-          >
-            <span style={{ fontSize: typography.fontSize.sm, color: colors.semantic.success.light, fontWeight: typography.fontWeight.semibold }}>
-              {selectedCount} selected
-            </span>
-            <button
-              type="button"
-              onClick={handleClearSelectionToolbar}
-              className="text-[12px] font-semibold hover:underline"
-              style={{
-                color: colors.semantic.success.light,
-                textUnderlineOffset: '2px',
-              }}
-            >
-              Clear
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={saveAllSelected}
-            disabled={isSavingAll || selectedDirtyCount === 0}
-            className="px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              fontSize: typography.fontSize.sm,
-              color: colors.bg.base,
-              backgroundColor: colors.semantic.success.DEFAULT,
-            }}
-          >
-            Save Selected
-          </button>
-
-          <div className="flex-1" />
-
-          {dirtyCount > 0 && (
-            <span style={{ fontSize: typography.fontSize.xs, color: colors.text.muted }}>
-              {dirtyCount} unsaved changes
-            </span>
-          )}
-        </div>
-      )}
 
       {/* Filter Controls - using reusable TableFilter component */}
       <TableFilter

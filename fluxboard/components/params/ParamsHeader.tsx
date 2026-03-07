@@ -54,6 +54,13 @@ export interface ParamsHeaderProps {
   lastFetchedAt: number | null;
   isStale: boolean;
 
+  // Selection actions
+  selectedCount: number;
+  selectedDirtyCount: number;
+  isSaveSelectedInProgress: boolean;
+  onClearSelection: () => void;
+  onSaveSelected: () => void;
+
   // Loading states
   loading?: boolean;
   refreshing?: boolean;
@@ -108,6 +115,11 @@ export function ParamsHeader({
   autoRefreshIntervalSec,
   lastFetchedAt,
   isStale,
+  selectedCount,
+  selectedDirtyCount,
+  isSaveSelectedInProgress,
+  onClearSelection,
+  onSaveSelected,
   loading,
   refreshing,
   onRefresh,
@@ -161,6 +173,52 @@ export function ParamsHeader({
           >
             Revert All
           </button>
+        )}
+
+        {/* Selection Actions */}
+        {selectedCount > 0 && (
+          <div
+            className="flex items-center gap-2 rounded-md px-2 py-1 h-6"
+            style={{
+              backgroundColor: `${colors.semantic.success.DEFAULT}1a`,
+              border: `1px solid ${colors.semantic.success.DEFAULT}55`,
+            }}
+          >
+            <span
+              className="text-[11px] font-medium"
+              style={{ color: colors.semantic.success.light }}
+            >
+              {`${selectedCount} ${selectedCount === 1 ? 'strategy' : 'strategies'} selected`}
+            </span>
+            <button
+              type="button"
+              onClick={onClearSelection}
+              className="text-[11px] font-semibold hover:underline"
+              style={{
+                color: colors.semantic.success.light,
+                textUnderlineOffset: '2px',
+              }}
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={onSaveSelected}
+              disabled={isSaveSelectedInProgress || selectedDirtyCount === 0}
+              className="h-6 px-2 rounded-md transition-colors text-[11px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                color: colors.bg.base,
+                backgroundColor: colors.semantic.success.DEFAULT,
+              }}
+            >
+              Save Selected
+            </button>
+            {selectedDirtyCount > 0 && (
+              <span style={{ fontSize: typography.fontSize.xs, color: colors.text.muted }}>
+                {selectedDirtyCount} unsaved
+              </span>
+            )}
+          </div>
         )}
 
         {/* Save Progress */}
