@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import nautilus_trader.flux.api.payloads as payloads
 import pytest
 
 from nautilus_trader.flux.api.payloads import ContractCatalogEntry
@@ -33,6 +34,40 @@ def test_build_envelope_includes_standard_fields() -> None:
         "data": {"value": 1},
         "error": None,
     }
+
+
+def test_payloads_module_declares_public_exports() -> None:
+    assert payloads.__all__ == [
+        "ContractCatalogEntry",
+        "StrategyMetadata",
+        "as_list",
+        "build_alerts_rows",
+        "build_balances_rows",
+        "build_envelope",
+        "build_error",
+        "build_legs_payload",
+        "build_params_payload",
+        "build_signals_payload",
+        "build_trades_rows",
+        "canonical_naming_fields",
+        "coerce_ts_ms",
+        "collapse_balance_display_rows",
+        "contract_id_for_leg",
+        "decode_text",
+        "enrich_balances_rows",
+        "enrich_row_with_canonical_naming",
+        "extract_stream_rows",
+        "filter_balance_rows_for_contract_scope",
+        "load_json",
+        "merge_portfolio_balances_rows",
+        "normalize_symbol_parts",
+        "now_ms",
+        "safe_bool",
+        "safe_float",
+        "safe_int",
+        "select_latest_strategy_row",
+        "strategy_id_from_row",
+    ]
 
 
 def test_build_balances_rows_flattens_events_and_aggregates_positions() -> None:
@@ -396,6 +431,47 @@ def test_filter_balance_rows_for_contract_scope_excludes_unrelated_assets() -> N
     ]
 
 
+def test_filter_balance_rows_for_contract_scope_keeps_usdc_collateral_for_usd_perps() -> None:
+    rows = [
+        {
+            "row_id": "cash-usdc",
+            "exchange": "hyperliquid",
+            "asset": "USDC",
+            "total": "250.5",
+        },
+        {
+            "row_id": "cash-zent",
+            "exchange": "hyperliquid",
+            "asset": "ZENT",
+            "total": "500",
+        },
+        {
+            "row_id": "pos-aapl",
+            "exchange": "hyperliquid",
+            "kind": "position",
+            "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+            "asset": "AAPL",
+            "signed_qty": "1",
+        },
+    ]
+
+    filtered = filter_balance_rows_for_contract_scope(
+        rows,
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+        ),
+    )
+
+    assert [row["row_id"] for row in filtered] == [
+        "cash-usdc",
+        "pos-aapl",
+    ]
+
+
 def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog) -> None:
     metadata = StrategyMetadata(
         strategy_class="maker_v3",
@@ -723,6 +799,136 @@ def test_build_signals_payload_backfills_local_qty_from_pricing_debug_when_state
     assert adjustments[0]["inv_skew_local"] == -4.903
 
 
+def test_build_signals_payload_backfills_global_qty_from_global_inventory_qty_when_sparse(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "ts_ms": 1700000000000,
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                },
+            ],
+            "pricing_debug": {
+                "skew": {
+                    "global_inventory_qty": "134961.863",
+                    "local_inventory_qty": "-62145.1373",
+                    "global_ratio": "1",
+                    "global_skew_bps": "25",
+                    "local_ratio": "-0.2485805492",
+                    "local_skew_bps": "-7.457416476",
+                    "des_qty_global": "0",
+                    "max_qty_global": "100000",
+                    "max_skew_bps_global": "25",
+                    "des_qty_local": "0",
+                    "max_qty_local": "250000",
+                    "max_skew_bps_local": "30",
+                },
+            },
+        },
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs=legs,
+    )
+
+    adjustments = payload["pricing_adjustments"]
+    assert adjustments
+    assert adjustments[0]["type"] == "inventory_skew"
+    assert adjustments[0]["global_qty"] == 134961.863
+    assert adjustments[0]["curr_qty"] == 134961.863
+    assert adjustments[0]["local_qty"] == -62145.1373
+    assert adjustments[0]["inv_ratio_global"] == 1.0
+    assert adjustments[0]["inv_skew_global"] == 25.0
+
+
+def test_build_signals_payload_backfills_inventory_skew_when_state_adjustments_list_empty(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "running",
+            "ts_ms": 1700000000000,
+            "pricing_adjustments": [],
+            "pricing_debug": {
+                "pricing": {
+                    "bid_edge1_cfg_bps": "10",
+                    "ask_edge1_cfg_bps": "10",
+                    "bid_edge1_eff_bps": "8",
+                    "ask_edge1_eff_bps": "12",
+                },
+                "skew": {
+                    "global_inventory_qty": "134961.863",
+                    "local_inventory_qty": "-62145.1373",
+                    "global_ratio": "1",
+                    "global_skew_bps": "25",
+                    "local_ratio": "-0.2485805492",
+                    "local_skew_bps": "-7.457416476",
+                    "total_skew_bps": "17.542583524",
+                    "des_qty_global": "0",
+                    "max_qty_global": "100000",
+                    "max_skew_bps_global": "25",
+                    "des_qty_local": "0",
+                    "max_qty_local": "250000",
+                    "max_skew_bps_local": "30",
+                },
+            },
+        },
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs=legs,
+    )
+
+    adjustments = payload["pricing_adjustments"]
+    assert adjustments
+    assert adjustments[0]["type"] == "inventory_skew"
+    assert adjustments[0]["global_qty"] == 134961.863
+    assert adjustments[0]["local_qty"] == -62145.1373
+    assert adjustments[0]["delta_bid_edge_bps"] == -2.0
+    assert adjustments[0]["delta_ask_edge_bps"] == 2.0
+
+
 def test_build_signals_payload_zeroes_quote_counts_when_state_is_stale_and_no_live_legs(
     contract_catalog,
     monkeypatch,
@@ -801,6 +1007,19 @@ def test_build_legs_payload_uses_contract_id_keys_for_same_exchange_contracts() 
     assert legs["venue_a:XYZ/USDT"]["exchange"] == "venue_a"
     assert legs["venue_a:XYZ/USDT"]["symbol"] == "XYZ/USDT"
     assert legs["venue_a:XYZ/USDT"]["mid"] == 200.5
+
+
+def test_build_legs_payload_uses_module_clock_when_now_ms_value_missing(monkeypatch) -> None:
+    monkeypatch.setattr("flux.api.payloads.now_ms", lambda: 1_700_000_010_000)
+
+    legs = build_legs_payload(
+        contracts=(ContractCatalogEntry(exchange="venue_a", symbol="ABC/USDT"),),
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1_700_000_000_000},
+        },
+    )
+
+    assert legs["venue_a:ABC/USDT"]["age_ms"] == 10_000
 
 
 def test_build_legs_payload_derives_canonical_naming_for_plume_spot_and_perp() -> None:
