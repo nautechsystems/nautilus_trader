@@ -393,7 +393,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=10.0,
         description="Band 1 bid edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -401,7 +401,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=10.0,
         description="Band 1 ask edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -433,7 +433,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=25.0,
         description="Band 2 bid edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -441,7 +441,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=25.0,
         description="Band 2 ask edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -473,7 +473,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=50.0,
         description="Band 3 bid edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(
@@ -481,7 +481,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         schema_type="number",
         default=50.0,
         description="Band 3 ask edge in bps.",
-        minimum=0.0,
+        minimum=-100.0,
         maximum=1_000.0,
     ),
     RuntimeParamSpec(

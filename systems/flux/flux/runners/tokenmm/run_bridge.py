@@ -15,6 +15,8 @@ import redis
 
 from flux.bridge.handlers import default_topic_handlers
 from flux.bridge.stream_consumer import FluxBridgeStreamConsumer
+from flux.common.config import validate_identifier_part
+from flux.events import TOPIC_EXECUTION_ALERT
 from flux.strategies.makerv3.constants import TOPIC_ALERT
 from flux.strategies.makerv3.constants import TOPIC_BALANCES
 from flux.strategies.makerv3.constants import TOPIC_EVENT
@@ -33,6 +35,7 @@ FULL_TO_SUFFIX_TOPICS: dict[str, str] = {
     TOPIC_EVENT: "event",
     TOPIC_TRADE: "trade",
     TOPIC_ALERT: "alert",
+    TOPIC_EXECUTION_ALERT: "alert",
     TOPIC_MARKET_BBO: "market_bbo",
     TOPIC_FV: "fv",
     TOPIC_BALANCES: "balances",
@@ -66,7 +69,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
-    parser.add_argument("--strategy-id", default=None)
+    parser.add_argument("--strategy-id", action="append", default=None)
     parser.add_argument("--all-strategies", action="store_true")
     parser.add_argument("--topic", action="append", default=[])
     parser.add_argument("--log-level", default=None)
@@ -91,20 +94,53 @@ def _build_handlers() -> dict[str, Any]:
     return handlers
 
 
-def _resolve_strategy_scope(config: dict[str, Any], args: argparse.Namespace) -> str | None:
+def _coerce_strategy_ids(raw_value: Any) -> list[str]:
+    if raw_value is None:
+        return []
+    values: list[Any]
+    if isinstance(raw_value, str):
+        values = [raw_value]
+    elif isinstance(raw_value, list):
+        values = list(raw_value)
+    else:
+        return []
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for index, value in enumerate(values):
+        strategy_id = _optional_text(value)
+        if not strategy_id:
+            continue
+        strategy_id = validate_identifier_part(strategy_id, f"strategy_id[{index}]")
+        if strategy_id in seen:
+            continue
+        seen.add(strategy_id)
+        out.append(strategy_id)
+    return out
+
+
+def _resolve_strategy_ids(config: dict[str, Any], args: argparse.Namespace) -> list[str] | None:
     identity = _table(config, "identity")
-    strategy_id_arg = _optional_text(args.strategy_id)
+    api_cfg = _table(config, "api")
+    strategy_id_args = _coerce_strategy_ids(args.strategy_id)
     all_strategies = bool(args.all_strategies)
 
-    if all_strategies and strategy_id_arg is not None:
+    if all_strategies and strategy_id_args:
         raise ValueError("`--strategy-id` and `--all-strategies` cannot be used together")
     if all_strategies:
         return None
 
-    strategy_id = strategy_id_arg or _optional_text(identity.get("strategy_id"))
+    if strategy_id_args:
+        return strategy_id_args
+
+    configured_ids = _coerce_strategy_ids(api_cfg.get("tokenmm_strategy_ids"))
+    if configured_ids:
+        return configured_ids
+
+    strategy_id = _optional_text(identity.get("strategy_id"))
     if not strategy_id:
         raise ValueError("A non-empty strategy_id is required unless `--all-strategies` is set")
-    return strategy_id
+    return [strategy_id]
 
 
 def main() -> None:
@@ -114,7 +150,7 @@ def main() -> None:
     args = _parse_args()
     config = _load_config(args.config)
     mode = _resolve_mode(config, args)
-    strategy_scope = _resolve_strategy_scope(config, args)
+    strategy_scope = _resolve_strategy_ids(config, args)
 
     flux = _table(config, "flux")
     redis_cfg = _table(config, "redis")
@@ -147,7 +183,7 @@ def main() -> None:
     consumer = FluxBridgeStreamConsumer(
         redis_client=redis_client,
         environment=mode,
-        strategy_id=strategy_scope,
+        strategy_ids=strategy_scope,
         namespace=str(flux.get("namespace", "flux")),
         schema_version=str(flux.get("schema_version", "v1")),
         handlers=handlers,

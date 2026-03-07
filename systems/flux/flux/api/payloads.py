@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from collections.abc import Mapping
 from collections.abc import Sequence
@@ -9,6 +10,11 @@ from datetime import datetime
 from decimal import Decimal
 from decimal import InvalidOperation
 from typing import Any
+
+if __name__ == "flux.api.payloads":
+    sys.modules.setdefault("nautilus_trader.flux.api.payloads", sys.modules[__name__])
+elif __name__ == "nautilus_trader.flux.api.payloads":
+    sys.modules.setdefault("flux.api.payloads", sys.modules[__name__])
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,15 +30,25 @@ class StrategyMetadata:
     strategy_groups: str
     base_asset: str
     quote_asset: str
+    param_set: str = ""
+    strategy_family: str = ""
+    strategy_version: str = ""
 
     def as_payload(self, *, strategy_id: str) -> dict[str, str]:
-        return {
+        payload = {
             "strategy_id": strategy_id,
             "class": self.strategy_class,
             "strategy_groups": self.strategy_groups,
             "base_asset": self.base_asset,
             "quote_asset": self.quote_asset,
         }
+        if self.param_set:
+            payload["param_set"] = self.param_set
+        if self.strategy_family:
+            payload["strategy_family"] = self.strategy_family
+        if self.strategy_version:
+            payload["strategy_version"] = self.strategy_version
+        return payload
 
 
 _KNOWN_QUOTES = (
@@ -1352,17 +1368,13 @@ def _state_pricing_debug(state: Mapping[str, Any]) -> tuple[dict[str, Any], dict
     )
 
 
-def _derive_pricing_adjustments(  # noqa: C901
+def _build_fallback_inventory_skew_adjustments(
     *,
     state: Mapping[str, Any],
     params: Mapping[str, Any],
     ts_ms: int | None,
     risk_delta: float | None,
 ) -> list[dict[str, Any]]:
-    state_adjustments = state.get("pricing_adjustments")
-    if isinstance(state_adjustments, list):
-        return [dict(item) for item in state_adjustments if isinstance(item, Mapping)]
-
     pricing, skew = _state_pricing_debug(state)
     total_skew_bps = _first_valid_float(
         skew.get("total_skew_bps"),
@@ -1493,6 +1505,65 @@ def _derive_pricing_adjustments(  # noqa: C901
         adjustment["updated_ts_ms"] = ts_ms
 
     return [adjustment]
+
+
+def _merge_inventory_skew_adjustments(
+    *,
+    current: list[dict[str, Any]],
+    fallback: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not current or not fallback:
+        return current
+
+    fallback_inventory = next(
+        (dict(item) for item in fallback if item.get("type") == "inventory_skew"),
+        None,
+    )
+    if fallback_inventory is None:
+        return current
+
+    merged: list[dict[str, Any]] = []
+    merged_inventory = False
+    for item in current:
+        if item.get("type") != "inventory_skew" or merged_inventory:
+            merged.append(item)
+            continue
+        merged_item = dict(fallback_inventory)
+        for key, value in item.items():
+            if value is not None:
+                merged_item[key] = value
+        merged.append(merged_item)
+        merged_inventory = True
+
+    if not merged_inventory:
+        merged.append(fallback_inventory)
+    return merged
+
+
+def _derive_pricing_adjustments(  # noqa: C901
+    *,
+    state: Mapping[str, Any],
+    params: Mapping[str, Any],
+    ts_ms: int | None,
+    risk_delta: float | None,
+) -> list[dict[str, Any]]:
+    state_adjustments = state.get("pricing_adjustments")
+    if isinstance(state_adjustments, list):
+        normalized = [dict(item) for item in state_adjustments if isinstance(item, Mapping)]
+        fallback = _build_fallback_inventory_skew_adjustments(
+            state=state,
+            params=params,
+            ts_ms=ts_ms,
+            risk_delta=risk_delta,
+        )
+        return _merge_inventory_skew_adjustments(current=normalized, fallback=fallback)
+
+    return _build_fallback_inventory_skew_adjustments(
+        state=state,
+        params=params,
+        ts_ms=ts_ms,
+        risk_delta=risk_delta,
+    )
 
 
 def _derive_strategy_family(strategy_class: str) -> str:
@@ -1783,7 +1854,7 @@ def build_signals_payload(  # noqa: C901
     return {
         "id": strategy_id,
         "meta": metadata.as_payload(strategy_id=strategy_id),
-        "strategy_family": _derive_strategy_family(metadata.strategy_class),
+        "strategy_family": metadata.strategy_family or _derive_strategy_family(metadata.strategy_class),
         "tradeable": tradeable,
         "blocked": blocked,
         "near_tradeable": near_tradeable,

@@ -29,6 +29,13 @@ exec_reconciliation_lookback_mins = 15
 exec_reconciliation_startup_delay_secs = 10.0
 filter_unclaimed_external_orders = true
 filter_position_reports = false
+purge_closed_orders_interval_mins = 10
+purge_closed_orders_buffer_mins = 15
+purge_closed_positions_interval_mins = 10
+purge_closed_positions_buffer_mins = 15
+purge_account_events_interval_mins = 10
+purge_account_events_lookback_mins = 15
+purge_from_database = true
 
 [node.venues.OKX]
 adapter = "okx"
@@ -39,6 +46,7 @@ api_secret_env = "OKX_API_SECRET"
 api_passphrase_env = "OKX_API_PASSPHRASE"
 instrument_type = "SWAP"
 contract_type = "LINEAR"
+margin_mode = "CROSS"
 is_demo = false
 
 [node.venues.BINANCE_SPOT]
@@ -50,6 +58,7 @@ account_type = "SPOT"
 
 [strategy]
 strategy_id = "plumeusdt_okx_perp_makerv3"
+force_bot_off_on_start = true
 order_qty = "1000"
 qty = "1000"
 bot_on = false

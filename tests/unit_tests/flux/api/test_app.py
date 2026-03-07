@@ -10,6 +10,7 @@ from nautilus_trader.flux.api import DEFAULT_PARAMS_SCHEMA
 from nautilus_trader.flux.api import ContractCatalogEntry
 from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.api.payloads import StrategyMetadata
+from nautilus_trader.flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
@@ -201,6 +202,30 @@ def test_readyz_returns_200_when_flux_schema_is_ready(
     assert all(bool(value) for value in body["data"]["required_keys"].values())
 
 
+def test_create_app_exposes_registered_strategy_set_descriptors(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    descriptors = app.extensions["flux_strategy_set_descriptors"]
+
+    assert descriptors["equities"] == get_strategy_set_descriptor("equities")
+    assert descriptors["tokenmm"] == get_strategy_set_descriptor("tokenmm")
+
+
 def test_signals_uses_batched_pipeline_for_key_lookup(
     flux_config,
     redis_client,
@@ -324,6 +349,65 @@ def test_signals_metadata_binds_to_requested_strategy_id(
     strategy = body["data"]["strategies"][0]
     assert strategy["id"] == "strategy_02"
     assert strategy["meta"]["strategy_id"] == "strategy_02"
+
+
+def test_signals_rejects_unallowlisted_tokenmm_strategy_query(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"strategy": "strategy_02"})
+        body = response.get_json()
+
+    assert response.status_code == 404
+    assert body["ok"] is False
+    assert body["error"]["code"] == "unknown_strategy_id"
+    assert redis_client.pipeline_exec_count == 0
+
+
+def test_signals_rejects_unallowlisted_equities_strategy_query(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get(
+            "/api/v1/signals",
+            query_string={"profile": "equities", "strategy": "strategy_02"},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 404
+    assert body["ok"] is False
+    assert body["error"]["code"] == "unknown_strategy_id"
+    assert redis_client.pipeline_exec_count == 0
 
 
 def test_trades_delta_uses_timestamp_seq_fallback_for_seq_less_rows(
@@ -2340,3 +2424,60 @@ def test_alerts_delete_profile_tokenmm_clears_all_allowlisted_strategies(
         flux_config.identity.strategy_id: 0,
         "strategy_02": 0,
     }
+
+
+def test_strategy_parameters_update_rejects_unallowlisted_tokenmm_strategy_path(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.patch(
+            "/api/v1/strategies/strategy_02/parameters",
+            json={"updates": {"qty": 2}},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 404
+    assert body["ok"] is False
+    assert body["error"]["code"] == "unknown_strategy_id"
+
+
+def test_alerts_delete_rejects_unallowlisted_tokenmm_strategy_query(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.delete("/api/v1/alerts", query_string={"strategy": "strategy_02"})
+        body = response.get_json()
+
+    assert response.status_code == 404
+    assert body["ok"] is False
+    assert body["error"]["code"] == "unknown_strategy_id"

@@ -11,6 +11,7 @@ from nautilus_trader.flux.api.socketio import apply_signal_delta_patch
 from nautilus_trader.flux.api.socketio import build_signal_delta_patch
 from nautilus_trader.flux.api.socketio import normalize_profile
 from nautilus_trader.flux.api.socketio import profile_room
+from nautilus_trader.flux.api.socketio import supported_profile_ids
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 
 
@@ -138,6 +139,10 @@ class _TestSocketIO:
 def test_normalize_profile_maps_token_aliases(raw: str, expected: str) -> None:
     assert normalize_profile(raw) == expected
     assert profile_room(normalize_profile(raw)) == f"profile:{expected}"
+
+
+def test_supported_profile_ids_include_registered_strategy_sets() -> None:
+    assert supported_profile_ids() == ("equities", "tokenmm")
 
 
 def test_signal_delta_patch_applies_missing_as_no_change_and_null_as_delete() -> None:

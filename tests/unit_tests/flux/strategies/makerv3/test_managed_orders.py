@@ -59,6 +59,89 @@ def test_collect_managed_orders_handles_none_sources() -> None:
     assert rows == []
 
 
+def test_collect_managed_orders_excludes_market_exit_and_reduce_only_orders() -> None:
+    managed_order = SimpleNamespace(
+        client_order_id="OPEN-1",
+        venue_order_id="V-1",
+        side="BUY",
+        price="100",
+        quantity="1",
+        ts_init=1,
+        is_closed=False,
+        is_reduce_only=False,
+        tags=[],
+    )
+    reduce_only_order = SimpleNamespace(
+        client_order_id="EXIT-1",
+        venue_order_id="V-2",
+        side="SELL",
+        price="101",
+        quantity="1",
+        ts_init=2,
+        is_closed=False,
+        is_reduce_only=True,
+        tags=[],
+    )
+    market_exit_order = SimpleNamespace(
+        client_order_id="EXIT-2",
+        venue_order_id="V-3",
+        side="SELL",
+        price="102",
+        quantity="1",
+        ts_init=3,
+        is_closed=False,
+        is_reduce_only=False,
+        tags=["MARKET_EXIT"],
+    )
+
+    cache = SimpleNamespace(
+        orders_open=lambda **_kwargs: [managed_order, reduce_only_order, market_exit_order],
+        orders_inflight=lambda **_kwargs: [],
+    )
+
+    rows = collect_managed_orders(cache=cache, instrument_id="MAKER.SIM", strategy_id="STRAT-1")
+
+    assert rows == [managed_order]
+
+
+def test_collect_managed_orders_excludes_pending_cancel_orders() -> None:
+    managed_order = SimpleNamespace(
+        client_order_id="OPEN-1",
+        venue_order_id="V-1",
+        side="BUY",
+        price="100",
+        quantity="1",
+        ts_init=1,
+        is_closed=False,
+        is_pending_cancel=False,
+        status="ACCEPTED",
+        is_reduce_only=False,
+        tags=[],
+    )
+    pending_cancel_order = SimpleNamespace(
+        client_order_id="PENDING-CANCEL-1",
+        venue_order_id="V-2",
+        side="SELL",
+        price="101",
+        quantity="1",
+        ts_init=2,
+        is_closed=False,
+        is_pending_cancel=True,
+        status="PENDING_CANCEL",
+        is_reduce_only=False,
+        tags=[],
+    )
+
+    cache = SimpleNamespace(
+        orders_open=lambda **_kwargs: [managed_order, pending_cancel_order],
+        orders_inflight=lambda **_kwargs: [],
+    )
+
+    rows = collect_managed_orders(cache=cache, instrument_id="MAKER.SIM", strategy_id="STRAT-1")
+
+    assert rows == [managed_order]
+
+
 def test_register_and_reconcile_managed_order_tracking() -> None:
     tracked_ids: set[str] = set()
 
@@ -134,7 +217,9 @@ def test_cancel_managed_quotes_cancel_all_exception_is_accounted_without_abortin
     assert result.cancel_exceptions == 0
 
 
-def test_cancel_managed_quotes_clears_tracked_ids_on_forced_stop() -> None:
+def test_cancel_managed_quotes_preserves_tracked_ids_on_forced_stop_without_confirmed_cleanup() -> (
+    None
+):
     tracked_ids = {"CLIENT-1"}
 
     cancel_managed_quotes(
@@ -148,7 +233,7 @@ def test_cancel_managed_quotes_clears_tracked_ids_on_forced_stop() -> None:
         cancel_all_instrument_orders=False,
     )
 
-    assert tracked_ids == set()
+    assert tracked_ids == {"CLIENT-1"}
 
 
 def test_cancel_managed_quotes_does_not_clear_tracked_ids_on_empty_cache() -> None:

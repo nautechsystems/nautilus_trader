@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from flask import Flask
 
+from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.tokenmm.run_api import _attach_fluxboard_tokenmm_routes
 from flux.runners.tokenmm.run_api import _attach_pulse_routes
 from flux.runners.tokenmm.run_api import _build_flux_config
@@ -13,6 +14,7 @@ from flux.runners.tokenmm.run_api import _build_profile_strategy_maps
 from flux.runners.tokenmm.run_api import _load_config
 from flux.runners.tokenmm.run_api import _parse_args
 from flux.runners.tokenmm.run_api import _resolve_bind_host
+from flux.runners.tokenmm.run_api import _should_enable_pulse_routes
 from flux.runners.tokenmm.run_api import _tokenmm_profile_summary
 
 
@@ -80,6 +82,17 @@ def test_build_profile_strategy_maps_reads_tokenmm_allowlist_and_required_subset
 
     assert strategy_map == {"tokenmm": ["strategy_a", "strategy_b"]}
     assert required_map == {"tokenmm": ["strategy_a"]}
+
+
+def test_tokenmm_descriptor_exposes_stable_profile_contract() -> None:
+    descriptor = get_strategy_set_descriptor("tokenmm")
+
+    assert descriptor.profile == "tokenmm"
+    assert descriptor.aliases == ("tokenmm", "tokenm")
+    assert descriptor.base_path == "/tokenmm"
+    assert descriptor.route_aliases == ("/tokenm",)
+    assert descriptor.strategy_ids_field == "tokenmm_strategy_ids"
+    assert descriptor.required_strategy_ids_field == "tokenmm_required_strategy_ids"
 
 
 def test_build_profile_strategy_maps_requires_non_empty_tokenmm_allowlist() -> None:
@@ -155,6 +168,15 @@ def test_attach_pulse_routes_serves_index_assets_and_spa_fallback(tmp_path: Path
     response = client.get("/pulse/jobs/tokenmm-api")
     assert response.status_code == 200
     assert "pulse" in response.get_data(as_text=True)
+
+
+def test_should_enable_pulse_routes_defaults_to_disabled() -> None:
+    assert _should_enable_pulse_routes(Namespace(serve_pulse=False), {}) is False
+
+
+def test_should_enable_pulse_routes_honors_cli_or_config_enablement() -> None:
+    assert _should_enable_pulse_routes(Namespace(serve_pulse=True), {}) is True
+    assert _should_enable_pulse_routes(Namespace(serve_pulse=False), {"enable_pulse_routes": True}) is True
 
 
 def test_load_config_applies_redis_env_overrides(monkeypatch, tmp_path: Path) -> None:

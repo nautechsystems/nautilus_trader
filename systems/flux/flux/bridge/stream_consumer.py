@@ -52,6 +52,7 @@ class FluxBridgeStreamConsumer:
         redis_client: redis.Redis,
         environment: str,
         strategy_id: str | None = None,
+        strategy_ids: list[str] | tuple[str, ...] | None = None,
         namespace: str = FLUX_DEFAULT_NAMESPACE,
         schema_version: str = FLUX_SCHEMA_VERSION,
         handlers: dict[str, HandlerFn] | None = None,
@@ -67,9 +68,17 @@ class FluxBridgeStreamConsumer:
         self._namespace = validate_identifier_part(namespace, "namespace")
         self._schema_version = validate_schema_version(schema_version, "schema_version")
         self._environment = validate_identifier_part(environment, "environment")
-        self._strategy_id = (
-            validate_identifier_part(strategy_id, "strategy_id")
-            if strategy_id is not None
+        if strategy_id is not None and strategy_ids is not None:
+            raise ValueError("Provide only one of `strategy_id` or `strategy_ids`")
+        scoped_strategy_ids = list(strategy_ids or ())
+        if strategy_id is not None:
+            scoped_strategy_ids.append(strategy_id)
+        self._strategy_ids = (
+            frozenset(
+                validate_identifier_part(current_strategy_id, "strategy_id")
+                for current_strategy_id in scoped_strategy_ids
+            )
+            if scoped_strategy_ids
             else None
         )
         self._handlers = handlers or default_topic_handlers()
@@ -145,11 +154,12 @@ class FluxBridgeStreamConsumer:
     def _scan_patterns(self) -> list[str]:
         patterns: list[str] = []
         for topic in self._topics:
-            if self._strategy_id is None:
+            if self._strategy_ids is None:
                 patterns.append(f"{self._prefix}:in:stream:{self._environment}:*:{topic}")
-            else:
+                continue
+            for strategy_id in sorted(self._strategy_ids):
                 patterns.append(
-                    f"{self._prefix}:in:stream:{self._environment}:{self._strategy_id}:{topic}",
+                    f"{self._prefix}:in:stream:{self._environment}:{strategy_id}:{topic}",
                 )
         return patterns
 
@@ -167,7 +177,7 @@ class FluxBridgeStreamConsumer:
             return None
         if environment != self._environment:
             return None
-        if self._strategy_id is not None and strategy_id != self._strategy_id:
+        if self._strategy_ids is not None and strategy_id not in self._strategy_ids:
             return None
         if topic not in self._handlers:
             return None
@@ -404,6 +414,7 @@ class FluxBridgeStreamConsumer:
             if not stream_bulk:
                 continue
 
+            batch_failed = False
             for stream_raw, entries in stream_bulk:
                 stream_key = decode_text(stream_raw)
                 for entry_id_raw, fields in entries:
@@ -422,9 +433,8 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             e,
                         )
-                        # Decode failures are permanent for this entry; advance offset and continue.
-                        self._stream_ids[stream_key] = entry_id
-                        continue
+                        batch_failed = True
+                        break
                     if decoded is None:
                         self._logger.error(
                             "Rejected stream entry stream=%s id=%s err=%s",
@@ -432,8 +442,8 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             "decode returned no payload",
                         )
-                        self._stream_ids[stream_key] = entry_id
-                        continue
+                        batch_failed = True
+                        break
                     payload, context = decoded
 
                     handler = self._handlers.get(context.topic)
@@ -444,8 +454,8 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             f"missing handler for topic={context.topic}",
                         )
-                        self._stream_ids[stream_key] = entry_id
-                        continue
+                        batch_failed = True
+                        break
 
                     try:
                         ops = handler(payload, context)
@@ -457,13 +467,12 @@ class FluxBridgeStreamConsumer:
                             entry_id,
                             e,
                         )
-                        # Handler failures should not stall the stream; skip this entry.
-                        self._stream_ids[stream_key] = entry_id
-                        continue
+                        batch_failed = True
+                        break
 
                     try:
                         self._apply_write_ops(ops)
-                    except redis.RedisError as e:
+                    except Exception as e:
                         current = (stream_key, entry_id)
                         if self._write_failure_entry != current:
                             self._write_failure_entry = current
@@ -482,7 +491,7 @@ class FluxBridgeStreamConsumer:
                             backoff_s,
                             e,
                         )
-                        # Do not advance offset on Redis write failures; retry this entry with backoff.
+                        # Do not advance offset on write failures; retry this entry with backoff.
                         if elapsed_s >= 60.0:
                             self._logger.critical(
                                 "Write-op application has failed for %.1fs (topic=%s stream=%s id=%s); stopping consumer to avoid silent stall",
@@ -493,22 +502,16 @@ class FluxBridgeStreamConsumer:
                             )
                             raise
                         time.sleep(backoff_s)
+                        batch_failed = True
                         break
-                    except Exception as e:
-                        self._logger.exception(
-                            "Write-op application failed topic=%s stream=%s id=%s err=%s",
-                            context.topic,
-                            stream_key,
-                            entry_id,
-                            e,
-                        )
-                        raise
                     else:
                         self._write_failure_entry = None
                         self._write_failure_streak = 0
                         self._write_failure_first_failure_s = 0.0
 
                     self._stream_ids[stream_key] = entry_id
+                if batch_failed:
+                    break
 
 
 def build_parser() -> argparse.ArgumentParser:

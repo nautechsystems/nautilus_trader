@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"
 RUN_DIR="${RUN_DIR:-${ROOT_DIR}/.run/tokenmm-stack}"
 LOG_DIR="${RUN_DIR}/logs"
 PID_DIR="${RUN_DIR}/pids"
@@ -354,17 +355,12 @@ validate_config_and_keys() {
 }
 
 load_strategy_configs() {
-  mapfile -t STRATEGY_CONFIGS < <(find "${STRATEGIES_DIR}" -maxdepth 1 -type f -name '*.toml' ! -name '*template*' | sort)
-  if ((${#STRATEGY_CONFIGS[@]} == 0)); then
-    echo "[tokenmm-stack] no strategy configs found under ${STRATEGIES_DIR}" >&2
-    exit 1
-  fi
-  if [[ "${EXPECTED_NODES}" =~ ^[0-9]+$ ]] && [[ "${EXPECTED_NODES}" != "0" ]]; then
-    if ((${#STRATEGY_CONFIGS[@]} != EXPECTED_NODES)); then
-      echo "[tokenmm-stack] expected ${EXPECTED_NODES} strategy configs, found ${#STRATEGY_CONFIGS[@]}" >&2
-      exit 1
-    fi
-  fi
+  strategy_stack_load_strategy_configs \
+    STRATEGY_CONFIGS \
+    "${STRATEGIES_DIR}" \
+    "*template*" \
+    "[tokenmm-stack]" \
+    "${EXPECTED_NODES}"
 }
 
 read_tokenmm_registry_ids() {

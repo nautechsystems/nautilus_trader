@@ -2,11 +2,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"
 SYSTEMD_DIR="/etc/systemd/system"
 ENV_DIR="/etc/flux"
 SUDOERS_DIR="/etc/sudoers.d"
 SUDOERS_PATH="${SUDOERS_DIR}/flux-pulse"
 COMMON_ENV_PATH="${ENV_DIR}/common.env"
+TARGET_PATH="${SYSTEMD_DIR}/flux-tokenmm.target"
 SHARED_CONFIG="${ROOT_DIR}/deploy/tokenmm/tokenmm.live.toml"
 
 declare -a NODE_STRATEGIES=(
@@ -24,12 +26,13 @@ require_sudo() {
 }
 
 install_units() {
-  install -d "${SYSTEMD_DIR}" "${ENV_DIR}" "${SUDOERS_DIR}"
-  install -m 0644 "${ROOT_DIR}/deploy/systemd/flux@.service" "${SYSTEMD_DIR}/flux@.service"
-  install -m 0644 "${ROOT_DIR}/deploy/tokenmm/systemd/flux-tokenmm.target" "${SYSTEMD_DIR}/flux-tokenmm.target"
-  if [[ ! -f "${COMMON_ENV_PATH}" ]]; then
-    install -m 0640 "${ROOT_DIR}/deploy/tokenmm/systemd/common.env.example" "${COMMON_ENV_PATH}"
-  fi
+  strategy_stack_install_base_units \
+    "${ROOT_DIR}" \
+    "${SYSTEMD_DIR}" \
+    "${ENV_DIR}" \
+    "${ROOT_DIR}/deploy/tokenmm/systemd/common.env.example" \
+    "${COMMON_ENV_PATH}"
+  install -d "${SUDOERS_DIR}"
   install_sudoers
 }
 
@@ -47,13 +50,42 @@ install_sudoers() {
 render_api_env() {
   cat > "${ENV_DIR}/tokenmm-api.env" <<EOF
 PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM API + Fluxboard + Pulse
+PULSE_DESCRIPTION=TokenMM API + Fluxboard
 PULSE_GROUP_KEY=tokenmm
 PULSE_GROUP_LABEL=TokenMM
 PULSE_GROUP_ORDER=10
 PULSE_SELF_SERVICE_ID=tokenmm-api
 PORT=5022
-CMD="env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard --serve-pulse"
+CMD="env FLUXBOARD_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard"
+EOF
+}
+
+render_target() {
+  local service_ids=(
+    "tokenmm-api"
+    "tokenmm-pulse"
+    "tokenmm-portfolio"
+    "tokenmm-bridge"
+  )
+  local strategy_id
+  for strategy_id in "${NODE_STRATEGIES[@]}"; do
+    service_ids+=("tokenmm-node-${strategy_id}")
+  done
+
+  strategy_stack_render_target "${TARGET_PATH}" "Flux TokenMM Stack" "${service_ids[@]}"
+}
+
+
+render_pulse_env() {
+  cat > "${ENV_DIR}/tokenmm-pulse.env" <<EOF
+PULSE_ENABLED=1
+PULSE_DESCRIPTION=TokenMM Pulse
+PULSE_GROUP_KEY=tokenmm
+PULSE_GROUP_LABEL=TokenMM
+PULSE_GROUP_ORDER=10
+PULSE_SELF_SERVICE_ID=tokenmm-pulse
+PORT=5023
+CMD="env PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5023 --serve-pulse"
 EOF
 }
 
@@ -69,13 +101,18 @@ EOF
 }
 
 render_bridge_env() {
+  local strategy_args=""
+  local strategy_id
+  for strategy_id in "${NODE_STRATEGIES[@]}"; do
+    strategy_args+=" --strategy-id ${strategy_id}"
+  done
   cat > "${ENV_DIR}/tokenmm-bridge.env" <<EOF
 PULSE_ENABLED=1
 PULSE_DESCRIPTION=TokenMM bridge consumer
 PULSE_GROUP_KEY=tokenmm
 PULSE_GROUP_LABEL=TokenMM
 PULSE_GROUP_ORDER=10
-CMD="python3 -m nautilus_trader.flux.runners.tokenmm.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live --all-strategies"
+CMD="python3 -m nautilus_trader.flux.runners.tokenmm.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live${strategy_args}"
 EOF
 }
 
@@ -102,7 +139,9 @@ enable_stack() {
 main() {
   require_sudo
   install_units
+  render_target
   render_api_env
+  render_pulse_env
   render_portfolio_env
   render_bridge_env
   render_node_envs

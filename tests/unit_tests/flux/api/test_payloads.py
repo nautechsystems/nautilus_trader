@@ -152,6 +152,48 @@ def test_merge_portfolio_balances_rows_retains_latest_known_mark_when_newer_cash
     assert cash["mv_raw"] == pytest.approx(36.40413014)
 
 
+def test_merge_portfolio_balances_rows_backfills_latest_cash_mark_even_when_sparse_row_arrives_first() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "strategy_02": [
+                {
+                    "strategy_id": "strategy_02",
+                    "exchange": "bybit",
+                    "asset": "PLUME",
+                    "free": "6431.15191",
+                    "locked": "0",
+                    "total": "6431.15191",
+                    "ts_ms": 1_700_000_000_200,
+                    "row_id": "strategy_02:cash:0",
+                },
+            ],
+            "strategy_01": [
+                {
+                    "strategy_id": "strategy_01",
+                    "exchange": "bybit",
+                    "asset": "PLUME",
+                    "free": "5434.35191",
+                    "locked": "0",
+                    "total": "5434.35191",
+                    "ts_ms": 1_700_000_000_100,
+                    "mark_raw": 0.0106,
+                    "mv_raw": 57.604130246,
+                    "row_id": "strategy_01:cash:0",
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+    )
+
+    rows_by_id = {row["row_id"]: row for row in merged}
+    cash = rows_by_id["tokenmm:cash:bybit::PLUME"]
+
+    assert cash["strategy_id"] == "tokenmm"
+    assert cash["total"] == "6431.15191"
+    assert cash["mark_raw"] == pytest.approx(0.0106)
+    assert cash["mv_raw"] == pytest.approx(68.170210246)
+
+
 def test_enrich_balances_rows_marks_cash_assets_and_positions_from_market_rows() -> None:
     rows = [
         {
@@ -317,6 +359,29 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     assert payload["legs"]["venue_a:ABC/USDT"]["mid"] == 100.5
 
 
+def test_strategy_metadata_payload_includes_param_set_and_strategy_version() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="makerv3",
+        strategy_family="maker_v3",
+        strategy_version="v3",
+    )
+
+    assert metadata.as_payload(strategy_id="aapl_tradexyz_makerv3") == {
+        "strategy_id": "aapl_tradexyz_makerv3",
+        "class": "maker_v3",
+        "strategy_groups": "equities",
+        "base_asset": "AAPL",
+        "quote_asset": "USD",
+        "param_set": "makerv3",
+        "strategy_family": "maker_v3",
+        "strategy_version": "v3",
+    }
+
+
 def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_state(
     contract_catalog,
 ) -> None:
@@ -430,6 +495,122 @@ def test_build_signals_payload_derives_quote_status_from_managed_orders_when_mis
         "bid_blocked": 1,
         "ask_blocked": 2,
     }
+
+
+def test_build_signals_payload_backfills_local_qty_from_pricing_debug_when_state_adjustments_sparse(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "ts_ms": 1700000000000,
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                },
+            ],
+            "pricing_debug": {
+                "skew": {
+                    "inventory_qty": "215144.93330847",
+                    "local_inventory_qty": "-9806",
+                    "local_ratio": "-0.19612",
+                    "local_skew_bps": "-4.903",
+                    "des_qty_global": "0",
+                    "max_qty_global": "100000",
+                    "max_skew_bps_global": "25",
+                    "des_qty_local": "0",
+                    "max_qty_local": "50000",
+                    "max_skew_bps_local": "25",
+                },
+            },
+        },
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs=legs,
+    )
+
+    adjustments = payload["pricing_adjustments"]
+    assert adjustments
+    assert adjustments[0]["type"] == "inventory_skew"
+    assert adjustments[0]["local_qty"] == -9806.0
+    assert adjustments[0]["inv_ratio_local"] == -0.19612
+    assert adjustments[0]["inv_skew_local"] == -4.903
+
+
+def test_build_signals_payload_zeroes_quote_counts_when_state_is_stale_and_no_live_legs(
+    contract_catalog,
+    monkeypatch,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="ABC",
+        quote_asset="USDT",
+    )
+    stale_ts_ms = 1_700_000_000_000
+    monkeypatch.setattr("flux.api.payloads.now_ms", lambda: stale_ts_ms + 45_000)
+
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={},
+        now_ms_value=stale_ts_ms + 45_000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 1022,
+            "state": "quotes_replaced",
+            "ts_ms": stale_ts_ms,
+            "maker_quote_status": {
+                "bid_open": 10,
+                "ask_open": 10,
+                "bid_depth": 10,
+                "ask_depth": 10,
+                "bid_blocked": 0,
+                "ask_blocked": 0,
+            },
+        },
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0, "bot_on": False},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["managed_orders"] == 0
+    assert payload["tradeable"] is False
+    assert payload["blocked"] is True
+    assert payload["maker_quote_status"] == {
+        "bid_open": 0,
+        "ask_open": 0,
+        "bid_depth": 0,
+        "ask_depth": 0,
+        "bid_blocked": 0,
+        "ask_blocked": 0,
+    }
+    assert payload["debug"]["md_health"]["state_stale"] is True
 
 
 def test_build_legs_payload_uses_contract_id_keys_for_same_exchange_contracts() -> None:
@@ -714,6 +895,52 @@ def test_enrich_balances_rows_uses_spot_contract_metadata_for_cash_rows() -> Non
     assert plume_cash["quote_asset"] == "USDT"
     assert plume_cash["pair"] == "PLUME/USDT"
     assert plume_cash["display_name_short"] == "PLUME Spot"
+
+
+def test_enrich_balances_rows_prefers_spot_contract_and_market_fallback_for_spot_position_rows() -> None:
+    rows = [
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "bybit",
+            "kind": "position",
+            "instrument_id": "PLUMEUSDT.BYBIT",
+            "asset": "PLUME",
+            "signed_qty": "-32311.0667",
+            "quantity": "32311.0667",
+            "side": "SHORT",
+            "avg_px_open": "0",
+            "row_id": "spot-pos",
+        },
+    ]
+    contracts = (
+        ContractCatalogEntry(
+            exchange="bybit",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+        ),
+        ContractCatalogEntry(
+            exchange="bybit",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT-SPOT.BYBIT",
+        ),
+    )
+    market_rows = {
+        "bybit:PLUMEUSDT-SPOT.BYBIT": {"bid": 0.0104, "ask": 0.0106},
+        "bybit:PLUMEUSDT-LINEAR.BYBIT": {"bid": 0.0103, "ask": 0.0105},
+    }
+
+    enriched = enrich_balances_rows(
+        rows,
+        contracts=contracts,
+        market_rows=market_rows,
+    )
+
+    plume_spot = enriched[0]
+    assert plume_spot["instrument_id"] == "PLUMEUSDT-SPOT.BYBIT"
+    assert plume_spot["product_type"] == "spot"
+    assert plume_spot["display_name_short"] == "PLUME Spot"
+    assert plume_spot["mark_raw"] == pytest.approx(0.0105)
+    assert plume_spot["mv_raw"] == pytest.approx(-339.26620035)
 
 
 def test_extract_stream_rows_accepts_flat_field_entries_without_payload_wrapper() -> None:

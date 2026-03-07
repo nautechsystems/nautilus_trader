@@ -27,13 +27,17 @@ from flux.common.config import FluxRedisConfig
 from flux.common.config import FluxVenuesConfig
 from flux.common.config import validate_identifier_part
 from flux.pulse import PulseControlPlane
+from flux.runners.shared.strategy_set import build_profile_strategy_maps
+from flux.runners.shared.strategy_set import build_profile_summary
+from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
-DEFAULT_TOKENMM_BASE_PATH = "/tokenmm"
-TOKENMM_ALIAS_BASE_PATH = "/tokenm"
 DEFAULT_PULSE_BASE_PATH = "/pulse"
+TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
+DEFAULT_TOKENMM_BASE_PATH = TOKENMM_DESCRIPTOR.base_path
+TOKENMM_ALIAS_BASE_PATH = TOKENMM_DESCRIPTOR.route_aliases[0]
 
 
 def _repo_root() -> Path:
@@ -215,68 +219,24 @@ def _resolve_bind_host(config: dict[str, Any], args: argparse.Namespace) -> str:
     return str(args.host or api_cfg.get("host", "127.0.0.1")).strip() or "127.0.0.1"
 
 
-def _coerce_strategy_ids(raw_value: Any, *, field_name: str) -> list[str]:
-    if raw_value is None:
-        return []
-    if not isinstance(raw_value, list):
-        raise ValueError(f"`{field_name}` must be a TOML array of strategy IDs")
-
-    out: list[str] = []
-    seen: set[str] = set()
-    for index, value in enumerate(raw_value):
-        text = _optional_text(value)
-        if not text:
-            continue
-        strategy_id = validate_identifier_part(text, f"{field_name}[{index}]")
-        if strategy_id in seen:
-            continue
-        seen.add(strategy_id)
-        out.append(strategy_id)
-    return out
-
-
 def _build_profile_strategy_maps(
     api_cfg: dict[str, Any],
 ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-    strategy_ids = _coerce_strategy_ids(
-        api_cfg.get("tokenmm_strategy_ids"),
-        field_name="api.tokenmm_strategy_ids",
+    return build_profile_strategy_maps(
+        api_cfg,
+        descriptor=TOKENMM_DESCRIPTOR,
+        validate_identifier=validate_identifier_part,
     )
-    required_ids = _coerce_strategy_ids(
-        api_cfg.get("tokenmm_required_strategy_ids"),
-        field_name="api.tokenmm_required_strategy_ids",
-    )
-
-    if not strategy_ids:
-        raise ValueError("`api.tokenmm_strategy_ids` must be a non-empty TOML array")
-
-    if required_ids:
-        strategy_id_set = set(strategy_ids)
-        unknown = sorted(strategy_id for strategy_id in required_ids if strategy_id not in strategy_id_set)
-        if unknown:
-            raise ValueError(
-                "`api.tokenmm_required_strategy_ids` must be a subset of `api.tokenmm_strategy_ids`; "
-                f"unknown={unknown}",
-            )
-
-    profile_strategy_map: dict[str, list[str]] = {}
-    profile_required_strategy_map: dict[str, list[str]] = {}
-    profile_strategy_map["tokenmm"] = strategy_ids
-    if required_ids:
-        profile_required_strategy_map["tokenmm"] = required_ids
-    return profile_strategy_map, profile_required_strategy_map
 
 
 def _tokenmm_profile_summary(
     profile_strategy_map: dict[str, list[str]],
     profile_required_strategy_map: dict[str, list[str]],
 ) -> str:
-    strategy_ids = list(profile_strategy_map.get("tokenmm", []))
-    required_ids = list(profile_required_strategy_map.get("tokenmm", strategy_ids))
-    return (
-        f"tokenmm_strategy_count={len(strategy_ids)} "
-        f"tokenmm_strategy_ids={strategy_ids} "
-        f"tokenmm_required_strategy_ids={required_ids}"
+    return build_profile_summary(
+        TOKENMM_DESCRIPTOR,
+        profile_strategy_map,
+        profile_required_strategy_map,
     )
 
 
@@ -309,6 +269,10 @@ def _resolve_pulse_dist_path(args: argparse.Namespace, api_cfg: dict[str, Any]) 
     if config_path:
         return Path(config_path)
     return DEFAULT_PULSE_DIST
+
+
+def _should_enable_pulse_routes(args: argparse.Namespace, api_cfg: dict[str, Any]) -> bool:
+    return bool(args.serve_pulse or api_cfg.get("enable_pulse_routes", False))
 
 
 def _is_within(parent: Path, candidate: Path) -> bool:
@@ -443,9 +407,12 @@ def main() -> None:
 
     metadata = StrategyMetadata(
         strategy_class=str(api_cfg.get("strategy_class", "maker_v3")),
-        strategy_groups=str(api_cfg.get("strategy_groups", "tokenmm")),
+        strategy_groups=str(api_cfg.get("strategy_groups", TOKENMM_DESCRIPTOR.profile)),
         base_asset=str(api_cfg.get("base_asset", "BASE")),
         quote_asset=str(api_cfg.get("quote_asset", "QUOTE")),
+        param_set="makerv3",
+        strategy_family="maker_v3",
+        strategy_version="v3",
     )
     profile_strategy_map, profile_required_strategy_map = _build_profile_strategy_maps(api_cfg)
     print(
@@ -474,14 +441,14 @@ def main() -> None:
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
     )
-    PulseControlPlane().register_routes(app)
+    if _should_enable_pulse_routes(args, api_cfg):
+        PulseControlPlane().register_routes(app)
 
     serve_fluxboard = args.serve_fluxboard or _env_flag("FLUXBOARD_SERVE_DIST", default=False)
     if serve_fluxboard:
         dist_path = _resolve_fluxboard_dist_path(args, api_cfg)
         _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_path)
-    serve_pulse = args.serve_pulse or _env_flag("PULSE_SERVE_DIST", default=False)
-    if serve_pulse:
+    if args.serve_pulse:
         dist_path = _resolve_pulse_dist_path(args, api_cfg)
         _attach_pulse_routes(app, dist_dir=dist_path)
 

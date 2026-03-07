@@ -321,6 +321,7 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "NoNewPrivileges=true" not in service_template
 
     assert "Wants=flux@tokenmm-api.service" in target_unit
+    assert "Wants=flux@tokenmm-pulse.service" in target_unit
     assert "Wants=flux@tokenmm-portfolio.service" in target_unit
     assert "Wants=flux@tokenmm-bridge.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in target_unit
@@ -332,22 +333,31 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "/etc/flux" in install_script
     assert "/etc/sudoers.d/flux-pulse" in install_script
     assert (
-        'CMD="env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m flux.runners.tokenmm.run_api'
+        'CMD="env FLUXBOARD_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api'
         in install_script
     )
+    assert "--serve-fluxboard" in install_script
+    assert "--host 0.0.0.0" in install_script
+    assert 'CMD="env PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5023 --serve-pulse"' in install_script
     assert "tokenmm-portfolio" in install_script
+    assert "tokenmm-pulse" in install_script
     assert 'service_id="tokenmm-node-${strategy_id}"' in install_script
     assert "tokenmm-api" in install_script
+    assert "--strategy-id ${strategy_id}" in install_script
+    assert "--all-strategies" not in install_script
 
     assert "TOKENMM_REDIS_PASSWORD=" in common_env
     assert "BYBIT_API_KEY=" in common_env
     assert "BINANCE_API_KEY=" in common_env
     assert "OKX_API_KEY=" in common_env
 
-    assert "/usr/bin/systemctl start flux@*" in sudoers
-    assert "/usr/bin/systemctl stop flux@*" in sudoers
-    assert "/usr/bin/systemctl restart flux@*" in sudoers
-    assert "/usr/bin/journalctl -u flux@*" in sudoers
+    assert "/usr/bin/systemctl start flux@tokenmm-api.service" in sudoers
+    assert "/usr/bin/systemctl start flux@tokenmm-pulse.service" in sudoers
+    assert "/usr/bin/systemctl start flux@tokenmm-bridge.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-portfolio.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in sudoers
+    assert "/usr/bin/journalctl -u flux@tokenmm-api.service" in sudoers
+    assert "flux@*" not in sudoers
 
 
 def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_bounded_lookback() -> (
@@ -441,6 +451,15 @@ def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets(
         config = _read(_strategy_config_path(strategy_id))
         for line in required_lines:
             assert line in config
+
+
+def test_tokenmm_okx_perp_configs_default_to_cross_margin() -> None:
+    repo_root = _repo_root()
+    template = _read(repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml")
+    okx_config = _read(_strategy_config_path("plumeusdt_okx_perp_makerv3"))
+
+    assert 'margin_mode = "CROSS"' in okx_config
+    assert 'OKX perp configs should set `margin_mode = "CROSS"`' in template
 
 
 def test_deploy_env_examples_default_to_safe_paper_profiles_and_direct_prod_rejection() -> None:
