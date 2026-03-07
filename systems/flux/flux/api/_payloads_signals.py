@@ -77,6 +77,22 @@ def _first_valid_float(*values: Any) -> float | None:
     return None
 
 
+def _first_valid_bool(*values: Any) -> bool | None:
+    for value in values:
+        parsed = safe_bool(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _first_valid_text(*values: Any) -> str | None:
+    for value in values:
+        parsed = decode_text(value).strip()
+        if parsed:
+            return parsed
+    return None
+
+
 def _resolve_role_leg_id(
     *,
     role_value: Any,
@@ -203,6 +219,123 @@ def _state_pricing_debug(state: Mapping[str, Any]) -> tuple[dict[str, Any], dict
         dict(pricing) if isinstance(pricing, Mapping) else {},
         dict(skew) if isinstance(skew, Mapping) else {},
     )
+
+
+def _first_inventory_skew_adjustment(
+    pricing_adjustments: Sequence[Mapping[str, Any]] | Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    for adjustment in pricing_adjustments:
+        if not isinstance(adjustment, Mapping):
+            continue
+        if decode_text(adjustment.get("type")).strip().lower() != "inventory_skew":
+            continue
+        return dict(adjustment)
+    return {}
+
+
+def _project_signal_inventory_fields(
+    *,
+    state: Mapping[str, Any],
+    pricing_adjustments: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    _pricing, skew = _state_pricing_debug(state)
+    inventory_adjustment = _first_inventory_skew_adjustment(pricing_adjustments)
+
+    projected: dict[str, Any] = {}
+
+    position_qty_venue = _first_valid_float(
+        state.get("position_qty_venue"),
+        state.get("local_position_qty_venue"),
+        skew.get("local_position_qty_venue"),
+        skew.get("position_qty_venue"),
+    )
+    if position_qty_venue is not None:
+        projected["position_qty_venue"] = position_qty_venue
+
+    position_qty_base = _first_valid_float(
+        state.get("position_qty_base"),
+        state.get("local_position_qty_base"),
+        skew.get("local_position_qty_base"),
+        skew.get("position_qty_base"),
+    )
+    if position_qty_base is not None:
+        projected["position_qty_base"] = position_qty_base
+
+    local_qty_base = _first_valid_float(
+        state.get("local_qty_base"),
+        state.get("local_qty"),
+        skew.get("local_inventory_qty_base"),
+        skew.get("local_inventory_qty"),
+        inventory_adjustment.get("local_qty_base"),
+        inventory_adjustment.get("local_qty"),
+    )
+    if local_qty_base is not None:
+        projected["local_qty_base"] = local_qty_base
+        projected["local_qty"] = local_qty_base
+
+    local_qty_venue = _first_valid_float(
+        state.get("local_qty_venue"),
+        inventory_adjustment.get("local_qty_venue"),
+    )
+    if local_qty_venue is not None:
+        projected["local_qty_venue"] = local_qty_venue
+
+    global_qty_base = _first_valid_float(
+        state.get("global_qty_base"),
+        state.get("global_qty"),
+        skew.get("global_inventory_qty_base"),
+        skew.get("global_inventory_qty"),
+        skew.get("inventory_qty_base"),
+        skew.get("inventory_qty"),
+        inventory_adjustment.get("global_qty_base"),
+        inventory_adjustment.get("global_qty"),
+        inventory_adjustment.get("curr_qty"),
+    )
+    if global_qty_base is not None:
+        projected["global_qty_base"] = global_qty_base
+        projected["global_qty"] = global_qty_base
+
+    global_qty_complete = _first_valid_bool(
+        state.get("global_qty_base_complete"),
+        state.get("global_qty_complete"),
+        skew.get("global_inventory_qty_base_complete"),
+        skew.get("global_inventory_qty_complete"),
+        inventory_adjustment.get("global_qty_base_complete"),
+        inventory_adjustment.get("global_qty_complete"),
+    )
+    if global_qty_complete is not None:
+        projected["global_qty_base_complete"] = global_qty_complete
+        projected["global_qty_complete"] = global_qty_complete
+
+    aggregation_mode = _first_valid_text(
+        state.get("aggregation_mode"),
+        skew.get("global_inventory_aggregation_mode"),
+        inventory_adjustment.get("aggregation_mode"),
+    )
+    if aggregation_mode is not None:
+        projected["aggregation_mode"] = aggregation_mode
+
+    qty_conversion_status = _first_valid_text(
+        state.get("qty_conversion_status"),
+        state.get("local_qty_conversion_status"),
+        skew.get("local_position_qty_conversion_status"),
+        skew.get("qty_conversion_status"),
+        inventory_adjustment.get("qty_conversion_status"),
+    )
+    if qty_conversion_status is not None:
+        projected["qty_conversion_status"] = qty_conversion_status
+
+    qty_conversion_source = _first_valid_text(
+        state.get("qty_conversion_source"),
+        state.get("local_qty_conversion_source"),
+        skew.get("local_position_qty_conversion_source"),
+        skew.get("qty_conversion_source"),
+        inventory_adjustment.get("qty_conversion_source"),
+    )
+    if qty_conversion_source is not None:
+        projected["qty_conversion_source"] = qty_conversion_source
+
+    return projected
 
 
 def _build_fallback_inventory_skew_adjustments(
@@ -715,6 +848,10 @@ def build_signals_payload_impl(
         ts_ms=ts_ms,
         risk_delta=risk_delta,
     )
+    inventory_fields = _project_signal_inventory_fields(
+        state=state,
+        pricing_adjustments=pricing_adjustments,
+    )
     strategy_family = metadata.strategy_family or _derive_strategy_family(metadata.strategy_class)
     quote_snapshot = (
         _derive_quote_snapshot_v4(
@@ -801,6 +938,7 @@ def build_signals_payload_impl(
         "quote_stacks": quote_stacks,
         "pricing_adjustments": pricing_adjustments,
         "balance_readiness": balance_readiness,
+        **inventory_fields,
         **(
             {"maker_v4": {"quote_snapshot": quote_snapshot}}
             if strategy_family == "maker_v4"
