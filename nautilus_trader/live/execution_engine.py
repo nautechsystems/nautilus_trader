@@ -1477,79 +1477,11 @@ class LiveExecutionEngine(ExecutionEngine):
             self._order_local_activity_ns.pop(order.client_order_id, None)
             return
 
-        if order.status == OrderStatus.ACCEPTED:
-            self._log.warning(
-                f"Reconciling {order.client_order_id!r}: ACCEPTED order not found at venue, marking as REJECTED",
-                LogColor.YELLOW,
-            )
-            rejected = create_order_rejected_event(
-                order=order,
-                ts_now=ts_now,
-                reason="ORDER_NOT_FOUND_AT_VENUE",
-            )
-            self._handle_event_with_tracking(rejected)
-            self._clear_recon_tracking(order.client_order_id)
-            self._order_local_activity_ns.pop(order.client_order_id, None)
-            return
-
-        if order.status == OrderStatus.PARTIALLY_FILLED:
-            self._log.warning(
-                f"Reconciling {order.client_order_id!r}: PARTIALLY_FILLED "
-                f"order not found at venue, marking as CANCELED (preserving {order.filled_qty} filled quantity)",
-                LogColor.YELLOW,
-            )
-            canceled = create_order_canceled_event(
-                order=order,
-                ts_now=ts_now,
-            )
-            self._handle_event_with_tracking(canceled)
-            self._clear_recon_tracking(order.client_order_id)
-            self._order_local_activity_ns.pop(order.client_order_id, None)
-            return
-
-        if order.status == OrderStatus.SUBMITTED:
-            self._log.warning(
-                f"Reconciling {order.client_order_id!r}: SUBMITTED order not found at venue, marking as REJECTED",
-                LogColor.YELLOW,
-            )
-            rejected = create_order_rejected_event(
-                order=order,
-                ts_now=ts_now,
-                reason="ORDER_NOT_FOUND_AT_VENUE",
-            )
-            self._handle_event_with_tracking(rejected)
-            self._clear_recon_tracking(order.client_order_id)
-            self._order_local_activity_ns.pop(order.client_order_id, None)
-            return
-
-        if order.is_inflight:
-            self._log.debug(
-                f"Deferring resolution for {order.client_order_id!r} - still inflight state {order.status_string()}",
-            )
-            self._clear_recon_tracking(order.client_order_id, drop_last_query=False)
-            self._ts_last_query[order.client_order_id] = ts_now
-            return
-
-        if order.is_closed:
-            if order.status == OrderStatus.FILLED:
-                self._log.debug(
-                    f"{order.client_order_id!r} is FILLED and not found at venue (expected behavior)",
-                )
-            else:
-                self._log.warning(
-                    f"Order {order.client_order_id!r} is already closed as {order.status_string()}, "
-                    "skipping missing-order resolution",
-                )
-            self._clear_recon_tracking(order.client_order_id)
-            self._order_local_activity_ns.pop(order.client_order_id, None)
-            return
-
-        self._log.warning(
-            f"Unexpected order status {order.status_string()} "
-            f"for order not found at venue: {order.client_order_id!r}",
+        self._resolve_cached_order_missing_at_venue(
+            order,
+            ts_now=ts_now,
+            reason="ORDER_NOT_FOUND_AT_VENUE",
         )
-        self._clear_recon_tracking(order.client_order_id)
-        self._order_local_activity_ns.pop(order.client_order_id, None)
 
     async def _query_order_status_reports(
         self,
@@ -3603,6 +3535,12 @@ class LiveExecutionEngine(ExecutionEngine):
         # Handle an order event with activity tracking, recording fills in cache and
         # cleaning up tracking data for closed orders.
         self._record_local_activity(event)
+        cancel_rejected_prior_status: OrderStatus | None = None
+
+        if isinstance(event, OrderCancelRejected) and event.client_order_id is not None:
+            cached_order = self._cache.order(event.client_order_id)
+            if cached_order is not None:
+                cancel_rejected_prior_status = cached_order.status
 
         if isinstance(event, OrderFilled):
             self._recent_fills_cache[event.trade_id] = self._clock.timestamp_ns()
@@ -3615,6 +3553,10 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._inferred_fill_ts[client_order_id] = event.ts_event
 
         self._handle_event(event)
+        self._resolve_cancel_state_mismatch(
+            event,
+            prior_status=cancel_rejected_prior_status,
+        )
         self._publish_execution_alert_if_relevant(event)
 
         if event.client_order_id is None:
@@ -3626,6 +3568,105 @@ class LiveExecutionEngine(ExecutionEngine):
             self._order_local_activity_ns.pop(order.client_order_id, None)
             self._inferred_fill_ts.pop(order.client_order_id, None)
             self._fill_application_audit.pop(order.client_order_id, None)
+
+    def _resolve_cached_order_missing_at_venue(
+        self,
+        order: Order,
+        *,
+        ts_now: int,
+        reason: str,
+        prior_status: OrderStatus | None = None,
+    ) -> None:
+        if not order.is_open:
+            if order.is_closed:
+                if order.status == OrderStatus.FILLED:
+                    self._log.debug(
+                        f"{order.client_order_id!r} is FILLED and not found at venue (expected behavior)",
+                    )
+                else:
+                    self._log.warning(
+                        f"Order {order.client_order_id!r} is already closed as {order.status_string()}, "
+                        "skipping missing-order resolution",
+                    )
+            else:
+                self._log.debug(
+                    f"Skipping missing-order resolution for {order.client_order_id!r} - "
+                    f"current status {order.status_string()}",
+                )
+            self._clear_recon_tracking(order.client_order_id)
+            self._order_local_activity_ns.pop(order.client_order_id, None)
+            return
+
+        resolution_status = prior_status or order.status
+
+        if resolution_status in (OrderStatus.ACCEPTED, OrderStatus.SUBMITTED):
+            self._log.warning(
+                f"Reconciling {order.client_order_id!r}: {resolution_status.name} "
+                f"order not found at venue, marking as REJECTED",
+                LogColor.YELLOW,
+            )
+            rejected = create_order_rejected_event(
+                order=order,
+                ts_now=ts_now,
+                reason=reason,
+            )
+            self._handle_event_with_tracking(rejected)
+            self._clear_recon_tracking(order.client_order_id)
+            self._order_local_activity_ns.pop(order.client_order_id, None)
+            return
+
+        if resolution_status in (
+            OrderStatus.PARTIALLY_FILLED,
+            OrderStatus.PENDING_CANCEL,
+            OrderStatus.PENDING_UPDATE,
+        ):
+            self._log.warning(
+                f"Reconciling {order.client_order_id!r}: {resolution_status.name} "
+                f"order not found at venue, marking as CANCELED",
+                LogColor.YELLOW,
+            )
+            canceled = create_order_canceled_event(
+                order=order,
+                ts_now=ts_now,
+            )
+            self._handle_event_with_tracking(canceled)
+            self._clear_recon_tracking(order.client_order_id)
+            self._order_local_activity_ns.pop(order.client_order_id, None)
+            return
+
+        self._log.warning(
+            f"Unexpected order status {order.status_string()} "
+            f"for order not found at venue: {order.client_order_id!r}",
+        )
+        self._clear_recon_tracking(order.client_order_id)
+        self._order_local_activity_ns.pop(order.client_order_id, None)
+
+    def _resolve_cancel_state_mismatch(
+        self,
+        event: OrderEvent,
+        *,
+        prior_status: OrderStatus | None = None,
+    ) -> None:
+        if not isinstance(event, OrderCancelRejected):
+            return
+
+        if not self._is_cancel_state_mismatch_reason(self._normalize_alert_reason(event.reason)):
+            return
+
+        client_order_id = event.client_order_id
+        if client_order_id is None:
+            return
+
+        order = self._cache.order(client_order_id)
+        if order is None or order.is_closed:
+            return
+
+        self._resolve_cached_order_missing_at_venue(
+            order,
+            ts_now=int(event.ts_event or self._clock.timestamp_ns()),
+            reason="ORDER_CANCEL_STATE_MISMATCH",
+            prior_status=prior_status,
+        )
 
     @staticmethod
     def _normalize_alert_reason(reason: str | None) -> str:

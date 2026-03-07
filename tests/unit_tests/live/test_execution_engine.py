@@ -709,6 +709,75 @@ class TestLiveExecutionEngine:
         assert published == []
 
     @pytest.mark.asyncio
+    async def test_cancel_rejected_state_mismatch_closes_cached_accepted_order(self):
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        await eventually(lambda: order.status == OrderStatus.ACCEPTED)
+
+        event = OrderCancelRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="s_code=51400, s_msg=order has been filled, canceled or does not exist",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+        )
+
+        self.exec_engine.process(event)
+
+        await eventually(lambda: order.status == OrderStatus.REJECTED)
+        assert self.cache.is_order_closed(order.client_order_id)
+        assert not self.cache.is_order_open(order.client_order_id)
+
+    @pytest.mark.asyncio
+    async def test_cancel_rejected_state_mismatch_closes_cached_pending_cancel_order(self):
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_pending_cancel(order))
+        await eventually(lambda: order.status == OrderStatus.PENDING_CANCEL)
+
+        event = OrderCancelRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="s_code=51400, s_msg=order has been filled, canceled or does not exist",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+        )
+
+        self.exec_engine.process(event)
+
+        await eventually(lambda: order.status == OrderStatus.CANCELED)
+        assert self.cache.is_order_closed(order.client_order_id)
+        assert not self.cache.is_order_open(order.client_order_id)
+
+    @pytest.mark.asyncio
     async def test_modify_rejected_burst_publishes_single_execution_alert_after_threshold(self):
         published: list[object] = []
         self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
