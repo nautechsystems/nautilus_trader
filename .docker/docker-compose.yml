@@ -9,8 +9,10 @@ services:
       PGDATA: /data/postgres
     volumes:
       - nautilus-database:/data/postgres
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     networks:
       - nautilus-network
     restart: unless-stopped
@@ -26,7 +28,7 @@ services:
     security_opt:
       - no-new-privileges:true
     ports:
-      - "${PGADMIN_PORT:-5051}:80"
+      - "127.0.0.1:${PGADMIN_PORT:-5051}:80"
     networks:
       - nautilus-network
     restart: unless-stopped
@@ -34,8 +36,10 @@ services:
   redis:
     container_name: nautilus-redis
     image: redis
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     restart: unless-stopped
     networks:
       - nautilus-network

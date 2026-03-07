@@ -11,6 +11,9 @@ Released on TBD (UTC).
 ### Breaking Changes
 - None
 
+### Security
+- Hardened Docker Compose to bind all ports to localhost and add `no-new-privileges` to all services
+
 ### Fixes
 - Fixed `RiskEngine` RefCell re-entrancy panic on order denial (#3680), thanks @husariancom
 - Fixed reconciliation when trigger_price is set for non-conditional orders (#3673), thanks @husariancom
