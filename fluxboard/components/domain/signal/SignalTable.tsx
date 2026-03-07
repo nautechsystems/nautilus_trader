@@ -1151,6 +1151,54 @@ function resolveDisplayedLeg(
   return quoteSnapshot ? resolveMakerAwareLeg(row, legKey, quoteSnapshot) : getLegForSlot(row, legKey);
 }
 
+function midpointFromValues(bid: unknown, ask: unknown): number | null {
+  const bidPx = coerceFiniteNumber(bid);
+  const askPx = coerceFiniteNumber(ask);
+  if (bidPx == null || askPx == null) return null;
+  return (bidPx + askPx) / 2;
+}
+
+function resolveDisplayedLegMid(leg: SignalLeg | null | undefined): number | null {
+  if (!leg) return null;
+  return midpointFromValues(
+    leg.decision_bid ?? leg.fv_bid ?? leg.raw_bid,
+    leg.decision_ask ?? leg.fv_ask ?? leg.raw_ask
+  );
+}
+
+function resolveVisibleStrategyMarketMid(row: SignalStrategy): number | null {
+  const displayedMid = resolveDisplayedLegMid(resolveDisplayedLeg(row, 'A'));
+  if (displayedMid != null) return displayedMid;
+
+  const quoteSnapshot = resolveQuoteSnapshot(row) as any;
+  if (!quoteSnapshot) return null;
+
+  return midpointFromValues(
+    quoteSnapshot.maker_top_bid ?? quoteSnapshot.bid ?? quoteSnapshot.place_bid,
+    quoteSnapshot.maker_top_ask ?? quoteSnapshot.ask ?? quoteSnapshot.place_ask
+  );
+}
+
+function resolveVisibleStrategyFvMid(row: SignalStrategy): number | null {
+  const displayedMid = resolveDisplayedLegMid(resolveDisplayedLeg(row, 'B'));
+  if (displayedMid != null) return displayedMid;
+
+  const quoteSnapshot = resolveQuoteSnapshot(row);
+  const snapshotMid = quoteSnapshot
+    ? midpointFromValues(quoteSnapshot.ref_bid, quoteSnapshot.ref_ask)
+    : null;
+  if (snapshotMid != null) return snapshotMid;
+
+  return coerceFiniteNumber((row as any).fv_row?.fv) ?? null;
+}
+
+function spreadMarketVsFvBps(row: SignalStrategy): number | null {
+  const marketMid = resolveVisibleStrategyMarketMid(row);
+  const fvMid = resolveVisibleStrategyFvMid(row);
+  if (marketMid == null || fvMid == null || !Number.isFinite(fvMid) || fvMid === 0) return null;
+  return ((marketMid - fvMid) / fvMid) * 10_000;
+}
+
 function buildMakerTruthRow(
   row: EnrichedRow,
   legKey: LegKey,
@@ -2124,7 +2172,7 @@ export default function SignalTable({
         ?? legB?.net_edge_bps
         ?? 0;
       const edge2 = row.edge2_bps ?? null;
-      const spreadNet = coerceFiniteNumber((row as any).spread_net_bps) ?? null;
+      const spreadNet = spreadMarketVsFvBps(row);
       const riskDelta = coerceFiniteNumber(row.risk_delta) ?? null;
       const { globalQty, localQty } = resolveInventoryQuantities(row);
 
@@ -2429,29 +2477,41 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Spread"
             tooltip={[
-              'Best-case crossable spread after fees/FX.',
-              'Uses backend spread_net_bps (best of case1/case2), not a local mid-vs-mid proxy.',
-              'Positive = at least one direction is favorable before threshold gating.',
-              'Hover for case breakdown and required edge.',
+              'Signed midpoint spread: strategy market mid vs FV mid.',
+              'Formula: (strategy_market_mid - fv_mid) / fv_mid * 10000.',
+              'Positive = rich to FV. Negative = cheap to FV.',
+              'Not the same as required edge or edge2.',
             ].join('\n')}
           />
         ),
         enableSorting: true,
         cell: ({ row }) => {
           const spreadBps = row.original._spreadNet;
-          const case1 = coerceFiniteNumber((row.original as any).spread_net_case1_bps);
-          const case2 = coerceFiniteNumber((row.original as any).spread_net_case2_bps);
-          const bestCase = String((row.original as any).spread_net_best_case ?? '').trim() || '—';
+          const marketMid = resolveVisibleStrategyMarketMid(row.original);
+          const fvMid = resolveVisibleStrategyFvMid(row.original);
+          const displayedFvMid = resolveDisplayedLegMid(resolveDisplayedLeg(row.original, 'B'));
+          const quoteSnapshot = resolveQuoteSnapshot(row.original);
+          const snapshotFvMid = quoteSnapshot
+            ? midpointFromValues(quoteSnapshot.ref_bid, quoteSnapshot.ref_ask)
+            : null;
+          const explicitFv = coerceFiniteNumber((row.original as any).fv_row?.fv);
+          const fvSource = displayedFvMid != null
+            ? 'visible ref market'
+            : snapshotFvMid != null
+              ? 'quote snapshot ref'
+              : explicitFv != null
+                ? 'fv_row.fv'
+                : '—';
           const requiredEdge = coerceFiniteNumber(row.original.required_edge_bps);
-          const spreadText = spreadBps != null && Number.isFinite(spreadBps) ? `${spreadBps.toFixed(1)} bps` : '—';
+          const spreadText = spreadBps != null && Number.isFinite(spreadBps) ? `${formatBps(spreadBps)} bps` : '—';
           const tooltip = [
-            'Net spread (backend):',
-            `best case: ${bestCase}`,
-            `spread_net_bps: ${spreadText}`,
-            `case1 (buy A / sell B): ${case1 != null ? `${case1.toFixed(1)} bps` : '—'}`,
-            `case2 (buy B / sell A): ${case2 != null ? `${case2.toFixed(1)} bps` : '—'}`,
-            `required edge: ${requiredEdge != null ? `${requiredEdge.toFixed(1)} bps` : '—'}`,
-            `surplus (edge2): ${row.original._edge2 != null ? `${row.original._edge2.toFixed(1)} bps` : '—'}`,
+            'Market vs FV midpoint spread',
+            `Strategy mid: ${marketMid != null ? fmtPriceTooltip(marketMid) : '—'}`,
+            `FV mid: ${fvMid != null ? fmtPriceTooltip(fvMid) : '—'} (${fvSource})`,
+            `Spread: ${spreadText}`,
+            '',
+            `Required edge: ${requiredEdge != null ? `${requiredEdge.toFixed(1)} bps` : '—'}`,
+            `Edge2 surplus: ${row.original._edge2 != null ? `${row.original._edge2.toFixed(1)} bps` : '—'}`,
           ].join('\n');
           return (
             <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>

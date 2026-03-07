@@ -75,7 +75,7 @@ describe('SignalTable audit coverage', () => {
     initSignalState({ rows: [] });
   });
 
-  it('renders the canonical backend spread value instead of a local mid-vs-mid proxy', async () => {
+  it('renders visible market-A mid vs visible market-B/FV mid instead of quote mid or backend spread_net_bps', async () => {
     const strategy: SignalStrategy = {
       id: 'spread_strategy',
       params: { bot_on: '1', cex_bid_edge: '5', cex_ask_edge: '5', pool_edge: '2' } as any,
@@ -93,12 +93,27 @@ describe('SignalTable audit coverage', () => {
         class: 'maker_v3',
         strategy_groups: 'tokenmm',
       },
+      maker_v3: {
+        quote_snapshot: {
+          maker_exchange: 'bybit',
+          maker_symbol: 'PLUME/USDT',
+          ref_exchange: 'binance_spot',
+          ref_symbol: 'PLUME/USDT',
+          place_bid: 100,
+          place_ask: 102,
+          ref_bid: 103,
+          ref_ask: 105,
+        },
+      } as any,
+      fv_row: {
+        fv: '104',
+      } as any,
       legs: {
         A: {
           exchange: 'bybit_linear',
           coin: 'PLUME',
-          decision_bid: 100,
-          decision_ask: 102,
+          decision_bid: 103,
+          decision_ask: 105,
           update_time: '2025-01-15 12:00:00',
         } as any,
         B: {
@@ -118,8 +133,8 @@ describe('SignalTable audit coverage', () => {
     await waitFor(() => expect(screen.getByText(strategy.id)).toBeInTheDocument());
 
     const spreadCell = container.querySelector('tbody tr td:nth-child(9)');
-    expect(spreadCell?.textContent).toContain('14.5 bps');
-    expect(spreadCell?.textContent).not.toContain('-288.5 bps');
+    expect(spreadCell?.textContent).toContain('0.0 bps');
+    expect(spreadCell?.textContent).not.toContain('14.5 bps');
   });
 
   it('builds balance methodology text from payload data instead of a hardcoded 10x rule', () => {
