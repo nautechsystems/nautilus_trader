@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](http://nautilustrader.io) adapter for the [dYdX](https://dydx.trade/) decentralized derivatives exchange.
+//! [NautilusTrader](https://nautilustrader.io) adapter for the [dYdX](https://dydx.trade/) decentralized derivatives exchange.
 //!
 //! The `nautilus-dydx` crate provides client bindings (HTTP, WebSocket & gRPC), data
 //! models, and helper utilities that wrap the official **dYdX v4 API**.
@@ -31,7 +31,7 @@
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! System-level components and orchestration for [NautilusTrader](http://nautilustrader.io).
+//! System-level components and orchestration for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-system` crate provides the core system architecture for orchestrating trading systems,
 //! including the kernel that manages all engines, configuration management,
@@ -25,7 +25,7 @@
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

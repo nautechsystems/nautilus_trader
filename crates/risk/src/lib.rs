@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Risk engine for [NautilusTrader](http://nautilustrader.io).
+//! Risk engine for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-risk` crate provides risk management capabilities including pre-trade
 //! order validation, position sizing calculations, and trading controls. This system ensures
@@ -27,7 +27,7 @@
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

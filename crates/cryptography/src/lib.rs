@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Cryptographic utilities and security functions for [NautilusTrader](http://nautilustrader.io).
+//! Cryptographic utilities and security functions for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-cryptography` crate provides essential cryptographic primitives and security utilities
 //! required for secure communication with trading venues and data providers. This includes
@@ -27,7 +27,7 @@
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

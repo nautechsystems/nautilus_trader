@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-Live system node for [NautilusTrader](http://nautilustrader.io).
+Live system node for [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-live` crate provides high-level abstractions and infrastructure for running live trading
 systems, including data streaming, execution management, and system lifecycle handling.
@@ -18,7 +18,7 @@ It builds on top of the system kernel to provide simplified interfaces for live 
 
 ## Platform
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 algorithmic trading platform, providing quantitative traders with the ability to backtest
 portfolios of automated trading strategies on historical data with an event-driven engine,
 and also deploy those same strategies live, with no code changes.

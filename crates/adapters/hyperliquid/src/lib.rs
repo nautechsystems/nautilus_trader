@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](http://nautilustrader.io) adapter for the [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) decentralized exchange.
+//! [NautilusTrader](https://nautilustrader.io) adapter for the [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) decentralized exchange.
 //!
 //! The `nautilus-hyperliquid` crate provides integration with the Hyperliquid API for
 //! trading perpetual futures on a decentralized exchange.
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

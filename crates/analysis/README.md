@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-Portfolio analysis and performance metrics for [NautilusTrader](http://nautilustrader.io).
+Portfolio analysis and performance metrics for [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-analysis` crate provides portfolio analysis tools and performance
 statistics for evaluating trading strategies and portfolios. This includes return-based metrics,
@@ -19,7 +19,7 @@ PnL-based statistics, and risk measurements commonly used in quantitative financ
 
 ## Platform
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 algorithmic trading platform, providing quantitative traders with the ability to backtest
 portfolios of automated trading strategies on historical data with an event-driven engine,
 and also deploy those same strategies live, with no code changes.

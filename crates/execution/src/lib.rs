@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Order execution system for [NautilusTrader](http://nautilustrader.io).
+//! Order execution system for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-execution` crate provides an order execution system that handles the complete
 //! order lifecycle from submission to fill processing. This includes sophisticated order matching,
@@ -33,7 +33,7 @@
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

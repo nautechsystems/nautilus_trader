@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Data persistence and storage management for [NautilusTrader](http://nautilustrader.io).
+//! Data persistence and storage management for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-persistence` crate provides data persistence capabilities for storing and retrieving
 //! trading data, state, and configuration.
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-Command-line interface and tools for [NautilusTrader](http://nautilustrader.io).
+Command-line interface and tools for [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-cli` crate provides a command-line interface for managing and
 operating NautilusTrader installations. It includes tools for database management,
@@ -19,7 +19,7 @@ system configuration, and operational utilities:
 
 ## Platform
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 algorithmic trading platform, providing quantitative traders with the ability to backtest
 portfolios of automated trading strategies on historical data with an event-driven engine,
 and also deploy those same strategies live, with no code changes.

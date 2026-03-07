@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Blockchain data adapter for [NautilusTrader](http://nautilustrader.io).
+//! Blockchain data adapter for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-blockchain` crate provides a high-performance, universal, extensible adapter for ingesting
 //! DeFi data from decentralized exchanges (DEXs), liquidity pools, and on-chain events.
@@ -22,7 +22,7 @@
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

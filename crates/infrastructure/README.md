@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-Database and messaging infrastructure for [NautilusTrader](http://nautilustrader.io).
+Database and messaging infrastructure for [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-infrastructure` crate provides backend database implementations and message bus adapters
 that enable NautilusTrader to scale from development to production deployments. This includes
@@ -23,7 +23,7 @@ the appropriate infrastructure components for their specific deployment requirem
 
 ## Platform
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 algorithmic trading platform, providing quantitative traders with the ability to backtest
 portfolios of automated trading strategies on historical data with an event-driven engine,
 and also deploy those same strategies live, with no code changes.

@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings aggregator crate for [NautilusTrader](http://nautilustrader.io).
+//! Python bindings aggregator crate for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-pyo3` crate collects the Python bindings generated across the NautilusTrader workspace
 //! and re-exports them through a single shared library that can be included in binary wheels.
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.

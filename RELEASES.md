@@ -13,6 +13,7 @@ Released on TBD (UTC).
 
 ### Security
 - Hardened Docker Compose to bind all ports to localhost and add `no-new-privileges` to all services
+- Upgraded all `nautilustrader.io` URLs from HTTP to HTTPS (#3686), thanks @04cb
 
 ### Fixes
 - Fixed `RiskEngine` RefCell re-entrancy panic on order denial (#3680), thanks @husariancom

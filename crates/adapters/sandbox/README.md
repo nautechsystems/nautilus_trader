@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-[NautilusTrader](http://nautilustrader.io) sandbox execution adapter for paper trading.
+[NautilusTrader](https://nautilustrader.io) sandbox execution adapter for paper trading.
 
 The `nautilus-sandbox` crate provides a simulated execution client that uses the
 `OrderMatchingEngine` to simulate order execution against live market data. This enables
@@ -23,7 +23,7 @@ paper trading and strategy testing in real-time without actual order execution o
 
 ## Platform
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 algorithmic trading platform, providing quantitative traders with the ability to backtest
 portfolios of automated trading strategies on historical data with an event-driven engine,
 and also deploy those same strategies live, with no code changes.

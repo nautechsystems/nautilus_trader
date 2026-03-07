@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-Order execution engine for [NautilusTrader](http://nautilustrader.io).
+Order execution engine for [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-execution` crate provides an order execution system that handles the complete
 order lifecycle from submission to fill processing. This includes sophisticated order matching,
@@ -26,7 +26,7 @@ development, and backtesting.
 
 ## Platform
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 algorithmic trading platform, providing quantitative traders with the ability to backtest
 portfolios of automated trading strategies on historical data with an event-driven engine,
 and also deploy those same strategies live, with no code changes.

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](http://nautilustrader.io) adapter for the [BitMEX](https://bitmex.com) cryptocurrency exchange.
+//! [NautilusTrader](https://nautilustrader.io) adapter for the [BitMEX](https://bitmex.com) cryptocurrency exchange.
 //!
 //! The `nautilus-bitmex` crate provides client bindings (HTTP & WebSocket), data
 //! models and helper utilities that wrap the official **BitMEX API**.
@@ -23,7 +23,7 @@
 //!
 //! # Platform
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
