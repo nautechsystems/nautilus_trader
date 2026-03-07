@@ -4,6 +4,8 @@ from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.strategies import MakerV3Strategy as MakerV3StrategyFromRoot
 from nautilus_trader.flux.strategies import MakerV3StrategyConfig as MakerV3StrategyConfigFromRoot
@@ -20,6 +22,7 @@ from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_ALERT
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_BALANCES
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_EVENT
 from nautilus_trader.flux.strategies.makerv3.constants import TOPIC_STATE
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -182,9 +185,55 @@ def test_blocked_alerts_are_rate_limited_until_unblocked_transition(
     assert all(payload["level"] == "warning" for payload in alerts)
 
 
+def test_publish_state_zeroes_quote_status_when_bot_off_with_cached_managed_orders(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: [
+        SimpleNamespace(side=OrderSide.BUY),
+        SimpleNamespace(side=OrderSide.SELL),
+    ]
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("bot_off")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["managed_orders"] == 2
+    assert state_payload["maker_quote_status"] == {
+        "bid_open": 0,
+        "ask_open": 0,
+        "bid_depth": 0,
+        "ask_depth": 0,
+        "bid_blocked": 0,
+        "ask_blocked": 0,
+    }
+
+
 def test_canonical_strategy_exports_match_root_surface() -> None:
     assert MakerV3StrategyFromRoot is MakerV3Strategy
     assert MakerV3StrategyConfigFromRoot is MakerV3StrategyConfig
+
+
+def test_flux_strategy_registry_exposes_canonical_makerv3_binding() -> None:
+    from nautilus_trader.flux.strategies.registry import get_strategy_spec
+
+    spec = get_strategy_spec("makerv3")
+
+    assert spec.param_set == "makerv3"
+    assert spec.strategy_cls is MakerV3Strategy
+    assert spec.config_cls is MakerV3StrategyConfig
+    assert spec.strategy_family == "maker_v3"
+    assert spec.strategy_version == "v3"
+
+
+def test_flux_strategy_registry_rejects_unsupported_param_sets() -> None:
+    from nautilus_trader.flux.strategies.registry import get_strategy_spec
+
+    with pytest.raises(ValueError, match="Unsupported flux strategy param set"):
+        get_strategy_spec("makerv4")
 
 
 def test_publish_json_emits_canonical_topic() -> None:

@@ -12,14 +12,20 @@ from flux.strategies.makerv3 import pricing as pricing_mod
 from flux.strategies.makerv3 import publisher as publisher_mod
 from flux.strategies.makerv3.constants import ALERT_COOLDOWN_BLOCKED_MS
 from flux.strategies.makerv3.constants import ALERT_KEY_MARKET_DATA_BLOCKED
+from flux.strategies.makerv3.constants import ALERT_KEY_PORTFOLIO_INVENTORY_BLOCKED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_BLOCKED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_COMPLETED
+from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_SKIPPED
+from flux.strategies.makerv3.constants import REASON_BLOCKED_STARTUP_CLEANUP
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
+from flux.strategies.makerv3.constants import REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from flux.strategies.makerv3.constants import REASON_COMPLETED_NO_ACTIONS
 from flux.strategies.makerv3.constants import REASON_COMPLETED_NO_TARGETS
 from flux.strategies.makerv3.constants import REASON_COMPLETED_REBALANCED
+from flux.strategies.makerv3.constants import REASON_SKIPPED_CANCEL_REJECT_COOLDOWN
+from flux.strategies.makerv3.constants import REASON_SKIPPED_PENDING_CANCELS
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 
@@ -111,6 +117,89 @@ def publish_recovery_state_if_blocked(
     )
 
 
+def handle_startup_cleanup_block(
+    strategy: MakerV3Strategy,
+    *,
+    now_ns: int,
+    quote_cycle_id: str,
+    managed_orders: list[Any],
+) -> None:
+    """
+    Block quoting while startup cleanup is still unwinding claimed orders.
+    """
+    from_state = getattr(strategy, "_last_state_name", None)
+    blocked_transition = not bool(getattr(strategy, "_state_is_blocked", False))
+    strategy._publish_state(
+        "blocked_startup_cleanup",
+        managed_orders_count=len(managed_orders),
+        managed_orders=managed_orders,
+    )
+    strategy._publish_quote_cycle_event(
+        now_ns=now_ns,
+        quote_cycle_event=QUOTE_CYCLE_EVENT_BLOCKED,
+        reason_code=REASON_BLOCKED_STARTUP_CLEANUP,
+        quote_cycle_id=quote_cycle_id,
+        payload={
+            "from_state": from_state,
+            "to_state": "blocked_startup_cleanup",
+            "blocked_transition": blocked_transition,
+            "managed_orders": len(managed_orders),
+            "pending_cancels": len(getattr(strategy, "_pending_cancel_client_order_ids", ())),
+        },
+    )
+    strategy._last_requote_ns = now_ns
+
+
+def handle_portfolio_inventory_block(
+    strategy: MakerV3Strategy,
+    *,
+    now_ns: int,
+    quote_cycle_id: str,
+    managed_orders: list[Any],
+) -> None:
+    """
+    Block quoting when shared portfolio inventory is degraded.
+    """
+    state = "blocked_portfolio_inventory"
+    from_state = getattr(strategy, "_last_state_name", None)
+    blocked_transition = not bool(getattr(strategy, "_state_is_blocked", False))
+    strategy._cancel_managed_quotes(
+        "portfolio_inventory_unavailable",
+        managed_orders=managed_orders,
+    )
+    strategy._publish_state(
+        state,
+        managed_orders_count=len(managed_orders),
+        managed_orders=managed_orders,
+    )
+    strategy._publish_quote_cycle_event(
+        now_ns=now_ns,
+        quote_cycle_event=QUOTE_CYCLE_EVENT_BLOCKED,
+        reason_code=REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE,
+        quote_cycle_id=quote_cycle_id,
+        payload={
+            "from_state": from_state,
+            "to_state": state,
+            "blocked_transition": blocked_transition,
+            "managed_orders": len(managed_orders),
+        },
+    )
+    if blocked_transition:
+        strategy._publish_actionable_alert(
+            alert_key=ALERT_KEY_PORTFOLIO_INVENTORY_BLOCKED,
+            message=(
+                "Quoting blocked (shared portfolio inventory unavailable) "
+                f"strategy_id={strategy._external_strategy_id}"
+            ),
+            level="warning",
+            reason_code=REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE,
+            cooldown_ms=ALERT_COOLDOWN_BLOCKED_MS,
+            transition=f"{from_state}->{state}",
+            now_ns=now_ns,
+        )
+    strategy._last_requote_ns = now_ns
+
+
 def refresh_quotes(  # noqa: C901
     strategy: MakerV3Strategy,
     *,
@@ -120,6 +209,8 @@ def refresh_quotes(  # noqa: C901
     """
     Compute desired quote ladder and rebalance managed orders to match it.
     """
+    if strategy._quote_management_suspended():
+        return
     if strategy._maker_instrument is None or strategy._order_qty is None:
         return
     if quote_cycle_id is None:
@@ -203,11 +294,50 @@ def refresh_quotes(  # noqa: C901
     if bps_anchor <= 0:
         return
     active_orders = strategy._managed_orders()
+    if strategy._startup_cleanup_active(managed_orders=active_orders):
+        handle_startup_cleanup_block(
+            strategy,
+            now_ns=now_ns,
+            quote_cycle_id=quote_cycle_id,
+            managed_orders=active_orders,
+        )
+        return
+    base_currency = strategy._maker_base_currency_code()
+    if strategy._portfolio_inventory_portfolio_id:
+        _, portfolio_block_reason = strategy._shared_portfolio_inventory_qty_and_block_reason(
+            base_currency,
+        )
+        if portfolio_block_reason == REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE:
+            handle_portfolio_inventory_block(
+                strategy,
+                now_ns=now_ns,
+                quote_cycle_id=quote_cycle_id,
+                managed_orders=active_orders,
+            )
+            return
     publish_recovery_state_if_blocked(
         strategy,
         managed_orders_count=len(active_orders),
         managed_orders=active_orders,
     )
+    cooldown_order_ids = strategy._active_cancel_reject_cooldown_order_ids(
+        now_ns=now_ns,
+        managed_orders=active_orders,
+    )
+    if cooldown_order_ids:
+        strategy._publish_quote_cycle_event(
+            now_ns=now_ns,
+            quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
+            reason_code=REASON_SKIPPED_CANCEL_REJECT_COOLDOWN,
+            quote_cycle_id=quote_cycle_id,
+            payload={
+                "managed_orders": len(active_orders),
+                "cooldown_order_count": len(cooldown_order_ids),
+                "cooldown_order_ids": cooldown_order_ids,
+            },
+        )
+        strategy._last_requote_ns = now_ns
+        return
 
     skew_ctx = strategy._cached_inventory_skew(now_ns=now_ns, runtime_params=runtime_params)
     total_skew_bps = _to_decimal(skew_ctx.get("total_skew_bps", Decimal(0)))
@@ -446,6 +576,21 @@ def refresh_quotes(  # noqa: C901
         now_ns=now_ns,
         max_age_ms=max_age_ms,
     )
+    if strategy._has_pending_managed_cancels():
+        strategy._last_requote_ns = now_ns
+        strategy._publish_quote_cycle_event(
+            now_ns=now_ns,
+            quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
+            reason_code=REASON_SKIPPED_PENDING_CANCELS,
+            quote_cycle_id=quote_cycle_id,
+            payload={
+                "cancel_count": cancels,
+                "pending_cancels": len(getattr(strategy, "_pending_cancel_client_order_ids", ())),
+                "bid_levels": len(desired_buys),
+                "ask_levels": len(desired_sells),
+            },
+        )
+        return
     places += strategy._place_missing_levels(
         side=OrderSide.BUY,
         active_orders=active_buys,

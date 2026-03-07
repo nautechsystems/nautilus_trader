@@ -20,7 +20,7 @@ from flux.strategies.makerv3.constants import TOPIC_BALANCES
 from flux.strategies.makerv3.constants import TOPIC_EVENT
 from flux.strategies.makerv3.constants import TOPIC_MARKET_BBO
 from flux.strategies.makerv3.constants import TOPIC_STATE
-from flux.strategies.makerv3.wire import FluxBusPayload
+from flux.events import FluxBusPayload
 from nautilus_trader.model.enums import OrderSide
 
 
@@ -436,7 +436,18 @@ def _maker_quote_status_payload(
     strategy: Any,
     *,
     managed_orders: Sequence[Any],
+    state: str | None = None,
 ) -> dict[str, int] | None:
+    if state == "bot_off":
+        return {
+            "bid_open": 0,
+            "ask_open": 0,
+            "bid_depth": 0,
+            "ask_depth": 0,
+            "bid_blocked": 0,
+            "ask_blocked": 0,
+        }
+
     bid_open = 0
     ask_open = 0
     for order in managed_orders:
@@ -504,6 +515,7 @@ def publish_state(
     maker_quote_status = _maker_quote_status_payload(
         strategy,
         managed_orders=managed_orders_list,
+        state=state,
     )
     if maker_quote_status is not None:
         payload["maker_quote_status"] = maker_quote_status
@@ -545,6 +557,7 @@ def publish_actionable_alert(
     cooldown_ms: int = 0,
     transition: str | None = None,
     now_ns: int | None = None,
+    **extra_fields: Any,
 ) -> bool:
     """
     Publish a cooldown/transition-gated alert and return True when emitted.
@@ -573,6 +586,7 @@ def publish_actionable_alert(
         alert_key=alert_key,
         reason_code=reason_code,
         actionable=True,
+        **extra_fields,
     )
     return True
 
@@ -586,6 +600,7 @@ def publish_alert(
     alert_key: str | None = None,
     reason_code: str | None = None,
     actionable: bool | None = None,
+    **extra_fields: Any,
 ) -> None:
     """
     Publish an alert payload to the alert topic.
@@ -604,6 +619,7 @@ def publish_alert(
         payload["reason_code"] = reason_code
     if actionable is not None:
         payload["actionable"] = actionable
+    payload.update(extra_fields)
     strategy._publish_json(
         TOPIC_ALERT,
         payload,

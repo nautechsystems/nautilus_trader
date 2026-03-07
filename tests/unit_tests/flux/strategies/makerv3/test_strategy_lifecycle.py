@@ -205,6 +205,130 @@ def test_on_start_allows_duplicate_instrument_ids_without_duplicate_subscription
     assert unsubscribed == [str(maker_id)]
 
 
+def test_on_start_persists_bot_off_before_loading_runtime_params_when_enabled(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    class _ParamsManager:
+        def __init__(self) -> None:
+            self.stored = {"bot_on": True, "max_age_ms": 100}
+            self.update_calls: list[dict[str, bool]] = []
+            self.publish_calls: list[tuple[dict[str, bool], int | None]] = []
+
+        def load(self) -> dict[str, int | bool]:
+            return dict(self.stored)
+
+        def update(self, updates: dict[str, bool]) -> dict[str, bool]:
+            coerced = dict(updates)
+            self.update_calls.append(coerced)
+            self.stored.update(coerced)
+            return coerced
+
+        def publish_update(
+            self,
+            updates: dict[str, bool],
+            *,
+            ts_ms: int | None = None,
+        ) -> dict[str, object]:
+            coerced = dict(updates)
+            self.publish_calls.append((coerced, ts_ms))
+            return {"updates": coerced, "ts_ms": ts_ms}
+
+    strategy = strategy_factory(force_bot_off_on_start=True)
+    strategy.set_params_manager(_ParamsManager())
+    strategy._publish_alert = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_balances = lambda: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
+    strategy.subscribe_order_book_deltas = lambda *_args, **_kwargs: None
+    fake_cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        instrument=lambda instrument_id: SimpleNamespace(
+            price_precision=6,
+            raw_symbol=str(instrument_id).split(".", maxsplit=1)[0],
+            make_qty=lambda value: value,
+        ),
+    )
+    fake_clock = SimpleNamespace(
+        timestamp_ns=lambda: 1_700_000_000_000_000_000,
+        set_timer=lambda **_kwargs: None,
+        timer_names=set(),
+        cancel_timer=lambda _name: None,
+    )
+    monkeypatch.setattr(type(strategy), "cache", property(lambda _self: fake_cache))
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+
+    strategy.on_start()
+
+    manager = strategy._params_manager
+    assert manager.update_calls == [{"bot_on": False}]
+    assert manager.publish_calls == [({"bot_on": False}, 1_700_000_000_000)]
+    assert strategy._effective_bot_on() is False
+
+
+def test_on_start_preserves_runtime_bot_on_when_force_off_disabled(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    class _ParamsManager:
+        def __init__(self) -> None:
+            self.stored = {"bot_on": True, "max_age_ms": 100}
+            self.update_calls: list[dict[str, bool]] = []
+            self.publish_calls: list[tuple[dict[str, bool], int | None]] = []
+
+        def load(self) -> dict[str, int | bool]:
+            return dict(self.stored)
+
+        def update(self, updates: dict[str, bool]) -> dict[str, bool]:
+            coerced = dict(updates)
+            self.update_calls.append(coerced)
+            self.stored.update(coerced)
+            return coerced
+
+        def publish_update(
+            self,
+            updates: dict[str, bool],
+            *,
+            ts_ms: int | None = None,
+        ) -> dict[str, object]:
+            coerced = dict(updates)
+            self.publish_calls.append((coerced, ts_ms))
+            return {"updates": coerced, "ts_ms": ts_ms}
+
+    strategy = strategy_factory(force_bot_off_on_start=False)
+    strategy.set_params_manager(_ParamsManager())
+    strategy._publish_alert = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_balances = lambda: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
+    strategy.subscribe_order_book_deltas = lambda *_args, **_kwargs: None
+    fake_cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        instrument=lambda instrument_id: SimpleNamespace(
+            price_precision=6,
+            raw_symbol=str(instrument_id).split(".", maxsplit=1)[0],
+            make_qty=lambda value: value,
+        ),
+    )
+    fake_clock = SimpleNamespace(
+        timestamp_ns=lambda: 1_700_000_000_000_000_000,
+        set_timer=lambda **_kwargs: None,
+        timer_names=set(),
+        cancel_timer=lambda _name: None,
+    )
+    monkeypatch.setattr(type(strategy), "cache", property(lambda _self: fake_cache))
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+
+    strategy.on_start()
+
+    manager = strategy._params_manager
+    assert manager.update_calls == []
+    assert manager.publish_calls == []
+    assert strategy._effective_bot_on() is True
+
+
 def test_cancel_managed_quotes_records_cancel_all_exception_fields(strategy_factory) -> None:
     strategy = strategy_factory(cancel_all_instrument_orders=True)
 
@@ -668,7 +792,7 @@ def test_quote_failure_circuit_breaker_triggers_stop(strategy_factory) -> None:
         (reason, force),
     )
     strategy._publish_state = lambda state, **_kwargs: states.append(state)
-    strategy.stop = lambda: stopped.append(True)
+    strategy.stop_immediately = lambda: stopped.append(True)
 
     strategy._handle_quote_failure(now_ns=1_000_000_000, exc=RuntimeError("boom-1"), context="test")
     strategy._handle_quote_failure(now_ns=2_000_000_000, exc=RuntimeError("boom-2"), context="test")
@@ -691,7 +815,7 @@ def test_quote_failure_circuit_breaker_stops_even_if_side_effects_raise(
     strategy._cancel_managed_quotes = raise_runtime_error
 
     stopped: list[bool] = []
-    strategy.stop = lambda: stopped.append(True)
+    strategy.stop_immediately = lambda: stopped.append(True)
 
     strategy._handle_quote_failure(now_ns=1_000_000_000, exc=RuntimeError("boom"), context="test")
 
@@ -699,7 +823,26 @@ def test_quote_failure_circuit_breaker_stops_even_if_side_effects_raise(
     assert stopped == [True]
 
 
-def test_on_stop_clears_tracked_ids_without_cancel_all_by_default(strategy_factory) -> None:
+def test_on_stop_during_startup_cleanup_keeps_managed_only_cancel_scope(strategy_factory) -> None:
+    strategy = strategy_factory(cancel_all_instrument_orders=True)
+    strategy._startup_cleanup_pending = True
+    strategy._stop_allow_instrument_cancel_override = False
+
+    cancel_calls: list[tuple[str, bool, bool | None]] = []
+    strategy._cancel_managed_quotes = lambda reason, force=False, **kwargs: cancel_calls.append(
+        (reason, force, kwargs.get("allow_instrument_cancel")),
+    )
+    strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+
+    strategy.on_stop()
+
+    assert cancel_calls == [("on_stop", True, False)]
+    assert strategy._startup_cleanup_pending is False
+    assert strategy._stop_allow_instrument_cancel_override is None
+
+
+def test_on_stop_preserves_tracked_ids_without_cancel_all_by_default(strategy_factory) -> None:
     strategy = strategy_factory()
 
     strategy._managed_client_order_ids = {"RESTING-1"}
@@ -714,8 +857,54 @@ def test_on_stop_clears_tracked_ids_without_cancel_all_by_default(strategy_facto
     strategy.on_stop()
 
     assert canceled_all == []
-    assert strategy._managed_client_order_ids == set()
+    assert strategy._managed_client_order_ids == {"RESTING-1"}
     assert states == ["on_stop", "on_stop"]
+
+
+def test_timer_triggers_fallback_requote_when_books_are_fresh_and_quiet(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([500_000_000])
+    strategy._refresh_runtime_params = lambda **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
+    strategy._effective_bot_on = lambda: True
+    strategy._last_bot_on = True
+    strategy._enforce_stale_market_data = lambda **_kwargs: None
+    strategy._quote_failure_circuit_open = False
+    strategy.INTERNAL_REQUOTE_THROTTLE_MS = 100
+    strategy._last_requote_ns = 0
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 450_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 450_000_000
+
+    refreshes: list[int] = []
+    strategy._refresh_quotes = lambda now_ns, *, quote_cycle_id=None: refreshes.append(now_ns)
+
+    strategy.on_time_event(SimpleNamespace(name=strategy._params_timer_name))
+
+    assert refreshes == [500_000_000]
+
+
+def test_timer_skips_quote_management_while_market_exit_is_active(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([500_000_000])
+    strategy._refresh_runtime_params = lambda **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
+    strategy._effective_bot_on = lambda: True
+    strategy._last_bot_on = True
+    strategy.is_exiting = lambda: True
+
+    stale_checks: list[int] = []
+    refreshes: list[int] = []
+    strategy._enforce_stale_market_data = lambda *, now_ns: stale_checks.append(now_ns)
+    strategy._refresh_quotes = lambda now_ns, *, quote_cycle_id=None: refreshes.append(now_ns)
+
+    strategy.on_time_event(SimpleNamespace(name=strategy._params_timer_name))
+
+    assert stale_checks == []
+    assert refreshes == []
 
 
 def test_cancel_managed_quotes_honors_cancel_all_escape_hatch_without_local_state(

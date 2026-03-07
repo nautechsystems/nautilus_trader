@@ -294,6 +294,31 @@ def apply_runtime_param_updates(strategy: MakerV3Strategy, updates: dict[str, An
         strategy._invalidate_inventory_skew_cache()
 
 
+def prepare_runtime_params_for_startup(strategy: MakerV3Strategy) -> None:
+    """
+    Apply startup runtime-param overrides before the initial refresh.
+    """
+    if not bool(getattr(strategy.config, "force_bot_off_on_start", False)):
+        return
+
+    bot_off_update = {"bot_on": False}
+    manager = ensure_params_manager(strategy)
+    if manager is None:
+        apply_runtime_param_updates(strategy, bot_off_update)
+        return
+
+    update_fn = getattr(manager, "update", None)
+    if not callable(update_fn):
+        raise RuntimeError("Configured params manager does not provide update()")
+    publish_fn = getattr(manager, "publish_update", None)
+    if not callable(publish_fn):
+        raise RuntimeError("Configured params manager does not provide publish_update()")
+
+    applied_updates = update_fn(bot_off_update)
+    publish_fn(applied_updates, ts_ms=int(strategy.clock.timestamp_ns() // 1_000_000))
+    apply_runtime_param_updates(strategy, applied_updates)
+
+
 def refresh_runtime_params(
     strategy: MakerV3Strategy,
     *,

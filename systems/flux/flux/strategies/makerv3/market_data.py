@@ -90,12 +90,17 @@ def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> 
     strategy._publish_balances_if_due()
 
     bot_on_now = strategy._effective_bot_on()
-    if strategy.config.maker_instrument_id != deltas.instrument_id:
+    if strategy._quote_management_suspended():
         return
+    is_maker_delta = strategy.config.maker_instrument_id == deltas.instrument_id
 
-    if not bot_on_now:
-        strategy._cancel_managed_quotes("bot_off")
-        strategy._publish_state("bot_off")
+    if is_maker_delta and not bot_on_now:
+        state_name = (
+            "blocked_startup_cleanup"
+            if bool(getattr(strategy, "_startup_cleanup_pending", False))
+            else "bot_off"
+        )
+        strategy._publish_state(state_name)
         quote_cycle_id = strategy._next_quote_cycle_id(now_ns=now_ns)
         strategy._publish_quote_cycle_event(
             now_ns=now_ns,
@@ -103,6 +108,8 @@ def on_order_book_deltas(strategy: MakerV3Strategy, deltas: OrderBookDeltas) -> 
             reason_code=REASON_SKIPPED_BOT_OFF,
             quote_cycle_id=quote_cycle_id,
         )
+        return
+    if not bot_on_now:
         return
 
     now_ns = int(strategy.clock.timestamp_ns())

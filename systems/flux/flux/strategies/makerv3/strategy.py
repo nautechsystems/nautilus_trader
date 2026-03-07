@@ -10,6 +10,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import Literal
 
 from flux.common.keys import FluxRedisKeys
 from flux.common.portfolio_inventory import DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS
@@ -31,6 +32,7 @@ from flux.strategies.makerv3.constants import (
 from flux.strategies.makerv3.constants import ALERT_KEY_ORDER_REJECTED_BURST
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
+from flux.strategies.makerv3.constants import REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from flux.strategies.makerv3.constants import TOPIC_FV
 from flux.strategies.makerv3.constants import TOPIC_TRADE
@@ -61,6 +63,9 @@ _round_price_to_tick = pricing_mod.round_price_to_tick
 _clamp_post_only_price = pricing_mod.clamp_post_only_price
 _nudge_unique_price = pricing_mod.nudge_unique_price
 _apply_inventory_skew_to_edges = pricing_mod.apply_inventory_skew_to_edges
+
+
+SpotCashBorrowingPolicy = Literal["none", "sell_only", "both_sides"]
 
 
 def _did_bot_turn_off(previous_bot_on: bool, current_bot_on: bool) -> bool:
@@ -120,18 +125,18 @@ if _NAUTILUS_IMPORT_ERROR is None:
         max_skew_bps_local: NonNegativeFloat | None = None
         linear_offset_bps: NonNegativeFloat | None = None
         max_age_ms: PositiveInt | None = None
-        bid_edge1: NonNegativeFloat | None = None
-        ask_edge1: NonNegativeFloat | None = None
+        bid_edge1: float | None = None
+        ask_edge1: float | None = None
         place_edge1: NonNegativeFloat | None = None
         distance1: NonNegativeFloat | None = None
         n_orders1: NonNegativeInt | None = None
-        bid_edge2: NonNegativeFloat | None = None
-        ask_edge2: NonNegativeFloat | None = None
+        bid_edge2: float | None = None
+        ask_edge2: float | None = None
         place_edge2: NonNegativeFloat | None = None
         distance2: NonNegativeFloat | None = None
         n_orders2: NonNegativeInt | None = None
-        bid_edge3: NonNegativeFloat | None = None
-        ask_edge3: NonNegativeFloat | None = None
+        bid_edge3: float | None = None
+        ask_edge3: float | None = None
         place_edge3: NonNegativeFloat | None = None
         distance3: NonNegativeFloat | None = None
         n_orders3: NonNegativeInt | None = None
@@ -139,6 +144,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
         order_reject_alert_after_s: NonNegativeFloat | None = None
         quote_fail_critical_after_count: NonNegativeInt | None = None
         quote_fail_critical_after_s: NonNegativeFloat | None = None
+        spot_cash_borrowing_policy: SpotCashBorrowingPolicy = "none"
+        force_bot_off_on_start: bool = False
         cancel_all_instrument_orders: bool = False
 
         @property
@@ -155,6 +162,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         INTERNAL_REQUOTE_THROTTLE_MS = 150
         STALE_CANCEL_COOLDOWN_MS = 1_000
+        CANCEL_REJECT_RETRY_COOLDOWN_MS = 1_000
         BALANCES_PUBLISH_INTERVAL_MS = 10_000
         STALE_CANCELS_PER_SIDE_PER_CYCLE = 1
         PARAMS_REFRESH_INTERVAL_MS = 500
@@ -193,12 +201,17 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._runtime_params_failed = False
             self._instruments: dict[InstrumentId, Instrument] = {}
             self._managed_client_order_ids: set[str] = set()
+            self._pending_cancel_client_order_ids: set[str] = set()
+            self._cancel_reject_retry_after_ns_by_client_order_id: dict[str, int] = {}
             self._order_rejections_ns_by_reason: dict[str, list[int]] = {}
             self._quote_failures_ns: list[int] = []
             self._quote_failure_circuit_open = False
+            self._venue_protection_circuit_open = False
             self._last_stale_cancel_ns = 0
             self._last_state_name: str | None = None
             self._state_is_blocked = False
+            self._startup_cleanup_pending = False
+            self._stop_allow_instrument_cancel_override: bool | None = None
             self._inventory_skew_cache = inventory_mod.InventorySkewCache(
                 ttl_ms=self.INVENTORY_SKEW_CACHE_TTL_MS,
             )
@@ -220,11 +233,16 @@ if _NAUTILUS_IMPORT_ERROR is None:
             """
             self._runtime_params_failed = False
             self._quote_failure_circuit_open = False
+            self._venue_protection_circuit_open = False
             self._order_rejections_ns_by_reason.clear()
             self._quote_failures_ns.clear()
+            self._pending_cancel_client_order_ids.clear()
+            self._cancel_reject_retry_after_ns_by_client_order_id.clear()
             self._last_stale_cancel_ns = 0
             self._last_state_name = None
             self._state_is_blocked = False
+            self._startup_cleanup_pending = False
+            self._set_managed_only_stop_safety(False)
             self._last_actionable_alert_ns.clear()
             self._last_actionable_alert_transition.clear()
             self._last_bot_on = self._runtime_bool("bot_on")
@@ -261,6 +279,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self.stop()
                 return
             try:
+                self._prepare_runtime_params_for_startup()
                 self._refresh_runtime_params(force=True)
             except Exception as e:
                 self._fail_fast_runtime_params(context="on_start", exc=e)
@@ -299,10 +318,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     book_type=BookType.L2_MBP,
                 )
 
+            self._begin_startup_cleanup_if_needed()
             self._publish_event("started")
             self._publish_balances()
-            self._publish_portfolio_inventory_component(state="on_start")
-            self._publish_state("on_start")
+            startup_state = "blocked_startup_cleanup" if self._startup_cleanup_pending else "on_start"
+            self._publish_portfolio_inventory_component(state=startup_state)
+            if not self._startup_cleanup_pending:
+                self._publish_state("on_start")
             self.log.info(
                 f"MakerV3 strategy started strategy_id={self._external_strategy_id} "
                 f"maker={self.config.maker_instrument_id} reference={self.config.reference_instrument_id}",
@@ -312,7 +334,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
             """
             Stop quoting, cancel managed orders, and publish terminal state.
             """
-            self._cancel_managed_quotes("on_stop", force=True)
+            self._cancel_managed_quotes(
+                "on_stop",
+                force=True,
+                allow_instrument_cancel=self._stop_allow_instrument_cancel_override,
+            )
+            self._set_managed_only_stop_safety(False)
+            self._pending_cancel_client_order_ids.clear()
+            self._cancel_reject_retry_after_ns_by_client_order_id.clear()
+            self._startup_cleanup_pending = False
             timer_names: set[str] = set()
             try:
                 timer_names = set(self.clock.timer_names)
@@ -354,12 +384,28 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._publish_balances_if_due()
             self._publish_portfolio_inventory_component()
             bot_on_now = self._effective_bot_on()
-            if _did_bot_turn_off(self._last_bot_on, bot_on_now):
+            quote_management_suspended = self._quote_management_suspended()
+            if _did_bot_turn_off(self._last_bot_on, bot_on_now) and not quote_management_suspended:
                 self._cancel_managed_quotes("bot_off_flip", force=True)
                 self._publish_state("bot_off")
             self._last_bot_on = bot_on_now
-            if bot_on_now:
-                self._enforce_stale_market_data(now_ns=now_ns)
+            if not bot_on_now or quote_management_suspended:
+                return
+
+            self._enforce_stale_market_data(now_ns=now_ns)
+            if self._quote_failure_circuit_open:
+                return
+            if now_ns - self._last_requote_ns < self.INTERNAL_REQUOTE_THROTTLE_MS * 1_000_000:
+                return
+            if not self._books_fresh_for_quoting(now_ns=now_ns):
+                return
+
+            quote_cycle_id = self._next_quote_cycle_id(now_ns=now_ns)
+            try:
+                self._refresh_quotes(now_ns=now_ns, quote_cycle_id=quote_cycle_id)
+                self._quote_failures_ns.clear()
+            except Exception as e:
+                self._handle_quote_failure(now_ns=now_ns, exc=e, context="on_time_event")
 
         def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
             """
@@ -371,6 +417,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             """
             Enforce stale market-data quote blocks even when deltas go silent.
             """
+            if self._quote_management_suspended():
+                return
             if self._quote_failure_circuit_open:
                 return
 
@@ -443,6 +491,31 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def _effective_bot_on(self) -> bool:
             return runtime_params_mod.effective_bot_on(self)
+
+        def _quote_management_suspended(self) -> bool:
+            is_exiting = getattr(self, "is_exiting", None)
+            if not callable(is_exiting):
+                return False
+            with suppress(Exception):
+                return bool(is_exiting())
+            return False
+
+        def _books_fresh_for_quoting(
+            self,
+            *,
+            now_ns: int,
+            max_age_ms: int | None = None,
+        ) -> bool:
+            max_age_value = self._runtime_int("max_age_ms") if max_age_ms is None else int(max_age_ms)
+            max_age_ns = max(1, max_age_value) * 1_000_000
+            for instrument_id in (
+                self.config.maker_instrument_id,
+                self.config.reference_instrument_id,
+            ):
+                ts_ns = int(self._last_bbo_ts_ns.get(instrument_id, 0) or 0)
+                if ts_ns <= 0 or now_ns - ts_ns >= max_age_ns:
+                    return False
+            return True
 
         def _runtime_decimal(self, name: str) -> Decimal:
             return runtime_params_mod.runtime_decimal(self, name)
@@ -529,17 +602,156 @@ if _NAUTILUS_IMPORT_ERROR is None:
         ) -> None:
             runtime_params_mod.refresh_runtime_params(self, now_ns=now_ns, force=force)
 
+        def _prepare_runtime_params_for_startup(self) -> None:
+            runtime_params_mod.prepare_runtime_params_for_startup(self)
+
         def _fail_fast_runtime_params(self, *, context: str, exc: Exception) -> None:
             runtime_params_mod.fail_fast_runtime_params(self, context=context, exc=exc)
 
         def _handle_quote_failure(self, *, now_ns: int, exc: Exception, context: str) -> None:
             failures_mod.handle_quote_failure(self, now_ns=now_ns, exc=exc, context=context)
 
+        def _track_pending_cancel(
+            self,
+            client_order_id: ClientOrderId | str | None,
+        ) -> None:
+            client_order_id_str = str(client_order_id or "")
+            if not client_order_id_str:
+                return
+            self._pending_cancel_client_order_ids.add(client_order_id_str)
+
+        def _clear_pending_cancel(
+            self,
+            client_order_id: ClientOrderId | str | None,
+        ) -> None:
+            client_order_id_str = str(client_order_id or "")
+            if not client_order_id_str:
+                return
+            self._pending_cancel_client_order_ids.discard(client_order_id_str)
+
+        def _has_pending_managed_cancels(self) -> bool:
+            return bool(self._pending_cancel_client_order_ids)
+
+        def _set_managed_only_stop_safety(self, enabled: bool) -> None:
+            self.request_immediate_stop(enabled)
+            self._stop_allow_instrument_cancel_override = False if enabled else None
+
+        def _set_cancel_reject_retry_after(
+            self,
+            client_order_id: ClientOrderId | str | None,
+            *,
+            now_ns: int,
+        ) -> None:
+            client_order_id_str = str(client_order_id or "")
+            if not client_order_id_str:
+                return
+            self._cancel_reject_retry_after_ns_by_client_order_id[client_order_id_str] = (
+                int(now_ns) + self.CANCEL_REJECT_RETRY_COOLDOWN_MS * 1_000_000
+            )
+
+        def _clear_cancel_reject_retry_after(
+            self,
+            client_order_id: ClientOrderId | str | None,
+        ) -> None:
+            client_order_id_str = str(client_order_id or "")
+            if not client_order_id_str:
+                return
+            self._cancel_reject_retry_after_ns_by_client_order_id.pop(client_order_id_str, None)
+
+        def _is_cancel_reject_retry_blocked(
+            self,
+            client_order_id: ClientOrderId | str | None,
+            *,
+            now_ns: int,
+        ) -> bool:
+            client_order_id_str = str(client_order_id or "")
+            if not client_order_id_str:
+                return False
+            retry_after_ns = int(
+                self._cancel_reject_retry_after_ns_by_client_order_id.get(client_order_id_str, 0),
+            )
+            if retry_after_ns <= 0:
+                return False
+            if int(now_ns) >= retry_after_ns:
+                self._cancel_reject_retry_after_ns_by_client_order_id.pop(client_order_id_str, None)
+                return False
+            return True
+
+        def _active_cancel_reject_cooldown_order_ids(
+            self,
+            *,
+            now_ns: int,
+            managed_orders: list[Order] | None = None,
+        ) -> list[str]:
+            if managed_orders is None:
+                managed_orders = self._managed_orders()
+            active_ids: list[str] = []
+            for order in managed_orders:
+                client_order_id = str(getattr(order, "client_order_id", "") or "")
+                if not client_order_id:
+                    continue
+                if self._is_cancel_reject_retry_blocked(client_order_id, now_ns=now_ns):
+                    active_ids.append(client_order_id)
+            return active_ids
+
+        def _has_active_cancel_reject_cooldown(
+            self,
+            *,
+            now_ns: int,
+            managed_orders: list[Order] | None = None,
+        ) -> bool:
+            return bool(
+                self._active_cancel_reject_cooldown_order_ids(
+                    now_ns=now_ns,
+                    managed_orders=managed_orders,
+                ),
+            )
+
+        def _startup_cleanup_active(
+            self,
+            *,
+            managed_orders: list[Order] | None = None,
+        ) -> bool:
+            if not self._startup_cleanup_pending:
+                return False
+            if managed_orders is None:
+                managed_orders = self._managed_orders()
+            if managed_orders or self._has_pending_managed_cancels():
+                return True
+            self._startup_cleanup_pending = False
+            self._set_managed_only_stop_safety(False)
+            return False
+
+        def _begin_startup_cleanup_if_needed(self) -> None:
+            managed_orders = self._managed_orders()
+            if not managed_orders:
+                self._startup_cleanup_pending = False
+                self._set_managed_only_stop_safety(False)
+                return
+            self._startup_cleanup_pending = True
+            self._set_managed_only_stop_safety(True)
+            self._publish_state(
+                "blocked_startup_cleanup",
+                managed_orders_count=len(managed_orders),
+                managed_orders=managed_orders,
+            )
+            self._publish_event(
+                "startup_cleanup_started",
+                managed_orders=len(managed_orders),
+            )
+            self._cancel_managed_quotes(
+                "startup_cleanup",
+                managed_orders=managed_orders,
+                allow_instrument_cancel=False,
+            )
+
         def on_order_filled(self, event: OrderFilled) -> None:
             """
             Handle order fill events and reconcile managed order tracking.
             """
             self._invalidate_inventory_skew_cache()
+            self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
+            self._clear_pending_cancel(getattr(event, "client_order_id", None))
             self._publish_portfolio_inventory_component(
                 state=self._last_state_name or "running",
                 now_ms_value=int(int(event.ts_event) // 1_000_000),
@@ -565,6 +777,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             Handle order rejection events and reconcile managed tracking.
             """
             self._invalidate_inventory_skew_cache()
+            self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
             reason = _normalized_reject_reason(getattr(event, "reason", None))
             self._reconcile_managed_order(
                 getattr(event, "client_order_id", None),
@@ -582,14 +795,72 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if now_ns is None:
                 with suppress(Exception):
                     now_ns = int(self.clock.timestamp_ns())
-            if now_ns is not None:
-                self._track_order_rejection_alert(now_ns=int(now_ns), reason=reason)
+            if now_ns is None:
+                return
+            if failures_mod.is_venue_protection_reason(reason):
+                failures_mod.handle_venue_protection(
+                    self,
+                    now_ns=int(now_ns),
+                    reason=reason,
+                    source_event="order_rejected",
+                    client_order_id=getattr(event, "client_order_id", None),
+                )
+                return
+            self._track_order_rejection_alert(
+                now_ns=int(now_ns),
+                reason=reason,
+                source_event="order_rejected",
+            )
+
+        def on_order_pending_cancel(self, event: Any) -> None:
+            """
+            Track managed orders with cancel requests in flight.
+            """
+            self._invalidate_inventory_skew_cache()
+            self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
+            self._track_pending_cancel(getattr(event, "client_order_id", None))
+
+        def on_order_cancel_rejected(self, event: Any) -> None:
+            """
+            Clear pending-cancel state and hard-stop on venue protection reasons.
+            """
+            self._invalidate_inventory_skew_cache()
+            client_order_id = getattr(event, "client_order_id", None)
+            self._clear_pending_cancel(client_order_id)
+            reason = _normalized_reject_reason(getattr(event, "reason", None))
+            now_ns = getattr(event, "ts_event", None)
+            if now_ns is None:
+                with suppress(Exception):
+                    now_ns = int(self.clock.timestamp_ns())
+            self.log.warning(
+                f"Order cancel rejected strategy_id={self._external_strategy_id} "
+                f"client_order_id={client_order_id} reason={reason}",
+            )
+            if now_ns is None:
+                return
+            if not failures_mod.is_venue_protection_reason(reason):
+                self._set_cancel_reject_retry_after(client_order_id, now_ns=int(now_ns))
+                self._track_order_rejection_alert(
+                    now_ns=int(now_ns),
+                    reason=reason,
+                    source_event="order_cancel_rejected",
+                )
+                return
+            failures_mod.handle_venue_protection(
+                self,
+                now_ns=int(now_ns),
+                reason=reason,
+                source_event="order_cancel_rejected",
+                client_order_id=client_order_id,
+            )
 
         def on_order_canceled(self, event: Any) -> None:
             """
             Handle order cancel events and reconcile managed tracking.
             """
             self._invalidate_inventory_skew_cache()
+            self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
+            self._clear_pending_cancel(getattr(event, "client_order_id", None))
             self._reconcile_managed_order(
                 getattr(event, "client_order_id", None),
                 lifecycle="canceled",
@@ -600,6 +871,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             Handle order expiry events and reconcile managed tracking.
             """
             self._invalidate_inventory_skew_cache()
+            self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
+            self._clear_pending_cancel(getattr(event, "client_order_id", None))
             self._reconcile_managed_order(
                 getattr(event, "client_order_id", None),
                 lifecycle="expired",
@@ -635,7 +908,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 event_payload["due_post_only"] = bool(due_post_only)
             self._publish_event("order_lifecycle", **event_payload)
 
-        def _track_order_rejection_alert(self, *, now_ns: int, reason: str) -> None:
+        def _track_order_rejection_alert(
+            self,
+            *,
+            now_ns: int,
+            reason: str,
+            source_event: str,
+        ) -> None:
             count_threshold = max(0, int(self._runtime_int("order_reject_alert_after_count")))
             if count_threshold <= 0:
                 return
@@ -643,14 +922,15 @@ if _NAUTILUS_IMPORT_ERROR is None:
             window_seconds = max(Decimal(0), self._runtime_decimal("order_reject_alert_after_s"))
             window_ns = int(window_seconds * Decimal(1_000_000_000))
             reason_key = _normalized_reject_reason(reason)
-            reason_rejections = list(self._order_rejections_ns_by_reason.get(reason_key, ()))
+            rejection_key = f"{source_event}:{reason_key}"
+            reason_rejections = list(self._order_rejections_ns_by_reason.get(rejection_key, ()))
             reason_rejections.append(now_ns)
             if window_ns > 0:
                 cutoff_ns = now_ns - window_ns
                 reason_rejections = [ts_ns for ts_ns in reason_rejections if ts_ns >= cutoff_ns]
             elif count_threshold > 0:
                 reason_rejections = reason_rejections[-count_threshold:]
-            self._order_rejections_ns_by_reason[reason_key] = reason_rejections
+            self._order_rejections_ns_by_reason[rejection_key] = reason_rejections
 
             rejection_count = len(reason_rejections)
             if rejection_count < count_threshold:
@@ -660,13 +940,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 alert_key=ALERT_KEY_ORDER_REJECTED_BURST,
                 message=(
                     "order_rejected_burst "
-                    f"reason={reason_key!r} count={rejection_count} "
+                    f"source_event={source_event} reason={reason_key!r} count={rejection_count} "
                     f"threshold={count_threshold} window_s={window_seconds}"
                 ),
                 level="error",
                 reason_code=ALERT_KEY_ORDER_REJECTED_BURST,
                 cooldown_ms=ALERT_COOLDOWN_ORDER_REJECTED_BURST_MS,
-                transition=reason_key,
+                transition=rejection_key,
                 now_ns=now_ns,
             )
 
@@ -816,6 +1096,17 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return True
             return "." in instrument_id_text
 
+        def _should_allow_cash_borrowing(self, side: OrderSide) -> bool:
+            if not self._maker_instrument_is_spot():
+                return False
+
+            policy = str(self.config.spot_cash_borrowing_policy).strip().lower()
+            if policy == "both_sides":
+                return True
+            if policy == "sell_only":
+                return side == OrderSide.SELL
+            return False
+
         def _maker_local_position_qty(self, currency_code: str | None) -> Decimal | None:
             if not currency_code or self._maker_instrument_is_spot():
                 return None
@@ -840,11 +1131,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
             maker_venue = getattr(self.config.maker_instrument_id, "venue", None)
             return self._spot_balance_total(currency_code, venue=maker_venue)
 
-        def _portfolio_global_inventory_qty(self, base_currency: str | None) -> Decimal | None:
+        def _shared_portfolio_inventory_qty_and_block_reason(
+            self,
+            base_currency: str | None,
+        ) -> tuple[Decimal | None, str | None]:
             portfolio_id = self._portfolio_inventory_portfolio_id
             client = self._portfolio_inventory_client
             if not base_currency or not portfolio_id or client is None:
-                return None
+                return None, None
             key = FluxRedisKeys.portfolio_inventory(
                 portfolio_id=portfolio_id,
                 base_currency=base_currency,
@@ -854,18 +1148,27 @@ if _NAUTILUS_IMPORT_ERROR is None:
             with suppress(Exception):
                 payload = decode_portfolio_inventory(client.get(key))
                 if not isinstance(payload, dict):
-                    return None
+                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
                 ts_ms = int(payload.get("ts_ms") or 0)
                 stale_after_ms = int(
                     payload.get("stale_after_ms") or self._portfolio_inventory_stale_after_ms,
                 )
                 now_ms_value = int(self.clock.timestamp_ns() // 1_000_000)
                 if ts_ms <= 0 or now_ms_value - ts_ms > max(1, stale_after_ms):
-                    return None
+                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
                 if payload.get("missing_required"):
-                    return None
-                return _to_decimal_or_none(payload.get("global_qty"))
-            return None
+                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
+                global_qty = _to_decimal_or_none(payload.get("global_qty"))
+                if global_qty is None:
+                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
+                return global_qty, None
+            return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
+
+        def _portfolio_global_inventory_qty(self, base_currency: str | None) -> Decimal | None:
+            global_qty, _block_reason = self._shared_portfolio_inventory_qty_and_block_reason(
+                base_currency,
+            )
+            return global_qty
 
         def _publish_portfolio_inventory_component(
             self,
@@ -1063,18 +1366,19 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 stale_cancel_budget=self.STALE_CANCELS_PER_SIDE_PER_CYCLE,
             )
 
+            cancel_count = 0
             for index in cancel_indices:
-                self.cancel_order(active_orders[index])
+                order = active_orders[index]
+                if self._is_cancel_reject_retry_blocked(
+                    getattr(order, "client_order_id", None),
+                    now_ns=now_ns,
+                ):
+                    continue
+                self.cancel_order(order)
+                self._track_pending_cancel(getattr(order, "client_order_id", None))
+                cancel_count += 1
 
-            if cancel_indices:
-                cancel_index_set = set(cancel_indices)
-                active_orders[:] = [
-                    order
-                    for index, order in enumerate(active_orders)
-                    if index not in cancel_index_set
-                ]
-
-            return len(cancel_indices)
+            return cancel_count
 
         def _place_missing_levels(
             self,
@@ -1085,6 +1389,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
             best_bid_px: Decimal,
             best_ask_px: Decimal,
         ) -> int:
+            if self._has_pending_managed_cancels():
+                return 0
+            now_ns = int(self.clock.timestamp_ns())
+            if self._has_active_cancel_reject_cooldown(
+                now_ns=now_ns,
+                managed_orders=active_orders,
+            ):
+                return 0
             places = 0
             active_prices = [_price_to_decimal(order.price) for order in active_orders]
             for target_price, _, match_tol in desired_levels:
@@ -1102,7 +1414,10 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     price=target_price,
                     post_only=True,
                 )
-                self.submit_order(order)
+                self.submit_order(
+                    order,
+                    allow_cash_borrowing=self._should_allow_cash_borrowing(side),
+                )
                 self._register_managed_order(order)
                 places += 1
                 active_orders.append(order)
@@ -1131,20 +1446,32 @@ if _NAUTILUS_IMPORT_ERROR is None:
             force: bool = False,
             *,
             managed_orders: list[Order] | None = None,
+            allow_instrument_cancel: bool | None = None,
         ) -> None:
             if managed_orders is None:
                 managed_orders = self._managed_orders()
+            requested_cancel_ids: set[str] = set()
+
+            def _cancel_order(order: Order) -> None:
+                self.cancel_order(order)
+                client_order_id = str(getattr(order, "client_order_id", "") or "")
+                if not client_order_id:
+                    return
+                requested_cancel_ids.add(client_order_id)
+                self._pending_cancel_client_order_ids.add(client_order_id)
+
             result = managed_orders_mod.cancel_managed_quotes(
                 reason=reason,
                 force=force,
                 tracked_ids=self._managed_client_order_ids,
                 managed_orders=managed_orders,
                 maker_instrument_id=self.config.maker_instrument_id,
-                cancel_order=self.cancel_order,
+                cancel_order=_cancel_order,
                 cancel_all_orders=self.cancel_all_orders,
                 cancel_all_instrument_orders=bool(
                     getattr(self.config, "cancel_all_instrument_orders", False),
                 ),
+                allow_instrument_cancel=allow_instrument_cancel,
             )
             if not result.should_cancel:
                 return
@@ -1160,6 +1487,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 cancel_all_instrument=result.cancel_all_instrument,
                 cancel_all_attempted=result.cancel_all_attempted,
                 cancel_all_exceptions=result.cancel_all_exceptions,
+                pending_cancel_count=len(self._pending_cancel_client_order_ids),
+                requested_cancel_ids=sorted(requested_cancel_ids),
                 cancellation_safety_invariant=managed_orders_mod.CANCELLATION_SAFETY_INVARIANT,
             )
             self.log.info(
@@ -1261,6 +1590,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             cooldown_ms: int = 0,
             transition: str | None = None,
             now_ns: int | None = None,
+            **extra_fields: Any,
         ) -> bool:
             return publisher_mod.publish_actionable_alert(
                 self,
@@ -1271,6 +1601,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 cooldown_ms=cooldown_ms,
                 transition=transition,
                 now_ns=now_ns,
+                **extra_fields,
             )
 
         def _publish_alert(
@@ -1282,6 +1613,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             alert_key: str | None = None,
             reason_code: str | None = None,
             actionable: bool | None = None,
+            **extra_fields: Any,
         ) -> None:
             publisher_mod.publish_alert(
                 self,
@@ -1291,6 +1623,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 alert_key=alert_key,
                 reason_code=reason_code,
                 actionable=actionable,
+                **extra_fields,
             )
 
         def _publish_balances(self) -> None:

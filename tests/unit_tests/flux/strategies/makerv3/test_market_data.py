@@ -98,6 +98,117 @@ def test_on_order_book_deltas_uses_decimal_bbo_without_string_conversions(
     assert published == [(Decimal(100), Decimal(101))]
 
 
+def test_on_order_book_deltas_reference_leg_refreshes_quotes_when_not_throttled(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000, 1_000_000_000])
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_if_due = lambda: None
+    strategy._publish_market_bbo = lambda *_args, **_kwargs: None
+    strategy._recompute_and_publish_fv = lambda: None
+    strategy._effective_bot_on = lambda: True
+
+    class _Book:
+        def apply_deltas(self, _deltas: object) -> None:
+            return
+
+        def best_bid_price(self) -> Decimal:
+            return Decimal(100)
+
+        def best_ask_price(self) -> Decimal:
+            return Decimal(101)
+
+    reference_id = strategy.config.reference_instrument_id
+    strategy._books = {reference_id: _Book()}
+    strategy._last_bbo = {reference_id: None}
+    strategy._last_market_bbo_publish_ns = {reference_id: 0}
+
+    refresh_calls: list[tuple[int, str | None]] = []
+    strategy._refresh_quotes = lambda now_ns, *, quote_cycle_id=None: refresh_calls.append(
+        (now_ns, quote_cycle_id),
+    )
+
+    strategy.on_order_book_deltas(SimpleNamespace(instrument_id=reference_id))
+
+    assert len(refresh_calls) == 1
+    assert refresh_calls[0][0] == 1_000_000_000
+    assert refresh_calls[0][1]
+
+
+def test_on_order_book_deltas_does_not_cancel_bot_off_quotes_during_market_exit(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_if_due = lambda: None
+    strategy._publish_market_bbo = lambda *_args, **_kwargs: None
+    strategy._recompute_and_publish_fv = lambda: None
+    strategy._effective_bot_on = lambda: False
+    strategy.is_exiting = lambda: True
+
+    class _Book:
+        def apply_deltas(self, _deltas: object) -> None:
+            return
+
+        def best_bid_price(self) -> Decimal:
+            return Decimal(100)
+
+        def best_ask_price(self) -> Decimal:
+            return Decimal(101)
+
+    maker_id = strategy.config.maker_instrument_id
+    strategy._books = {maker_id: _Book()}
+    strategy._last_bbo = {maker_id: None}
+    strategy._last_market_bbo_publish_ns = {maker_id: 0}
+
+    canceled: list[str] = []
+    strategy._cancel_managed_quotes = lambda reason, **_kwargs: canceled.append(reason)
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._publish_quote_cycle_event = lambda **_kwargs: None
+
+    strategy.on_order_book_deltas(SimpleNamespace(instrument_id=maker_id))
+
+    assert canceled == []
+
+
+def test_on_order_book_deltas_does_not_recancel_bot_off_quotes_during_startup_cleanup(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_if_due = lambda: None
+    strategy._publish_market_bbo = lambda *_args, **_kwargs: None
+    strategy._recompute_and_publish_fv = lambda: None
+    strategy._effective_bot_on = lambda: False
+    strategy._startup_cleanup_pending = True
+
+    class _Book:
+        def apply_deltas(self, _deltas: object) -> None:
+            return
+
+        def best_bid_price(self) -> Decimal:
+            return Decimal(100)
+
+        def best_ask_price(self) -> Decimal:
+            return Decimal(101)
+
+    maker_id = strategy.config.maker_instrument_id
+    strategy._books = {maker_id: _Book()}
+    strategy._last_bbo = {maker_id: None}
+    strategy._last_market_bbo_publish_ns = {maker_id: 0}
+
+    canceled: list[str] = []
+    states: list[str] = []
+    strategy._cancel_managed_quotes = lambda reason, **_kwargs: canceled.append(reason)
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_quote_cycle_event = lambda **_kwargs: None
+
+    strategy.on_order_book_deltas(SimpleNamespace(instrument_id=maker_id))
+
+    assert canceled == []
+    assert states == ["blocked_startup_cleanup"]
+
+
 def test_publish_market_bbo_formats_prices_with_instrument_precision(strategy_factory) -> None:
     strategy = strategy_factory()
     instrument_id = strategy.config.maker_instrument_id
