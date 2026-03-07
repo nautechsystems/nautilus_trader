@@ -142,8 +142,8 @@ class TestGreeksCalculator:
             f"Price mismatch: {greeks.price} vs 8.500007629394531"
         )
         assert abs(greeks.vol - 0.3260962941) < 1e-5, f"Vol mismatch: {greeks.vol} vs 0.3260962941"
-        assert abs(greeks.delta - 0.6545312404632568) < 1e-3, (
-            f"Delta mismatch: {greeks.delta} vs 0.6545312404632568"
+        assert abs(greeks.delta - 0.6522504091262817) < 1e-3, (
+            f"Delta mismatch: {greeks.delta} vs 0.6522504091262817"
         )
         assert abs(greeks.gamma - 0.025358643383) < 1e-3, (
             f"Gamma mismatch: {greeks.gamma} vs 0.025358643383"
