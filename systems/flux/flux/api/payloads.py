@@ -1008,6 +1008,7 @@ def _row_contract_key(
         instrument_text.split(".", maxsplit=1)[0] if instrument_text else "",
     )
     asset_hint = _row_asset_hint(row)
+    instrument_matches: list[ContractCatalogEntry] = []
     asset_matches: list[ContractCatalogEntry] = []
 
     for contract in contracts:
@@ -1025,15 +1026,19 @@ def _row_contract_key(
                 _raw_symbol_from_instrument_id(contract.instrument_id) or contract.symbol,
             )
             if contract_signature and instrument_signature.startswith(contract_signature):
-                return contract_id
+                instrument_matches.append(contract)
         if asset_hint and base_asset == asset_hint:
             asset_matches.append(contract)
 
-    if not asset_matches:
+    candidates = instrument_matches or asset_matches
+    if not candidates:
         return None
 
-    want_product_type = "perp" if _is_position_row(dict(row)) else "spot"
-    for contract in asset_matches:
+    instrument_hint = decode_text(row.get("instrument_id") or row.get("symbol")).strip().upper()
+    want_product_type = "spot"
+    if _is_position_row(dict(row)) and any(token in instrument_hint for token in ("PERP", "LINEAR", "SWAP")):
+        want_product_type = "perp"
+    for contract in candidates:
         naming = canonical_naming_fields(
             instrument_id=contract.instrument_id,
             exchange=contract.exchange,
@@ -1046,7 +1051,7 @@ def _row_contract_key(
                 symbol=contract.symbol,
                 instrument_id=contract.instrument_id,
             )
-    first = asset_matches[0]
+    first = candidates[0]
     return contract_id_for_leg(
         exchange=first.exchange,
         symbol=first.symbol,
@@ -1063,7 +1068,7 @@ def enrich_balances_rows(
     enriched: list[dict[str, Any]] = []
     for source_row in rows:
         row = dict(source_row)
-        if row.get("mark_raw") is not None and row.get("mv_raw") is not None:
+        if not _is_position_row(row) and row.get("mark_raw") is not None and row.get("mv_raw") is not None:
             enriched.append(enrich_row_with_canonical_naming(row))
             continue
 
@@ -1099,6 +1104,8 @@ def enrich_balances_rows(
                 break
         mark = safe_float(row.get("mark_raw") or row.get("mark") or row.get("avg_px_open") or row.get("price"))
 
+        if mark is not None and mark <= 0:
+            mark = None
         if mark is None and asset_hint in _STABLE_BALANCE_ASSETS:
             mark = 1.0
         if mark is None:

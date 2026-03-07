@@ -245,6 +245,40 @@ def test_enrich_balances_rows_marks_cash_assets_and_positions_from_market_rows()
     assert plume_perp["mv_raw"] == pytest.approx(0.021)
 
 
+def test_enrich_balances_rows_recomputes_position_mv_from_signed_qty_even_when_prefilled() -> None:
+    rows = [
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "bybit",
+            "kind": "position",
+            "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+            "signed_qty": "-162162.2",
+            "quantity": "162162.2",
+            "side": "SHORT",
+            "mark_raw": 0.010704,
+            "mv_raw": 706.45,
+            "row_id": "strategy_01:pos:prefilled",
+        },
+    ]
+    contracts = (
+        ContractCatalogEntry(
+            exchange="bybit",
+            symbol="PLUME/USDT",
+            instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+        ),
+    )
+
+    enriched = enrich_balances_rows(
+        rows,
+        contracts=contracts,
+        market_rows={},
+    )
+
+    plume_perp = enriched[0]
+    assert plume_perp["mark_raw"] == pytest.approx(0.010704)
+    assert plume_perp["mv_raw"] == pytest.approx(-1735.7841888)
+
+
 def test_filter_balance_rows_for_contract_scope_excludes_unrelated_assets() -> None:
     rows = [
         {
