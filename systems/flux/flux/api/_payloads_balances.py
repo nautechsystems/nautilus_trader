@@ -394,7 +394,11 @@ def _cash_row_key(
     exchange, account, asset = base_key
     product_type = _row_product_type_hint(row)
     merge_scope = ""
-    if preserve_product_scope_cash and product_type in {"spot", "perp"}:
+    if (
+        preserve_product_scope_cash
+        and product_type in {"spot", "perp"}
+        and asset not in _STABLE_BALANCE_ASSETS
+    ):
         merge_scope = product_type
     elif product_type == "perp" and asset not in _STABLE_BALANCE_ASSETS:
         merge_scope = product_type

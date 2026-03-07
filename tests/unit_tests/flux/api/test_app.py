@@ -2846,7 +2846,7 @@ def test_balances_profile_tokenmm_staleness_clears_when_all_components_fresh(
     assert all(component["stale"] is False for component in body["data"]["components"])
 
 
-def test_balances_profile_tokenmm_keeps_bitget_spot_and_perp_usdt_rows_distinct(
+def test_balances_profile_tokenmm_merges_same_account_stable_cash_across_product_scopes(
     flux_config,
     redis_client,
     contract_catalog,
@@ -2917,10 +2917,10 @@ def test_balances_profile_tokenmm_keeps_bitget_spot_and_perp_usdt_rows_distinct(
         for row in body["data"]["rows"]
         if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
     ]
-    assert len(bitget_rows) == 2
-    rows_by_product_type = {row["product_type"]: row for row in bitget_rows}
-    assert rows_by_product_type["spot"]["total"] == "500"
-    assert rows_by_product_type["perp"]["total"] == "0"
+    assert len(bitget_rows) == 1
+    row = bitget_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["total"] == "500"
 
 
 def test_balances_profile_tokenmm_uses_event_balance_timestamps_for_freshness(

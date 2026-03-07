@@ -100,7 +100,7 @@ def test_portfolio_snapshot_round_trip_preserves_strict_inventory_metadata() -> 
     assert decoded["balances"] == {"rows": [], "totals": {"mv_raw": 0.0, "mv_display": "$0.00"}}
 
 
-def test_build_portfolio_snapshot_preserves_product_scope_cash_rows() -> None:
+def test_build_portfolio_snapshot_merges_same_account_stable_cash_across_product_scopes() -> None:
     snapshot = build_portfolio_snapshot(
         portfolio_id="tokenmm",
         base_currency="PLUME",
@@ -145,7 +145,7 @@ def test_build_portfolio_snapshot_preserves_product_scope_cash_rows() -> None:
         if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
     ]
 
-    assert len(bitget_rows) == 2
-    rows_by_product_type = {row["product_type"]: row for row in bitget_rows}
-    assert rows_by_product_type["spot"]["total"] == "500"
-    assert rows_by_product_type["perp"]["total"] == "0"
+    assert len(bitget_rows) == 1
+    row = bitget_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["total"] == "500"
