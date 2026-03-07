@@ -21,7 +21,7 @@ use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::BarSpecification,
-    enums::{AccountType, BookType, OmsType},
+    enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ClientId, InstrumentId, TraderId},
     types::Currency,
 };
@@ -149,6 +149,8 @@ impl BacktestVenueConfig {
         use_market_order_acks = None,
         liquidity_consumption = None,
         allow_cash_borrowing = None,
+        queue_position = None,
+        oto_trigger_mode = None,
         base_currency = None,
         default_leverage = None,
         leverages = None,
@@ -175,6 +177,8 @@ impl BacktestVenueConfig {
         use_market_order_acks: Option<bool>,
         liquidity_consumption: Option<bool>,
         allow_cash_borrowing: Option<bool>,
+        queue_position: Option<bool>,
+        oto_trigger_mode: Option<OtoTriggerMode>,
         base_currency: Option<Currency>,
         default_leverage: Option<f64>,
         leverages: Option<HashMap<InstrumentId, f64>>,
@@ -200,6 +204,8 @@ impl BacktestVenueConfig {
             use_market_order_acks,
             liquidity_consumption,
             allow_cash_borrowing,
+            queue_position,
+            oto_trigger_mode,
             starting_balances,
             base_currency,
             default_leverage,

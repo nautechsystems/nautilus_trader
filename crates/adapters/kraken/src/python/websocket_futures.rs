@@ -198,6 +198,18 @@ impl KrakenFuturesWebSocketClient {
                                     }
                                 }
                             }
+                            KrakenFuturesWsMessage::OrderRejected(event) => {
+                                match event.into_py_any(py) {
+                                    Ok(py_obj) => {
+                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to convert OrderRejected to Python: {e}"
+                                        );
+                                    }
+                                }
+                            }
                             KrakenFuturesWsMessage::OrderCanceled(event) => {
                                 match event.into_py_any(py) {
                                     Ok(py_obj) => {

@@ -321,6 +321,10 @@ impl Order for TrailingStopMarketOrder {
         Some(self.trigger_price)
     }
 
+    fn activation_price(&self) -> Option<Price> {
+        self.activation_price
+    }
+
     fn trigger_type(&self) -> Option<TriggerType> {
         Some(self.trigger_type)
     }
@@ -462,10 +466,6 @@ impl Order for TrailingStopMarketOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        if let OrderEventAny::Updated(ref event) = event {
-            self.update(event);
-        }
-
         let was_filled = matches!(event, OrderEventAny::Filled(_));
         let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
         let ts_event = if is_order_triggered {
@@ -474,7 +474,11 @@ impl Order for TrailingStopMarketOrder {
             None
         };
 
-        self.core.apply(event)?;
+        self.core.apply(event.clone())?;
+
+        if let OrderEventAny::Updated(ref event) = event {
+            self.update(event);
+        }
 
         if is_order_triggered {
             self.is_triggered = true;

@@ -425,12 +425,13 @@ impl Order for MarketToLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
+        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+
+        self.core.apply(event.clone())?;
+
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
         }
-        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
-
-        self.core.apply(event)?;
 
         if is_order_filled && let Some(price) = self.price {
             self.core.set_slippage(price);

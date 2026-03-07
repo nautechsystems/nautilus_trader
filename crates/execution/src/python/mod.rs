@@ -17,6 +17,7 @@
 
 pub mod fee;
 pub mod fill;
+pub mod latency;
 pub mod reconciliation;
 
 use pyo3::prelude::*;
@@ -36,11 +37,9 @@ pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         reconciliation::py_calculate_reconciliation_price,
         m
     )?)?;
-    // Fee models
     m.add_class::<crate::models::fee::FixedFeeModel>()?;
     m.add_class::<crate::models::fee::MakerTakerFeeModel>()?;
     m.add_class::<crate::models::fee::PerContractFeeModel>()?;
-    // Fill models
     m.add_class::<crate::models::fill::DefaultFillModel>()?;
     m.add_class::<crate::models::fill::BestPriceFillModel>()?;
     m.add_class::<crate::models::fill::OneTickSlippageFillModel>()?;
@@ -52,5 +51,6 @@ pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::models::fill::CompetitionAwareFillModel>()?;
     m.add_class::<crate::models::fill::VolumeSensitiveFillModel>()?;
     m.add_class::<crate::models::fill::MarketHoursFillModel>()?;
+    m.add_class::<crate::models::latency::StaticLatencyModel>()?;
     Ok(())
 }

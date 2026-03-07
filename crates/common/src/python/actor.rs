@@ -34,7 +34,7 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::BookType,
@@ -706,12 +706,9 @@ impl DataActor for PyDataActorInner {
     }
 
     #[allow(unused_variables)]
-    fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+    fn on_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
         Python::attach(|py| {
-            // TODO: Create a placeholder object since we can't easily convert &dyn Any to Py<PyAny>
-            // For now, we'll pass None and let Python subclasses handle specific data types
-            let py_data = py.None();
-
+            let py_data: Py<PyAny> = Py::new(py, data.clone())?.into_any();
             self.dispatch_on_data(py_data)
                 .map_err(|e| anyhow::anyhow!("Python on_data failed: {e}"))
         })
@@ -1991,7 +1988,6 @@ impl PyDataActor {
 #[cfg(test)]
 mod tests {
     use std::{
-        any::Any,
         cell::RefCell,
         collections::HashMap,
         ops::{Deref, DerefMut},
@@ -2010,8 +2006,9 @@ mod tests {
     };
     use nautilus_model::{
         data::{
-            Bar, BarType, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-            OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
+            Bar, BarType, CustomData, DataType, IndexPriceUpdate, InstrumentStatus,
+            MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+            close::InstrumentClose,
         },
         enums::{AggressorSide, BookType, InstrumentCloseType, MarketStatusAction},
         identifiers::{ClientId, TradeId, TraderId, Venue},
@@ -2062,7 +2059,7 @@ mod tests {
 
     #[fixture]
     fn data_type() -> DataType {
-        DataType::new("TestData", None)
+        DataType::new("TestData", None, None)
     }
 
     #[fixture]
@@ -2313,7 +2310,7 @@ mod tests {
             self.inner.inner_mut().on_time_event(event)
         }
 
-        fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+        fn on_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
             self.track_call("on_data");
             self.inner.inner_mut().on_data(data)
         }
@@ -2431,7 +2428,8 @@ mod tests {
         test_actor.reset_tracker();
         test_actor.register(trader_id, clock, cache).unwrap();
 
-        assert!(test_actor.on_data(&()).is_ok());
+        let custom_data = crate::actor::tests::make_test_custom_data("test");
+        assert!(test_actor.on_data(&custom_data).is_ok());
         assert_eq!(test_actor.get_call_count("on_data"), 1);
     }
 

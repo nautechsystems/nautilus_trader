@@ -454,10 +454,6 @@ impl Order for StopLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        if let OrderEventAny::Updated(ref event) = event {
-            self.update(event);
-        }
-
         let is_order_filled = matches!(event, OrderEventAny::Filled(_));
         let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
         let ts_event = if is_order_triggered {
@@ -466,7 +462,11 @@ impl Order for StopLimitOrder {
             None
         };
 
-        self.core.apply(event)?;
+        self.core.apply(event.clone())?;
+
+        if let OrderEventAny::Updated(ref event) = event {
+            self.update(event);
+        }
 
         if is_order_triggered {
             self.is_triggered = true;
@@ -481,8 +481,6 @@ impl Order for StopLimitOrder {
     }
 
     fn update(&mut self, event: &OrderUpdated) {
-        self.quantity = event.quantity;
-
         if let Some(price) = event.price {
             self.price = price;
         }

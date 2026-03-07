@@ -234,6 +234,8 @@ fn create_engine() -> BacktestEngine {
             None,
             None,
             None,
+            None,
+            None,
         )
         .unwrap();
     engine
@@ -565,6 +567,8 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
             None,
             None,
             None,
+            None,
+            None,
         )
         .unwrap();
 
@@ -583,6 +587,8 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
             vec![],
             FillModelAny::default(),
             FeeModelAny::default(),
+            None,
+            None,
             None,
             None,
             None,
@@ -1232,4 +1238,233 @@ fn test_streaming_end_flushes_tail_timers(crypto_perpetual_ethusdt: CryptoPerpet
         bars_after_end <= 4,
         "Expected at most 4 bars after end() flush to 20s, found {bars_after_end}",
     );
+}
+
+#[rstest]
+fn test_engine_properties() {
+    let config = BacktestEngineConfig::default();
+    let engine = BacktestEngine::new(config).unwrap();
+
+    assert_eq!(engine.trader_id().to_string(), "TRADER-001");
+    assert!(!engine.instance_id().to_string().is_empty());
+    assert_eq!(engine.iteration(), 0);
+}
+
+#[rstest]
+fn test_list_venues_empty() {
+    let engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    assert!(engine.list_venues().is_empty());
+}
+
+#[rstest]
+fn test_list_venues_single() {
+    let engine = create_engine();
+    let venues = engine.list_venues();
+
+    assert_eq!(venues.len(), 1);
+    assert_eq!(venues[0], Venue::from("BINANCE"));
+}
+
+#[rstest]
+fn test_list_venues_multiple() {
+    let config = BacktestEngineConfig::default();
+    let mut engine = BacktestEngine::new(config).unwrap();
+
+    engine
+        .add_venue(
+            Venue::from("BINANCE"),
+            OmsType::Netting,
+            AccountType::Margin,
+            BookType::L1_MBP,
+            vec![Money::from("1_000_000 USDT")],
+            None,
+            None,
+            AHashMap::new(),
+            None,
+            vec![],
+            FillModelAny::default(),
+            FeeModelAny::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    engine
+        .add_venue(
+            Venue::from("BITMEX"),
+            OmsType::Netting,
+            AccountType::Margin,
+            BookType::L1_MBP,
+            vec![Money::from("1_000_000 USD")],
+            None,
+            None,
+            AHashMap::new(),
+            None,
+            vec![],
+            FillModelAny::default(),
+            FeeModelAny::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    let mut venues = engine.list_venues();
+    venues.sort_by_key(|v| v.to_string());
+    assert_eq!(venues.len(), 2);
+    assert_eq!(venues[0], Venue::from("BINANCE"));
+    assert_eq!(venues[1], Venue::from("BITMEX"));
+}
+
+#[rstest]
+fn test_iteration_advances_with_data(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(instrument).unwrap();
+
+    assert_eq!(engine.iteration(), 0);
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1000.10", 1_000_000_000),
+        quote(instrument_id, "1000.50", "1000.60", 2_000_000_000),
+        quote(instrument_id, "1001.00", "1001.10", 3_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true);
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(engine.iteration(), 3);
+}
+
+#[rstest]
+fn test_add_venue_with_queue_position(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let config = BacktestEngineConfig::default();
+    let mut engine = BacktestEngine::new(config).unwrap();
+
+    let result = engine.add_venue(
+        Venue::from("BINANCE"),
+        OmsType::Netting,
+        AccountType::Margin,
+        BookType::L1_MBP,
+        vec![Money::from("1_000_000 USDT")],
+        None,
+        None,
+        AHashMap::new(),
+        None,
+        vec![],
+        FillModelAny::default(),
+        FeeModelAny::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(true), // queue_position
+        None,
+        None,
+    );
+    assert!(result.is_ok());
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(instrument).unwrap();
+
+    let quotes = vec![quote(instrument_id, "1000.00", "1000.10", 1_000_000_000)];
+    engine.add_data(quotes, None, true, true);
+    engine.run(None, None, None, false).unwrap();
+    assert_eq!(engine.get_result().iterations, 1);
+}
+
+#[rstest]
+fn test_add_venue_with_oto_full_trigger(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let config = BacktestEngineConfig::default();
+    let mut engine = BacktestEngine::new(config).unwrap();
+
+    let result = engine.add_venue(
+        Venue::from("BINANCE"),
+        OmsType::Netting,
+        AccountType::Margin,
+        BookType::L1_MBP,
+        vec![Money::from("1_000_000 USDT")],
+        None,
+        None,
+        AHashMap::new(),
+        None,
+        vec![],
+        FillModelAny::default(),
+        FeeModelAny::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(true), // oto_full_trigger
+        None,
+    );
+    assert!(result.is_ok());
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(instrument).unwrap();
+
+    let quotes = vec![quote(instrument_id, "1000.00", "1000.10", 1_000_000_000)];
+    engine.add_data(quotes, None, true, true);
+    engine.run(None, None, None, false).unwrap();
+    assert_eq!(engine.get_result().iterations, 1);
 }

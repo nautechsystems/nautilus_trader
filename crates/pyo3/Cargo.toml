@@ -37,6 +37,7 @@ extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-cryptography/extension-module",
+  "nautilus-data/extension-module",
   "nautilus-databento/extension-module",
   "nautilus-deribit/extension-module",
   "nautilus-dydx/extension-module",
@@ -94,6 +95,7 @@ nautilus-backtest = { workspace = true, features = ["python"] }
 nautilus-common = { workspace = true, features = ["python"] }
 nautilus-core = { workspace = true, features = ["python"] }
 nautilus-cryptography = { workspace = true, features = ["python"] }
+nautilus-data = { workspace = true, features = ["python"] }
 nautilus-execution = { workspace = true, features = ["python"] }
 nautilus-indicators = { workspace = true, features = ["python"] }
 nautilus-infrastructure = { workspace = true, features = ["python"] }

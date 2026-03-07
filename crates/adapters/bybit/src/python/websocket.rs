@@ -282,8 +282,10 @@ impl BybitWebSocketClient {
                                 err.into_py_any(py).map(|obj| obj.into_bound(py))
                             });
                         }
-                        NautilusWsMessage::OptionGreeks(_greeks) => {
-                            log::debug!("Received option greeks (not dispatched to Python)");
+                        NautilusWsMessage::OptionGreeks(greeks) => {
+                            call_python_with_data(&call_soon, &callback, move |py| {
+                                greeks.into_py_any(py).map(|obj| obj.into_bound(py))
+                            });
                         }
                         NautilusWsMessage::Reconnected => {
                             log::info!("WebSocket reconnected");
@@ -420,6 +422,56 @@ impl BybitWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .subscribe_ticker(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_option_greeks")]
+    fn py_subscribe_option_greeks<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.add_option_greeks_sub(instrument_id);
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_ticker(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Registers an instrument for option greeks emission without subscribing
+    /// the ticker channel.
+    #[pyo3(name = "add_option_greeks_sub")]
+    fn py_add_option_greeks_sub(&self, instrument_id: InstrumentId) {
+        self.add_option_greeks_sub(instrument_id);
+    }
+
+    /// Removes an instrument from the option greeks subscription set without
+    /// touching the underlying ticker channel.
+    #[pyo3(name = "remove_option_greeks_sub")]
+    fn py_remove_option_greeks_sub(&self, instrument_id: InstrumentId) {
+        self.remove_option_greeks_sub(&instrument_id);
+    }
+
+    #[pyo3(name = "unsubscribe_option_greeks")]
+    fn py_unsubscribe_option_greeks<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.remove_option_greeks_sub(&instrument_id);
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_ticker(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

@@ -34,10 +34,10 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose,
-        option_chain::{AtmSource, OptionChainSlice, OptionGreeks, StrikeRange},
+        option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
     },
     enums::BookType,
     events::order::{any::OrderEventAny, canceled::OrderCanceled, filled::OrderFilled},
@@ -265,7 +265,7 @@ pub trait DataActor:
     ///
     /// Returns an error if handling the data fails.
     #[allow(unused_variables)]
-    fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+    fn on_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -581,7 +581,7 @@ pub trait DataActor:
     }
 
     /// Handles a received custom data point.
-    fn handle_data(&mut self, data: &dyn Any) {
+    fn handle_data(&mut self, data: &CustomData) {
         log_received(&data);
 
         if self.not_running() {
@@ -1015,7 +1015,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let handler = ShareableMessageHandler::from_any(move |data: &dyn Any| {
+        let handler = ShareableMessageHandler::from_typed(move |data: &CustomData| {
             get_actor_unchecked::<Self>(&actor_id).handle_data(data);
         });
 
@@ -1355,14 +1355,12 @@ pub trait DataActor:
 
     /// Subscribe to streaming [`OptionChainSlice`] snapshots for the option `series_id`.
     ///
-    /// If `atm_source` is `None`, the `DataEngine` will auto-resolve it by searching
-    /// the cache for a `CryptoPerpetual` on the same venue with the same underlying
-    /// and defaulting to `AtmSource::IndexPrice`.
+    /// The ATM price is always derived from the exchange-provided forward price
+    /// embedded in each option greeks/ticker update.
     fn subscribe_option_chain(
         &mut self,
         series_id: OptionSeriesId,
         strike_range: StrikeRange,
-        atm_source: Option<AtmSource>,
         snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
     ) where
@@ -1385,7 +1383,6 @@ pub trait DataActor:
             handler,
             series_id,
             strike_range,
-            atm_source,
             snapshot_interval_ms,
             client_id,
         );
@@ -3392,7 +3389,6 @@ impl DataActorCore {
         handler: TypedHandler<OptionChainSlice>,
         series_id: OptionSeriesId,
         strike_range: StrikeRange,
-        atm_source: Option<AtmSource>,
         snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
     ) {
@@ -3403,7 +3399,6 @@ impl DataActorCore {
         let command = SubscribeCommand::OptionChain(SubscribeOptionChain::new(
             series_id,
             strike_range,
-            atm_source,
             snapshot_interval_ms,
             UUID4::new(),
             self.timestamp_ns(),

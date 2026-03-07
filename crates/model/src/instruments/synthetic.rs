@@ -19,7 +19,7 @@ use std::{
 };
 
 use derive_builder::Builder;
-use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
+use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Operator, Value};
 use nautilus_core::{UnixNanos, correctness::FAILED};
 use serde::{Deserialize, Serialize};
 
@@ -32,10 +32,13 @@ use crate::{
 ///   * a "safe" formula string (with any hyphenated instrument IDs replaced by underscore variants)
 ///   * the corresponding list of safe variable names (one per component, in order)
 ///   * a mapping from safe variable names to original instrument ID strings
+/// # Errors
+///
+/// Returns an error if two distinct component IDs map to the same sanitized variable name.
 fn make_safe_formula_with_variables_and_mapping(
     formula: &str,
     components: &[InstrumentId],
-) -> (String, Vec<String>, HashMap<String, String>) {
+) -> anyhow::Result<(String, Vec<String>, HashMap<String, String>)> {
     let mut safe_formula = formula.to_string();
     let mut variables = Vec::with_capacity(components.len());
     let mut safe_to_original = HashMap::new();
@@ -43,16 +46,45 @@ fn make_safe_formula_with_variables_and_mapping(
     for component in components {
         let original = component.to_string();
         let safe = original.replace('-', "_");
+        if let Some(existing) = safe_to_original.get(&safe)
+            && *existing != original
+        {
+            anyhow::bail!(
+                "Component ID collision: '{original}' and '{existing}' both map to '{safe}'"
+            );
+        }
         safe_to_original.insert(safe.clone(), original.clone());
         if original != safe {
-            // Replace all occurrences of the instrument ID token with its safe variant.
             safe_formula = safe_formula.replace(&original, &safe);
         }
 
         variables.push(safe);
     }
 
-    (safe_formula, variables, safe_to_original)
+    Ok((safe_formula, variables, safe_to_original))
+}
+
+/// Checks that every variable read in `tree` is either a component or assigned within the formula.
+fn check_formula_variables(tree: &Node, variables: &[String]) -> anyhow::Result<()> {
+    let mut assigned: Vec<&str> = Vec::new();
+    for node in tree.iter() {
+        match node.operator() {
+            Operator::VariableIdentifierWrite { identifier } => {
+                assigned.push(identifier.as_str());
+            }
+            Operator::VariableIdentifierRead { identifier } => {
+                if !variables.iter().any(|v| v == identifier)
+                    && !assigned.contains(&identifier.as_str())
+                {
+                    anyhow::bail!(
+                        "Formula references unknown variable '{identifier}' not in components"
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// Represents a synthetic instrument with prices derived from component instruments using a
@@ -126,7 +158,8 @@ impl<'de> Deserialize<'de> for SyntheticInstrument {
         let fields = Fields::deserialize(deserializer)?;
 
         let (safe_formula, variables, safe_to_original) =
-            make_safe_formula_with_variables_and_mapping(&fields.formula, &fields.components);
+            make_safe_formula_with_variables_and_mapping(&fields.formula, &fields.components)
+                .map_err(serde::de::Error::custom)?;
 
         let operator_tree =
             evalexpr::build_operator_tree(&safe_formula).map_err(serde::de::Error::custom)?;
@@ -164,12 +197,14 @@ impl SyntheticInstrument {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
+        let price_increment =
+            Price::new_checked(10f64.powi(-i32::from(price_precision)), price_precision)?;
 
         // Build a safe version of the formula and the corresponding safe variable names.
         let (safe_formula, variables, safe_to_original) =
-            make_safe_formula_with_variables_and_mapping(&formula, &components);
+            make_safe_formula_with_variables_and_mapping(&formula, &components)?;
         let operator_tree = evalexpr::build_operator_tree(&safe_formula)?;
+        check_formula_variables(&operator_tree, &variables)?;
 
         Ok(Self {
             id: InstrumentId::new(symbol, Venue::synthetic()),
@@ -187,9 +222,15 @@ impl SyntheticInstrument {
     }
 
     pub fn is_valid_formula_for_components(formula: &str, components: &[InstrumentId]) -> bool {
-        let (safe_formula, _, _) =
-            make_safe_formula_with_variables_and_mapping(formula, components);
-        evalexpr::build_operator_tree(&safe_formula).is_ok()
+        let Ok((safe_formula, variables, _)) =
+            make_safe_formula_with_variables_and_mapping(formula, components)
+        else {
+            return false;
+        };
+        let Ok(tree) = evalexpr::build_operator_tree(&safe_formula) else {
+            return false;
+        };
+        check_formula_variables(&tree, &variables).is_ok()
     }
 
     /// Creates a new [`SyntheticInstrument`] instance, parsing the given formula.
@@ -225,9 +266,10 @@ impl SyntheticInstrument {
     ///
     /// Returns an error if parsing the new formula fails.
     pub fn change_formula(&mut self, formula: String) -> anyhow::Result<()> {
-        let (safe_formula, _, _) =
-            make_safe_formula_with_variables_and_mapping(&formula, &self.components);
+        let (safe_formula, variables, _) =
+            make_safe_formula_with_variables_and_mapping(&formula, &self.components)?;
         let operator_tree = evalexpr::build_operator_tree(&safe_formula)?;
+        check_formula_variables(&operator_tree, &variables)?;
         self.formula = safe_formula;
         self.operator_tree = operator_tree;
         Ok(())
@@ -281,7 +323,8 @@ impl SyntheticInstrument {
         let result: Value = self.operator_tree.eval_with_context(&self.context)?;
 
         match result {
-            Value::Float(price) => Ok(Price::new(price, self.price_precision)),
+            Value::Float(price) => Price::new_checked(price, self.price_precision)
+                .map_err(|e| anyhow::anyhow!("Formula result produced invalid price: {e}")),
             _ => anyhow::bail!("Failed to evaluate formula to a floating point number"),
         }
     }

@@ -115,6 +115,8 @@ fn main() -> anyhow::Result<()> {
         None, // liquidity_consumption
         None, // allow_cash_borrowing
         None, // frozen_account
+        None, // queue_position
+        None, // oto_full_trigger
         None, // price_protection_points
     )?;
 

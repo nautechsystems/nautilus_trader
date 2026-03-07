@@ -119,6 +119,8 @@ impl SandboxExecutionClientConfig {
             self.use_random_ids,
             self.use_reduce_only,
             false, // use_market_order_acks
+            false, // queue_position
+            false, // oto_full_trigger
         )
     }
 

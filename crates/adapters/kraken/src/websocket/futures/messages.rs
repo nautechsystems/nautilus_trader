@@ -19,7 +19,7 @@ use nautilus_model::{
     data::{
         FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
     },
-    events::{OrderAccepted, OrderCanceled, OrderExpired, OrderUpdated},
+    events::{OrderAccepted, OrderCanceled, OrderExpired, OrderRejected, OrderUpdated},
     reports::{FillReport, OrderStatusReport},
 };
 use serde::{Deserialize, Serialize};
@@ -39,6 +39,7 @@ pub enum KrakenFuturesWsMessage {
     IndexPrice(IndexPriceUpdate),
     FundingRate(FundingRateUpdate),
     OrderAccepted(OrderAccepted),
+    OrderRejected(OrderRejected),
     OrderCanceled(OrderCanceled),
     OrderExpired(OrderExpired),
     OrderUpdated(OrderUpdated),

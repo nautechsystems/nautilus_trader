@@ -404,11 +404,11 @@ impl Order for MarketOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
+        self.core.apply(event.clone())?;
+
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
         }
-
-        self.core.apply(event)?;
 
         Ok(())
     }
@@ -421,7 +421,9 @@ impl Order for MarketOrder {
             OrderError::InvalidOrderEvent
         );
 
-        self.protection_price = event.protection_price;
+        if let Some(protection_price) = event.protection_price {
+            self.protection_price = Some(protection_price);
+        }
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }

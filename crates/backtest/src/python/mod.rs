@@ -17,6 +17,7 @@
 
 pub mod config;
 pub mod engine;
+pub mod modules;
 pub mod node;
 pub mod result;
 
@@ -36,5 +37,7 @@ pub fn backtest(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::result::BacktestResult>()?;
     m.add_class::<crate::node::BacktestNode>()?;
     m.add_class::<engine::PyBacktestEngine>()?;
+    m.add_class::<crate::modules::fx_rollover::InterestRateRecord>()?;
+    m.add_class::<crate::modules::fx_rollover::FXRolloverInterestModule>()?;
     Ok(())
 }

@@ -75,6 +75,7 @@ from nautilus_trader.adapters.betfair.parsing.requests import nautilus_market_to
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_order_to_place_instructions
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
+from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
 from nautilus_trader.adapters.betfair.parsing.streaming import (
@@ -449,6 +450,29 @@ class TestBetfairParsing:
             market_id="1-179082386",
             instructions=[CancelInstruction(bet_id=228302937743, size_reduction=None)],
             customer_ref="2d89666b1a1e4a75b1934eb3b454c757",
+        )
+        assert result == expected
+        assert msgspec.json.decode(msgspec.json.encode(result), type=CancelOrders) == expected
+
+    def test_order_partial_cancel_to_betfair(self):
+        modify = TestCommandStubs.modify_order_command(
+            instrument_id=self.instrument.id,
+            client_order_id=ClientOrderId("C-1"),
+            venue_order_id=VenueOrderId("228302937743"),
+            quantity=betfair_float_to_quantity(8),
+        )
+        size_reduction = 2.0
+
+        result = order_update_to_cancel_order_params(
+            command=modify,
+            instrument=self.instrument,
+            size_reduction=size_reduction,
+        )
+        expected = CancelOrders.with_params(
+            request_id=result.id,
+            market_id="1-179082386",
+            instructions=[CancelInstruction(bet_id=228302937743, size_reduction=2.0)],
+            customer_ref=result.params.customer_ref,
         )
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=CancelOrders) == expected

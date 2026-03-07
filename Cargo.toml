@@ -29,6 +29,7 @@ members = [
   "crates/infrastructure",
   "crates/live",
   "crates/model",
+  "crates/persistence/macros",
   "crates/network",
   "crates/persistence",
   "crates/portfolio",
@@ -117,6 +118,7 @@ arrow = { version = "57.3.0", default-features = false, features = [
   "csv",
   "json",
   "ipc",
+  "ffi",
 ] }
 arrow-row = "57.3.0"
 async-stream = "0.3.6"
@@ -185,6 +187,7 @@ pyo3 = { version = "0.28.2", default-features = false, features = [
   "hashbrown",
   "indexmap",
   "macros",
+  "multiple-pymethods",
   "rust_decimal",
   "serde",
 ] }

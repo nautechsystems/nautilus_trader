@@ -86,6 +86,8 @@ fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
             None,
             None,
             None,
+            None,
+            None,
         )
         .unwrap();
     engine.add_instrument(instrument.clone()).unwrap();

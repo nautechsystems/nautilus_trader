@@ -25,6 +25,7 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestForwardPrices
 from nautilus_trader.data.messages cimport RequestFundingRates
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
@@ -41,6 +42,7 @@ from nautilus_trader.data.messages cimport SubscribeInstrumentClose
 from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport SubscribeMarkPrices
+from nautilus_trader.data.messages cimport SubscribeOptionGreeks
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
@@ -53,6 +55,7 @@ from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
+from nautilus_trader.data.messages cimport UnsubscribeOptionGreeks
 from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
@@ -283,6 +286,7 @@ cdef class MarketDataClient(DataClient):
         self._subscriptions_instrument_status = set()    # type: set[InstrumentId]
         self._subscriptions_instrument_close = set()     # type: set[InstrumentId]
         self._subscriptions_instrument = set()           # type: set[InstrumentId]
+        self._subscriptions_option_greeks = set()        # type: set[InstrumentId]
         self._subscriptions_bar = set()                  # type: set[BarType]
 
         # Tasks
@@ -421,6 +425,17 @@ cdef class MarketDataClient(DataClient):
 
         """
         return sorted(list(self._subscriptions_instrument_close))
+
+    cpdef list subscribed_option_greeks(self):
+        """
+        Return the option greeks instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._subscriptions_option_greeks))
 
     cpdef void subscribe(self, SubscribeData command):
         """
@@ -639,6 +654,22 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `subscribe_instrument_close` method for this client",  # pragma: no cover
         )
         raise NotImplementedError("method `subscribe_instrument_close` must be implemented in the subclass")
+
+    cpdef void subscribe_option_greeks(self, SubscribeOptionGreeks command):
+        """
+        Subscribe to `OptionGreeks` data for the given instrument ID.
+
+        Parameters
+        ----------
+        command : SubscribeOptionGreeks
+            The subscribe command.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `OptionGreeks` data for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_option_greeks` method for this client",  # pragma: no cover
+        )
+        raise NotImplementedError("method `subscribe_option_greeks` must be implemented in the subclass")
 
     cpdef void subscribe_bars(self, SubscribeBars command):
         """
@@ -889,6 +920,22 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_instrument_close` must be implemented in the subclass")
 
+    cpdef void unsubscribe_option_greeks(self, UnsubscribeOptionGreeks command):
+        """
+        Unsubscribe from `OptionGreeks` data for the given instrument ID.
+
+        Parameters
+        ----------
+        command : UnsubscribeOptionGreeks
+            The unsubscribe command.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `OptionGreeks` data for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_option_greeks` method for this client",  # pragma: no cover
+        )
+        raise NotImplementedError("method `unsubscribe_option_greeks` must be implemented in the subclass")
+
     cpdef void _add_subscription(self, DataType data_type):
         Condition.not_none(data_type, "data_type")
 
@@ -949,6 +996,11 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_instrument_close.add(instrument_id)
 
+    cpdef void _add_subscription_option_greeks(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_option_greeks.add(instrument_id)
+
     cpdef void _remove_subscription(self, DataType data_type):
         Condition.not_none(data_type, "data_type")
 
@@ -1008,6 +1060,11 @@ cdef class MarketDataClient(DataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument_close.discard(instrument_id)
+
+    cpdef void _remove_subscription_option_greeks(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_option_greeks.discard(instrument_id)
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
@@ -1131,6 +1188,21 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_bars` method for this client",  # pragma: no cover  # noqa
         )
 
+    cpdef void request_forward_prices(self, RequestForwardPrices request):
+        """
+        Request forward prices for option chain ATM determination.
+
+        Parameters
+        ----------
+        request : RequestForwardPrices
+            The message for the data request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request forward prices for {request.underlying}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_forward_prices` method for this client",  # pragma: no cover  # noqa
+        )
+
 
 # -- PYTHON WRAPPERS ------------------------------------------------------------------------------
 
@@ -1163,6 +1235,9 @@ cdef class MarketDataClient(DataClient):
 
     def _handle_order_book_deltas_py(self, InstrumentId instrument_id, list deltas, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_order_book_deltas(instrument_id, deltas, correlation_id, start, end, params)
+
+    def _handle_forward_prices_py(self, list forward_prices, UUID4 correlation_id, dict[str, object] params = None):
+        self._handle_forward_prices(forward_prices, correlation_id, params)
 
     def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_data_response(data_type, data, correlation_id, start, end, params)
@@ -1296,6 +1371,22 @@ cdef class MarketDataClient(DataClient):
             end=end,
             ts_init=self._clock.timestamp_ns(),
             params=params,
+        )
+
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
+
+    cpdef void _handle_forward_prices(self, list forward_prices, UUID4 correlation_id, dict[str, object] params):
+        cdef DataResponse response = DataResponse(
+            client_id=self.id,
+            venue=self.venue,
+            data_type=DataType(Data, metadata={"type": "forward_prices"}),
+            data=forward_prices,
+            correlation_id=correlation_id,
+            response_id=UUID4(),
+            start=None,
+            end=None,
+            ts_init=self._clock.timestamp_ns(),
+            params=params or {},
         )
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)

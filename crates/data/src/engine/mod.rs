@@ -59,8 +59,7 @@ use nautilus_common::{
         SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
         SubscribeCommand, SubscribeOptionChain, UnsubscribeBars, UnsubscribeBookDeltas,
         UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeOptionChain,
-        UnsubscribeOptionGreeks, UnsubscribeQuotes,
+        UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
     },
     msgbus::{
         self, MStr, ShareableMessageHandler, Topic, TypedHandler, TypedIntoHandler,
@@ -70,7 +69,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    UUID4, UnixNanos, WeakCell,
+    UUID4, WeakCell,
     correctness::{
         FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
     },
@@ -80,10 +79,10 @@ use nautilus_core::{
 use nautilus_model::defi::DefiData;
 use nautilus_model::{
     data::{
-        Bar, BarType, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
-        QuoteTick, TradeTick,
-        option_chain::{AtmSource, OptionGreeks, StrikeRange},
+        Bar, BarType, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate,
+        InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
+        OrderBookDepth10, QuoteTick, TradeTick,
+        option_chain::{OptionGreeks, StrikeRange},
     },
     enums::{
         AggregationSource, BarAggregation, BookType, MarketStatusAction, PriceType, RecordFlag,
@@ -189,7 +188,7 @@ pub struct DataEngine {
     option_chain_managers: AHashMap<OptionSeriesId, Rc<RefCell<OptionChainManager>>>,
     option_chain_instrument_index: AHashMap<InstrumentId, OptionSeriesId>,
     deferred_cmd_queue: DeferredCommandQueue,
-    pending_option_chain_requests: AHashMap<UUID4, (SubscribeOptionChain, AtmSource)>,
+    pending_option_chain_requests: AHashMap<UUID4, SubscribeOptionChain>,
     _synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     _synthetic_trade_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
@@ -914,6 +913,7 @@ impl DataEngine {
                 self.drain_deferred_commands();
             }
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
+            Data::Custom(custom) => self.handle_custom_data(custom),
         }
     }
 
@@ -1217,13 +1217,8 @@ impl DataEngine {
         );
 
         if series_empty {
-            let atm_source = manager_rc.borrow().atm_source();
-            let venue = manager_rc.borrow().venue();
-
             manager_rc.borrow_mut().teardown(&self.clock);
             self.option_chain_managers.remove(&series_id);
-
-            self.forward_atm_source_unsubscribe(atm_source, venue, None);
 
             log::info!("Torn down empty option chain manager for {series_id}");
         }
@@ -1232,6 +1227,12 @@ impl DataEngine {
     fn handle_instrument_close(&mut self, close: InstrumentClose) {
         let topic = switchboard::get_instrument_close_topic(close.instrument_id);
         msgbus::publish_any(topic, &close);
+    }
+
+    fn handle_custom_data(&mut self, custom: CustomData) {
+        log::debug!("Processing custom data: {}", custom.data.type_name());
+        let topic = switchboard::get_custom_topic(&custom.data_type);
+        msgbus::publish_any(topic, &custom);
     }
 
     /// Drains deferred subscribe/unsubscribe commands pushed by option chain
@@ -1548,20 +1549,14 @@ impl DataEngine {
         if let Some(old) = self.option_chain_managers.remove(&series_id) {
             log::info!("Re-subscribing option chain for {series_id}, tearing down previous");
             let all_ids = old.borrow().all_instrument_ids();
-            let old_atm = old.borrow().atm_source();
             let old_venue = old.borrow().venue();
             old.borrow_mut().teardown(&self.clock);
-            self.forward_option_chain_unsubscribes(&all_ids, old_atm, old_venue, cmd.client_id);
+            self.forward_option_chain_unsubscribes(&all_ids, old_venue, cmd.client_id);
         }
 
         // Drain any stale pending forward price requests for this series
         self.pending_option_chain_requests
-            .retain(|_, (pending_cmd, _)| pending_cmd.series_id != series_id);
-
-        // Default to ForwardPrice — the exchange-provided forward price embedded
-        // in every option ticker update, eliminating spot-forward basis error
-        // and removing the need for a separate perpetual subscription.
-        let resolved_atm_source = cmd.atm_source.unwrap_or(AtmSource::ForwardPrice);
+            .retain(|_, pending_cmd| pending_cmd.series_id != series_id);
 
         // For ATM-based strike ranges, request forward prices from the adapter
         // to enable instant bootstrap without waiting for the first WebSocket tick.
@@ -1600,23 +1595,23 @@ impl DataEngine {
                 );
 
                 self.pending_option_chain_requests
-                    .insert(request_id, (cmd.clone(), resolved_atm_source));
+                    .insert(request_id, cmd.clone());
 
                 let req_cmd = RequestCommand::ForwardPrices(request);
                 if let Err(e) = self.execute_request(req_cmd) {
                     log::warn!("Failed to request forward prices for {series_id}: {e}");
-                    let (cmd, atm_source) = self
+                    let cmd = self
                         .pending_option_chain_requests
                         .remove(&request_id)
                         .expect("just inserted");
-                    self.create_option_chain_manager(&cmd, atm_source, None);
+                    self.create_option_chain_manager(&cmd, None);
                 }
 
                 return Ok(());
             }
         }
 
-        self.create_option_chain_manager(cmd, resolved_atm_source, None);
+        self.create_option_chain_manager(cmd, None);
         Ok(())
     }
 
@@ -1624,7 +1619,6 @@ impl DataEngine {
     fn create_option_chain_manager(
         &mut self,
         cmd: &SubscribeOptionChain,
-        resolved_atm_source: AtmSource,
         initial_atm_price: Option<Price>,
     ) {
         let series_id = cmd.series_id;
@@ -1639,7 +1633,6 @@ impl DataEngine {
                 series_id,
                 cache,
                 cmd,
-                resolved_atm_source,
                 &clock,
                 priority,
                 client,
@@ -1656,50 +1649,6 @@ impl DataEngine {
         self.option_chain_managers.insert(series_id, manager_rc);
     }
 
-    /// Resolves a perpetual-based ATM source for an option series by searching the cache
-    /// for a `CryptoPerpetual` instrument on the same venue with the same underlying.
-    ///
-    /// Prefers a perpetual whose settlement currency matches the option series.
-    /// Falls back to any perpetual with the same underlying if no exact match exists.
-    ///
-    /// Returns `None` if no suitable perpetual is found in cache.
-    fn resolve_perpetual_atm_source(&self, series_id: &OptionSeriesId) -> Option<AtmSource> {
-        let cache = self.cache.borrow();
-        let venue = &series_id.venue;
-        let underlying = &series_id.underlying;
-        let settlement = &series_id.settlement_currency;
-
-        let mut fallback = None;
-
-        for instrument in cache.instruments(venue, None) {
-            if let InstrumentAny::CryptoPerpetual(perp) = instrument
-                && perp.base_currency.code == *underlying
-            {
-                if perp.settlement_currency.code == *settlement {
-                    log::info!(
-                        "Resolved perpetual ATM source for {series_id}: IndexPrice({})",
-                        perp.id,
-                    );
-                    return Some(AtmSource::IndexPrice(perp.id));
-                }
-
-                if fallback.is_none() {
-                    fallback = Some(perp.id);
-                }
-            }
-        }
-
-        if let Some(perp_id) = fallback {
-            log::info!(
-                "Resolved perpetual ATM source for {series_id}: IndexPrice({perp_id}) \
-                 (no settlement currency match, using fallback)",
-            );
-            return Some(AtmSource::IndexPrice(perp_id));
-        }
-
-        None
-    }
-
     fn unsubscribe_option_chain(&mut self, cmd: &UnsubscribeOptionChain) -> anyhow::Result<()> {
         let series_id = cmd.series_id;
 
@@ -1710,7 +1659,6 @@ impl DataEngine {
 
         // Extract info before teardown
         let all_ids = manager_rc.borrow().all_instrument_ids();
-        let atm_source = manager_rc.borrow().atm_source();
         let venue = manager_rc.borrow().venue();
 
         // Remove all instruments from reverse index
@@ -1721,18 +1669,16 @@ impl DataEngine {
         manager_rc.borrow_mut().teardown(&self.clock);
 
         // Forward wire-level unsubscribes to the data client
-        self.forward_option_chain_unsubscribes(&all_ids, atm_source, venue, cmd.client_id);
+        self.forward_option_chain_unsubscribes(&all_ids, venue, cmd.client_id);
 
         log::info!("Unsubscribed option chain for {series_id}");
         Ok(())
     }
 
-    /// Forwards wire-level unsubscribe commands for all option chain instruments and
-    /// the ATM source to the data client.
+    /// Forwards wire-level unsubscribe commands for all option chain instruments.
     fn forward_option_chain_unsubscribes(
         &mut self,
         instrument_ids: &[InstrumentId],
-        atm_source: AtmSource,
         venue: Venue,
         client_id: Option<ClientId>,
     ) {
@@ -1766,77 +1712,6 @@ impl DataEngine {
                     None,
                 ),
             ));
-        }
-
-        Self::forward_atm_source_unsubscribe_to(client, atm_source, venue, client_id, ts_init);
-    }
-
-    /// Forwards a wire-level unsubscribe for the ATM source feed to the data client.
-    fn forward_atm_source_unsubscribe(
-        &mut self,
-        atm_source: AtmSource,
-        venue: Venue,
-        client_id: Option<ClientId>,
-    ) {
-        let ts_init = self.clock.borrow().timestamp_ns();
-
-        let Some(client) = self.get_client(client_id.as_ref(), Some(&venue)) else {
-            log::error!("Cannot forward ATM source unsubscribe: no client found for venue={venue}",);
-            return;
-        };
-
-        Self::forward_atm_source_unsubscribe_to(client, atm_source, venue, client_id, ts_init);
-    }
-
-    /// Static helper: sends ATM source unsubscribe to the given client.
-    fn forward_atm_source_unsubscribe_to(
-        client: &mut DataClientAdapter,
-        atm_source: AtmSource,
-        venue: Venue,
-        client_id: Option<ClientId>,
-        ts_init: UnixNanos,
-    ) {
-        match atm_source {
-            AtmSource::MarkPrice(source_id) => {
-                client.execute_unsubscribe(&UnsubscribeCommand::MarkPrices(
-                    UnsubscribeMarkPrices::new(
-                        source_id,
-                        client_id,
-                        Some(venue),
-                        UUID4::new(),
-                        ts_init,
-                        None,
-                        None,
-                    ),
-                ));
-            }
-            AtmSource::IndexPrice(source_id) => {
-                client.execute_unsubscribe(&UnsubscribeCommand::IndexPrices(
-                    UnsubscribeIndexPrices::new(
-                        source_id,
-                        client_id,
-                        Some(venue),
-                        UUID4::new(),
-                        ts_init,
-                        None,
-                        None,
-                    ),
-                ));
-            }
-            AtmSource::UnderlyingQuoteMid(source_id) => {
-                client.execute_unsubscribe(&UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
-                    source_id,
-                    client_id,
-                    Some(venue),
-                    UUID4::new(),
-                    ts_init,
-                    None,
-                    None,
-                )));
-            }
-            AtmSource::ForwardPrice => {
-                // No separate ATM source subscription to unsubscribe
-            }
         }
     }
 
@@ -1958,8 +1833,7 @@ impl DataEngine {
         correlation_id: &UUID4,
         resp: &ForwardPricesResponse,
     ) {
-        let Some((cmd, atm_source)) = self.pending_option_chain_requests.remove(correlation_id)
-        else {
+        let Some(cmd) = self.pending_option_chain_requests.remove(correlation_id) else {
             log::debug!(
                 "No pending option chain request for correlation_id={correlation_id}, ignoring"
             );
@@ -1989,9 +1863,7 @@ impl DataEngine {
         }
         drop(cache);
 
-        let initial_price = best_price;
-
-        if let Some(price) = initial_price {
+        if let Some(price) = best_price {
             log::info!("Forward price for {series_id}: {price} (instant bootstrap)",);
         } else {
             log::info!(
@@ -1999,23 +1871,7 @@ impl DataEngine {
             );
         }
 
-        // If ForwardPrice source has no bootstrap data and no greeks will arrive until
-        // instruments are subscribed (chicken-and-egg), fall back to perpetual index price.
-        let atm_source = if initial_price.is_none() && matches!(atm_source, AtmSource::ForwardPrice)
-        {
-            if let Some(fallback) = self.resolve_perpetual_atm_source(&series_id) {
-                log::info!(
-                    "Forward price bootstrap failed for {series_id}, falling back to {fallback:?}",
-                );
-                fallback
-            } else {
-                atm_source
-            }
-        } else {
-            atm_source
-        };
-
-        self.create_option_chain_manager(&cmd, atm_source, initial_price);
+        self.create_option_chain_manager(&cmd, best_price);
     }
 
     // -- INTERNAL --------------------------------------------------------------------------------

@@ -137,8 +137,9 @@ impl OwnBookOrder {
 
 impl Ord for OwnBookOrder {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Compare solely based on ts_init.
-        self.ts_init.cmp(&other.ts_init)
+        self.ts_init
+            .cmp(&other.ts_init)
+            .then_with(|| self.client_order_id.cmp(&other.client_order_id))
     }
 }
 
@@ -151,8 +152,6 @@ impl PartialOrd for OwnBookOrder {
 impl PartialEq for OwnBookOrder {
     fn eq(&self, other: &Self) -> bool {
         self.client_order_id == other.client_order_id
-            && self.status == other.status
-            && self.ts_last == other.ts_last
     }
 }
 
@@ -712,6 +711,13 @@ impl OwnBookLadder {
 
         if order.price == level.price.value {
             level.update(order);
+            if order.size.is_zero() {
+                self.cache.remove(&order.client_order_id);
+
+                if level.is_empty() {
+                    self.levels.remove(&price);
+                }
+            }
             return Ok(());
         }
 
@@ -903,7 +909,11 @@ impl OwnBookLevel {
     pub fn update(&mut self, order: OwnBookOrder) {
         debug_assert_eq!(order.price, self.price.value);
 
-        self.orders[&order.client_order_id] = order;
+        if order.size.is_zero() {
+            self.orders.shift_remove(&order.client_order_id);
+        } else {
+            self.orders[&order.client_order_id] = order;
+        }
     }
 
     /// Deletes an order from this price level.

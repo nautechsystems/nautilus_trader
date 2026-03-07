@@ -61,7 +61,7 @@ _TEST_TIMEOUT = 5.0
 _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 # Requirements:
-# - A Postgres service listening on the default port 5432
+# - A Postgres service listening on the default port 5432 (e.g. `makeinit-services`)
 
 pytestmark = pytest.mark.skipif(
     sys.platform != "linux",

@@ -104,7 +104,7 @@ def test_order_rejected():
     assert (
         str(event)
         == "OrderRejected(instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, "
-        "account_id=SIM-000, reason='INSUFFICIENT_MARGIN', ts_event=0)"
+        "account_id=SIM-000, reason='INSUFFICIENT_MARGIN', due_post_only=false, ts_event=0)"
     )
     assert (
         repr(event) == "OrderRejected(trader_id=TESTER-001, strategy_id=S-001, "

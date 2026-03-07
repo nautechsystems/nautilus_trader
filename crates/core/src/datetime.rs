@@ -53,6 +53,17 @@ const _: () = {
     assert!(NANOSECONDS_IN_SECOND / NANOSECONDS_IN_MICROSECOND == 1_000_000);
 };
 
+#[inline]
+fn unix_nanos_to_datetime(unix_nanos: UnixNanos) -> anyhow::Result<DateTime<Utc>> {
+    let nanos_i64 = i64::try_from(unix_nanos.as_u64()).map_err(|_| {
+        anyhow::anyhow!(
+            "UnixNanos value {} exceeds maximum representable datetime (i64::MAX)",
+            unix_nanos.as_u64()
+        )
+    })?;
+    Ok(DateTime::from_timestamp_nanos(nanos_i64))
+}
+
 /// List of weekdays (Monday to Friday).
 pub const WEEKDAYS: [Weekday; 5] = [
     Weekday::Mon,
@@ -203,11 +214,16 @@ pub const fn nanos_to_micros(nanos: u64) -> u64 {
 }
 
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string.
+///
+/// Returns the raw nanosecond value as a string if it exceeds the representable
+/// datetime range (`i64::MAX`, approximately year 2262).
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
-    let datetime = unix_nanos.to_datetime_utc();
-    datetime.to_rfc3339_opts(SecondsFormat::Nanos, true)
+    match unix_nanos_to_datetime(unix_nanos) {
+        Ok(dt) => dt.to_rfc3339_opts(SecondsFormat::Nanos, true),
+        Err(_) => unix_nanos.as_u64().to_string(),
+    }
 }
 
 /// Converts an ISO 8601 (RFC 3339) format string to UNIX nanoseconds timestamp.
@@ -241,11 +257,16 @@ pub fn iso8601_to_unix_nanos(date_string: String) -> anyhow::Result<UnixNanos> {
 
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string
 /// with millisecond precision.
+///
+/// Returns the raw nanosecond value as a string if it exceeds the representable
+/// datetime range (`i64::MAX`, approximately year 2262).
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601_millis(unix_nanos: UnixNanos) -> String {
-    let datetime = unix_nanos.to_datetime_utc();
-    datetime.to_rfc3339_opts(SecondsFormat::Millis, true)
+    match unix_nanos_to_datetime(unix_nanos) {
+        Ok(dt) => dt.to_rfc3339_opts(SecondsFormat::Millis, true),
+        Err(_) => unix_nanos.as_u64().to_string(),
+    }
 }
 
 /// Floor the given UNIX nanoseconds to the nearest microsecond.
@@ -343,7 +364,7 @@ pub fn add_n_months(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<
 ///
 /// Returns an error if the resulting timestamp is out of range or invalid.
 pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
-    let datetime = unix_nanos.to_datetime_utc();
+    let datetime = unix_nanos_to_datetime(unix_nanos)?;
     let result = subtract_n_months(datetime, n)?;
     let timestamp = match result.timestamp_nanos_opt() {
         Some(ts) => ts,
@@ -363,7 +384,7 @@ pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<
 ///
 /// Returns an error if the resulting timestamp is out of range or invalid.
 pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
-    let datetime = unix_nanos.to_datetime_utc();
+    let datetime = unix_nanos_to_datetime(unix_nanos)?;
     let result = add_n_months(datetime, n)?;
     let timestamp = match result.timestamp_nanos_opt() {
         Some(ts) => ts,
@@ -415,7 +436,7 @@ pub fn subtract_n_years(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateT
 ///
 /// Returns an error if the resulting timestamp is out of range or invalid.
 pub fn add_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
-    let datetime = unix_nanos.to_datetime_utc();
+    let datetime = unix_nanos_to_datetime(unix_nanos)?;
     let result = add_n_years(datetime, n)?;
     let timestamp = match result.timestamp_nanos_opt() {
         Some(ts) => ts,
@@ -435,7 +456,7 @@ pub fn add_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNa
 ///
 /// Returns an error if the resulting timestamp is out of range or invalid.
 pub fn subtract_n_years_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
-    let datetime = unix_nanos.to_datetime_utc();
+    let datetime = unix_nanos_to_datetime(unix_nanos)?;
     let result = subtract_n_years(datetime, n)?;
     let timestamp = match result.timestamp_nanos_opt() {
         Some(ts) => ts,
@@ -909,5 +930,14 @@ mod tests {
         let dt = Utc.timestamp_opt(0, 1_000).unwrap(); // 1 microsecond = 1000 nanos
         let result = datetime_to_unix_nanos(Some(dt));
         assert_eq!(result, Some(UnixNanos::from(1_000)));
+    }
+
+    #[rstest]
+    fn test_nanos_helpers_return_err_for_values_above_i64_max() {
+        let large = UnixNanos::from(u64::MAX);
+        assert!(subtract_n_months_nanos(large, 1).is_err());
+        assert!(add_n_months_nanos(large, 1).is_err());
+        assert!(add_n_years_nanos(large, 1).is_err());
+        assert!(subtract_n_years_nanos(large, 1).is_err());
     }
 }

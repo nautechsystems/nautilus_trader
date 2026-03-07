@@ -226,10 +226,9 @@ fn pricing_kernel<T: BlackScholesReal>(
     let gamma = df * pdf_d1 * inv_vol_sqrt_t / s_orig;
 
     let theta_base = -(vega * vol) * (T::splat(2.0) * t).recip_precise();
-    let phi_theta = T::select(is_call, T::splat(1.0), -T::splat(1.0));
-    let c_theta = theta_base - r * k * disc * n_d2 - phi_theta * (b - r) * s * n_d1;
+    let c_theta = theta_base - r * k * disc * n_d2 - (b - r) * s * n_d1;
     let p_theta =
-        theta_base + r * k * disc * (T::splat(1.0) - n_d2) - phi_theta * (b - r) * s * n_d1;
+        theta_base + r * k * disc * (T::splat(1.0) - n_d2) + (b - r) * s * (T::splat(1.0) - n_d1);
 
     let price = T::select(is_call, c_price, p_price);
     let delta = T::select(is_call, n_d1, n_d1 - T::splat(1.0));
@@ -448,6 +447,32 @@ mod tests {
             g_fast.theta,
             theta_exact_raw,
             g_exact.theta
+        );
+    }
+
+    #[rstest]
+    fn test_put_theta_with_cost_of_carry_not_equal_to_rate() {
+        let s = 100.0f64;
+        let k = 100.0f64;
+        let t = 1.0f64;
+        let r = 0.05f64;
+        let b = 0.0f64; // cost of carry != r (e.g. futures option)
+        let vol = 0.2f64;
+        let multiplier = 1.0f64;
+
+        let g_fast = compute_greeks::<f32>(
+            s as f32, k as f32, t as f32, r as f32, b as f32, vol as f32, false,
+        );
+
+        let g_exact = black_scholes_greeks_exact(s, r, b, vol, false, k, t);
+
+        let theta_daily_factor = 0.0027378507871321013;
+        let theta_exact_raw = g_exact.theta / (multiplier * theta_daily_factor);
+        assert!(
+            (g_fast.theta as f64 - theta_exact_raw).abs() < 1e-3,
+            "Put theta mismatch with b!=r: fast={}, exact_raw={}",
+            g_fast.theta,
+            theta_exact_raw
         );
     }
 

@@ -20,6 +20,7 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
+    data::{CustomData, DataType},
     identifiers::{AccountId, ClientOrderId, PositionId, TraderId},
     python::{
         account::account_any_to_pyobject, instruments::instrument_any_to_pyobject,
@@ -205,5 +206,19 @@ impl RedisCacheDatabase {
         let account_id = AccountId::new(account_id);
         self.delete_account_event(&account_id, event_id)
             .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "add_custom_data")]
+    fn py_add_custom_data(&mut self, data: CustomData) -> PyResult<()> {
+        self.add_custom_data(&data).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_custom_data")]
+    fn py_load_custom_data(
+        &mut self,
+        py: Python<'_>,
+        data_type: DataType,
+    ) -> PyResult<Vec<CustomData>> {
+        py.detach(|| self.load_custom_data(&data_type).map_err(to_pyvalue_err))
     }
 }

@@ -31,8 +31,9 @@ extension-module = [
 live = ["nautilus-live", "nautilus-system", "dotenvy"]
 python = [
   "live",
-  "nautilus-core/ffi", # Temporary as python currently relies on the ffi CVec
+  "nautilus-core/ffi",
   "nautilus-core/python",
+  "nautilus-model/ffi",
   "nautilus-model/python",
   "nautilus-system/python",
   "pyo3",

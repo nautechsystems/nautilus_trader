@@ -18,7 +18,6 @@
 use std::{num::NonZero, str::FromStr};
 
 use ahash::AHashMap;
-use dashmap::DashMap;
 use nautilus_core::{UnixNanos, uuid::UUID4};
 #[cfg(test)]
 use nautilus_model::types::Currency;
@@ -510,7 +509,7 @@ fn infer_order_type_from_msg(msg: &BitmexOrderMsg) -> Option<OrderType> {
 pub fn parse_order_msg(
     msg: &BitmexOrderMsg,
     instrument: &InstrumentAny,
-    order_type_cache: &DashMap<ClientOrderId, OrderType>,
+    order_type_cache: &mut AHashMap<ClientOrderId, OrderType>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account)); // TODO: Revisit
@@ -534,8 +533,8 @@ pub fn parse_order_msg(
         }
     } else if let Some(client_order_id) = msg.cl_ord_id {
         let client_order_id = ClientOrderId::new(client_order_id);
-        if let Some(entry) = order_type_cache.get(&client_order_id) {
-            *entry.value()
+        if let Some(&cached) = order_type_cache.get(&client_order_id) {
+            cached
         } else if let Some(inferred) = infer_order_type_from_msg(msg) {
             order_type_cache.insert(client_order_id, inferred);
             inferred
@@ -1357,9 +1356,9 @@ mod tests {
     fn test_parse_order_msg() {
         let json_data = load_test_json("ws_order.json");
         let msg: BitmexOrderMsg = serde_json::from_str(&json_data).unwrap();
-        let cache = DashMap::new();
+        let mut cache = AHashMap::new();
         let instrument = create_test_perpetual_instrument();
-        let report = parse_order_msg(&msg, &instrument, &cache, UnixNanos::default()).unwrap();
+        let report = parse_order_msg(&msg, &instrument, &mut cache, UnixNanos::default()).unwrap();
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
@@ -1390,10 +1389,10 @@ mod tests {
         msg.price = Some(98_000.0);
         msg.stop_px = None;
 
-        let cache = DashMap::new();
+        let mut cache = AHashMap::new();
         let instrument = create_test_perpetual_instrument();
 
-        let report = parse_order_msg(&msg, &instrument, &cache, UnixNanos::default()).unwrap();
+        let report = parse_order_msg(&msg, &instrument, &mut cache, UnixNanos::default()).unwrap();
 
         assert_eq!(report.order_type, OrderType::Limit);
     }
@@ -1407,9 +1406,9 @@ mod tests {
         msg.text = None;
         msg.cum_qty = 0;
 
-        let cache = DashMap::new();
+        let mut cache = AHashMap::new();
         let instrument = create_test_perpetual_instrument();
-        let report = parse_order_msg(&msg, &instrument, &cache, UnixNanos::default()).unwrap();
+        let report = parse_order_msg(&msg, &instrument, &mut cache, UnixNanos::default()).unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Rejected);
         assert_eq!(
@@ -1427,9 +1426,9 @@ mod tests {
         msg.text = Some(Ustr::from("Order would execute immediately"));
         msg.cum_qty = 0;
 
-        let cache = DashMap::new();
+        let mut cache = AHashMap::new();
         let instrument = create_test_perpetual_instrument();
-        let report = parse_order_msg(&msg, &instrument, &cache, UnixNanos::default()).unwrap();
+        let report = parse_order_msg(&msg, &instrument, &mut cache, UnixNanos::default()).unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Rejected);
         assert_eq!(
@@ -1447,9 +1446,9 @@ mod tests {
         msg.text = None;
         msg.cum_qty = 0;
 
-        let cache = DashMap::new();
+        let mut cache = AHashMap::new();
         let instrument = create_test_perpetual_instrument();
-        let report = parse_order_msg(&msg, &instrument, &cache, UnixNanos::default()).unwrap();
+        let report = parse_order_msg(&msg, &instrument, &mut cache, UnixNanos::default()).unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Rejected);
         assert_eq!(report.cancel_reason, None);

@@ -874,8 +874,8 @@ mod tests {
         assert_eq!(instrument.max_quantity(), None);
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_notional(), None);
-        assert_eq!(instrument.maker_fee(), dec!(0));
-        assert_eq!(instrument.taker_fee(), dec!(0));
+        assert_eq!(instrument.maker_fee(), dec!(-0.0001));
+        assert_eq!(instrument.taker_fee(), dec!(0.0005));
     }
 
     #[rstest]
@@ -978,7 +978,7 @@ mod tests {
         assert_eq!(instrument.max_quantity(), None);
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_notional(), None);
-        assert_eq!(instrument.maker_fee(), dec!(0));
-        assert_eq!(instrument.taker_fee(), dec!(0));
+        assert_eq!(instrument.maker_fee(), dec!(0.0003));
+        assert_eq!(instrument.taker_fee(), dec!(0.0003));
     }
 }

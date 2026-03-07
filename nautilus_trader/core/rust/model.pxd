@@ -799,10 +799,10 @@ cdef extern from "../includes/model.h":
         # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
-    # A built-in Nautilus data type.
+    # A C-compatible representation of [`Data`] for FFI.
     #
-    # Not recommended for storing large amounts of data, as the largest variant is significantly
-    # larger (10x) than the smallest.
+    # This enum matches the standard variants of [`Data`] but excludes the `Custom`
+    # variant which is not FFI-safe.
     cpdef enum Data_t_Tag:
         DELTA,
         DELTAS,

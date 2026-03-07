@@ -43,7 +43,7 @@ use nautilus_model::{
     accounts::{Account, AccountAny, margin_model::MarginModelAny},
     data::{Data, HasTsInit},
     enums::{AccountType, BookType, OmsType},
-    identifiers::{AccountId, ClientId, InstrumentId, Venue},
+    identifiers::{AccountId, ClientId, InstrumentId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     position::Position,
@@ -156,6 +156,30 @@ impl BacktestEngine {
         &mut self.kernel
     }
 
+    /// Returns the trader ID for this engine.
+    #[must_use]
+    pub fn trader_id(&self) -> TraderId {
+        self.kernel.trader_id()
+    }
+
+    /// Returns the unique instance ID for this engine.
+    #[must_use]
+    pub fn instance_id(&self) -> UUID4 {
+        self.instance_id
+    }
+
+    /// Returns the current iteration count.
+    #[must_use]
+    pub fn iteration(&self) -> usize {
+        self.iteration
+    }
+
+    /// Returns the list of registered venue identifiers.
+    #[must_use]
+    pub fn list_venues(&self) -> Vec<Venue> {
+        self.venues.keys().copied().collect()
+    }
+
     /// # Errors
     ///
     /// Returns an error if initializing the simulated exchange for the venue fails.
@@ -190,6 +214,8 @@ impl BacktestEngine {
         liquidity_consumption: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
+        queue_position: Option<bool>,
+        oto_full_trigger: Option<bool>,
         price_protection_points: Option<u32>,
     ) -> anyhow::Result<()> {
         let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
@@ -230,6 +256,8 @@ impl BacktestEngine {
             use_market_order_acks,
             allow_cash_borrowing,
             frozen_account,
+            queue_position,
+            oto_full_trigger,
             price_protection_points,
         )?;
         let exchange = Rc::new(RefCell::new(exchange));
@@ -809,19 +837,27 @@ impl BacktestEngine {
     }
 
     fn route_data_to_exchange(&self, data: &Data) {
+        if matches!(
+            data,
+            Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) | Data::Custom(_)
+        ) {
+            return;
+        }
+
         let venue = data.instrument_id().venue;
         if let Some(exchange) = self.venues.get(&venue) {
-            let mut ex = exchange.borrow_mut();
+            let mut exchange = exchange.borrow_mut();
+
             match data {
-                Data::Delta(delta) => ex.process_order_book_delta(*delta),
-                Data::Deltas(deltas) => ex.process_order_book_deltas((**deltas).clone()),
-                Data::Quote(quote) => ex.process_quote_tick(quote),
-                Data::Trade(trade) => ex.process_trade_tick(trade),
-                Data::Bar(bar) => ex.process_bar(*bar),
-                Data::InstrumentClose(close) => ex.process_instrument_close(*close),
-                Data::Depth10(depth) => ex.process_order_book_depth10(depth),
-                Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) => {
-                    // Not routed to exchange — processed by data engine only
+                Data::Delta(delta) => exchange.process_order_book_delta(*delta),
+                Data::Deltas(deltas) => exchange.process_order_book_deltas((**deltas).clone()),
+                Data::Quote(quote) => exchange.process_quote_tick(quote),
+                Data::Trade(trade) => exchange.process_trade_tick(trade),
+                Data::Bar(bar) => exchange.process_bar(*bar),
+                Data::InstrumentClose(close) => exchange.process_instrument_close(*close),
+                Data::Depth10(depth) => exchange.process_order_book_depth10(depth),
+                Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) | Data::Custom(_) => {
+                    unreachable!("filtered by early return above")
                 }
             }
         } else {

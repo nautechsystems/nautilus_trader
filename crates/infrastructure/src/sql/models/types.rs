@@ -13,11 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use bytes::Bytes;
-use indexmap::IndexMap;
-use nautilus_common::{custom::CustomData, signal::Signal};
+use nautilus_common::signal::Signal;
 use nautilus_core::UnixNanos;
-use nautilus_model::{data::DataType, types::Currency};
+use nautilus_model::types::Currency;
 use sqlx::{FromRow, Row, postgres::PgRow};
 use ustr::Ustr;
 
@@ -28,9 +26,6 @@ pub struct CurrencyModel(pub Currency);
 
 #[derive(Debug)]
 pub struct SignalModel(pub Signal);
-
-#[derive(Debug)]
-pub struct CustomDataModel(pub CustomData);
 
 impl<'r> FromRow<'r, PgRow> for CurrencyModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
@@ -58,23 +53,5 @@ impl<'r> FromRow<'r, PgRow> for SignalModel {
         let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
         let signal = Signal::new(name, value, ts_event, ts_init);
         Ok(Self(signal))
-    }
-}
-
-impl<'r> FromRow<'r, PgRow> for CustomDataModel {
-    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let type_name = row.try_get::<&str, _>("data_type")?;
-        let metadata_json: Option<serde_json::Value> =
-            row.try_get::<Option<serde_json::Value>, _>("metadata")?;
-        let metadata: Option<IndexMap<String, String>> = match metadata_json {
-            Some(json_value) => serde_json::from_value(json_value).unwrap_or(None), // Handle deserialization
-            None => None,
-        };
-        let data_type = DataType::new(type_name, metadata);
-        let value = row.try_get::<Vec<u8>, _>("value").map(Bytes::from)?;
-        let ts_event = row.try_get::<&str, _>("ts_event").map(UnixNanos::from)?;
-        let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
-        let custom = CustomData::new(data_type, value, ts_event, ts_init);
-        Ok(Self(custom))
     }
 }

@@ -34,7 +34,7 @@ use axum::{
     routing::get,
 };
 use futures_util::StreamExt;
-use nautilus_bitmex::websocket::{client::BitmexWebSocketClient, messages::NautilusWsMessage};
+use nautilus_bitmex::websocket::{client::BitmexWebSocketClient, messages::BitmexWsMessage};
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::identifiers::{AccountId, InstrumentId};
 use rstest::rstest;
@@ -1025,7 +1025,7 @@ async fn test_reconnection_emits_reconnected_message() {
                 return false;
             };
 
-            if matches!(message, NautilusWsMessage::Reconnected) {
+            if matches!(message, BitmexWsMessage::Reconnected) {
                 return true;
             }
         }
@@ -1035,7 +1035,7 @@ async fn test_reconnection_emits_reconnected_message() {
 
     assert!(
         saw_reconnected,
-        "Expected NautilusWsMessage::Reconnected after server-triggered reconnect"
+        "Expected BitmexWsMessage::Reconnected after server-triggered reconnect"
     );
 
     client.close().await.unwrap();
