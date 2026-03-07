@@ -4,6 +4,7 @@ import sys
 import logging
 import signal
 import time
+import inspect
 from typing import Any
 
 from flux.common.keys import FluxRedisKeys
@@ -194,7 +195,13 @@ class StrategySetPortfolioAggregator:
         disconnect = getattr(connection_pool, "disconnect", None)
         if callable(disconnect):
             try:
-                disconnect(in_use_connections=False)
+                parameter_names = tuple(inspect.signature(disconnect).parameters)
+                if "in_use_connections" in parameter_names:
+                    disconnect(in_use_connections=False)
+                elif "inuse_connections" in parameter_names:
+                    disconnect(inuse_connections=False)
+                else:
+                    disconnect()
             except Exception as exc:
                 self._log.warning("Failed to disconnect redis connection pool cleanly: %s", exc)
 

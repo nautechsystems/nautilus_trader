@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 import pytest
+from unittest.mock import MagicMock
 
 from flux.common.keys import FluxRedisKeys
 from flux.common.portfolio_inventory import StrategyInventoryComponent
@@ -35,6 +36,7 @@ class _FakeRedis:
     def __init__(self, values: dict[str, bytes | None] | None = None) -> None:
         self.values = dict(values or {})
         self.published: list[tuple[str, str]] = []
+        self.closed = False
 
     def get(self, key: str) -> bytes | None:
         return self.values.get(key)
@@ -50,6 +52,23 @@ class _FakeRedis:
     def pipeline(self, transaction: bool = False) -> _FakePipeline:
         _ = transaction
         return _FakePipeline(self)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _LegacyConnectionPool:
+    def __init__(self) -> None:
+        self.disconnect_calls: list[bool] = []
+
+    def disconnect(self, inuse_connections: bool = True) -> None:
+        self.disconnect_calls.append(inuse_connections)
+
+
+class _LegacyDisconnectRedis(_FakeRedis):
+    def __init__(self) -> None:
+        super().__init__()
+        self.connection_pool = _LegacyConnectionPool()
 
 
 def test_equities_strategy_ids_requires_non_empty_allowlist() -> None:
@@ -157,3 +176,28 @@ def test_portfolio_aggregator_sums_allowlisted_component_keys() -> None:
     assert payload["global_qty"] == "10.000000"
     assert payload["missing_required"] == []
     assert fake_redis.published
+
+
+def test_equities_portfolio_aggregator_run_closes_redis_on_exit_with_legacy_disconnect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aggregator = EquitiesPortfolioAggregator.__new__(EquitiesPortfolioAggregator)
+    aggregator._descriptor = get_strategy_set_descriptor("equities")
+    aggregator._portfolio_id = "equities"
+    aggregator._mode = "paper"
+    aggregator._base_assets = ["AAPL"]
+    aggregator._strategy_ids = ["aapl_tradexyz_makerv3"]
+    aggregator._redis = _LegacyDisconnectRedis()
+    aggregator._log = MagicMock()
+    aggregator._running = True
+
+    def _recompute_once() -> None:
+        aggregator.stop()
+
+    aggregator.recompute_once = _recompute_once
+    monkeypatch.setattr(time, "sleep", lambda _secs: None)
+
+    aggregator.run()
+
+    assert aggregator._redis.closed is True
+    assert aggregator._redis.connection_pool.disconnect_calls == [False]

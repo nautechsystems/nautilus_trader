@@ -132,6 +132,24 @@ class _RunLoopRedis:
         ]
 
 
+class _LegacyDisconnectPool:
+    def __init__(self) -> None:
+        self.disconnect_calls: list[bool] = []
+
+    def disconnect(self, inuse_connections: bool = True) -> None:
+        self.disconnect_calls.append(inuse_connections)
+
+
+class _ShutdownRedis(_RunLoopRedis):
+    def __init__(self, stream_key: str, entry_id: str, fields: dict[Any, Any]) -> None:
+        super().__init__(stream_key=stream_key, entry_id=entry_id, fields=fields)
+        self.closed = False
+        self.connection_pool = _LegacyDisconnectPool()
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def _build_run_consumer(
     *,
     handler,
@@ -251,3 +269,33 @@ def test_run_stops_processing_stream_batch_after_first_decode_failure() -> None:
 
     assert handled_entry_ids == []
     assert consumer._stream_ids[stream_key] == "$"
+
+
+def test_run_closes_redis_on_exit_with_legacy_disconnect_pool() -> None:
+    stream_key = "flux:v1:in:stream:paper:strategy_01:event"
+    entry_id = "1700000001000-0"
+    fields = {"payload": json.dumps({"event": "refresh", "ts_event": "1700000010"})}
+    redis_client = _ShutdownRedis(stream_key=stream_key, entry_id=entry_id, fields=fields)
+
+    def _handler(payload, context):
+        _ = payload, context
+        return []
+
+    consumer = FluxBridgeStreamConsumer(
+        redis_client=redis_client,
+        environment="paper",
+        handlers={"event": _handler},
+        topics=["event"],
+    )
+    consumer._stream_ids = {stream_key: "$"}
+    consumer._install_signals = lambda: None
+    consumer._refresh_streams = lambda *, force=False: None
+
+    def _write_ok(_ops):
+        consumer._running = False
+
+    consumer._apply_write_ops = _write_ok
+    consumer.run()
+
+    assert redis_client.closed is True
+    assert redis_client.connection_pool.disconnect_calls == [False]
