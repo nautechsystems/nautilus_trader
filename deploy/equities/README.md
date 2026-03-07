@@ -61,6 +61,7 @@ Runtime registration is explicit:
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`
 - The equities target enrolls `equities-portfolio`, `equities-bridge`, and every discovered `equities-node-*` service
 - The equities bridge consumes only the configured `api.equities_strategy_ids` scope by default.
+- Production hosts should inject the dedicated equities ElastiCache endpoint through `EQUITIES_REDIS_HOST`, `EQUITIES_REDIS_PORT`, `EQUITIES_REDIS_USERNAME`, `EQUITIES_REDIS_PASSWORD`, and `EQUITIES_REDIS_SSL` in `/etc/flux/common.env`.
 - `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` stay in `/etc/flux/common.env`; do not inline them into strategy TOMLs.
 - Shared-host Pulse control lives at `tokenmm-api`; the equities installer does not provision a second API on `:5022`.
 

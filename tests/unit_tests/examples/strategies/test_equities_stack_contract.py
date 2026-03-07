@@ -91,6 +91,11 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert '"20"' in install_script
     assert 'strategy_stack_discover_strategy_ids' in install_script
     assert "--all-strategies" not in install_script
+    assert 'EQUITIES_REDIS_HOST=' in common_env
+    assert 'EQUITIES_REDIS_PORT=6379' in common_env
+    assert 'EQUITIES_REDIS_USERNAME=default' in common_env
+    assert 'EQUITIES_REDIS_PASSWORD=' in common_env
+    assert 'EQUITIES_REDIS_SSL=1' in common_env
     assert 'TRADE_XYZ_AGENT_PK=' in common_env
     assert 'TRADE_XYZ_ACCOUNT_ADDRESS=' in common_env
     assert "/usr/bin/systemctl start flux@equities-api.service" not in sudoers
@@ -161,6 +166,8 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "one stock uses one strategy file and one node process" in strategies_readme.lower()
     assert "Start from `equities.strategy.template.toml`." in strategies_readme
 
+    assert "EQUITIES_REDIS_HOST=" in common_env
+    assert "EQUITIES_REDIS_PASSWORD=" in common_env
     assert "TRADE_XYZ_AGENT_PK=" in common_env
     assert "TRADE_XYZ_ACCOUNT_ADDRESS=" in common_env
 
