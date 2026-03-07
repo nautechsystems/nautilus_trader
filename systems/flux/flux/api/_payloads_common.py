@@ -13,6 +13,9 @@ from decimal import InvalidOperation
 from typing import Any
 
 
+_STABLE_CASH_ASSETS = frozenset({"USD", "USDT", "USDC", "DAI", "FDUSD", "USDE"})
+
+
 @dataclass(frozen=True, slots=True)
 class ContractCatalogEntry:
     """Describe a contract that may appear in balances, legs, and signal payloads."""
@@ -355,6 +358,7 @@ def canonical_naming_fields(
     symbol: Any = None,
     asset: Any = None,
     inventory_asset: Any = None,
+    product_type: Any = None,
     is_position: bool = False,
 ) -> dict[str, str]:
     """Derive the canonical instrument, venue, and display fields used across payload rows."""
@@ -378,15 +382,25 @@ def canonical_naming_fields(
         venue=venue_text,
         is_position=is_position,
     )
-    product_type = "perp" if contract_type in _PERP_CONTRACT_TYPES else "spot"
-    if contract_type == "cash" and product_type != "spot":
-        product_type = "spot"
+    explicit_product_type = decode_text(product_type).strip().lower()
+    if explicit_product_type in {"spot", "perp"}:
+        product_type = explicit_product_type
+    else:
+        product_type = "perp" if contract_type in _PERP_CONTRACT_TYPES else "spot"
+        if contract_type == "cash" and product_type != "spot":
+            product_type = "spot"
     if not base_asset:
         base_asset = inventory_asset_text or decode_text(asset).strip().upper()
     pair = f"{base_asset}/{quote_asset}" if base_asset and quote_asset else (inventory_asset_text or raw_symbol)
 
     display_asset = inventory_asset_text or base_asset or raw_symbol or decode_text(symbol).strip().upper()
-    if product_type == "perp":
+    if (
+        display_asset in _STABLE_CASH_ASSETS
+        and not is_position
+        and not instrument_text
+    ):
+        display_name_short = display_asset
+    elif product_type == "perp":
         display_name_short = f"{display_asset} Perp".strip()
     else:
         display_name_short = f"{display_asset} Spot".strip() if display_asset else "Spot"
@@ -452,6 +466,7 @@ def enrich_row_with_canonical_naming(
             or out.get("base")
             or out.get("asset")
         ),
+        product_type=out.get("product_type") or out.get("market_type"),
         is_position=position,
     )
     out.update(naming)
@@ -586,24 +601,54 @@ def _decimal_text(value: Decimal) -> str:
     return text or "0"
 
 
-def _position_signed_qty(row: dict[str, Any]) -> Decimal | None:
+def _position_qty_from_keys(
+    row: Mapping[str, Any],
+    *,
+    signed_keys: Sequence[str],
+    magnitude_keys: Sequence[str],
+) -> Decimal | None:
+    signed_key_set = set(signed_keys)
     source_key = ""
     value: Any = None
-    for key in ("signed_qty", "total", "free", "quantity", "qty", "size"):
+    for key in signed_keys:
         candidate = row.get(key)
         if candidate is None:
             continue
         value = candidate
         source_key = key
         break
+    if value is None:
+        for key in magnitude_keys:
+            candidate = row.get(key)
+            if candidate is None:
+                continue
+            value = candidate
+            source_key = key
+            break
     qty = _to_decimal(value)
     if qty is None:
         return None
-    if source_key != "signed_qty":
+    if source_key not in signed_key_set:
         side = decode_text(row.get("side") or row.get("position_side")).strip().upper()
         if (side == "SHORT" and qty > 0) or (side == "LONG" and qty < 0):
             qty = -qty
     return qty
+
+
+def _position_signed_qty(row: dict[str, Any]) -> Decimal | None:
+    return _position_qty_from_keys(
+        row,
+        signed_keys=("signed_qty_base", "signed_qty"),
+        magnitude_keys=("quantity_base", "total", "free", "quantity", "qty", "size"),
+    )
+
+
+def _position_venue_signed_qty(row: dict[str, Any]) -> Decimal | None:
+    return _position_qty_from_keys(
+        row,
+        signed_keys=("signed_qty_venue", "signed_qty"),
+        magnitude_keys=("quantity_venue", "quantity", "qty", "size", "total", "free"),
+    )
 
 
 def build_params_payload(

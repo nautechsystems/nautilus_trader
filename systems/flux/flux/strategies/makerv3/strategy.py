@@ -17,6 +17,7 @@ from flux.common.portfolio_inventory import DEFAULT_PORTFOLIO_INVENTORY_STALE_AF
 from flux.common.portfolio_inventory import StrategyInventoryComponent
 from flux.common.portfolio_inventory import decode_portfolio_inventory
 from flux.common.portfolio_inventory import encode_component
+from flux.common.quantity_units import exposure_from_venue_qty
 from flux.strategies.makerv3 import failures as failures_mod
 from flux.strategies.makerv3 import inventory as inventory_mod
 from flux.strategies.makerv3 import managed_orders as managed_orders_mod
@@ -66,6 +67,7 @@ _apply_inventory_skew_to_edges = pricing_mod.apply_inventory_skew_to_edges
 
 
 SpotCashBorrowingPolicy = Literal["none", "sell_only", "both_sides"]
+OrderQtyUnit = Literal["venue", "base"]
 
 
 def _did_bot_turn_off(previous_bot_on: bool, current_bot_on: bool) -> bool:
@@ -114,6 +116,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
         maker_instrument_id: InstrumentId
         reference_instrument_id: InstrumentId
         order_qty: Decimal
+        qty_unit: OrderQtyUnit = "venue"
         external_strategy_id: str = "makerv3"
         bot_on: bool | None = None
         qty: Decimal | None = None
@@ -226,6 +229,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._portfolio_inventory_stale_after_ms = (
                 DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS
             )
+            self._portfolio_inventory_allow_partial_global_risk = False
+            self._latest_maker_position_report_snapshot: dict[str, Any] | None = None
+            self._last_maker_position_activity_ns = 0
 
         def on_start(self) -> None:
             """
@@ -245,6 +251,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._set_managed_only_stop_safety(False)
             self._last_actionable_alert_ns.clear()
             self._last_actionable_alert_transition.clear()
+            self._latest_maker_position_report_snapshot = None
+            self._last_maker_position_activity_ns = 0
             self._last_bot_on = self._runtime_bool("bot_on")
             start_ns = int(self.clock.timestamp_ns())
             self._run_id = f"{self._strategy_identity}:{start_ns // 1_000_000}"
@@ -270,12 +278,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
             }
 
             try:
-                self._order_qty = self._maker_instrument.make_qty(self.config.active_order_qty)
-            except ValueError:
-                self._publish_alert(
-                    f"Invalid order quantity configured for {instrument_id}",
-                    level="error",
+                self._order_qty = runtime_params_mod.resolve_order_quantity(
+                    self,
+                    self.config.active_order_qty,
                 )
+            except Exception as e:
+                self._publish_alert(str(e), level="error")
                 self.stop()
                 return
             try:
@@ -317,7 +325,18 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     instrument_id=instrument_id,
                     book_type=BookType.L2_MBP,
                 )
+            msgbus = getattr(self, "msgbus", None)
+            if msgbus is None:
+                msgbus = getattr(self, "_msgbus", None)
+            subscribe = getattr(msgbus, "subscribe", None)
+            if callable(subscribe):
+                with suppress(Exception):
+                    subscribe(
+                        topic="reports.execution.*",
+                        handler=self._handle_execution_report_message,
+                    )
 
+            self._log_startup_qty_guardrail()
             self._begin_startup_cleanup_if_needed()
             self._publish_event("started")
             self._publish_balances()
@@ -328,6 +347,48 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self.log.info(
                 f"MakerV3 strategy started strategy_id={self._external_strategy_id} "
                 f"maker={self.config.maker_instrument_id} reference={self.config.reference_instrument_id}",
+            )
+
+        def _log_startup_qty_guardrail(self) -> None:
+            if self._maker_instrument_is_spot():
+                return
+
+            base_currency = self._maker_base_currency_code()
+            local_position_summary = self._maker_local_position_summary(base_currency)
+            qty_unit = runtime_params_mod.configured_qty_unit(self)
+            configured_order_qty = self.config.active_order_qty
+            resolved_order_qty_venue = _to_decimal_or_none(self._order_qty)
+            conversion_status = local_position_summary.qty_conversion_status or "none"
+            conversion_source = local_position_summary.qty_conversion_source or "none"
+            base_qty_complete = bool(local_position_summary.qty_complete)
+
+            self.log.info(
+                "startup_qty_guardrail "
+                f"strategy_id={self._external_strategy_id} "
+                f"maker={self.config.maker_instrument_id} "
+                f"base_currency={base_currency} "
+                f"qty_unit={qty_unit} "
+                f"configured_order_qty={configured_order_qty} "
+                f"resolved_order_qty_venue={resolved_order_qty_venue} "
+                f"local_position_qty_venue={local_position_summary.venue_qty} "
+                f"local_position_qty_base={local_position_summary.base_qty} "
+                f"base_qty_complete={base_qty_complete} "
+                f"conversion_status={conversion_status} "
+                f"conversion_source={conversion_source}",
+            )
+
+            if local_position_summary.venue_qty is None or local_position_summary.base_qty is not None:
+                return
+
+            self.log.warning(
+                "startup_qty_guardrail_missing_base "
+                f"strategy_id={self._external_strategy_id} "
+                f"maker={self.config.maker_instrument_id} "
+                f"qty_unit={qty_unit} "
+                f"local_position_qty_venue={local_position_summary.venue_qty} "
+                f"local_position_qty_base={local_position_summary.base_qty} "
+                f"conversion_status={conversion_status} "
+                f"conversion_source={conversion_source}",
             )
 
         def on_stop(self) -> None:
@@ -348,6 +409,16 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 timer_names = set(self.clock.timer_names)
             except Exception:
                 timer_names = set()
+            msgbus = getattr(self, "msgbus", None)
+            if msgbus is None:
+                msgbus = getattr(self, "_msgbus", None)
+            unsubscribe = getattr(msgbus, "unsubscribe", None)
+            if callable(unsubscribe):
+                with suppress(Exception):
+                    unsubscribe(
+                        topic="reports.execution.*",
+                        handler=self._handle_execution_report_message,
+                    )
             if self._params_timer_name in timer_names:
                 self.clock.cancel_timer(self._params_timer_name)
             unsubscribed_instrument_ids: list[InstrumentId] = []
@@ -770,8 +841,27 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     "ts_event": int(event.ts_event),
                 },
             )
+            self._record_maker_position_activity(event)
             self._reconcile_managed_order(event.client_order_id, lifecycle="filled")
             self._publish_current_state_snapshot()
+
+        def on_position_opened(self, event: Any) -> None:
+            """
+            Track local maker-position activity to guard against stale venue snapshots.
+            """
+            self._record_maker_position_activity(event)
+
+        def on_position_changed(self, event: Any) -> None:
+            """
+            Track local maker-position activity to guard against stale venue snapshots.
+            """
+            self._record_maker_position_activity(event)
+
+        def on_position_closed(self, event: Any) -> None:
+            """
+            Track local maker-position activity to guard against stale venue snapshots.
+            """
+            self._record_maker_position_activity(event)
 
         def on_order_rejected(self, event: Any) -> None:
             """
@@ -970,6 +1060,157 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 cache = getattr(self, "cache", None)
             return cache
 
+        def _record_maker_position_activity(self, event: Any) -> None:
+            instrument_id = getattr(event, "instrument_id", None)
+            if instrument_id != self.config.maker_instrument_id:
+                return
+            ts_event = int(getattr(event, "ts_event", 0) or 0)
+            if ts_event > 0:
+                self._last_maker_position_activity_ns = max(
+                    int(getattr(self, "_last_maker_position_activity_ns", 0) or 0),
+                    ts_event,
+                )
+            self._invalidate_inventory_skew_cache()
+
+        def _execution_report_ts_ns(self, report: Any) -> int:
+            timestamps = []
+            for field_name in ("ts_last", "ts_event", "ts_init"):
+                raw_value = getattr(report, field_name, None)
+                try:
+                    value = int(raw_value or 0)
+                except Exception:
+                    value = 0
+                if value > 0:
+                    timestamps.append(value)
+            return max(timestamps) if timestamps else 0
+
+        def _aggregate_maker_position_reports(
+            self,
+            reports: Any,
+            *,
+            fallback_ts_ns: int = 0,
+        ) -> dict[str, Any] | None:
+            total = Decimal(0)
+            avg_px_num = Decimal(0)
+            avg_px_den = Decimal(0)
+            latest_ts_ns = max(0, int(fallback_ts_ns))
+            position_id: str | None = None
+            found = False
+
+            for report in list(reports or ()):
+                if getattr(report, "instrument_id", None) != self.config.maker_instrument_id:
+                    continue
+                signed_qty = _to_decimal_or_none(getattr(report, "signed_decimal_qty", None))
+                if signed_qty is None:
+                    signed_qty = _to_decimal_or_none(getattr(report, "signed_qty", None))
+                if signed_qty is None:
+                    continue
+                found = True
+                total += signed_qty
+                avg_px_open = _to_decimal_or_none(getattr(report, "avg_px_open", None))
+                if avg_px_open is not None and signed_qty != 0:
+                    avg_px_num += abs(signed_qty) * avg_px_open
+                    avg_px_den += abs(signed_qty)
+                latest_ts_ns = max(latest_ts_ns, self._execution_report_ts_ns(report))
+                if not position_id:
+                    report_position_id = getattr(report, "venue_position_id", None) or getattr(
+                        report,
+                        "position_id",
+                        None,
+                    )
+                    if report_position_id is not None:
+                        text = str(report_position_id).strip()
+                        if text:
+                            position_id = text
+
+            if not found:
+                return None
+
+            avg_px_open = avg_px_num / avg_px_den if avg_px_den > 0 else None
+            instrument = self._resolve_instrument(self.config.maker_instrument_id)
+            signed_qty_base: Decimal | None = None
+            qty_conversion_status: str | None = None
+            qty_conversion_source: str | None = None
+            if instrument is None:
+                qty_conversion_status = "missing_metadata"
+                qty_conversion_source = "maker instrument unavailable"
+            else:
+                exposure = exposure_from_venue_qty(
+                    instrument,
+                    total,
+                    last_px=self._inventory_base_exposure_last_px(),
+                )
+                signed_qty_base = exposure.base_qty
+                qty_conversion_status = exposure.qty_conversion_status
+                qty_conversion_source = exposure.qty_conversion_source
+            return {
+                "instrument_id": self.config.maker_instrument_id,
+                "signed_qty": total,
+                "signed_qty_venue": total,
+                "quantity_venue": abs(total),
+                "signed_qty_base": signed_qty_base,
+                "quantity_base": abs(signed_qty_base) if signed_qty_base is not None else None,
+                "qty_conversion_status": qty_conversion_status,
+                "qty_conversion_source": qty_conversion_source,
+                "avg_px_open": avg_px_open,
+                "position_id": position_id,
+                "ts_ns": latest_ts_ns,
+            }
+
+        def _fresh_maker_position_report_snapshot(self) -> dict[str, Any] | None:
+            snapshot = getattr(self, "_latest_maker_position_report_snapshot", None)
+            if not isinstance(snapshot, Mapping):
+                return None
+            report_ts_ns = int(snapshot.get("ts_ns") or 0)
+            local_activity_ns = int(getattr(self, "_last_maker_position_activity_ns", 0) or 0)
+            if report_ts_ns > 0 and report_ts_ns >= local_activity_ns:
+                return dict(snapshot)
+            return None
+
+        def _handle_execution_report_message(self, message: Any) -> None:
+            if self._maker_instrument_is_spot():
+                return
+
+            snapshot: dict[str, Any] | None = None
+            if getattr(message, "instrument_id", None) == self.config.maker_instrument_id:
+                snapshot = self._aggregate_maker_position_reports(
+                    [message],
+                    fallback_ts_ns=self._execution_report_ts_ns(message),
+                )
+            else:
+                position_reports = getattr(message, "position_reports", None)
+                if isinstance(position_reports, Mapping):
+                    reports = position_reports.get(self.config.maker_instrument_id)
+                    snapshot = self._aggregate_maker_position_reports(
+                        reports,
+                        fallback_ts_ns=int(getattr(message, "ts_init", 0) or 0),
+                    )
+            if snapshot is None:
+                return
+
+            previous_snapshot = getattr(self, "_latest_maker_position_report_snapshot", None)
+            previous_ts_ns = (
+                int(previous_snapshot.get("ts_ns") or 0)
+                if isinstance(previous_snapshot, Mapping)
+                else 0
+            )
+            current_ts_ns = int(snapshot.get("ts_ns") or 0)
+            if previous_ts_ns > current_ts_ns:
+                return
+
+            self._latest_maker_position_report_snapshot = dict(snapshot)
+            self._invalidate_inventory_skew_cache()
+
+            if getattr(self, "_last_state_name", None) is None:
+                return
+
+            now_ms_value = current_ts_ns // 1_000_000 if current_ts_ns > 0 else None
+            self._publish_portfolio_inventory_component(
+                state=self._last_state_name or "running",
+                now_ms_value=now_ms_value,
+            )
+            self._publish_current_state_snapshot()
+
         def _resolve_instrument(self, instrument_id: Any) -> Any | None:
             instrument = self._instruments.get(instrument_id)
             if instrument is not None:
@@ -990,25 +1231,37 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return list(positions_open())
             return None
 
-        def _position_inventory_qty(
+        def _inventory_base_exposure_last_px(self) -> Decimal | None:
+            if self._last_fv is not None:
+                return self._last_fv
+
+            maker_mid = self._best_mid(self.config.maker_instrument_id)
+            if maker_mid is not None:
+                return maker_mid
+
+            return self._best_mid(self.config.reference_instrument_id)
+
+        def _position_exposure_summary(
             self,
             currency_code: str,
             *,
             venue: Any | None = None,
-        ) -> Decimal | None:
+            instrument_id: Any | None = None,
+        ) -> inventory_mod.PositionExposureSummary:
             if not currency_code:
-                return None
+                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
             positions = self._open_positions()
             if positions is None:
-                return None
+                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
             cache = self._inventory_cache()
-            quantity = inventory_mod.position_inventory_total(
+            return inventory_mod.position_exposure_summary(
                 positions,
                 base_currency=currency_code,
                 instrument_lookup=self._resolve_instrument if cache is not None else None,
                 venue=venue,
+                instrument_id=instrument_id,
+                last_px=self._inventory_base_exposure_last_px(),
             )
-            return Decimal(0) if quantity is None else quantity
 
         def _spot_balance_total(
             self,
@@ -1021,25 +1274,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
             accounts: list[Account] = []
             cache = self._inventory_cache()
-            if venue is not None:
-                account_for_venue = getattr(cache, "account_for_venue", None)
-                if callable(account_for_venue):
-                    with suppress(Exception):
-                        scoped_account = account_for_venue(venue=venue)
-                        if scoped_account is not None:
-                            return inventory_mod.spot_balance_total(
-                                accounts=[scoped_account],
-                                currency_code=currency_code,
-                            )
-                if hasattr(self, "portfolio"):
-                    with suppress(Exception):
-                        scoped_account = self.portfolio.account(venue=venue)
-                        if scoped_account is not None:
-                            return inventory_mod.spot_balance_total(
-                                accounts=[scoped_account],
-                                currency_code=currency_code,
-                            )
-
             accounts_lookup = getattr(cache, "accounts", None)
             if callable(accounts_lookup):
                 with suppress(Exception):
@@ -1064,6 +1298,18 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     for account in accounts
                     if inventory_mod.account_venue_code(account) == venue_code
                 ]
+                if not scoped_accounts:
+                    account_for_venue = getattr(cache, "account_for_venue", None)
+                    if callable(account_for_venue):
+                        with suppress(Exception):
+                            scoped_account = account_for_venue(venue=venue)
+                            if scoped_account is not None:
+                                scoped_accounts = [scoped_account]
+                if not scoped_accounts and hasattr(self, "portfolio"):
+                    with suppress(Exception):
+                        scoped_account = self.portfolio.account(venue=venue)
+                        if scoped_account is not None:
+                            scoped_accounts = [scoped_account]
             total = inventory_mod.spot_balance_total(
                 accounts=scoped_accounts,
                 currency_code=currency_code,
@@ -1089,12 +1335,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
             namespace: str,
             schema_version: str,
             stale_after_ms: int = DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS,
+            allow_partial_global_risk: bool = False,
         ) -> None:
             self._portfolio_inventory_client = redis_client
             self._portfolio_inventory_portfolio_id = portfolio_id.strip() or None
             self._portfolio_inventory_namespace = namespace
             self._portfolio_inventory_schema_version = schema_version
             self._portfolio_inventory_stale_after_ms = max(1, int(stale_after_ms))
+            self._portfolio_inventory_allow_partial_global_risk = bool(allow_partial_global_risk)
 
         def _maker_instrument_is_spot(self) -> bool:
             instrument_id_text = str(self.config.maker_instrument_id).upper()
@@ -1121,23 +1369,59 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 return side == OrderSide.SELL
             return False
 
-        def _maker_local_position_qty(self, currency_code: str | None) -> Decimal | None:
+        def _maker_local_position_summary(
+            self,
+            currency_code: str | None,
+        ) -> inventory_mod.PositionExposureSummary:
             if not currency_code or self._maker_instrument_is_spot():
-                return None
-            positions = self._open_positions()
-            if positions is None:
-                return None
-            total = Decimal(0)
-            found = False
-            for position in positions:
-                if getattr(position, "instrument_id", None) != self.config.maker_instrument_id:
-                    continue
-                signed_qty = inventory_mod.position_signed_qty([position])
-                if signed_qty is None:
-                    continue
-                total += signed_qty
-                found = True
-            return total if found else Decimal(0)
+                return inventory_mod.PositionExposureSummary(venue_qty=None, base_qty=None)
+            fresh_report_snapshot = self._fresh_maker_position_report_snapshot()
+            if fresh_report_snapshot is not None:
+                signed_qty = _to_decimal_or_none(fresh_report_snapshot.get("signed_qty"))
+                if signed_qty is not None:
+                    snapshot_base_qty_raw = fresh_report_snapshot.get("signed_qty_base")
+                    if snapshot_base_qty_raw is None:
+                        snapshot_base_qty_raw = fresh_report_snapshot.get("base_qty")
+                    snapshot_base_qty = _to_decimal_or_none(snapshot_base_qty_raw)
+                    snapshot_conversion_status = str(
+                        fresh_report_snapshot.get("qty_conversion_status") or "",
+                    ).strip() or None
+                    snapshot_conversion_source = str(
+                        fresh_report_snapshot.get("qty_conversion_source") or "",
+                    ).strip() or None
+                    if snapshot_base_qty is not None or snapshot_conversion_status is not None:
+                        return inventory_mod.PositionExposureSummary(
+                            venue_qty=signed_qty,
+                            base_qty=snapshot_base_qty,
+                            qty_complete=snapshot_base_qty is not None,
+                            qty_conversion_status=snapshot_conversion_status,
+                            qty_conversion_source=snapshot_conversion_source,
+                        )
+                    instrument = self._resolve_instrument(self.config.maker_instrument_id)
+                    if instrument is None:
+                        return inventory_mod.PositionExposureSummary(
+                            venue_qty=signed_qty,
+                            base_qty=None,
+                            qty_complete=False,
+                            qty_conversion_status="missing_metadata",
+                            qty_conversion_source="maker instrument unavailable",
+                        )
+                    exposure = exposure_from_venue_qty(
+                        instrument,
+                        signed_qty,
+                        last_px=self._inventory_base_exposure_last_px(),
+                    )
+                    return inventory_mod.PositionExposureSummary(
+                        venue_qty=signed_qty,
+                        base_qty=exposure.base_qty,
+                        qty_complete=exposure.base_qty is not None,
+                        qty_conversion_status=exposure.qty_conversion_status,
+                        qty_conversion_source=exposure.qty_conversion_source,
+                    )
+            return self._position_exposure_summary(
+                currency_code,
+                instrument_id=self.config.maker_instrument_id,
+            )
 
         def _maker_local_spot_qty(self, currency_code: str | None) -> Decimal | None:
             if not currency_code or not self._maker_instrument_is_spot():
@@ -1148,11 +1432,11 @@ if _NAUTILUS_IMPORT_ERROR is None:
         def _shared_portfolio_inventory_qty_and_block_reason(
             self,
             base_currency: str | None,
-        ) -> tuple[Decimal | None, str | None]:
+        ) -> tuple[Decimal | None, str | None, dict[str, Any] | None]:
             portfolio_id = self._portfolio_inventory_portfolio_id
             client = self._portfolio_inventory_client
             if not base_currency or not portfolio_id or client is None:
-                return None, None
+                return None, None, None
             key = FluxRedisKeys.portfolio_inventory(
                 portfolio_id=portfolio_id,
                 base_currency=base_currency,
@@ -1162,24 +1446,41 @@ if _NAUTILUS_IMPORT_ERROR is None:
             with suppress(Exception):
                 payload = decode_portfolio_inventory(client.get(key))
                 if not isinstance(payload, dict):
-                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
+                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE, None
                 ts_ms = int(payload.get("ts_ms") or 0)
                 stale_after_ms = int(
                     payload.get("stale_after_ms") or self._portfolio_inventory_stale_after_ms,
                 )
                 now_ms_value = int(self.clock.timestamp_ns() // 1_000_000)
                 if ts_ms <= 0 or now_ms_value - ts_ms > max(1, stale_after_ms):
-                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
-                if payload.get("missing_required"):
-                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
-                global_qty = _to_decimal_or_none(payload.get("global_qty"))
+                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE, None
+                global_qty = _to_decimal_or_none(
+                    payload.get("global_qty_base") or payload.get("global_qty"),
+                )
                 if global_qty is None:
-                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
-                return global_qty, None
-            return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
+                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE, None
+                global_qty_complete = bool(
+                    payload.get(
+                        "global_qty_base_complete",
+                        payload.get("global_qty_complete", True),
+                    ),
+                )
+                diagnostics = {
+                    "aggregation_mode": str(payload.get("aggregation_mode") or "strict"),
+                    "global_qty_base_complete": global_qty_complete,
+                    "global_qty_complete": global_qty_complete,
+                    "missing_required": list(payload.get("missing_required") or []),
+                    "stale_required": list(payload.get("stale_required") or []),
+                    "null_qty_required": list(payload.get("null_qty_required") or []),
+                }
+                incomplete = not bool(diagnostics["global_qty_base_complete"])
+                if incomplete and not self._portfolio_inventory_allow_partial_global_risk:
+                    return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE, diagnostics
+                return global_qty, None, diagnostics
+            return None, REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE, None
 
         def _portfolio_global_inventory_qty(self, base_currency: str | None) -> Decimal | None:
-            global_qty, _block_reason = self._shared_portfolio_inventory_qty_and_block_reason(
+            global_qty, _block_reason, _diagnostics = self._shared_portfolio_inventory_qty_and_block_reason(
                 base_currency,
             )
             return global_qty
@@ -1200,18 +1501,23 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 if now_ms_value is None
                 else int(now_ms_value)
             )
-            local_position_qty = self._maker_local_position_qty(base_currency)
+            local_position_summary = self._maker_local_position_summary(base_currency)
             local_spot_qty = self._maker_local_spot_qty(base_currency)
-            local_qty = inventory_mod.local_inventory_total(
-                local_position_qty=local_position_qty,
+            local_qty_base = inventory_mod.local_inventory_total(
+                local_position_qty=local_position_summary.base_qty,
                 local_spot_qty=local_spot_qty,
             )
             component = StrategyInventoryComponent(
                 strategy_id=self._external_strategy_id,
                 portfolio_id=portfolio_id,
                 base_currency=base_currency,
-                local_qty=local_qty,
+                local_qty_base=local_qty_base,
                 ts_ms=ts_ms,
+                local_position_qty_venue=local_position_summary.venue_qty,
+                local_position_qty_base=local_position_summary.base_qty,
+                local_spot_qty=local_spot_qty,
+                qty_conversion_status=local_position_summary.qty_conversion_status,
+                qty_conversion_source=local_position_summary.qty_conversion_source,
                 stale_after_ms=self._portfolio_inventory_stale_after_ms,
                 maker_instrument_id=str(self.config.maker_instrument_id),
                 state=state or (self._last_state_name or ""),
@@ -1232,38 +1538,85 @@ if _NAUTILUS_IMPORT_ERROR is None:
             runtime_params: Mapping[str, Any] | None = None,
         ) -> dict[str, Any]:
             base_currency = self._maker_base_currency_code()
-            portfolio_global_qty = self._portfolio_global_inventory_qty(base_currency)
+            portfolio_global_qty_base, _portfolio_block_reason, portfolio_diagnostics = (
+                self._shared_portfolio_inventory_qty_and_block_reason(base_currency)
+            )
             use_shared_portfolio = bool(self._portfolio_inventory_portfolio_id)
-            if portfolio_global_qty is None and not use_shared_portfolio:
-                global_position_qty = (
-                    self._position_inventory_qty(base_currency)
+            global_position_summary = inventory_mod.PositionExposureSummary(
+                venue_qty=None,
+                base_qty=None,
+            )
+            if portfolio_global_qty_base is None and not use_shared_portfolio:
+                global_position_summary = (
+                    self._position_exposure_summary(base_currency)
                     if base_currency
-                    else None
+                    else global_position_summary
                 )
                 global_spot_qty = self._spot_balance_total(base_currency) if base_currency else None
                 global_inventory_qty_override = None
                 global_inventory_source_override = None
             else:
-                global_position_qty = None
                 global_spot_qty = None
-                global_inventory_qty_override = portfolio_global_qty
-                global_inventory_source_override = (
-                    "portfolio_component_sum" if portfolio_global_qty is not None else "portfolio_unavailable"
+                global_inventory_qty_override = portfolio_global_qty_base
+                portfolio_complete = bool(
+                    (portfolio_diagnostics or {}).get("global_qty_base_complete", True),
                 )
-            local_position_qty = self._maker_local_position_qty(base_currency)
+                global_inventory_source_override = (
+                    (
+                        "portfolio_component_sum"
+                        if portfolio_complete
+                        else "portfolio_component_partial_sum"
+                    )
+                    if portfolio_global_qty_base is not None
+                    else "portfolio_unavailable"
+                )
+            local_position_summary = self._maker_local_position_summary(base_currency)
             local_spot_qty = self._maker_local_spot_qty(base_currency)
             if runtime_params is None:
                 runtime_params = self._quote_runtime_params_snapshot()
-            return inventory_mod.compute_inventory_skew(
-                global_position_qty=global_position_qty,
+            skew = inventory_mod.compute_inventory_skew(
+                global_position_qty_venue=global_position_summary.venue_qty,
+                global_position_qty_base=global_position_summary.base_qty,
                 global_spot_qty=global_spot_qty,
-                local_position_qty=local_position_qty,
+                local_position_qty_venue=local_position_summary.venue_qty,
+                local_position_qty_base=local_position_summary.base_qty,
                 local_spot_qty=local_spot_qty,
+                global_position_qty_complete=global_position_summary.qty_complete,
+                local_position_qty_complete=local_position_summary.qty_complete,
                 global_inventory_qty_override=global_inventory_qty_override,
                 global_inventory_source_override=global_inventory_source_override,
                 base_currency=base_currency,
                 runtime_params=runtime_params,
             )
+            if global_position_summary.qty_conversion_status is not None:
+                skew["global_position_qty_conversion_status"] = global_position_summary.qty_conversion_status
+                skew["global_position_qty_conversion_source"] = global_position_summary.qty_conversion_source
+            if local_position_summary.qty_conversion_status is not None:
+                skew["local_position_qty_conversion_status"] = local_position_summary.qty_conversion_status
+                skew["local_position_qty_conversion_source"] = local_position_summary.qty_conversion_source
+            if portfolio_diagnostics:
+                skew["global_inventory_qty_base_complete"] = bool(
+                    portfolio_diagnostics.get("global_qty_base_complete", True),
+                )
+                skew["global_inventory_qty_complete"] = bool(
+                    portfolio_diagnostics.get(
+                        "global_qty_base_complete",
+                        portfolio_diagnostics.get("global_qty_complete", True),
+                    ),
+                )
+                skew["global_inventory_aggregation_mode"] = str(
+                    portfolio_diagnostics.get("aggregation_mode") or "strict",
+                )
+                skew["global_inventory_missing_required"] = list(
+                    portfolio_diagnostics.get("missing_required") or [],
+                )
+                skew["global_inventory_stale_required"] = list(
+                    portfolio_diagnostics.get("stale_required") or [],
+                )
+                skew["global_inventory_null_qty_required"] = list(
+                    portfolio_diagnostics.get("null_qty_required") or [],
+                )
+            return skew
 
         def _next_quote_cycle_id(self, *, now_ns: int) -> str:
             del now_ns

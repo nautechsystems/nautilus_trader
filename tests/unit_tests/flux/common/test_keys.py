@@ -31,6 +31,15 @@ class TestFluxRedisKeys:
             == "flux:v1:market:last:maker_v3_01:bybit:PLUMEUSDT-LINEAR.BYBIT"
         )
         assert (
+            keys.market_last(
+                exchange="hyperliquid",
+                base="XYZ:AAPL",
+                quote="USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            )
+            == "flux:v1:market:last:maker_v3_01:hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID"
+        )
+        assert (
             FluxRedisKeys.portfolio_inventory_component(
                 strategy_id="maker_v3_01",
                 portfolio_id="tokenmm",
@@ -48,6 +57,14 @@ class TestFluxRedisKeys:
                 base_currency="PLUME",
             )
             == "flux:v1:portfolio:inventory:tokenmm:PLUME:changed"
+        )
+        assert (
+            FluxRedisKeys.portfolio_snapshot(portfolio_id="tokenmm")
+            == "flux:v1:portfolio:snapshot:tokenmm"
+        )
+        assert (
+            FluxRedisKeys.portfolio_snapshot_channel(portfolio_id="tokenmm")
+            == "flux:v1:portfolio:snapshot:tokenmm:changed"
         )
         assert keys.params_hash_key() == "flux:v1:params:maker_v3_01"
 

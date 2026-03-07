@@ -473,14 +473,78 @@ class FluxApiStore:
         merged.update(primary_row)
         return merged
 
+    def load_market_rows(self, strategy_id: str) -> dict[str, dict[str, Any]]:
+        market_pairs = self._market_keys(strategy_id)
+        pipe = self._redis.pipeline(transaction=False)
+        for _, market_key, fallback_key in market_pairs:
+            pipe.get(market_key)
+            if fallback_key:
+                pipe.get(fallback_key)
+        raw = pipe.execute()
+        expected_length = sum(2 if fallback_key else 1 for _, _, fallback_key in market_pairs)
+        if len(raw) != expected_length:
+            raise RuntimeError(
+                f"Market pipeline returned {len(raw)} rows, expected {expected_length}",
+            )
+
+        market_rows: dict[str, dict[str, Any]] = {}
+        raw_index = 0
+        for contract, _market_key, fallback_key in market_pairs:
+            primary_raw = raw[raw_index]
+            raw_index += 1
+            fallback_raw = None
+            if fallback_key:
+                fallback_raw = raw[raw_index]
+                raw_index += 1
+            parsed = self._decode_market_row(primary_raw, fallback_raw)
+            contract_id = contract_id_for_leg(
+                exchange=contract.exchange,
+                symbol=contract.symbol,
+                instrument_id=contract.instrument_id,
+            )
+            market_rows[contract_id] = parsed
+        return market_rows
+
+    def load_market_rows_for_strategies(
+        self,
+        strategy_ids: Sequence[str],
+    ) -> dict[str, dict[str, Any]]:
+        merged: dict[str, dict[str, Any]] = {}
+        seen: set[str] = set()
+        for strategy_id in strategy_ids:
+            strategy_text = decode_text(strategy_id).strip()
+            if not strategy_text or strategy_text in seen:
+                continue
+            seen.add(strategy_text)
+            strategy_rows = self.load_market_rows(strategy_text)
+            for contract_id, row in strategy_rows.items():
+                if not isinstance(row, Mapping):
+                    continue
+                if contract_id not in merged:
+                    merged[contract_id] = dict(row)
+                    continue
+                combined = dict(merged[contract_id])
+                combined.update(dict(row))
+                merged[contract_id] = combined
+        return merged
+
+    def load_portfolio_snapshot(self, portfolio_id: str) -> dict[str, Any] | None:
+        key = FluxRedisKeys.portfolio_snapshot(
+            portfolio_id=portfolio_id,
+            namespace=self._config.identity.namespace,
+            schema_version=self._config.identity.schema_version,
+        )
+        payload = load_json(self._redis.get(key))
+        return dict(payload) if isinstance(payload, Mapping) else None
+
     def load_signals_payload(self, strategy_id: str, metadata: StrategyMetadata) -> dict[str, Any]:
         keys = self._keys_for_strategy(strategy_id)
-        market_pairs = self._market_keys(strategy_id)
 
         pipe = self._redis.pipeline(transaction=False)
         pipe.get(keys.state())
         pipe.xrevrange(keys.fv_stream(), count=50)
         pipe.get(keys.balances_snapshot())
+        market_pairs = self._market_keys(strategy_id)
         for _, market_key, fallback_key in market_pairs:
             pipe.get(market_key)
             if fallback_key:
@@ -540,9 +604,9 @@ class FluxApiStore:
 
     def load_balances_rows_with_presence(self, strategy_id: str) -> tuple[list[dict[str, Any]], bool]:
         keys = self._keys_for_strategy(strategy_id)
-        market_pairs = self._market_keys(strategy_id)
         pipe = self._redis.pipeline(transaction=False)
         pipe.get(keys.balances_snapshot())
+        market_pairs = self._market_keys(strategy_id)
         for _, market_key, fallback_key in market_pairs:
             pipe.get(market_key)
             if fallback_key:
@@ -900,6 +964,7 @@ def create_flux_api_app(  # noqa: C901
     profile_required_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
     params_schema: Mapping[str, Mapping[str, Any]] | None = None,
     params_defaults: Mapping[str, Any] | None = None,
+    param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
     required_readiness_keys: Sequence[str] | None = None,
 ) -> Flask:
     if not isinstance(flux_config, FluxConfig) and not all(
@@ -923,6 +988,7 @@ def create_flux_api_app(  # noqa: C901
         contract_catalog=contract_catalog,
         params_schema=schema,
         params_defaults=defaults,
+        param_set=param_set,
         required_readiness_keys=required_readiness_keys,
     )
     default_strategy_id = flux_config.identity.strategy_id
@@ -1583,6 +1649,94 @@ def create_flux_api_app(  # noqa: C901
             required_strategy_ids = set(
                 _required_strategy_ids_for_profile(profile_text, fallback=strategy_ids),
             )
+            portfolio_snapshot = (
+                store.load_portfolio_snapshot(profile_normalized)
+                if profile_normalized == "tokenmm"
+                else None
+            )
+            if portfolio_snapshot is not None:
+                snapshot_balances = portfolio_snapshot.get("balances")
+                snapshot_rows_raw = (
+                    snapshot_balances.get("rows")
+                    if isinstance(snapshot_balances, Mapping)
+                    else []
+                )
+                snapshot_rows = [
+                    dict(row)
+                    for row in snapshot_rows_raw
+                    if isinstance(row, Mapping)
+                ]
+                rows = filter_balance_rows_for_contract_scope(
+                    snapshot_rows,
+                    contracts=store._contracts,
+                )
+                if not rows and snapshot_rows:
+                    rows = snapshot_rows
+                if strategy_ids:
+                    market_rows = store.load_market_rows_for_strategies(strategy_ids)
+                    rows = collapse_balance_display_rows(
+                        enrich_balances_rows(
+                            rows,
+                            contracts=store._contracts,
+                            market_rows=market_rows,
+                        ),
+                    )
+                inventory = portfolio_snapshot.get("inventory")
+                inventory_payload = dict(inventory) if isinstance(inventory, Mapping) else {}
+                response_ts_ms = (
+                    safe_int(portfolio_snapshot.get("server_ts_ms"))
+                    or safe_int(inventory_payload.get("ts_ms"))
+                    or now_ms()
+                )
+                components_payload = inventory_payload.get("components")
+                if not isinstance(components_payload, list):
+                    components_payload = portfolio_snapshot.get("components")
+                components = [
+                    dict(component)
+                    for component in (components_payload or [])
+                    if isinstance(component, Mapping)
+                ]
+                total_rows = len(rows)
+                return _ok(
+                    data={
+                        "source": "portfolio_snapshot",
+                        "rows": rows[:limit],
+                        "count": total_rows,
+                        "total": total_rows,
+                        "limit": limit,
+                        "totals": _balances_totals(rows),
+                        "server_ts_ms": response_ts_ms,
+                        "portfolio_id": decode_text(
+                            portfolio_snapshot.get("portfolio_id") or profile_normalized,
+                        ),
+                        "base_currency": decode_text(
+                            portfolio_snapshot.get("base_currency")
+                            or inventory_payload.get("base_currency"),
+                        ).strip().upper(),
+                        "components": components,
+                        "degraded": bool(inventory_payload.get("degraded", False)),
+                        "global_qty_base": inventory_payload.get("global_qty_base")
+                        or inventory_payload.get("global_qty"),
+                        "global_qty": inventory_payload.get("global_qty"),
+                        "aggregation_mode": decode_text(
+                            inventory_payload.get("aggregation_mode") or "strict",
+                        ),
+                        "global_qty_base_complete": bool(
+                            inventory_payload.get("global_qty_base_complete", True),
+                        ),
+                        "global_qty_complete": bool(
+                            inventory_payload.get("global_qty_complete", True),
+                        ),
+                        "missing_required": list(inventory_payload.get("missing_required") or []),
+                        "stale_required": list(inventory_payload.get("stale_required") or []),
+                        "null_qty_required": list(inventory_payload.get("null_qty_required") or []),
+                        "stale_after_ms": safe_int(
+                            inventory_payload.get("stale_after_ms"),
+                        )
+                        or TOKENMM_BALANCES_STALE_AFTER_MS,
+                    },
+                )
+
             response_ts_ms = now_ms()
             rows_by_strategy: dict[str, list[dict[str, Any]]] = {}
             components: list[dict[str, Any]] = []
@@ -1622,11 +1776,14 @@ def create_flux_api_app(  # noqa: C901
             rows = merge_portfolio_balances_rows(
                 rows_by_strategy=rows_by_strategy,
                 portfolio_id=profile_normalized,
+                preserve_product_scope_cash=True,
             )
-            rows = filter_balance_rows_for_contract_scope(
+            filtered_rows = filter_balance_rows_for_contract_scope(
                 rows,
                 contracts=store._contracts,
             )
+            if filtered_rows:
+                rows = filtered_rows
             missing_required = sorted(
                 component["strategy_id"]
                 for component in components

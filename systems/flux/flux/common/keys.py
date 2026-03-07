@@ -132,6 +132,36 @@ class FluxRedisKeys:
             + ":changed"
         )
 
+    @classmethod
+    def portfolio_snapshot(
+        cls,
+        *,
+        portfolio_id: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        safe_namespace = validate_identifier_part(namespace, "namespace")
+        safe_schema_version = validate_schema_version(schema_version, "schema_version")
+        safe_portfolio_id = validate_identifier_part(portfolio_id, "portfolio_id")
+        return f"{safe_namespace}:{safe_schema_version}:portfolio:snapshot:{safe_portfolio_id}"
+
+    @classmethod
+    def portfolio_snapshot_channel(
+        cls,
+        *,
+        portfolio_id: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        return (
+            cls.portfolio_snapshot(
+                portfolio_id=portfolio_id,
+                namespace=namespace,
+                schema_version=schema_version,
+            )
+            + ":changed"
+        )
+
     def market_last(
         self,
         exchange: str,

@@ -8,10 +8,12 @@ from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Mapping
 from contextlib import suppress
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.accounting.accounts.base import Account
+from flux.common.quantity_units import exposure_from_venue_qty
 from flux.strategies.makerv3.pricing import clamp_decimal
 from flux.strategies.makerv3.pricing import to_decimal
 from flux.strategies.makerv3.pricing import to_decimal_or_none
@@ -29,6 +31,30 @@ INVENTORY_SKEW_RUNTIME_PARAMS: set[str] = {
     "max_skew_bps_local",
     "linear_offset_bps",
 }
+
+
+@dataclass(frozen=True, slots=True)
+class PositionExposureSummary:
+    venue_qty: Decimal | None
+    base_qty: Decimal | None
+    qty_complete: bool = True
+    qty_conversion_status: str | None = None
+    qty_conversion_source: str | None = None
+
+
+def _merge_qty_conversion_metadata(
+    current_status: str | None,
+    current_source: str | None,
+    incoming_status: str | None,
+    incoming_source: str | None,
+) -> tuple[str | None, str | None]:
+    if incoming_status is None:
+        return current_status, current_source
+    if current_status is None:
+        return incoming_status, incoming_source
+    if current_status == incoming_status and current_source == incoming_source:
+        return current_status, current_source
+    return None, None
 
 
 def _stringify_identifier(value: Any) -> str:
@@ -184,6 +210,94 @@ def position_inventory_total(
     return total if found else None
 
 
+def position_exposure_summary(
+    positions: Iterable[Position],
+    *,
+    base_currency: str,
+    instrument_lookup: Callable[[Any], Instrument | None] | None = None,
+    venue: Any | None = None,
+    instrument_id: Any | None = None,
+    last_px: Decimal | None = None,
+) -> PositionExposureSummary:
+    """
+    Aggregate venue and base exposure quantities for positions in the requested scope.
+    """
+    code = str(base_currency).strip().upper()
+    if not code:
+        return PositionExposureSummary(venue_qty=None, base_qty=None)
+
+    total_venue = Decimal(0)
+    total_base = Decimal(0)
+    qty_conversion_status: str | None = None
+    qty_conversion_source: str | None = None
+    matched = False
+    for position in positions:
+        if instrument_id is not None and getattr(position, "instrument_id", None) != instrument_id:
+            continue
+        if not position_matches_base_currency(
+            position,
+            base_currency=code,
+            instrument_lookup=instrument_lookup,
+            venue=venue,
+        ):
+            continue
+
+        signed_qty = _position_signed_qty_value(position)
+        if signed_qty is None:
+            continue
+
+        matched = True
+        total_venue += signed_qty
+        if signed_qty == 0:
+            continue
+        if not callable(instrument_lookup):
+            return PositionExposureSummary(
+                venue_qty=total_venue,
+                base_qty=None,
+                qty_complete=False,
+                qty_conversion_status="missing_metadata",
+                qty_conversion_source="position instrument lookup unavailable",
+            )
+
+        instrument = instrument_lookup(getattr(position, "instrument_id", None))
+        if instrument is None:
+            return PositionExposureSummary(
+                venue_qty=total_venue,
+                base_qty=None,
+                qty_complete=False,
+                qty_conversion_status="missing_metadata",
+                qty_conversion_source="position instrument unavailable",
+            )
+
+        exposure = exposure_from_venue_qty(instrument, signed_qty, last_px=last_px)
+        if exposure.base_qty is None:
+            return PositionExposureSummary(
+                venue_qty=total_venue,
+                base_qty=None,
+                qty_complete=False,
+                qty_conversion_status=exposure.qty_conversion_status,
+                qty_conversion_source=exposure.qty_conversion_source,
+            )
+        total_base += exposure.base_qty
+        qty_conversion_status, qty_conversion_source = _merge_qty_conversion_metadata(
+            qty_conversion_status,
+            qty_conversion_source,
+            exposure.qty_conversion_status,
+            exposure.qty_conversion_source,
+        )
+
+    if not matched:
+        return PositionExposureSummary(venue_qty=Decimal(0), base_qty=Decimal(0))
+
+    return PositionExposureSummary(
+        venue_qty=total_venue,
+        base_qty=total_base,
+        qty_complete=True,
+        qty_conversion_status=qty_conversion_status,
+        qty_conversion_source=qty_conversion_source,
+    )
+
+
 def position_matches_base_currency(
     position: Position,
     *,
@@ -298,10 +412,14 @@ def spot_balance_total(
 
 def compute_inventory_skew(
     *,
-    global_position_qty: Decimal | None,
+    global_position_qty_venue: Decimal | None,
+    global_position_qty_base: Decimal | None,
     global_spot_qty: Decimal | None,
-    local_position_qty: Decimal | None,
+    local_position_qty_venue: Decimal | None,
+    local_position_qty_base: Decimal | None,
     local_spot_qty: Decimal | None,
+    global_position_qty_complete: bool = True,
+    local_position_qty_complete: bool = True,
     global_inventory_qty_override: Decimal | None = None,
     global_inventory_source_override: str | None = None,
     base_currency: str | None,
@@ -310,19 +428,27 @@ def compute_inventory_skew(
     """
     Compute inventory skew context from balances and runtime parameters.
     """
-    global_inventory_qty = _inventory_total(global_position_qty, global_spot_qty)
-    global_inventory_source = _inventory_source(
-        ("positions", global_position_qty),
-        ("spot", global_spot_qty),
-    )
+    if global_position_qty_complete:
+        global_inventory_qty = _inventory_total(global_position_qty_base, global_spot_qty)
+        global_inventory_source = _inventory_source(
+            ("positions", global_position_qty_base),
+            ("spot", global_spot_qty),
+        )
+    else:
+        global_inventory_qty = None
+        global_inventory_source = "position_exposure_unavailable"
     if global_inventory_qty_override is not None:
         global_inventory_qty = global_inventory_qty_override
         global_inventory_source = global_inventory_source_override or "override"
-    local_inventory_qty = _inventory_total(local_position_qty, local_spot_qty)
-    local_inventory_source = _inventory_source(
-        ("positions", local_position_qty),
-        ("spot", local_spot_qty),
-    )
+    if local_position_qty_complete:
+        local_inventory_qty = _inventory_total(local_position_qty_base, local_spot_qty)
+        local_inventory_source = _inventory_source(
+            ("positions", local_position_qty_base),
+            ("spot", local_spot_qty),
+        )
+    else:
+        local_inventory_qty = None
+        local_inventory_source = "position_exposure_unavailable"
 
     des_qty_global = to_decimal(runtime_params["des_qty_global"])
     max_qty_global = to_decimal(runtime_params["max_qty_global"])
@@ -359,17 +485,31 @@ def compute_inventory_skew(
         total_skew_bps += local_skew_bps
 
     return {
+        "inventory_qty_base": global_inventory_qty,
         "inventory_qty": global_inventory_qty,
         "inventory_source": global_inventory_source,
         "base_currency": base_currency,
-        "position_qty": global_position_qty,
+        "position_qty_base": global_position_qty_base,
+        "position_qty_venue": global_position_qty_venue,
+        "position_qty_complete": global_position_qty_complete,
+        "position_qty": global_position_qty_base,
         "spot_qty": global_spot_qty,
-        "global_position_qty": global_position_qty,
+        "global_position_qty_base": global_position_qty_base,
+        "global_position_qty_venue": global_position_qty_venue,
+        "global_position_qty_complete": global_position_qty_complete,
+        "global_position_qty": global_position_qty_base,
         "global_spot_qty": global_spot_qty,
+        "global_inventory_qty_base": global_inventory_qty,
+        "global_inventory_qty_complete": global_position_qty_complete,
         "global_inventory_qty": global_inventory_qty,
         "global_inventory_source": global_inventory_source,
-        "local_position_qty": local_position_qty,
+        "local_position_qty_base": local_position_qty_base,
+        "local_position_qty_venue": local_position_qty_venue,
+        "local_position_qty_complete": local_position_qty_complete,
+        "local_position_qty": local_position_qty_base,
         "local_spot_qty": local_spot_qty,
+        "local_inventory_qty_base": local_inventory_qty,
+        "local_inventory_qty_complete": local_position_qty_complete,
         "local_inventory_qty": local_inventory_qty,
         "local_inventory_source": local_inventory_source,
         "des_qty_global": des_qty_global,
@@ -439,6 +579,7 @@ __all__ = [
     "account_venue_code",
     "compute_inventory_skew",
     "instrument_base_currency_code",
+    "position_exposure_summary",
     "position_inventory_total",
     "position_matches_base_currency",
     "maker_base_currency_code",

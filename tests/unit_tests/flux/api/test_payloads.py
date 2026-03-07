@@ -113,6 +113,55 @@ def test_build_balances_rows_flattens_events_and_aggregates_positions() -> None:
     assert spot_rows[0]["ts_ms"] == 1_700_000_000_000
 
 
+def test_build_balances_rows_prefers_base_qty_and_preserves_venue_qty_fields() -> None:
+    raw_snapshot = [
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "okx",
+            "kind": "position",
+            "instrument_id": "PLUME-USDT-SWAP.OKX",
+            "signed_qty": "343",
+            "quantity": "343",
+            "signed_qty_venue": "343",
+            "quantity_venue": "343",
+            "signed_qty_base": "3430",
+            "quantity_base": "3430",
+            "qty_conversion_status": "exact_multiplier",
+            "qty_conversion_source": "instrument.info:base_exposure_mode=exact_multiplier",
+        },
+        {
+            "strategy_id": "strategy_01",
+            "exchange": "okx",
+            "kind": "position",
+            "instrument_id": "PLUME-USDT-SWAP.OKX",
+            "signed_qty": "-100",
+            "quantity": "100",
+            "signed_qty_venue": "-100",
+            "quantity_venue": "100",
+            "signed_qty_base": "-1000",
+            "quantity_base": "1000",
+            "qty_conversion_status": "exact_multiplier",
+            "qty_conversion_source": "instrument.info:base_exposure_mode=exact_multiplier",
+        },
+    ]
+
+    rows = build_balances_rows(raw_snapshot=raw_snapshot, strategy_id="strategy_01")
+    position_rows = [row for row in rows if str(row.get("kind")).lower() == "position"]
+
+    assert len(position_rows) == 1
+    assert position_rows[0]["signed_qty"] == "2430"
+    assert position_rows[0]["quantity"] == "2430"
+    assert position_rows[0]["signed_qty_base"] == "2430"
+    assert position_rows[0]["quantity_base"] == "2430"
+    assert position_rows[0]["signed_qty_venue"] == "243"
+    assert position_rows[0]["quantity_venue"] == "243"
+    assert position_rows[0]["qty_conversion_status"] == "exact_multiplier"
+    assert (
+        position_rows[0]["qty_conversion_source"]
+        == "instrument.info:base_exposure_mode=exact_multiplier"
+    )
+
+
 def test_build_balances_rows_flattens_nested_account_events_balances() -> None:
     raw_snapshot = [
         {
@@ -152,6 +201,71 @@ def test_build_balances_rows_flattens_nested_account_events_balances() -> None:
     assert row["total"] == "-30139.05291039"
     assert row["ts_ms"] == 1_700_000_000_123
     assert row["row_id"] == "strategy_01:acc:0:evt:0:0"
+
+
+def test_build_balances_rows_preserves_account_id_and_formats_stable_cash_without_suffix() -> None:
+    raw_snapshot = [
+        {
+            "strategy_id": "plumeusdt_bitget_perp_makerv3",
+            "accounts": [
+                {
+                    "account_id": "BITGET-001",
+                    "events": [
+                        {
+                            "account_id": "BITGET-001",
+                            "ts_ms": 1_700_000_000_456,
+                            "balances": [
+                                {
+                                    "currency": "USDT",
+                                    "free": "0",
+                                    "locked": "0",
+                                    "total": "0",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+
+    rows = build_balances_rows(
+        raw_snapshot=raw_snapshot,
+        strategy_id="plumeusdt_bitget_perp_makerv3",
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["account_id"] == "BITGET-001"
+    assert row["account"] == "BITGET-001"
+    assert row["product_type"] == "perp"
+    assert row["market_type"] == "perp"
+    assert row["display_name_short"] == "USDT"
+    assert row["display_name_long"] == "Bitget USDT"
+
+
+def test_enrich_balances_rows_formats_instrumentless_stable_spot_rows_without_suffix() -> None:
+    rows = [
+        {
+            "strategy_id": "plumeusdt_binance_spot_makerv3",
+            "exchange": "binance_spot",
+            "account_id": "BINANCE_SPOT-MARGIN-master",
+            "asset": "USDT",
+            "free": "1285.28070703",
+            "locked": "0",
+            "total": "1285.28070703",
+            "product_type": "spot",
+            "market_type": "spot",
+            "row_id": "row-1",
+        },
+    ]
+
+    enriched = enrich_balances_rows(rows, contracts=[], market_rows={})
+
+    assert len(enriched) == 1
+    row = enriched[0]
+    assert row["display_name_short"] == "USDT"
+    assert row["display_name_long"] == "Binance USDT"
 
 
 def test_build_signals_payload_does_not_fabricate_quote_status_from_scalar_count(
@@ -294,6 +408,102 @@ def test_merge_portfolio_balances_rows_backfills_latest_cash_mark_even_when_spar
     assert cash["total"] == "6431.15191"
     assert cash["mark_raw"] == pytest.approx(0.0106)
     assert cash["mv_raw"] == pytest.approx(68.170210246)
+
+
+def test_merge_portfolio_balances_rows_merges_same_account_stable_cash_across_product_scopes() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "plumeusdt_bitget_spot_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_bitget_spot_makerv3",
+                    "exchange": "bitget",
+                    "account_id": "BITGET-001",
+                    "asset": "USDT",
+                    "free": "500",
+                    "locked": "0",
+                    "total": "500",
+                    "ts_ms": 1_700_000_000_100,
+                    "row_id": "plumeusdt_bitget_spot_makerv3:cash:0",
+                    "product_type": "spot",
+                },
+            ],
+            "plumeusdt_bitget_perp_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                    "exchange": "bitget",
+                    "account_id": "BITGET-001",
+                    "asset": "USDT",
+                    "free": "0",
+                    "locked": "0",
+                    "total": "0",
+                    "ts_ms": 1_700_000_000_000,
+                    "row_id": "plumeusdt_bitget_perp_makerv3:cash:0",
+                    "product_type": "perp",
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+    )
+
+    cash_rows = [
+        row
+        for row in merged
+        if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
+    ]
+
+    assert len(cash_rows) == 1
+    row = cash_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["total"] == "500"
+    assert row["display_name_short"] == "USDT"
+    assert row["display_name_long"] == "Bitget USDT"
+
+
+def test_merge_portfolio_balances_rows_keeps_non_zero_stable_cash_when_newer_duplicate_scope_reports_zero() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "plumeusdt_bitget_spot_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_bitget_spot_makerv3",
+                    "exchange": "bitget",
+                    "account_id": "BITGET-001",
+                    "asset": "USDT",
+                    "free": "500",
+                    "locked": "0",
+                    "total": "500",
+                    "ts_ms": 1_700_000_000_000,
+                    "row_id": "plumeusdt_bitget_spot_makerv3:cash:0",
+                    "product_type": "spot",
+                },
+            ],
+            "plumeusdt_bitget_perp_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_bitget_perp_makerv3",
+                    "exchange": "bitget",
+                    "account_id": "BITGET-001",
+                    "asset": "USDT",
+                    "free": "0",
+                    "locked": "0",
+                    "total": "0",
+                    "ts_ms": 1_700_000_000_100,
+                    "row_id": "plumeusdt_bitget_perp_makerv3:cash:0",
+                    "product_type": "perp",
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+    )
+
+    cash_rows = [
+        row
+        for row in merged
+        if row.get("exchange") == "bitget" and row.get("asset") == "USDT"
+    ]
+
+    assert len(cash_rows) == 1
+    row = cash_rows[0]
+    assert row["row_id"] == "tokenmm:cash:bitget:BITGET-001:USDT"
+    assert row["total"] == "500"
 
 
 def test_enrich_balances_rows_marks_cash_assets_and_positions_from_market_rows() -> None:
@@ -534,6 +744,46 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     assert payload["maker_v3"]["quote_snapshot"]["ref_bid"] == 99.0
     assert payload["maker_v3"]["quote_snapshot"]["ref_ask"] == 100.0
     assert payload["legs"]["venue_a:ABC/USDT"]["mid"] == 100.5
+
+
+def test_build_signals_payload_prefers_signed_qty_base_for_risk_delta(contract_catalog) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="ABC",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={"bot_on": True, "managed_orders": 1, "state": "running", "ts_ms": 1700000000000},
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0},
+        balances=[
+            {
+                "strategy_id": "strategy_01",
+                "kind": "position",
+                "instrument_id": "ABCUSDT-LINEAR.VENUE_A",
+                "signed_qty_venue": "1.25",
+                "quantity_venue": "1.25",
+                "signed_qty_base": "12.5",
+                "quantity_base": "12.5",
+                "side": "LONG",
+            },
+        ],
+        legs=legs,
+    )
+
+    assert payload["risk_delta"] == 12.5
 
 
 def test_build_signals_payload_preserves_ibkr_ref_identity_without_ref_leg_data() -> None:
@@ -799,6 +1049,72 @@ def test_build_signals_payload_backfills_local_qty_from_pricing_debug_when_state
     assert adjustments[0]["inv_skew_local"] == -4.903
 
 
+def test_build_signals_payload_prefers_explicit_base_inventory_fields_when_present(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "ts_ms": 1700000000000,
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                },
+            ],
+            "pricing_debug": {
+                "skew": {
+                    "inventory_qty_base": "3430",
+                    "inventory_qty": "343",
+                    "global_inventory_qty_base": "3430",
+                    "global_inventory_qty": "343",
+                    "local_inventory_qty_base": "-98060",
+                    "local_inventory_qty": "-9806",
+                    "global_ratio": "0.0686",
+                    "global_skew_bps": "1.372",
+                    "local_ratio": "-0.9806",
+                    "local_skew_bps": "0",
+                    "des_qty_global": "0",
+                    "max_qty_global": "50000",
+                    "max_skew_bps_global": "20",
+                    "des_qty_local": "0",
+                    "max_qty_local": "100000",
+                    "max_skew_bps_local": "0",
+                },
+            },
+        },
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs=legs,
+    )
+
+    adjustments = payload["pricing_adjustments"]
+    assert adjustments
+    assert adjustments[0]["type"] == "inventory_skew"
+    assert adjustments[0]["global_qty"] == 3430.0
+    assert adjustments[0]["curr_qty"] == 3430.0
+    assert adjustments[0]["local_qty"] == -98060.0
+
+
 def test_build_signals_payload_backfills_global_qty_from_global_inventory_qty_when_sparse(
     contract_catalog,
 ) -> None:
@@ -861,6 +1177,70 @@ def test_build_signals_payload_backfills_global_qty_from_global_inventory_qty_wh
     assert adjustments[0]["local_qty"] == -62145.1373
     assert adjustments[0]["inv_ratio_global"] == 1.0
     assert adjustments[0]["inv_skew_global"] == 25.0
+
+
+def test_build_signals_payload_prefers_canonical_base_qty_fields_when_present(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1700000000000,
+            "local_qty_base": "15.5",
+            "global_qty_base": "40.25",
+            "global_qty_base_complete": False,
+            "aggregation_mode": "partial",
+            "pricing_adjustments": [
+                {
+                    "type": "inventory_skew",
+                },
+            ],
+            "pricing_debug": {
+                "skew": {
+                    "global_inventory_qty": "999",
+                    "local_inventory_qty": "999",
+                    "des_qty_global": "0",
+                    "max_qty_global": "100000",
+                    "max_skew_bps_global": "25",
+                },
+            },
+        },
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs=legs,
+    )
+
+    adjustments = payload["pricing_adjustments"]
+    assert adjustments
+    assert adjustments[0]["type"] == "inventory_skew"
+    assert adjustments[0]["local_qty_base"] == 15.5
+    assert adjustments[0]["local_qty"] == 15.5
+    assert adjustments[0]["global_qty_base"] == 40.25
+    assert adjustments[0]["global_qty"] == 40.25
+    assert adjustments[0]["curr_qty"] == 40.25
+    assert adjustments[0]["global_qty_base_complete"] is False
+    assert adjustments[0]["global_qty_complete"] is False
+    assert adjustments[0]["aggregation_mode"] == "partial"
 
 
 def test_build_signals_payload_backfills_inventory_skew_when_state_adjustments_list_empty(
@@ -983,6 +1363,44 @@ def test_build_signals_payload_zeroes_quote_counts_when_state_is_stale_and_no_li
         "ask_blocked": 0,
     }
     assert payload["debug"]["md_health"]["state_stale"] is True
+
+
+def test_build_signals_payload_marks_blocked_reconciliation_as_not_tradeable(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 2,
+            "state": "blocked_reconciliation",
+            "ts_ms": 1700000000000,
+        },
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["tradeable"] is False
+    assert payload["blocked"] is True
+    assert payload["state"]["state"] == "blocked_reconciliation"
 
 
 def test_build_legs_payload_uses_contract_id_keys_for_same_exchange_contracts() -> None:
@@ -1376,3 +1794,94 @@ def test_extract_stream_rows_preserves_entry_metadata_for_payload_rows() -> None
             "_stream_seq": 6_963_200_000_004_096,
         },
     ]
+
+
+def test_build_signals_payload_emits_makerv4_quote_snapshot() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v4",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="makerv4",
+        strategy_family="maker_v4",
+        strategy_version="v4",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "bid": 255.7,
+                "ask": 255.9,
+                "ts_ms": 1700000000000,
+            },
+            "ibkr:AAPL.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+                "bid": 255.6,
+                "ask": 255.8,
+                "ts_ms": 1700000000001,
+            },
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="aapl_tradexyz_makerv4",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "hedge_paused",
+            "ts_ms": 1700000000000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "AAPL.NASDAQ",
+                "hedge_leg": "AAPL.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "effective_spread_bps": 6.5,
+                    "quoted_spread_bps": 8.0,
+                    "expected_maker_fee_bps": 0.25,
+                    "assumed_hedge_fee_bps": 1.0,
+                    "hedge_ready": False,
+                    "hedge_route": "SMART",
+                    "effective_account_source": "userRole.master",
+                    "hedge_disabled_reason": "stale_quote",
+                    "ibkr_quote_age_ms": 1200,
+                    "fee_snapshot_age_s": 9,
+                    "hedge_latency_ms": 45,
+                    "hedge_slippage_bps_vs_mid": 1.5,
+                },
+            },
+        },
+        fv_row={"fv": 255.8},
+        params={"qty": 1.0},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["strategy_family"] == "maker_v4"
+    quote_snapshot = payload["maker_v4"]["quote_snapshot"]
+    assert quote_snapshot["maker_leg"]["venue"] == "HYPERLIQUID"
+    assert quote_snapshot["hedge_leg"]["venue"] == "IBKR"
+    assert quote_snapshot["ref_leg"]["venue"] == "IBKR"
+    assert quote_snapshot["effective_spread_bps"] == 6.5
+    assert quote_snapshot["effective_account_source"] == "userRole.master"
+    assert quote_snapshot["assumed_hedge_fee_bps"] == 1.0
+    assert quote_snapshot["hedge_disabled_reason"] == "stale_quote"

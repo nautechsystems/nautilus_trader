@@ -11,6 +11,7 @@ from flux.runners.tokenmm import run_node
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.events import AccountState
@@ -150,6 +151,7 @@ def test_attach_portfolio_inventory_feed_wires_shared_portfolio_reader(monkeypat
         "namespace": "fluxx",
         "schema_version": "v2",
         "stale_after_ms": 2500,
+        "allow_partial_global_risk": False,
     }
 
 
@@ -303,6 +305,142 @@ def test_build_node_resolves_strategy_via_registry(monkeypatch) -> None:
     assert registry_calls == ["makerv3"]
     assert isinstance(captured["strategy"], _CapturedStrategy)
     assert isinstance(captured["strategy"].config, _CapturedStrategyConfig)
+
+
+def test_build_node_warns_when_qty_unit_missing_and_defaults_to_venue(
+    monkeypatch,
+    caplog,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["config"] = config
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategyConfig:
+        def __init__(self, **kwargs) -> None:
+            self.__dict__.update(kwargs)
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    monkeypatch.setattr(
+        run_node,
+        "get_strategy_spec",
+        lambda _name: SimpleNamespace(
+            strategy_cls=_CapturedStrategy,
+            config_cls=_CapturedStrategyConfig,
+            param_set="makerv3",
+            strategy_family="maker_v3",
+            strategy_version="v3",
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("PLUMEUSDT-PERP.BYBIT"),
+            reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    with caplog.at_level("WARNING", logger=run_node.__name__):
+        run_node.build_node(
+            {
+                "flux": {"namespace": "flux", "schema_version": "v1"},
+                "identity": {
+                    "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    "external_strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    "trader_id": "TOKENMM-LIVE-BYBIT-PERP",
+                },
+                "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+                "node": {"enable_execution": False},
+                "strategy": {"strategy_id": "plumeusdt_bybit_perp_makerv3", "order_qty": "1000"},
+            },
+            mode="paper",
+            force_enable_execution=False,
+        )
+
+    assert captured["strategy"].config.qty_unit == "venue"
+    assert "qty_unit missing" in caplog.text
+    assert "defaulting to 'venue'" in caplog.text
+
+
+def test_build_node_rejects_invalid_qty_unit(monkeypatch) -> None:
+    class _CapturedNode:
+        def __init__(self, config=None, **_kwargs) -> None:
+            self.trader = SimpleNamespace(add_strategy=lambda _strategy: None)
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("PLUMEUSDT-PERP.BYBIT"),
+            reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Unsupported qty_unit"):
+        run_node.build_node(
+            {
+                "flux": {"namespace": "flux", "schema_version": "v1"},
+                "identity": {
+                    "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    "external_strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    "trader_id": "TOKENMM-LIVE-BYBIT-PERP",
+                },
+                "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+                "node": {"enable_execution": False},
+                "strategy": {
+                    "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    "order_qty": "1000",
+                    "qty_unit": "contracts",
+                },
+            },
+            mode="paper",
+            force_enable_execution=False,
+        )
 
 
 def test_build_node_honors_explicit_message_bus_autotrim_override(monkeypatch) -> None:
@@ -949,6 +1087,136 @@ def test_resolve_reconciliation_settings_keeps_positive_live_lookback() -> None:
     assert startup_delay == 12.0
 
 
+def test_build_node_rejects_live_execution_when_startup_reconciliation_is_disabled(
+    monkeypatch,
+) -> None:
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            self.config = config
+            self.trader = SimpleNamespace(add_strategy=lambda _strategy: None)
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("PLUMEUSDT-PERP.BYBIT"),
+            reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    with pytest.raises(ValueError, match="exec_reconciliation=true"):
+        run_node.build_node(
+            {
+                "flux": {"namespace": "flux", "schema_version": "v1"},
+                "identity": {
+                    "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    "external_strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    "trader_id": "TOKENMM-LIVE-BYBIT-PERP",
+                },
+                "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+                "node": {
+                    "enable_execution": True,
+                    "exec_reconciliation": False,
+                },
+                "strategy": {"strategy_id": "plumeusdt_bybit_perp_makerv3", "order_qty": "1000"},
+            },
+            mode="live",
+            force_enable_execution=False,
+        )
+
+
+def test_build_node_rejects_live_execution_when_position_report_filtering_is_enabled(
+    monkeypatch,
+) -> None:
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            self.config = config
+            self.trader = SimpleNamespace(add_strategy=lambda _strategy: None)
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("PLUMEUSDT-PERP.BYBIT"),
+            reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    with pytest.raises(ValueError, match="filter_position_reports=false"):
+        run_node.build_node(
+            {
+                "flux": {"namespace": "flux", "schema_version": "v1"},
+                "identity": {
+                    "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    "external_strategy_id": "plumeusdt_bybit_perp_makerv3",
+                    "trader_id": "TOKENMM-LIVE-BYBIT-PERP",
+                },
+                "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+                "node": {
+                    "enable_execution": True,
+                    "filter_position_reports": True,
+                },
+                "strategy": {"strategy_id": "plumeusdt_bybit_perp_makerv3", "order_qty": "1000"},
+            },
+            mode="live",
+            force_enable_execution=False,
+        )
+
+
 def test_redis_database_config_uses_redis_section_values() -> None:
     database = run_node._redis_database_config(
         {
@@ -1168,3 +1436,37 @@ def test_strategy_startup_lock_releases_after_context_exit(tmp_path: Path) -> No
 
     with run_node._strategy_startup_lock(config, lock_dir=tmp_path):
         pass
+
+
+def test_main_exits_with_fatal_code_without_restartable_success(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "strategy.toml"
+    shared_path = tmp_path / "shared.toml"
+    config_path.write_text("[identity]\nstrategy_id='strategy_a'\n", encoding="utf-8")
+    shared_path.write_text("[redis]\nhost='127.0.0.1'\n", encoding="utf-8")
+
+    class _FatalNode:
+        def run(self) -> None:
+            raise TradingNodeFatalError("fatal startup failure")
+
+        def dispose(self) -> None:
+            disposed.append(True)
+
+    disposed: list[bool] = []
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_node.py",
+            "--config",
+            str(config_path),
+            "--shared-config",
+            str(shared_path),
+        ],
+    )
+    monkeypatch.setattr(run_node, "_load_runtime_config", lambda *args, **kwargs: {})
+    monkeypatch.setattr(run_node, "_resolve_mode", lambda *_args, **_kwargs: "live")
+    monkeypatch.setattr(run_node, "build_node", lambda *args, **kwargs: _FatalNode())
+
+    with pytest.raises(SystemExit, match="78"):
+        run_node.main()
+
+    assert disposed == [True]

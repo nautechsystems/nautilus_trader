@@ -12,6 +12,9 @@ from flux.common.portfolio_inventory import DEFAULT_PORTFOLIO_INVENTORY_STALE_AF
 from flux.common.portfolio_inventory import aggregate_components
 from flux.common.portfolio_inventory import decode_component
 from flux.common.portfolio_inventory import encode_portfolio_inventory
+from flux.common.portfolio_snapshot import build_balance_rows_by_strategy
+from flux.common.portfolio_snapshot import build_portfolio_snapshot
+from flux.common.portfolio_snapshot import encode_portfolio_snapshot
 from flux.runners.shared.bootstrap import build_redis_client
 from flux.runners.shared.bootstrap import table
 
@@ -116,6 +119,9 @@ class StrategySetPortfolioAggregator:
                 DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS,
             ),
         )
+        self._aggregation_mode = str(
+            portfolio_cfg.get("inventory_aggregation_mode", "strict"),
+        ).strip().lower() or "strict"
         self._strategy_ids = parse_strategy_ids(api_cfg, descriptor=descriptor)
         self._required_strategy_ids = set(
             parse_required_strategy_ids(
@@ -157,8 +163,43 @@ class StrategySetPortfolioAggregator:
             schema_version=self._schema_version,
         )
 
+    def _balances_snapshot_key(self, *, strategy_id: str) -> str:
+        return FluxRedisKeys(
+            strategy_id=strategy_id,
+            namespace=self._namespace,
+            schema_version=self._schema_version,
+        ).balances_snapshot()
+
+    def _snapshot_key(self) -> str:
+        return FluxRedisKeys.portfolio_snapshot(
+            portfolio_id=self._portfolio_id,
+            namespace=self._namespace,
+            schema_version=self._schema_version,
+        )
+
+    def _snapshot_channel(self) -> str:
+        return FluxRedisKeys.portfolio_snapshot_channel(
+            portfolio_id=self._portfolio_id,
+            namespace=self._namespace,
+            schema_version=self._schema_version,
+        )
+
     def recompute_once(self) -> None:
         now_ms_value = int(time.time() * 1000)
+        balances_pipeline = self._redis.pipeline(transaction=False)
+        for strategy_id in self._strategy_ids:
+            balances_pipeline.get(self._balances_snapshot_key(strategy_id=strategy_id))
+        raw_balance_snapshots = balances_pipeline.execute()
+        balance_rows_by_strategy = build_balance_rows_by_strategy(
+            raw_snapshots_by_strategy={
+                strategy_id: raw_snapshot
+                for strategy_id, raw_snapshot in zip(
+                    self._strategy_ids,
+                    raw_balance_snapshots,
+                    strict=True,
+                )
+            },
+        )
         for base_currency in self._base_assets:
             pipeline = self._redis.pipeline(transaction=False)
             for strategy_id in self._strategy_ids:
@@ -175,6 +216,7 @@ class StrategySetPortfolioAggregator:
                 required_strategy_ids=self._required_strategy_ids,
                 now_ms_value=now_ms_value,
                 stale_after_ms=self._stale_after_ms,
+                aggregation_mode=getattr(self, "_aggregation_mode", "strict"),
             )
             encoded = encode_portfolio_inventory(payload)
             key = self._aggregate_key(base_currency=base_currency)
@@ -182,6 +224,24 @@ class StrategySetPortfolioAggregator:
             self._redis.set(key, encoded)
             if previous != encoded.encode():
                 self._redis.publish(self._aggregate_channel(base_currency=base_currency), encoded)
+
+            snapshot = build_portfolio_snapshot(
+                portfolio_id=self._portfolio_id,
+                base_currency=base_currency,
+                inventory_components=components,
+                balance_rows_by_strategy=balance_rows_by_strategy,
+                required_strategy_ids=self._required_strategy_ids,
+                now_ms_value=now_ms_value,
+                stale_after_ms=self._stale_after_ms,
+                aggregation_mode=getattr(self, "_aggregation_mode", "strict"),
+                inventory_payload=payload,
+            )
+            encoded_snapshot = encode_portfolio_snapshot(snapshot)
+            snapshot_key = self._snapshot_key()
+            previous_snapshot = self._redis.get(snapshot_key)
+            self._redis.set(snapshot_key, encoded_snapshot)
+            if previous_snapshot != encoded_snapshot.encode():
+                self._redis.publish(self._snapshot_channel(), encoded_snapshot)
 
     def _shutdown(self) -> None:
         close = getattr(self._redis, "close", None)

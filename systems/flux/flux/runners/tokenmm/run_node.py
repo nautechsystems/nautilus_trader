@@ -9,6 +9,7 @@ import argparse
 from contextlib import contextmanager
 from contextlib import suppress
 from decimal import Decimal
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,7 @@ from flux.runners.shared.bootstrap import merge_shared_tables as merge_shared_ta
 from flux.runners.shared.bootstrap import resolve_flux_strategy_id as resolve_flux_strategy_id_from_bootstrap
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import strategy_startup_lock
+from flux.runners.shared.qty_units import resolve_runner_qty_unit
 from flux.runners.shared.bootstrap import table as shared_table
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies import FluxStrategySpec
@@ -40,6 +42,7 @@ from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
@@ -49,6 +52,7 @@ SAFE_MODES = frozenset({"paper", "testnet", "live"})
 DEFAULT_LIVE_MESSAGE_BUS_AUTOTRIM_MINS = 30
 TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
 _MAKERV3_SPEC = get_strategy_spec("makerv3")
+LOGGER = logging.getLogger(__name__)
 MakerV3Strategy = _MAKERV3_SPEC.strategy_cls
 MakerV3StrategyConfig = _MAKERV3_SPEC.config_cls
 
@@ -159,6 +163,7 @@ def _attach_portfolio_inventory_feed(
         namespace=namespace,
         schema_version=schema_version,
         stale_after_ms=int(portfolio_cfg.get("inventory_stale_after_ms", 3_000)),
+        allow_partial_global_risk=bool(portfolio_cfg.get("allow_partial_global_risk", False)),
     )
 
 
@@ -180,6 +185,26 @@ def _resolve_execution_filter_settings(node_cfg: dict[str, Any]) -> tuple[bool, 
         bool(node_cfg.get("filter_unclaimed_external_orders", False)),
         bool(node_cfg.get("filter_position_reports", False)),
     )
+
+
+def _enforce_live_startup_reconciliation_guardrails(
+    *,
+    mode: str,
+    node_cfg: dict[str, Any],
+    enable_execution: bool,
+) -> None:
+    if mode != "live" or not enable_execution:
+        return
+
+    if not bool(node_cfg.get("exec_reconciliation", True)):
+        raise ValueError(
+            "live TokenMM nodes with execution enabled require exec_reconciliation=true",
+        )
+
+    if bool(node_cfg.get("filter_position_reports", False)):
+        raise ValueError(
+            "live TokenMM nodes with execution enabled require filter_position_reports=false",
+        )
 
 
 def _optional_int(node_cfg: dict[str, Any], field_name: str) -> int | None:
@@ -244,6 +269,11 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     schema_version = _optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION
 
     enable_execution = bool(node_cfg.get("enable_execution", force_enable_execution))
+    _enforce_live_startup_reconciliation_guardrails(
+        mode=mode,
+        node_cfg=node_cfg,
+        enable_execution=enable_execution,
+    )
     reconciliation_lookback_mins, reconciliation_startup_delay_secs = (
         _resolve_reconciliation_settings(mode=mode, node_cfg=node_cfg)
     )
@@ -339,6 +369,11 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     order_qty = Decimal(str(strategy_cfg.get("order_qty", "1000")))
     qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1000"))
     qty = Decimal(str(qty_raw)) if qty_raw is not None else None
+    qty_unit = resolve_runner_qty_unit(
+        strategy_cfg,
+        strategy_id=external_strategy_id,
+        logger=LOGGER,
+    )
     strategy_spec = _resolve_strategy_spec()
 
     strategy = strategy_spec.strategy_cls(
@@ -351,6 +386,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             external_order_claims=[maker_instrument_id],
             manage_stop=bool(strategy_cfg.get("manage_stop", False)),
             order_qty=order_qty,
+            qty_unit=qty_unit,
             qty=qty,
             bot_on=bool(strategy_cfg.get("bot_on", False)),
             des_qty_global=float(strategy_cfg.get("des_qty_global", 0.0)),
@@ -433,10 +469,15 @@ def main() -> None:
     )
 
     with _strategy_startup_lock(config):
+        fatal_error: TradingNodeFatalError | None = None
         try:
             node.run()
+        except TradingNodeFatalError as exc:
+            fatal_error = exc
         finally:
             node.dispose()
+        if fatal_error is not None:
+            raise SystemExit(fatal_error.exit_code)
 
 
 if __name__ == "__main__":

@@ -296,19 +296,41 @@ def _build_fallback_inventory_skew_adjustments(
         adjustment["inv_skew_local"] = local_skew
 
     global_qty = _first_valid_float(
+        state.get("global_qty_base"),
+        skew.get("global_inventory_qty_base"),
+        skew.get("inventory_qty_base"),
         skew.get("global_inventory_qty"),
         skew.get("inventory_qty"),
         skew.get("global_qty"),
     )
     if global_qty is not None:
+        adjustment["global_qty_base"] = global_qty
         adjustment["global_qty"] = global_qty
         adjustment["curr_qty"] = global_qty
     local_qty = _first_valid_float(
+        state.get("local_qty_base"),
+        skew.get("local_inventory_qty_base"),
         skew.get("local_inventory_qty"),
         skew.get("local_qty"),
     )
     if local_qty is not None:
+        adjustment["local_qty_base"] = local_qty
         adjustment["local_qty"] = local_qty
+
+    global_qty_complete = safe_bool(state.get("global_qty_base_complete"))
+    if global_qty_complete is None:
+        global_qty_complete = safe_bool(skew.get("global_inventory_qty_base_complete"))
+    if global_qty_complete is None:
+        global_qty_complete = safe_bool(skew.get("global_inventory_qty_complete"))
+    if global_qty_complete is not None:
+        adjustment["global_qty_base_complete"] = global_qty_complete
+        adjustment["global_qty_complete"] = global_qty_complete
+
+    aggregation_mode = decode_text(
+        state.get("aggregation_mode") or skew.get("global_inventory_aggregation_mode"),
+    ).strip()
+    if aggregation_mode:
+        adjustment["aggregation_mode"] = aggregation_mode
 
     des_qty = _first_valid_float(
         skew.get("des_qty_global"),
@@ -416,11 +438,77 @@ def _derive_pricing_adjustments(
 
 def _derive_strategy_family(strategy_class: str) -> str:
     normalized = strategy_class.strip().lower()
+    if "maker_v4" in normalized:
+        return "maker_v4"
     if "maker_v3" in normalized:
         return "maker_v3"
     if "maker_v2" in normalized or normalized.startswith("maker"):
         return "maker_v2"
     return "taker"
+
+
+def _normalize_v4_leg_snapshot(
+    existing: Mapping[str, Any] | None,
+    leg: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    payload = dict(existing) if isinstance(existing, Mapping) else {}
+    if isinstance(leg, Mapping):
+        venue = decode_text(leg.get("exchange") or leg.get("venue")).strip().upper()
+        symbol = decode_text(leg.get("symbol")).strip()
+        instrument_id = decode_text(leg.get("instrument_id")).strip()
+        bid = _first_valid_float(leg.get("bid"))
+        ask = _first_valid_float(leg.get("ask"))
+        mid = _first_valid_float(leg.get("mid"))
+        ts_ms = coerce_ts_ms(leg.get("ts_ms"))
+        age_ms = safe_int(leg.get("age_ms"))
+        if venue:
+            payload["venue"] = venue
+        if symbol:
+            payload["symbol"] = symbol
+        if instrument_id:
+            payload["instrument_id"] = instrument_id
+        if bid is not None:
+            payload["bid"] = bid
+        if ask is not None:
+            payload["ask"] = ask
+        if mid is not None:
+            payload["mid"] = mid
+        if ts_ms is not None:
+            payload["ts_ms"] = ts_ms
+        if age_ms is not None:
+            payload["age_ms"] = age_ms
+    return payload
+
+
+def _derive_quote_snapshot_v4(
+    *,
+    state: Mapping[str, Any],
+    ts_ms: int | None,
+    maker_leg: Mapping[str, Any] | None,
+    hedge_leg: Mapping[str, Any] | None,
+    ref_leg: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    state_maker_v4 = state.get("maker_v4")
+    quote_snapshot: dict[str, Any] = {}
+    if isinstance(state_maker_v4, Mapping):
+        raw_quote_snapshot = state_maker_v4.get("quote_snapshot")
+        if isinstance(raw_quote_snapshot, Mapping):
+            quote_snapshot = dict(raw_quote_snapshot)
+
+    quote_snapshot["ts_ms"] = coerce_ts_ms(quote_snapshot.get("ts_ms") or ts_ms)
+    quote_snapshot["maker_leg"] = _normalize_v4_leg_snapshot(
+        quote_snapshot.get("maker_leg") if isinstance(quote_snapshot.get("maker_leg"), Mapping) else None,
+        maker_leg,
+    )
+    quote_snapshot["hedge_leg"] = _normalize_v4_leg_snapshot(
+        quote_snapshot.get("hedge_leg") if isinstance(quote_snapshot.get("hedge_leg"), Mapping) else None,
+        hedge_leg,
+    )
+    quote_snapshot["ref_leg"] = _normalize_v4_leg_snapshot(
+        quote_snapshot.get("ref_leg") if isinstance(quote_snapshot.get("ref_leg"), Mapping) else None,
+        ref_leg,
+    )
+    return quote_snapshot
 
 
 def _derive_quote_snapshot(
@@ -534,10 +622,13 @@ def build_signals_payload_impl(
 
     maker_leg = legs.get(role_map.get("maker_leg") or "") if role_map.get("maker_leg") else None
     ref_leg = legs.get(role_map.get("ref_leg") or "") if role_map.get("ref_leg") else None
+    hedge_leg = legs.get(role_map.get("hedge_leg") or "") if role_map.get("hedge_leg") else None
     if not isinstance(maker_leg, Mapping):
         maker_leg = None
     if not isinstance(ref_leg, Mapping):
         ref_leg = None
+    if not isinstance(hedge_leg, Mapping):
+        hedge_leg = None
 
     leg_a = (
         maker_leg if maker_leg is not None else (legs.get(legs_order[0]) if legs_order else None)
@@ -624,13 +715,24 @@ def build_signals_payload_impl(
         ts_ms=ts_ms,
         risk_delta=risk_delta,
     )
-    quote_snapshot = _derive_quote_snapshot(
-        state=state,
-        params=params,
-        bot_on=bot_on,
-        ts_ms=ts_ms,
-        maker_leg=maker_leg,
-        ref_leg=ref_leg,
+    strategy_family = metadata.strategy_family or _derive_strategy_family(metadata.strategy_class)
+    quote_snapshot = (
+        _derive_quote_snapshot_v4(
+            state=state,
+            ts_ms=ts_ms,
+            maker_leg=maker_leg,
+            hedge_leg=hedge_leg or ref_leg,
+            ref_leg=ref_leg,
+        )
+        if strategy_family == "maker_v4"
+        else _derive_quote_snapshot(
+            state=state,
+            params=params,
+            bot_on=bot_on,
+            ts_ms=ts_ms,
+            maker_leg=maker_leg,
+            ref_leg=ref_leg,
+        )
     )
 
     state_quote_status = state.get("maker_quote_status")
@@ -644,9 +746,11 @@ def build_signals_payload_impl(
         dict(state_balance_readiness) if isinstance(state_balance_readiness, Mapping) else None
     )
 
-    tradeable = bot_on
+    state_name = decode_text(state.get("state")).strip().lower()
+    state_blocked = state_name.startswith("blocked_")
+    tradeable = bot_on and not state_blocked
     near_tradeable = False
-    blocked = not bot_on
+    blocked = (not bot_on) or state_blocked
 
     md_health: dict[str, Any] = {
         "legs_count": len(legs),
@@ -676,7 +780,7 @@ def build_signals_payload_impl(
     return {
         "id": strategy_id,
         "meta": metadata.as_payload(strategy_id=strategy_id),
-        "strategy_family": metadata.strategy_family or _derive_strategy_family(metadata.strategy_class),
+        "strategy_family": strategy_family,
         "tradeable": tradeable,
         "blocked": blocked,
         "near_tradeable": near_tradeable,
@@ -697,9 +801,11 @@ def build_signals_payload_impl(
         "quote_stacks": quote_stacks,
         "pricing_adjustments": pricing_adjustments,
         "balance_readiness": balance_readiness,
-        "maker_v3": {
-            "quote_snapshot": quote_snapshot,
-        },
+        **(
+            {"maker_v4": {"quote_snapshot": quote_snapshot}}
+            if strategy_family == "maker_v4"
+            else {"maker_v3": {"quote_snapshot": quote_snapshot}}
+        ),
         "state": state,
         "legs": legs,
         "legs_order": legs_order,

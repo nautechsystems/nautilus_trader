@@ -38,11 +38,20 @@ class StrategyInventoryComponent:
     strategy_id: str
     portfolio_id: str
     base_currency: str
-    local_qty: Decimal | None
+    local_qty_base: Decimal | None
     ts_ms: int
+    local_position_qty_venue: Decimal | None = None
+    local_position_qty_base: Decimal | None = None
+    local_spot_qty: Decimal | None = None
+    qty_conversion_status: str | None = None
+    qty_conversion_source: str | None = None
     stale_after_ms: int = DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS
     maker_instrument_id: str = ""
     state: str = ""
+
+    @property
+    def local_qty(self) -> Decimal | None:
+        return self.local_qty_base
 
     @property
     def expires_at_ms(self) -> int:
@@ -53,12 +62,19 @@ class StrategyInventoryComponent:
 
 
 def encode_component(component: StrategyInventoryComponent) -> str:
+    local_qty_base = _decimal_to_text(component.local_qty_base)
     return json.dumps(
         {
             "strategy_id": component.strategy_id,
             "portfolio_id": component.portfolio_id,
             "base_currency": component.base_currency,
-            "local_qty": _decimal_to_text(component.local_qty),
+            "local_qty_base": local_qty_base,
+            "local_qty": local_qty_base,
+            "local_position_qty_venue": _decimal_to_text(component.local_position_qty_venue),
+            "local_position_qty_base": _decimal_to_text(component.local_position_qty_base),
+            "local_spot_qty": _decimal_to_text(component.local_spot_qty),
+            "qty_conversion_status": component.qty_conversion_status,
+            "qty_conversion_source": component.qty_conversion_source,
             "ts_ms": int(component.ts_ms),
             "stale_after_ms": int(component.stale_after_ms),
             "maker_instrument_id": component.maker_instrument_id,
@@ -89,8 +105,13 @@ def decode_component(raw: Any) -> StrategyInventoryComponent | None:
         strategy_id=strategy_id,
         portfolio_id=portfolio_id,
         base_currency=base_currency.upper(),
-        local_qty=_decimal_from_value(raw.get("local_qty")),
+        local_qty_base=_decimal_from_value(raw.get("local_qty_base") or raw.get("local_qty")),
         ts_ms=int(raw.get("ts_ms") or 0),
+        local_position_qty_venue=_decimal_from_value(raw.get("local_position_qty_venue")),
+        local_position_qty_base=_decimal_from_value(raw.get("local_position_qty_base")),
+        local_spot_qty=_decimal_from_value(raw.get("local_spot_qty")),
+        qty_conversion_status=_optional_text(raw.get("qty_conversion_status")),
+        qty_conversion_source=_optional_text(raw.get("qty_conversion_source")),
         stale_after_ms=int(raw.get("stale_after_ms") or DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS),
         maker_instrument_id=_optional_text(raw.get("maker_instrument_id")) or "",
         state=_optional_text(raw.get("state")) or "",
@@ -124,11 +145,18 @@ def aggregate_components(
     required_strategy_ids: set[str],
     now_ms_value: int,
     stale_after_ms: int = DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS,
+    aggregation_mode: str = "strict",
 ) -> dict[str, Any]:
     total = Decimal(0)
     fresh_any = False
+    usable_component_count = 0
     component_rows: list[dict[str, Any]] = []
     missing_required: list[str] = []
+    stale_required: list[str] = []
+    null_qty_required: list[str] = []
+    mode = str(aggregation_mode or "strict").strip().lower()
+    if mode not in {"strict", "partial"}:
+        mode = "strict"
 
     for strategy_id, component in components.items():
         if component is None:
@@ -138,7 +166,13 @@ def aggregate_components(
                 "stale": False,
                 "fresh": False,
                 "required": strategy_id in required_strategy_ids,
+                "local_qty_base": None,
                 "local_qty": None,
+                "local_position_qty_venue": None,
+                "local_position_qty_base": None,
+                "local_spot_qty": None,
+                "qty_conversion_status": None,
+                "qty_conversion_source": None,
                 "ts_ms": 0,
             }
             if strategy_id in required_strategy_ids:
@@ -148,13 +182,20 @@ def aggregate_components(
 
         fresh = component.is_fresh(now_ms_value=now_ms_value)
         stale = not fresh
-        local_qty = component.local_qty
-        if fresh and local_qty is not None:
-            total += local_qty
+        local_qty_base = component.local_qty_base
+        if fresh and local_qty_base is not None:
+            total += local_qty_base
             fresh_any = True
+            usable_component_count += 1
         elif strategy_id in required_strategy_ids:
-            missing_required.append(strategy_id)
+            if stale:
+                stale_required.append(strategy_id)
+            elif local_qty_base is None:
+                null_qty_required.append(strategy_id)
+            else:
+                missing_required.append(strategy_id)
 
+        local_qty_base_text = _decimal_to_text(local_qty_base)
         component_rows.append(
             {
                 "strategy_id": strategy_id,
@@ -162,7 +203,13 @@ def aggregate_components(
                 "stale": stale,
                 "fresh": fresh,
                 "required": strategy_id in required_strategy_ids,
-                "local_qty": _decimal_to_text(local_qty),
+                "local_qty_base": local_qty_base_text,
+                "local_qty": local_qty_base_text,
+                "local_position_qty_venue": _decimal_to_text(component.local_position_qty_venue),
+                "local_position_qty_base": _decimal_to_text(component.local_position_qty_base),
+                "local_spot_qty": _decimal_to_text(component.local_spot_qty),
+                "qty_conversion_status": component.qty_conversion_status,
+                "qty_conversion_source": component.qty_conversion_source,
                 "ts_ms": component.ts_ms,
                 "maker_instrument_id": component.maker_instrument_id,
                 "state": component.state,
@@ -171,14 +218,30 @@ def aggregate_components(
 
     component_rows.sort(key=lambda item: str(item["strategy_id"]))
     missing_required = sorted(set(missing_required))
+    stale_required = sorted(set(stale_required))
+    null_qty_required = sorted(set(null_qty_required))
+    degraded = bool(missing_required or stale_required or null_qty_required)
+    global_qty_base: str | None
+    if mode == "partial":
+        global_qty_base = _decimal_to_text(total) if fresh_any else None
+    else:
+        global_qty_base = _decimal_to_text(total) if fresh_any and not degraded else None
     payload: dict[str, Any] = {
         "portfolio_id": portfolio_id,
         "base_currency": base_currency.upper(),
-        "global_qty": _decimal_to_text(total) if fresh_any and not missing_required else None,
+        "global_qty_base": global_qty_base,
+        "global_qty": global_qty_base,
+        "aggregation_mode": mode,
+        "global_qty_base_complete": not degraded,
+        "global_qty_complete": not degraded,
         "ts_ms": int(now_ms_value),
         "stale_after_ms": int(stale_after_ms),
         "components": component_rows,
         "missing_required": missing_required,
-        "degraded": bool(missing_required),
+        "stale_required": stale_required,
+        "null_qty_required": null_qty_required,
+        "usable_component_count": usable_component_count,
+        "expected_component_count": len(component_rows),
+        "degraded": degraded,
     }
     return payload

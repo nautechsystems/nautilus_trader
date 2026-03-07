@@ -13,6 +13,8 @@ from typing import Any
 
 from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
+from flux.common.quantity_units import normalize_order_qty_unit
+from flux.common.quantity_units import venue_qty_from_base_qty
 from flux.strategies.makerv3 import inventory as inventory_mod
 from flux.strategies.makerv3 import pricing as pricing_mod
 from flux.strategies.makerv3 import publisher as publisher_mod
@@ -120,6 +122,58 @@ def initial_runtime_params(config: MakerV3StrategyConfig) -> dict[str, Any]:
             configured_value = runtime_defaults[name]
         runtime_params[name] = coerce_runtime_param_value(name, configured_value)
     return runtime_params
+
+
+def configured_qty_unit(strategy: MakerV3Strategy) -> str:
+    """
+    Return the normalized configured order quantity unit.
+    """
+    return normalize_order_qty_unit(
+        getattr(strategy.config, "qty_unit", "venue"),
+        context=strategy._external_strategy_id,
+    )
+
+
+def resolve_order_quantity(strategy: MakerV3Strategy, qty: Decimal) -> Any:
+    """
+    Convert a configured order quantity into the venue-native Nautilus quantity.
+    """
+    if qty <= 0:
+        raise ValueError("`qty` must be > 0")
+
+    instrument = strategy._maker_instrument
+    if instrument is None:
+        raise RuntimeError(
+            f"Maker instrument unavailable for qty conversion on {strategy._external_strategy_id}",
+        )
+
+    qty_unit = configured_qty_unit(strategy)
+    venue_qty = qty
+    if qty_unit == "base":
+        last_px: Decimal | None = None
+        inventory_base_exposure_last_px = getattr(strategy, "_inventory_base_exposure_last_px", None)
+        if callable(inventory_base_exposure_last_px):
+            with suppress(Exception):
+                last_px = inventory_base_exposure_last_px()
+
+        exposure = venue_qty_from_base_qty(instrument, qty, last_px=last_px)
+        if exposure.venue_qty is None:
+            raise RuntimeError(
+                "Failed to convert configured qty to venue quantity for "
+                f"{strategy._external_strategy_id}: qty={qty} qty_unit={qty_unit} "
+                f"status={exposure.qty_conversion_status} "
+                f"source={exposure.qty_conversion_source}",
+            )
+        venue_qty = exposure.venue_qty
+
+    try:
+        return instrument.make_qty(venue_qty)
+    except Exception as e:
+        raise RuntimeError(
+            "Failed to convert configured qty to instrument quantity for "
+            f"{strategy._external_strategy_id}: qty={qty} qty_unit={qty_unit} "
+            f"venue_qty={venue_qty}",
+        ) from e
 
 
 def effective_bot_on(strategy: MakerV3Strategy) -> bool:
@@ -280,11 +334,12 @@ def apply_runtime_param_updates(strategy: MakerV3Strategy, updates: dict[str, An
             raise ValueError("`qty` must be > 0")
         if strategy._maker_instrument is not None:
             try:
-                next_order_qty = strategy._maker_instrument.make_qty(qty)
+                next_order_qty = resolve_order_quantity(strategy, qty)
             except Exception as e:
                 raise RuntimeError(
-                    f"Failed to convert runtime qty to instrument quantity for "
-                    f"{strategy._external_strategy_id}: qty={qty}",
+                    "Failed to convert runtime qty for "
+                    f"{strategy._external_strategy_id}: qty={qty} "
+                    f"qty_unit={configured_qty_unit(strategy)}: {e}",
                 ) from e
 
     strategy._runtime_params.update(coerced_updates)
