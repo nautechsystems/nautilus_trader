@@ -22,6 +22,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Added Python strategy support to `LiveNode` with `add_strategy_from_config`
 - Added backtest margin models, `FXRolloverInterestModule`, `PerContractFeeModel`, and `SimulationModule` trait in Rust
+- Improved socket clients reconnect and shutdown reliability
 - Refined `AtomicTime` mode switching and datetime panics
 - Optimized network client performance and add benchmarks
 - Upgraded Rust (MSRV) to 1.94.0

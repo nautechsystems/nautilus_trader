@@ -126,12 +126,13 @@ impl WebSocketClientInner {
         // Note: We don't spawn a read task here since the reader is handled externally
         let read_task = None;
 
+        // Stream mode ignores reconnect settings, use harmless defaults
         let backoff = ExponentialBackoff::new(
-            Duration::from_millis(config.reconnect_delay_initial_ms.unwrap_or(2_000)),
-            Duration::from_millis(config.reconnect_delay_max_ms.unwrap_or(30_000)),
-            config.reconnect_backoff_factor.unwrap_or(1.5),
-            config.reconnect_jitter_ms.unwrap_or(100),
-            true, // immediate-first
+            Duration::from_secs(2),
+            Duration::from_secs(30),
+            1.5,
+            100,
+            true,
         )
         .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
 
@@ -154,8 +155,8 @@ impl WebSocketClientInner {
             None
         };
 
-        let reconnect_max_attempts = config.reconnect_max_attempts;
-        let reconnect_timeout = Duration::from_millis(config.reconnect_timeout_ms.unwrap_or(10000));
+        let reconnect_max_attempts = None; // Stream mode does not reconnect
+        let reconnect_timeout = Duration::from_secs(10);
 
         Ok(Self {
             config,
@@ -1104,6 +1105,28 @@ impl WebSocketClient {
         }
     }
 
+    /// Waits for rate limiter quota, aborting early if connection enters a terminal state.
+    async fn await_rate_limit_or_closed(&self, keys: Option<&[Ustr]>) -> Result<(), SendError> {
+        const CHECK_INTERVAL_MS: u64 = 100;
+
+        tokio::select! {
+            () = self.rate_limiter.await_keys_ready(keys) => Ok(()),
+            () = async {
+                loop {
+                    let notified = self.state_notify.notified();
+
+                    if matches!(self.connection_mode(), ConnectionMode::Disconnect | ConnectionMode::Closed) {
+                        break;
+                    }
+                    tokio::select! {
+                        () = notified => {}
+                        () = tokio::time::sleep(Duration::from_millis(CHECK_INTERVAL_MS)) => {}
+                    }
+                }
+            } => Err(SendError::Closed),
+        }
+    }
+
     /// Waits for the client to become active before sending.
     ///
     /// Uses `state_notify` for event-driven wakeup so sends resume immediately
@@ -1159,7 +1182,7 @@ impl WebSocketClient {
         log::debug!("Disconnecting");
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
-        self.state_notify.notify_one();
+        self.state_notify.notify_waiters();
 
         if tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
             while !self.is_disconnected() {
@@ -1189,6 +1212,10 @@ impl WebSocketClient {
 
     /// Sends the given text `data` to the server.
     ///
+    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does NOT
+    /// guarantee delivery: if a disconnect occurs concurrently, the writer task may drop the
+    /// message. During reconnection, messages are buffered and replayed on the new connection.
+    ///
     /// # Errors
     ///
     /// Returns a websocket error if unable to send.
@@ -1196,7 +1223,7 @@ impl WebSocketClient {
     pub async fn send_text(&self, data: String, keys: Option<&[Ustr]>) -> Result<(), SendError> {
         self.check_not_terminal()?;
 
-        self.rate_limiter.await_keys_ready(keys).await;
+        self.await_rate_limit_or_closed(keys).await?;
         self.wait_for_active().await?;
 
         log::trace!("Sending text: {data:?}");
@@ -1225,6 +1252,10 @@ impl WebSocketClient {
 
     /// Sends the given bytes `data` to the server.
     ///
+    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does NOT
+    /// guarantee delivery: if a disconnect occurs concurrently, the writer task may drop the
+    /// message. During reconnection, messages are buffered and replayed on the new connection.
+    ///
     /// # Errors
     ///
     /// Returns a websocket error if unable to send.
@@ -1232,7 +1263,7 @@ impl WebSocketClient {
     pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<&[Ustr]>) -> Result<(), SendError> {
         self.check_not_terminal()?;
 
-        self.rate_limiter.await_keys_ready(keys).await;
+        self.await_rate_limit_or_closed(keys).await?;
         self.wait_for_active().await?;
 
         log::trace!("Sending bytes: {data:?}");
@@ -1316,16 +1347,22 @@ impl WebSocketClient {
                 }
 
                 if mode.is_active() && !inner.is_alive() {
+                    let target = if inner.is_stream_mode {
+                        ConnectionMode::Closed
+                    } else {
+                        ConnectionMode::Reconnect
+                    };
+
                     if connection_mode
                         .compare_exchange(
                             ConnectionMode::Active.as_u8(),
-                            ConnectionMode::Reconnect.as_u8(),
+                            target.as_u8(),
                             Ordering::SeqCst,
                             Ordering::SeqCst,
                         )
                         .is_ok()
                     {
-                        log::debug!("Detected dead read task, transitioning to RECONNECT");
+                        log::debug!("Detected dead connection, transitioning to {target:?}");
                     }
                     mode = ConnectionMode::from_atomic(&connection_mode);
                 }
@@ -1352,8 +1389,25 @@ impl WebSocketClient {
                             .map_or_else(|| "unlimited".to_string(), |m| m.to_string())
                     );
 
-                    match inner.reconnect().await {
-                        Ok(()) => {
+                    // Race reconnect against disconnect notification
+                    let reconnect_result = tokio::select! {
+                        result = inner.reconnect() => Some(result),
+                        () = async {
+                            loop {
+                                state_notify.notified().await;
+
+                                if ConnectionMode::from_atomic(&connection_mode).is_disconnect() {
+                                    break;
+                                }
+                            }
+                        } => None,
+                    };
+
+                    match reconnect_result {
+                        None => {
+                            log::debug!("Reconnect interrupted by disconnect");
+                        }
+                        Some(Ok(())) => {
                             inner.backoff.reset();
                             inner.reconnection_attempt_count = 0;
 
@@ -1380,7 +1434,7 @@ impl WebSocketClient {
                                 );
                             }
                         }
-                        Err(e) => {
+                        Some(Err(e)) => {
                             let duration = inner.backoff.next_duration();
                             log::warn!(
                                 "Reconnect attempt {} failed: {e}",
@@ -1389,8 +1443,22 @@ impl WebSocketClient {
 
                             if !duration.is_zero() {
                                 log::warn!("Backing off for {}s...", duration.as_secs_f64());
+                                // Race backoff sleep against disconnect
+                                tokio::select! {
+                                    () = tokio::time::sleep(duration) => {}
+                                    () = async {
+                                        loop {
+                                            state_notify.notified().await;
+
+                                            if ConnectionMode::from_atomic(&connection_mode).is_disconnect() {
+                                                break;
+                                            }
+                                        }
+                                    } => {
+                                        log::debug!("Backoff interrupted by disconnect");
+                                    }
+                                }
                             }
-                            tokio::time::sleep(duration).await;
                         }
                     }
                 }
@@ -2659,6 +2727,242 @@ mod rust_tests {
         );
 
         client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_disconnect_during_backoff_exits_promptly() {
+        // Verify that disconnect interrupts backoff sleep (Finding 1).
+        // Server accepts then drops, no second listener -> reconnect fails -> enters backoff.
+        // We disconnect while backing off and assert the client shuts down quickly.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // Accept first connection, close immediately
+            if let Ok((stream, _)) = listener.accept().await {
+                let _ = accept_async(stream).await;
+            }
+            // Don't accept again so reconnect fails and enters backoff
+            sleep(Duration::from_secs(60)).await;
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(10_000), // 10s backoff to ensure we're sleeping
+            reconnect_delay_max_ms: Some(10_000),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        // Wait for client to enter reconnect
+        wait_until_async(
+            || async { client.is_reconnecting() },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        // Wait a bit more for the reconnect attempt to fail and enter backoff sleep
+        sleep(Duration::from_millis(1_500)).await;
+
+        // Disconnect while backing off
+        let start = std::time::Instant::now();
+        client.disconnect().await;
+        let elapsed = start.elapsed();
+
+        assert!(client.is_disconnected(), "Client should be disconnected");
+        // Should exit well before the 10s backoff sleep completes
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "Disconnect should interrupt backoff sleep, took {elapsed:?}"
+        );
+
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_rate_limit_cancelled_on_disconnect() {
+        // Verify that a send blocked on rate limiting returns Closed when
+        // the client disconnects (Finding 6).
+        use std::{num::NonZeroU32, sync::Arc};
+
+        use crate::ratelimiter::quota::Quota;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await {
+                let mut ws = accept_async(stream).await.unwrap();
+                // Keep alive and echo
+                while let Some(Ok(msg)) = ws.next().await {
+                    if ws.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(5_000),
+            reconnect_delay_initial_ms: Some(100),
+            reconnect_delay_max_ms: Some(500),
+            reconnect_backoff_factor: Some(1.5),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        // Very restrictive: 1 req per 60 seconds
+        let quota = Quota::with_period(Duration::from_secs(60))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(1).unwrap());
+
+        let client = Arc::new(
+            WebSocketClient::connect(
+                config,
+                Some(handler),
+                None,
+                None,
+                vec![("rate_key".to_string(), quota)],
+                None,
+            )
+            .await
+            .unwrap(),
+        );
+
+        let test_key: [Ustr; 1] = [Ustr::from("rate_key")];
+
+        // Exhaust the burst quota
+        client
+            .send_text("exhaust".to_string(), Some(test_key.as_slice()))
+            .await
+            .unwrap();
+
+        // Spawn a send that will block on rate limiter
+        let client_clone = client.clone();
+        let send_handle = task::spawn(async move {
+            client_clone
+                .send_text("blocked".to_string(), Some(&[Ustr::from("rate_key")]))
+                .await
+        });
+
+        // Let the send block on rate limit
+        sleep(Duration::from_millis(200)).await;
+
+        // Disconnect while send is blocked
+        let start = std::time::Instant::now();
+        client.disconnect().await;
+        let elapsed_disconnect = start.elapsed();
+
+        // The blocked send should return Closed
+        let result = tokio::time::timeout(Duration::from_secs(2), send_handle)
+            .await
+            .expect("Send task should complete quickly")
+            .expect("Send task should not panic");
+
+        assert!(
+            matches!(result, Err(crate::error::SendError::Closed)),
+            "Blocked send should return Closed, was: {result:?}"
+        );
+
+        // Disconnect should be fast, not waiting for the 60s rate limit
+        assert!(
+            elapsed_disconnect < Duration::from_secs(3),
+            "Disconnect should not wait for rate limiter, took {elapsed_disconnect:?}"
+        );
+
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_stream_mode_transitions_to_closed_on_dead_write_task() {
+        // Verify that stream mode transitions to CLOSED (not RECONNECT) when
+        // the write task dies (Finding 4). We force write failure by sending
+        // after the server closes the connection.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await
+                && let Ok(ws) = accept_async(stream).await
+            {
+                // Close immediately to cause write errors
+                drop(ws);
+            }
+        });
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+        };
+
+        let (_reader, client) = WebSocketClient::connect_stream(config, vec![], None, None)
+            .await
+            .unwrap();
+
+        assert!(client.is_active(), "Client should start active");
+
+        // Wait for server to close, then send to trigger write task failure
+        sleep(Duration::from_millis(100)).await;
+
+        // Keep sending until the write task detects the broken connection
+        for _ in 0..20 {
+            let _ = client.send_text("ping".to_string(), None).await;
+            sleep(Duration::from_millis(50)).await;
+
+            if !client.is_active() {
+                break;
+            }
+        }
+
+        // Wait for controller to process the state change
+        wait_until_async(|| async { !client.is_active() }, Duration::from_secs(5)).await;
+
+        // Stream mode should go to CLOSED, not RECONNECT
+        assert!(
+            client.is_closed() || client.is_disconnected(),
+            "Stream mode should transition to CLOSED, not RECONNECT. \
+             is_reconnecting={}, is_closed={}, is_disconnected={}",
+            client.is_reconnecting(),
+            client.is_closed(),
+            client.is_disconnected(),
+        );
+        assert!(
+            !client.is_reconnecting(),
+            "Stream mode should never attempt reconnection"
+        );
+
         server.abort();
     }
 

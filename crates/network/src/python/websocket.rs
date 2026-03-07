@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    sync::{Arc, atomic::Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+    },
     time::Duration,
 };
 
@@ -278,7 +281,17 @@ impl WebSocketClient {
                     msg,
                 )));
             }
-            rate_limiter.await_keys_ready(keys.as_deref()).await;
+
+            tokio::select! {
+                () = rate_limiter.await_keys_ready(keys.as_deref()) => {}
+                () = poll_until_closed(&mode) => {
+                    return Err(to_pyruntime_err(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionAborted,
+                        "Connection closed while waiting for rate limit",
+                    )));
+                }
+            }
+
             log::trace!("Sending binary: {data:?}");
 
             let msg = Message::Binary(data.into());
@@ -324,7 +337,17 @@ impl WebSocketClient {
                 );
                 return Err(to_pyruntime_err(e));
             }
-            rate_limiter.await_keys_ready(keys.as_deref()).await;
+
+            tokio::select! {
+                () = rate_limiter.await_keys_ready(keys.as_deref()) => {}
+                () = poll_until_closed(&mode) => {
+                    return Err(to_pyruntime_err(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionAborted,
+                        "Connection closed while waiting for rate limit",
+                    )));
+                }
+            }
+
             log::trace!("Sending text: {data}");
 
             let msg = Message::Text(data);
@@ -364,6 +387,19 @@ impl WebSocketClient {
                 .send(WriterCommand::Send(msg))
                 .map_err(to_pyruntime_err)
         })
+    }
+}
+
+async fn poll_until_closed(mode: &Arc<AtomicU8>) {
+    loop {
+        if matches!(
+            ConnectionMode::from_atomic(mode),
+            ConnectionMode::Disconnect | ConnectionMode::Closed
+        ) {
+            break;
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 

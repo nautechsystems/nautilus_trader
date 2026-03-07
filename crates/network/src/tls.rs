@@ -182,10 +182,28 @@ pub fn create_tls_config_from_certs_dir(
         }
     }
 
-    // If key found, first cert becomes client cert; otherwise all certs are CA roots
-    let client_cert = if client_key.is_some() && !all_certs.is_empty() {
-        let (_, cert) = all_certs.remove(0);
-        Some(cert)
+    // If key found, find the matching client cert by trial validation
+    let client_cert = if let Some(ref key) = client_key
+        && !all_certs.is_empty()
+    {
+        let mut matched = None;
+        for i in 0..all_certs.len() {
+            let test_config = rustls::ClientConfig::builder()
+                .with_root_certificates(rustls::RootCertStore::empty())
+                .with_client_auth_cert(all_certs[i].1.clone(), key.clone_key());
+
+            if test_config.is_ok() {
+                let (path, cert) = all_certs.remove(i);
+                log::debug!("Matched client certificate from {path:?}");
+                matched = Some(cert);
+                break;
+            }
+        }
+
+        if matched.is_none() {
+            log::warn!("Private key found but no matching client certificate in {certs_dir:?}");
+        }
+        matched
     } else {
         None
     };

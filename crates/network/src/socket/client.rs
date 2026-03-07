@@ -635,6 +635,7 @@ impl SocketClientInner {
         tokio::task::spawn(async move {
             let mut active_writer = writer;
             let mut reconnect_buffer: VecDeque<Bytes> = VecDeque::new();
+            let mut write_buf: Vec<u8> = Vec::new();
 
             loop {
                 if matches!(
@@ -693,19 +694,14 @@ impl SocketClientInner {
                                 }
                             }
                             WriterCommand::Send(msg) => {
-                                if let Err(e) = active_writer.write_all(&msg).await {
+                                write_buf.clear();
+                                write_buf.extend_from_slice(&msg);
+                                write_buf.extend_from_slice(&suffix);
+
+                                if let Err(e) = active_writer.write_all(&write_buf).await {
                                     log::error!("Failed to send message: {e}");
                                     log::warn!("Writer triggering reconnect");
-                                    reconnect_buffer.push_back(msg);
-                                    connection_state
-                                        .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
-                                    state_notify.notify_one();
-                                    continue;
-                                }
 
-                                if let Err(e) = active_writer.write_all(&suffix).await {
-                                    log::error!("Failed to send suffix: {e}");
-                                    log::warn!("Writer triggering reconnect");
                                     reconnect_buffer.push_back(msg);
                                     connection_state
                                         .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
@@ -918,7 +914,7 @@ impl SocketClient {
     pub async fn close(&self) {
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
-        self.state_notify.notify_one();
+        self.state_notify.notify_waiters();
 
         if tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
             while !self.is_closed() {
@@ -1003,6 +999,10 @@ impl SocketClient {
     }
 
     /// Sends a message of the given `data`.
+    ///
+    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does NOT
+    /// guarantee delivery: if a disconnect occurs concurrently, the writer task may drop the
+    /// message. During reconnection, messages are buffered and replayed on the new connection.
     ///
     /// # Errors
     ///
@@ -1108,8 +1108,26 @@ impl SocketClient {
                     }
 
                     inner.reconnect_attempt_count += 1;
-                    match inner.reconnect().await {
-                        Ok(()) => {
+
+                    // Race reconnect against disconnect notification
+                    let reconnect_result = tokio::select! {
+                        result = inner.reconnect() => Some(result),
+                        () = async {
+                            loop {
+                                state_notify.notified().await;
+
+                                if ConnectionMode::from_atomic(&connection_mode).is_disconnect() {
+                                    break;
+                                }
+                            }
+                        } => None,
+                    };
+
+                    match reconnect_result {
+                        None => {
+                            log::debug!("Reconnect interrupted by disconnect");
+                        }
+                        Some(Ok(())) => {
                             log::debug!("Reconnected successfully");
                             inner.backoff.reset();
                             inner.reconnect_attempt_count = 0;
@@ -1127,7 +1145,7 @@ impl SocketClient {
                                 );
                             }
                         }
-                        Err(e) => {
+                        Some(Err(e)) => {
                             let duration = inner.backoff.next_duration();
                             log::warn!(
                                 "Reconnect attempt {} failed: {e}",
@@ -1136,8 +1154,22 @@ impl SocketClient {
 
                             if !duration.is_zero() {
                                 log::warn!("Backing off for {}s...", duration.as_secs_f64());
+                                // Race backoff sleep against disconnect
+                                tokio::select! {
+                                    () = tokio::time::sleep(duration) => {}
+                                    () = async {
+                                        loop {
+                                            state_notify.notified().await;
+
+                                            if ConnectionMode::from_atomic(&connection_mode).is_disconnect() {
+                                                break;
+                                            }
+                                        }
+                                    } => {
+                                        log::debug!("Backoff interrupted by disconnect");
+                                    }
+                                }
                             }
-                            tokio::time::sleep(duration).await;
                         }
                     }
                 }
@@ -2078,6 +2110,70 @@ mod rust_tests {
         );
 
         client.close().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_close_during_backoff_exits_promptly() {
+        // Verify that close() interrupts backoff sleep (Finding 1).
+        // Server accepts then drops, no second listener -> reconnect fails -> enters backoff.
+        // We close while backing off and assert the client shuts down quickly.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            // Accept first connection, close immediately
+            if let Ok((mut sock, _)) = listener.accept().await {
+                drop(sock.shutdown());
+            }
+            // Don't accept again so reconnect fails and enters backoff
+            sleep(Duration::from_secs(60)).await;
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(10_000), // 10s backoff to ensure we're sleeping
+            reconnect_delay_max_ms: Some(10_000),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            connection_max_retries: None,
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            certs_dir: None,
+        };
+
+        let client = SocketClient::connect(config, None, None, None)
+            .await
+            .unwrap();
+
+        // Wait for client to enter reconnect
+        wait_until_async(
+            || async { client.is_reconnecting() },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        // Wait for the reconnect attempt to fail and enter backoff sleep
+        sleep(Duration::from_millis(1_500)).await;
+
+        // Close while backing off
+        let start = std::time::Instant::now();
+        client.close().await;
+        let elapsed = start.elapsed();
+
+        assert!(client.is_closed(), "Client should be closed");
+        // Should exit well before the 10s backoff sleep completes
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "Close should interrupt backoff sleep, took {elapsed:?}"
+        );
+
         server.abort();
     }
 
