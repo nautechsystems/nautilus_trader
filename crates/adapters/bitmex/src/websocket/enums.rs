@@ -19,6 +19,17 @@ use nautilus_model::enums::{AggressorSide, BookAction, OrderSide};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
+/// Order book subscription channel.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BitmexBookChannel {
+    /// Full L2 order book.
+    OrderBookL2,
+    /// Top 25 levels of the L2 order book.
+    OrderBookL2_25,
+    /// Top 10 aggregated depth snapshots.
+    OrderBook10,
+}
+
 /// Side of an order or trade.
 #[derive(
     Copy,

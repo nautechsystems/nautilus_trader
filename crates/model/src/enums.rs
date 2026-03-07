@@ -1203,6 +1203,38 @@ pub enum OrderStatus {
 }
 
 impl OrderStatus {
+    /// Returns whether the order status represents an open/working order.
+    #[must_use]
+    pub const fn is_open(self) -> bool {
+        matches!(
+            self,
+            Self::Submitted
+                | Self::Accepted
+                | Self::Triggered
+                | Self::PendingUpdate
+                | Self::PendingCancel
+                | Self::PartiallyFilled
+        )
+    }
+
+    /// Returns whether the order status represents a terminal (closed) state.
+    #[must_use]
+    pub const fn is_closed(self) -> bool {
+        matches!(
+            self,
+            Self::Denied | Self::Rejected | Self::Canceled | Self::Expired | Self::Filled
+        )
+    }
+
+    /// Returns whether the order can be cancelled from this status.
+    #[must_use]
+    pub const fn is_cancellable(self) -> bool {
+        matches!(
+            self,
+            Self::Accepted | Self::Triggered | Self::PendingUpdate | Self::PartiallyFilled
+        )
+    }
+
     /// Returns a cached `AHashSet` of order statuses safe for cancellation queries.
     ///
     /// These are statuses where an order is working on the venue but not already
@@ -1228,20 +1260,6 @@ impl OrderStatus {
                 Self::PartiallyFilled,
             ])
         })
-    }
-
-    /// Returns whether the order status represents an open/working order.
-    #[must_use]
-    pub const fn is_open(self) -> bool {
-        matches!(
-            self,
-            Self::Submitted
-                | Self::Accepted
-                | Self::Triggered
-                | Self::PendingUpdate
-                | Self::PendingCancel
-                | Self::PartiallyFilled
-        )
     }
 }
 

@@ -94,9 +94,9 @@ pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("BITMEX_HTTP_URL", crate::common::consts::BITMEX_HTTP_URL)?;
     m.add("BITMEX_WS_URL", crate::common::consts::BITMEX_WS_URL)?;
     m.add_class::<crate::http::client::BitmexHttpClient>()?;
-    m.add_class::<crate::websocket::BitmexWebSocketClient>()?;
     m.add_class::<crate::broadcast::canceller::CancelBroadcaster>()?;
     m.add_class::<crate::broadcast::submitter::SubmitBroadcaster>()?;
+    m.add_class::<websocket::PyBitmexWebSocketClient>()?;
     m.add_class::<BitmexDataClientConfig>()?;
     m.add_class::<BitmexExecClientConfig>()?;
     m.add_class::<BitmexExecFactoryConfig>()?;

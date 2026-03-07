@@ -17,7 +17,6 @@
 
 use std::{
     future::Future,
-    str::FromStr,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -25,6 +24,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
@@ -41,13 +41,13 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params, UnixNanos,
+    UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide},
+    enums::{AccountType, OmsType, OrderSide, OrderType},
     events::OrderEventAny,
     identifiers::{AccountId, ClientId, ClientOrderId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -57,16 +57,31 @@ use nautilus_model::{
 };
 use rust_decimal::prelude::ToPrimitive;
 use tokio::task::JoinHandle;
+use ustr::Ustr;
 
 use crate::{
     broadcast::{
         canceller::{CancelBroadcaster, CancelBroadcasterConfig},
         submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
     },
-    common::enums::BitmexPegPriceType,
+    common::{
+        enums::{BitmexExecType, BitmexOrderType, BitmexPegPriceType},
+        parse::{parse_peg_offset_value, parse_peg_price_type},
+    },
     config::BitmexExecClientConfig,
-    http::client::BitmexHttpClient,
-    websocket::{client::BitmexWebSocketClient, messages::NautilusWsMessage},
+    http::{
+        client::BitmexHttpClient,
+        parse::{InstrumentParseResult, parse_instrument_any},
+    },
+    websocket::{
+        client::BitmexWebSocketClient,
+        enums::BitmexAction,
+        messages::{BitmexTableMessage, BitmexWsMessage, OrderData},
+        parse::{
+            parse_execution_msg, parse_order_msg, parse_order_update_msg, parse_position_msg,
+            parse_wallet_msg,
+        },
+    },
 };
 
 #[derive(Debug)]
@@ -321,8 +336,6 @@ impl BitmexExecutionClient {
             self._canceller.cache_instrument(instrument.clone());
         }
 
-        self.ws_client.cache_instruments(instruments);
-
         self.core.set_instruments_initialized();
         Ok(())
     }
@@ -373,11 +386,40 @@ impl BitmexExecutionClient {
 
         let stream = self.ws_client.stream();
         let emitter = self.emitter.clone();
+        let account_id = self.core.account_id;
+        let clock = self.clock;
+
+        // Build symbol-keyed instrument map, preferring core cache then HTTP client cache
+        let mut instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = self
+            .core
+            .cache()
+            .instruments(&self.core.venue, None)
+            .into_iter()
+            .map(|inst| (inst.symbol().inner(), inst.clone()))
+            .collect();
+
+        if instruments_by_symbol.is_empty() {
+            for entry in self.http_client.instruments_cache.iter() {
+                instruments_by_symbol.insert(*entry.key(), entry.value().clone());
+            }
+        }
 
         let handle = get_runtime().spawn(async move {
             pin_mut!(stream);
+            let mut order_type_cache: AHashMap<ClientOrderId, OrderType> = AHashMap::new();
+            let mut order_symbol_cache: AHashMap<ClientOrderId, Ustr> = AHashMap::new();
+            let mut insts_by_symbol = instruments_by_symbol;
+
             while let Some(message) = stream.next().await {
-                dispatch_ws_message(message, &emitter);
+                dispatch_ws_message(
+                    clock.get_time_ns(),
+                    message,
+                    &emitter,
+                    &mut insts_by_symbol,
+                    &mut order_type_cache,
+                    &mut order_symbol_cache,
+                    account_id,
+                );
             }
         });
 
@@ -1036,69 +1078,276 @@ impl ExecutionClient for BitmexExecutionClient {
     }
 }
 
-/// Dispatches a WebSocket message using the event emitter.
-fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitter) {
+/// Dispatches a venue WebSocket message by parsing it and routing to the event emitter.
+#[allow(clippy::too_many_arguments)]
+fn dispatch_ws_message(
+    ts_init: UnixNanos,
+    message: BitmexWsMessage,
+    emitter: &ExecutionEventEmitter,
+    instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
+    order_type_cache: &mut AHashMap<ClientOrderId, OrderType>,
+    order_symbol_cache: &mut AHashMap<ClientOrderId, Ustr>,
+    account_id: AccountId,
+) {
     match message {
-        NautilusWsMessage::OrderStatusReports(reports) => {
-            for report in reports {
-                emitter.send_order_status_report(report);
+        BitmexWsMessage::Table(table_msg) => {
+            match table_msg {
+                BitmexTableMessage::Order { data, .. } => {
+                    handle_order_messages(
+                        data,
+                        emitter,
+                        instruments_by_symbol,
+                        order_type_cache,
+                        order_symbol_cache,
+                        account_id,
+                        ts_init,
+                    );
+                }
+                BitmexTableMessage::Execution { data, .. } => {
+                    handle_execution_messages(
+                        data,
+                        emitter,
+                        instruments_by_symbol,
+                        order_symbol_cache,
+                        ts_init,
+                    );
+                }
+                BitmexTableMessage::Position { data, .. } => {
+                    for pos_msg in data {
+                        let Some(instrument) = instruments_by_symbol.get(&pos_msg.symbol) else {
+                            log::error!(
+                                "Instrument cache miss: position dropped for symbol={}, account={}",
+                                pos_msg.symbol,
+                                pos_msg.account,
+                            );
+                            continue;
+                        };
+                        let report = parse_position_msg(pos_msg, instrument, ts_init);
+                        emitter.send_position_report(report);
+                    }
+                }
+                BitmexTableMessage::Wallet { data, .. } => {
+                    for wallet_msg in data {
+                        let state = parse_wallet_msg(wallet_msg, ts_init);
+                        emitter.send_account_state(state);
+                    }
+                }
+                BitmexTableMessage::Margin { .. } => {
+                    // Skip margin messages - BitMEX uses account-level cross-margin
+                    // which doesn't map well to Nautilus's per-instrument margin model
+                }
+                BitmexTableMessage::Instrument { action, data } => {
+                    if matches!(action, BitmexAction::Partial | BitmexAction::Insert) {
+                        for msg in data {
+                            match msg.try_into() {
+                                Ok(http_inst) => match parse_instrument_any(&http_inst, ts_init) {
+                                    InstrumentParseResult::Ok(boxed) => {
+                                        let inst = *boxed;
+                                        let symbol = inst.symbol().inner();
+                                        instruments_by_symbol.insert(symbol, inst);
+                                    }
+                                    InstrumentParseResult::Unsupported { .. }
+                                    | InstrumentParseResult::Inactive { .. } => {}
+                                    InstrumentParseResult::Failed { symbol, error, .. } => {
+                                        log::warn!("Failed to parse instrument {symbol}: {error}");
+                                    }
+                                },
+                                Err(e) => {
+                                    log::debug!(
+                                        "Skipping instrument (missing required fields): {e}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                // Ignore data-only tables on execution client
+                BitmexTableMessage::OrderBookL2 { .. }
+                | BitmexTableMessage::OrderBookL2_25 { .. }
+                | BitmexTableMessage::OrderBook10 { .. }
+                | BitmexTableMessage::Quote { .. }
+                | BitmexTableMessage::Trade { .. }
+                | BitmexTableMessage::TradeBin1m { .. }
+                | BitmexTableMessage::TradeBin5m { .. }
+                | BitmexTableMessage::TradeBin1h { .. }
+                | BitmexTableMessage::TradeBin1d { .. }
+                | BitmexTableMessage::Funding { .. } => {
+                    log::debug!("Ignoring BitMEX data message on execution stream");
+                }
+                _ => {
+                    log::warn!("Unhandled table message type on execution stream");
+                }
             }
         }
-        NautilusWsMessage::FillReports(reports) => {
-            for report in reports {
-                emitter.send_fill_report(report);
-            }
-        }
-        NautilusWsMessage::PositionStatusReports(reports) => {
-            for report in reports {
-                emitter.send_position_report(report);
-            }
-        }
-        NautilusWsMessage::AccountStates(states) => {
-            for state in states {
-                emitter.send_account_state(state);
-            }
-        }
-        NautilusWsMessage::OrderUpdated(event) => {
-            emitter.send_order_event(OrderEventAny::Updated(*event));
-        }
-        NautilusWsMessage::OrderUpdates(events) => {
-            for event in events {
-                emitter.send_order_event(OrderEventAny::Updated(event));
-            }
-        }
-        NautilusWsMessage::Data(_)
-        | NautilusWsMessage::Instruments(_)
-        | NautilusWsMessage::InstrumentStatus(_)
-        | NautilusWsMessage::FundingRateUpdates(_) => {
-            log::debug!("Ignoring BitMEX data message on execution stream");
-        }
-        NautilusWsMessage::Reconnected => {
+        BitmexWsMessage::Reconnected => {
+            order_type_cache.clear();
+            order_symbol_cache.clear();
             log::info!("BitMEX execution websocket reconnected");
         }
-        NautilusWsMessage::Authenticated => {
+        BitmexWsMessage::Authenticated => {
             log::debug!("BitMEX execution websocket authenticated");
         }
     }
 }
 
-fn parse_peg_price_type(params: Option<&Params>) -> anyhow::Result<Option<BitmexPegPriceType>> {
-    let value = params.and_then(|p| p.get_str("peg_price_type"));
-    match value {
-        Some(s) => BitmexPegPriceType::from_str(s)
-            .map(Some)
-            .map_err(|_| anyhow::anyhow!("Invalid peg_price_type: {s}")),
-        None => Ok(None),
+fn handle_order_messages(
+    data: Vec<OrderData>,
+    emitter: &ExecutionEventEmitter,
+    instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
+    order_type_cache: &mut AHashMap<ClientOrderId, OrderType>,
+    order_symbol_cache: &mut AHashMap<ClientOrderId, Ustr>,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) {
+    for order_data in data {
+        match order_data {
+            OrderData::Full(order_msg) => {
+                let Some(instrument) = instruments_by_symbol.get(&order_msg.symbol) else {
+                    log::error!(
+                        "Instrument cache miss: order dropped for symbol={}, order_id={}",
+                        order_msg.symbol,
+                        order_msg.order_id,
+                    );
+                    continue;
+                };
+
+                match parse_order_msg(&order_msg, instrument, order_type_cache, ts_init) {
+                    Ok(report) => {
+                        if let Some(client_order_id) = &order_msg.cl_ord_id {
+                            let client_order_id = ClientOrderId::new(client_order_id);
+
+                            if let Some(ord_type) = &order_msg.ord_type {
+                                let order_type: OrderType = if *ord_type == BitmexOrderType::Pegged
+                                    && order_msg.peg_price_type
+                                        == Some(BitmexPegPriceType::TrailingStopPeg)
+                                {
+                                    if order_msg.price.is_some() {
+                                        OrderType::TrailingStopLimit
+                                    } else {
+                                        OrderType::TrailingStopMarket
+                                    }
+                                } else {
+                                    (*ord_type).into()
+                                };
+                                order_type_cache.insert(client_order_id, order_type);
+                            }
+
+                            order_symbol_cache.insert(client_order_id, order_msg.symbol);
+                        }
+
+                        if report.order_status.is_closed()
+                            && let Some(client_id) = report.client_order_id
+                        {
+                            order_type_cache.remove(&client_id);
+                            order_symbol_cache.remove(&client_id);
+                        }
+
+                        emitter.send_order_status_report(report);
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Failed to parse full order message: \
+                            error={e}, symbol={}, order_id={}, time_in_force={:?}",
+                            order_msg.symbol,
+                            order_msg.order_id,
+                            order_msg.time_in_force,
+                        );
+                    }
+                }
+            }
+            OrderData::Update(msg) => {
+                let Some(instrument) = instruments_by_symbol.get(&msg.symbol) else {
+                    log::error!(
+                        "Instrument cache miss: order update dropped for symbol={}, order_id={}",
+                        msg.symbol,
+                        msg.order_id,
+                    );
+                    continue;
+                };
+
+                // Populate cache for execution message routing
+                if let Some(cl_ord_id) = &msg.cl_ord_id {
+                    let client_order_id = ClientOrderId::new(cl_ord_id);
+                    order_symbol_cache.insert(client_order_id, msg.symbol);
+                }
+
+                if let Some(event) = parse_order_update_msg(&msg, instrument, account_id, ts_init) {
+                    emitter.send_order_event(OrderEventAny::Updated(event));
+                } else {
+                    log::warn!(
+                        "Skipped order update (insufficient data): order_id={}, price={:?}",
+                        msg.order_id,
+                        msg.price,
+                    );
+                }
+            }
+        }
     }
 }
 
-fn parse_peg_offset_value(params: Option<&Params>) -> anyhow::Result<Option<f64>> {
-    let value = params.and_then(|p| p.get_str("peg_offset_value"));
-    match value {
-        Some(s) => s
-            .parse::<f64>()
-            .map(Some)
-            .map_err(|_| anyhow::anyhow!("Invalid peg_offset_value: {s}")),
-        None => Ok(None),
+fn handle_execution_messages(
+    data: Vec<crate::websocket::messages::BitmexExecutionMsg>,
+    emitter: &ExecutionEventEmitter,
+    instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
+    order_symbol_cache: &AHashMap<ClientOrderId, Ustr>,
+    ts_init: UnixNanos,
+) {
+    for exec_msg in data {
+        let symbol_opt = if let Some(sym) = &exec_msg.symbol {
+            Some(*sym)
+        } else if let Some(cl_ord_id) = &exec_msg.cl_ord_id {
+            let client_order_id = ClientOrderId::new(cl_ord_id);
+            order_symbol_cache.get(&client_order_id).copied()
+        } else {
+            None
+        };
+
+        let Some(symbol) = symbol_opt else {
+            if let Some(cl_ord_id) = &exec_msg.cl_ord_id {
+                if exec_msg.exec_type == Some(BitmexExecType::Trade) {
+                    log::warn!(
+                        "Execution missing symbol and not in cache: \
+                        cl_ord_id={cl_ord_id}, exec_id={:?}",
+                        exec_msg.exec_id,
+                    );
+                } else {
+                    log::debug!(
+                        "Execution missing symbol and not in cache: \
+                        cl_ord_id={cl_ord_id}, exec_type={:?}",
+                        exec_msg.exec_type,
+                    );
+                }
+            } else if exec_msg.exec_type == Some(BitmexExecType::CancelReject) {
+                log::debug!(
+                    "CancelReject missing symbol/clOrdID (expected with redundant cancels): \
+                    exec_id={:?}, order_id={:?}",
+                    exec_msg.exec_id,
+                    exec_msg.order_id,
+                );
+            } else {
+                log::warn!(
+                    "Execution missing both symbol and clOrdID: \
+                    exec_id={:?}, order_id={:?}, exec_type={:?}",
+                    exec_msg.exec_id,
+                    exec_msg.order_id,
+                    exec_msg.exec_type,
+                );
+            }
+            continue;
+        };
+
+        let Some(instrument) = instruments_by_symbol.get(&symbol) else {
+            log::error!(
+                "Instrument cache miss: execution dropped for symbol={}, exec_id={:?}, exec_type={:?}",
+                symbol,
+                exec_msg.exec_id,
+                exec_msg.exec_type,
+            );
+            continue;
+        };
+
+        if let Some(fill) = parse_execution_msg(exec_msg, instrument, ts_init) {
+            emitter.send_fill_report(fill);
+        }
     }
 }
