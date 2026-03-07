@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use nautilus_model::{
     data::{
         QuoteTick,
@@ -37,9 +37,15 @@ use pyo3::prelude::*;
 
 use crate::option_chains::{AtmTracker, OptionChainAggregator};
 
-// ---------------------------------------------------------------------------
-// PyOptionChainManager
-// ---------------------------------------------------------------------------
+fn parse_option_kind(value: u8) -> PyResult<OptionKind> {
+    match value {
+        0 => Ok(OptionKind::Call),
+        1 => Ok(OptionKind::Put),
+        _ => Err(to_pyvalue_err(format!(
+            "invalid `OptionKind` value, expected 0 (Call) or 1 (Put), received {value}"
+        ))),
+    }
+}
 
 /// Python-facing option chain manager that wraps [`OptionChainAggregator`] and
 /// [`AtmTracker`].
@@ -74,18 +80,13 @@ impl PyOptionChainManager {
         instruments: HashMap<InstrumentId, (Price, u8)>,
         snapshot_interval_ms: Option<u64>,
         initial_atm_price: Option<Price>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let rust_instruments: HashMap<InstrumentId, (Price, OptionKind)> = instruments
             .into_iter()
             .map(|(id, (strike, kind_u8))| {
-                let kind = if kind_u8 == 0 {
-                    OptionKind::Call
-                } else {
-                    OptionKind::Put
-                };
-                (id, (strike, kind))
+                parse_option_kind(kind_u8).map(|kind| (id, (strike, kind)))
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
         let mut tracker = AtmTracker::new();
 
@@ -106,19 +107,20 @@ impl PyOptionChainManager {
         let bootstrapped = !active_ids.is_empty() || all_ids.is_empty();
         let raw_mode = snapshot_interval_ms.is_none();
 
-        Self {
+        Ok(Self {
             aggregator,
             series_id,
             raw_mode,
             bootstrapped,
-        }
+        })
     }
 
     /// Feeds a quote tick to the aggregator.
     ///
     /// Returns `True` if the manager just bootstrapped (first ATM price arrived
     /// and the active instrument set was computed for the first time).
-    fn handle_quote(&mut self, quote: &Bound<'_, PyAny>) -> PyResult<bool> {
+    #[pyo3(name = "handle_quote")]
+    fn py_handle_quote(&mut self, quote: &Bound<'_, PyAny>) -> PyResult<bool> {
         let tick = quote
             .extract::<QuoteTick>()
             .or_else(|_| QuoteTick::from_pyobject(quote))?;
@@ -136,7 +138,8 @@ impl PyOptionChainManager {
     ///
     /// Returns `True` if the manager just bootstrapped (ATM price derived from
     /// the greeks' `underlying_price`).
-    fn handle_greeks(&mut self, greeks_obj: &Bound<'_, PyAny>) -> PyResult<bool> {
+    #[pyo3(name = "handle_greeks")]
+    fn py_handle_greeks(&mut self, greeks_obj: &Bound<'_, PyAny>) -> PyResult<bool> {
         let greeks = greeks_obj
             .extract::<OptionGreeks>()
             .or_else(|_| OptionGreeks::from_pyobject(greeks_obj))?;
@@ -160,7 +163,8 @@ impl PyOptionChainManager {
     /// Creates a point-in-time snapshot from accumulated buffers.
     ///
     /// Returns `None` if no data has been accumulated yet (both buffers empty).
-    fn snapshot(&self, ts_ns: u64) -> Option<OptionChainSlice> {
+    #[pyo3(name = "snapshot")]
+    fn py_snapshot(&self, ts_ns: u64) -> Option<OptionChainSlice> {
         if self.aggregator.is_buffer_empty() {
             return None;
         }
@@ -172,7 +176,8 @@ impl PyOptionChainManager {
     /// Returns `None` when no rebalancing is needed.
     /// Returns `(added_ids, removed_ids)` when the active set should change.
     /// The caller is responsible for subscribing/unsubscribing instruments.
-    fn check_rebalance(&mut self, ts_ns: u64) -> Option<(Vec<InstrumentId>, Vec<InstrumentId>)> {
+    #[pyo3(name = "check_rebalance")]
+    fn py_check_rebalance(&mut self, ts_ns: u64) -> Option<(Vec<InstrumentId>, Vec<InstrumentId>)> {
         let now = UnixNanos::from(ts_ns);
         let action = self.aggregator.check_rebalance(now)?;
         let add = action.add.clone();
@@ -182,53 +187,63 @@ impl PyOptionChainManager {
     }
 
     /// Returns the currently active instrument IDs (the subset being tracked).
-    fn active_instrument_ids(&self) -> Vec<InstrumentId> {
+    #[pyo3(name = "active_instrument_ids")]
+    fn py_active_instrument_ids(&self) -> Vec<InstrumentId> {
         self.aggregator.instrument_ids()
     }
 
     /// Returns all instrument IDs in the full catalog.
-    fn all_instrument_ids(&self) -> Vec<InstrumentId> {
+    #[pyo3(name = "all_instrument_ids")]
+    fn py_all_instrument_ids(&self) -> Vec<InstrumentId> {
         self.aggregator.all_instrument_ids()
     }
 
     /// Adds a newly discovered instrument to the series.
     ///
     /// Returns `True` if the instrument was newly inserted.
-    fn add_instrument(&mut self, instrument_id: InstrumentId, strike: Price, kind: u8) -> bool {
-        let option_kind = if kind == 0 {
-            OptionKind::Call
-        } else {
-            OptionKind::Put
-        };
-        self.aggregator
-            .add_instrument(instrument_id, strike, option_kind)
+    #[pyo3(name = "add_instrument")]
+    fn py_add_instrument(
+        &mut self,
+        instrument_id: InstrumentId,
+        strike: Price,
+        kind: u8,
+    ) -> PyResult<bool> {
+        let option_kind = parse_option_kind(kind)?;
+        Ok(self
+            .aggregator
+            .add_instrument(instrument_id, strike, option_kind))
     }
 
     /// Removes an instrument from the catalog.
     ///
     /// Returns `True` if the catalog is now empty.
-    fn remove_instrument(&mut self, instrument_id: InstrumentId) -> bool {
+    #[pyo3(name = "remove_instrument")]
+    fn py_remove_instrument(&mut self, instrument_id: InstrumentId) -> bool {
         let _ = self.aggregator.remove_instrument(&instrument_id);
         self.aggregator.is_catalog_empty()
     }
 
     #[getter]
-    fn series_id(&self) -> OptionSeriesId {
+    #[pyo3(name = "series_id")]
+    fn py_series_id(&self) -> OptionSeriesId {
         self.series_id
     }
 
     #[getter]
-    fn bootstrapped(&self) -> bool {
+    #[pyo3(name = "bootstrapped")]
+    fn py_bootstrapped(&self) -> bool {
         self.bootstrapped
     }
 
     #[getter]
-    fn raw_mode(&self) -> bool {
+    #[pyo3(name = "raw_mode")]
+    fn py_raw_mode(&self) -> bool {
         self.raw_mode
     }
 
     #[getter]
-    fn atm_price(&self) -> Option<Price> {
+    #[pyo3(name = "atm_price")]
+    fn py_atm_price(&self) -> Option<Price> {
         self.aggregator.atm_tracker().atm_price()
     }
 

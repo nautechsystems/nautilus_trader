@@ -85,7 +85,8 @@ impl OptionSeriesId {
     }
 
     #[getter]
-    fn value(&self) -> String {
+    #[pyo3(name = "value")]
+    fn py_value(&self) -> String {
         self.to_string()
     }
 

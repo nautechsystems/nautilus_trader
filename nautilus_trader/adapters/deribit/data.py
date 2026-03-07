@@ -44,6 +44,7 @@ from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeInstrumentStatus
 from nautilus_trader.data.messages import SubscribeMarkPrices
+from nautilus_trader.data.messages import SubscribeOptionGreeks
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
@@ -54,6 +55,7 @@ from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages import UnsubscribeMarkPrices
+from nautilus_trader.data.messages import UnsubscribeOptionGreeks
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -336,14 +338,14 @@ class DeribitDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_instrument_status(pyo3_instrument_id)
 
-    async def _subscribe_option_greeks(self, command) -> None:
+    async def _subscribe_option_greeks(self, command: SubscribeOptionGreeks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        interval = self._get_interval(getattr(command, "params", None))
+        interval = self._get_interval(command.params)
         await self._ws_client.subscribe_option_greeks(pyo3_instrument_id, interval)  # type: ignore[attr-defined]
 
-    async def _unsubscribe_option_greeks(self, command) -> None:
+    async def _unsubscribe_option_greeks(self, command: UnsubscribeOptionGreeks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        interval = self._get_interval(getattr(command, "params", None))
+        interval = self._get_interval(command.params)
         await self._ws_client.unsubscribe_option_greeks(pyo3_instrument_id, interval)  # type: ignore[attr-defined]
 
     async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:

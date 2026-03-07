@@ -446,6 +446,20 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Registers an instrument for option greeks emission without subscribing
+    /// the ticker channel.
+    #[pyo3(name = "add_option_greeks_sub")]
+    fn py_add_option_greeks_sub(&self, instrument_id: InstrumentId) {
+        self.add_option_greeks_sub(instrument_id);
+    }
+
+    /// Removes an instrument from the option greeks subscription set without
+    /// touching the underlying ticker channel.
+    #[pyo3(name = "remove_option_greeks_sub")]
+    fn py_remove_option_greeks_sub(&self, instrument_id: InstrumentId) {
+        self.remove_option_greeks_sub(&instrument_id);
+    }
+
     #[pyo3(name = "unsubscribe_option_greeks")]
     fn py_unsubscribe_option_greeks<'py>(
         &self,
