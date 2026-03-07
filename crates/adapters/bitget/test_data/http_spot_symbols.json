@@ -1,0 +1,25 @@
+{
+  "code": "00000",
+  "msg": "success",
+  "requestTime": 1700000000000,
+  "data": [
+    {
+      "symbol": "BTCUSDT",
+      "baseCoin": "BTC",
+      "quoteCoin": "USDT",
+      "pricePrecision": "2",
+      "quantityPrecision": "5",
+      "minTradeAmount": "0.00001",
+      "minTradeUSDT": "5"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "baseCoin": "ETH",
+      "quoteCoin": "USDT",
+      "pricePrecision": "2",
+      "quantityPrecision": "4",
+      "minTradeAmount": "0.0001",
+      "minTradeUSDT": "5"
+    }
+  ]
+}

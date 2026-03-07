@@ -1,0 +1,23 @@
+{
+  "action": "update",
+  "arg": {
+    "instType": "SPOT",
+    "channel": "ticker",
+    "instId": "BTCUSDT"
+  },
+  "data": [
+    {
+      "instId": "BTCUSDT",
+      "last": "100.75",
+      "bidPr": "100.20",
+      "askPr": "100.80",
+      "bidSz": "2.00",
+      "askSz": "3.00",
+      "markPr": "100.60",
+      "indexPx": "100.55",
+      "fundingRate": "0.000123",
+      "nextFundingTime": "1700000005000",
+      "ts": "1700000004000"
+    }
+  ]
+}
