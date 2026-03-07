@@ -578,6 +578,7 @@ def refresh_quotes(  # noqa: C901
     )
     if strategy._has_pending_managed_cancels():
         strategy._last_requote_ns = now_ns
+        strategy._publish_state(getattr(strategy, "_last_state_name", None) or "running")
         strategy._publish_quote_cycle_event(
             now_ns=now_ns,
             quote_cycle_event=QUOTE_CYCLE_EVENT_SKIPPED,
@@ -628,11 +629,7 @@ def refresh_quotes(  # noqa: C901
             cancels=cancels,
             places=places,
         )
-        strategy._publish_state(
-            "quotes_replaced",
-            managed_orders_count=len(active_buys) + len(active_sells),
-            managed_orders=[*active_buys, *active_sells],
-        )
+        strategy._publish_state("quotes_replaced")
 
 
 __all__ = [

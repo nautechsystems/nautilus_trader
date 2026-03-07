@@ -61,7 +61,7 @@ adapter = "binance"
 instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
-account_type = "SPOT"
+account_type = "MARGIN"
 
 [strategy]
 strategy_id = "tokenmm_api"

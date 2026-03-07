@@ -65,6 +65,18 @@ def test_tokenmm_stack_script_manages_portfolio_aggregator_service() -> None:
     assert 'service_status_line "portfolio"' in script
 
 
+def test_tokenmm_binance_spot_strategy_uses_margin_account_type() -> None:
+    shared_config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
+            "rb",
+        ),
+    )
+
+    assert shared_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
+
+
 def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 

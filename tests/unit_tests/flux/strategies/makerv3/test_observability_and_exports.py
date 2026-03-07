@@ -212,6 +212,59 @@ def test_publish_state_zeroes_quote_status_when_bot_off_with_cached_managed_orde
     }
 
 
+def test_publish_state_uses_cache_truth_not_tracked_managed_order_ids(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: []
+    strategy._managed_client_order_ids = {"A", "B"}
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._runtime_params["n_orders1"] = 5
+    strategy._publish_state("quotes_replaced")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["managed_orders"] == 0
+    assert state_payload["maker_quote_status"] == {
+        "bid_open": 0,
+        "ask_open": 0,
+        "bid_depth": 5,
+        "ask_depth": 5,
+        "bid_blocked": 5,
+        "ask_blocked": 5,
+    }
+
+
+def test_on_order_pending_cancel_republishes_current_state_with_cache_truth(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000, 1_000_000_000])
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: []
+    strategy._last_state_name = "quotes_replaced"
+    strategy._runtime_params["n_orders1"] = 5
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy.on_order_pending_cancel(SimpleNamespace(client_order_id="A"))
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["state"] == "quotes_replaced"
+    assert state_payload["managed_orders"] == 0
+    assert state_payload["maker_quote_status"] == {
+        "bid_open": 0,
+        "ask_open": 0,
+        "bid_depth": 5,
+        "ask_depth": 5,
+        "bid_blocked": 5,
+        "ask_blocked": 5,
+    }
+
+
 def test_canonical_strategy_exports_match_root_surface() -> None:
     assert MakerV3StrategyFromRoot is MakerV3Strategy
     assert MakerV3StrategyConfigFromRoot is MakerV3StrategyConfig

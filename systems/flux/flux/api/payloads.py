@@ -703,6 +703,45 @@ def _aggregate_position_rows(rows: list[dict[str, Any]], strategy_id: str) -> li
 
 
 def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str, Any]]:  # noqa: C901
+    def _append_event_balances(
+        *,
+        events: Any,
+        sid: str,
+        root_ts_ms: Any,
+        row_prefix: str,
+    ) -> int:
+        appended = 0
+        if not isinstance(events, list):
+            return appended
+        for event_index, event in enumerate(events):
+            if not isinstance(event, dict):
+                continue
+            event_balances = event.get("balances")
+            if not isinstance(event_balances, list):
+                continue
+            account_id = decode_text(event.get("account_id")).strip()
+            venue = account_id.split("-", maxsplit=1)[0].lower() if account_id else ""
+            for balance_index, balance in enumerate(event_balances):
+                if not isinstance(balance, dict):
+                    continue
+                asset = decode_text(balance.get("currency")).strip().upper()
+                out.append(
+                    {
+                        "strategy_id": sid,
+                        "exchange": venue,
+                        "asset": asset,
+                        "coin": asset,
+                        "base": asset,
+                        "free": balance.get("free"),
+                        "locked": balance.get("locked"),
+                        "total": balance.get("total"),
+                        "ts_ms": event.get("ts_ms") if event.get("ts_ms") is not None else root_ts_ms,
+                        "row_id": f"{row_prefix}:evt:{event_index}:{balance_index}",
+                    },
+                )
+                appended += 1
+        return appended
+
     rows = as_list(raw_snapshot)
     out: list[dict[str, Any]] = []
     for row in rows:
@@ -718,10 +757,20 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
         if isinstance(accounts, list) and accounts:
             for index, account in enumerate(accounts):
                 if isinstance(account, dict):
+                    account_row_id = f"{sid}:acc:{index}"
+                    account_flattened = _append_event_balances(
+                        events=account.get("events"),
+                        sid=sid,
+                        root_ts_ms=root_ts_ms,
+                        row_prefix=account_row_id,
+                    )
+                    if account_flattened:
+                        flattened += account_flattened
+                        continue
                     flattened_row = {
                         **account,
                         "strategy_id": sid,
-                        "row_id": f"{sid}:acc:{index}",
+                        "row_id": account_row_id,
                     }
                     if root_ts_ms is not None and flattened_row.get("ts_ms") is None:
                         flattened_row["ts_ms"] = root_ts_ms
@@ -744,35 +793,12 @@ def build_balances_rows(*, raw_snapshot: Any, strategy_id: str) -> list[dict[str
                 out.append(flattened_row)
                 flattened += 1
 
-        events = current.get("events")
-        if isinstance(events, list) and events:
-            for event_index, event in enumerate(events):
-                if not isinstance(event, dict):
-                    continue
-                event_balances = event.get("balances")
-                if not isinstance(event_balances, list):
-                    continue
-                account_id = decode_text(event.get("account_id")).strip()
-                venue = account_id.split("-", maxsplit=1)[0].lower() if account_id else ""
-                for balance_index, balance in enumerate(event_balances):
-                    if not isinstance(balance, dict):
-                        continue
-                    asset = decode_text(balance.get("currency")).strip().upper()
-                    out.append(
-                        {
-                            "strategy_id": sid,
-                            "exchange": venue,
-                            "asset": asset,
-                            "coin": asset,
-                            "base": asset,
-                            "free": balance.get("free"),
-                            "locked": balance.get("locked"),
-                            "total": balance.get("total"),
-                            "ts_ms": event.get("ts_ms") if event.get("ts_ms") is not None else root_ts_ms,
-                            "row_id": f"{sid}:evt:{event_index}:{balance_index}",
-                        },
-                    )
-                    flattened += 1
+        flattened += _append_event_balances(
+            events=current.get("events"),
+            sid=sid,
+            root_ts_ms=root_ts_ms,
+            row_prefix=sid,
+        )
 
         if flattened > 0:
             continue
@@ -896,6 +922,7 @@ def merge_portfolio_balances_rows(
     portfolio_id: str = "tokenmm",
 ) -> list[dict[str, Any]]:
     cash_latest: dict[tuple[str, str, str], tuple[int, dict[str, Any]]] = {}
+    cash_latest_marked: dict[tuple[str, str, str], tuple[int, dict[str, Any]]] = {}
     position_grouped: dict[tuple[str, str], dict[str, Any]] = {}
     passthrough_rows: list[dict[str, Any]] = []
 
@@ -929,9 +956,13 @@ def merge_portfolio_balances_rows(
                 continue
 
             row_ts_ms = _row_ts_ms(row)
+            row_mark = safe_float(row.get("mark_raw") or row.get("mark"))
+            marked_previous = cash_latest_marked.get(cash_key)
+            if row_mark is not None and (marked_previous is None or row_ts_ms >= marked_previous[0]):
+                cash_latest_marked[cash_key] = (row_ts_ms, dict(row))
             previous = cash_latest.get(cash_key)
             if previous is None or row_ts_ms >= previous[0]:
-                merged = _carry_forward_cash_mark(dict(row), previous)
+                merged = dict(row)
                 merged["strategy_id"] = portfolio_id
                 merged["row_id"] = f"{portfolio_id}:cash:{cash_key[0]}:{cash_key[1]}:{cash_key[2]}"
                 merged["exchange"] = cash_key[0]
@@ -941,6 +972,14 @@ def merge_portfolio_balances_rows(
                 merged["coin"] = cash_key[2]
                 merged["base"] = cash_key[2]
                 cash_latest[cash_key] = (row_ts_ms, merged)
+
+    for cash_key, latest in list(cash_latest.items()):
+        latest_ts_ms, latest_row = latest
+        marked_previous = cash_latest_marked.get(cash_key)
+        if marked_previous is None:
+            continue
+        carried = _carry_forward_cash_mark(dict(latest_row), marked_previous)
+        cash_latest[cash_key] = (latest_ts_ms, carried)
 
     merged_positions: list[dict[str, Any]] = []
     for key, agg in position_grouped.items():
@@ -1268,6 +1307,16 @@ def _resolve_role_leg_id(
         return None
     if text in legs:
         return text
+
+    raw_instrument_id = text.split(":", maxsplit=1)[1] if ":" in text else text
+    raw_instrument_id = raw_instrument_id.strip().upper()
+    if raw_instrument_id:
+        for leg_id, leg in legs.items():
+            if not isinstance(leg, Mapping):
+                continue
+            leg_instrument_id = decode_text(leg.get("instrument_id")).strip().upper()
+            if leg_instrument_id and leg_instrument_id == raw_instrument_id:
+                return leg_id
 
     upper = text.upper()
     if upper == "A" and legs_order:
@@ -1833,11 +1882,6 @@ def build_signals_payload(  # noqa: C901
     maker_quote_status = (
         dict(state_quote_status) if isinstance(state_quote_status, Mapping) else None
     )
-    if maker_quote_status is None:
-        maker_quote_status = _derive_maker_quote_status_from_managed_orders(
-            managed_orders=managed,
-            params=params,
-        )
     state_quote_stacks = state.get("quote_stacks")
     quote_stacks = dict(state_quote_stacks) if isinstance(state_quote_stacks, Mapping) else None
     state_balance_readiness = state.get("balance_readiness")
@@ -1856,7 +1900,23 @@ def build_signals_payload(  # noqa: C901
         ),
     }
     if ts_ms is not None:
-        md_health["strategy_state_age_ms"] = max(0, now_ms() - ts_ms)
+        state_age_ms = max(0, now_ms() - ts_ms)
+        md_health["strategy_state_age_ms"] = state_age_ms
+        live_legs = any(safe_int(row.get("age_ms")) is not None for row in legs.values())
+        state_stale = state_age_ms >= 30_000 and not live_legs
+        if state_stale:
+            managed = 0
+            tradeable = False
+            blocked = True
+            maker_quote_status = {
+                "bid_open": 0,
+                "ask_open": 0,
+                "bid_depth": 0,
+                "ask_depth": 0,
+                "bid_blocked": 0,
+                "ask_blocked": 0,
+            }
+        md_health["state_stale"] = state_stale
 
     return {
         "id": strategy_id,

@@ -638,6 +638,7 @@ def test_timer_publishes_balances_when_due_after_startup_snapshot(clocked_strate
 def test_lifecycle_handlers_reconcile_local_managed_order_state(strategy_factory) -> None:
     strategy = strategy_factory()
     strategy._managed_client_order_ids = {"A", "B", "C"}
+    strategy._publish_state = lambda *_args, **_kwargs: None
 
     strategy.on_order_rejected(SimpleNamespace(client_order_id="A"))
     strategy.on_order_canceled(SimpleNamespace(client_order_id="B"))
@@ -662,6 +663,7 @@ def test_order_rejected_enriches_event_and_alerts_after_threshold(
     alerts: list[dict[str, object]] = []
     strategy._publish_event = lambda event, **payload: events.append((event, payload))
     strategy._publish_alert = lambda **payload: alerts.append(payload)
+    strategy._publish_state = lambda *_args, **_kwargs: None
 
     strategy.on_order_rejected(
         SimpleNamespace(
@@ -726,6 +728,7 @@ def test_order_rejected_alert_is_cooldown_gated_by_reason_transition(
     alerts: list[dict[str, object]] = []
     strategy._publish_event = lambda *_args, **_kwargs: None
     strategy._publish_alert = lambda **payload: alerts.append(payload)
+    strategy._publish_state = lambda *_args, **_kwargs: None
 
     for client_order_id in ("A", "B", "C", "D"):
         strategy.on_order_rejected(
@@ -762,6 +765,7 @@ def test_order_filled_reconciles_managed_tracking_without_cache_closed(strategy_
     published: list[tuple[str, dict[str, object]]] = []
     strategy._publish_event = lambda name, **payload: published.append((name, payload))
     strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
 
     strategy.on_order_filled(
         SimpleNamespace(

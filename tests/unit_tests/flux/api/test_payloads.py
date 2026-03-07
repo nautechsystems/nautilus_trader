@@ -78,6 +78,73 @@ def test_build_balances_rows_flattens_events_and_aggregates_positions() -> None:
     assert spot_rows[0]["ts_ms"] == 1_700_000_000_000
 
 
+def test_build_balances_rows_flattens_nested_account_events_balances() -> None:
+    raw_snapshot = [
+        {
+            "strategy_id": "strategy_01",
+            "accounts": [
+                {
+                    "account_id": "binance-main",
+                    "events": [
+                        {
+                            "account_id": "binance-main",
+                            "ts_ms": 1_700_000_000_123,
+                            "balances": [
+                                {
+                                    "currency": "PLUME",
+                                    "free": "-30139.05291039",
+                                    "locked": "0",
+                                    "total": "-30139.05291039",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+
+    rows = build_balances_rows(raw_snapshot=raw_snapshot, strategy_id="strategy_01")
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["strategy_id"] == "strategy_01"
+    assert row["exchange"] == "binance"
+    assert row["asset"] == "PLUME"
+    assert row["coin"] == "PLUME"
+    assert row["base"] == "PLUME"
+    assert row["free"] == "-30139.05291039"
+    assert row["locked"] == "0"
+    assert row["total"] == "-30139.05291039"
+    assert row["ts_ms"] == 1_700_000_000_123
+    assert row["row_id"] == "strategy_01:acc:0:evt:0:0"
+
+
+def test_build_signals_payload_does_not_fabricate_quote_status_from_scalar_count(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("flux.api.payloads.now_ms", lambda: 1_700_000_000_000)
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=StrategyMetadata(
+            strategy_class="MakerV3Strategy",
+            strategy_groups="maker",
+            base_asset="PLUME",
+            quote_asset="USDT",
+        ),
+        state={
+            "bot_on": True,
+            "managed_orders": 10,
+            "ts_ms": 1_700_000_000_000,
+        },
+        fv_row={},
+        params={"n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs={},
+    )
+
+    assert payload["maker_quote_status"] is None
+
+
 def test_merge_portfolio_balances_rows_nets_same_instrument_across_strategies() -> None:
     merged = merge_portfolio_balances_rows(
         rows_by_strategy={
@@ -393,6 +460,78 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     assert payload["legs"]["venue_a:ABC/USDT"]["mid"] == 100.5
 
 
+def test_build_signals_payload_preserves_ibkr_ref_identity_without_ref_leg_data() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "bid": 255.7,
+                "ask": 255.9,
+                "ts_ms": 1700000000000,
+            },
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="aapl_tradexyz_makerv3",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "waiting_for_ref_data",
+            "ts_ms": 1700000000000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "AAPL.NASDAQ",
+            },
+            "maker_v3": {
+                "quote_snapshot": {
+                    "maker_exchange": "hyperliquid",
+                    "maker_symbol": "AAPL/USD",
+                    "ref_exchange": "ibkr",
+                    "ref_symbol": "AAPL.NASDAQ",
+                },
+            },
+        },
+        fv_row={"fv": 255.8},
+        params={"qty": 100},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["maker_role_map"]["maker_leg"] == "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID"
+    assert payload["maker_role_map"]["ref_leg"] == "ibkr:AAPL.NASDAQ"
+    assert payload["maker_v3"]["quote_snapshot"]["maker_exchange"] == "hyperliquid"
+    assert payload["maker_v3"]["quote_snapshot"]["maker_symbol"] == "AAPL/USD"
+    assert payload["maker_v3"]["quote_snapshot"]["ref_exchange"] == "ibkr"
+    assert payload["maker_v3"]["quote_snapshot"]["ref_symbol"] == "AAPL/USD"
+    assert payload["maker_v3"]["quote_snapshot"].get("ref_bid") is None
+    assert payload["maker_v3"]["quote_snapshot"].get("ref_ask") is None
+    assert payload["maker_v3"]["quote_snapshot"]["maker_top_bid"] == 255.7
+    assert payload["maker_v3"]["quote_snapshot"]["maker_top_ask"] == 255.9
+
+
 def test_strategy_metadata_payload_includes_param_set_and_strategy_version() -> None:
     metadata = StrategyMetadata(
         strategy_class="maker_v3",
@@ -521,14 +660,7 @@ def test_build_signals_payload_derives_quote_status_from_managed_orders_when_mis
         legs=legs,
     )
 
-    assert payload["maker_quote_status"] == {
-        "bid_open": 4,
-        "ask_open": 3,
-        "bid_depth": 5,
-        "ask_depth": 5,
-        "bid_blocked": 1,
-        "ask_blocked": 2,
-    }
+    assert payload["maker_quote_status"] is None
 
 
 def test_build_signals_payload_backfills_local_qty_from_pricing_debug_when_state_adjustments_sparse(

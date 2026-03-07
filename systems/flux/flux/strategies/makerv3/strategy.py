@@ -771,6 +771,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 },
             )
             self._reconcile_managed_order(event.client_order_id, lifecycle="filled")
+            self._publish_current_state_snapshot()
 
         def on_order_rejected(self, event: Any) -> None:
             """
@@ -786,6 +787,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 reason=reason,
                 due_post_only=getattr(event, "due_post_only", None),
             )
+            self._publish_current_state_snapshot()
             self.log.warning(
                 f"Order rejected strategy_id={self._external_strategy_id} "
                 f"client_order_id={getattr(event, 'client_order_id', None)} "
@@ -819,6 +821,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._invalidate_inventory_skew_cache()
             self._clear_cancel_reject_retry_after(getattr(event, "client_order_id", None))
             self._track_pending_cancel(getattr(event, "client_order_id", None))
+            self._publish_current_state_snapshot()
 
         def on_order_cancel_rejected(self, event: Any) -> None:
             """
@@ -827,6 +830,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._invalidate_inventory_skew_cache()
             client_order_id = getattr(event, "client_order_id", None)
             self._clear_pending_cancel(client_order_id)
+            self._publish_current_state_snapshot()
             reason = _normalized_reject_reason(getattr(event, "reason", None))
             now_ns = getattr(event, "ts_event", None)
             if now_ns is None:
@@ -873,6 +877,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 getattr(event, "client_order_id", None),
                 lifecycle="canceled",
             )
+            self._publish_current_state_snapshot()
 
         def on_order_expired(self, event: Any) -> None:
             """
@@ -885,6 +890,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 getattr(event, "client_order_id", None),
                 lifecycle="expired",
             )
+            self._publish_current_state_snapshot()
 
         def _reconcile_managed_order(
             self,
@@ -1442,11 +1448,23 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._invalidate_inventory_skew_cache()
 
         def _managed_orders(self) -> list[Order]:
-            return managed_orders_mod.collect_managed_orders(
+            managed_orders = managed_orders_mod.collect_managed_orders(
                 cache=self.cache,
                 instrument_id=self.config.maker_instrument_id,
                 strategy_id=self.id,
             )
+            pending_cancel_ids = getattr(self, "_pending_cancel_client_order_ids", set())
+            if not pending_cancel_ids:
+                return managed_orders
+            return [
+                order
+                for order in managed_orders
+                if str(getattr(order, "client_order_id", "") or "") not in pending_cancel_ids
+            ]
+
+        def _publish_current_state_snapshot(self) -> None:
+            current_state = getattr(self, "_last_state_name", None) or "running"
+            self._publish_state(current_state)
 
         def _cancel_managed_quotes(
             self,

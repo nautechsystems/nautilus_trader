@@ -504,11 +504,13 @@ def publish_state(
         managed_orders_list = list(strategy._managed_orders())
     if managed_orders_count is None:
         managed_orders_count = len(managed_orders_list)
+    tracked_managed_orders = strategy._tracked_managed_order_count()
     payload: dict[str, Any] = {
         "strategy_id": strategy._external_strategy_id,
         "state": state,
         "bot_on": strategy._effective_bot_on(),
-        "managed_orders": max(managed_orders_count, strategy._tracked_managed_order_count()),
+        "managed_orders": max(0, int(managed_orders_count)),
+        "tracked_managed_orders": tracked_managed_orders,
         "ts_event": now_ns,
         "ts_ms": now_ns // 1_000_000,
     }
