@@ -89,15 +89,17 @@ impl KrakenFuturesSendOrderParamsBuilder {
             match order_type {
                 KrakenFuturesOrderType::Limit
                 | KrakenFuturesOrderType::Ioc
-                | KrakenFuturesOrderType::Post => {
-                    if self.limit_price.is_none() || self.limit_price.as_ref().unwrap().is_none() {
-                        return Err("limit_price is required for limit orders".to_string());
-                    }
+                | KrakenFuturesOrderType::Post
+                    if (self.limit_price.is_none()
+                        || self.limit_price.as_ref().unwrap().is_none()) =>
+                {
+                    return Err("limit_price is required for limit orders".to_string());
                 }
-                KrakenFuturesOrderType::Stop | KrakenFuturesOrderType::StopLoss => {
-                    if self.stop_price.is_none() || self.stop_price.as_ref().unwrap().is_none() {
-                        return Err("stop_price is required for stop orders".to_string());
-                    }
+                KrakenFuturesOrderType::Stop | KrakenFuturesOrderType::StopLoss
+                    if (self.stop_price.is_none()
+                        || self.stop_price.as_ref().unwrap().is_none()) =>
+                {
+                    return Err("stop_price is required for stop orders".to_string());
                 }
                 _ => {}
             }

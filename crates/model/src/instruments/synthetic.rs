@@ -72,14 +72,13 @@ fn check_formula_variables(tree: &Node, variables: &[String]) -> anyhow::Result<
             Operator::VariableIdentifierWrite { identifier } => {
                 assigned.push(identifier.as_str());
             }
-            Operator::VariableIdentifierRead { identifier } => {
+            Operator::VariableIdentifierRead { identifier }
                 if !variables.iter().any(|v| v == identifier)
-                    && !assigned.contains(&identifier.as_str())
-                {
-                    anyhow::bail!(
-                        "Formula references unknown variable '{identifier}' not in components"
-                    );
-                }
+                    && !assigned.contains(&identifier.as_str()) =>
+            {
+                anyhow::bail!(
+                    "Formula references unknown variable '{identifier}' not in components"
+                );
             }
             _ => {}
         }
