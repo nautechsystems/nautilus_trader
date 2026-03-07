@@ -509,6 +509,14 @@ class FluxApiStore:
         self,
         strategy_ids: Sequence[str],
     ) -> dict[str, dict[str, Any]]:
+        def _merge_market_row(existing: Mapping[str, Any], incoming: Mapping[str, Any]) -> dict[str, Any]:
+            combined = dict(existing)
+            for key, value in incoming.items():
+                if value is None and key in combined:
+                    continue
+                combined[key] = value
+            return combined
+
         merged: dict[str, dict[str, Any]] = {}
         seen: set[str] = set()
         for strategy_id in strategy_ids:
@@ -523,9 +531,7 @@ class FluxApiStore:
                 if contract_id not in merged:
                     merged[contract_id] = dict(row)
                     continue
-                combined = dict(merged[contract_id])
-                combined.update(dict(row))
-                merged[contract_id] = combined
+                merged[contract_id] = _merge_market_row(merged[contract_id], row)
         return merged
 
     def load_portfolio_snapshot(self, portfolio_id: str) -> dict[str, Any] | None:

@@ -2659,6 +2659,129 @@ def test_balances_profile_tokenmm_portfolio_snapshot_uses_market_rows_from_all_p
     assert body["data"]["totals"]["mv_raw"] == pytest.approx(10.0)
 
 
+def test_balances_profile_tokenmm_portfolio_snapshot_preserves_non_null_market_quotes_across_strategies(
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        primary_keys.market_last(
+            exchange="bybit",
+            base="PLUME",
+            quote="USDT",
+            instrument_id="PLUMEUSDT-SPOT.BYBIT",
+        ),
+        {
+            "bid": 0.0112,
+            "ask": 0.0113,
+            "ts_ms": 1_700_000_000_000,
+        },
+    )
+    redis_client.set_json(
+        secondary_keys.market_last(
+            exchange="bybit",
+            base="PLUME",
+            quote="USDT",
+            instrument_id="PLUMEUSDT-SPOT.BYBIT",
+        ),
+        {
+            "bid": None,
+            "ask": None,
+            "ts_ms": 1_700_000_000_100,
+        },
+    )
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "USDT",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "USDT",
+                "global_qty_base": "0",
+                "global_qty": "0",
+                "aggregation_mode": "strict",
+                "global_qty_base_complete": True,
+                "global_qty_complete": True,
+                "components": [],
+            },
+            "components": [],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:bybit:BYBIT-UNIFIED:spot:PLUME",
+                        "strategy_id": "tokenmm",
+                        "exchange": "bybit",
+                        "account_id": "BYBIT-UNIFIED",
+                        "account": "BYBIT-UNIFIED",
+                        "asset": "PLUME",
+                        "coin": "PLUME",
+                        "base": "PLUME",
+                        "free": "-62331.89500742",
+                        "locked": "0.00000000",
+                        "total": "-62331.89500742",
+                        "product_type": "spot",
+                        "market_type": "spot",
+                        "instrument_id": "PLUMEUSDT-SPOT.BYBIT",
+                        "ts_ms": 1_700_000_000_000,
+                    },
+                ],
+                "totals": {
+                    "mv_raw": 0.0,
+                    "mv_display": "$0.00",
+                },
+            },
+            "server_ts_ms": 1_700_000_000_500,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+            ),
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-SPOT.BYBIT",
+            ),
+        ),
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id, "strategy_02"],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["source"] == "portfolio_snapshot"
+    assert body["data"]["rows"][0]["row_id"] == "tokenmm:cash:bybit:BYBIT-UNIFIED:spot:PLUME"
+    assert body["data"]["rows"][0]["mark_raw"] == pytest.approx(0.01125)
+    assert body["data"]["rows"][0]["mv_raw"] == pytest.approx(-701.233818833475)
+    assert body["data"]["totals"]["mv_raw"] == pytest.approx(-701.233818833475)
+
+
 def test_balances_profile_tokenmm_staleness_clears_when_all_components_fresh(
     monkeypatch,
     flux_config,
