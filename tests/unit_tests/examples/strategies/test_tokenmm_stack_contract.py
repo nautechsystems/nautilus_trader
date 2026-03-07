@@ -393,6 +393,18 @@ def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_
         assert "filter_position_reports = false" in config
 
 
+def test_tokenmm_strategy_configs_explicitly_set_manage_stop_false() -> None:
+    repo_root = _repo_root()
+    config_paths = [
+        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
+        *(_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS),
+    ]
+
+    for path in config_paths:
+        config = _read(path)
+        assert "manage_stop = false" in config
+
+
 def test_tokenmm_production_strategy_configs_use_descriptive_strategy_ids() -> None:
     strategy_paths = [_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS]
 

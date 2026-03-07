@@ -39,6 +39,9 @@ This directory holds one TOML file per TokenMM node process enrolled into the Pu
 - Each node publishes a maker-leg inventory component to Redis.
 - `flux.runners.tokenmm.run_portfolio` aggregates those components into the shared
   portfolio inventory feed consumed by all TokenMM strategies.
+- Live TokenMM nodes must not flatten positions on service stop or restart.
+- `manage_stop = false` is required in each per-node strategy config.
+- Flattening inventory must be an explicit operator action, not a service lifecycle side effect.
 
 Each file is a complete node config consumed directly by `python -m flux.runners.tokenmm.run_node`.
 Start from `tokenmm.strategy.template.toml`.
