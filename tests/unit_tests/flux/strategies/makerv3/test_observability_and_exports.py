@@ -486,6 +486,88 @@ def test_publish_balances_uses_fresh_venue_position_report_for_maker_instrument(
     )
 
 
+def test_publish_balances_keeps_fresh_venue_position_report_when_position_events_are_newer(
+    clocked_strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-LINEAR.BYBIT")
+    strategy = clocked_strategy_factory(
+        [1_000_000_000],
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE"),
+    )
+    strategy._maker_instrument = SimpleNamespace(
+        id=maker_instrument_id,
+        base_currency=SimpleNamespace(code="PLUME"),
+        quote_currency=SimpleNamespace(code="USDT"),
+        settlement_currency=SimpleNamespace(code="USDT"),
+        is_inverse=False,
+        multiplier=SimpleNamespace(as_decimal=lambda: Decimal("1")),
+        info={"base_exposure_mode": "identity"},
+        make_qty=lambda value: SimpleNamespace(as_decimal=lambda: Decimal(str(value))),
+        make_price=lambda value: SimpleNamespace(as_decimal=lambda: Decimal(str(value))),
+        calculate_base_exposure_qty=lambda qty, _price=None: qty.as_decimal(),
+    )
+    stale_positions = [
+        SimpleNamespace(
+            instrument_id=maker_instrument_id,
+            signed_qty=Decimal("371135"),
+            avg_px_open=Decimal("0.01101"),
+        ),
+        SimpleNamespace(
+            instrument_id=maker_instrument_id,
+            signed_qty=Decimal("-173371"),
+            avg_px_open=Decimal("0.01078"),
+        ),
+    ]
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        accounts=list,
+        positions_open=lambda instrument_id=None: (
+            stale_positions
+            if instrument_id is None or instrument_id == maker_instrument_id
+            else []
+        ),
+        instrument=lambda instrument_id: (
+            strategy._maker_instrument if instrument_id == maker_instrument_id else None
+        ),
+    )
+    strategy._last_maker_position_activity_ns = 100
+    report = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_decimal_qty=Decimal("99382"),
+        avg_px_open=Decimal("0.0109378"),
+        ts_last=200,
+        ts_init=210,
+        venue_position_id=None,
+    )
+    strategy._handle_execution_report_message(
+        SimpleNamespace(position_reports={maker_instrument_id: [report]}, ts_init=210),
+    )
+    strategy.on_position_changed(
+        SimpleNamespace(
+            instrument_id=maker_instrument_id,
+            ts_event=300,
+        ),
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_balances()
+
+    balances_payload = next(payload for topic, payload in payloads if topic == TOPIC_BALANCES)
+    assert len(balances_payload["positions"]) == 1
+    assert balances_payload["positions"][0]["instrument_id"] == str(maker_instrument_id)
+    assert balances_payload["positions"][0]["signed_qty"] == "99382"
+    assert balances_payload["positions"][0]["signed_qty_venue"] == "99382"
+    assert balances_payload["positions"][0]["signed_qty_base"] == "99382"
+    assert balances_payload["positions"][0]["qty_conversion_status"] == "identity"
+    assert (
+        balances_payload["positions"][0]["qty_conversion_source"]
+        == "instrument.info:base_exposure_mode=identity"
+    )
+
+
 def test_publish_balances_preserves_precomputed_dual_unit_snapshot_fields(
     clocked_strategy_factory,
 ) -> None:

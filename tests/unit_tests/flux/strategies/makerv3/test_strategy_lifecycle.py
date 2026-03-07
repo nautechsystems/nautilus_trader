@@ -898,6 +898,64 @@ def test_maker_local_position_summary_falls_back_to_cache_when_local_activity_is
     assert summary.base_qty == Decimal("197764")
 
 
+def test_maker_local_position_summary_keeps_fresh_venue_report_when_only_position_events_are_newer(
+    strategy_factory,
+) -> None:
+    maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-LINEAR.BYBIT")
+    strategy = strategy_factory(
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE"),
+    )
+    strategy._maker_instrument = _identity_exposure_instrument(maker_instrument_id)
+    stale_positions = [
+        SimpleNamespace(
+            instrument_id=maker_instrument_id,
+            signed_qty=Decimal("371135"),
+            avg_px_open=Decimal("0.01101"),
+        ),
+        SimpleNamespace(
+            instrument_id=maker_instrument_id,
+            signed_qty=Decimal("-173371"),
+            avg_px_open=Decimal("0.01078"),
+        ),
+    ]
+    strategy._cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        positions_open=lambda instrument_id=None: (
+            stale_positions
+            if instrument_id is None or instrument_id == maker_instrument_id
+            else []
+        ),
+        instrument=lambda instrument_id: (
+            strategy._maker_instrument if instrument_id == maker_instrument_id else None
+        ),
+    )
+    strategy._last_maker_position_activity_ns = 100
+
+    report = SimpleNamespace(
+        instrument_id=maker_instrument_id,
+        signed_decimal_qty=Decimal("99382"),
+        avg_px_open=Decimal("0.0109378"),
+        ts_last=200,
+        ts_init=210,
+        venue_position_id=None,
+    )
+    strategy._handle_execution_report_message(
+        SimpleNamespace(position_reports={maker_instrument_id: [report]}, ts_init=210),
+    )
+    strategy.on_position_changed(
+        SimpleNamespace(
+            instrument_id=maker_instrument_id,
+            ts_event=300,
+        ),
+    )
+
+    summary = strategy._maker_local_position_summary("PLUME")
+
+    assert summary.venue_qty == Decimal("99382")
+    assert summary.base_qty == Decimal("99382")
+
+
 def test_maker_local_position_summary_converts_okx_venue_report_to_base_once(
     strategy_factory,
 ) -> None:

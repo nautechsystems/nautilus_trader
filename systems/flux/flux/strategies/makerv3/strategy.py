@@ -847,21 +847,24 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def on_position_opened(self, event: Any) -> None:
             """
-            Track local maker-position activity to guard against stale venue snapshots.
+            Position cache events are downstream of reconciliation and startup replay.
+            They must not invalidate a fresher direct maker venue report snapshot.
             """
-            self._record_maker_position_activity(event)
+            _ = event
 
         def on_position_changed(self, event: Any) -> None:
             """
-            Track local maker-position activity to guard against stale venue snapshots.
+            Position cache events are downstream of reconciliation and startup replay.
+            They must not invalidate a fresher direct maker venue report snapshot.
             """
-            self._record_maker_position_activity(event)
+            _ = event
 
         def on_position_closed(self, event: Any) -> None:
             """
-            Track local maker-position activity to guard against stale venue snapshots.
+            Position cache events are downstream of reconciliation and startup replay.
+            They must not invalidate a fresher direct maker venue report snapshot.
             """
-            self._record_maker_position_activity(event)
+            _ = event
 
         def on_order_rejected(self, event: Any) -> None:
             """

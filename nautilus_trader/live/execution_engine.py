@@ -2470,11 +2470,12 @@ class LiveExecutionEngine(ExecutionEngine):
 
         if not quantities_match:
             if not self.generate_missing_orders:
-                self._log.warning(
-                    f"Discrepancy for {report.instrument_id} position "
-                    "when `generate_missing_orders` disabled, skipping further reconciliation",
+                self._log.error(
+                    f"Cannot reconcile {report.instrument_id}: "
+                    f"position net qty {position_signed_decimal_qty} != reported net qty "
+                    f"{report.signed_decimal_qty} and `generate_missing_orders` is disabled",
                 )
-                return True
+                return False
 
             diff = abs(position_signed_decimal_qty - report.signed_decimal_qty)
             diff_quantity = Quantity(diff, instrument.size_precision)
