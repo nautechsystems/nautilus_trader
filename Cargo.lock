@@ -5815,6 +5815,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
+ "pyo3",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",

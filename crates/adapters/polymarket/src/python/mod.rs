@@ -15,10 +15,15 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod config;
+
 use pyo3::prelude::*;
 
 /// Loaded as `nautilus_pyo3.polymarket`.
 #[pymodule]
-pub fn polymarket(_m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<crate::common::enums::SignatureType>()?;
+    m.add_class::<crate::config::PolymarketDataClientConfig>()?;
+    m.add_class::<crate::config::PolymarketExecClientConfig>()?;
     Ok(())
 }

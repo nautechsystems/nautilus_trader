@@ -20,6 +20,13 @@ use nautilus_model::identifiers::{AccountId, TraderId};
 use crate::common::credential::credential_env_vars;
 
 /// Configuration for the AX Exchange live data client.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        from_py_object
+    )
+)]
 #[derive(Clone, Debug)]
 pub struct AxDataClientConfig {
     /// Optional API key for authenticated REST/WebSocket requests.
@@ -133,6 +140,13 @@ impl AxDataClientConfig {
 }
 
 /// Configuration for the AX Exchange live execution client.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        from_py_object
+    )
+)]
 #[derive(Clone, Debug)]
 pub struct AxExecClientConfig {
     /// The trader ID for the client.

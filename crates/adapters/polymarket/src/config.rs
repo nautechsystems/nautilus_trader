@@ -18,6 +18,13 @@
 use crate::common::{enums::SignatureType, urls};
 
 /// Configuration for the Polymarket data client.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
+        from_py_object
+    )
+)]
 #[derive(Clone, Debug)]
 pub struct PolymarketDataClientConfig {
     pub base_url_http: Option<String>,
@@ -73,6 +80,13 @@ impl PolymarketDataClientConfig {
 }
 
 /// Configuration for the Polymarket execution client.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
+        from_py_object
+    )
+)]
 #[derive(Clone, Debug)]
 pub struct PolymarketExecClientConfig {
     /// Falls back to `POLYMARKET_PK` env var.

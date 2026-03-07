@@ -23,6 +23,17 @@ use strum::{Display, EnumString};
 /// EIP-712 signature type for order signing.
 ///
 /// Serialized as a numeric value (0/1/2) on the wire.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
+        from_py_object,
+    )
+)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum SignatureType {

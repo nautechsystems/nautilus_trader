@@ -17,6 +17,10 @@ use nautilus_core::serialization::default_true;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for `Portfolio` instances.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortfolioConfig {
     /// The type of prices used for portfolio calculations, such as unrealized PnLs.

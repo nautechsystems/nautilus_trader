@@ -38,6 +38,7 @@ python = [
   "nautilus-core/python",
   "nautilus-execution/python",
   "nautilus-model/python",
+  "nautilus-portfolio/python",
   "nautilus-system/python",
   "nautilus-trading/python",
   "pyo3",

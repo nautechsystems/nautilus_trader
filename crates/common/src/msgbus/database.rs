@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use bytes::Bytes;
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
@@ -26,7 +28,11 @@ use crate::enums::SerializationEncoding;
 /// # Notes
 ///
 /// If `database_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
+)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DatabaseConfig {
     /// The database type.
@@ -56,6 +62,26 @@ pub struct DatabaseConfig {
     pub factor: u64,
 }
 
+impl Debug for DatabaseConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let redacted = self.password.as_ref().map(|_| "***");
+        f.debug_struct(stringify!(DatabaseConfig))
+            .field("database_type", &self.database_type)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &redacted)
+            .field("ssl", &self.ssl)
+            .field("connection_timeout", &self.connection_timeout)
+            .field("response_timeout", &self.response_timeout)
+            .field("number_of_retries", &self.number_of_retries)
+            .field("exponent_base", &self.exponent_base)
+            .field("max_delay", &self.max_delay)
+            .field("factor", &self.factor)
+            .finish()
+    }
+}
+
 impl Default for DatabaseConfig {
     /// Creates a new default [`DatabaseConfig`] instance.
     fn default() -> Self {
@@ -77,6 +103,10 @@ impl Default for DatabaseConfig {
 }
 
 /// Configuration for `MessageBus` instances.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
+)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MessageBusConfig {
