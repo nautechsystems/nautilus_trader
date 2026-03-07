@@ -81,8 +81,9 @@ use super::{
 };
 use crate::{
     common::{
-        consts::BINANCE_VENUE,
+        consts::{BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_VENUE},
         credential::resolve_credentials,
+        encoder::encode_broker_id,
         enums::{BinancePositionSide, BinanceProductType},
     },
     config::BinanceExecClientConfig,
@@ -400,6 +401,7 @@ impl BinanceFuturesExecutionClient {
         let price = order.price();
         let trigger_price = order.trigger_price();
         let reduce_only = order.is_reduce_only();
+        let post_only = order.is_post_only();
         let position_side = self.determine_position_side(order_side, reduce_only);
 
         // HTTP only generates OrderRejected on failure.
@@ -436,6 +438,7 @@ impl BinanceFuturesExecutionClient {
                         price,
                         trigger_price,
                         reduce_only,
+                        post_only,
                         position_side,
                     )
                     .await
@@ -965,7 +968,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 .parse::<i64>()
                 .expect("venue_order_id should be numeric")
         });
-        let orig_client_order_id = Some(command.client_order_id.to_string());
+        let orig_client_order_id = Some(encode_broker_id(
+            &command.client_order_id,
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+        ));
         let (_, size_precision) = self.get_instrument_precision(command.instrument_id);
 
         self.spawn_task("query_order", async move {
@@ -1287,13 +1293,19 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             } else {
                                 BatchCancelItem::by_client_order_id(
                                     command.instrument_id.symbol.to_string(),
-                                    cancel.client_order_id.to_string(),
+                                    encode_broker_id(
+                                        &cancel.client_order_id,
+                                        BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+                                    ),
                                 )
                             }
                         } else {
                             BatchCancelItem::by_client_order_id(
                                 command.instrument_id.symbol.to_string(),
-                                cancel.client_order_id.to_string(),
+                                encode_broker_id(
+                                    &cancel.client_order_id,
+                                    BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+                                ),
                             )
                         }
                     })
@@ -1392,7 +1404,9 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 .parse::<i64>()
                 .expect("venue_order_id should be numeric")
         });
-        let orig_client_order_id = cmd.client_order_id.map(|id| id.to_string());
+        let orig_client_order_id = cmd
+            .client_order_id
+            .map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_FUTURES_BROKER_ID));
 
         let mut builder = BinanceOrderQueryParamsBuilder::default();
         builder.symbol(symbol);

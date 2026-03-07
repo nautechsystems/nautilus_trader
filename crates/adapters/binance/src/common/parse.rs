@@ -43,6 +43,8 @@ use serde_json::Value;
 
 use crate::{
     common::{
+        consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
+        encoder::decode_broker_id,
         enums::{BinanceContractStatus, BinanceKlineInterval, BinanceTradingStatus},
         fixed::{mantissa_to_price, mantissa_to_quantity},
         sbe::spot::{
@@ -659,7 +661,10 @@ pub fn parse_order_status_report_sbe(
     let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
-        Some(ClientOrderId::new(order.client_order_id.clone())),
+        Some(ClientOrderId::new(decode_broker_id(
+            &order.client_order_id,
+            BINANCE_NAUTILUS_SPOT_BROKER_ID,
+        ))),
         VenueOrderId::new(order.order_id.to_string()),
         order_side,
         order_type,
@@ -797,7 +802,10 @@ pub fn parse_new_order_response_sbe(
     let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
-        Some(ClientOrderId::new(response.client_order_id.clone())),
+        Some(ClientOrderId::new(decode_broker_id(
+            &response.client_order_id,
+            BINANCE_NAUTILUS_SPOT_BROKER_ID,
+        ))),
         VenueOrderId::new(response.order_id.to_string()),
         order_side,
         order_type,

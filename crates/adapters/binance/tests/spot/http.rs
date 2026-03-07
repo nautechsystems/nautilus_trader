@@ -1711,6 +1711,8 @@ async fn test_domain_submit_order() {
             Some(Price::from("50000.00")),
             None,
             false,
+            false,
+            None,
         )
         .await
         .unwrap();

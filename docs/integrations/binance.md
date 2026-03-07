@@ -269,6 +269,34 @@ For trailing stop market orders on Binance:
 Do not use `trigger_price` for trailing stop orders - it will fail with an error. Use `activation_price` instead.
 :::
 
+## Link & Trade
+
+The NautilusTrader integration ID is automatically prefixed to all
+system-generated client order IDs for every order placed through the Binance
+Rust adapter. This provides transparent order attribution through Binance's
+[Link and Trade](https://developers.binance.com/docs/binance_link/link-and-trade)
+program without requiring any user configuration.
+
+The adapter encodes outgoing `ClientOrderId` values into a compact format that
+fits within Binance's 36-character `newClientOrderId` limit, and decodes
+incoming order events back to the original ID before they reach strategies.
+This transformation is fully transparent: strategies see only their original
+`ClientOrderId` values at all times.
+
+:::note
+The integration ID prefix applies to all order operations including
+submissions, modifications, cancellations, and status queries. Orders placed
+before this support was added are handled gracefully through passthrough
+decoding.
+:::
+
+:::info
+This feature is currently available in the Rust adapter only. Users can opt out
+by passing a custom `client_order_id` on their orders, or by removing the
+encoding calls and recompiling. There is no technical limitation preventing
+either approach.
+:::
+
 ## Order books
 
 Order books can be maintained at full or partial depths based on the subscription settings.
@@ -638,7 +666,7 @@ Environment variables: `BINANCE_API_KEY`, `BINANCE_API_SECRET`
 
 #### Demo trading
 
-Practice trading with simulated funds. Spot demo uses dedicated production infrastructure (`demo-api.binance.com`), while Futures demo shares testnet endpoints. Create demo API keys from the [Binance Demo Trading page](https://www.binance.com/en/demo-trading).
+Practice trading with simulated funds. Spot demo uses `demo-api.binance.com`, USD-M Futures demo uses `demo-fapi.binance.com`, and COIN-M Futures demo shares testnet endpoints. Create demo API keys from the [Binance Demo Trading page](https://www.binance.com/en/demo-trading).
 
 ```python
 config = BinanceExecClientConfig(

@@ -63,9 +63,10 @@ use super::{
 use crate::common::{
     consts::{
         BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH, BINANCE_FAPI_RATE_LIMITS,
-        BinanceRateLimitQuota,
+        BINANCE_NAUTILUS_FUTURES_BROKER_ID, BinanceRateLimitQuota,
     },
     credential::Credential,
+    encoder::encode_broker_id,
     enums::{
         BinanceAlgoType, BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide,
         BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType, BinanceSide,
@@ -1511,6 +1512,7 @@ impl BinanceFuturesHttpClient {
         price: Option<Price>,
         trigger_price: Option<Price>,
         reduce_only: bool,
+        post_only: bool,
         position_side: Option<BinancePositionSide>,
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = format_binance_symbol(&instrument_id);
@@ -1518,7 +1520,11 @@ impl BinanceFuturesHttpClient {
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_futures(order_type)?;
-        let binance_tif = BinanceTimeInForce::try_from(time_in_force)?;
+        let binance_tif = if post_only {
+            BinanceTimeInForce::Gtx
+        } else {
+            BinanceTimeInForce::try_from(time_in_force)?
+        };
 
         let requires_trigger_price = matches!(
             order_type,
@@ -1542,7 +1548,7 @@ impl BinanceFuturesHttpClient {
         let qty_str = quantity.to_string();
         let price_str = price.map(|p| p.to_string());
         let stop_price_str = trigger_price.map(|p| p.to_string());
-        let client_id_str = client_order_id.to_string();
+        let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
 
         let params = BinanceNewOrderParams {
             symbol,
@@ -1622,7 +1628,7 @@ impl BinanceFuturesHttpClient {
         let qty_str = quantity.to_string();
         let price_str = price.map(|p| p.to_string());
         let trigger_price_str = trigger_price.map(|p| p.to_string());
-        let client_id_str = client_order_id.to_string();
+        let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
 
         let params = BinanceNewAlgoOrderParams {
             symbol,
@@ -1708,7 +1714,8 @@ impl BinanceFuturesHttpClient {
         let params = BinanceModifyOrderParams {
             symbol,
             order_id,
-            orig_client_order_id: client_order_id.map(|id| id.to_string()),
+            orig_client_order_id: client_order_id
+                .map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_FUTURES_BROKER_ID)),
             side: binance_side,
             quantity: quantity.to_string(),
             price: price.to_string(),
@@ -1765,7 +1772,8 @@ impl BinanceFuturesHttpClient {
         let params = BinanceCancelOrderParams {
             symbol,
             order_id,
-            orig_client_order_id: client_order_id.map(|id| id.to_string()),
+            orig_client_order_id: client_order_id
+                .map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_FUTURES_BROKER_ID)),
             recv_window: None,
         };
 
@@ -1784,7 +1792,10 @@ impl BinanceFuturesHttpClient {
     pub async fn cancel_algo_order(&self, client_order_id: ClientOrderId) -> anyhow::Result<()> {
         let params = BinanceAlgoOrderQueryParams {
             algo_id: None,
-            client_algo_id: Some(client_order_id.to_string()),
+            client_algo_id: Some(encode_broker_id(
+                &client_order_id,
+                BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+            )),
             recv_window: None,
         };
 
@@ -1892,7 +1903,10 @@ impl BinanceFuturesHttpClient {
     ) -> BinanceFuturesHttpResult<BinanceFuturesAlgoOrder> {
         let params = BinanceAlgoOrderQueryParams {
             algo_id: None,
-            client_algo_id: Some(client_order_id.to_string()),
+            client_algo_id: Some(encode_broker_id(
+                &client_order_id,
+                BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+            )),
             recv_window: None,
         };
 
@@ -1970,7 +1984,8 @@ impl BinanceFuturesHttpClient {
             .transpose()
             .map_err(|_| anyhow::anyhow!("Invalid venue order ID"))?;
 
-        let orig_client_order_id = client_order_id.map(|id| id.to_string());
+        let orig_client_order_id =
+            client_order_id.map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_FUTURES_BROKER_ID));
 
         let params = BinanceOrderQueryParams {
             symbol,

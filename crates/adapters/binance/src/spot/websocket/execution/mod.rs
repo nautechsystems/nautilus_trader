@@ -13,18 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common types, constants, and utilities for the Binance adapter.
+//! Binance Spot User Data Stream (UDS) execution WebSocket support.
+//!
+//! Provides real-time order and account events via the Binance Spot user data
+//! stream. The handler emits raw venue types; the execution client performs all
+//! Nautilus conversion.
 
-pub mod consts;
-pub mod credential;
-pub mod encoder;
-pub mod enums;
-pub mod fixed;
-pub mod models;
+pub mod client;
+pub mod handler;
+pub mod messages;
 pub mod parse;
-pub mod sbe;
-pub mod symbol;
-pub mod urls;
 
-#[cfg(test)]
-pub mod testing;
+pub use client::BinanceSpotUdsClient;
+pub use messages::BinanceSpotUdsMessage;

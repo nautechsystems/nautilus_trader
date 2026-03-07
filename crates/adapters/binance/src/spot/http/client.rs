@@ -70,8 +70,11 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{BINANCE_SPOT_RATE_LIMITS, BinanceRateLimitQuota},
+        consts::{
+            BINANCE_NAUTILUS_SPOT_BROKER_ID, BINANCE_SPOT_RATE_LIMITS, BinanceRateLimitQuota,
+        },
         credential::Credential,
+        encoder::{decode_broker_id, encode_broker_id},
         enums::{
             BinanceEnvironment, BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType,
             BinanceSide, BinanceTimeInForce,
@@ -91,7 +94,7 @@ use crate::{
     },
     spot::enums::{
         BinanceCancelReplaceMode, BinanceOrderResponseType, BinanceSpotOrderType,
-        order_type_to_binance_spot,
+        order_type_to_binance_spot, time_in_force_to_binance_spot,
     },
 };
 
@@ -1049,6 +1052,51 @@ impl BinanceRawSpotHttpClient {
         Ok(response)
     }
 
+    /// Creates a new order with full parameter support.
+    ///
+    /// Extends [`new_order`](Self::new_order) with `quote_order_qty` (for market
+    /// orders denominated in quote currency) and `iceberg_qty` (display
+    /// quantity for iceberg orders).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or SBE decoding fails.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn new_order_full(
+        &self,
+        symbol: &str,
+        side: BinanceSide,
+        order_type: BinanceSpotOrderType,
+        time_in_force: Option<BinanceTimeInForce>,
+        quantity: Option<&str>,
+        quote_order_qty: Option<&str>,
+        price: Option<&str>,
+        client_order_id: Option<&str>,
+        stop_price: Option<&str>,
+        iceberg_qty: Option<&str>,
+    ) -> BinanceSpotHttpResult<BinanceNewOrderResponse> {
+        let params = NewOrderParams {
+            symbol: symbol.to_string(),
+            side,
+            order_type,
+            time_in_force,
+            quantity: quantity.map(|s| s.to_string()),
+            quote_order_qty: quote_order_qty.map(|s| s.to_string()),
+            price: price.map(|s| s.to_string()),
+            new_client_order_id: client_order_id.map(|s| s.to_string()),
+            stop_price: stop_price.map(|s| s.to_string()),
+            trailing_delta: None,
+            iceberg_qty: iceberg_qty.map(|s| s.to_string()),
+            new_order_resp_type: Some(BinanceOrderResponseType::Full),
+            self_trade_prevention_mode: None,
+            strategy_id: None,
+            strategy_type: None,
+        };
+        let bytes = self.post_order("order", Some(&params)).await?;
+        let response = parse::decode_new_order_full(&bytes)?;
+        Ok(response)
+    }
+
     /// Cancels an existing order and places a new order atomically.
     ///
     /// # Errors
@@ -1531,7 +1579,8 @@ impl BinanceSpotHttpClient {
             .transpose()
             .map_err(|_| anyhow::anyhow!("Invalid venue order ID"))?;
 
-        let client_id_str = client_order_id.map(|id| id.to_string());
+        let client_id_str =
+            client_order_id.map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_SPOT_BROKER_ID));
 
         let order = self
             .inner
@@ -1665,6 +1714,8 @@ impl BinanceSpotHttpClient {
         price: Option<Price>,
         trigger_price: Option<Price>,
         post_only: bool,
+        quote_quantity: bool,
+        display_qty: Option<Quantity>,
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = instrument_id.symbol.inner();
         let instrument = self.instrument_from_cache(symbol)?;
@@ -1673,10 +1724,17 @@ impl BinanceSpotHttpClient {
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_spot(order_type, post_only)?;
 
-        // Validate trigger price for stop orders
-        let is_stop_order = matches!(order_type, OrderType::StopMarket | OrderType::StopLimit);
-        if is_stop_order && trigger_price.is_none() {
-            anyhow::bail!("Stop orders require a trigger price");
+        // Validate trigger price for conditional orders
+        let requires_trigger = matches!(
+            order_type,
+            OrderType::StopMarket
+                | OrderType::StopLimit
+                | OrderType::MarketIfTouched
+                | OrderType::LimitIfTouched
+        );
+
+        if requires_trigger && trigger_price.is_none() {
+            anyhow::bail!("Conditional orders require a trigger price");
         }
 
         // Validate price for order types that require it
@@ -1700,7 +1758,7 @@ impl BinanceSpotHttpClient {
                 | BinanceSpotOrderType::TakeProfitLimit
         );
         let binance_tif = if supports_tif {
-            Some(BinanceTimeInForce::try_from(time_in_force)?)
+            Some(time_in_force_to_binance_spot(time_in_force)?)
         } else {
             None
         };
@@ -1708,19 +1766,32 @@ impl BinanceSpotHttpClient {
         let qty_str = quantity.to_string();
         let price_str = price.map(|p| p.to_string());
         let stop_price_str = trigger_price.map(|p| p.to_string());
-        let client_id_str = client_order_id.to_string();
+        let iceberg_qty_str = display_qty.map(|q| q.to_string());
+        let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID);
+
+        if quote_quantity && binance_order_type != BinanceSpotOrderType::Market {
+            anyhow::bail!("quoteOrderQty is only supported for MARKET orders");
+        }
+
+        let (base_qty, quote_qty) = if quote_quantity {
+            (None, Some(qty_str.as_str()))
+        } else {
+            (Some(qty_str.as_str()), None)
+        };
 
         let response = self
             .inner
-            .new_order(
+            .new_order_full(
                 symbol.as_str(),
                 binance_side,
                 binance_order_type,
                 binance_tif,
-                Some(&qty_str),
+                base_qty,
+                quote_qty,
                 price_str.as_deref(),
                 Some(&client_id_str),
                 stop_price_str.as_deref(),
+                iceberg_qty_str.as_deref(),
             )
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
@@ -1769,7 +1840,7 @@ impl BinanceSpotHttpClient {
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_spot(order_type, false)?;
-        let binance_tif = BinanceTimeInForce::try_from(time_in_force)?;
+        let binance_tif = time_in_force_to_binance_spot(time_in_force)?;
 
         let cancel_order_id: i64 = venue_order_id
             .inner()
@@ -1778,7 +1849,7 @@ impl BinanceSpotHttpClient {
 
         let qty_str = quantity.to_string();
         let price_str = price.map(|p| p.to_string());
-        let client_id_str = client_order_id.to_string();
+        let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID);
 
         let response = self
             .inner
@@ -1819,7 +1890,8 @@ impl BinanceSpotHttpClient {
             .transpose()
             .map_err(|_| anyhow::anyhow!("Invalid venue order ID"))?;
 
-        let client_id_str = client_order_id.map(|id| id.to_string());
+        let client_id_str =
+            client_order_id.map(|id| encode_broker_id(&id, BINANCE_NAUTILUS_SPOT_BROKER_ID));
 
         let response = self
             .inner
@@ -1868,7 +1940,10 @@ impl BinanceSpotHttpClient {
             .map(|r| {
                 (
                     VenueOrderId::new(r.order_id.to_string()),
-                    ClientOrderId::new(&r.orig_client_order_id),
+                    ClientOrderId::new(decode_broker_id(
+                        &r.orig_client_order_id,
+                        BINANCE_NAUTILUS_SPOT_BROKER_ID,
+                    )),
                 )
             })
             .collect())

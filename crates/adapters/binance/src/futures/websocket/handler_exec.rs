@@ -48,6 +48,8 @@ use super::messages::{
 };
 use crate::{
     common::{
+        consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+        encoder::decode_broker_id,
         enums::{BinanceAlgoStatus, BinanceProductType},
         symbol::format_instrument_id,
     },
@@ -301,7 +303,10 @@ impl BinanceFuturesExecWsFeedHandler {
         let ts_event = UnixNanos::from((msg.event_time * 1_000_000) as u64);
         let ts_init = self.clock.get_time_ns();
 
-        let client_order_id = ClientOrderId::new(&order_data.client_order_id);
+        let client_order_id = ClientOrderId::new(decode_broker_id(
+            &order_data.client_order_id,
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+        ));
         let venue_order_id = VenueOrderId::new(order_data.order_id.to_string());
 
         // Look up order context from pending/active maps, falling back to EXTERNAL
@@ -415,7 +420,10 @@ impl BinanceFuturesExecWsFeedHandler {
         ts_init: UnixNanos,
     ) -> Option<NautilusExecWsMessage> {
         let order_data = &msg.order;
-        let client_order_id = ClientOrderId::new(&order_data.client_order_id);
+        let client_order_id = ClientOrderId::new(decode_broker_id(
+            &order_data.client_order_id,
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+        ));
         let venue_order_id = VenueOrderId::new(order_data.order_id.to_string());
 
         // Look up precision from instrument cache
@@ -542,7 +550,10 @@ impl BinanceFuturesExecWsFeedHandler {
         let ts_event = UnixNanos::from((msg.event_time * 1_000_000) as u64);
         let ts_init = self.clock.get_time_ns();
 
-        let client_order_id = ClientOrderId::new(&algo_data.client_algo_id);
+        let client_order_id = ClientOrderId::new(decode_broker_id(
+            &algo_data.client_algo_id,
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+        ));
         let venue_order_id = algo_data
             .actual_order_id
             .as_ref()

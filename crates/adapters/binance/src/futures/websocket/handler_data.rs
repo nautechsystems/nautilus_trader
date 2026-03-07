@@ -226,8 +226,8 @@ impl BinanceFuturesDataWsFeedHandler {
             log::error!("Failed to send unsubscribe request: {e}");
         }
 
-        // Mark as unsubscribed
         for stream in &streams {
+            self.subscriptions_state.mark_unsubscribe(stream);
             self.subscriptions_state.confirm_unsubscribe(stream);
         }
     }

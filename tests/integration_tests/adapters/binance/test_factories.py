@@ -150,7 +150,7 @@ class TestBinanceFactories:
                 BinanceAccountType.USDT_FUTURES,
                 BinanceEnvironment.DEMO,
                 False,
-                "https://testnet.binancefuture.com",
+                "https://demo-fapi.binance.com",
             ),
         ],
     )

@@ -30,10 +30,16 @@
 //! - Order placement
 //! - Order cancellation
 //! - Cancel-replace operations
+//!
+//! ## Execution (`execution`)
+//!
+//! User Data Stream for real-time order and account updates via listenKey.
 
 pub mod error;
+pub mod execution;
 pub mod streams;
 pub mod trading;
 
+pub use execution::BinanceSpotUdsClient;
 pub use streams::BinanceSpotWebSocketClient;
 pub use trading::BinanceSpotWsTradingClient;

@@ -305,7 +305,7 @@ impl BinanceSpotHttpClient {
         })
     }
 
-    #[pyo3(name = "submit_order", signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, price=None, trigger_price=None, post_only=false))]
+    #[pyo3(name = "submit_order", signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, price=None, trigger_price=None, post_only=false, quote_quantity=false, display_qty=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
@@ -320,6 +320,8 @@ impl BinanceSpotHttpClient {
         price: Option<Price>,
         trigger_price: Option<Price>,
         post_only: bool,
+        quote_quantity: bool,
+        display_qty: Option<Quantity>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -336,6 +338,8 @@ impl BinanceSpotHttpClient {
                     price,
                     trigger_price,
                     post_only,
+                    quote_quantity,
+                    display_qty,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;

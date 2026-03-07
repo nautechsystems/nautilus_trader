@@ -76,7 +76,7 @@ from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
             BinanceAccountType.USDT_FUTURES,
             BinanceEnvironment.DEMO,
             False,
-            "https://testnet.binancefuture.com",
+            "https://demo-fapi.binance.com",
         ),
         (
             BinanceAccountType.COIN_FUTURES,

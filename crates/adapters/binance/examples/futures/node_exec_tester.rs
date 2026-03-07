@@ -17,11 +17,12 @@
 //!
 //! Run with: `cargo run --example binance-futures-exec-tester --package nautilus-binance`
 //!
-//! Uses testnet by default for safety.
-//!
-//! Requires environment variables:
-//! - BINANCE_FUTURES_TESTNET_API_KEY: Your Binance Futures testnet API key
-//! - BINANCE_FUTURES_TESTNET_API_SECRET: Your Binance Futures testnet API secret
+//! Requires environment variables based on the configured environment
+//! (Ed25519 keys are auto-detected):
+//! - Mainnet: `BINANCE_API_KEY` / `BINANCE_API_SECRET`
+//! - Testnet (Spot): `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
+//! - Testnet (Futures): `BINANCE_FUTURES_TESTNET_API_KEY` / `BINANCE_FUTURES_TESTNET_API_SECRET`
+//! - Demo: `BINANCE_DEMO_API_KEY` / `BINANCE_DEMO_API_SECRET`
 
 use nautilus_binance::{
     common::enums::{BinanceEnvironment, BinanceProductType},

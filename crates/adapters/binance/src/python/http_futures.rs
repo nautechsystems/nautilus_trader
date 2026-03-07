@@ -349,7 +349,7 @@ impl BinanceFuturesHttpClient {
     }
 
     #[pyo3(name = "submit_order")]
-    #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, price=None, trigger_price=None, reduce_only=false, position_side=None))]
+    #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, price=None, trigger_price=None, reduce_only=false, post_only=false, position_side=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
@@ -364,6 +364,7 @@ impl BinanceFuturesHttpClient {
         price: Option<Price>,
         trigger_price: Option<Price>,
         reduce_only: bool,
+        post_only: bool,
         position_side: Option<BinancePositionSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -381,6 +382,7 @@ impl BinanceFuturesHttpClient {
                     price,
                     trigger_price,
                     reduce_only,
+                    post_only,
                     position_side,
                 )
                 .await

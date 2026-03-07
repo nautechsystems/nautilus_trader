@@ -17,13 +17,14 @@
 
 use super::{
     consts::{
-        BINANCE_FUTURES_COIN_HTTP_URL, BINANCE_FUTURES_COIN_TESTNET_HTTP_URL,
-        BINANCE_FUTURES_COIN_TESTNET_WS_URL, BINANCE_FUTURES_COIN_WS_URL,
-        BINANCE_FUTURES_DEMO_HTTP_URL, BINANCE_FUTURES_USD_HTTP_URL,
-        BINANCE_FUTURES_USD_TESTNET_HTTP_URL, BINANCE_FUTURES_USD_TESTNET_WS_URL,
-        BINANCE_FUTURES_USD_WS_URL, BINANCE_OPTIONS_HTTP_URL, BINANCE_OPTIONS_WS_URL,
-        BINANCE_SPOT_DEMO_HTTP_URL, BINANCE_SPOT_DEMO_WS_URL, BINANCE_SPOT_HTTP_URL,
-        BINANCE_SPOT_TESTNET_HTTP_URL, BINANCE_SPOT_TESTNET_WS_URL, BINANCE_SPOT_WS_URL,
+        BINANCE_FUTURES_COIN_DEMO_HTTP_URL, BINANCE_FUTURES_COIN_HTTP_URL,
+        BINANCE_FUTURES_COIN_TESTNET_HTTP_URL, BINANCE_FUTURES_COIN_TESTNET_WS_URL,
+        BINANCE_FUTURES_COIN_WS_URL, BINANCE_FUTURES_USD_DEMO_HTTP_URL,
+        BINANCE_FUTURES_USD_HTTP_URL, BINANCE_FUTURES_USD_TESTNET_HTTP_URL,
+        BINANCE_FUTURES_USD_TESTNET_WS_URL, BINANCE_FUTURES_USD_WS_URL, BINANCE_OPTIONS_HTTP_URL,
+        BINANCE_OPTIONS_WS_URL, BINANCE_SPOT_DEMO_HTTP_URL, BINANCE_SPOT_DEMO_WS_URL,
+        BINANCE_SPOT_HTTP_URL, BINANCE_SPOT_TESTNET_HTTP_URL, BINANCE_SPOT_TESTNET_WS_URL,
+        BINANCE_SPOT_WS_URL,
     },
     enums::{BinanceEnvironment, BinanceProductType},
 };
@@ -55,13 +56,12 @@ pub fn get_http_base_url(
         }
         (BinanceProductType::Options, BinanceEnvironment::Testnet) => BINANCE_OPTIONS_HTTP_URL,
 
-        // Demo (futures demo uses same URLs as futures testnet)
+        // Demo
         (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Demo) => {
             BINANCE_SPOT_DEMO_HTTP_URL
         }
-        (BinanceProductType::UsdM | BinanceProductType::CoinM, BinanceEnvironment::Demo) => {
-            BINANCE_FUTURES_DEMO_HTTP_URL
-        }
+        (BinanceProductType::UsdM, BinanceEnvironment::Demo) => BINANCE_FUTURES_USD_DEMO_HTTP_URL,
+        (BinanceProductType::CoinM, BinanceEnvironment::Demo) => BINANCE_FUTURES_COIN_DEMO_HTTP_URL,
         (BinanceProductType::Options, BinanceEnvironment::Demo) => BINANCE_OPTIONS_HTTP_URL,
     }
 }
@@ -139,6 +139,18 @@ mod tests {
     fn test_http_url_coinm_mainnet() {
         let url = get_http_base_url(BinanceProductType::CoinM, BinanceEnvironment::Mainnet);
         assert_eq!(url, "https://dapi.binance.com");
+    }
+
+    #[rstest]
+    fn test_http_url_usdm_demo() {
+        let url = get_http_base_url(BinanceProductType::UsdM, BinanceEnvironment::Demo);
+        assert_eq!(url, "https://demo-fapi.binance.com");
+    }
+
+    #[rstest]
+    fn test_http_url_coinm_demo() {
+        let url = get_http_base_url(BinanceProductType::CoinM, BinanceEnvironment::Demo);
+        assert_eq!(url, "https://testnet.binancefuture.com");
     }
 
     #[rstest]

@@ -192,6 +192,7 @@ impl BinanceFuturesWebSocketClient {
     #[allow(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceWsResult<()> {
         self.signal.store(false, Ordering::Relaxed);
+        self.cancellation_token = CancellationToken::new();
 
         let (raw_handler, raw_rx) = channel_message_handler();
         let ping_handler: PingHandler = Arc::new(move |_| {});

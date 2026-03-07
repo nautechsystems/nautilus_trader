@@ -29,6 +29,16 @@ pub const BINANCE: &str = "BINANCE";
 /// Static venue instance for Binance.
 pub static BINANCE_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(BINANCE));
 
+/// Binance Link and Trade broker ID for Spot.
+///
+/// <https://developers.binance.com/docs/binance_link/link-and-trade>
+pub const BINANCE_NAUTILUS_SPOT_BROKER_ID: &str = "TD67BGP9";
+
+/// Binance Link and Trade broker ID for Futures (TBD: awaiting separate ID from Binance).
+///
+/// <https://developers.binance.com/docs/binance_link/link-and-trade>
+pub const BINANCE_NAUTILUS_FUTURES_BROKER_ID: &str = "TD67BGP9";
+
 /// Binance Spot API base URL (mainnet).
 pub const BINANCE_SPOT_HTTP_URL: &str = "https://api.binance.com";
 
@@ -53,8 +63,11 @@ pub const BINANCE_FUTURES_COIN_TESTNET_HTTP_URL: &str = "https://testnet.binance
 /// Binance Spot API base URL (demo).
 pub const BINANCE_SPOT_DEMO_HTTP_URL: &str = "https://demo-api.binance.com";
 
-/// Binance Futures API base URL (demo, same as futures testnet).
-pub const BINANCE_FUTURES_DEMO_HTTP_URL: &str = "https://testnet.binancefuture.com";
+/// Binance USD-M Futures API base URL (demo).
+pub const BINANCE_FUTURES_USD_DEMO_HTTP_URL: &str = "https://demo-fapi.binance.com";
+
+/// Binance COIN-M Futures API base URL (demo, same as COIN-M testnet).
+pub const BINANCE_FUTURES_COIN_DEMO_HTTP_URL: &str = "https://testnet.binancefuture.com";
 
 /// Binance Spot WebSocket base URL (mainnet).
 pub const BINANCE_SPOT_WS_URL: &str = "wss://stream.binance.com:9443/ws";
