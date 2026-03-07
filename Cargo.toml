@@ -273,7 +273,7 @@ tokio-tungstenite = { version = "0.28.0", features = [
   "rustls-tls-webpki-roots",
 ] }
 tokio-util = { version = "0.7.18", default-features = false, features = ["io"] }
-toml = { version = "1.0.4", default-features = false, features = [
+toml = { version = "1.0.6", default-features = false, features = [
   "parse",
   "serde",
 ] }

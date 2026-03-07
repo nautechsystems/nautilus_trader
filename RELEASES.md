@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added option chains and greeks in Rust (#3637), thanks @filipmacek
+- Added option chains and greeks in Python (#3677), thanks @filipmacek
 - Added custom data registration, persistence, and routing in Rust (#3542), thanks @faysou
 - Added Hyperliquid agent wallet support (#3668), thanks @oh92
 
@@ -13,16 +14,17 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `RiskEngine` RefCell re-entrancy panic on order denial (#3680), thanks @husariancom
 - Fixed reconciliation when trigger_price is set for non-conditional orders (#3673), thanks @husariancom
+- Fixed spurious "Timer replaced" warnings for expired timers in `LiveClock` and `TestClock` (#3690), thanks @HaakonFlaaronning
 - Fixed Betfair order modify `Quantity` serialization for partial cancel size reduction
 - Fixed Binance algo order update (#3665), thanks @qu1zzyboy
 - Fixed Binance SBE price/quantity precision derivation (#3670), thanks @husariancom
-- Fixed spurious "Timer replaced" warnings for expired timers in `LiveClock` and `TestClock`, thanks @HaakonFlaaronning
 - Fixed dYdX WebSocket handler repeatedly emitting `NewInstrumentDiscovered` for uncached instruments on every `v4_markets` update
 - Fixed Kraken post-only order rejection not setting `due_post_only` on `OrderRejected` events (Spot and Futures)
 
 ### Internal Improvements
 - Added Python strategy support to `LiveNode` with `add_strategy_from_config`
 - Added backtest margin models, `FXRolloverInterestModule`, `PerContractFeeModel`, and `SimulationModule` trait in Rust
+- Refactored computation of greeks (#3691), thanks @faysou
 - Improved socket clients reconnect and shutdown reliability
 - Refined `AtomicTime` mode switching and datetime panics
 - Optimized network client performance and add benchmarks
