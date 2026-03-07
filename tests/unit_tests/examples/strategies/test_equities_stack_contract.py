@@ -113,6 +113,10 @@ def test_equities_and_tokenmm_installers_use_shared_strategy_stack_conventions()
     assert 'source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"' in equities_install
     assert 'source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"' in tokenmm_stack
     assert 'source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"' in equities_stack
+    assert '/../../.." && pwd)' in tokenmm_install
+    assert '/../../.." && pwd)' in equities_install
+    assert '/../../.." && pwd)' in tokenmm_stack
+    assert '/../../.." && pwd)' in equities_stack
 
     assert "strategy_stack_render_target()" in shared
     assert "strategy_stack_write_env()" in shared
