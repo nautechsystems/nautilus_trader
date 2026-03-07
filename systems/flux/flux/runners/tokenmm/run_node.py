@@ -348,7 +348,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             external_strategy_id=external_strategy_id,
             allowed_submit_instrument_ids=[maker_instrument_id],
             external_order_claims=[maker_instrument_id],
-            manage_stop=bool(strategy_cfg.get("manage_stop", mode == "live")),
+            manage_stop=bool(strategy_cfg.get("manage_stop", False)),
             order_qty=order_qty,
             qty=qty,
             bot_on=bool(strategy_cfg.get("bot_on", False)),

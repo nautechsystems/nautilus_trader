@@ -449,7 +449,7 @@ def test_build_node_wires_exec_engine_purge_settings(monkeypatch) -> None:
     assert exec_engine.purge_from_database is True
 
 
-def test_build_node_defaults_manage_stop_graceful_shutdown_and_allowed_submit_instrument_ids(
+def test_build_node_defaults_non_flattening_manage_stop_graceful_shutdown_and_allowed_submit_instrument_ids(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -521,7 +521,7 @@ def test_build_node_defaults_manage_stop_graceful_shutdown_and_allowed_submit_in
     assert node_config.data_engine.graceful_shutdown_on_exception is True
     assert node_config.risk_engine.graceful_shutdown_on_exception is True
     assert node_config.exec_engine.graceful_shutdown_on_exception is True
-    assert strategy.config.manage_stop is True
+    assert strategy.config.manage_stop is False
     assert strategy.config.cancel_all_instrument_orders is False
     assert strategy.config.allowed_submit_instrument_ids == [maker_instrument_id]
 
