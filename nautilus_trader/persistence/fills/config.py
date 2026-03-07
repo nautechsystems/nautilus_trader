@@ -19,6 +19,7 @@ from typing import Literal
 
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import PositiveInt
+from nautilus_trader.persistence._execution_timing import EXECUTION_TIMING_TOPIC
 
 ErrorPolicy = Literal["fail_fast", "log_and_drop", "buffer_until_full_then_fail"]
 
@@ -39,3 +40,9 @@ class ExecutionFillPersistenceActorConfig(ActorConfig, frozen=True):
     stop_timeout_ms: PositiveInt = 5_000
     strict_stop: bool = False
     propagate_errors_to_bus: bool = False
+    action_intent_topic: str | None = None
+    action_intent_max_entries: PositiveInt = 50_000
+    action_intent_ttl_ms: PositiveInt = 86_400_000
+    execution_timing_topic: str | None = EXECUTION_TIMING_TOPIC
+    execution_timing_max_entries: PositiveInt = 50_000
+    execution_timing_ttl_ms: PositiveInt = 86_400_000

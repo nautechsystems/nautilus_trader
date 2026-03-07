@@ -13,11 +13,63 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL = "null"
-SIGNAL_SNAPSHOT_JSON_DEFAULT_SQL = f"'{SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL}'"
+from nautilus_trader.persistence._action_intent import DECISION_CONTEXT_JSON_DEFAULT_LITERAL
 
 
-ORDER_ACTION_SCHEMA_SQL = f"""\
+DECISION_CONTEXT_JSON_DEFAULT_SQL = f"'{DECISION_CONTEXT_JSON_DEFAULT_LITERAL}'"
+SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL = DECISION_CONTEXT_JSON_DEFAULT_LITERAL
+
+ORDER_ACTION_COLUMN_NAMES = (
+    "trader_id",
+    "event_id",
+    "strategy_id",
+    "instrument_id",
+    "client_order_id",
+    "account_id",
+    "venue_order_id",
+    "position_id",
+    "action_type",
+    "action_state",
+    "event_type",
+    "action_id",
+    "action_reason",
+    "run_id",
+    "quote_cycle_id",
+    "reason_code",
+    "level_index",
+    "target_px",
+    "cancel_px",
+    "match_tol",
+    "ts_market_data_event_ns",
+    "ts_market_data_recv_ns",
+    "ts_decision_ns",
+    "ts_submit_local_ns",
+    "ts_command_init_ns",
+    "ts_risk_recv_ns",
+    "ts_risk_forward_ns",
+    "ts_exec_recv_ns",
+    "ts_exec_forward_ns",
+    "ts_client_submit_ns",
+    "ts_adapter_submit_start_ns",
+    "ts_cancel_request_local_ns",
+    "decision_context_json",
+    "order_side",
+    "order_type",
+    "time_in_force",
+    "post_only",
+    "reduce_only",
+    "order_qty",
+    "order_px",
+    "rejection_reason",
+    "ts_event",
+    "ts_init",
+    "ts_ingest",
+    "reconciliation",
+    "payload_json",
+    "created_at",
+)
+
+ORDER_ACTION_TABLE_SQL = f"""\
 CREATE TABLE IF NOT EXISTS order_action (
   trader_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
@@ -35,9 +87,26 @@ CREATE TABLE IF NOT EXISTS order_action (
 
   action_id TEXT,
   action_reason TEXT,
+  run_id TEXT,
+  quote_cycle_id TEXT,
+  reason_code TEXT,
+  level_index INTEGER,
+  target_px TEXT,
+  cancel_px TEXT,
+  match_tol TEXT,
+  ts_market_data_event_ns INTEGER,
+  ts_market_data_recv_ns INTEGER,
   ts_decision_ns INTEGER,
-  -- JSON literal `null` (text), not SQL NULL.
-  signal_snapshot_json TEXT NOT NULL DEFAULT {SIGNAL_SNAPSHOT_JSON_DEFAULT_SQL},
+  ts_submit_local_ns INTEGER,
+  ts_command_init_ns INTEGER,
+  ts_risk_recv_ns INTEGER,
+  ts_risk_forward_ns INTEGER,
+  ts_exec_recv_ns INTEGER,
+  ts_exec_forward_ns INTEGER,
+  ts_client_submit_ns INTEGER,
+  ts_adapter_submit_start_ns INTEGER,
+  ts_cancel_request_local_ns INTEGER,
+  decision_context_json TEXT NOT NULL DEFAULT {DECISION_CONTEXT_JSON_DEFAULT_SQL},
 
   order_side TEXT,
   order_type TEXT,
@@ -57,16 +126,60 @@ CREATE TABLE IF NOT EXISTS order_action (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   PRIMARY KEY (trader_id, event_id)
 );
+"""
 
+ORDER_ACTION_INDEXES_SQL = """\
 CREATE INDEX IF NOT EXISTS order_action_strategy_ts_event_idx
   ON order_action (strategy_id, ts_event);
 
 CREATE INDEX IF NOT EXISTS order_action_client_order_ts_event_idx
   ON order_action (client_order_id, ts_event);
 
+CREATE INDEX IF NOT EXISTS order_action_quote_cycle_id_idx
+  ON order_action (quote_cycle_id);
+
 CREATE INDEX IF NOT EXISTS order_action_trader_strategy_action_state_ts_event_idx
   ON order_action (trader_id, strategy_id, action_type, action_state, ts_event);
 """
+
+ORDER_ACTION_SCHEMA_SQL = ORDER_ACTION_TABLE_SQL + "\n" + ORDER_ACTION_INDEXES_SQL
+
+ORDER_ACTION_MIGRATION_DEFAULTS = {
+    "action_id": "NULL",
+    "action_reason": "NULL",
+    "run_id": "NULL",
+    "quote_cycle_id": "NULL",
+    "reason_code": "NULL",
+    "level_index": "NULL",
+    "target_px": "NULL",
+    "cancel_px": "NULL",
+    "match_tol": "NULL",
+    "ts_market_data_event_ns": "NULL",
+    "ts_market_data_recv_ns": "NULL",
+    "ts_decision_ns": "NULL",
+    "ts_submit_local_ns": "NULL",
+    "ts_command_init_ns": "NULL",
+    "ts_risk_recv_ns": "NULL",
+    "ts_risk_forward_ns": "NULL",
+    "ts_exec_recv_ns": "NULL",
+    "ts_exec_forward_ns": "NULL",
+    "ts_client_submit_ns": "NULL",
+    "ts_adapter_submit_start_ns": "NULL",
+    "ts_cancel_request_local_ns": "NULL",
+    "decision_context_json": DECISION_CONTEXT_JSON_DEFAULT_SQL,
+    "order_side": "NULL",
+    "order_type": "NULL",
+    "time_in_force": "NULL",
+    "post_only": "NULL",
+    "reduce_only": "NULL",
+    "order_qty": "NULL",
+    "order_px": "NULL",
+    "rejection_reason": "NULL",
+    "ts_ingest": "0",
+    "reconciliation": "0",
+    "payload_json": "'{}'",
+    "created_at": "(strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+}
 
 
 INSERT_ORDER_ACTION_SQL = """\
@@ -84,8 +197,26 @@ INSERT INTO order_action (
   event_type,
   action_id,
   action_reason,
+  run_id,
+  quote_cycle_id,
+  reason_code,
+  level_index,
+  target_px,
+  cancel_px,
+  match_tol,
+  ts_market_data_event_ns,
+  ts_market_data_recv_ns,
   ts_decision_ns,
-  signal_snapshot_json,
+  ts_submit_local_ns,
+  ts_command_init_ns,
+  ts_risk_recv_ns,
+  ts_risk_forward_ns,
+  ts_exec_recv_ns,
+  ts_exec_forward_ns,
+  ts_client_submit_ns,
+  ts_adapter_submit_start_ns,
+  ts_cancel_request_local_ns,
+  decision_context_json,
   order_side,
   order_type,
   time_in_force,
@@ -100,7 +231,7 @@ INSERT INTO order_action (
   reconciliation,
   payload_json
 ) VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 ON CONFLICT(trader_id, event_id) DO NOTHING
 """

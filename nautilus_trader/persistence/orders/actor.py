@@ -17,19 +17,27 @@ from __future__ import annotations
 
 import copy
 import sqlite3
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 import msgspec
 
+from nautilus_trader.persistence._action_intent import ActionIntentCache
+from nautilus_trader.persistence._action_intent import ActionIntentRecord
+from nautilus_trader.persistence._action_intent import current_ts_ns
+from nautilus_trader.persistence._action_intent import DECISION_CONTEXT_JSON_DEFAULT_LITERAL
+from nautilus_trader.persistence._action_intent import intent_type_for_order_event
+from nautilus_trader.persistence._action_intent import intent_types_to_evict_for_order_event
+from nautilus_trader.persistence._action_intent import iter_json_payload_mappings
 from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.model.events import OrderEvent
 from nautilus_trader.persistence._async_sqlite import _AsyncSQLitePersistenceActor
 from nautilus_trader.persistence._async_sqlite import writer_startup_timeout_seconds
+from nautilus_trader.persistence._execution_timing import ExecutionTimingCache
+from nautilus_trader.persistence._execution_timing import ExecutionTimingRecord
+from nautilus_trader.persistence._execution_timing import iter_execution_timing_records
 from nautilus_trader.persistence.orders.config import OrderActionPersistenceActorConfig
-from nautilus_trader.persistence.orders.schema import SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL
 from nautilus_trader.persistence.orders.sqlite import OrderActionRow
 from nautilus_trader.persistence.orders.sqlite import connect
 from nautilus_trader.persistence.orders.sqlite import ensure_schema
@@ -51,9 +59,7 @@ def _writer_startup_timeout_seconds(config: OrderActionPersistenceActorConfig) -
 
 
 def _current_ts_ingest_ns(clock: object | None) -> int:
-    if clock is None:
-        return time.time_ns()
-    return int(clock.timestamp_ns())  # type: ignore[no-any-return]
+    return current_ts_ns(clock)
 
 
 def _extract_order_px(options: object) -> str | None:
@@ -92,10 +98,10 @@ def _parse_intent_tags(tags: object) -> tuple[str | None, str | None, int | None
     action_id: str | None = None
     action_reason: str | None = None
     ts_decision_ns: int | None = None
-    signal_snapshot_json = SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL
+    decision_context_json = DECISION_CONTEXT_JSON_DEFAULT_LITERAL
 
     if not isinstance(tags, list):
-        return action_id, action_reason, ts_decision_ns, signal_snapshot_json
+        return action_id, action_reason, ts_decision_ns, decision_context_json
 
     for tag in tags:
         if not isinstance(tag, str):
@@ -119,11 +125,11 @@ def _parse_intent_tags(tags: object) -> tuple[str | None, str | None, int | None
             try:
                 decoded = msgspec.json.decode(value.encode("utf-8"))
             except Exception:
-                signal_snapshot_json = msgspec.json.encode(value).decode("utf-8")
+                decision_context_json = msgspec.json.encode(value).decode("utf-8")
             else:
-                signal_snapshot_json = msgspec.json.encode(decoded).decode("utf-8")
+                decision_context_json = msgspec.json.encode(decoded).decode("utf-8")
 
-    return action_id, action_reason, ts_decision_ns, signal_snapshot_json
+    return action_id, action_reason, ts_decision_ns, decision_context_json
 
 
 def order_event_to_row(
@@ -131,6 +137,8 @@ def order_event_to_row(
     *,
     event_type: str | None = None,
     ts_ingest: int,
+    action_intent: ActionIntentRecord | None = None,
+    execution_timing: ExecutionTimingRecord | None = None,
     on_payload_encode_error: Callable[[], None] | None = None,
 ) -> OrderActionRow | None:
     """
@@ -150,8 +158,26 @@ def order_event_to_row(
 
     action_id: str | None = None
     action_reason: str | None = None
+    run_id: str | None = None
+    quote_cycle_id: str | None = None
+    reason_code: str | None = None
+    level_index: int | None = None
+    target_px: str | None = None
+    cancel_px: str | None = None
+    match_tol: str | None = None
+    ts_market_data_event_ns: int | None = None
+    ts_market_data_recv_ns: int | None = None
     ts_decision_ns: int | None = None
-    signal_snapshot_json = SIGNAL_SNAPSHOT_JSON_DEFAULT_LITERAL
+    ts_submit_local_ns: int | None = None
+    ts_command_init_ns: int | None = None
+    ts_risk_recv_ns: int | None = None
+    ts_risk_forward_ns: int | None = None
+    ts_exec_recv_ns: int | None = None
+    ts_exec_forward_ns: int | None = None
+    ts_client_submit_ns: int | None = None
+    ts_adapter_submit_start_ns: int | None = None
+    ts_cancel_request_local_ns: int | None = None
+    decision_context_json = DECISION_CONTEXT_JSON_DEFAULT_LITERAL
     order_side: str | None = None
     order_type: str | None = None
     time_in_force: str | None = None
@@ -162,7 +188,7 @@ def order_event_to_row(
     rejection_reason: str | None = None
 
     if event_type == "OrderInitialized":
-        action_id, action_reason, ts_decision_ns, signal_snapshot_json = _parse_intent_tags(data.get("tags"))
+        action_id, action_reason, ts_decision_ns, decision_context_json = _parse_intent_tags(data.get("tags"))
         order_side = data.get("order_side")
         order_type = data.get("order_type")
         time_in_force = data.get("time_in_force")
@@ -176,6 +202,31 @@ def order_event_to_row(
     if event_type in ("OrderRejected", "OrderCancelRejected"):
         reason = data.get("reason")
         rejection_reason = str(reason) if reason is not None else None
+
+    if action_intent is not None:
+        run_id = action_intent.run_id
+        quote_cycle_id = action_intent.quote_cycle_id
+        reason_code = action_intent.reason_code
+        level_index = action_intent.level_index
+        target_px = action_intent.target_px
+        cancel_px = action_intent.cancel_px
+        match_tol = action_intent.match_tol
+        ts_market_data_event_ns = action_intent.ts_market_data_event_ns
+        ts_market_data_recv_ns = action_intent.ts_market_data_recv_ns
+        ts_decision_ns = action_intent.ts_decision_ns if action_intent.ts_decision_ns is not None else ts_decision_ns
+        ts_submit_local_ns = action_intent.ts_submit_local_ns
+        ts_cancel_request_local_ns = action_intent.ts_cancel_request_local_ns
+        if action_intent.decision_context_json != DECISION_CONTEXT_JSON_DEFAULT_LITERAL:
+            decision_context_json = action_intent.decision_context_json
+
+    if execution_timing is not None:
+        ts_command_init_ns = execution_timing.ts_command_init_ns
+        ts_risk_recv_ns = execution_timing.ts_risk_recv_ns
+        ts_risk_forward_ns = execution_timing.ts_risk_forward_ns
+        ts_exec_recv_ns = execution_timing.ts_exec_recv_ns
+        ts_exec_forward_ns = execution_timing.ts_exec_forward_ns
+        ts_client_submit_ns = execution_timing.ts_client_submit_ns
+        ts_adapter_submit_start_ns = execution_timing.ts_adapter_submit_start_ns
 
     return OrderActionRow(
         trader_id=data["trader_id"],
@@ -191,8 +242,26 @@ def order_event_to_row(
         event_type=event_type,
         action_id=action_id,
         action_reason=action_reason,
+        run_id=run_id,
+        quote_cycle_id=quote_cycle_id,
+        reason_code=reason_code,
+        level_index=level_index,
+        target_px=target_px,
+        cancel_px=cancel_px,
+        match_tol=match_tol,
+        ts_market_data_event_ns=ts_market_data_event_ns,
+        ts_market_data_recv_ns=ts_market_data_recv_ns,
         ts_decision_ns=ts_decision_ns,
-        signal_snapshot_json=signal_snapshot_json,
+        ts_submit_local_ns=ts_submit_local_ns,
+        ts_command_init_ns=ts_command_init_ns,
+        ts_risk_recv_ns=ts_risk_recv_ns,
+        ts_risk_forward_ns=ts_risk_forward_ns,
+        ts_exec_recv_ns=ts_exec_recv_ns,
+        ts_exec_forward_ns=ts_exec_forward_ns,
+        ts_client_submit_ns=ts_client_submit_ns,
+        ts_adapter_submit_start_ns=ts_adapter_submit_start_ns,
+        ts_cancel_request_local_ns=ts_cancel_request_local_ns,
+        decision_context_json=decision_context_json,
         order_side=order_side,
         order_type=order_type,
         time_in_force=time_in_force,
@@ -214,6 +283,8 @@ class _OrderActionEnvelope:
     data: dict[str, Any]
     event_type: str
     ts_ingest: int
+    action_intent: ActionIntentRecord | None
+    execution_timing: ExecutionTimingRecord | None
 
 
 class OrderActionPersistenceActor(_AsyncSQLitePersistenceActor[_OrderActionEnvelope, OrderActionRow]):
@@ -247,14 +318,46 @@ class OrderActionPersistenceActor(_AsyncSQLitePersistenceActor[_OrderActionEnvel
         )
         self.filtered = 0
         self.payload_encode_errors = 0
+        self._action_intent_cache = ActionIntentCache(
+            max_entries=config.action_intent_max_entries,
+            ttl_ns=config.action_intent_ttl_ms * 1_000_000,
+        )
+        self._execution_timing_cache = ExecutionTimingCache(
+            max_entries=config.execution_timing_max_entries,
+            ttl_ns=config.execution_timing_ttl_ms * 1_000_000,
+        )
 
     def on_start(self) -> None:
+        self._action_intent_cache.clear()
+        self._execution_timing_cache.clear()
         super().on_start()
         self.msgbus.subscribe(topic=self.config.topic, handler=self._on_order_message)
+        if self.config.action_intent_topic is not None:
+            self.msgbus.subscribe(
+                topic=self.config.action_intent_topic,
+                handler=self._on_action_intent_message,
+            )
+        if self.config.execution_timing_topic is not None:
+            self.msgbus.subscribe(
+                topic=self.config.execution_timing_topic,
+                handler=self._on_execution_timing_message,
+            )
 
     def on_stop(self) -> None:
         if self.msgbus is not None:
             self.msgbus.unsubscribe(topic=self.config.topic, handler=self._on_order_message)
+            if self.config.action_intent_topic is not None:
+                self.msgbus.unsubscribe(
+                    topic=self.config.action_intent_topic,
+                    handler=self._on_action_intent_message,
+                )
+            if self.config.execution_timing_topic is not None:
+                self.msgbus.unsubscribe(
+                    topic=self.config.execution_timing_topic,
+                    handler=self._on_execution_timing_message,
+                )
+        self._action_intent_cache.clear()
+        self._execution_timing_cache.clear()
         super().on_stop()
 
     def _on_order_message(self, msg: object) -> None:
@@ -268,21 +371,68 @@ class OrderActionPersistenceActor(_AsyncSQLitePersistenceActor[_OrderActionEnvel
             return
 
         payload = _snapshot_payload_data(event.to_dict(event))
+        now_ns = _current_ts_ingest_ns(self.clock)
+        self._action_intent_cache.prune(now_ns=now_ns)
+        self._execution_timing_cache.prune(now_ns=now_ns)
+        action_intent = None
+        execution_timing = None
+        intent_type = intent_type_for_order_event(event_type)
+        if intent_type is not None:
+            action_intent = self._action_intent_cache.get(
+                client_order_id=str(event.client_order_id),
+                intent_type=intent_type,
+                strategy_id=str(event.strategy_id),
+                now_ns=now_ns,
+            )
+            execution_timing = self._execution_timing_cache.get(
+                client_order_id=str(event.client_order_id),
+                action_type=intent_type,
+                strategy_id=str(event.strategy_id),
+                now_ns=now_ns,
+            )
         self._enqueue_payload(
             _OrderActionEnvelope(
                 data=payload,
                 event_type=event_type,
-                ts_ingest=_current_ts_ingest_ns(self.clock),
+                ts_ingest=now_ns,
+                action_intent=action_intent,
+                execution_timing=execution_timing,
             ),
         )
+        evict_types = intent_types_to_evict_for_order_event(event_type)
+        if evict_types:
+            self._action_intent_cache.evict_types(
+                client_order_id=str(event.client_order_id),
+                strategy_id=str(event.strategy_id),
+                intent_types=evict_types,
+            )
+            self._execution_timing_cache.evict_types(
+                client_order_id=str(event.client_order_id),
+                strategy_id=str(event.strategy_id),
+                action_types=evict_types,
+            )
 
     def _build_row(self, payload: _OrderActionEnvelope) -> OrderActionRow | None:
         return order_event_to_row(
             payload.data,
             event_type=payload.event_type,
             ts_ingest=payload.ts_ingest,
+            action_intent=payload.action_intent,
+            execution_timing=payload.execution_timing,
             on_payload_encode_error=self._on_payload_encode_error,
         )
 
     def _on_payload_encode_error(self) -> None:
         self.payload_encode_errors += 1
+
+    def _on_action_intent_message(self, msg: object) -> None:
+        now_ns = _current_ts_ingest_ns(self.clock)
+        for payload in iter_json_payload_mappings(msg):
+            action_intent = ActionIntentRecord.from_payload(payload)
+            if action_intent is not None:
+                self._action_intent_cache.add(action_intent, now_ns=now_ns)
+
+    def _on_execution_timing_message(self, msg: object) -> None:
+        now_ns = _current_ts_ingest_ns(self.clock)
+        for record in iter_execution_timing_records(msg):
+            self._execution_timing_cache.add(record, now_ns=now_ns)

@@ -126,6 +126,20 @@ tokenmm_required_strategy_ids = [
   "plumeusdt_binance_spot_makerv3",
 ]
 
+[telemetry_shipper]
+enabled = true
+enable_local_persistence = true
+source_profile = "tokenmm"
+fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"
+orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"
+quote_cycles_db_path = "/var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite"
+balance_snapshots_db_path = "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite"
+portfolio_inventory_db_path = "/var/lib/nautilus/telemetry/tokenmm/portfolio_inventory.sqlite"
+state_db_path = "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"
+poll_interval_ms = 1000
+max_batch_size = 500
+prune_retention_hours = 168
+
 [portfolio]
 portfolio_id = "tokenmm"
 inventory_stale_after_ms = 3000

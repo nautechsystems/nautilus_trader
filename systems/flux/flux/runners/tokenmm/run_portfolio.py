@@ -16,6 +16,7 @@ from flux.common.portfolio_inventory import DEFAULT_PORTFOLIO_INVENTORY_STALE_AF
 from flux.common.portfolio_inventory import aggregate_components
 from flux.common.portfolio_inventory import decode_component
 from flux.common.portfolio_inventory import encode_portfolio_inventory
+from flux.persistence.portfolio_inventory_snapshots.sqlite import PortfolioInventorySnapshotWriter
 from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 
 
@@ -153,6 +154,7 @@ class TokenMMPortfolioAggregator:
         )
         self._log = logger
         self._running = True
+        self._snapshot_writer = _build_portfolio_inventory_snapshot_writer(config)
 
     def stop(self, *_args: Any) -> None:
         self._running = False
@@ -207,6 +209,9 @@ class TokenMMPortfolioAggregator:
             self._redis.set(key, encoded)
             if previous != encoded.encode():
                 self._redis.publish(self._aggregate_channel(base_currency=base_currency), encoded)
+            snapshot_writer = getattr(self, "_snapshot_writer", None)
+            if snapshot_writer is not None:
+                snapshot_writer.maybe_persist(payload=payload, ts_ms=now_ms_value)
 
     def run(self) -> None:
         signal.signal(signal.SIGINT, self.stop)
@@ -221,6 +226,9 @@ class TokenMMPortfolioAggregator:
         while self._running:
             self.recompute_once()
             time.sleep(POLL_INTERVAL_SECS)
+        snapshot_writer = getattr(self, "_snapshot_writer", None)
+        if snapshot_writer is not None:
+            snapshot_writer.close()
 
 
 def main() -> None:
@@ -239,6 +247,26 @@ def main() -> None:
         logger=logging.getLogger("nautilus-tokenmm-portfolio"),
     )
     aggregator.run()
+
+
+def _build_portfolio_inventory_snapshot_writer(
+    config: dict[str, Any],
+) -> PortfolioInventorySnapshotWriter | None:
+    telemetry = config.get("telemetry_shipper")
+    if not isinstance(telemetry, dict):
+        return None
+    if not bool(telemetry.get("enable_local_persistence", False)):
+        return None
+
+    db_path = _optional_text(telemetry.get("portfolio_inventory_db_path"))
+    if db_path is None:
+        return None
+
+    Path(db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+    return PortfolioInventorySnapshotWriter(
+        db_path=db_path,
+        unchanged_heartbeat_ms=int(telemetry.get("portfolio_inventory_unchanged_heartbeat_ms", 60_000)),
+    )
 
 
 if __name__ == "__main__":

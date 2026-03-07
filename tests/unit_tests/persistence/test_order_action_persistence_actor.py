@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 
@@ -33,6 +34,10 @@ from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+
+
+ACTION_INTENT_TOPIC = "flux.makerv3.order_intent"
+EXECUTION_TIMING_TOPIC = "events.execution.timing"
 
 
 def _row_count(db_path: str) -> int:
@@ -85,6 +90,8 @@ def _make_actor(
     insert_many_fn=None,
     connect_fn=None,
     max_queue_size: int = 10_000,
+    action_intent_topic: str | None = None,
+    execution_timing_topic: str | None = None,
 ):
     clock = TestClock()
     msgbus = MessageBus(
@@ -115,6 +122,10 @@ def _make_actor(
     }
     if event_types is not None:
         config_kwargs["event_types"] = event_types
+    if action_intent_topic is not None:
+        config_kwargs["action_intent_topic"] = action_intent_topic
+    if execution_timing_topic is not None:
+        config_kwargs["execution_timing_topic"] = execution_timing_topic
     config = OrderActionPersistenceActorConfig(**config_kwargs)
 
     actor_kwargs = {"run_writer_thread": run_writer_thread}
@@ -708,7 +719,7 @@ def test_actor_parses_order_initialized_tags_with_invalid_decision_and_signal_fa
           action_id,
           action_reason,
           ts_decision_ns,
-          signal_snapshot_json,
+          decision_context_json,
           ts_ingest
         FROM order_action
         WHERE event_type = 'OrderInitialized'
@@ -719,5 +730,279 @@ def test_actor_parses_order_initialized_tags_with_invalid_decision_and_signal_fa
     assert row["action_id"] == "act-1"
     assert row["action_reason"] == "quote:reprice"
     assert row["ts_decision_ns"] is None
-    assert row["signal_snapshot_json"] == "\"{bad-json\""
+    assert row["decision_context_json"] == "\"{bad-json\""
     assert row["ts_ingest"] == 987_654_321
+
+
+def test_actor_enriches_place_lifecycle_from_action_intent_topic(tmp_path) -> None:
+    actor, msgbus, db_path, _ = _make_actor(
+        tmp_path,
+        event_types=("OrderInitialized",),
+        run_writer_thread=False,
+        action_intent_topic=ACTION_INTENT_TOPIC,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.limit_order(instrument=instrument, tags=[])
+    initialized = order.init_event
+
+    actor.start()
+    msgbus.publish(
+        topic=ACTION_INTENT_TOPIC,
+        msg={
+            "strategy_id": order.strategy_id.value,
+            "client_order_id": order.client_order_id.value,
+            "intent_type": "PLACE",
+            "run_id": "run-telemetry-001",
+            "quote_cycle_id": "run-telemetry-001:17",
+            "reason_code": "place_missing_level",
+            "level_index": 2,
+            "target_px": "100.25",
+            "cancel_px": None,
+            "match_tol": "0.05",
+            "ts_market_data_event_ns": 1_111,
+            "ts_market_data_recv_ns": 1_222,
+            "ts_decision_ns": 1_333,
+            "ts_submit_local_ns": 1_444,
+            "ts_cancel_request_local_ns": None,
+            "decision_context_json": {
+                "edge_bps": "3.2",
+                "anchor_source": "maker_bbo",
+            },
+        },
+    )
+    msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=initialized)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT
+          run_id,
+          quote_cycle_id,
+          reason_code,
+          level_index,
+          target_px,
+          cancel_px,
+          match_tol,
+          ts_market_data_event_ns,
+          ts_market_data_recv_ns,
+          ts_decision_ns,
+          ts_submit_local_ns,
+          ts_cancel_request_local_ns,
+          decision_context_json
+        FROM order_action
+        WHERE client_order_id = ? AND event_type = 'OrderInitialized'
+        """,
+        (order.client_order_id.value,),
+    )
+    assert row is not None
+    assert row["run_id"] == "run-telemetry-001"
+    assert row["quote_cycle_id"] == "run-telemetry-001:17"
+    assert row["reason_code"] == "place_missing_level"
+    assert row["level_index"] == 2
+    assert row["target_px"] == "100.25"
+    assert row["cancel_px"] is None
+    assert row["match_tol"] == "0.05"
+    assert row["ts_market_data_event_ns"] == 1_111
+    assert row["ts_market_data_recv_ns"] == 1_222
+    assert row["ts_decision_ns"] == 1_333
+    assert row["ts_submit_local_ns"] == 1_444
+    assert row["ts_cancel_request_local_ns"] is None
+    assert json.loads(row["decision_context_json"]) == {
+        "edge_bps": "3.2",
+        "anchor_source": "maker_bbo",
+    }
+
+
+def test_actor_enriches_cancel_lifecycle_from_action_intent_topic(tmp_path) -> None:
+    actor, msgbus, db_path, _ = _make_actor(
+        tmp_path,
+        event_types=("OrderPendingCancel",),
+        run_writer_thread=False,
+        action_intent_topic=ACTION_INTENT_TOPIC,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+    pending_cancel = TestEventStubs.order_pending_cancel(order=order, ts_event=1_555)
+
+    actor.start()
+    msgbus.publish(
+        topic=ACTION_INTENT_TOPIC,
+        msg={
+            "strategy_id": order.strategy_id.value,
+            "client_order_id": order.client_order_id.value,
+            "intent_type": "CANCEL",
+            "run_id": "run-telemetry-001",
+            "quote_cycle_id": "run-telemetry-001:18",
+            "reason_code": "cancel_too_aggressive",
+            "level_index": 1,
+            "target_px": None,
+            "cancel_px": "100.31",
+            "match_tol": "0.01",
+            "ts_market_data_event_ns": 2_111,
+            "ts_market_data_recv_ns": 2_222,
+            "ts_decision_ns": 2_333,
+            "ts_submit_local_ns": None,
+            "ts_cancel_request_local_ns": 2_444,
+            "decision_context_json": {
+                "existing_order_px": "100.31",
+                "top_of_book_px": "100.29",
+            },
+        },
+    )
+    msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=pending_cancel)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT
+          run_id,
+          quote_cycle_id,
+          reason_code,
+          level_index,
+          target_px,
+          cancel_px,
+          match_tol,
+          ts_market_data_event_ns,
+          ts_market_data_recv_ns,
+          ts_decision_ns,
+          ts_submit_local_ns,
+          ts_cancel_request_local_ns,
+          decision_context_json
+        FROM order_action
+        WHERE client_order_id = ? AND event_type = 'OrderPendingCancel'
+        """,
+        (order.client_order_id.value,),
+    )
+    assert row is not None
+    assert row["run_id"] == "run-telemetry-001"
+    assert row["quote_cycle_id"] == "run-telemetry-001:18"
+    assert row["reason_code"] == "cancel_too_aggressive"
+    assert row["level_index"] == 1
+    assert row["target_px"] is None
+    assert row["cancel_px"] == "100.31"
+    assert row["match_tol"] == "0.01"
+    assert row["ts_market_data_event_ns"] == 2_111
+    assert row["ts_market_data_recv_ns"] == 2_222
+    assert row["ts_decision_ns"] == 2_333
+    assert row["ts_submit_local_ns"] is None
+    assert row["ts_cancel_request_local_ns"] == 2_444
+    assert json.loads(row["decision_context_json"]) == {
+        "existing_order_px": "100.31",
+        "top_of_book_px": "100.29",
+    }
+
+
+def test_actor_enriches_place_lifecycle_from_execution_timing_topic(tmp_path) -> None:
+    actor, msgbus, db_path, _ = _make_actor(
+        tmp_path,
+        event_types=("OrderSubmitted",),
+        run_writer_thread=False,
+        execution_timing_topic=EXECUTION_TIMING_TOPIC,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_submitted_order(instrument=instrument)
+    submitted = TestEventStubs.order_submitted(order=order, ts_event=2_500)
+
+    actor.start()
+    msgbus.publish(
+        topic=EXECUTION_TIMING_TOPIC,
+        msg={
+            "strategy_id": order.strategy_id.value,
+            "client_order_id": order.client_order_id.value,
+            "action_type": "PLACE",
+            "ts_command_init_ns": 1_100,
+            "ts_risk_recv_ns": 1_200,
+            "ts_risk_forward_ns": 1_300,
+            "ts_exec_recv_ns": 1_400,
+            "ts_exec_forward_ns": 1_500,
+            "ts_client_submit_ns": 1_600,
+            "ts_adapter_submit_start_ns": 1_700,
+        },
+    )
+    msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=submitted)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT
+          ts_command_init_ns,
+          ts_risk_recv_ns,
+          ts_risk_forward_ns,
+          ts_exec_recv_ns,
+          ts_exec_forward_ns,
+          ts_client_submit_ns,
+          ts_adapter_submit_start_ns
+        FROM order_action
+        WHERE client_order_id = ? AND event_type = 'OrderSubmitted'
+        """,
+        (order.client_order_id.value,),
+    )
+    assert row is not None
+    assert row["ts_command_init_ns"] == 1_100
+    assert row["ts_risk_recv_ns"] == 1_200
+    assert row["ts_risk_forward_ns"] == 1_300
+    assert row["ts_exec_recv_ns"] == 1_400
+    assert row["ts_exec_forward_ns"] == 1_500
+    assert row["ts_client_submit_ns"] == 1_600
+    assert row["ts_adapter_submit_start_ns"] == 1_700
+
+
+def test_actor_enriches_cancel_lifecycle_from_execution_timing_topic(tmp_path) -> None:
+    actor, msgbus, db_path, _ = _make_actor(
+        tmp_path,
+        event_types=("OrderPendingCancel",),
+        run_writer_thread=False,
+        execution_timing_topic=EXECUTION_TIMING_TOPIC,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    order = TestExecStubs.make_accepted_order(instrument=instrument)
+    pending_cancel = TestEventStubs.order_pending_cancel(order=order, ts_event=2_600)
+
+    actor.start()
+    msgbus.publish(
+        topic=EXECUTION_TIMING_TOPIC,
+        msg={
+            "strategy_id": order.strategy_id.value,
+            "client_order_id": order.client_order_id.value,
+            "action_type": "CANCEL",
+            "ts_command_init_ns": 2_100,
+            "ts_exec_recv_ns": 2_200,
+            "ts_exec_forward_ns": 2_300,
+            "ts_client_submit_ns": 2_400,
+            "ts_adapter_submit_start_ns": 2_500,
+        },
+    )
+    msgbus.publish(topic=f"events.order.{order.strategy_id.value}", msg=pending_cancel)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT
+          ts_command_init_ns,
+          ts_risk_recv_ns,
+          ts_risk_forward_ns,
+          ts_exec_recv_ns,
+          ts_exec_forward_ns,
+          ts_client_submit_ns,
+          ts_adapter_submit_start_ns
+        FROM order_action
+        WHERE client_order_id = ? AND event_type = 'OrderPendingCancel'
+        """,
+        (order.client_order_id.value,),
+    )
+    assert row is not None
+    assert row["ts_command_init_ns"] == 2_100
+    assert row["ts_risk_recv_ns"] is None
+    assert row["ts_risk_forward_ns"] is None
+    assert row["ts_exec_recv_ns"] == 2_200
+    assert row["ts_exec_forward_ns"] == 2_300
+    assert row["ts_client_submit_ns"] == 2_400
+    assert row["ts_adapter_submit_start_ns"] == 2_500

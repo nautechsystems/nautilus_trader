@@ -211,10 +211,12 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
         if error_code in self.ORDER_REJECTION_CODES:
             # Handle various order rejections
+            self._order_latency_by_order_ref.pop(order_ref.order_id, None)
             if handler:
                 handler(order_ref=order_ref.order_id, order_status="Rejected", reason=error_string)
         elif error_code == 202:
             # Handle order cancellation warning
+            self._order_latency_by_order_ref.pop(order_ref.order_id, None)
             if handler:
                 handler(order_ref=order_ref.order_id, order_status="Cancelled", reason=error_string)
         else:

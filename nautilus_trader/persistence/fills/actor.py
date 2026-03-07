@@ -21,9 +21,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from nautilus_trader.persistence._action_intent import ActionIntentCache
+from nautilus_trader.persistence._action_intent import ActionIntentRecord
+from nautilus_trader.persistence._action_intent import current_ts_ns
+from nautilus_trader.persistence._action_intent import iter_json_payload_mappings
+from nautilus_trader.persistence._action_intent import PLACE_INTENT_TYPE
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.persistence._async_sqlite import _AsyncSQLitePersistenceActor
 from nautilus_trader.persistence._async_sqlite import writer_startup_timeout_seconds
+from nautilus_trader.persistence._execution_timing import ExecutionTimingCache
+from nautilus_trader.persistence._execution_timing import ExecutionTimingRecord
+from nautilus_trader.persistence._execution_timing import iter_execution_timing_records
 from nautilus_trader.persistence.fills.config import ExecutionFillPersistenceActorConfig
 from nautilus_trader.persistence.fills.sqlite import ExecutionFillRow
 from nautilus_trader.persistence.fills.sqlite import connect
@@ -41,6 +49,9 @@ class _ExecutionFillEnvelope:
     event: OrderFilled
     client_order_id: str
     info: dict[str, Any]
+    ts_ingest_ns: int
+    action_intent: ActionIntentRecord | None
+    execution_timing: ExecutionTimingRecord | None
 
 
 class ExecutionFillPersistenceActor(_AsyncSQLitePersistenceActor[_ExecutionFillEnvelope, ExecutionFillRow]):
@@ -72,14 +83,46 @@ class ExecutionFillPersistenceActor(_AsyncSQLitePersistenceActor[_ExecutionFillE
             queue_item_name="fill",
         )
         self.info_encode_errors = 0
+        self._action_intent_cache = ActionIntentCache(
+            max_entries=config.action_intent_max_entries,
+            ttl_ns=config.action_intent_ttl_ms * 1_000_000,
+        )
+        self._execution_timing_cache = ExecutionTimingCache(
+            max_entries=config.execution_timing_max_entries,
+            ttl_ns=config.execution_timing_ttl_ms * 1_000_000,
+        )
 
     def on_start(self) -> None:
+        self._action_intent_cache.clear()
+        self._execution_timing_cache.clear()
         super().on_start()
         self.msgbus.subscribe(topic=self.config.topic, handler=self._on_fill_message)
+        if self.config.action_intent_topic is not None:
+            self.msgbus.subscribe(
+                topic=self.config.action_intent_topic,
+                handler=self._on_action_intent_message,
+            )
+        if self.config.execution_timing_topic is not None:
+            self.msgbus.subscribe(
+                topic=self.config.execution_timing_topic,
+                handler=self._on_execution_timing_message,
+            )
 
     def on_stop(self) -> None:
         if self.msgbus is not None:
             self.msgbus.unsubscribe(topic=self.config.topic, handler=self._on_fill_message)
+            if self.config.action_intent_topic is not None:
+                self.msgbus.unsubscribe(
+                    topic=self.config.action_intent_topic,
+                    handler=self._on_action_intent_message,
+                )
+            if self.config.execution_timing_topic is not None:
+                self.msgbus.unsubscribe(
+                    topic=self.config.execution_timing_topic,
+                    handler=self._on_execution_timing_message,
+                )
+        self._action_intent_cache.clear()
+        self._execution_timing_cache.clear()
         super().on_stop()
 
     def _on_fill_message(self, msg: object) -> None:
@@ -87,11 +130,27 @@ class ExecutionFillPersistenceActor(_AsyncSQLitePersistenceActor[_ExecutionFillE
             self.on_order_filled(msg)
 
     def on_order_filled(self, event: OrderFilled) -> None:
+        now_ns = current_ts_ns(self.clock)
+        self._action_intent_cache.prune(now_ns=now_ns)
+        self._execution_timing_cache.prune(now_ns=now_ns)
         self._enqueue_payload(
             _ExecutionFillEnvelope(
                 event=event,
                 client_order_id=event.client_order_id.value,
                 info=copy.deepcopy(event.info),
+                ts_ingest_ns=now_ns,
+                action_intent=self._action_intent_cache.get(
+                    client_order_id=event.client_order_id.value,
+                    intent_type=PLACE_INTENT_TYPE,
+                    strategy_id=event.strategy_id.value,
+                    now_ns=now_ns,
+                ),
+                execution_timing=self._execution_timing_cache.get(
+                    client_order_id=event.client_order_id.value,
+                    action_type=PLACE_INTENT_TYPE,
+                    strategy_id=event.strategy_id.value,
+                    now_ns=now_ns,
+                ),
             ),
         )
 
@@ -100,8 +159,23 @@ class ExecutionFillPersistenceActor(_AsyncSQLitePersistenceActor[_ExecutionFillE
             payload.event,
             info_override=payload.info,
             client_order_id_override=payload.client_order_id,
+            action_intent=payload.action_intent,
+            execution_timing=payload.execution_timing,
+            ts_ingest_ns=payload.ts_ingest_ns,
             on_info_encode_error=self._on_info_encode_error,
         )
 
     def _on_info_encode_error(self) -> None:
         self.info_encode_errors += 1
+
+    def _on_action_intent_message(self, msg: object) -> None:
+        now_ns = current_ts_ns(self.clock)
+        for payload in iter_json_payload_mappings(msg):
+            action_intent = ActionIntentRecord.from_payload(payload)
+            if action_intent is not None:
+                self._action_intent_cache.add(action_intent, now_ns=now_ns)
+
+    def _on_execution_timing_message(self, msg: object) -> None:
+        now_ns = current_ts_ns(self.clock)
+        for record in iter_execution_timing_records(msg):
+            self._execution_timing_cache.add(record, now_ns=now_ns)

@@ -12,6 +12,7 @@ This directory is the production deployment root for the current 4-node PLUME To
   - `flux.runners.tokenmm.run_portfolio`
   - `flux.runners.tokenmm.run_bridge`
   - `flux.runners.tokenmm.run_api`
+  - `nautilus_trader.persistence.shipper.run`
 - Active production strategy topology:
   - `plumeusdt_bybit_perp_makerv3`
   - `plumeusdt_bybit_spot_makerv3`
@@ -26,6 +27,10 @@ This directory is the production deployment root for the current 4-node PLUME To
 - Live trading is opt-in only when `TOKENMM_MODE=live`, `TOKENMM_CONFIRM_LIVE=1`, and `TOKENMM_ENABLE_EXECUTION=1` are all set together.
 - Redis stays in `tokenmm.live.toml`; per-strategy node deploy files inherit it through the node runner `--shared-config` overlay.
 - Production Redis is the dedicated `tokenmm` ElastiCache endpoint; keep the auth token out of git and inject it with `TOKENMM_REDIS_PASSWORD`.
+- Execution telemetry stays off the hot path: nodes write local SQLite under `/var/lib/nautilus/telemetry/tokenmm`, and a separate shipper service mirrors those files into RDS PostgreSQL.
+- Redis remains latest-only for live operational state.
+- Historical portfolio reconciliation now comes from RDS via the local SQLite shipper.
+- Historical balance and portfolio inventory surfaces are persisted as `flux_balance_snapshot` / `flux_balance_snapshot_row` and `portfolio_inventory_snapshot`.
 - All four active strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
 
 ## Inventory and balances model
@@ -38,6 +43,8 @@ This directory is the production deployment root for the current 4-node PLUME To
 - `GET /api/v1/balances?profile=tokenmm` remains a portfolio API projection built from allowlisted strategy
   balance snapshots.
 - `GET /api/v1/balances?strategy=<id>` remains the per-strategy debug view.
+- Redis powers the latest-only operational projection. Historical balance and portfolio reconciliation
+  should query the shipped RDS tables instead of Redis.
 
 :::info
 The portfolio sidecar currently drives shared inventory semantics for MakerV3 strategy state. The balances
@@ -49,6 +56,7 @@ endpoint still performs API-side aggregation for the TokenMM portfolio view.
 ```bash
 sudo ops/scripts/deploy/install_tokenmm_systemd.sh
 sudoedit /etc/flux/common.env
+python3 -m nautilus_trader.persistence.shipper.run --config deploy/tokenmm/tokenmm.live.toml --bootstrap-postgres
 sudo systemctl daemon-reload
 sudo systemctl start flux-tokenmm.target
 ```
@@ -57,10 +65,16 @@ Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`.
-- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`, and the 4 active
-  node services.
+- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`,
+  `tokenmm-telemetry-shipper`, and the 4 active node services.
 - Normal production start/stop/restart of services and nodes is supported through Pulse UI/API, not
   `tokenmm_stack.sh`.
+- RDS credentials live in `/etc/flux/common.env` via `NAUTILUS_TELEMETRY_PG_*`.
+- The shipper requires the sink schema to be bootstrapped explicitly before the first start.
+- A shared one physical Postgres database is used for TokenMM and future equities profiles; segmentation is logical via `source_profile`, `strategy_id`, `trader_id`, and related telemetry fields.
+- Postgres sink deduplication is keyed by `source_profile` plus the local event identity, so different profiles can safely share the same sink database.
+- Portfolio-history shipping includes `telemetry.flux_balance_snapshot`,
+  `telemetry.flux_balance_snapshot_row`, and `telemetry.portfolio_inventory_snapshot`.
 
 Bootstrap or disaster recovery only:
 
@@ -74,6 +88,7 @@ Primary operator surfaces:
 - `http://<host>:5022/pulse`
 - `GET /api/pulse/jobs`
 - `POST /api/pulse/jobs/group/tokenmm/restart`
+- [TELEMETRY_RDS_RUNBOOK.md](TELEMETRY_RDS_RUNBOOK.md)
 
 ## Local smoke only
 

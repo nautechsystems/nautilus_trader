@@ -13,7 +13,56 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-EXECUTION_FILL_SCHEMA_SQL = """\
+EXECUTION_FILL_COLUMN_NAMES = (
+    "trader_id",
+    "event_id",
+    "strategy_id",
+    "account_id",
+    "instrument_id",
+    "trade_id",
+    "client_order_id",
+    "venue_order_id",
+    "position_id",
+    "order_side",
+    "order_type",
+    "last_qty",
+    "last_px",
+    "currency",
+    "commission",
+    "liquidity_side",
+    "ts_event",
+    "ts_init",
+    "reconciliation",
+    "info_json",
+    "run_id",
+    "quote_cycle_id",
+    "reason_code",
+    "level_index",
+    "target_px",
+    "cancel_px",
+    "match_tol",
+    "ts_market_data_event_ns",
+    "ts_market_data_recv_ns",
+    "ts_decision_ns",
+    "ts_submit_local_ns",
+    "ts_command_init_ns",
+    "ts_risk_recv_ns",
+    "ts_risk_forward_ns",
+    "ts_exec_recv_ns",
+    "ts_exec_forward_ns",
+    "ts_client_submit_ns",
+    "ts_adapter_submit_start_ns",
+    "ts_ingest_ns",
+    "ts_submit_gateway_send_ns",
+    "ts_cancel_gateway_send_ns",
+    "ts_open_order_recv_ns",
+    "ts_order_status_recv_ns",
+    "ts_exec_details_recv_ns",
+    "created_at",
+)
+
+
+EXECUTION_FILL_TABLE_SQL = """\
 CREATE TABLE IF NOT EXISTS execution_fill (
   trader_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
@@ -36,10 +85,36 @@ CREATE TABLE IF NOT EXISTS execution_fill (
   ts_init INTEGER NOT NULL,
   reconciliation INTEGER NOT NULL DEFAULT 0,
   info_json TEXT NOT NULL DEFAULT '{}',
+  run_id TEXT,
+  quote_cycle_id TEXT,
+  reason_code TEXT,
+  level_index INTEGER,
+  target_px TEXT,
+  cancel_px TEXT,
+  match_tol TEXT,
+  ts_market_data_event_ns INTEGER,
+  ts_market_data_recv_ns INTEGER,
+  ts_decision_ns INTEGER,
+  ts_submit_local_ns INTEGER,
+  ts_command_init_ns INTEGER,
+  ts_risk_recv_ns INTEGER,
+  ts_risk_forward_ns INTEGER,
+  ts_exec_recv_ns INTEGER,
+  ts_exec_forward_ns INTEGER,
+  ts_client_submit_ns INTEGER,
+  ts_adapter_submit_start_ns INTEGER,
+  ts_ingest_ns INTEGER NOT NULL DEFAULT 0,
+  ts_submit_gateway_send_ns INTEGER,
+  ts_cancel_gateway_send_ns INTEGER,
+  ts_open_order_recv_ns INTEGER,
+  ts_order_status_recv_ns INTEGER,
+  ts_exec_details_recv_ns INTEGER,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   PRIMARY KEY (trader_id, event_id)
 );
+"""
 
+EXECUTION_FILL_INDEXES_SQL = """\
 CREATE INDEX IF NOT EXISTS execution_fill_ts_event_idx
   ON execution_fill (ts_event);
 
@@ -60,7 +135,13 @@ CREATE INDEX IF NOT EXISTS execution_fill_client_order_id_idx
 
 CREATE INDEX IF NOT EXISTS execution_fill_venue_order_id_idx
   ON execution_fill (venue_order_id);
+
+CREATE INDEX IF NOT EXISTS execution_fill_quote_cycle_id_idx
+  ON execution_fill (quote_cycle_id);
 """
+
+
+EXECUTION_FILL_SCHEMA_SQL = EXECUTION_FILL_TABLE_SQL + "\n" + EXECUTION_FILL_INDEXES_SQL
 
 
 INSERT_EXECUTION_FILL_SQL = """\
@@ -84,10 +165,33 @@ INSERT INTO execution_fill (
   ts_event,
   ts_init,
   reconciliation,
-  info_json
+  info_json,
+  run_id,
+  quote_cycle_id,
+  reason_code,
+  level_index,
+  target_px,
+  cancel_px,
+  match_tol,
+  ts_market_data_event_ns,
+  ts_market_data_recv_ns,
+  ts_decision_ns,
+  ts_submit_local_ns,
+  ts_command_init_ns,
+  ts_risk_recv_ns,
+  ts_risk_forward_ns,
+  ts_exec_recv_ns,
+  ts_exec_forward_ns,
+  ts_client_submit_ns,
+  ts_adapter_submit_start_ns,
+  ts_ingest_ns,
+  ts_submit_gateway_send_ns,
+  ts_cancel_gateway_send_ns,
+  ts_open_order_recv_ns,
+  ts_order_status_recv_ns,
+  ts_exec_details_recv_ns
 ) VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 ON CONFLICT(trader_id, event_id) DO NOTHING
 """
-

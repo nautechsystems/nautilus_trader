@@ -27,6 +27,7 @@ dependencies = [
   "numpy>=1.26.4",
   "pandas>=2.3.3,<3.0.0",
   "portion>=2.6.1",
+  "psycopg[binary]>=3.2.12,<4.0.0",
   "pyarrow>=22.0.0",
   "pytz>=2025.2.0",
   "tqdm>=4.67.3,<5.0.0",

@@ -12,27 +12,42 @@ import tomllib
 from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import redis
 
+from flux.common.config import FLUX_DEFAULT_NAMESPACE
+from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.runners.live import resolve_strategy_venues
+from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
+from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
-from flux.common.config import FLUX_DEFAULT_NAMESPACE
-from flux.common.config import FLUX_SCHEMA_VERSION
-from flux.runners.live import resolve_strategy_venues
-from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
-from flux.strategies import MakerV3Strategy
-from flux.strategies import MakerV3StrategyConfig
-from flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
+
+
+try:
+    from flux.strategies import MakerV3Strategy
+    from flux.strategies import MakerV3StrategyConfig
+    from flux.strategies.makerv3 import runtime_params as runtime_params_mod
+    from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
+except ModuleNotFoundError:  # pragma: no cover - optional web deps may be absent in unit tests
+    MakerV3Strategy = None
+
+    def _fallback_makerv3_strategy_config(**kwargs):
+        return kwargs
+
+    MakerV3StrategyConfig = _fallback_makerv3_strategy_config
+    TOPIC_ORDER_INTENT = "flux.makerv3.order_intent"
+    runtime_params_mod = SimpleNamespace(params_manager_factory=None)
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
@@ -90,7 +105,7 @@ def _load_runtime_config(path: Path, *, shared_config_path: Path | None = None) 
     return _merge_shared_tables(
         config=config,
         shared_config=shared_config,
-        table_names=("redis", "portfolio"),
+        table_names=("redis", "portfolio", "telemetry_shipper"),
     )
 
 
@@ -225,6 +240,82 @@ def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
     return _optional_text(identity.get("strategy_id")) or "makerv3"
 
 
+def _build_telemetry_actor_configs(config: dict[str, Any]) -> list[ImportableActorConfig]:
+    telemetry = config.get("telemetry_shipper")
+    if not isinstance(telemetry, dict):
+        return []
+    if not bool(telemetry.get("enable_local_persistence", False)):
+        return []
+
+    actors: list[ImportableActorConfig] = []
+    balance_snapshots_db_path = _optional_text(telemetry.get("balance_snapshots_db_path"))
+    if balance_snapshots_db_path is not None:
+        actors.append(
+            ImportableActorConfig(
+                actor_path="nautilus_trader.flux.persistence.balance_snapshots.actor.FluxBalanceSnapshotPersistenceActor",
+                config_path="nautilus_trader.flux.persistence.balance_snapshots.config.FluxBalanceSnapshotPersistenceActorConfig",
+                config={"db_path": balance_snapshots_db_path},
+            ),
+        )
+
+    fills_db_path = _optional_text(telemetry.get("fills_db_path"))
+    if fills_db_path is not None:
+        actors.append(
+            ImportableActorConfig(
+                actor_path="nautilus_trader.persistence.fills.actor.ExecutionFillPersistenceActor",
+                config_path="nautilus_trader.persistence.fills.config.ExecutionFillPersistenceActorConfig",
+                config={
+                    "db_path": fills_db_path,
+                    "action_intent_topic": TOPIC_ORDER_INTENT,
+                },
+            ),
+        )
+
+    orders_db_path = _optional_text(telemetry.get("orders_db_path"))
+    if orders_db_path is not None:
+        actors.append(
+            ImportableActorConfig(
+                actor_path="nautilus_trader.persistence.orders.actor.OrderActionPersistenceActor",
+                config_path="nautilus_trader.persistence.orders.config.OrderActionPersistenceActorConfig",
+                config={
+                    "db_path": orders_db_path,
+                    "action_intent_topic": TOPIC_ORDER_INTENT,
+                },
+            ),
+        )
+
+    quote_cycles_db_path = _optional_text(telemetry.get("quote_cycles_db_path"))
+    if quote_cycles_db_path is not None:
+        actors.append(
+            ImportableActorConfig(
+                actor_path="nautilus_trader.flux.persistence.quote_cycles.actor.QuoteCyclePersistenceActor",
+                config_path="nautilus_trader.flux.persistence.quote_cycles.config.QuoteCyclePersistenceActorConfig",
+                config={"db_path": quote_cycles_db_path},
+            ),
+        )
+
+    return actors
+
+
+def _prepare_telemetry_paths(config: dict[str, Any]) -> None:
+    telemetry = config.get("telemetry_shipper")
+    if not isinstance(telemetry, dict):
+        return
+    if not bool(telemetry.get("enable_local_persistence", False)):
+        return
+
+    for key in (
+        "balance_snapshots_db_path",
+        "fills_db_path",
+        "orders_db_path",
+        "quote_cycles_db_path",
+    ):
+        path_value = _optional_text(telemetry.get(key))
+        if path_value is None:
+            continue
+        Path(path_value).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
+
 @contextmanager
 def _strategy_startup_lock(
     config: dict[str, Any],
@@ -321,6 +412,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             stream_per_topic=True,
             types_filter=[OrderBookDeltas],
         ),
+        actors=_build_telemetry_actor_configs(config),
         data_clients=strategy_venues.data_clients,
         exec_clients=strategy_venues.exec_clients,
         timeout_connection=float(node_cfg.get("timeout_connection", 20.0)),
@@ -333,6 +425,10 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     order_qty = Decimal(str(strategy_cfg.get("order_qty", "1000")))
     qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1000"))
     qty = Decimal(str(qty_raw)) if qty_raw is not None else None
+    if MakerV3Strategy is None:
+        raise ModuleNotFoundError(
+            "TokenMM node runtime requires the Flux MakerV3 strategy dependencies to be installed.",
+        )
 
     strategy = MakerV3Strategy(
         config=MakerV3StrategyConfig(
@@ -406,6 +502,7 @@ def main() -> None:
     args = _parse_args()
     config = _load_runtime_config(args.config, shared_config_path=args.shared_config)
     mode = _resolve_mode(config, args)
+    _prepare_telemetry_paths(config)
 
     node = build_node(
         config,

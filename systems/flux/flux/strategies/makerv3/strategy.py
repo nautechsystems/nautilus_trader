@@ -32,10 +32,21 @@ from flux.strategies.makerv3.constants import ALERT_KEY_ORDER_REJECTED_BURST
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
+from flux.strategies.makerv3.constants import REASON_CANCEL_BOT_OFF
+from flux.strategies.makerv3.constants import REASON_CANCEL_BOT_OFF_FLIP
+from flux.strategies.makerv3.constants import REASON_CANCEL_MAKER_BOOK_UNAVAILABLE
+from flux.strategies.makerv3.constants import REASON_CANCEL_MAKER_MD_STALE
+from flux.strategies.makerv3.constants import REASON_CANCEL_ON_STOP
+from flux.strategies.makerv3.constants import REASON_CANCEL_QUOTE_FAIL_CIRCUIT_BREAKER
+from flux.strategies.makerv3.constants import REASON_CANCEL_REFERENCE_MD_STALE
+from flux.strategies.makerv3.constants import REASON_CANCEL_NO_TARGETS
+from flux.strategies.makerv3.constants import REASON_PLACE_MISSING_LEVEL
 from flux.strategies.makerv3.constants import TOPIC_FV
+from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
 from flux.strategies.makerv3.constants import TOPIC_TRADE
 from flux.strategies.makerv3.wire import build_quote_cycle_envelope
 from flux.strategies.makerv3.wire import build_quote_cycle_id
+from flux.strategies.makerv3.wire import QuoteCycleContext
 
 
 if TYPE_CHECKING:
@@ -72,11 +83,38 @@ def _normalized_reject_reason(reason: Any) -> str:
     return text or "unknown"
 
 
+def _order_side_text(side: Any) -> str | None:
+    if side is None:
+        return None
+    name = getattr(side, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    text = str(side).strip().upper()
+    if text in {"BUY", "SELL"}:
+        return text
+    if text == "1":
+        return "BUY"
+    if text == "2":
+        return "SELL"
+    return text or None
+
+
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return _decimal_to_json_str(value)
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_value(item) for item in value]
+    return value
+
+
 _validate_three_band_input = pricing_mod.validate_three_band_input
 build_ladder_targets = pricing_mod.build_ladder_targets
 build_ladder_place_cancel_levels = pricing_mod.build_ladder_place_cancel_levels
 build_ladder_place_cancel_levels_from_bps = pricing_mod.build_ladder_place_cancel_levels_from_bps
 plan_side_rebalance_actions = rebalancing_mod.plan_side_rebalance_actions
+plan_side_rebalance_details = rebalancing_mod.plan_side_rebalance_details
 
 
 _NAUTILUS_IMPORT_ERROR: ModuleNotFoundError | None = None
@@ -172,6 +210,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._books: dict[InstrumentId, OrderBook] = {}
             self._last_bbo: dict[InstrumentId, tuple[Decimal, Decimal] | None] = {}
             self._last_bbo_ts_ns: dict[InstrumentId, int] = {}
+            self._last_bbo_event_ts_ns: dict[InstrumentId, int] = {}
+            self._last_bbo_init_ts_ns: dict[InstrumentId, int] = {}
             self._last_market_bbo_publish_ns: dict[InstrumentId, int] = {}
             self._last_requote_ns = 0
             self._last_fv: Decimal | None = None
@@ -206,6 +246,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._quote_cycle_seq = 0
             self._last_actionable_alert_ns: dict[str, int] = {}
             self._last_actionable_alert_transition: dict[str, str] = {}
+            self._latest_place_intent_by_client_order_id: dict[str, dict[str, Any]] = {}
             self._portfolio_inventory_client: Any | None = None
             self._portfolio_inventory_portfolio_id: str | None = None
             self._portfolio_inventory_namespace = "flux"
@@ -227,6 +268,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._state_is_blocked = False
             self._last_actionable_alert_ns.clear()
             self._last_actionable_alert_transition.clear()
+            self._latest_place_intent_by_client_order_id.clear()
             self._last_bot_on = self._runtime_bool("bot_on")
             start_ns = int(self.clock.timestamp_ns())
             self._run_id = f"{self._strategy_identity}:{start_ns // 1_000_000}"
@@ -291,6 +333,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             }
             self._last_bbo = dict.fromkeys(self._books)
             self._last_bbo_ts_ns = dict.fromkeys(self._books, 0)
+            self._last_bbo_event_ts_ns = dict.fromkeys(self._books, 0)
+            self._last_bbo_init_ts_ns = dict.fromkeys(self._books, 0)
             self._last_market_bbo_publish_ns = dict.fromkeys(self._books, 0)
 
             for instrument_id in subscribed_instrument_ids:
@@ -312,7 +356,13 @@ if _NAUTILUS_IMPORT_ERROR is None:
             """
             Stop quoting, cancel managed orders, and publish terminal state.
             """
-            self._cancel_managed_quotes("on_stop", force=True)
+            self._latest_place_intent_by_client_order_id.clear()
+            self._cancel_managed_quotes(
+                "on_stop",
+                force=True,
+                now_ns=int(self.clock.timestamp_ns()),
+                reason_code=REASON_CANCEL_ON_STOP,
+            )
             timer_names: set[str] = set()
             try:
                 timer_names = set(self.clock.timer_names)
@@ -355,7 +405,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._publish_portfolio_inventory_component()
             bot_on_now = self._effective_bot_on()
             if _did_bot_turn_off(self._last_bot_on, bot_on_now):
-                self._cancel_managed_quotes("bot_off_flip", force=True)
+                self._cancel_managed_quotes(
+                    "bot_off_flip",
+                    force=True,
+                    now_ns=now_ns,
+                    reason_code=REASON_CANCEL_BOT_OFF_FLIP,
+                )
                 self._publish_state("bot_off")
             self._last_bot_on = bot_on_now
             if bot_on_now:
@@ -391,12 +446,25 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
             maker_ts_ns = int(self._last_bbo_ts_ns.get(self.config.maker_instrument_id, 0) or 0)
             if maker_ts_ns <= 0:
+                quote_cycle = self._begin_quote_cycle(
+                    now_ns=now_ns,
+                    trigger_source="timer_guard",
+                    trigger_instrument_id=self.config.maker_instrument_id,
+                    trigger_md_ts_event_ns=int(
+                        self._last_bbo_event_ts_ns.get(self.config.maker_instrument_id, 0) or 0,
+                    )
+                    or None,
+                    trigger_md_ts_init_ns=int(
+                        self._last_bbo_init_ts_ns.get(self.config.maker_instrument_id, 0) or 0,
+                    )
+                    or None,
+                )
                 self._handle_stale_quote_block(
                     now_ns=now_ns,
                     state="blocked_maker_md",
-                    cancel_reason="maker_md_stale",
+                    cancel_reason="maker_book_unavailable",
                     reason_code=REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE,
-                    quote_cycle_id=self._next_quote_cycle_id(now_ns=now_ns),
+                    quote_cycle=quote_cycle,
                     warning_message=(
                         "Quoting blocked (maker book unavailable) "
                         f"strategy_id={self._external_strategy_id}"
@@ -406,12 +474,25 @@ if _NAUTILUS_IMPORT_ERROR is None:
             maker_age_ns = now_ns - maker_ts_ns
             if maker_age_ns >= max_age_ns:
                 age_ms = int(maker_age_ns / 1_000_000)
+                quote_cycle = self._begin_quote_cycle(
+                    now_ns=now_ns,
+                    trigger_source="timer_guard",
+                    trigger_instrument_id=self.config.maker_instrument_id,
+                    trigger_md_ts_event_ns=int(
+                        self._last_bbo_event_ts_ns.get(self.config.maker_instrument_id, 0) or 0,
+                    )
+                    or None,
+                    trigger_md_ts_init_ns=int(
+                        self._last_bbo_init_ts_ns.get(self.config.maker_instrument_id, 0) or 0,
+                    )
+                    or None,
+                )
                 self._handle_stale_quote_block(
                     now_ns=now_ns,
                     state="blocked_maker_md",
                     cancel_reason="maker_md_stale",
                     reason_code=REASON_BLOCKED_MAKER_MD_STALE,
-                    quote_cycle_id=self._next_quote_cycle_id(now_ns=now_ns),
+                    quote_cycle=quote_cycle,
                     warning_message=(
                         "Quoting blocked (maker data stale) "
                         f"strategy_id={self._external_strategy_id} "
@@ -428,12 +509,25 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 reference_age_ms = (
                     int(reference_age_ns / 1_000_000) if reference_age_ns is not None else None
                 )
+                quote_cycle = self._begin_quote_cycle(
+                    now_ns=now_ns,
+                    trigger_source="timer_guard",
+                    trigger_instrument_id=self.config.reference_instrument_id,
+                    trigger_md_ts_event_ns=int(
+                        self._last_bbo_event_ts_ns.get(self.config.reference_instrument_id, 0) or 0,
+                    )
+                    or None,
+                    trigger_md_ts_init_ns=int(
+                        self._last_bbo_init_ts_ns.get(self.config.reference_instrument_id, 0) or 0,
+                    )
+                    or None,
+                )
                 self._handle_stale_quote_block(
                     now_ns=now_ns,
                     state="blocked_reference_md",
                     cancel_reason="reference_md_stale",
                     reason_code=REASON_BLOCKED_REFERENCE_MD_STALE,
-                    quote_cycle_id=self._next_quote_cycle_id(now_ns=now_ns),
+                    quote_cycle=quote_cycle,
                     warning_message=(
                         "Quoting blocked (reference data stale) "
                         f"strategy_id={self._external_strategy_id} "
@@ -540,24 +634,27 @@ if _NAUTILUS_IMPORT_ERROR is None:
             Handle order fill events and reconcile managed order tracking.
             """
             self._invalidate_inventory_skew_cache()
+            place_intent = self._pop_place_intent(getattr(event, "client_order_id", None))
             self._publish_portfolio_inventory_component(
                 state=self._last_state_name or "running",
                 now_ms_value=int(int(event.ts_event) // 1_000_000),
             )
-            self._publish_json(
-                TOPIC_TRADE,
-                {
-                    "strategy_id": self._external_strategy_id,
-                    "event": "order_filled",
-                    "instrument_id": str(event.instrument_id),
-                    "client_order_id": str(event.client_order_id),
-                    "trade_id": str(event.trade_id),
-                    "side": str(event.order_side),
-                    "qty": str(event.last_qty),
-                    "price": str(event.last_px),
-                    "ts_event": int(event.ts_event),
-                },
-            )
+            trade_payload = {
+                "strategy_id": self._external_strategy_id,
+                "event": "order_filled",
+                "instrument_id": str(event.instrument_id),
+                "client_order_id": str(event.client_order_id),
+                "trade_id": str(event.trade_id),
+                "side": str(event.order_side),
+                "qty": str(event.last_qty),
+                "price": str(event.last_px),
+                "ts_event": int(event.ts_event),
+            }
+            if place_intent is not None:
+                for key in ("run_id", "quote_cycle_id", "reason_code", "level_index"):
+                    if place_intent.get(key) is not None:
+                        trade_payload[key] = place_intent[key]
+            self._publish_json(TOPIC_TRADE, trade_payload)
             self._reconcile_managed_order(event.client_order_id, lifecycle="filled")
 
         def on_order_rejected(self, event: Any) -> None:
@@ -584,6 +681,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     now_ns = int(self.clock.timestamp_ns())
             if now_ns is not None:
                 self._track_order_rejection_alert(now_ns=int(now_ns), reason=reason)
+            self._pop_place_intent(getattr(event, "client_order_id", None))
 
         def on_order_canceled(self, event: Any) -> None:
             """
@@ -594,6 +692,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 getattr(event, "client_order_id", None),
                 lifecycle="canceled",
             )
+            self._pop_place_intent(getattr(event, "client_order_id", None))
 
         def on_order_expired(self, event: Any) -> None:
             """
@@ -604,6 +703,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 getattr(event, "client_order_id", None),
                 lifecycle="expired",
             )
+            self._pop_place_intent(getattr(event, "client_order_id", None))
 
         def _reconcile_managed_order(
             self,
@@ -956,20 +1056,110 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 quote_cycle_seq=self._quote_cycle_seq,
             )
 
+        def _begin_quote_cycle(
+            self,
+            *,
+            now_ns: int,
+            trigger_source: str | None,
+            trigger_instrument_id: InstrumentId | str | None = None,
+            trigger_md_ts_event_ns: int | None = None,
+            trigger_md_ts_init_ns: int | None = None,
+        ) -> QuoteCycleContext:
+            quote_cycle_id = self._next_quote_cycle_id(now_ns=now_ns)
+            return QuoteCycleContext(
+                run_id=str(getattr(self, "_run_id", self._strategy_identity)),
+                quote_cycle_id=quote_cycle_id,
+                quote_cycle_seq=int(getattr(self, "_quote_cycle_seq", 0)),
+                instrument_id=str(self.config.maker_instrument_id),
+                trigger_source=trigger_source,
+                trigger_instrument_id=str(trigger_instrument_id) if trigger_instrument_id is not None else None,
+                trigger_md_ts_event_ns=trigger_md_ts_event_ns,
+                trigger_md_ts_init_ns=trigger_md_ts_init_ns,
+                ts_cycle_start_ns=int(now_ns),
+            )
+
+        def _quote_cycle_context_from_id(
+            self,
+            *,
+            now_ns: int,
+            quote_cycle_id: str,
+            trigger_source: str | None = None,
+            trigger_instrument_id: InstrumentId | str | None = None,
+            trigger_md_ts_event_ns: int | None = None,
+            trigger_md_ts_init_ns: int | None = None,
+        ) -> QuoteCycleContext:
+            quote_cycle_seq = int(getattr(self, "_quote_cycle_seq", 0))
+            suffix = quote_cycle_id.rsplit(":", 1)[-1]
+            with suppress(ValueError):
+                quote_cycle_seq = int(suffix)
+            return QuoteCycleContext(
+                run_id=str(getattr(self, "_run_id", self._strategy_identity)),
+                quote_cycle_id=quote_cycle_id,
+                quote_cycle_seq=quote_cycle_seq,
+                instrument_id=str(self.config.maker_instrument_id),
+                trigger_source=trigger_source,
+                trigger_instrument_id=str(trigger_instrument_id) if trigger_instrument_id is not None else None,
+                trigger_md_ts_event_ns=trigger_md_ts_event_ns,
+                trigger_md_ts_init_ns=trigger_md_ts_init_ns,
+                ts_cycle_start_ns=int(now_ns),
+            )
+
+        def _quote_cycle_decision_context(
+            self,
+            *,
+            runtime_params: Mapping[str, Any] | None = None,
+            managed_orders: list[Order] | None = None,
+            per_level_outcomes: list[dict[str, Any]] | None = None,
+        ) -> dict[str, Any] | None:
+            if runtime_params is None:
+                runtime_params = self._quote_runtime_params_snapshot()
+            managed_orders_list = managed_orders if managed_orders is not None else self._managed_orders()
+            payload: dict[str, Any] = {}
+
+            pricing_debug = publisher_mod._pricing_debug_payload(self)  # noqa: SLF001
+            if pricing_debug:
+                payload["pricing_debug"] = _json_safe_value(pricing_debug)
+
+            if runtime_params:
+                payload["runtime_params"] = _json_safe_value(dict(runtime_params))
+
+            maker_quote_status = publisher_mod._maker_quote_status_payload(  # noqa: SLF001
+                self,
+                managed_orders=managed_orders_list,
+            )
+            if maker_quote_status is not None:
+                payload["maker_quote_status"] = maker_quote_status
+
+            maker_role_map = publisher_mod._maker_role_map_payload(self)  # noqa: SLF001
+            if maker_role_map:
+                payload["maker_role_map"] = maker_role_map
+
+            if per_level_outcomes:
+                payload["per_level_outcomes"] = list(per_level_outcomes)
+
+            return payload or None
+
         def _publish_quote_cycle_event(
             self,
             *,
             now_ns: int,
             quote_cycle_event: str,
             reason_code: str,
-            quote_cycle_id: str,
+            quote_cycle: QuoteCycleContext | None = None,
+            quote_cycle_id: str | None = None,
             payload: dict[str, Any] | None = None,
         ) -> None:
+            if quote_cycle is None:
+                quote_cycle_id_value = quote_cycle_id or self._next_quote_cycle_id(now_ns=now_ns)
+                quote_cycle = self._quote_cycle_context_from_id(
+                    now_ns=now_ns,
+                    quote_cycle_id=quote_cycle_id_value,
+                )
             envelope = build_quote_cycle_envelope(
-                run_id=str(getattr(self, "_run_id", self._strategy_identity)),
-                quote_cycle_id=quote_cycle_id,
+                context=quote_cycle,
                 quote_cycle_event=quote_cycle_event,
                 reason_code=reason_code,
+                ts_cycle_end_ns=now_ns,
                 payload=payload,
             )
             self._publish_event(
@@ -978,6 +1168,56 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 **envelope,
             )
 
+        def _publish_order_intent(
+            self,
+            *,
+            intent_type: str,
+            client_order_id: str,
+            quote_cycle: QuoteCycleContext | None,
+            reason_code: str,
+            side: OrderSide | str | None,
+            level_index: int | None,
+            target_px: Decimal | Price | str | None,
+            cancel_px: Decimal | Price | str | None,
+            match_tol: Decimal | str | None,
+            ts_decision_ns: int,
+            ts_submit_local_ns: int | None = None,
+            ts_cancel_request_local_ns: int | None = None,
+            decision_context_json: dict[str, Any] | None = None,
+        ) -> None:
+            payload: dict[str, Any] = {
+                "strategy_id": self._external_strategy_id,
+                "client_order_id": client_order_id,
+                "intent_type": intent_type,
+                "run_id": str(getattr(self, "_run_id", self._strategy_identity)),
+                "quote_cycle_id": quote_cycle.quote_cycle_id if quote_cycle is not None else None,
+                "reason_code": reason_code,
+                "side": _order_side_text(side),
+                "level_index": level_index,
+                "target_px": None if target_px is None else str(target_px),
+                "cancel_px": None if cancel_px is None else str(cancel_px),
+                "match_tol": None if match_tol is None else str(match_tol),
+                "ts_market_data_event_ns": (
+                    quote_cycle.trigger_md_ts_event_ns if quote_cycle is not None else None
+                ),
+                "ts_market_data_recv_ns": (
+                    quote_cycle.trigger_md_ts_init_ns if quote_cycle is not None else None
+                ),
+                "ts_decision_ns": int(ts_decision_ns),
+                "ts_submit_local_ns": ts_submit_local_ns,
+                "ts_cancel_request_local_ns": ts_cancel_request_local_ns,
+                "decision_context_json": None,
+            }
+            self._publish_json(TOPIC_ORDER_INTENT, payload)
+            if intent_type == "PLACE":
+                self._latest_place_intent_by_client_order_id[client_order_id] = payload
+
+        def _pop_place_intent(self, client_order_id: ClientOrderId | str | None) -> dict[str, Any] | None:
+            client_order_id_str = str(client_order_id or "")
+            if not client_order_id_str:
+                return None
+            return self._latest_place_intent_by_client_order_id.pop(client_order_id_str, None)
+
         def _handle_stale_quote_block(
             self,
             *,
@@ -985,7 +1225,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             state: str,
             cancel_reason: str,
             reason_code: str,
-            quote_cycle_id: str,
+            quote_cycle_id: str | None = None,
+            quote_cycle: QuoteCycleContext | None = None,
             warning_message: str,
         ) -> None:
             quote_engine_mod.handle_stale_quote_block(
@@ -994,6 +1235,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 state=state,
                 cancel_reason=cancel_reason,
                 reason_code=reason_code,
+                quote_cycle=quote_cycle,
                 quote_cycle_id=quote_cycle_id,
                 warning_message=warning_message,
             )
@@ -1010,11 +1252,18 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 managed_orders=managed_orders,
             )
 
-        def _refresh_quotes(self, now_ns: int, *, quote_cycle_id: str | None = None) -> None:
+        def _refresh_quotes(
+            self,
+            now_ns: int,
+            *,
+            quote_cycle_id: str | None = None,
+            quote_cycle: QuoteCycleContext | None = None,
+        ) -> None:
             quote_engine_mod.refresh_quotes(
                 self,
                 now_ns=now_ns,
                 quote_cycle_id=quote_cycle_id,
+                quote_cycle=quote_cycle,
             )
 
         def _publish_state_if_due(self) -> None:
@@ -1043,6 +1292,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             desired_levels: list[tuple[Price, Decimal, Decimal]],
             now_ns: int,
             max_age_ms: int,
+            quote_cycle: QuoteCycleContext | None = None,
+            decision_context_json: dict[str, Any] | None = None,
         ) -> int:
             side_name = "buy" if side == OrderSide.BUY else "sell"
             active_prices = [_price_to_decimal(order.price) for order in active_orders]
@@ -1055,7 +1306,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 for target_price, cancel_px, match_tol in desired_levels
             ]
 
-            cancel_indices, _ = plan_side_rebalance_actions(
+            cancel_actions, _ = plan_side_rebalance_details(
                 side=side_name,
                 active_prices=active_prices,
                 active_stale=active_stale,
@@ -1063,18 +1314,39 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 stale_cancel_budget=self.STALE_CANCELS_PER_SIDE_PER_CYCLE,
             )
 
-            for index in cancel_indices:
+            for cancel_action in cancel_actions:
+                index = cancel_action.index
+                cancel_px = _price_to_decimal(active_orders[index].price)
+                target_px: Decimal | None = None
+                match_tol: Decimal | None = None
+                if index < len(desired_dec):
+                    target_px = desired_dec[index][0]
+                    match_tol = desired_dec[index][2]
+                self._publish_order_intent(
+                    intent_type="CANCEL",
+                    client_order_id=str(active_orders[index].client_order_id),
+                    quote_cycle=quote_cycle,
+                    reason_code=cancel_action.reason_code,
+                    side=side,
+                    level_index=index,
+                    target_px=target_px,
+                    cancel_px=cancel_px,
+                    match_tol=match_tol,
+                    ts_decision_ns=now_ns,
+                    ts_cancel_request_local_ns=now_ns,
+                    decision_context_json=decision_context_json,
+                )
                 self.cancel_order(active_orders[index])
 
-            if cancel_indices:
-                cancel_index_set = set(cancel_indices)
+            if cancel_actions:
+                cancel_index_set = {action.index for action in cancel_actions}
                 active_orders[:] = [
                     order
                     for index, order in enumerate(active_orders)
                     if index not in cancel_index_set
                 ]
 
-            return len(cancel_indices)
+            return len(cancel_actions)
 
         def _place_missing_levels(
             self,
@@ -1084,16 +1356,32 @@ if _NAUTILUS_IMPORT_ERROR is None:
             desired_levels: list[tuple[Price, Decimal, Decimal]],
             best_bid_px: Decimal,
             best_ask_px: Decimal,
+            now_ns: int,
+            quote_cycle: QuoteCycleContext | None = None,
+            decision_context_json: dict[str, Any] | None = None,
+            per_level_outcomes: list[dict[str, Any]] | None = None,
         ) -> int:
             places = 0
             active_prices = [_price_to_decimal(order.price) for order in active_orders]
-            for target_price, _, match_tol in desired_levels:
+            for level_index, (target_price, cancel_px, match_tol) in enumerate(desired_levels):
                 target_px = _price_to_decimal(target_price)
                 if side == OrderSide.BUY and target_px >= best_ask_px:
+                    if per_level_outcomes is not None:
+                        per_level_outcomes.append(
+                            {"side": _order_side_text(side), "level_index": level_index, "outcome": "skipped_crossed_book"},
+                        )
                     continue
                 if side == OrderSide.SELL and target_px <= best_bid_px:
+                    if per_level_outcomes is not None:
+                        per_level_outcomes.append(
+                            {"side": _order_side_text(side), "level_index": level_index, "outcome": "skipped_crossed_book"},
+                        )
                     continue
                 if any(abs(existing_px - target_px) <= match_tol for existing_px in active_prices):
+                    if per_level_outcomes is not None:
+                        per_level_outcomes.append(
+                            {"side": _order_side_text(side), "level_index": level_index, "outcome": "skipped_existing_match"},
+                        )
                     continue
                 order = self.order_factory.limit(
                     instrument_id=self.config.maker_instrument_id,
@@ -1104,9 +1392,27 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 )
                 self.submit_order(order)
                 self._register_managed_order(order)
+                self._publish_order_intent(
+                    intent_type="PLACE",
+                    client_order_id=str(order.client_order_id),
+                    quote_cycle=quote_cycle,
+                    reason_code=REASON_PLACE_MISSING_LEVEL,
+                    side=side,
+                    level_index=level_index,
+                    target_px=target_px,
+                    cancel_px=cancel_px,
+                    match_tol=match_tol,
+                    ts_decision_ns=now_ns,
+                    ts_submit_local_ns=now_ns,
+                    decision_context_json=decision_context_json,
+                )
                 places += 1
                 active_orders.append(order)
                 active_prices.append(target_px)
+                if per_level_outcomes is not None:
+                    per_level_outcomes.append(
+                        {"side": _order_side_text(side), "level_index": level_index, "outcome": "placed"},
+                    )
             return places
 
         def _register_managed_order(self, order: Order) -> None:
@@ -1131,9 +1437,40 @@ if _NAUTILUS_IMPORT_ERROR is None:
             force: bool = False,
             *,
             managed_orders: list[Order] | None = None,
+            quote_cycle: QuoteCycleContext | None = None,
+            now_ns: int | None = None,
+            reason_code: str | None = None,
+            decision_context_json: dict[str, Any] | None = None,
         ) -> None:
             if managed_orders is None:
                 managed_orders = self._managed_orders()
+            publish_ns = int(self.clock.timestamp_ns()) if now_ns is None else int(now_ns)
+            cancel_reason_code = reason_code or {
+                "bot_off": REASON_CANCEL_BOT_OFF,
+                "bot_off_flip": REASON_CANCEL_BOT_OFF_FLIP,
+                "maker_book_unavailable": REASON_CANCEL_MAKER_BOOK_UNAVAILABLE,
+                "maker_md_stale": REASON_CANCEL_MAKER_MD_STALE,
+                "reference_md_stale": REASON_CANCEL_REFERENCE_MD_STALE,
+                "no_targets": REASON_CANCEL_NO_TARGETS,
+                "on_stop": REASON_CANCEL_ON_STOP,
+                "quote_fail_circuit_breaker": REASON_CANCEL_QUOTE_FAIL_CIRCUIT_BREAKER,
+            }.get(reason)
+            if cancel_reason_code is not None:
+                for order in managed_orders:
+                    self._publish_order_intent(
+                        intent_type="CANCEL",
+                        client_order_id=str(order.client_order_id),
+                        quote_cycle=quote_cycle,
+                        reason_code=cancel_reason_code,
+                        side=getattr(order, "side", None),
+                        level_index=None,
+                        target_px=None,
+                        cancel_px=getattr(order, "price", None),
+                        match_tol=None,
+                        ts_decision_ns=publish_ns,
+                        ts_cancel_request_local_ns=publish_ns,
+                        decision_context_json=decision_context_json,
+                    )
             result = managed_orders_mod.cancel_managed_quotes(
                 reason=reason,
                 force=force,

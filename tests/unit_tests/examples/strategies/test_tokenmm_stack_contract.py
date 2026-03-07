@@ -323,6 +323,7 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "Wants=flux@tokenmm-api.service" in target_unit
     assert "Wants=flux@tokenmm-portfolio.service" in target_unit
     assert "Wants=flux@tokenmm-bridge.service" in target_unit
+    assert "Wants=flux@tokenmm-telemetry-shipper.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_spot_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service" in target_unit
@@ -332,13 +333,22 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "/etc/flux" in install_script
     assert "/etc/sudoers.d/flux-pulse" in install_script
     assert (
-        'CMD="env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m flux.runners.tokenmm.run_api'
+        'CMD="env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api'
         in install_script
     )
+    assert "tokenmm-telemetry-shipper" in install_script
+    assert "nautilus_trader.persistence.shipper.run" in install_script
     assert "tokenmm-portfolio" in install_script
     assert 'service_id="tokenmm-node-${strategy_id}"' in install_script
     assert "tokenmm-api" in install_script
 
+    assert "NAUTILUS_TELEMETRY_PG_HOST=" in common_env
+    assert "NAUTILUS_TELEMETRY_PG_PORT=5432" in common_env
+    assert "NAUTILUS_TELEMETRY_PG_DATABASE=nautilus_telemetry" in common_env
+    assert "NAUTILUS_TELEMETRY_PG_SCHEMA=telemetry" in common_env
+    assert "NAUTILUS_TELEMETRY_PG_USERNAME=" in common_env
+    assert "NAUTILUS_TELEMETRY_PG_PASSWORD=" in common_env
+    assert "NAUTILUS_TELEMETRY_PG_SSLMODE=require" in common_env
     assert "TOKENMM_REDIS_PASSWORD=" in common_env
     assert "BYBIT_API_KEY=" in common_env
     assert "BINANCE_API_KEY=" in common_env
@@ -391,6 +401,25 @@ def test_tokenmm_registry_uses_execution_scoped_ids_not_tokenmm_clone_ids() -> N
         assert f'"{strategy_id}"' in config
     assert "tokenmm_plume_makerv3" not in config
     assert 'host = "0.0.0.0"' in config
+
+
+def test_tokenmm_live_config_defines_shared_telemetry_shipper_paths() -> None:
+    config = _read(_repo_root() / "deploy/tokenmm/tokenmm.live.toml")
+
+    assert "[telemetry_shipper]" in config
+    assert 'source_profile = "tokenmm"' in config
+    assert 'fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"' in config
+    assert 'orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"' in config
+    assert 'quote_cycles_db_path = "/var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite"' in config
+    assert (
+        'balance_snapshots_db_path = "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite"'
+        in config
+    )
+    assert (
+        'portfolio_inventory_db_path = "/var/lib/nautilus/telemetry/tokenmm/portfolio_inventory.sqlite"'
+        in config
+    )
+    assert 'state_db_path = "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"' in config
 
 
 def test_tokenmm_api_contract_catalog_lists_distinct_plume_spot_and_perp_instruments() -> None:
@@ -497,6 +526,12 @@ def test_deploy_docs_make_runtime_intent_and_reconciliation_guardrails_explicit(
     assert "flux.runners.tokenmm.run_portfolio" in readme
     assert "flux.runners.tokenmm.run_bridge" in readme
     assert "flux.runners.tokenmm.run_api" in readme
+    assert "Redis remains latest-only for live operational state." in readme
+    assert "Historical portfolio reconciliation now comes from RDS via the local SQLite shipper." in readme
+    assert "`flux_balance_snapshot` / `flux_balance_snapshot_row`" in readme
+    assert "`portfolio_inventory_snapshot`" in readme
+    assert "shared one physical Postgres database" in readme
+    assert "`source_profile`" in readme
     assert "deploy/makerv3" not in readme
     assert "runners.makerv3" not in readme
 
@@ -521,6 +556,8 @@ def test_flux_prod_docs_reference_tokenmm_runner_namespace() -> None:
     api_doc = _read(_repo_root() / "systems/flux/docs/api.md")
     bridge_doc = _read(_repo_root() / "systems/flux/docs/bridge.md")
     runbook = _read(_repo_root() / "apps/fluxboard/docs/tokenmm_runbook.md")
+    telemetry_runbook = _read(_repo_root() / "deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md")
+    execution_doc = _read(_repo_root() / "docs/concepts/execution.md")
 
     assert "flux.runners.tokenmm.run_api" in api_doc
     assert "flux.runners.makerv3.run_api" not in api_doc
@@ -535,3 +572,14 @@ def test_flux_prod_docs_reference_tokenmm_runner_namespace() -> None:
     assert "supported production lifecycle is Pulse-first" in runbook
     assert "bootstrap or disaster recovery only" in runbook
     assert "flux.runners.makerv3" not in runbook
+
+    assert "balance_snapshots_db_path" in telemetry_runbook
+    assert "portfolio_inventory_db_path" in telemetry_runbook
+    assert "telemetry.flux_balance_snapshot" in telemetry_runbook
+    assert "telemetry.flux_balance_snapshot_row" in telemetry_runbook
+    assert "telemetry.portfolio_inventory_snapshot" in telemetry_runbook
+    assert "one physical Postgres database" in telemetry_runbook
+    assert "`source_profile`" in telemetry_runbook
+
+    assert "Redis remains latest-only" in execution_doc
+    assert "portfolio reconciliation now comes from the shipped historical tables" in execution_doc

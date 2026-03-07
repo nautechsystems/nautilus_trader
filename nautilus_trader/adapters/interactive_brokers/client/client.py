@@ -2,6 +2,7 @@ import asyncio
 import functools
 import os
 import traceback
+from collections import OrderedDict
 from collections.abc import Callable
 from collections.abc import Coroutine
 from inspect import iscoroutinefunction
@@ -156,6 +157,8 @@ class InteractiveBrokersClient(
             dict[str, Execution | (CommissionAndFeesReport | str)],
         ] = {}
         self._order_id_to_order_ref: dict[VenueOrderId, AccountOrderRef] = {}
+        self._order_latency_by_order_ref: OrderedDict[str, dict[str, int]] = OrderedDict()
+        self._order_latency_cache_max_entries: int = 10_000
         self._next_valid_order_id: int = -1
 
         # Instrument provider (set by data/execution clients during connection)

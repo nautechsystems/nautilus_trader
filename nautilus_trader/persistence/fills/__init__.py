@@ -18,7 +18,9 @@ Execution fill persistence package.
 
 from nautilus_trader.persistence.fills.actor import ExecutionFillPersistenceActor
 from nautilus_trader.persistence.fills.config import ExecutionFillPersistenceActorConfig
+from nautilus_trader.persistence.fills.schema import EXECUTION_FILL_INDEXES_SQL
 from nautilus_trader.persistence.fills.schema import EXECUTION_FILL_SCHEMA_SQL
+from nautilus_trader.persistence.fills.schema import EXECUTION_FILL_TABLE_SQL
 from nautilus_trader.persistence.fills.sqlite import ExecutionFillRow
 from nautilus_trader.persistence.fills.sqlite import connect
 from nautilus_trader.persistence.fills.sqlite import ensure_schema
@@ -26,7 +28,9 @@ from nautilus_trader.persistence.fills.sqlite import fill_to_row
 from nautilus_trader.persistence.fills.sqlite import insert_fills
 
 __all__ = [
+    "EXECUTION_FILL_INDEXES_SQL",
     "EXECUTION_FILL_SCHEMA_SQL",
+    "EXECUTION_FILL_TABLE_SQL",
     "ExecutionFillPersistenceActor",
     "ExecutionFillPersistenceActorConfig",
     "ExecutionFillRow",
@@ -35,4 +39,3 @@ __all__ = [
     "fill_to_row",
     "insert_fills",
 ]
-

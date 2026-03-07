@@ -281,6 +281,7 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
+        ts_order_status_recv_ns = self._client._clock.timestamp_ns()
         task = partial(
             self._client.process_order_status,
             order_id=orderId,
@@ -294,6 +295,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             client_id=clientId,
             why_held=whyHeld,
             mkt_cap_price=mktCapPrice,
+            ts_order_status_recv_ns=ts_order_status_recv_ns,
         )
         self._client.submit_to_msg_handler_queue(task)
 
@@ -320,12 +322,14 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
+        ts_open_order_recv_ns = self._client._clock.timestamp_ns()
         task = partial(
             self._client.process_open_order,
             order_id=orderId,
             contract=contract,
             order=order,
             order_state=orderState,
+            ts_open_order_recv_ns=ts_open_order_recv_ns,
         )
         self._client.submit_to_msg_handler_queue(task)
 
@@ -440,11 +444,13 @@ class InteractiveBrokersEWrapper(EWrapper):
         filled.
         """
         self.logAnswer(current_fn_name(), vars())
+        ts_exec_details_recv_ns = self._client._clock.timestamp_ns()
         task = partial(
             self._client.process_exec_details,
             req_id=reqId,
             contract=contract,
             execution=execution,
+            ts_exec_details_recv_ns=ts_exec_details_recv_ns,
         )
         self._client.submit_to_msg_handler_queue(task)
 

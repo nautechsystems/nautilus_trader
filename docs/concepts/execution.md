@@ -71,6 +71,45 @@ The persistence actor writes immutable rows into `execution_fill` using idempote
 non-blocking: the MessageBus handler snapshots mutable fill fields and enqueues them; JSON encoding
 and DB I/O run in buffered flushes.
 
+For latency-sensitive production deployments, the recommended topology is:
+
+- local SQLite on the trading node as the first durable sink
+- a separate shipper process reading those SQLite files asynchronously
+- one RDS PostgreSQL sink for centralized analytics and audit queries
+- Redis remains latest-only for live operational state; portfolio reconciliation now comes from the shipped historical tables in RDS, including `flux_balance_snapshot`,
+  `flux_balance_snapshot_row`, and `portfolio_inventory_snapshot`
+
+This keeps network database writes out of the trading hot path while still providing a managed
+central store.
+
+For MakerV3 and similar decision-driven strategies, `execution_fill` can also be enriched from a
+parallel action-intent stream keyed by `client_order_id`. It can also be enriched from the generic
+execution-timing stream `events.execution.timing`, keyed by `(strategy_id, client_order_id, action_type)`. In
+that mode the row includes:
+
+- Decision correlation: `run_id`, `quote_cycle_id`, `reason_code`, `level_index`
+- Decision timestamps: `ts_market_data_event_ns`, `ts_market_data_recv_ns`, `ts_decision_ns`,
+  `ts_submit_local_ns`, `ts_ingest_ns`
+- Generic execution pipeline timing:
+  `ts_command_init_ns`, `ts_risk_recv_ns`, `ts_risk_forward_ns`, `ts_exec_recv_ns`,
+  `ts_exec_forward_ns`, `ts_client_submit_ns`, `ts_adapter_submit_start_ns`
+- IB latency stamps when present in fill `info.ib_latency`:
+  `ts_submit_gateway_send_ns`, `ts_cancel_gateway_send_ns`, `ts_open_order_recv_ns`,
+  `ts_order_status_recv_ns`, `ts_exec_details_recv_ns`
+
+Clock-domain caveat:
+
+- `ts_market_data_event_ns` is the source event timestamp propagated from market data and is not
+  assumed to share a clock domain with local strategy or adapter timestamps.
+- `ts_market_data_recv_ns`, `ts_decision_ns`, `ts_submit_local_ns`, `ts_ingest_ns`,
+  `ts_command_init_ns`, `ts_risk_recv_ns`, `ts_risk_forward_ns`, `ts_exec_recv_ns`,
+  `ts_exec_forward_ns`, `ts_client_submit_ns`, `ts_adapter_submit_start_ns`,
+  `ts_submit_gateway_send_ns`, `ts_cancel_gateway_send_ns`, `ts_open_order_recv_ns`,
+  `ts_order_status_recv_ns`, and `ts_exec_details_recv_ns` are local-clock timestamps and can be
+  compared directly.
+- `execution_fill.ts_event` remains the adapter-provided execution event timestamp and also must
+  not be mixed into local latency calculations without explicit clock-domain handling.
+
 ```python
 from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -90,6 +129,8 @@ config = TradingNodeConfig(
                 "flush_timeout_ms": 5000,
                 "max_queue_size": 10000,
                 "on_error": "buffer_until_full_then_fail",
+                "action_intent_topic": "flux.makerv3.order_intent",
+                "execution_timing_topic": "events.execution.timing",
                 "propagate_errors_to_bus": False,
                 "stop_timeout_ms": 5000,
                 "strict_stop": False,
@@ -128,12 +169,43 @@ The persistence actor writes immutable rows into `order_action` using idempotenc
 `(trader_id, event_id)`. The hot path snapshots the event payload and enqueues it; tag parsing,
 JSON encoding, and DB I/O run in buffered flushes.
 
+`order_action` persists actual order lifecycle rows only. For MakerV3-style post-trade analysis,
+the table is enriched from `flux.makerv3.order_intent` plus the generic execution-timing stream
+`events.execution.timing` and carries:
+
+- Correlation: `run_id`, `quote_cycle_id`, `reason_code`, `level_index`
+- Decision context: `decision_context_json`
+- Decision timing: `ts_market_data_event_ns`, `ts_market_data_recv_ns`, `ts_decision_ns`,
+  `ts_submit_local_ns`, `ts_cancel_request_local_ns`
+- Generic execution pipeline timing:
+  `ts_command_init_ns`, `ts_risk_recv_ns`, `ts_risk_forward_ns`, `ts_exec_recv_ns`,
+  `ts_exec_forward_ns`, `ts_client_submit_ns`, `ts_adapter_submit_start_ns`
+
+On the standard live path today, submit commands traverse risk and execution, while cancel commands
+begin at execution. Expect `ts_risk_recv_ns` and `ts_risk_forward_ns` to be populated for submit
+rows and typically `NULL` for cancel rows unless a venue-specific stack adds risk-side cancel
+stamping.
+
+For IB specifically, adapter-side latency is represented in two ways:
+
+- `OrderSubmitted.ts_event` is a best-effort local pre-dispatch timestamp taken immediately before
+  the `ibapi` submit call, not a confirmed gateway/network send receipt.
+- Accept/reject lifecycle `ts_event` values reflect local callback receipt timestamps when the IB
+  adapter emits those lifecycle events. `OrderPendingCancel` is not currently emitted by the IB
+  adapter, so cancel-request timing should be read from `ts_cancel_gateway_send_ns` and the later
+  cancel callback timestamps where present.
+
+This keeps the order path queryable without adding venue-specific columns to every lifecycle row.
+
 `order_px` is a best-effort promoted column from `OrderInitialized.options` with key precedence
 `price` -> `trigger_price` -> `activation_price`. Treat `payload_json` as the canonical source for
 order-type-specific price semantics.
 
 SQLite defaults use `journal_mode=WAL` and `synchronous=NORMAL` for lower write latency. This can
 lose the most recent committed transaction(s) on abrupt power loss.
+
+In production, use the same pattern for `order_action`: local SQLite first, then ship asynchronously
+to RDS PostgreSQL from a separate process. Do not point the actor itself at a remote database.
 
 ```python
 from nautilus_trader.config import ImportableActorConfig
@@ -163,6 +235,8 @@ config = TradingNodeConfig(
                 "flush_timeout_ms": 5000,
                 "max_queue_size": 10000,
                 "on_error": "buffer_until_full_then_fail",
+                "action_intent_topic": "flux.makerv3.order_intent",
+                "execution_timing_topic": "events.execution.timing",
                 "propagate_errors_to_bus": False,
                 "stop_timeout_ms": 5000,
                 "strict_stop": False,
@@ -172,9 +246,32 @@ config = TradingNodeConfig(
 )
 ```
 
-In this MVP, `OrderActionIntent` (cancel-intent stream persistence) is deferred to the Task 5
-follow-up. Cancel strategy intent metadata is not persisted as a separate intent stream in this
-phase.
+## MakerV3 quote-cycle persistence
+
+Some of the most important market-making decisions produce no order at all. MakerV3 therefore
+persists a separate `quote_cycle` surface on `flux.makerv3.event` for every decision pass through
+the quote engine.
+
+Each row answers:
+
+- What triggered the cycle: `trigger_source`, `trigger_instrument_id`,
+  `trigger_md_ts_event_ns`, `trigger_md_ts_init_ns`
+- Which run/cycle the decision belonged to: `run_id`, `quote_cycle_id`, `quote_cycle_seq`
+- What happened: `quote_cycle_event`, `reason_code`, `cancel_count`, `place_count`
+- What the strategy saw and computed: `decision_context_json`
+
+`quote_cycle_id` is the canonical correlation key across:
+
+- `quote_cycle`
+- `order_action.quote_cycle_id`
+- `execution_fill.quote_cycle_id`
+
+For lightweight skip paths such as throttle/bot-off/circuit-open, `decision_context_json` is
+omitted or stored as JSON `null`. Completed and blocked cycles carry heavier audit context.
+
+`flux.makerv3.order_intent` is a lightweight enrichment stream, not a standalone SQL table in this
+PR. It exists to correlate quote-cycle decisions onto `order_action` and `execution_fill` rows
+without moving JSON encoding or DB work back onto the strategy hot path.
 
 Error-policy note:
 
@@ -284,6 +381,53 @@ WHERE oa.trader_id = :trader_id
   AND oa.action_type = 'PLACE'
   AND oa.ts_event BETWEEN :window_start_ns AND :window_end_ns
 ORDER BY oa.ts_event DESC, ef.ts_event DESC;
+```
+
+```sql
+-- Safe local tick receive -> local IB pre-dispatch timestamp (same clock domain).
+SELECT
+  client_order_id,
+  quote_cycle_id,
+  ts_market_data_recv_ns,
+  ts_submit_gateway_send_ns,
+  ts_submit_gateway_send_ns - ts_market_data_recv_ns AS md_recv_to_ib_predispatch_ns
+FROM execution_fill
+WHERE strategy_id = :strategy_id
+  AND ts_market_data_recv_ns IS NOT NULL
+  AND ts_submit_gateway_send_ns IS NOT NULL
+ORDER BY ts_submit_gateway_send_ns DESC;
+```
+
+```sql
+-- Local pipeline breakdown from command creation through adapter entry.
+SELECT
+  client_order_id,
+  ts_command_init_ns,
+  ts_risk_recv_ns - ts_command_init_ns AS command_to_risk_recv_ns,
+  ts_risk_forward_ns - ts_risk_recv_ns AS risk_residence_ns,
+  ts_exec_recv_ns - ts_risk_forward_ns AS risk_to_exec_ns,
+  ts_exec_forward_ns - ts_exec_recv_ns AS exec_residence_ns,
+  ts_client_submit_ns - ts_exec_forward_ns AS exec_to_client_ns,
+  ts_adapter_submit_start_ns - ts_client_submit_ns AS client_to_adapter_ns
+FROM order_action
+WHERE strategy_id = :strategy_id
+  AND action_type = 'PLACE'
+  AND action_state IN ('SUBMITTED', 'ACCEPTED', 'REJECTED')
+  AND ts_adapter_submit_start_ns IS NOT NULL
+ORDER BY ts_event DESC;
+```
+
+```sql
+-- Unsafe unless you have explicit clock normalization: raw source/venue timestamps are stored
+-- for audit/correlation, not direct subtraction against local-clock columns.
+SELECT
+  client_order_id,
+  ts_market_data_event_ns,
+  ts_market_data_recv_ns,
+  ts_event
+FROM execution_fill
+WHERE strategy_id = :strategy_id
+ORDER BY ts_event DESC;
 ```
 
 ## Order Management System (OMS)

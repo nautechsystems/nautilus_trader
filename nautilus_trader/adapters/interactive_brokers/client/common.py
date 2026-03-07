@@ -2,6 +2,7 @@ import asyncio
 import functools
 from abc import ABC
 from abc import abstractmethod
+from collections import OrderedDict
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Annotated
@@ -550,9 +551,11 @@ class BaseMixin:
 
     # Order
     _next_valid_order_id: int
+    _order_latency_by_order_ref: OrderedDict[str, dict[str, int]]
+    _order_latency_cache_max_entries: int
     _exec_id_details: dict[
         str,
-        dict[str, Execution | (CommissionAndFeesReport | str)],
+        dict[str, Execution | CommissionAndFeesReport | IBContract | str | int],
     ]
 
 

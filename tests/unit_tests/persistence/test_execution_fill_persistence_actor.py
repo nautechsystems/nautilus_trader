@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
@@ -32,6 +33,10 @@ from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+
+
+ACTION_INTENT_TOPIC = "flux.makerv3.order_intent"
+EXECUTION_TIMING_TOPIC = "events.execution.timing"
 
 
 def _make_fill(instrument, trade_id=None, ts_event: int = 123):
@@ -87,6 +92,8 @@ def _make_actor(
     strict_stop: bool = False,
     propagate_errors_to_bus: bool = False,
     insert_fills_fn=None,
+    action_intent_topic: str | None = None,
+    execution_timing_topic: str | None = None,
 ):
     clock = TestClock()
     msgbus = MessageBus(
@@ -101,20 +108,25 @@ def _make_actor(
     )
     db_path = str(tmp_path / "fills.sqlite")
 
-    config = ExecutionFillPersistenceActorConfig(
-        component_id="FILL-DB",
-        db_path=db_path,
-        topic="events.fills.*",
-        flush_interval_ms=10,
-        max_batch_size=1000,
-        flush_time_budget_ms=10,
-        flush_timeout_ms=flush_timeout_ms,
-        max_queue_size=max_queue_size,
-        on_error=on_error,
-        stop_timeout_ms=stop_timeout_ms,
-        strict_stop=strict_stop,
-        propagate_errors_to_bus=propagate_errors_to_bus,
-    )
+    config_kwargs = {
+        "component_id": "FILL-DB",
+        "db_path": db_path,
+        "topic": "events.fills.*",
+        "flush_interval_ms": 10,
+        "max_batch_size": 1000,
+        "flush_time_budget_ms": 10,
+        "flush_timeout_ms": flush_timeout_ms,
+        "max_queue_size": max_queue_size,
+        "on_error": on_error,
+        "stop_timeout_ms": stop_timeout_ms,
+        "strict_stop": strict_stop,
+        "propagate_errors_to_bus": propagate_errors_to_bus,
+    }
+    if action_intent_topic is not None:
+        config_kwargs["action_intent_topic"] = action_intent_topic
+    if execution_timing_topic is not None:
+        config_kwargs["execution_timing_topic"] = execution_timing_topic
+    config = ExecutionFillPersistenceActorConfig(**config_kwargs)
 
     actor_kwargs = {"run_writer_thread": run_writer_thread}
     if insert_fills_fn is not None:
@@ -662,3 +674,135 @@ def test_actor_startup_timeout_uses_flush_timeout_when_it_is_largest_budget() ->
     timeout = _writer_startup_timeout_seconds(config)
 
     assert timeout == 2.0
+
+
+def test_actor_enriches_fill_from_place_action_intent_and_sets_ts_ingest_ns(tmp_path) -> None:
+    actor, msgbus, db_path = _make_actor(
+        tmp_path,
+        run_writer_thread=False,
+        action_intent_topic=ACTION_INTENT_TOPIC,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(instrument=instrument, ts_event=7_000)
+
+    actor.start()
+    assert actor.clock is not None
+    actor.clock.advance_time(9_999_000_000)
+    msgbus.publish(
+        topic=ACTION_INTENT_TOPIC,
+        msg={
+            "strategy_id": fill.strategy_id.value,
+            "client_order_id": fill.client_order_id.value,
+            "intent_type": "PLACE",
+            "run_id": "run-telemetry-001",
+            "quote_cycle_id": "run-telemetry-001:27",
+            "reason_code": "place_missing_level",
+            "level_index": 3,
+            "target_px": "100.55",
+            "cancel_px": None,
+            "match_tol": "0.05",
+            "ts_market_data_event_ns": 4_111,
+            "ts_market_data_recv_ns": 4_222,
+            "ts_decision_ns": 4_333,
+            "ts_submit_local_ns": 4_444,
+            "decision_context_json": {
+                "effective_edge_bps": "4.1",
+                "maker_role": "lead",
+            },
+        },
+    )
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT
+          run_id,
+          quote_cycle_id,
+          reason_code,
+          level_index,
+          target_px,
+          cancel_px,
+          match_tol,
+          ts_market_data_event_ns,
+          ts_market_data_recv_ns,
+          ts_decision_ns,
+          ts_submit_local_ns,
+          ts_ingest_ns,
+          info_json
+        FROM execution_fill
+        WHERE event_id = ?
+        """,
+        (fill.id.value,),
+    )
+    assert row is not None
+    assert row["run_id"] == "run-telemetry-001"
+    assert row["quote_cycle_id"] == "run-telemetry-001:27"
+    assert row["reason_code"] == "place_missing_level"
+    assert row["level_index"] == 3
+    assert row["target_px"] == "100.55"
+    assert row["cancel_px"] is None
+    assert row["match_tol"] == "0.05"
+    assert row["ts_market_data_event_ns"] == 4_111
+    assert row["ts_market_data_recv_ns"] == 4_222
+    assert row["ts_decision_ns"] == 4_333
+    assert row["ts_submit_local_ns"] == 4_444
+    assert row["ts_ingest_ns"] == 9_999_000_000
+    assert json.loads(row["info_json"]) == {}
+
+
+def test_actor_enriches_fill_from_execution_timing_topic(tmp_path) -> None:
+    actor, msgbus, db_path = _make_actor(
+        tmp_path,
+        run_writer_thread=False,
+        execution_timing_topic=EXECUTION_TIMING_TOPIC,
+    )
+    instrument = TestInstrumentProvider.btcusdt_binance()
+    fill = _make_fill(instrument=instrument, ts_event=7_100)
+
+    actor.start()
+    msgbus.publish(
+        topic=EXECUTION_TIMING_TOPIC,
+        msg={
+            "strategy_id": fill.strategy_id.value,
+            "client_order_id": fill.client_order_id.value,
+            "action_type": "PLACE",
+            "ts_command_init_ns": 5_100,
+            "ts_risk_recv_ns": 5_200,
+            "ts_risk_forward_ns": 5_300,
+            "ts_exec_recv_ns": 5_400,
+            "ts_exec_forward_ns": 5_500,
+            "ts_client_submit_ns": 5_600,
+            "ts_adapter_submit_start_ns": 5_700,
+        },
+    )
+    msgbus.publish(topic=f"events.fills.{instrument.id}", msg=fill)
+    actor.flush()
+    actor.stop()
+
+    row = _fetch_one(
+        db_path,
+        """
+        SELECT
+          ts_command_init_ns,
+          ts_risk_recv_ns,
+          ts_risk_forward_ns,
+          ts_exec_recv_ns,
+          ts_exec_forward_ns,
+          ts_client_submit_ns,
+          ts_adapter_submit_start_ns
+        FROM execution_fill
+        WHERE event_id = ?
+        """,
+        (fill.id.value,),
+    )
+    assert row is not None
+    assert row["ts_command_init_ns"] == 5_100
+    assert row["ts_risk_recv_ns"] == 5_200
+    assert row["ts_risk_forward_ns"] == 5_300
+    assert row["ts_exec_recv_ns"] == 5_400
+    assert row["ts_exec_forward_ns"] == 5_500
+    assert row["ts_client_submit_ns"] == 5_600
+    assert row["ts_adapter_submit_start_ns"] == 5_700

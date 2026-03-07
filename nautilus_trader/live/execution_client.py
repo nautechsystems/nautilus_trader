@@ -41,6 +41,10 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
+from nautilus_trader.persistence._execution_timing import CANCEL_ACTION_TYPE
+from nautilus_trader.persistence._execution_timing import PLACE_ACTION_TYPE
+from nautilus_trader.persistence._execution_timing import publish_command_execution_timing
+from nautilus_trader.persistence._execution_timing import record_command_timing
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import order_side_to_str
@@ -254,6 +258,14 @@ class LiveExecutionClient(ExecutionClient):
 
     def submit_order(self, command: SubmitOrder) -> None:
         self._log.info(f"Submit {command.order}", LogColor.BLUE)
+        record_command_timing(command, field="ts_client_submit_ns", clock=self._clock)
+        publish_command_execution_timing(
+            self._msgbus,
+            command=command,
+            client_order_id=command.order.client_order_id.value,
+            action_type=PLACE_ACTION_TYPE,
+            strategy_id=command.order.strategy_id.value,
+        )
         self.create_task(
             self._submit_order(command),
             log_msg=f"submit_order: {command}",
@@ -261,6 +273,15 @@ class LiveExecutionClient(ExecutionClient):
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
         self._log.info(f"Submit {command.order_list}", LogColor.BLUE)
+        record_command_timing(command, field="ts_client_submit_ns", clock=self._clock)
+        for order in command.order_list.orders:
+            publish_command_execution_timing(
+                self._msgbus,
+                command=command,
+                client_order_id=order.client_order_id.value,
+                action_type=PLACE_ACTION_TYPE,
+                strategy_id=order.strategy_id.value,
+            )
         self.create_task(
             self._submit_order_list(command),
             log_msg=f"submit_order_list: {command}",
@@ -281,6 +302,14 @@ class LiveExecutionClient(ExecutionClient):
             " " + repr(command.venue_order_id) if command.venue_order_id is not None else ""
         )
         self._log.info(f"Cancel {command.client_order_id!r}{venue_order_id_str}", LogColor.BLUE)
+        record_command_timing(command, field="ts_client_submit_ns", clock=self._clock)
+        publish_command_execution_timing(
+            self._msgbus,
+            command=command,
+            client_order_id=command.client_order_id.value,
+            action_type=CANCEL_ACTION_TYPE,
+            strategy_id=command.strategy_id.value,
+        )
         self.create_task(
             self._cancel_order(command),
             log_msg=f"cancel_order: {command}",
@@ -299,6 +328,15 @@ class LiveExecutionClient(ExecutionClient):
             f"Batch cancel orders {[repr(c.client_order_id) for c in command.cancels]}",
             LogColor.BLUE,
         )
+        record_command_timing(command, field="ts_client_submit_ns", clock=self._clock)
+        for cancel in command.cancels:
+            publish_command_execution_timing(
+                self._msgbus,
+                command=command,
+                client_order_id=cancel.client_order_id.value,
+                action_type=CANCEL_ACTION_TYPE,
+                strategy_id=cancel.strategy_id.value,
+            )
         self.create_task(
             self._batch_cancel_orders(command),
             log_msg=f"batch_cancel_orders: {command}",

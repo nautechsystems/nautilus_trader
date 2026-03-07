@@ -1,9 +1,16 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+
+
+try:
+    import redis as _redis  # noqa: F401
+except ModuleNotFoundError:  # pragma: no cover - local test harness fallback
+    sys.modules["redis"] = SimpleNamespace(Redis=None)
 
 from flux.runners.tokenmm import run_node
 from nautilus_trader.model.identifiers import InstrumentId
@@ -406,6 +413,53 @@ db = 0
     assert merged["redis"]["db"] == 0
 
 
+def test_load_runtime_config_merges_shared_telemetry_shipper_table(tmp_path: Path) -> None:
+    strategy_path = tmp_path / "strategy.toml"
+    shared_path = tmp_path / "shared.toml"
+    strategy_path.write_text(
+        """
+[flux]
+mode = "paper"
+
+[identity]
+strategy_id = "strategy_a"
+
+[node]
+enable_execution = false
+""".strip(),
+        encoding="utf-8",
+    )
+    shared_path.write_text(
+        """
+[telemetry_shipper]
+enabled = true
+enable_local_persistence = true
+source_profile = "tokenmm"
+balance_snapshots_db_path = "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite"
+fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"
+orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"
+quote_cycles_db_path = "/var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite"
+state_db_path = "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"
+poll_interval_ms = 1000
+max_batch_size = 500
+prune_retention_hours = 168
+""".strip(),
+        encoding="utf-8",
+    )
+
+    merged = run_node._load_runtime_config(strategy_path, shared_config_path=shared_path)
+
+    assert merged["telemetry_shipper"]["source_profile"] == "tokenmm"
+    assert (
+        merged["telemetry_shipper"]["balance_snapshots_db_path"]
+        == "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite"
+    )
+    assert (
+        merged["telemetry_shipper"]["fills_db_path"]
+        == "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"
+    )
+
+
 def test_load_runtime_config_applies_redis_env_overrides(tmp_path: Path, monkeypatch) -> None:
     strategy_path = tmp_path / "strategy.toml"
     strategy_path.write_text(
@@ -466,6 +520,93 @@ def test_parse_args_accepts_optional_shared_config(monkeypatch, tmp_path: Path) 
 
     assert args.config == config_path
     assert args.shared_config == shared_path
+
+
+def test_build_node_adds_local_telemetry_persistence_actors_when_enabled(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["config"] = config
+            self.trader = SimpleNamespace(add_strategy=lambda _strategy: None)
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    monkeypatch.setattr(run_node, "MakerV3Strategy", _CapturedStrategy)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("PLUMEUSDT-PERP.BYBIT"),
+            reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "external_strategy_id": "plumeusdt_bybit_perp_makerv3",
+                "trader_id": "TOKENMM-LIVE-BYBIT-PERP",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {"enable_execution": False},
+            "strategy": {"strategy_id": "plumeusdt_bybit_perp_makerv3", "order_qty": "1000"},
+            "telemetry_shipper": {
+                "enabled": True,
+                "enable_local_persistence": True,
+                "source_profile": "tokenmm",
+                "balance_snapshots_db_path": "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite",
+                "fills_db_path": "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite",
+                "orders_db_path": "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite",
+                "quote_cycles_db_path": "/var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite",
+                "state_db_path": "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite",
+                "poll_interval_ms": 1000,
+                "max_batch_size": 500,
+                "prune_retention_hours": 168,
+            },
+        },
+        mode="live",
+        force_enable_execution=False,
+    )
+
+    config = captured["config"]
+    actors = config.actors
+    assert len(actors) == 4
+    assert {
+        actor.actor_path
+        for actor in actors
+    } == {
+        "nautilus_trader.flux.persistence.balance_snapshots.actor.FluxBalanceSnapshotPersistenceActor",
+        "nautilus_trader.persistence.fills.actor.ExecutionFillPersistenceActor",
+        "nautilus_trader.persistence.orders.actor.OrderActionPersistenceActor",
+        "nautilus_trader.flux.persistence.quote_cycles.actor.QuoteCyclePersistenceActor",
+    }
 
 
 def test_strategy_startup_lock_prevents_duplicate_flux_strategy_ids(tmp_path: Path) -> None:

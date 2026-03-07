@@ -30,6 +30,19 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
     _fetch_all_open_orders: bool
 
+    def _record_order_latency(self, order_ref: str, field: str, ts_ns: int | None = None) -> int:
+        timestamp_ns = self._clock.timestamp_ns() if ts_ns is None else int(ts_ns)
+        latency = self._order_latency_by_order_ref.pop(order_ref, {})
+        latency[field] = int(timestamp_ns)
+        self._order_latency_by_order_ref[order_ref] = latency
+        while len(self._order_latency_by_order_ref) > self._order_latency_cache_max_entries:
+            self._order_latency_by_order_ref.popitem(last=False)
+        return int(timestamp_ns)
+
+    def _evict_order_latency(self, order_ref: str | None) -> None:
+        if order_ref:
+            self._order_latency_by_order_ref.pop(order_ref, None)
+
     def place_order(self, order: IBOrder) -> None:
         """
         Place an order through the EClient.
@@ -43,10 +56,12 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         """
         # For orders we place, orderId is valid (permId not yet assigned)
         venue_order_id = VenueOrderId(str(order.orderId))
+        order_ref = order.orderRef
         self._order_id_to_order_ref[venue_order_id] = AccountOrderRef(
             account_id=order.account,
-            order_id=order.orderRef.rsplit(":", 1)[0],
+            order_id=order_ref.rsplit(":", 1)[0],
         )
+        self._record_order_latency(order_ref.rsplit(":", 1)[0], "ts_submit_gateway_send_ns")
         order.orderRef = f"{order.orderRef}:{order.orderId}"
         self._eclient.placeOrder(order.orderId, order.contract, order)
 
@@ -61,6 +76,13 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
         """
         for order in orders:
+            order_ref = order.orderRef.rsplit(":", 1)[0]
+            venue_order_id = VenueOrderId(str(order.orderId))
+            self._order_id_to_order_ref[venue_order_id] = AccountOrderRef(
+                account_id=order.account,
+                order_id=order_ref,
+            )
+            self._record_order_latency(order_ref, "ts_submit_gateway_send_ns")
             order.orderRef = f"{order.orderRef}:{order.orderId}"
             self._eclient.placeOrder(order.orderId, order.contract, order)
 
@@ -79,6 +101,9 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         if order_cancel is None:
             order_cancel = IBOrderCancel()
 
+        order_ref = self._order_id_to_order_ref.get(VenueOrderId(str(order_id)))
+        if order_ref is not None:
+            self._record_order_latency(order_ref.order_id, "ts_cancel_gateway_send_ns")
         self._eclient.cancelOrder(order_id, order_cancel)
 
     def cancel_all_orders(self) -> None:
@@ -257,6 +282,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         contract: Contract,
         order: IBOrder,
         order_state: IBOrderState,
+        ts_open_order_recv_ns: int | None = None,
     ) -> None:
         """
         Feed in currently open orders.
@@ -264,6 +290,8 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         order.contract = IBContract(**contract.__dict__)
         order.order_state = order_state
         order.orderRef = order.orderRef.rsplit(":", 1)[0]
+        if ts_open_order_recv_ns is not None:
+            self._record_order_latency(order.orderRef, "ts_open_order_recv_ns", ts_open_order_recv_ns)
 
         # Handle response to on-demand request
         if request := self._requests.get(name="OpenOrders"):
@@ -294,6 +322,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 order_ref=order.orderRef.rsplit(":", 1)[0],
                 order=order,
                 order_state=order_state,
+                ts_open_order_recv_ns=ts_open_order_recv_ns,
             )
 
     async def process_open_order_end(self) -> None:
@@ -317,6 +346,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         client_id: int,
         why_held: str,
         mkt_cap_price: float,
+        ts_order_status_recv_ns: int | None = None,
     ) -> None:
         """
         Get the up-to-date information of an order every time it changes.
@@ -328,6 +358,12 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         order_ref = self._order_id_to_order_ref.get(venue_order_id, None)
 
         if order_ref:
+            if ts_order_status_recv_ns is not None:
+                self._record_order_latency(
+                    order_ref.order_id,
+                    "ts_order_status_recv_ns",
+                    ts_order_status_recv_ns,
+                )
             name = f"orderStatus-{order_ref.account_id}"
 
             if handler := self._event_subscriptions.get(name, None):
@@ -338,7 +374,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     avg_fill_price=avg_fill_price,
                     filled=filled,
                     remaining=remaining,
+                    ts_order_status_recv_ns=ts_order_status_recv_ns,
                 )
+            if status in {"ApiCancelled", "Cancelled", "Inactive", "Rejected"}:
+                self._evict_order_latency(order_ref.order_id)
 
     async def process_exec_details(
         self,
@@ -346,6 +385,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         req_id: int,
         contract: Contract,
         execution: Execution,
+        ts_exec_details_recv_ns: int | None = None,
     ) -> None:
         """
         Provide the executions that happened in the prior 24 hours.
@@ -358,6 +398,13 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         cache["contract"] = IBContract(**contract.__dict__)
         cache["order_ref"] = execution.orderRef.rsplit(":", 1)[0]
         cache["req_id"] = req_id
+        if ts_exec_details_recv_ns is not None:
+            cache["ts_exec_details_recv_ns"] = int(ts_exec_details_recv_ns)
+            self._record_order_latency(
+                cache["order_ref"],
+                "ts_exec_details_recv_ns",
+                ts_exec_details_recv_ns,
+            )
 
         # Check if this is for a get_executions request
         execution_request_name = f"Executions-{execution.acctNumber}"
@@ -386,6 +433,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 execution=cache["execution"],
                 commission_report=cache["commission_report"],
                 contract=cache["contract"],
+                ts_exec_details_recv_ns=cache.get("ts_exec_details_recv_ns"),
             )
 
             # Only remove from cache if not part of a request
@@ -429,6 +477,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     execution=cache["execution"],
                     commission_report=cache["commission_report"],
                     contract=cache.get("contract"),
+                    ts_exec_details_recv_ns=cache.get("ts_exec_details_recv_ns"),
                 )
 
                 # Only remove from cache if not part of a request

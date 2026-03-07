@@ -2,7 +2,7 @@
 
 **Goal:** Persist engine-observed order lifecycle events related to placement and cancellation as immutable, queryable SQL records for audit/debugging (MM/HFT “flight recorder”), complementing execution fill persistence.
 
-**Architecture:** Subscribe to internal MessageBus order topics (currently `events.order.<strategy_id>`), filter to a chosen `OrderEvent` set, normalize into a canonical `order_action` row, and write through one idempotent, buffered persistence path (SQLite MVP; Postgres/outbox later). Capture strategy “intent” metadata (`action_reason`, optional `action_id`, optional `ts_decision_ns`) via order tags (`OrderInitialized.tags`) and/or a parallel intent event stream for cancels.
+**Architecture:** Subscribe to internal MessageBus order topics (currently `events.order.<strategy_id>`), filter to a chosen `OrderEvent` set, normalize into a canonical `order_action` row, and write through one idempotent, buffered persistence path (SQLite MVP; Postgres/outbox later). Capture strategy “intent” metadata (`reason_code`, optional `action_id`, optional `ts_decision_ns`) via `OrderInitialized.tags` where available and/or an optional parallel `action_intent` stream keyed by `client_order_id`. The current implementation also enriches rows from the generic live execution-timing stream `events.execution.timing`, keyed by `(strategy_id, client_order_id, action_type)`, to persist local pipeline timestamps without moving DB work onto the command hot path.
 
 **Tech stack:** Nautilus MessageBus + `Actor`, `OrderEvent` model events, SQLite (`sqlite3`) for MVP, optional Postgres follow-up, optional out-of-process consumer via external streams (Redis caveats documented).
 
@@ -46,7 +46,7 @@ Reference files (source of truth):
 ## Review decisions locked (Task 1)
 
 1. Event set (MVP): include `OrderInitialized`, `OrderSubmitted`, `OrderAccepted`, `OrderRejected`, `OrderPendingCancel`, `OrderCanceled`, `OrderCancelRejected`.
-1. Strategy metadata capture (MVP): tags-based extraction from `OrderInitialized` for PLACE path; keep cancel `OrderActionIntent` stream as follow-up (Task 5), not required for Tasks 2-4.
+1. Strategy metadata capture (current implementation): tags-based extraction from `OrderInitialized` remains supported for PLACE path, and optional `action_intent` stream enrichment is now available for both PLACE and CANCEL paths.
 1. SQLite layout (MVP default): separate DB files for fills vs orders (`fills.sqlite`, `orders.sqlite`).
 1. Index set (MVP): baseline indexes only; optional indexes (`instrument_id`, `venue_order_id`, `action_id`) deferred until query-driven follow-up.
 
@@ -169,7 +169,7 @@ Strategy intent metadata (best-effort, nullable):
 - `action_id TEXT` (nullable)
 - `action_reason TEXT` (nullable)
 - `ts_decision_ns INTEGER` (nullable; UNIX ns)
-- `signal_snapshot_json TEXT NOT NULL DEFAULT 'null'` (optional)
+- `decision_context_json TEXT NOT NULL DEFAULT 'null'` (optional)
 
 Order parameter columns (nullable; primarily from `OrderInitialized`):
 
@@ -249,21 +249,29 @@ Tracking:
 
 1. Strategy-side reason tagging framework is tracked in GitHub issue `clickconfirm/nautilus-trader#7`.
 
-### Cancel intent follow-up (CANCEL path, non-MVP)
+### Action-intent enrichment (implemented)
 
-MVP scope lock for Tasks 2-4: do **not** implement cancel-intent stream persistence in this phase.
-Because cancel lifecycle events do not carry strategy tags/info today, persist strategy cancel intent separately as Task 5 follow-up work.
+Cancel lifecycle events still do not carry strategy tags/info natively. The current implementation
+solves this by consuming a lightweight parallel `action_intent` stream keyed by
+`(client_order_id, intent_type)`.
 
-Follow-up approach (Task 5):
+Current approach:
 
-1. Emit a custom internal event `OrderActionIntent` on `events.order_intent.<strategy_id>`.
-1. Persist it append-only with the same idempotency key (`(trader_id, event_id)`), either:
-1. as a separate table `order_action_intent`, or
-1. as “intent rows” in the same `order_action` table (distinguished by `event_type`) if you want a single-table query surface.
+1. Strategies may emit a lightweight JSON intent payload, for example on
+   `flux.makerv3.order_intent`.
+1. The persistence actors keep a bounded TTL cache of recent PLACE/CANCEL intents keyed by
+   `client_order_id`.
+1. `order_action` enriches lifecycle rows from that cache:
+1. PLACE lifecycle rows use the latest PLACE intent.
+1. CANCEL lifecycle rows use the latest CANCEL intent.
+1. The intent stream is correlation metadata only; it is not persisted as a standalone SQL table in
+   this PR.
 
 Correlation:
 
-1. Join cancel intent to cancel lifecycle events by `(trader_id, client_order_id)` and (optionally) `action_id`.
+1. Join strategy intent to lifecycle rows by `(trader_id, client_order_id)` and event ordering.
+1. Use `quote_cycle_id`, `run_id`, `reason_code`, and timing fields for higher-fidelity attribution
+   when the emitting strategy provides them.
 
 ---
 
@@ -337,7 +345,7 @@ Postgres follow-up avoids these limitations.
 ## Open questions status (locked for Tasks 2-4 scope)
 
 1. `OrderInitialized` in MVP: **Yes (locked)**.
-1. `OrderActionIntent` in MVP: **No (follow-up, Task 5)**.
+1. `action_intent` enrichment in MVP: **Yes (implemented as optional stream enrichment, not a standalone SQL table)**.
 1. `action_id` strategy requirement in MVP: **best-effort (nullable, not enforced)**.
 1. Optional indexes (`instrument_id`, `venue_order_id`, `action_id`): **defer from MVP; add only when query evidence requires them**.
 1. Blocking check for Tasks 2-4: **No remaining blockers**.
@@ -350,11 +358,11 @@ Legend: `TODO` | `DOING` | `DONE` | `BLOCKED`
 
 | Item | Status | Notes | Link |
 | --- | --- | --- | --- |
-| Task 1: Lock MVP scope + mapping | DONE | Locked MVP event set (includes `OrderInitialized`/`OrderAccepted`/`OrderRejected`), locked enum mapping, moved `OrderActionIntent` to follow-up, set `action_id` best-effort, deferred optional indexes. Refs: `98fd07677`, `096697dad`, `771c4642d`, `05d7da641`, `9d89f0b98` | `98fd07677`, `096697dad`, `771c4642d`, `05d7da641`, `9d89f0b98` |
+| Task 1: Lock MVP scope + mapping | DONE | Locked MVP event set (includes `OrderInitialized`/`OrderAccepted`/`OrderRejected`), locked enum mapping, kept `action_id` best-effort, and later extended the implementation with optional `action_intent` enrichment for PLACE/CANCEL without changing the core lifecycle row model. Refs: `98fd07677`, `096697dad`, `771c4642d`, `05d7da641`, `9d89f0b98` | `98fd07677`, `096697dad`, `771c4642d`, `05d7da641`, `9d89f0b98` |
 | Task 2: SQLite store for `order_action` | DONE | Added orders schema + `insert_many` idempotent writer; follow-up clarified JSON `null` literal intent, replaced brittle tuple alias with named row type, added empty/mixed batch tests, and aligned test fixtures to use `OrderActionRow` + shared signal default literal. Refs: `c9ed7bd1e`, `20bb92f6e`, `06a0b9c81` | `c9ed7bd1e`, `20bb92f6e`, `06a0b9c81` |
 | Task 3: `OrderActionPersistenceActor` | DONE | Added orders actor/config with selected event filtering, enqueue-only hot path, bounded batch flush, threaded durability barrier semantics, strict/non-strict timeout handling, deterministic cleanup/finalization, and backlog drain regression coverage. Refs: base implementation `241adae5f`; follow-up hardening commits through `a541d6403`. | base `241adae5f`; follow-up hardening through `a541d6403` |
 | Task 4: Docs update | DONE | Added execution docs for `OrderActionPersistenceActor` usage, topic patterns, Redis wildcard caveat, and example SQL queries including `action_state` and fills joins. Refs: `054f1e652`, `6a6aeeef0`, `3689f3130`, `204bff39d`, `fb2bd7c7e`. | `054f1e652`, `6a6aeeef0`, `3689f3130`, `204bff39d`, `fb2bd7c7e` |
-| Task 5: Strategy reason/action_id framework | TODO | Strategy tagging + cancel intent channel | `clickconfirm/nautilus-trader#7` |
+| Task 5: Strategy reason/action_id framework | DONE | Added optional `action_intent` enrichment hook and MakerV3 `flux.makerv3.order_intent` publisher for PLACE/CANCEL correlation. Broader cross-strategy decision taxonomy remains future strategy-specific follow-up. | `clickconfirm/nautilus-trader#7` |
 
 ## Implementation plan (tasks)
 

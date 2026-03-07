@@ -79,6 +79,17 @@ CMD="python3 -m nautilus_trader.flux.runners.tokenmm.run_bridge --config ${SHARE
 EOF
 }
 
+render_telemetry_shipper_env() {
+  cat > "${ENV_DIR}/tokenmm-telemetry-shipper.env" <<EOF
+PULSE_ENABLED=1
+PULSE_DESCRIPTION=TokenMM telemetry shipper
+PULSE_GROUP_KEY=tokenmm
+PULSE_GROUP_LABEL=TokenMM
+PULSE_GROUP_ORDER=10
+CMD="python3 -m nautilus_trader.persistence.shipper.run --config ${SHARED_CONFIG}"
+EOF
+}
+
 render_node_envs() {
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
     local service_id="tokenmm-node-${strategy_id}"
@@ -105,6 +116,7 @@ main() {
   render_api_env
   render_portfolio_env
   render_bridge_env
+  render_telemetry_shipper_env
   render_node_envs
   enable_stack
   echo "[tokenmm-systemd] installed units under /etc/systemd/system, env files under /etc/flux, and sudoers at /etc/sudoers.d/flux-pulse"
