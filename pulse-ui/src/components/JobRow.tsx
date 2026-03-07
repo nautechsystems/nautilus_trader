@@ -40,8 +40,9 @@ export function JobRow({ job, busy, onAction, onViewLogs }: JobRowProps) {
   return (
     <tr className="job-row">
       <td>
-        <div className="job-row__primary mono">{job.name}</div>
-        {job.description ? <div className="job-row__secondary">{job.description}</div> : null}
+        <div className="job-row__primary mono" title={job.description ?? undefined}>
+          {job.name}
+        </div>
       </td>
       <td>
         <StatusPill label={status.toUpperCase()} tone={statusTone(status)} />

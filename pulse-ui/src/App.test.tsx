@@ -125,8 +125,14 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "Pulse" })).toBeInTheDocument();
     expect(await screen.findByText("TokenMM")).toBeInTheDocument();
-    expect(await screen.findByText("tokenmm-api")).toBeInTheDocument();
-    expect(await screen.findByText("tokenmm-bridge")).toBeInTheDocument();
+    const apiRow = await screen.findByText("tokenmm-api");
+    const bridgeRow = await screen.findByText("tokenmm-bridge");
+    expect(apiRow).toBeInTheDocument();
+    expect(bridgeRow).toBeInTheDocument();
+    expect(apiRow).toHaveAttribute("title", "TokenMM API");
+    expect(bridgeRow).toHaveAttribute("title", "TokenMM Bridge");
+    expect(screen.queryByText("TokenMM API")).not.toBeInTheDocument();
+    expect(screen.queryByText("TokenMM Bridge")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /view logs/i })).toHaveLength(2);
     expect(screen.getByRole("button", { name: /restart all/i })).toBeInTheDocument();
 
