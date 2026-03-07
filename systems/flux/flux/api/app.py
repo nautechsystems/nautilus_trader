@@ -30,6 +30,7 @@ from flux.api.payloads import build_params_payload
 from flux.api.payloads import build_signals_payload
 from flux.api.payloads import build_trades_rows
 from flux.api.payloads import coerce_ts_ms
+from flux.api.payloads import collapse_balance_display_rows
 from flux.api.payloads import contract_id_for_leg
 from flux.api.payloads import decode_text
 from flux.api.payloads import enrich_balances_rows
@@ -575,10 +576,12 @@ class FluxApiStore:
             market_rows[contract_id] = parsed
 
         return (
-            enrich_balances_rows(
-                rows,
-                contracts=self._contracts,
-                market_rows=market_rows,
+            collapse_balance_display_rows(
+                enrich_balances_rows(
+                    rows,
+                    contracts=self._contracts,
+                    market_rows=market_rows,
+                ),
             ),
             raw_snapshot is not None,
         )

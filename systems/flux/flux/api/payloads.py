@@ -862,6 +862,78 @@ def _cash_row_key(row: Mapping[str, Any]) -> tuple[str, str, str] | None:
     return (exchange, account, asset)
 
 
+def _balance_inventory_key(row: Mapping[str, Any]) -> tuple[str, str] | None:
+    exchange = _row_exchange_hint(row)
+    if not exchange:
+        return None
+
+    inventory_asset = decode_text(
+        row.get("inventory_asset")
+        or row.get("asset")
+        or row.get("coin")
+        or row.get("base"),
+    ).strip().upper()
+    if not inventory_asset:
+        naming = canonical_naming_fields(
+            instrument_id=row.get("instrument_id"),
+            exchange=row.get("exchange"),
+            venue=row.get("venue"),
+            symbol=row.get("symbol"),
+            asset=row.get("asset"),
+            inventory_asset=row.get("coin") or row.get("asset") or row.get("base"),
+            is_position=_is_position_row(dict(row)),
+        )
+        inventory_asset = decode_text(naming.get("inventory_asset")).strip().upper()
+    if not inventory_asset:
+        return None
+    return (exchange, inventory_asset)
+
+
+def _balance_product_type(row: Mapping[str, Any]) -> str:
+    product_type = decode_text(row.get("product_type")).strip().lower()
+    if product_type in {"spot", "perp"}:
+        return product_type
+    naming = canonical_naming_fields(
+        instrument_id=row.get("instrument_id"),
+        exchange=row.get("exchange"),
+        venue=row.get("venue"),
+        symbol=row.get("symbol"),
+        asset=row.get("asset"),
+        inventory_asset=row.get("coin") or row.get("asset") or row.get("base"),
+        is_position=_is_position_row(dict(row)),
+    )
+    return decode_text(naming.get("product_type")).strip().lower()
+
+
+def collapse_balance_display_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Prefer spot cash rows over duplicate spot-position rows for the same venue/base asset.
+
+    Some venue snapshots publish spot inventory twice: once as account cash and once as a spot "position".
+    Balances should render that inventory once, while Signal and other raw snapshot consumers remain untouched.
+    """
+    cash_keys: set[tuple[str, str]] = set()
+    normalized_rows = [dict(source_row) for source_row in rows if isinstance(source_row, Mapping)]
+
+    for row in normalized_rows:
+        if _is_position_row(row):
+            continue
+        if _balance_product_type(row) != "spot":
+            continue
+        key = _balance_inventory_key(row)
+        if key is not None:
+            cash_keys.add(key)
+
+    collapsed: list[dict[str, Any]] = []
+    for row in normalized_rows:
+        if _is_position_row(row) and _balance_product_type(row) == "spot":
+            key = _balance_inventory_key(row)
+            if key is not None and key in cash_keys:
+                continue
+        collapsed.append(row)
+    return collapsed
+
+
 def _position_portfolio_key(row: Mapping[str, Any]) -> tuple[str, str] | None:
     exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
     instrument = decode_text(
@@ -990,7 +1062,9 @@ def merge_portfolio_balances_rows(
     merged_cash = [item[1] for item in cash_latest.values()]
     merged_rows = [*merged_positions, *merged_cash, *passthrough_rows]
     merged_rows.sort(key=_portfolio_balance_sort_key)
-    return [enrich_row_with_canonical_naming(row) for row in merged_rows]
+    return collapse_balance_display_rows(
+        [enrich_row_with_canonical_naming(row) for row in merged_rows],
+    )
 
 
 _STABLE_BALANCE_ASSETS = frozenset({"USD", "USDT", "USDC", "DAI", "FDUSD", "USDE"})

@@ -1935,6 +1935,85 @@ def test_balances_profile_tokenmm_filters_unrelated_shared_account_assets(
     assert "tokenmm:pos:bybit:BTCUSDT-LINEAR.BYBIT" not in row_ids
 
 
+def test_balances_profile_tokenmm_prefers_cash_row_over_duplicate_spot_position(
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "account": "main",
+                "asset": "PLUME",
+                "free": "-59110.34159317",
+                "total": "-59110.34159317",
+                "ts_ms": 2_000,
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "kind": "position",
+                "instrument_id": "PLUMEUSDT-SPOT.BYBIT",
+                "signed_qty": "-228161.2",
+                "quantity": "228161.2",
+                "side": "SHORT",
+                "ts_ms": 2_000,
+            },
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "exchange": "bybit",
+                "kind": "position",
+                "instrument_id": "PLUMEUSDT-LINEAR.BYBIT",
+                "signed_qty": "84919",
+                "quantity": "84919",
+                "side": "LONG",
+                "ts_ms": 2_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        keys.market_last(exchange="bybit", base="PLUME", quote="USDT"),
+        {"bid": 0.0110, "ask": 0.0111, "ts_ms": 2_000},
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-SPOT.BYBIT",
+            ),
+            ContractCatalogEntry(
+                exchange="bybit",
+                symbol="PLUME/USDT",
+                instrument_id="PLUMEUSDT-LINEAR.BYBIT",
+            ),
+        ),
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row_ids = {row["row_id"] for row in body["data"]["rows"]}
+    assert "tokenmm:cash:bybit:main:PLUME" in row_ids
+    assert "tokenmm:pos:bybit:PLUMEUSDT-LINEAR.BYBIT" in row_ids
+    assert "tokenmm:pos:bybit:PLUMEUSDT-SPOT.BYBIT" not in row_ids
+
+
 def test_balances_mark_cash_assets_and_positions_from_market_data(
     flux_config,
     redis_client,
