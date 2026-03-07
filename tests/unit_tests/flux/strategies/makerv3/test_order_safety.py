@@ -261,6 +261,43 @@ def test_order_cancel_rejected_order_limit_triggers_venue_protection_circuit(
     assert alerts[-1]["alert_key"] == "venue_protection_circuit_breaker"
 
 
+def test_order_cancel_rejected_rate_limit_during_startup_cleanup_sets_retry_cooldown(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory(cancel_all_instrument_orders=True)
+    strategy._startup_cleanup_pending = True
+    strategy._pending_cancel_client_order_ids = {"RESTING-1"}
+    strategy._managed_orders = lambda: [
+        _fake_order(client_order_id="RESTING-1", price="100", side=OrderSide.BUY),
+    ]
+    strategy._runtime_params["order_reject_alert_after_count"] = 1
+    strategy._runtime_params["order_reject_alert_after_s"] = Decimal(10)
+
+    canceled: list[tuple[str, bool, bool | None]] = []
+    alerts: list[dict[str, object]] = []
+    states: list[str] = []
+    stopped: list[bool] = []
+
+    strategy._cancel_managed_quotes = lambda reason, force=False, **kwargs: canceled.append(
+        (reason, force, kwargs.get("allow_instrument_cancel")),
+    )
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy.stop_immediately = lambda: stopped.append(True)
+
+    strategy.on_order_cancel_rejected(
+        _cancel_rejected_event(reason="Too many visits. Exceeded the API Rate Limit."),
+    )
+
+    assert strategy._pending_cancel_client_order_ids == set()
+    assert strategy._cancel_reject_retry_after_ns_by_client_order_id["RESTING-1"] > 1
+    assert strategy._startup_cleanup_active(managed_orders=strategy._managed_orders()) is True
+    assert stopped == []
+    assert canceled == []
+    assert alerts[-1]["alert_key"] == "order_rejected_burst"
+
+
 def test_venue_protection_reason_matches_bare_429() -> None:
     assert failures_mod.is_venue_protection_reason("429") is True
 

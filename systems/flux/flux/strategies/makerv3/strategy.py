@@ -838,6 +838,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
             )
             if now_ns is None:
                 return
+            if self._startup_cleanup_pending and failures_mod.is_venue_protection_reason(reason):
+                self._set_cancel_reject_retry_after(client_order_id, now_ns=int(now_ns))
+                self._track_order_rejection_alert(
+                    now_ns=int(now_ns),
+                    reason=reason,
+                    source_event="order_cancel_rejected",
+                )
+                return
             if not failures_mod.is_venue_protection_reason(reason):
                 self._set_cancel_reject_retry_after(client_order_id, now_ns=int(now_ns))
                 self._track_order_rejection_alert(
