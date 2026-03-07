@@ -20,6 +20,23 @@ use std::{
     ops::{Add, Deref, Mul},
 };
 
+use implied_vol::{DefaultSpecialFn, ImpliedBlackVolatility, SpecialFn};
+use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, math::quadratic_interpolation};
+
+use crate::{
+    data::{
+        HasTsInit,
+        black_scholes::{compute_greeks, compute_iv_and_greeks},
+    },
+    identifiers::InstrumentId,
+};
+
+const FRAC_SQRT_2_PI: f64 = f64::from_bits(0x3fd9884533d43651);
+/// used to convert theta to per-calendar-day change when building BlackScholesGreeksResult.
+const THETA_DAILY_FACTOR: f64 = 1.0 / 365.25;
+/// Scale for vega to express as absolute percent change when building BlackScholesGreeksResult.
+const VEGA_PERCENT_FACTOR: f64 = 0.01;
+
 /// Core option Greek sensitivity values (the 5 standard sensitivities).
 /// Designed as a composable building block embedded in all Greeks-carrying types.
 #[repr(C)]
@@ -83,23 +100,6 @@ pub trait HasGreeks {
     fn greeks(&self) -> OptionGreekValues;
 }
 
-use implied_vol::{DefaultSpecialFn, ImpliedBlackVolatility, SpecialFn};
-use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, math::quadratic_interpolation};
-
-use crate::{
-    data::{
-        HasTsInit,
-        black_scholes::{compute_greeks, compute_iv_and_greeks},
-    },
-    identifiers::InstrumentId,
-};
-
-const FRAC_SQRT_2_PI: f64 = f64::from_bits(0x3fd9884533d43651);
-/// used to convert theta to per-calendar-day change when building BlackScholesGreeksResult.
-const THETA_DAILY_FACTOR: f64 = 1.0 / 365.25;
-/// Scale for vega to express as absolute percent change when building BlackScholesGreeksResult.
-const VEGA_PERCENT_FACTOR: f64 = 0.01;
-
 #[inline(always)]
 fn norm_pdf(x: f64) -> f64 {
     FRAC_SQRT_2_PI * (-0.5 * x * x).exp()
@@ -123,6 +123,7 @@ pub struct BlackScholesGreeksResult {
     pub itm_prob: f64,
 }
 
+// Standardized Generalized Black-Scholes Greeks implementation
 // dS_t = S_t * (b * dt + vol * dW_t) (stock)
 // dC_t = r * C_t * dt (cash numeraire)
 #[allow(clippy::too_many_arguments)]
@@ -136,24 +137,33 @@ pub fn black_scholes_greeks_exact(
     t: f64,
 ) -> BlackScholesGreeksResult {
     let phi = if is_call { 1.0 } else { -1.0 };
-    let scaled_vol = vol * t.sqrt();
+    let sqrt_t = t.sqrt();
+    let scaled_vol = vol * sqrt_t;
+
+    // d1 and d2 calculations
     let d1 = ((s / k).ln() + (b + 0.5 * vol.powi(2)) * t) / scaled_vol;
     let d2 = d1 - scaled_vol;
+
+    // Probabilities and PDF
     let cdf_phi_d1 = DefaultSpecialFn::norm_cdf(phi * d1);
     let cdf_phi_d2 = DefaultSpecialFn::norm_cdf(phi * d2);
-    let dist_d1 = norm_pdf(d1);
-    let df = ((b - r) * t).exp();
-    let s_t = s * df;
-    let k_t = k * (-r * t).exp();
+    let pdf_d1 = norm_pdf(d1);
 
-    let price = phi * (s_t * cdf_phi_d1 - k_t * cdf_phi_d2);
-    let delta = phi * df * cdf_phi_d1;
-    let gamma = df * dist_d1 / (s * scaled_vol);
-    let vega = s_t * t.sqrt() * dist_d1 * VEGA_PERCENT_FACTOR;
-    let theta = (s_t * (-dist_d1 * vol / (2.0 * t.sqrt()) - phi * (b - r) * cdf_phi_d1)
-        - phi * r * k_t * cdf_phi_d2)
-        * THETA_DAILY_FACTOR;
-    let itm_prob = cdf_phi_d2;
+    // Discounting factors
+    let df_b = ((b - r) * t).exp();
+    let df_r = (-r * t).exp();
+
+    // Price and common Greeks
+    let price = phi * (s * df_b * cdf_phi_d1 - k * df_r * cdf_phi_d2);
+    let delta = phi * df_b * cdf_phi_d1;
+    let gamma = (df_b * pdf_d1) / (s * scaled_vol);
+    let vega = s * df_b * sqrt_t * pdf_d1 * VEGA_PERCENT_FACTOR;
+
+    // Decay due to volatility, Drift/Cost of Carry component, Interest rate component on strike
+    let theta_v = -(s * df_b * pdf_d1 * vol) / (2.0 * sqrt_t);
+    let theta_b = -phi * (b - r) * s * df_b * cdf_phi_d1;
+    let theta_r = -phi * r * k * df_r * cdf_phi_d2;
+    let theta = (theta_v + theta_b + theta_r) * THETA_DAILY_FACTOR;
 
     BlackScholesGreeksResult {
         price,
@@ -162,7 +172,7 @@ pub fn black_scholes_greeks_exact(
         gamma,
         vega,
         theta,
-        itm_prob,
+        itm_prob: cdf_phi_d2,
     }
 }
 

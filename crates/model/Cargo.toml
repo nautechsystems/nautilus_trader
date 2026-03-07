@@ -83,8 +83,8 @@ path = "benches/greeks_criterion.rs"
 harness = false
 
 [[bench]]
-name = "black_scholes_simd_criterion"
-path = "benches/black_scholes_simd_criterion.rs"
+name = "black_scholes_criterion"
+path = "benches/black_scholes_criterion.rs"
 harness = false
 
 [[bench]]
