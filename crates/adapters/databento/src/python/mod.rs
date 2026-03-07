@@ -15,6 +15,8 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
+#[cfg(feature = "arrow")]
+pub mod arrow;
 pub mod enums;
 pub mod historical;
 pub mod loader;
@@ -80,6 +82,22 @@ pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::types::DatabentoImbalance>()?;
     m.add_class::<super::loader::DatabentoDataLoader>()?;
     m.add_class::<historical::DatabentoHistoricalClient>()?;
+
+    #[cfg(feature = "arrow")]
+    {
+        m.add_function(wrap_pyfunction!(
+            crate::python::arrow::get_databento_arrow_schema_map,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
+            crate::python::arrow::py_databento_statistics_to_arrow_record_batch_bytes,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
+            crate::python::arrow::py_databento_imbalance_to_arrow_record_batch_bytes,
+            m
+        )?)?;
+    }
 
     #[cfg(feature = "live")]
     m.add_class::<live::DatabentoLiveClient>()?;

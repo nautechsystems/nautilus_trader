@@ -54,6 +54,9 @@ pub mod loader;
 pub mod symbology;
 pub mod types;
 
+#[cfg(feature = "arrow")]
+pub mod arrow;
+
 #[cfg(feature = "python")]
 pub mod python;
 

@@ -67,6 +67,8 @@ NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
     nautilus_pyo3.MarkPriceUpdate,
     nautilus_pyo3.IndexPriceUpdate,
     nautilus_pyo3.InstrumentClose,
+    nautilus_pyo3.DatabentoStatistics,
+    nautilus_pyo3.DatabentoImbalance,
 ]
 
 _ARROW_ENCODERS: dict[type, Callable] = {}
@@ -154,6 +156,14 @@ class ArrowSerializer:
                 batch_bytes = nautilus_pyo3.trades_to_arrow_record_batch_bytes(data)
             case nautilus_pyo3.Bar:
                 batch_bytes = nautilus_pyo3.bars_to_arrow_record_batch_bytes(data)
+            case nautilus_pyo3.DatabentoStatistics:
+                batch_bytes = nautilus_pyo3.py_databento_statistics_to_arrow_record_batch_bytes(
+                    data,
+                )
+            case nautilus_pyo3.DatabentoImbalance:
+                batch_bytes = nautilus_pyo3.py_databento_imbalance_to_arrow_record_batch_bytes(
+                    data,
+                )
             case _:
                 if data_cls in (OrderBookDelta, OrderBookDeltas):
                     pyo3_deltas = OrderBookDelta.to_pyo3_list(data)
@@ -219,7 +229,7 @@ class ArrowSerializer:
 
         delegate = _ARROW_ENCODERS.get(data_cls)
         if delegate is None:
-            if data_cls in RUST_SERIALIZERS:
+            if data_cls in RUST_SERIALIZERS or data_cls in RUST_PYO3_SERIALIZERS:
                 return ArrowSerializer.rust_defined_to_record_batch([data], data_cls=data_cls)
             raise TypeError(
                 f"Cannot serialize object `{data_cls}`. Register a "
@@ -256,7 +266,11 @@ class ArrowSerializer:
             If `obj` cannot be serialized.
 
         """
-        if data_cls in RUST_SERIALIZERS or data_cls.__name__ in RUST_STR_SERIALIZERS:
+        if (
+            data_cls in RUST_SERIALIZERS
+            or data_cls in RUST_PYO3_SERIALIZERS
+            or data_cls.__name__ in RUST_STR_SERIALIZERS
+        ):
             return ArrowSerializer.rust_defined_to_record_batch(data, data_cls=data_cls)
 
         batches = [ArrowSerializer.serialize(obj, data_cls) for obj in data]
@@ -361,6 +375,13 @@ RUST_SERIALIZERS = {
     # InstrumentClose,  # TODO: Not implemented yet
 }
 RUST_STR_SERIALIZERS = {s.__name__ for s in RUST_SERIALIZERS}
+
+# Pyo3-only types with Rust Arrow serialization (no Cython equivalent)
+RUST_PYO3_SERIALIZERS = {
+    nautilus_pyo3.DatabentoStatistics,
+    nautilus_pyo3.DatabentoImbalance,
+}
+RUST_STR_SERIALIZERS.update({s.__name__ for s in RUST_PYO3_SERIALIZERS})
 
 # TODO - breaking while we don't have access to rust schemas
 # Check we have each type defined only once (rust or python)
