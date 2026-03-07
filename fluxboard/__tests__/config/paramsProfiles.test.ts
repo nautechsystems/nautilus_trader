@@ -26,6 +26,17 @@ describe('paramsProfiles', () => {
         },
       })
     ).toBe('maker_v3');
+
+    expect(
+      deriveStrategyProfile({
+        meta: {
+          class: 'maker_v4',
+          param_set: 'makerv4',
+          strategy_family: 'maker_v4',
+          strategy_version: 'v4',
+        },
+      })
+    ).toBe('maker_v4');
   });
 
   it('falls back to key signatures when class is missing', () => {
@@ -68,10 +79,11 @@ describe('paramsProfiles', () => {
   });
 
   it('exports stable profile labels and ordering', () => {
-    expect(listParamsProfiles()).toEqual(['taker', 'maker_v2', 'maker_v3']);
+    expect(listParamsProfiles()).toEqual(['taker', 'maker_v2', 'maker_v3', 'maker_v4']);
     expect(getProfileLabel('taker')).toBe('Taker');
     expect(getProfileLabel('maker_v2')).toBe('Maker V2');
     expect(getProfileLabel('maker_v3')).toBe('Maker V3');
+    expect(getProfileLabel('maker_v4')).toBe('Maker V4');
   });
 
   it('hides legacy maker_v3 alias keys', () => {
@@ -194,5 +206,36 @@ describe('paramsProfiles', () => {
     expect(index('n_orders3')).toBeLessThan(index('n_orders_hedge'));
     expect(index('n_orders_hedge')).toBeLessThan(index('hedge_reduce_only'));
     expect(index('hedge_reduce_only')).toBeLessThan(index('hedge_touch_at_max_qty'));
+  });
+
+  it('orders maker_v4 hedge and fee controls ahead of shared quote controls', () => {
+    const schema = {
+      params: {
+        bot_on: { key: 'bot_on' },
+        instant_hedge_enabled: { key: 'instant_hedge_enabled' },
+        hedge_style: { key: 'hedge_style' },
+        hedge_ioc_cross_mid_bps: { key: 'hedge_ioc_cross_mid_bps' },
+        hedge_ioc_max_cross_bps: { key: 'hedge_ioc_max_cross_bps' },
+        maker_fee_source: { key: 'maker_fee_source' },
+        hedge_fee_source: { key: 'hedge_fee_source' },
+        assumed_hedge_fee_bps: { key: 'assumed_hedge_fee_bps' },
+        qty: { key: 'qty' },
+        bid_edge1: { key: 'bid_edge1' },
+      },
+      deprecated: {},
+    } as any;
+
+    expect(buildProfileDefaultColumnOrder(schema, 'maker_v4')).toEqual([
+      'bot_on',
+      'instant_hedge_enabled',
+      'hedge_style',
+      'hedge_ioc_cross_mid_bps',
+      'hedge_ioc_max_cross_bps',
+      'maker_fee_source',
+      'hedge_fee_source',
+      'assumed_hedge_fee_bps',
+      'qty',
+      'bid_edge1',
+    ]);
   });
 });

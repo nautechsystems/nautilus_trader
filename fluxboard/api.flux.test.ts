@@ -594,7 +594,7 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
-  it('can normalize makerv3 schema labels independently of the route profile', async () => {
+  it('defaults equities params schema normalization to MakerV3 short labels', async () => {
     setPathname('/equities/params');
     fetchJSONMock.mockResolvedValueOnce({
       ok: true,
@@ -615,7 +615,7 @@ describe('profile-scoped read APIs', () => {
       },
     });
 
-    const schema = await (api as any).getParamSchema({ preferKeyLabel: true });
+    const schema = await api.getParamSchema();
     expect(schema.params.bot_on).toMatchObject({
       key: 'bot_on',
       label: 'bot_on',

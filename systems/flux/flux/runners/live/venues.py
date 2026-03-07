@@ -12,6 +12,12 @@ from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.bitget import BITGET
+from nautilus_trader.adapters.bitget import BitgetDataClientConfig
+from nautilus_trader.adapters.bitget import BitgetExecClientConfig
+from nautilus_trader.adapters.bitget import BitgetLiveDataClientFactory
+from nautilus_trader.adapters.bitget import BitgetLiveExecClientFactory
+from nautilus_trader.adapters.bitget.constants import BITGET_DEFAULT_PRODUCTS
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
@@ -158,6 +164,14 @@ def _coerce_bybit_product_types(raw_value: Any, venue_name: str) -> tuple[Any, .
     )
 
 
+def _coerce_bitget_product_types(raw_value: Any, venue_name: str) -> tuple[Any, ...]:
+    return _enum_tuple_member(
+        type(BITGET_DEFAULT_PRODUCTS[0]),
+        raw_value,
+        field_name=f"node.venues.{venue_name}.product_type",
+    )
+
+
 def _coerce_binance_account_type(raw_value: Any, venue_name: str) -> Any:
     return _enum_member(
         BinanceAccountType,
@@ -291,6 +305,24 @@ SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
         secret_fields=(("api_key", "api_key_env"), ("api_secret", "api_secret_env")),
         mode_defaults={"environment": _default_binance_environment},
     ),
+    "bitget": VenueAdapterSpec(
+        adapter_id="bitget",
+        venue_key=BITGET,
+        data_config_cls=BitgetDataClientConfig,
+        data_factory_cls=BitgetLiveDataClientFactory,
+        exec_config_cls=BitgetExecClientConfig,
+        exec_factory_cls=BitgetLiveExecClientFactory,
+        field_aliases={"product_types": "product_type"},
+        field_coercers={
+            "product_types": _coerce_bitget_product_types,
+        },
+        secret_fields=(
+            ("api_key", "api_key_env"),
+            ("api_secret", "api_secret_env"),
+            ("api_passphrase", "api_passphrase_env"),
+        ),
+        mode_defaults={"demo": lambda mode: mode != "live"},
+    ),
     "bybit": VenueAdapterSpec(
         adapter_id="bybit",
         venue_key=BYBIT,
@@ -396,6 +428,7 @@ def _build_client_config(
 ) -> Any:
     parameter_names = _signature_parameter_names(config_cls)
     kwargs: dict[str, Any] = {}
+    routing_venues = frozenset({venue_name, str(instrument_id.venue).upper()})
 
     if "instrument_provider" in parameter_names:
         if spec.instrument_provider_factory is not None:
@@ -405,7 +438,7 @@ def _build_client_config(
                 load_ids=frozenset([instrument_id]),
             )
     if "routing" in parameter_names:
-        kwargs["routing"] = RoutingConfig(default=default_routing, venues=frozenset([venue_name]))
+        kwargs["routing"] = RoutingConfig(default=default_routing, venues=routing_venues)
     if "venue" in parameter_names:
         kwargs["venue"] = Venue(venue_name)
 

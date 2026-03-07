@@ -54,6 +54,10 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.flux.runners.live.hyperliquid_account import (
+    HyperliquidUserResolutionError,
+)
+from nautilus_trader.flux.runners.live.hyperliquid_account import resolve_hyperliquid_user
 
 
 class HyperliquidExecutionClient(LiveExecutionClient):
@@ -133,26 +137,39 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._terminal_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._pending_filled: set[str] = set()
 
-        # Use the configured query/subscription address directly when present.
-        # Only derive the signer EOA if no explicit account or vault address was supplied.
-        self._user_address: str | None = config.account_address or config.vault_address
-        if config.account_address:
-            self._log.info(
-                f"Account address (queries/WS subscriptions): {config.account_address}",
-                LogColor.BLUE,
+        try:
+            self._resolved_user = resolve_hyperliquid_user(
+                client=self._client,
+                account_address=config.account_address,
+                vault_address=config.vault_address,
+                testnet=config.testnet,
+                http_timeout_secs=config.http_timeout_secs,
+                http_proxy_url=config.http_proxy_url,
             )
-        if config.vault_address:
-            self._log.info(
-                f"Vault address (WS subscriptions): {config.vault_address}",
-                LogColor.BLUE,
-            )
-        if self._user_address is None:
+        except HyperliquidUserResolutionError as exc:
+            self._log.error(str(exc), LogColor.RED)
+            raise
+
+        set_account_address = getattr(self._client, "set_account_address", None)
+        if callable(set_account_address):
             try:
-                eoa_address = self._client.get_user_address()
-                self._user_address = eoa_address
-                self._log.info(f"User address (EOA): {eoa_address}", LogColor.BLUE)
+                set_account_address(self._resolved_user.account_query_address)
             except Exception as e:
-                self._log.warning(f"Could not get user address: {e}")
+                self._log.warning(f"Could not set effective account address: {e}")
+
+        if self._resolved_user.execution_signer:
+            self._log.info(
+                f"Execution signer address: {self._resolved_user.execution_signer}",
+                LogColor.BLUE,
+            )
+        if self._resolved_user.account_query_address:
+            self._log.info(
+                "Effective account address "
+                f"({self._resolved_user.source}): {self._resolved_user.account_query_address}",
+                LogColor.BLUE,
+            )
+        elif config.account_address or config.vault_address:
+            self._log.warning("Configured Hyperliquid account identity resolved to empty address")
 
     @property
     def hyperliquid_instrument_provider(self) -> HyperliquidInstrumentProvider:
@@ -175,8 +192,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         kwargs: dict[str, Any] = {}
         if instrument_id is not None:
             kwargs["instrument_id"] = instrument_id
-        if self._user_address is not None:
-            kwargs["account_address"] = self._user_address
+        if self._resolved_user.account_query_address is not None:
+            kwargs["account_address"] = self._resolved_user.account_query_address
         if self._config.dex is not None:
             kwargs["dex"] = self._config.dex
         return kwargs
@@ -202,16 +219,17 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         await self._ws_client.connect(self._loop, instruments, self._handle_msg)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
-        if self._user_address:
-            await self._ws_client.subscribe_order_updates(self._user_address)
+        ws_subscription_address = self._resolved_user.ws_subscription_address
+        if ws_subscription_address:
+            await self._ws_client.subscribe_order_updates(ws_subscription_address)
             self._log.info(
-                f"Subscribed to order updates for {self._user_address}",
+                f"Subscribed to order updates for {ws_subscription_address}",
                 LogColor.BLUE,
             )
 
-            await self._ws_client.subscribe_user_events(self._user_address)
+            await self._ws_client.subscribe_user_events(ws_subscription_address)
             self._log.info(
-                f"Subscribed to user events (includes fills) for {self._user_address}",
+                f"Subscribed to user events (includes fills) for {ws_subscription_address}",
                 LogColor.BLUE,
             )
 

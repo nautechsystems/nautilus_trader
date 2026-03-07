@@ -4,6 +4,7 @@ import msgspec
 import pandas as pd
 import pytest
 
+from nautilus_trader.adapters.bitget.constants import BITGET_DEFAULT_PRODUCTS
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.common.config import CUSTOM_DECODINGS
@@ -202,6 +203,12 @@ def test_encoding_unsupported_type() -> None:
 
     # Verifying the exception message
     assert str(exinfo.value) == "Encoding objects of type <class 'list'> is unsupported"
+
+
+def test_encoding_bitget_product_type() -> None:
+    result = msgspec_encoding_hook(BITGET_DEFAULT_PRODUCTS[0])
+
+    assert result == "SPOT"
 
 
 def test_decoding_unsupported_type() -> None:

@@ -264,6 +264,9 @@ export const ParamCellNumeric = memo(function ParamCellNumeric({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      return;
+    }
     if (event.key === 'Enter') {
       event.preventDefault();
       if (!error && onSave) onSave();
@@ -335,6 +338,9 @@ export const ParamCellSelect = memo(function ParamCellSelect({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLSelectElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      return;
+    }
     if (event.key === 'Enter' && onSave && !error) {
       event.preventDefault();
       onSave();
@@ -425,6 +431,9 @@ export const ParamCellToggle = memo(function ParamCellToggle({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      return;
+    }
     const direction = navKeyMap[event.key];
     if (direction === 'left' || direction === 'right') {
       event.preventDefault();

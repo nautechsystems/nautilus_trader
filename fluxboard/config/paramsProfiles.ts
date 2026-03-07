@@ -1,6 +1,6 @@
 import type { ParamSchema } from '../types';
 
-export type ParamsProfileId = 'taker' | 'maker_v2' | 'maker_v3';
+export type ParamsProfileId = 'taker' | 'maker_v2' | 'maker_v3' | 'maker_v4';
 
 type StrategyProfileRow = {
   params?: Record<string, string>;
@@ -17,9 +17,10 @@ const PROFILE_LABELS: Record<ParamsProfileId, string> = {
   taker: 'Taker',
   maker_v2: 'Maker V2',
   maker_v3: 'Maker V3',
+  maker_v4: 'Maker V4',
 };
 
-const PROFILE_ORDER: ParamsProfileId[] = ['taker', 'maker_v2', 'maker_v3'];
+const PROFILE_ORDER: ParamsProfileId[] = ['taker', 'maker_v2', 'maker_v3', 'maker_v4'];
 
 const PROFILE_ALIASES: Record<string, ParamsProfileId> = {
   taker: 'taker',
@@ -32,6 +33,8 @@ const PROFILE_ALIASES: Record<string, ParamsProfileId> = {
   maker_v3: 'maker_v3',
   maker_v3_dual_cex: 'maker_v3',
   equity_perp_maker_v3: 'maker_v3',
+  maker_v4: 'maker_v4',
+  equity_perp_maker_v4: 'maker_v4',
   equity_perp_maker: 'maker_v2',
 };
 
@@ -153,12 +156,65 @@ const PROFILE_PARAM_PRIORITIES: Record<ParamsProfileId, string[]> = {
     'allow_cex_margin_sell',
     'max_cex_margin_sell_notional_usd',
   ],
+  maker_v4: [
+    'bot_on',
+    'instant_hedge_enabled',
+    'hedge_style',
+    'hedge_ioc_cross_mid_bps',
+    'hedge_ioc_max_cross_bps',
+    'maker_fee_source',
+    'hedge_fee_source',
+    'assumed_hedge_fee_bps',
+    'max_age_ms',
+    'cooldown',
+    'qty',
+    'hedge_qty',
+    'des_qty_global',
+    'max_qty_global',
+    'max_skew_bps_global',
+    'des_qty_local',
+    'max_qty_local',
+    'max_skew_bps_local',
+    'linear_offset_bps',
+    'n_orders1',
+    'distance1',
+    'bid_edge1',
+    'ask_edge1',
+    'place_edge1',
+    'n_orders2',
+    'distance2',
+    'bid_edge2',
+    'ask_edge2',
+    'place_edge2',
+    'n_orders3',
+    'distance3',
+    'bid_edge3',
+    'ask_edge3',
+    'place_edge3',
+    'n_orders_hedge',
+    'distance_hedge',
+    'bid_edge_hedge',
+    'ask_edge_hedge',
+    'place_edge_hedge',
+    'hedge_reduce_only',
+    'hedge_touch_at_max_qty',
+    'strategy_take_enabled',
+    'bid_edge_take',
+    'ask_edge_take',
+    'take_qty',
+    'take_cooldown',
+    'quote_fail_critical_after_count',
+    'quote_fail_critical_after_s',
+    'allow_cex_margin_sell',
+    'max_cex_margin_sell_notional_usd',
+  ],
 };
 
 export const PROFILE_TO_APPLIES_TO: Record<ParamsProfileId, string[]> = {
   taker: ['takerarbitragetask', 'taker_arbitrage_task', 'dex_cex_arb', 'equity_perp_arb'],
   maker_v2: ['maker_v2', 'crypto_spot_perp_maker', 'equity_perp_maker'],
   maker_v3: ['maker_v3', 'maker_v3_dual_cex', 'equity_perp_maker_v3'],
+  maker_v4: ['maker_v4', 'makerv4', 'equity_perp_maker_v4'],
 };
 
 function normalizeKey(value: string | undefined | null): string {
@@ -180,6 +236,9 @@ export function deriveStrategyProfile(row: StrategyProfileRow): ParamsProfileId 
   if (paramSet === 'makerv3') {
     return 'maker_v3';
   }
+  if (paramSet === 'makerv4') {
+    return 'maker_v4';
+  }
   if (paramSet === 'makerv2') {
     return 'maker_v2';
   }
@@ -189,8 +248,16 @@ export function deriveStrategyProfile(row: StrategyProfileRow): ParamsProfileId 
 
   const explicitFamily = normalizeKey(row.meta?.strategy_family);
   const explicitVersion = normalizeKey(row.meta?.strategy_version);
-  if (explicitFamily === 'maker_v3' || explicitFamily === 'maker_v2' || explicitFamily === 'taker') {
+  if (
+    explicitFamily === 'maker_v4' ||
+    explicitFamily === 'maker_v3' ||
+    explicitFamily === 'maker_v2' ||
+    explicitFamily === 'taker'
+  ) {
     return explicitFamily;
+  }
+  if (explicitFamily === 'maker' && explicitVersion === 'v4') {
+    return 'maker_v4';
   }
   if (explicitFamily === 'maker' && explicitVersion === 'v3') {
     return 'maker_v3';
@@ -219,12 +286,12 @@ export function deriveStrategyProfile(row: StrategyProfileRow): ParamsProfileId 
 }
 
 export function getProfileHiddenKeys(profile: ParamsProfileId): string[] {
-  if (profile === 'maker_v3') return Array.from(MAKER_V3_LEGACY_ALIAS_KEYS);
+  if (profile === 'maker_v3' || profile === 'maker_v4') return Array.from(MAKER_V3_LEGACY_ALIAS_KEYS);
   return [];
 }
 
 export function isProfileHiddenKey(profile: ParamsProfileId, key: string): boolean {
-  if (profile === 'maker_v3') return MAKER_V3_LEGACY_ALIAS_KEYS.has(key);
+  if (profile === 'maker_v3' || profile === 'maker_v4') return MAKER_V3_LEGACY_ALIAS_KEYS.has(key);
   return false;
 }
 

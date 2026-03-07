@@ -7,6 +7,7 @@ from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.bitget.constants import BITGET
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
@@ -165,6 +166,46 @@ def test_resolve_strategy_venues_sets_okx_demo_defaults_in_testnet() -> None:
     assert resolved.exec_clients[OKX].is_demo is True
 
 
+def test_resolve_strategy_venues_supports_bitget_perp_execution_and_binance_spot_reference() -> (
+    None
+):
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "BITGET",
+                "reference_venue": "BINANCE_SPOT",
+            },
+            "node": {
+                "venues": {
+                    "BITGET": {
+                        "adapter": "bitget",
+                        "instrument_id": "PLUMEUSDT-PERP.BITGET",
+                        "product_type": "USDT_FUTURES",
+                        "execution": True,
+                        "api_passphrase": "passphrase",
+                    },
+                    "BINANCE_SPOT": {
+                        "adapter": "binance",
+                        "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                        "account_type": "SPOT",
+                    },
+                },
+            },
+        },
+        mode="paper",
+        enable_execution=True,
+    )
+
+    assert resolved.execution_venue == "BITGET"
+    assert resolved.reference_venue == "BINANCE_SPOT"
+    assert str(resolved.execution_instrument_id) == "PLUMEUSDT-PERP.BITGET"
+    assert str(resolved.reference_instrument_id) == "PLUMEUSDT.BINANCE_SPOT"
+    assert set(resolved.data_clients) == {BITGET, "BINANCE_SPOT"}
+    assert set(resolved.exec_clients) == {BITGET}
+    assert resolved.data_clients[BITGET].api_passphrase == "passphrase"
+    assert resolved.exec_clients[BITGET].api_passphrase == "passphrase"
+
+
 def test_resolve_strategy_venues_supports_ibkr_reference_data_client() -> None:
     interactive_brokers_config = pytest.importorskip(
         "nautilus_trader.adapters.interactive_brokers.config",
@@ -212,6 +253,7 @@ def test_resolve_strategy_venues_supports_ibkr_reference_data_client() -> None:
     assert resolved.data_clients["IBKR"].ibg_host == "127.0.0.1"
     assert resolved.data_clients["IBKR"].ibg_port == 4002
     assert resolved.data_clients["IBKR"].ibg_client_id == 7
+    assert resolved.data_clients["IBKR"].routing.venues == frozenset({"IBKR", "NASDAQ"})
     assert (
         resolved.data_clients["IBKR"].instrument_provider.symbology_method
         == SymbologyMethod.IB_SIMPLIFIED
@@ -382,7 +424,7 @@ def test_resolve_strategy_venues_legacy_fallback_keeps_prior_bybit_product_defau
     assert resolved.data_clients[BYBIT].product_types == (BybitProductType.LINEAR,)
 
 
-def test_resolve_strategy_venues_supports_hyperliquid_dex_and_account_address() -> None:
+def test_resolve_strategy_venues_supports_hyperliquid_dex_account_and_vault_addresses() -> None:
     resolved = resolve_strategy_venues(
         config={
             "venues": {
@@ -392,10 +434,11 @@ def test_resolve_strategy_venues_supports_hyperliquid_dex_and_account_address() 
             "node": {
                 "venues": {
                     "HYPERLIQUID": {
-                        "instrument_id": "AAPL-USD-PERP.HYPERLIQUID",
+                        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                         "execution": True,
                         "private_key": "0xdeadbeef",
                         "account_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "vault_address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                         "dex": "xyz",
                     },
                 },
@@ -407,8 +450,8 @@ def test_resolve_strategy_venues_supports_hyperliquid_dex_and_account_address() 
 
     assert resolved.execution_venue == "HYPERLIQUID"
     assert resolved.reference_venue == "HYPERLIQUID"
-    assert str(resolved.execution_instrument_id) == "AAPL-USD-PERP.HYPERLIQUID"
-    assert str(resolved.reference_instrument_id) == "AAPL-USD-PERP.HYPERLIQUID"
+    assert str(resolved.execution_instrument_id) == "xyz:AAPL-USD-PERP.HYPERLIQUID"
+    assert str(resolved.reference_instrument_id) == "xyz:AAPL-USD-PERP.HYPERLIQUID"
     assert set(resolved.data_clients) == {HYPERLIQUID}
     assert set(resolved.exec_clients) == {HYPERLIQUID}
     assert isinstance(resolved.data_clients[HYPERLIQUID], HyperliquidDataClientConfig)
@@ -418,6 +461,10 @@ def test_resolve_strategy_venues_supports_hyperliquid_dex_and_account_address() 
     assert (
         resolved.exec_clients[HYPERLIQUID].account_address
         == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    )
+    assert (
+        resolved.exec_clients[HYPERLIQUID].vault_address
+        == "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     )
 
 

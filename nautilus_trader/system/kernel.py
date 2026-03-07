@@ -531,6 +531,7 @@ class NautilusKernel:
         # State flags
         self._is_running = False
         self._is_stopping = False
+        self._fatal_shutdown_reason: str | None = None
 
         build_time_ns = time.time_ns() - ts_build
         build_time_ms = nanos_to_millis(build_time_ns) if build_time_ns > 0 else 0
@@ -610,6 +611,7 @@ class NautilusKernel:
         if self._is_stopping:
             return  # Already stopping
 
+        self._fatal_shutdown_reason = command.reason or "System shutdown requested"
         self._log.info(f"Received {command!r}, shutting down...", LogColor.BLUE)
 
         if self._loop:
@@ -969,6 +971,18 @@ class NautilusKernel:
         """
         return self._is_running
 
+    @property
+    def fatal_shutdown_reason(self) -> str | None:
+        """
+        Return the fatal shutdown reason, if one has been recorded.
+
+        Returns
+        -------
+        str | None
+
+        """
+        return self._fatal_shutdown_reason
+
     def start(self) -> None:
         """
         Start the Nautilus system kernel.
@@ -983,7 +997,7 @@ class NautilusKernel:
         self._initialize_portfolio()
         self._trader.start()
 
-    async def start_async(self) -> None:
+    async def start_async(self) -> bool:
         """
         Start the Nautilus system kernel in an asynchronous context with an event loop.
 
@@ -999,17 +1013,22 @@ class NautilusKernel:
         self._log.info("STARTING")
         self._ts_started = self._clock.timestamp_ns()
         self._is_running = True
+        self._fatal_shutdown_reason = None
 
         self._register_executor()
         self._start_engines()
         self._connect_clients()
 
         if not await self._await_engines_connected():
-            return
+            await self._abort_startup(
+                f"Startup failed: engines did not connect within {self._config.timeout_connection}s",
+            )
+            return False
 
         if self.exec_engine.reconciliation:
             if not await self._await_execution_reconciliation():
-                return
+                await self._abort_startup("Startup failed: execution state reconciliation did not complete")
+                return False
         else:
             self._log.warning("Reconciliation deactivated")
 
@@ -1017,9 +1036,13 @@ class NautilusKernel:
         self._initialize_portfolio()
 
         if not await self._await_portfolio_initialization():
-            return
+            await self._abort_startup(
+                f"Startup failed: portfolio did not initialize within {self._config.timeout_portfolio}s",
+            )
+            return False
 
         self._trader.start()
+        return True
 
     def stop(self) -> None:
         """
@@ -1087,6 +1110,13 @@ class NautilusKernel:
         self._is_running = False
         self._is_stopping = False
         self._ts_shutdown = self._clock.timestamp_ns()
+
+    async def _abort_startup(self, reason: str) -> None:
+        self._fatal_shutdown_reason = reason
+        self._log.error(reason)
+
+        if self._is_running and not self._is_stopping:
+            await self.stop_async()
 
     def dispose(self) -> None:
         """

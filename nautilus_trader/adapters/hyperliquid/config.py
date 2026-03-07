@@ -44,10 +44,15 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         The Hyperliquid EVM private key.
         If ``None`` then will source the `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`
         environment variable (depending on the `testnet` setting).
+    account_address : str, optional
+        The funded account address to use for account-state queries, fee lookup, and
+        WebSocket subscriptions when execution is signed by a separate agent wallet.
     vault_address : str, optional
         The vault address for vault trading.
         If ``None`` then will source the `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`
         environment variable (depending on the `testnet` setting).
+        When both `vault_address` and `account_address` are provided, the vault address
+        is the effective account identity for queries, fee lookup, and subscriptions.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
     http_proxy_url : str, optional

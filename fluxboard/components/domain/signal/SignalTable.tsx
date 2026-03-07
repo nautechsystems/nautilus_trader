@@ -42,6 +42,7 @@ import { computeStrategyAge } from '@/utils/age';
 import { buildLegDeltaPatch, getLegForSlot, getOrderedLegEntries, resolveRoleSlot } from '@/utils/signalLegs';
 import { formatAbsoluteTime, formatLocal } from '@/utils/time';
 import { useVisibleNowMs } from './useVisibleNowMs';
+import MakerV4SignalTable from './MakerV4SignalTable';
 import type {
   BalanceSummary,
   MakerRoleMap,
@@ -61,12 +62,12 @@ import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { colors, spacing, typography, STALE_THRESHOLDS } from '@/lib/tokens';
 import { cn } from '@/lib/utils';
 import { useMobileLayout } from '@/hooks/useMobileLayout';
+import { deriveStrategyProfile } from '@/config/paramsProfiles';
 import { resolvePathProfile, type PathProfile } from '@/config/uiProfiles';
 import { EMPTY_SNAPSHOT_HOLD_MS, evaluateEmptySnapshotPolicy } from './emptySnapshotPolicy';
 import {
   deriveStrategyStatus,
   describeTradingStatus,
-  parseTradingEnabled,
   statusToFilterValue,
   TRADING_FILTER_VALUES,
   type TradingFilterValue,
@@ -98,13 +99,19 @@ type EnrichedRow = SignalStrategy & {
   exchange: string;  // Combined exchanges from legs
   coin: string;  // Combined coins from legs
   market_type: string;
+  asset: string;
+  maker_venue: string;
+  maker_market: string;
+  reference_venue: string;
+  reference_market: string;
+  strategy_class: string;
   // Flattened classification metadata for filtering/grouping
   class?: string;
   venue_prefix?: string;
   chain?: string;
 };
 
-type SignalStrategyFamily = 'maker_v3' | 'maker_v2' | 'taker';
+type SignalStrategyFamily = 'maker_v4' | 'maker_v3' | 'maker_v2' | 'taker';
 type SignalFamilyScope = 'all' | SignalStrategyFamily;
 type SignalLegResolutionRow = Pick<
   SignalStrategy,
@@ -127,7 +134,7 @@ const tradingSortingFn: SortingFn<EnrichedRow> = (rowA, rowB, columnId) => {
 
 type BalanceStatus = 'OK' | 'WARN' | 'FAIL' | 'UNKNOWN';
 
-const SIGNAL_FILTERS: ColumnFilter[] = [
+const GENERIC_SIGNAL_FILTERS: ColumnFilter[] = [
   { key: 'id', label: 'Strategy', type: 'text', placeholder: 'Strategy ID...' },
   { key: 'trading_enabled', label: 'Trading', type: 'select', options: TRADING_FILTER_VALUES },
   { key: 'exchange', label: 'Exchange', type: 'text', placeholder: 'bybit, rooster...' },
@@ -142,6 +149,8 @@ const SIGNAL_FILTERS: ColumnFilter[] = [
   },
   { key: 'chain', label: 'Chain', type: 'select', options: ['plume', 'sei', 'bnb', 'tron', 'equities'] },
 ];
+
+const MAKER_SUITE_SIGNAL_PROFILES = new Set<PathProfile>(['tokenmm', 'equities']);
 
 const TRADING_SORT_ORDER: Record<TradingFilterValue, number> = {
   Enabled: 2,
@@ -204,23 +213,30 @@ function parseStrategyGroups(rawGroups: unknown): Set<PathProfile> {
 }
 
 const MAKER_V3_CLASSES = new Set(['maker_v3', 'maker_v3_dual_cex', 'equity_perp_maker_v3']);
+const MAKER_V4_CLASSES = new Set(['maker_v4', 'equity_perp_maker_v4']);
 const MAKER_V2_CLASSES = new Set(['maker_v2', 'crypto_spot_perp_maker', 'equity_perp_maker']);
 
 function deriveStrategyFamily(strategy: Pick<SignalStrategy, 'strategy_family' | 'meta'>): SignalStrategyFamily {
   const explicit = String(strategy.strategy_family || '').trim().toLowerCase();
-  if (explicit === 'maker_v3' || explicit === 'maker_v2' || explicit === 'taker') {
+  if (explicit === 'maker_v4' || explicit === 'maker_v3' || explicit === 'maker_v2' || explicit === 'taker') {
     return explicit;
   }
   const metaFamily = String(strategy.meta?.strategy_family || '').trim().toLowerCase();
   const metaVersion = String(strategy.meta?.strategy_version || '').trim().toLowerCase();
-  if (metaFamily === 'maker_v3' || metaFamily === 'maker_v2' || metaFamily === 'taker') {
+  if (metaFamily === 'maker_v4' || metaFamily === 'maker_v3' || metaFamily === 'maker_v2' || metaFamily === 'taker') {
     return metaFamily;
   }
+  if (metaFamily === 'maker' && metaVersion === 'v4') return 'maker_v4';
   if (metaFamily === 'maker' && metaVersion === 'v3') return 'maker_v3';
   if (metaFamily === 'maker' && metaVersion === 'v2') return 'maker_v2';
   const cls = String(strategy.meta?.class || '').trim().toLowerCase();
+  if (MAKER_V4_CLASSES.has(cls)) return 'maker_v4';
   if (MAKER_V3_CLASSES.has(cls)) return 'maker_v3';
   if (MAKER_V2_CLASSES.has(cls)) return 'maker_v2';
+  const profile = deriveStrategyProfile({ meta: strategy.meta });
+  if (profile === 'maker_v4') return 'maker_v4';
+  if (profile === 'maker_v3') return 'maker_v3';
+  if (profile === 'maker_v2') return 'maker_v2';
   return 'taker';
 }
 
@@ -242,6 +258,10 @@ function defaultFamilyScopeForProfile(profile: PathProfile): SignalFamilyScope {
   return profile === 'tokenmm' ? 'maker_v3' : 'all';
 }
 
+function isMakerSuiteSignalProfile(profile: PathProfile): boolean {
+  return MAKER_SUITE_SIGNAL_PROFILES.has(profile);
+}
+
 function getLegDisplayLabel(leg: SignalLeg | null | undefined): string {
   if (!leg) return 'N/A';
   return String(
@@ -256,6 +276,84 @@ function getLegUnderlying(leg: SignalLeg | null | undefined): string {
 
 function getLegMarketType(leg: SignalLeg | null | undefined): string {
   return String(leg?.product_type ?? leg?.market_type ?? '').trim().toLowerCase();
+}
+
+function normalizeFacetValue(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function normalizeAssetFacet(value: unknown): string {
+  return String(value ?? '').trim().toUpperCase();
+}
+
+function uniqueFilterOptions(values: Array<string | null | undefined>): string[] {
+  const normalized = values
+    .map((value) => String(value ?? '').trim())
+    .filter((value) => value.length > 0);
+  return Array.from(new Set(normalized)).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function legMatchesSnapshotHint(
+  leg: SignalLeg | null | undefined,
+  {
+    exchange,
+    symbol,
+  }: {
+    exchange: string;
+    symbol: string;
+  },
+): boolean {
+  if (!leg) return false;
+  const legSymbol = (leg as SignalLeg & { symbol?: string }).symbol;
+  const legExchange = normalizeFacetValue(leg.exchange);
+  if (exchange && legExchange !== exchange) return false;
+  if (!symbol) return true;
+  const candidates = [
+    legSymbol,
+    leg.instrument_id,
+    leg.contract_id?.split(':').slice(1).join(':'),
+    leg.raw_symbol,
+    leg.pair?.replace('/', ''),
+  ]
+    .map((candidate) => normalizeSnapshotSymbol(candidate))
+    .filter((candidate) => candidate.length > 0);
+  return candidates.includes(symbol);
+}
+
+function resolveMakerV3RoleLegs(row: SignalLegResolutionRow): { makerLeg: SignalLeg | null; referenceLeg: SignalLeg | null } {
+  const makerSlot = resolveRoleSlot(row.maker_role_map?.maker_leg, row);
+  const referenceSlot = resolveRoleSlot(row.maker_role_map?.ref_leg, row);
+  let makerLeg = makerSlot ? getLegForSlot(row, makerSlot) : null;
+  let referenceLeg = referenceSlot ? getLegForSlot(row, referenceSlot) : null;
+
+  if (makerLeg && referenceLeg) {
+    return { makerLeg, referenceLeg };
+  }
+
+  const orderedLegs = getOrderedLegEntries(row);
+  const quoteSnapshot = resolveQuoteSnapshot(row);
+  const makerExchange = normalizeFacetValue(quoteSnapshot?.maker_exchange);
+  const makerSymbol = normalizeSnapshotSymbol(quoteSnapshot?.maker_symbol);
+  const referenceExchange = normalizeFacetValue(quoteSnapshot?.ref_exchange);
+  const referenceSymbol = normalizeSnapshotSymbol(quoteSnapshot?.ref_symbol);
+
+  if (!makerLeg) {
+    makerLeg = orderedLegs.find(({ leg }) =>
+      legMatchesSnapshotHint(leg, { exchange: makerExchange, symbol: makerSymbol }),
+    )?.leg ?? null;
+  }
+  if (!referenceLeg) {
+    referenceLeg = orderedLegs.find(({ leg }) =>
+      legMatchesSnapshotHint(leg, { exchange: referenceExchange, symbol: referenceSymbol }),
+    )?.leg ?? null;
+  }
+
+  if (!makerLeg) makerLeg = orderedLegs[0]?.leg ?? null;
+  if (!referenceLeg) {
+    referenceLeg = orderedLegs.find(({ leg }) => leg !== makerLeg)?.leg ?? null;
+  }
+
+  return { makerLeg, referenceLeg };
 }
 
 function getBalanceStatus(row: EnrichedRow) {
@@ -380,7 +478,14 @@ function resolveTradingValue(row: Partial<SignalStrategy> & Record<string, any>)
   const fromParams = row?.params?.bot_on;
   if (fromParams !== undefined && fromParams !== null) return fromParams;
   const fromState = row?.state?.bot_on;
-  if (fromState !== undefined && fromState !== null) return fromState;
+  if (
+    typeof fromState === 'string'
+    || typeof fromState === 'number'
+    || typeof fromState === 'boolean'
+    || fromState === null
+  ) {
+    return fromState;
+  }
   if (typeof row?.tradeable === 'boolean') return row.tradeable ? 1 : 0;
   return undefined;
 }
@@ -459,23 +564,7 @@ function shouldShowHedgeQuoteCounts(row: EnrichedRow): boolean {
   return cls.includes('maker') || !!resolveQuoteSnapshot(row);
 }
 
-function shouldSuppressQuoteCounts(row: EnrichedRow): boolean {
-  const tradingEnabled = parseTradingEnabled(resolveTradingValue(row));
-  const quoteSnapshot = resolveQuoteSnapshot(row) as any;
-  const mode = String(quoteSnapshot?.mode ?? '').trim().toUpperCase();
-  const reason = String(quoteSnapshot?.reason ?? '').trim().toLowerCase();
-  return !tradingEnabled || mode === 'OFF' || reason === 'bot_off';
-}
-
-function zeroCounts(
-  counts?: { bidOpen: number; bidDepth: number; bidBlocked: number; askOpen: number; askDepth: number; askBlocked: number }
-) {
-  if (!counts) return undefined;
-  return zeroQuoteCounts();
-}
-
 function getQuoteCounts(row: EnrichedRow): QuoteCounts {
-  const suppress = shouldSuppressQuoteCounts(row);
   const stacks = (row as any).quote_stacks;
   if (stacks && typeof stacks === 'object') {
     const makerBands = (stacks.maker?.bands ?? []) as any[];
@@ -502,8 +591,8 @@ function getQuoteCounts(row: EnrichedRow): QuoteCounts {
       const hedgeFallback = shouldShowHedgeQuoteCounts(row) ? (hedgeCounts ?? zeroQuoteCounts()) : hedgeCounts;
       return {
         source: 'quote_stacks',
-        maker: suppress ? zeroCounts(maker) : maker,
-        hedge: suppress ? zeroCounts(hedgeFallback) : hedgeFallback,
+        maker,
+        hedge: hedgeFallback,
       };
     }
   }
@@ -521,8 +610,8 @@ function getQuoteCounts(row: EnrichedRow): QuoteCounts {
     const hedge = shouldShowHedgeQuoteCounts(row) ? zeroQuoteCounts() : undefined;
     return {
       source: 'maker_quote_status',
-      maker: suppress ? zeroCounts(maker) : maker,
-      hedge: suppress ? zeroCounts(hedge) : hedge,
+      maker,
+      hedge,
     };
   }
 
@@ -630,7 +719,9 @@ function buildInventorySkewSummary(adj?: InventorySkewAdjustment): string | null
 
 function resolveInventoryQuantities(row: SignalStrategy): { globalQty: number | null; localQty: number | null } {
   const adj = findInventorySkewAdjustment(row.pricing_adjustments);
-  const globalQty = coerceFiniteNumber(adj?.curr_qty ?? row.risk_delta) ?? null;
+  const globalQty = adj
+    ? (coerceFiniteNumber(adj.global_qty ?? adj.curr_qty) ?? null)
+    : (coerceFiniteNumber(row.risk_delta) ?? null);
   const localQty = coerceFiniteNumber(adj?.local_qty) ?? null;
   return { globalQty, localQty };
 }
@@ -1606,6 +1697,7 @@ export default function SignalTable({
     const firstSegment = (location.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
     return resolvePathProfile(firstSegment);
   }, [location.pathname]);
+  const isMakerSuiteProfile = useMemo(() => isMakerSuiteSignalProfile(pathProfile), [pathProfile]);
   const [familyScope, setFamilyScope] = useState<SignalFamilyScope>(() => defaultFamilyScopeForProfile(pathProfile));
 
   useEffect(() => {
@@ -1616,8 +1708,9 @@ export default function SignalTable({
     return matchesSignalProfile(pathProfile, strategy);
   }, [pathProfile]);
   const isFamilyVisible = useCallback((strategy: SignalStrategy): boolean => {
-    if (familyScope === 'all') return true;
-    return deriveStrategyFamily(strategy) === familyScope;
+    const effectiveFamilyScope: SignalFamilyScope = familyScope;
+    if (effectiveFamilyScope === 'all') return true;
+    return deriveStrategyFamily(strategy) === effectiveFamilyScope;
   }, [familyScope]);
   // Select from zustand store with shallow equality to reduce re-renders
   const rows = useSignalStore(selectSignalRows, shallow);
@@ -1670,6 +1763,7 @@ export default function SignalTable({
     const base = (rows || []).filter(isStrategyVisible);
     return {
       all: base.length,
+      maker_v4: base.filter((r) => deriveStrategyFamily(r) === 'maker_v4').length,
       maker_v3: base.filter((r) => deriveStrategyFamily(r) === 'maker_v3').length,
       maker_v2: base.filter((r) => deriveStrategyFamily(r) === 'maker_v2').length,
       taker: base.filter((r) => deriveStrategyFamily(r) === 'taker').length,
@@ -2175,6 +2269,7 @@ export default function SignalTable({
       const spreadNet = spreadMarketVsFvBps(row);
       const riskDelta = coerceFiniteNumber(row.risk_delta) ?? null;
       const { globalQty, localQty } = resolveInventoryQuantities(row);
+      const { makerLeg, referenceLeg } = resolveMakerV3RoleLegs(row);
 
       // Extract filterable fields (exchange and coin from legs)
       const exchanges = orderedLegs
@@ -2195,6 +2290,13 @@ export default function SignalTable({
         .find((value): value is string => typeof value === 'string' && value.length > 0);
 
       const meta = row.meta || {};
+      const strategyClass = normalizeFacetValue(meta.class);
+      const asset = normalizeAssetFacet(meta.base_asset) || normalizeAssetFacet(getLegUnderlying(makerLeg)) || normalizeAssetFacet(getLegUnderlying(referenceLeg));
+      const makerVenue = normalizeFacetValue(makerLeg?.exchange ?? resolveQuoteSnapshot(row)?.maker_exchange);
+      const makerMarket = normalizeFacetValue(getLegMarketType(makerLeg));
+      const referenceVenue = normalizeFacetValue(referenceLeg?.exchange ?? resolveQuoteSnapshot(row)?.ref_exchange);
+      const referenceMarket = normalizeFacetValue(getLegMarketType(referenceLeg));
+      const normalizedChain = normalizeFacetValue(meta.chain);
 
       return {
         ...row,
@@ -2218,17 +2320,59 @@ export default function SignalTable({
         exchange: exchanges,
         coin: coins,
         market_type: marketTypes,
+        asset,
+        maker_venue: makerVenue,
+        maker_market: makerMarket,
+        reference_venue: referenceVenue,
+        reference_market: referenceMarket,
+        strategy_class: strategyClass,
         class: meta.class,
         venue_prefix: meta.venue_prefix,
-        chain: meta.chain,
+        chain: normalizedChain,
       };
     }).filter((row) => row !== null)) as EnrichedRow[];
   }, [ageSortTick, getServerNowMs, isFamilyVisible, isStrategyVisible, rows]);
 
+  const signalFilters = useMemo<ColumnFilter[]>(() => {
+    if (!isMakerSuiteProfile) {
+      return GENERIC_SIGNAL_FILTERS;
+    }
+
+    const assetOptions = uniqueFilterOptions(enrichedRows.map((row) => row.asset));
+    const makerVenueOptions = uniqueFilterOptions(enrichedRows.map((row) => row.maker_venue));
+    const makerMarketOptions = uniqueFilterOptions(enrichedRows.map((row) => row.maker_market));
+    const referenceVenueOptions = uniqueFilterOptions(enrichedRows.map((row) => row.reference_venue));
+    const referenceMarketOptions = uniqueFilterOptions(enrichedRows.map((row) => row.reference_market));
+    const strategyClassOptions = uniqueFilterOptions(enrichedRows.map((row) => row.strategy_class));
+    const chainOptions = uniqueFilterOptions(enrichedRows.map((row) => row.chain));
+
+    const filters: ColumnFilter[] = [
+      { key: 'id', label: 'Strategy', type: 'text', placeholder: 'Strategy ID...' },
+      { key: 'trading_enabled', label: 'Trading', type: 'select', options: TRADING_FILTER_VALUES },
+      { key: 'asset', label: 'Asset', type: 'select', options: assetOptions },
+      { key: 'maker_venue', label: 'Maker Venue', type: 'select', options: makerVenueOptions },
+      { key: 'maker_market', label: 'Maker Market', type: 'select', options: makerMarketOptions },
+      { key: 'reference_venue', label: 'Reference Venue', type: 'select', options: referenceVenueOptions },
+      { key: 'reference_market', label: 'Reference Market', type: 'select', options: referenceMarketOptions },
+      { key: 'strategy_class', label: 'Class', type: 'select', options: strategyClassOptions },
+    ];
+
+    if (chainOptions.length > 0) {
+      filters.push({ key: 'chain', label: 'Chain', type: 'select', options: chainOptions });
+    }
+
+    return filters;
+  }, [enrichedRows, isMakerSuiteProfile]);
+
   // Apply filters
   const filteredRows = useMemo(() => {
-    return applyFilters(enrichedRows, filters, { columns: SIGNAL_FILTERS });
-  }, [enrichedRows, filters]);
+    return applyFilters(enrichedRows, filters, { columns: signalFilters });
+  }, [enrichedRows, filters, signalFilters]);
+
+  const shouldUseMakerV4Table = useMemo(() => {
+    if (familyScope === 'maker_v4') return true;
+    return filteredRows.length > 0 && filteredRows.every((row) => row._strategyFamily === 'maker_v4');
+  }, [familyScope, filteredRows]);
 
   // Column definitions (TanStack Table format)
   const columns = useMemo<ColumnDef<EnrichedRow>[]>(() => {
@@ -2659,7 +2803,7 @@ export default function SignalTable({
         />
       )}
       <TableFilter
-        columns={SIGNAL_FILTERS}
+        columns={signalFilters}
         onFilterChange={handleFilterChange}
         dense={true}
         customControls={
@@ -2671,51 +2815,60 @@ export default function SignalTable({
               color: colors.text.muted,
             }}
           >
-            <label className="flex items-center" style={{ gap: spacing.gap.xs }}>
-              <span>Family</span>
-              <select
-                value={familyScope}
-                onChange={(e) => setFamilyScope(e.target.value as SignalFamilyScope)}
-                className="rounded border px-2 py-1 bg-bg-surface text-text-primary"
-                style={{ borderColor: colors.border.DEFAULT }}
-              >
-                <option value="all">All ({familyCounts.all})</option>
-                <option value="maker_v3">Maker V3 ({familyCounts.maker_v3})</option>
-                <option value="maker_v2">Maker V2 ({familyCounts.maker_v2})</option>
-                <option value="taker">Taker ({familyCounts.taker})</option>
-              </select>
-            </label>
-            <label className="flex items-center select-none cursor-pointer" style={{ gap: spacing.gap.xs }}>
-              <input
-                type="checkbox"
-                className="cursor-pointer"
-                style={{ accentColor: colors.semantic.success.DEFAULT }}
-                checked={showQuoted}
-                onChange={(e) => setShowQuoted(e.target.checked)}
-              />
-              Show quoted prices (edge bias)
-            </label>
+            {!isMakerSuiteProfile && (
+              <label className="flex items-center" style={{ gap: spacing.gap.xs }}>
+                <span>Family</span>
+                <select
+                  value={familyScope}
+                  onChange={(e) => setFamilyScope(e.target.value as SignalFamilyScope)}
+                  className="rounded border px-2 py-1 bg-bg-surface text-text-primary"
+                  style={{ borderColor: colors.border.DEFAULT }}
+                >
+                  <option value="all">All ({familyCounts.all})</option>
+                  <option value="maker_v4">Maker V4 ({familyCounts.maker_v4})</option>
+                  <option value="maker_v3">Maker V3 ({familyCounts.maker_v3})</option>
+                  <option value="maker_v2">Maker V2 ({familyCounts.maker_v2})</option>
+                  <option value="taker">Taker ({familyCounts.taker})</option>
+                </select>
+              </label>
+            )}
+            {!shouldUseMakerV4Table && (
+              <label className="flex items-center select-none cursor-pointer" style={{ gap: spacing.gap.xs }}>
+                <input
+                  type="checkbox"
+                  className="cursor-pointer"
+                  style={{ accentColor: colors.semantic.success.DEFAULT }}
+                  checked={showQuoted}
+                  onChange={(e) => setShowQuoted(e.target.checked)}
+                />
+                Show quoted prices (edge bias)
+              </label>
+            )}
           </div>
         }
       />
       <PanelBody ref={handleVisibilityRootRef}>
-        <DataTable
-          data={filteredRows}
-          columns={columns}
-          getRowId={(row) => (row as any).id}
-          sortable
-          initialSorting={initialSorting}
-          sortingState={sortingState}
-          onSortingStateChange={setSortingState}
-          dense={false}
-          loading={loading}
-          emptyMessage={loading ? 'Loading strategies...' : (wsConnected ? 'Waiting for pricing…' : 'No strategies found')}
-          className={tableClassName}
-          widthMode="content"
-          columnWidthMode="explicit"
-          mobileMode="cards"
-          renderMobileRow={renderMobileRow}
-        />
+        {shouldUseMakerV4Table ? (
+          <MakerV4SignalTable rows={filteredRows} loading={loading} />
+        ) : (
+          <DataTable
+            data={filteredRows}
+            columns={columns}
+            getRowId={(row) => (row as any).id}
+            sortable
+            initialSorting={initialSorting}
+            sortingState={sortingState}
+            onSortingStateChange={setSortingState}
+            dense={false}
+            loading={loading}
+            emptyMessage={loading ? 'Loading strategies...' : (wsConnected ? 'Waiting for pricing…' : 'No strategies found')}
+            className={tableClassName}
+            widthMode="content"
+            columnWidthMode="explicit"
+            mobileMode="cards"
+            renderMobileRow={renderMobileRow}
+          />
+        )}
       </PanelBody>
     </>
   );

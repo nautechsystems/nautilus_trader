@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import nautilus_trader.flux.api.payloads as payloads
 import pytest
 
@@ -37,6 +38,13 @@ def test_build_envelope_includes_standard_fields() -> None:
 
 
 def test_payloads_module_declares_public_exports() -> None:
+    flux_api = importlib.import_module("flux.api")
+    flux_api_payloads = importlib.import_module("flux.api.payloads")
+    nautilus_flux_api = importlib.import_module("nautilus_trader.flux.api")
+    nautilus_flux_api_payloads = importlib.import_module("nautilus_trader.flux.api.payloads")
+
+    assert flux_api.payloads is flux_api_payloads
+    assert nautilus_flux_api.payloads is nautilus_flux_api_payloads
     assert payloads.__all__ == [
         "ContractCatalogEntry",
         "StrategyMetadata",

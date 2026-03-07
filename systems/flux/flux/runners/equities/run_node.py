@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Run a live Equities trading node using canonical MakerV3 strategy exports.
+Run a live Equities trading node using the canonical equities strategy spec.
 """
 
 from __future__ import annotations
@@ -9,6 +9,8 @@ import argparse
 from contextlib import contextmanager
 from contextlib import suppress
 from decimal import Decimal
+import inspect
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -31,15 +33,19 @@ from flux.runners.shared.bootstrap import merge_shared_tables as merge_shared_ta
 from flux.runners.shared.bootstrap import resolve_flux_strategy_id as resolve_flux_strategy_id_from_bootstrap
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import strategy_startup_lock
+from flux.runners.shared.qty_units import resolve_runner_qty_unit
 from flux.runners.shared.bootstrap import table as shared_table
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies import FluxStrategySpec
 from flux.strategies import get_strategy_spec
-from flux.strategies.makerv3 import runtime_params as runtime_params_mod
+from flux.strategies.makerv4 import runtime_params as makerv4_runtime_params_mod
+from flux.strategies.makerv4.instruments import hyperliquid_perp_to_ibkr_instrument_id
+from flux.strategies.makerv3 import runtime_params as makerv3_runtime_params_mod
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
@@ -49,8 +55,12 @@ SAFE_MODES = frozenset({"paper", "testnet", "live"})
 DEFAULT_LIVE_MESSAGE_BUS_AUTOTRIM_MINS = 30
 EQUITIES_DESCRIPTOR = get_strategy_set_descriptor("equities")
 _MAKERV3_SPEC = get_strategy_spec("makerv3")
+_MAKERV4_SPEC = get_strategy_spec("makerv4")
+LOGGER = logging.getLogger(__name__)
 MakerV3Strategy = _MAKERV3_SPEC.strategy_cls
 MakerV3StrategyConfig = _MAKERV3_SPEC.config_cls
+MakerV4Strategy = _MAKERV4_SPEC.strategy_cls
+MakerV4StrategyConfig = _MAKERV4_SPEC.config_cls
 
 
 def _repo_root() -> Path:
@@ -131,8 +141,10 @@ def _attach_runtime_params_manager(
     redis_cfg: dict[str, Any],
     namespace: str,
     schema_version: str,
+    strategy_spec: FluxStrategySpec,
 ) -> None:
     redis_client = redis.Redis(**build_redis_client_kwargs(redis_cfg))
+    runtime_params_mod = _runtime_params_module(strategy_spec)
     strategy.set_params_manager_factory(
         runtime_params_mod.params_manager_factory(
             redis_client=redis_client,
@@ -159,6 +171,7 @@ def _attach_portfolio_inventory_feed(
         namespace=namespace,
         schema_version=schema_version,
         stale_after_ms=int(portfolio_cfg.get("inventory_stale_after_ms", 3_000)),
+        allow_partial_global_risk=bool(portfolio_cfg.get("allow_partial_global_risk", False)),
     )
 
 
@@ -208,8 +221,100 @@ def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
     return resolve_flux_strategy_id_from_bootstrap(config)
 
 
-def _resolve_strategy_spec() -> FluxStrategySpec:
-    return get_strategy_spec("makerv3")
+def _resolve_strategy_param_set(config: dict[str, Any]) -> str:
+    strategy_cfg = _table(config, "strategy")
+    return _optional_text(strategy_cfg.get("param_set")) or _MAKERV3_SPEC.strategy_id
+
+
+def _resolve_strategy_spec(config: dict[str, Any]) -> FluxStrategySpec:
+    return get_strategy_spec(_resolve_strategy_param_set(config))
+
+
+def _runtime_params_module(strategy_spec: FluxStrategySpec):
+    if strategy_spec.param_set == "makerv4":
+        return makerv4_runtime_params_mod
+    return makerv3_runtime_params_mod
+
+
+def _effective_venue_resolution_config(
+    *,
+    config: dict[str, Any],
+    strategy_spec: FluxStrategySpec,
+) -> dict[str, Any]:
+    if strategy_spec.param_set != "makerv4":
+        return config
+
+    node_cfg = config.get("node")
+    if not isinstance(node_cfg, dict):
+        return config
+
+    venue_entries = node_cfg.get("venues")
+    if not isinstance(venue_entries, dict):
+        return config
+
+    hyperliquid_cfg = venue_entries.get("HYPERLIQUID")
+    ibkr_cfg = venue_entries.get("IBKR")
+    if not isinstance(hyperliquid_cfg, dict) or not isinstance(ibkr_cfg, dict):
+        return config
+
+    maker_instrument_id = _optional_text(hyperliquid_cfg.get("instrument_id"))
+    if maker_instrument_id is None:
+        return config
+
+    strategy_cfg = _table(config, "strategy")
+    derived_reference_instrument_id = hyperliquid_perp_to_ibkr_instrument_id(
+        maker_instrument_id,
+        primary_exchange=str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
+    )
+    if _optional_text(ibkr_cfg.get("instrument_id")) == derived_reference_instrument_id:
+        return config
+
+    effective_node_cfg = dict(node_cfg)
+    effective_venue_entries = dict(venue_entries)
+    effective_venue_entries["IBKR"] = {
+        **ibkr_cfg,
+        "instrument_id": derived_reference_instrument_id,
+    }
+    effective_node_cfg["venues"] = effective_venue_entries
+    return {
+        **config,
+        "node": effective_node_cfg,
+    }
+
+
+def _strategy_config_accepts(config_cls: type[object], field_name: str) -> bool:
+    try:
+        signature = inspect.signature(config_cls)
+    except (TypeError, ValueError):
+        return False
+    if field_name in signature.parameters:
+        return True
+    return any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+
+
+def _optional_strategy_config_kwargs(
+    *,
+    strategy_spec: FluxStrategySpec,
+    strategy_cfg: dict[str, Any],
+) -> dict[str, Any]:
+    candidates: dict[str, Any] = {
+        "outside_rth_hedge_enabled": bool(strategy_cfg.get("outside_rth_hedge_enabled", False)),
+        "hedge_price_tick_size": Decimal(str(strategy_cfg.get("hedge_price_tick_size", "0.01"))),
+        "hedge_min_share_increment": Decimal(
+            str(strategy_cfg.get("hedge_min_share_increment", "1")),
+        ),
+        "max_ibkr_quote_age_ms": int(strategy_cfg.get("max_ibkr_quote_age_ms", 1_000)),
+        "max_ibkr_spread_bps": Decimal(str(strategy_cfg.get("max_ibkr_spread_bps", "25"))),
+        "ibkr_primary_exchange": str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
+    }
+    return {
+        field_name: value
+        for field_name, value in candidates.items()
+        if _strategy_config_accepts(strategy_spec.config_cls, field_name)
+    }
 
 
 @contextmanager
@@ -242,6 +347,11 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     trader_id = _optional_text(identity.get("trader_id")) or "MAKER-PAPER-001"
     namespace = _optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE
     schema_version = _optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION
+    strategy_spec = _resolve_strategy_spec(config)
+    venue_resolution_config = _effective_venue_resolution_config(
+        config=config,
+        strategy_spec=strategy_spec,
+    )
 
     enable_execution = bool(node_cfg.get("enable_execution", force_enable_execution))
     reconciliation_lookback_mins, reconciliation_startup_delay_secs = (
@@ -257,7 +367,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     )
     redis_database = _redis_database_config(redis_cfg)
     strategy_venues = resolve_strategy_venues(
-        config=config,
+        config=venue_resolution_config,
         mode=mode,
         enable_execution=enable_execution,
     )
@@ -338,7 +448,11 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     order_qty = Decimal(str(strategy_cfg.get("order_qty", "1000")))
     qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1000"))
     qty = Decimal(str(qty_raw)) if qty_raw is not None else None
-    strategy_spec = _resolve_strategy_spec()
+    qty_unit = resolve_runner_qty_unit(
+        strategy_cfg,
+        strategy_id=external_strategy_id,
+        logger=LOGGER,
+    )
 
     strategy = strategy_spec.strategy_cls(
         config=strategy_spec.config_cls(
@@ -350,6 +464,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             external_order_claims=[maker_instrument_id],
             manage_stop=bool(strategy_cfg.get("manage_stop", mode == "live")),
             order_qty=order_qty,
+            qty_unit=qty_unit,
             qty=qty,
             bot_on=bool(strategy_cfg.get("bot_on", False)),
             des_qty_global=float(strategy_cfg.get("des_qty_global", 0.0)),
@@ -390,6 +505,10 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
             cancel_all_instrument_orders=bool(
                 strategy_cfg.get("cancel_all_instrument_orders", False),
             ),
+            **_optional_strategy_config_kwargs(
+                strategy_spec=strategy_spec,
+                strategy_cfg=strategy_cfg,
+            ),
             **_client_order_id_config(maker_instrument_id),
         ),
     )
@@ -398,6 +517,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
         redis_cfg=redis_cfg,
         namespace=namespace,
         schema_version=schema_version,
+        strategy_spec=strategy_spec,
     )
     _attach_portfolio_inventory_feed(
         strategy=strategy,
@@ -432,10 +552,15 @@ def main() -> None:
     )
 
     with _strategy_startup_lock(config):
+        fatal_error: TradingNodeFatalError | None = None
         try:
             node.run()
+        except TradingNodeFatalError as exc:
+            fatal_error = exc
         finally:
             node.dispose()
+        if fatal_error is not None:
+            raise SystemExit(fatal_error.exit_code)
 
 
 if __name__ == "__main__":

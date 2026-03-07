@@ -1470,12 +1470,14 @@ const createDefaultColumnPrefsByProfile = (): ParamsColumnPrefsByProfile => ({
   taker: createDefaultColumnPrefs(),
   maker_v2: createDefaultColumnPrefs(),
   maker_v3: createDefaultColumnPrefs(),
+  maker_v4: createDefaultColumnPrefs(),
 });
 
 function normalizeParamsProfileId(value: unknown): ParamsProfileId {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'maker_v2') return 'maker_v2';
   if (normalized === 'maker_v3') return 'maker_v3';
+  if (normalized === 'maker_v4') return 'maker_v4';
   return 'taker';
 }
 
@@ -1494,6 +1496,7 @@ const normalizeColumnPrefsByProfile = (
         : takerLegacy,
     maker_v2: normalizeColumnPrefs(prefs?.maker_v2 ?? defaults.maker_v2),
     maker_v3: normalizeColumnPrefs(prefs?.maker_v3 ?? defaults.maker_v3),
+    maker_v4: normalizeColumnPrefs(prefs?.maker_v4 ?? defaults.maker_v4),
   };
 };
 
@@ -1612,6 +1615,7 @@ export const useParamsStore = create<ParamsStore>()(
           normalizedPrefsByProfile.taker = cloneLegacyPrefs();
           normalizedPrefsByProfile.maker_v2 = cloneLegacyPrefs();
           normalizedPrefsByProfile.maker_v3 = cloneLegacyPrefs();
+          normalizedPrefsByProfile.maker_v4 = cloneLegacyPrefs();
         }
         const activeProfile = normalizeParamsProfileId(
           version < 3

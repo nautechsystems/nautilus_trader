@@ -12,6 +12,7 @@ from flux.runners.equities.run_api import _build_profile_strategy_maps
 from flux.runners.equities.run_api import _equities_profile_summary
 from flux.runners.equities.run_api import _load_config
 from flux.runners.equities.run_api import _parse_args
+from flux.runners.equities.run_api import build_strategy_metadata_for_test
 
 
 def test_build_profile_strategy_maps_reads_equities_allowlist_and_required_subset() -> None:
@@ -63,6 +64,15 @@ def test_equities_profile_summary_reports_effective_strategy_sets() -> None:
     assert "equities_strategy_count=2" in summary
     assert "equities_strategy_ids=['aapl_tradexyz_makerv3', 'msft_tradexyz_makerv3']" in summary
     assert "equities_required_strategy_ids=['aapl_tradexyz_makerv3']" in summary
+
+
+def test_equities_run_api_uses_makerv4_metadata_when_strategy_spec_is_makerv4() -> None:
+    metadata = build_strategy_metadata_for_test("makerv4")
+
+    assert metadata.strategy_class == "maker_v4"
+    assert metadata.param_set == "makerv4"
+    assert metadata.strategy_family == "maker_v4"
+    assert metadata.strategy_version == "v4"
 
 
 def test_parse_args_requires_explicit_config(monkeypatch) -> None:

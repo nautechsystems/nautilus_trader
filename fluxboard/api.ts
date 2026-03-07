@@ -105,6 +105,10 @@ function appendProfileQuery(qs: URLSearchParams): void {
   if (profile !== 'default') qs.set('profile', profile);
 }
 
+function routePrefersKeyLabel(profile: PathProfile): boolean {
+  return profile === 'tokenmm' || profile === 'equities';
+}
+
 // Create enhanced API client instance with timeout, retry, and deduplication
 const apiClient = new APIClient(base);
 
@@ -1856,7 +1860,7 @@ export const api = {
     );
     const payload = unwrapFluxEnvelope(response);
     const activeProfile = getActivePathProfile();
-    const preferKeyLabel = options?.preferKeyLabel ?? (activeProfile === 'tokenmm');
+    const preferKeyLabel = options?.preferKeyLabel ?? routePrefersKeyLabel(activeProfile);
     return normalizeParamSchemaPayloadWithOptions(payload, {
       // TokenMM operators need compact param-key headers to keep the grid readable.
       preferKeyLabel,

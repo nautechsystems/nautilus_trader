@@ -26,15 +26,21 @@ from flux.common.config import FluxIdentityConfig
 from flux.common.config import FluxRedisConfig
 from flux.common.config import FluxVenuesConfig
 from flux.common.config import validate_identifier_part
+from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
+from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 from flux.pulse import PulseControlPlane
 from flux.runners.shared.strategy_set import build_profile_strategy_maps
 from flux.runners.shared.strategy_set import build_profile_summary
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.redis_runtime import apply_redis_env_overrides
+from flux.strategies import get_strategy_spec
+from flux.strategies.makerv4.runtime_params import MAKERV4_RUNTIME_PARAM_DEFAULTS
+from flux.strategies.makerv4.runtime_params import MAKERV4_RUNTIME_PARAM_SCHEMA
 
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
 EQUITIES_DESCRIPTOR = get_strategy_set_descriptor("equities")
+DEFAULT_EQUITIES_STRATEGY_SPEC = get_strategy_spec("makerv3")
 DEFAULT_EQUITIES_BASE_PATH = EQUITIES_DESCRIPTOR.base_path
 EQUITIES_ALIAS_BASE_PATH = EQUITIES_DESCRIPTOR.route_aliases[0]
 DEFAULT_PULSE_BASE_PATH = "/pulse"
@@ -176,7 +182,7 @@ def _build_flux_config(config: dict[str, Any], *, mode: str, confirm_live: bool)
     redis_cfg = _table(config, "redis")
     venues = _table(config, "venues")
 
-    strategy_id = _optional_text(identity.get("strategy_id")) or "makerv3"
+    strategy_id = _optional_text(identity.get("strategy_id")) or "equities_api"
 
     flux_identity = FluxIdentityConfig(
         namespace=_optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE,
@@ -238,6 +244,44 @@ def _equities_profile_summary(
         profile_strategy_map,
         profile_required_strategy_map,
     )
+
+
+def _resolve_strategy_name(api_cfg: dict[str, Any]) -> str:
+    explicit = _optional_text(api_cfg.get("param_set"))
+    if explicit:
+        return explicit
+
+    strategy_class = (_optional_text(api_cfg.get("strategy_class")) or "").lower()
+    if strategy_class in {"maker_v4", "makerv4"}:
+        return "makerv4"
+    if strategy_class in {"maker_v3", "makerv3"}:
+        return DEFAULT_EQUITIES_STRATEGY_SPEC.strategy_id
+    return DEFAULT_EQUITIES_STRATEGY_SPEC.strategy_id
+
+
+def _build_strategy_metadata(api_cfg: dict[str, Any], *, strategy_name: str) -> StrategyMetadata:
+    strategy_spec = get_strategy_spec(strategy_name)
+    return StrategyMetadata(
+        strategy_class=str(strategy_spec.profile_key),
+        strategy_groups=str(api_cfg.get("strategy_groups", EQUITIES_DESCRIPTOR.profile)),
+        base_asset=str(api_cfg.get("base_asset", "BASE")),
+        quote_asset=str(api_cfg.get("quote_asset", "QUOTE")),
+        param_set=strategy_spec.param_set,
+        strategy_family=strategy_spec.strategy_family,
+        strategy_version=strategy_spec.strategy_version,
+    )
+
+
+def build_strategy_metadata_for_test(strategy_name: str) -> StrategyMetadata:
+    return _build_strategy_metadata({}, strategy_name=strategy_name)
+
+
+def _resolve_runtime_params_payloads(
+    strategy_name: str,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    if strategy_name == "makerv4":
+        return MAKERV4_RUNTIME_PARAM_SCHEMA, MAKERV4_RUNTIME_PARAM_DEFAULTS
+    return MAKERV3_RUNTIME_PARAM_SCHEMA, MAKERV3_RUNTIME_PARAM_DEFAULTS
 
 
 def _env_flag(name: str, *, default: bool = False) -> bool:
@@ -400,15 +444,13 @@ def main() -> None:
         mode=mode,
         confirm_live=(mode != "live" or args.confirm_live),
     )
+    strategy_name = _resolve_strategy_name(api_cfg)
+    strategy_spec = get_strategy_spec(strategy_name)
+    params_schema, params_defaults = _resolve_runtime_params_payloads(strategy_name)
 
-    metadata = StrategyMetadata(
-        strategy_class=str(api_cfg.get("strategy_class", "maker_v3")),
-        strategy_groups=str(api_cfg.get("strategy_groups", EQUITIES_DESCRIPTOR.profile)),
-        base_asset=str(api_cfg.get("base_asset", "BASE")),
-        quote_asset=str(api_cfg.get("quote_asset", "QUOTE")),
-        param_set="makerv3",
-        strategy_family="maker_v3",
-        strategy_version="v3",
+    metadata = _build_strategy_metadata(
+        api_cfg,
+        strategy_name=strategy_spec.strategy_id,
     )
     profile_strategy_map, profile_required_strategy_map = _build_profile_strategy_maps(api_cfg)
     print(
@@ -436,6 +478,9 @@ def main() -> None:
         strategy_metadata=metadata,
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set=strategy_spec.param_set,
     )
     PulseControlPlane().register_routes(app)
 

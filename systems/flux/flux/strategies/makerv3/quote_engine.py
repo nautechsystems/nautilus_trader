@@ -304,8 +304,10 @@ def refresh_quotes(  # noqa: C901
         return
     base_currency = strategy._maker_base_currency_code()
     if strategy._portfolio_inventory_portfolio_id:
-        _, portfolio_block_reason = strategy._shared_portfolio_inventory_qty_and_block_reason(
+        _, portfolio_block_reason, _portfolio_diagnostics = (
+            strategy._shared_portfolio_inventory_qty_and_block_reason(
             base_currency,
+            )
         )
         if portfolio_block_reason == REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE:
             handle_portfolio_inventory_block(
@@ -629,7 +631,10 @@ def refresh_quotes(  # noqa: C901
             cancels=cancels,
             places=places,
         )
-        strategy._publish_state("quotes_replaced")
+        strategy._publish_state(
+            "quotes_replaced",
+            managed_orders=active_orders,
+        )
 
 
 __all__ = [

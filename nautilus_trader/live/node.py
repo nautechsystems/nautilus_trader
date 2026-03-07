@@ -21,6 +21,17 @@ from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
 
+class TradingNodeFatalError(RuntimeError):
+    """
+    Fatal trading node failure that should terminate the hosting process.
+    """
+
+    def __init__(self, reason: str, *, exit_code: int = 78) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.exit_code = exit_code
+
+
 class TradingNode:
     """
     Provides an asynchronous network node for live trading.
@@ -281,6 +292,8 @@ class TradingNode:
                 task.add_done_callback(self._handle_run_task_result)
             else:
                 self.kernel.loop.run_until_complete(self.run_async())
+        except TradingNodeFatalError:
+            raise
         except RuntimeError as e:
             self.kernel.logger.exception("Error on run", e)
 
@@ -331,7 +344,12 @@ class TradingNode:
                     "Run `node.build()` prior to start.",
                 )
 
-            await self.kernel.start_async()
+            started = await self.kernel.start_async()
+
+            if not started:
+                raise TradingNodeFatalError(
+                    self.kernel.fatal_shutdown_reason or "Trading node startup failed",
+                )
 
             if self.kernel.loop.is_running():
                 self.kernel.logger.info("RUNNING")
@@ -360,6 +378,9 @@ class TradingNode:
                 self._task_streaming.add_done_callback(self._handle_streaming_exception)
 
             await asyncio.gather(*tasks)
+
+            if self.kernel.fatal_shutdown_reason is not None:
+                raise TradingNodeFatalError(self.kernel.fatal_shutdown_reason)
         except asyncio.CancelledError as e:
             self.kernel.logger.error(str(e))
 

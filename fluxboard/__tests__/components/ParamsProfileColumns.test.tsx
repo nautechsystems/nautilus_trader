@@ -3,8 +3,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Params from '../../Params';
 import * as api from '../../api';
 
-const { mockSetActiveProfile } = vi.hoisted(() => ({
+const { mockSetActiveProfile, paramsStoreState } = vi.hoisted(() => ({
   mockSetActiveProfile: vi.fn(),
+  paramsStoreState: {
+    activeProfile: 'maker_v2' as const,
+  },
 }));
 
 vi.mock('../../api', () => ({
@@ -25,8 +28,13 @@ vi.mock('../../stores', () => {
     setAuto: vi.fn(),
     viewMode: 'compact' as const,
     setViewMode: vi.fn(),
-    activeProfile: 'maker_v2' as const,
-    setActiveProfile: mockSetActiveProfile,
+    get activeProfile() {
+      return paramsStoreState.activeProfile;
+    },
+    setActiveProfile: (profile: 'taker' | 'maker_v2' | 'maker_v3') => {
+      paramsStoreState.activeProfile = profile;
+      mockSetActiveProfile(profile);
+    },
     columnPrefs: { order: [] as string[], visibility: {} as Record<string, boolean> },
     setColumnOrder: vi.fn(),
     setColumnVisibility: vi.fn(),
@@ -59,6 +67,7 @@ describe('Params profile column filtering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSetActiveProfile.mockReset();
+    paramsStoreState.activeProfile = 'maker_v2';
 
     vi.mocked(api.api.getParamSchema).mockResolvedValue({
       params: {
@@ -162,4 +171,62 @@ describe('Params profile column filtering', () => {
 
     expect(mockSetActiveProfile).toHaveBeenCalledWith('maker_v3');
   });
+
+  it('renders MakerV3 short headers for equities params when rows are MakerV3-only', async () => {
+    window.history.pushState({}, '', '/equities/params');
+    paramsStoreState.activeProfile = 'maker_v3';
+    vi.mocked(api.api.getParamSchema).mockResolvedValue({
+      params: {
+        bot_on: {
+          key: 'bot_on',
+          label: 'bot_on',
+          description: 'toggle',
+          type: 'select',
+          default: '0',
+          options: [['0', 'Off'], ['1', 'On']],
+        },
+        bid_edge1: {
+          key: 'bid_edge1',
+          label: 'bid_edge1',
+          description: 'bid edge',
+          type: 'float',
+          default: 10,
+        },
+        ask_edge1: {
+          key: 'ask_edge1',
+          label: 'ask_edge1',
+          description: 'ask edge',
+          type: 'float',
+          default: 10,
+        },
+      },
+      deprecated: {},
+    } as any);
+    vi.mocked(api.api.getParams).mockResolvedValue([
+      {
+        strategy_id: 'aapl_tradexyz_makerv3',
+        running: true,
+        meta: { class: 'maker_v3' },
+        hot_params: ['bot_on', 'bid_edge1', 'ask_edge1'],
+        params: {
+          bot_on: '1',
+          bid_edge1: '25',
+          ask_edge1: '25',
+        },
+      },
+    ] as any);
+
+    render(<Params />);
+
+    await waitFor(() => {
+      expect(screen.getByText('aapl_tradexyz_makerv3')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(api.api.getParamSchema).toHaveBeenCalledWith({ preferKeyLabel: true });
+    });
+    expect(screen.getByRole('button', { name: 'Sort by bid_edge1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sort by ask_edge1' })).toBeInTheDocument();
+  });
+
 });

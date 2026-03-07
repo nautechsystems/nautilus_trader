@@ -170,6 +170,7 @@ def attach_portfolio_inventory_feed(
         namespace=namespace,
         schema_version=schema_version,
         stale_after_ms=int(portfolio_cfg.get("inventory_stale_after_ms", 3_000)),
+        allow_partial_global_risk=bool(portfolio_cfg.get("allow_partial_global_risk", False)),
     )
 
 

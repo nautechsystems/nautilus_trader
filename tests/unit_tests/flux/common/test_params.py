@@ -4,6 +4,8 @@ import pytest
 
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
 from nautilus_trader.flux.common.params import RuntimeParamSpec
+from nautilus_trader.flux.strategies.makerv4 import runtime_params as makerv4_runtime_params
+from nautilus_trader.flux.strategies.makerv4.runtime_params import MAKERV4_RUNTIME_PARAM_REGISTRY
 
 
 def test_makerv3_registry_exposes_schema_defaults_and_hot_path_bounds() -> None:
@@ -29,6 +31,22 @@ def test_makerv3_registry_exposes_schema_defaults_and_hot_path_bounds() -> None:
     assert schema["max_age_ms"]["maximum"] == 60_000
     assert schema["quote_fail_critical_after_count"]["minimum"] == 0
     assert schema["quote_fail_critical_after_count"]["maximum"] == 100
+
+
+def test_makerv4_registry_exposes_explicit_param_set_with_compatible_schema() -> None:
+    registry = MAKERV4_RUNTIME_PARAM_REGISTRY
+
+    assert registry.param_set == "makerv4"
+    assert registry.defaults["qty"] == 1.0
+    assert registry.defaults["max_qty_global"] == 100.0
+    assert registry.defaults["instant_hedge_enabled"] is True
+    assert registry.defaults["maker_fee_source"] == "hyperliquid_api"
+    assert registry.schema["n_orders1"]["type"] == MAKERV3_RUNTIME_PARAM_REGISTRY.schema["n_orders1"]["type"]
+    assert registry.schema["hedge_style"] == {
+        "type": "select",
+        "description": "Immediate-hedge execution style.",
+        "options": [["ioc_through_mid", "IOC Through Mid"]],
+    }
 
 
 @pytest.mark.parametrize(
@@ -203,3 +221,9 @@ def test_registry_coerce_updates_rejects_invalid_bool_and_int_values(
 
     with pytest.raises(ValueError, match=error_fragment):
         registry.coerce_updates(updates)
+
+
+def test_makerv4_runtime_params_stub_uses_distinct_param_set() -> None:
+    assert makerv4_runtime_params.PARAM_SET == "makerv4"
+    assert makerv4_runtime_params.RUNTIME_PARAM_DEFAULTS["qty"] == 1.0
+    assert makerv4_runtime_params.RUNTIME_PARAM_DEFAULTS["hedge_style"] == "ioc_through_mid"

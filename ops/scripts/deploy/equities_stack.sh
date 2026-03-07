@@ -226,10 +226,14 @@ start_stack() {
   start_process portfolio python3 -m nautilus_trader.flux.runners.equities.run_portfolio --config "${CONFIG_PATH}" --mode "${MODE}"
   start_process bridge python3 -m nautilus_trader.flux.runners.equities.run_bridge --config "${CONFIG_PATH}" --mode "${MODE}"
   start_process api env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.equities.run_api --config "${CONFIG_PATH}" --mode "${MODE}" --host "${API_HOST}" --port "${API_PORT}" --serve-fluxboard --serve-pulse
+  local -a exec_flag=()
+  if [[ "${ENABLE_EXECUTION}" == "1" ]]; then
+    exec_flag+=(--enable-execution)
+  fi
   local config_path service_name
   while IFS= read -r config_path; do
     service_name="node_$(basename "${config_path}" .toml)"
-    start_process "${service_name}" python3 -m nautilus_trader.flux.runners.equities.run_node --config "${config_path}" --shared-config "${CONFIG_PATH}" --mode "${MODE}"
+    start_process "${service_name}" python3 -m nautilus_trader.flux.runners.equities.run_node --config "${config_path}" --shared-config "${CONFIG_PATH}" --mode "${MODE}" "${exec_flag[@]}"
   done < <(node_configs)
 }
 

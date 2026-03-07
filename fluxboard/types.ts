@@ -610,6 +610,7 @@ export type PricingAdjustment = {
   inv_skew_global?: number;
   inv_ratio_local?: number;
   inv_skew_local?: number;
+  global_qty?: number | null;
   curr_qty?: number | null;
   local_qty?: number | null;
   local_qty_key?: {
@@ -665,6 +666,38 @@ export type MakerV2QuoteSnapshot = {
   eff_ask_edge_bps?: string | number | null;
   place_edge_bps?: string | number | null;
 
+  [key: string]: unknown;
+};
+
+export type MakerV4LegSnapshot = {
+  venue?: string;
+  symbol?: string;
+  instrument_id?: string;
+  bid?: string | number | null;
+  ask?: string | number | null;
+  mid?: string | number | null;
+  ts_ms?: string | number | null;
+  age_ms?: string | number | null;
+  [key: string]: unknown;
+};
+
+export type MakerV4QuoteSnapshot = {
+  ts_ms?: string | number | null;
+  maker_leg?: MakerV4LegSnapshot;
+  hedge_leg?: MakerV4LegSnapshot;
+  ref_leg?: MakerV4LegSnapshot;
+  effective_spread_bps?: string | number | null;
+  quoted_spread_bps?: string | number | null;
+  expected_maker_fee_bps?: string | number | null;
+  assumed_hedge_fee_bps?: string | number | null;
+  hedge_ready?: boolean | null;
+  hedge_route?: string | null;
+  effective_account_source?: string | null;
+  hedge_disabled_reason?: string | null;
+  ibkr_quote_age_ms?: string | number | null;
+  fee_snapshot_age_s?: string | number | null;
+  hedge_latency_ms?: string | number | null;
+  hedge_slippage_bps_vs_mid?: string | number | null;
   [key: string]: unknown;
 };
 
@@ -727,7 +760,10 @@ export type SignalStrategy = {
   maker_v3?: {
     quote_snapshot?: MakerV2QuoteSnapshot;
   };
-  strategy_family?: 'maker_v3' | 'maker_v2' | 'taker';
+  maker_v4?: {
+    quote_snapshot?: MakerV4QuoteSnapshot;
+  };
+  strategy_family?: 'maker_v4' | 'maker_v3' | 'maker_v2' | 'taker';
   risk_delta?: number;
   risk_delta_ts_ms?: number;
   // Static strategy classification metadata (optional, from configs/strategies.ini)

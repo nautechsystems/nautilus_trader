@@ -1,0 +1,16 @@
+from __future__ import annotations
+
+MAKERV4_STRATEGY_ID = "makerv4"
+MAKERV4_STRATEGY_FAMILY = "maker_v4"
+MAKERV4_STRATEGY_VERSION = "v4"
+MAKERV4_PARAM_SET = "makerv4"
+MAKERV4_PROFILE_KEY = "maker_v4"
+
+
+__all__ = [
+    "MAKERV4_PARAM_SET",
+    "MAKERV4_PROFILE_KEY",
+    "MAKERV4_STRATEGY_FAMILY",
+    "MAKERV4_STRATEGY_ID",
+    "MAKERV4_STRATEGY_VERSION",
+]

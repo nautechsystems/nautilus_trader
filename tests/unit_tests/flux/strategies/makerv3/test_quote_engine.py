@@ -329,6 +329,84 @@ def test_refresh_quotes_blocks_when_shared_portfolio_inventory_is_degraded(
     assert alerts[-1]["reason_code"] == "blocked_portfolio_inventory_unavailable"
 
 
+def test_refresh_quotes_allows_partial_shared_portfolio_inventory_when_enabled(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_500_000_000])
+    strategy._maker_instrument = SimpleNamespace(
+        base_currency=SimpleNamespace(code="PLUME"),
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+        id=strategy.config.maker_instrument_id,
+    )
+    strategy._instruments = {
+        strategy.config.maker_instrument_id: strategy._maker_instrument,
+        strategy.config.reference_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="PLUME"),
+            id=strategy.config.reference_instrument_id,
+        ),
+    }
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = list
+    strategy._refresh_quotes_to_target = lambda *_args, **_kwargs: None
+    strategy._compute_fv = lambda *_args, **_kwargs: Decimal("100.5")
+    strategy._managed_orders = lambda: []
+    strategy._place_missing_levels = lambda **_kwargs: 0
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+
+    fake_redis = _FakeRedis()
+    aggregate_key = FluxRedisKeys.portfolio_inventory(
+        portfolio_id="tokenmm",
+        base_currency="PLUME",
+    )
+    fake_redis.set(
+        aggregate_key,
+        encode_portfolio_inventory(
+            {
+                "portfolio_id": "tokenmm",
+                "base_currency": "PLUME",
+                "global_qty": "129016.69578451",
+                "aggregation_mode": "partial",
+                "global_qty_complete": False,
+                "ts_ms": 1_000,
+                "stale_after_ms": 3_000,
+                "components": [],
+                "missing_required": ["strategy_02"],
+                "stale_required": [],
+                "null_qty_required": [],
+                "degraded": True,
+            },
+        ),
+    )
+    strategy.configure_portfolio_inventory_feed(
+        redis_client=fake_redis,
+        portfolio_id="tokenmm",
+        namespace="flux",
+        schema_version="v1",
+        allow_partial_global_risk=True,
+    )
+
+    now_ns = 1_500_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    cancels: list[str] = []
+    states: list[str] = []
+    alerts: list[dict[str, object]] = []
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: cancels.append(
+        f"{reason}:{force}",
+    )
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert cancels == []
+    assert states == []
+    assert alerts == []
+
+
 def test_refresh_quotes_uses_runtime_snapshot_without_runtime_getters(
     clocked_strategy_factory,
 ) -> None:

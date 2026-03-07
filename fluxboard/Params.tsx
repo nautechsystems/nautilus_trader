@@ -15,6 +15,7 @@ import { useEffect, useState, useMemo, useCallback, memo, useRef, useLayoutEffec
 import { Check, RotateCcw, Power, Copy } from 'lucide-react';
 import type {
   DragEvent as ReactDragEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent
 } from 'react';
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual';
@@ -194,7 +195,7 @@ function resolveSchemaProfile(
 }
 
 function shouldPreferKeyLabel(profile: ParamsProfileId): boolean {
-  return profile === 'maker_v3';
+  return profile === 'maker_v3' || profile === 'maker_v4';
 }
 
 type DragPosition = 'before' | 'after';
@@ -259,6 +260,7 @@ type StrategyRowProps = {
   onParamBlur: (strategyId: string, paramKey: string) => void;
   onParamFocus: (strategyId: string, paramKey: string, rowIndex: number, columnIndex: number) => void;
   onParamBlurForFocus: () => void;
+  onTradingFocus: (strategyId: string, rowIndex: number) => void;
   onSave: (strategyId: string) => void;
   onRevert: (strategyId: string) => void;
   onConflictKeepMine: (strategyId: string) => void;
@@ -349,6 +351,7 @@ const MemoizedStrategyRow = memo(function StrategyRow({
   onParamBlur,
   onParamFocus,
   onParamBlurForFocus,
+  onTradingFocus,
   onSave,
   onRevert,
   onConflictKeepMine,
@@ -596,6 +599,7 @@ const MemoizedStrategyRow = memo(function StrategyRow({
             size="sm"
             checked={tradingEnabled}
             onCheckedChange={handleTradingChange}
+            onFocus={() => onTradingFocus(strategy.strategy_id, idx)}
             disabled={isSaving}
             aria-label={`Toggle trading for ${strategy.strategy_id}`}
             data-testid={`trading-toggle-${strategy.strategy_id}`}
@@ -957,6 +961,7 @@ export default function Params({
   const selectionRef = useRef(selectedStrategies);
   const anchorIndexRef = useRef<number | null>(null);
   const dragSelectingRef = useRef(false);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const headerRowRef = useRef<HTMLTableRowElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1059,7 +1064,7 @@ export default function Params({
   }, [diffStrategyId, conflictRows]);
 
   const columnOrder = useMemo(() => {
-    const forceCanonicalOrder = activeProfile === 'maker_v3';
+    const forceCanonicalOrder = activeProfile === 'maker_v3' || activeProfile === 'maker_v4';
     if (forceCanonicalOrder) {
       return defaultColumnOrder;
     }
@@ -1076,7 +1081,7 @@ export default function Params({
 
   useEffect(() => {
     if (!schema) return;
-    const forceCanonicalOrder = activeProfile === 'maker_v3';
+    const forceCanonicalOrder = activeProfile === 'maker_v3' || activeProfile === 'maker_v4';
     if (forceCanonicalOrder) {
       const persistedOrder = Array.isArray(columnPrefs.order) ? columnPrefs.order : [];
       if (!arraysShallowEqual(persistedOrder, defaultColumnOrder)) {
@@ -1474,6 +1479,17 @@ export default function Params({
     setHasInputFocus(false);
     setLastFocusedCell(null);
   }, [setLastFocusedCell]);
+
+  const handleTradingFocus = useCallback((strategyId: string, rowIndex: number) => {
+    const currentSelection = selectionRef.current;
+    if (currentSelection.length === 0 || !currentSelection.includes(strategyId)) {
+      const nextSelection = [strategyId];
+      selectionRef.current = nextSelection;
+      setSelectedStrategies(nextSelection);
+    }
+    anchorIndexRef.current = rowIndex;
+    setAnchorStrategyId(strategyId);
+  }, [setSelectedStrategies, setAnchorStrategyId]);
 
   const applyRemoteKeys = useCallback((strategyId: string, keys: string[]) => {
     if (!strategyId || keys.length === 0) return;
@@ -1965,6 +1981,16 @@ export default function Params({
       clearSelection();
     }
   }, [selectedStrategies, dirtyParams, ensureNoValidationErrors, collectBulkUpdates, performBulkSave, clearSelection]);
+
+  const handleSurfaceKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const isMac = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac');
+    const modifier = isMac ? event.metaKey : event.ctrlKey;
+    if (!modifier || event.shiftKey || event.altKey || event.key !== 'Enter') return;
+    if (selectionRef.current.length === 0) return;
+
+    event.preventDefault();
+    void saveAllSelected();
+  }, [saveAllSelected]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -2919,7 +2945,12 @@ export default function Params({
   }
 
   const mobileContent = (
-    <div className="flex flex-col h-full" style={{ backgroundColor: colors.bg.base }}>
+    <div
+      ref={surfaceRef}
+      className="flex flex-col h-full"
+      style={{ backgroundColor: colors.bg.base }}
+      onKeyDownCapture={handleSurfaceKeyDownCapture}
+    >
       <header
         className="sticky top-0 z-20"
         style={{
@@ -3140,7 +3171,7 @@ export default function Params({
   );
 
   const desktopContent = (
-    <div className="flex flex-col h-full">
+    <div ref={surfaceRef} className="flex flex-col h-full" onKeyDownCapture={handleSurfaceKeyDownCapture}>
       {showHeader && (
         <ParamsHeader
           hasDirtyParams={hasDirtyParams}
@@ -3500,6 +3531,7 @@ export default function Params({
                       onParamBlur={handleParamBlur}
                       onParamFocus={handleParamFocus}
                       onParamBlurForFocus={handleParamBlurForFocus}
+                      onTradingFocus={handleTradingFocus}
                       onSave={saveStrategy}
                       onRevert={handleRevertRow}
                       onConflictKeepMine={handleKeepMine}

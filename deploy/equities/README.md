@@ -4,7 +4,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## Layout
 
-- `equities.live.toml`: shared node, portfolio, bridge, and API config plus the canonical equities allowlist.
+- `equities.live.toml`: shared Redis, portfolio, bridge, API, and contract metadata plus the canonical equities allowlist.
 - `equities_stack.env.example`: local paper/testnet smoke environment template for `ops/scripts/deploy/equities_stack.sh`.
 - `strategies/`: one complete node TOML per enrolled stock strategy, named by exact strategy ID.
 - Runtime services:
@@ -21,15 +21,27 @@ This directory is the deploy root for the dedicated `equities` stack.
 - trade[XYZ] is represented as `HYPERLIQUID` plus `dex = "xyz"`.
 - One stock uses one strategy file and one node process.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
+- The active checked-in canary is `aapl_tradexyz_makerv4`; `aapl_tradexyz_makerv3.toml.disabled` is rollback material only and is deliberately not discovered by the installer.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
 - On the shared TokenMM host, Pulse is served by `tokenmm-api` at `/pulse` and manages the enrolled equities services from the same `/etc/flux` registry.
 - The shared host also runs an internal-only `equities-api` backend on loopback so `/equities` can read the dedicated equities Redis store without exposing a second public API port.
 - `ops/scripts/deploy/equities_stack.sh` is local smoke only and refuses live deploys.
 - Live trading is opt-in only when `EQUITIES_MODE=live`, `EQUITIES_CONFIRM_LIVE=1`, and `EQUITIES_ENABLE_EXECUTION=1` are set together through systemd/Pulse-managed services.
 
+## MakerV4 contract
+
+- `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "maker_v4"`, the equities allowlist points only to `aapl_tradexyz_makerv4`, and the shared contract metadata publishes `AAPL.NASDAQ` for the active IBKR leg.
+- The shared config merge only imports `redis` and `portfolio`, so active node settings live in `deploy/equities/strategies/*.toml`, not in `deploy/equities/equities.live.toml`.
+- The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so that shared IBKR contract entry must mirror the active canary route from `deploy/equities/strategies/*.toml`.
+- Per-node configs use `[strategy].param_set = "makerv4"` and keep `strategy_groups = "equities"`.
+- Hyperliquid effective account precedence remains `vault_address_env`, then funded `account_address_env`, then agent-wallet master resolution. Production hosts should keep `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` in `/etc/flux/common.env`.
+- MakerV4 after-hours rollout is explicit in the active node files: `node.venues.IBKR.instrument_id = "AAPL.NASDAQ"`, `node.venues.IBKR.use_regular_trading_hours = false`, `strategy.outside_rth_hedge_enabled = true`, and `strategy.ibkr_primary_exchange = "NASDAQ"`.
+- The AAPL canary default is `ibkr_primary_exchange = "NASDAQ"`. The current runner contract does not expose a separate IBKR route-exchange field, so keep the reference instrument on the qualifiable listing venue and do not set `BLUEOCEAN` as `instrument_id`.
+- IBKR hedge fees are not live-discovered. MakerV4 quotes use runtime param `assumed_hedge_fee_bps` as an operator-managed assumption, with the current default seeded from runtime params at `1.0` bps.
+
 ## Inventory and balances model
 
-- `Signal` remains per-strategy MakerV3 state.
+- `Signal` remains per-strategy MakerV4 state for the active equities rollout.
 - `local_qty` remains per-stock strategy inventory.
 - `global_qty` is the shared `equities` portfolio aggregate owned by `flux.runners.equities.run_portfolio`.
 - `GET /api/v1/balances?profile=equities` is the portfolio projection across the allowlisted stock strategies.
@@ -63,7 +75,7 @@ Runtime registration is explicit:
 - The equities target enrolls `equities-api`, `equities-portfolio`, `equities-bridge`, and every discovered `equities-node-*` service
 - The equities bridge consumes only the configured `api.equities_strategy_ids` scope by default.
 - Production hosts should inject the dedicated equities ElastiCache endpoint through `EQUITIES_REDIS_HOST`, `EQUITIES_REDIS_PORT`, `EQUITIES_REDIS_USERNAME`, `EQUITIES_REDIS_PASSWORD`, and `EQUITIES_REDIS_SSL` in `/etc/flux/common.env`.
-- `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` stay in `/etc/flux/common.env`; do not inline them into strategy TOMLs.
+- `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` stay in `/etc/flux/common.env`; do not inline them into strategy TOMLs.
 - Shared-host Pulse control lives at `tokenmm-api`; the equities installer does not provision a second public API on `:5022`.
 - Set `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024` in `/etc/flux/common.env` so the public `tokenmm-api` process can proxy `/equities`, equities-profile `/api/v1/*`, and equities-profile `/socket.io` to the hidden backend.
 
@@ -113,6 +125,15 @@ Expected smoke result:
 - `balances` returns the shared `equities` portfolio view plus component readiness metadata.
 - `trades` may be empty in paper smoke; if rows are present they retain per-row `strategy_id` values for the enrolled stock strategies.
 - `alerts` returns profile-scoped alerts only for the enrolled equities strategies.
+
+## After-hours production validation
+
+- Confirm the active strategy file keeps `use_regular_trading_hours = false` so IBKR reference data remains available outside RTH.
+- Confirm `outside_rth_hedge_enabled = true` on the active MakerV4 strategy before enabling execution.
+- Confirm outside-RTH fills are actually available on the configured route before enabling execution.
+- Confirm the active strategy keeps a qualifiable IBKR reference instrument. The checked-in AAPL canary uses `AAPL.NASDAQ`; do not switch the instrument ID to `BLUEOCEAN`.
+- Confirm the IBKR account has the required after-hours permissions for the configured exchange and instrument.
+- Confirm operators understand that `assumed_hedge_fee_bps` is not live-discovered and should be reviewed explicitly before live rollout.
 
 Fluxboard contract reference:
 

@@ -503,6 +503,84 @@ describe('Signal MakerV2 truth overlay', () => {
     expect(localQtyCell?.textContent).toContain('150,000.0000');
   });
 
+  it('keeps live quote counts visible when bot_on is off', async () => {
+    const strategy: SignalStrategy = {
+      id: 'plumeusdt_okx_perp_makerv3',
+      params: { bot_on: '0' } as any,
+      state: { state: 'bot_off', ts_ms: Date.now(), bot_on: false } as any,
+      maker_quote_status: {
+        bid_open: 1,
+        ask_open: 2,
+        bid_depth: 3,
+        ask_depth: 3,
+        bid_blocked: 2,
+        ask_blocked: 1,
+      } as any,
+      maker_v3: {
+        quote_snapshot: {
+          ts_ms: Date.now(),
+          mode: 'OFF',
+          reason: 'bot_off',
+        },
+      } as any,
+      legs: {
+        A: { coin: 'PLUME/USDT', exchange: 'okx', update_time: '2025-01-15 12:00:00' } as any,
+        B: { coin: 'PLUME/USDT', exchange: 'binance_spot', update_time: '2025-01-15 12:00:00' } as any,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    const { container } = renderSignalTable();
+    await screen.findByText('plumeusdt_okx_perp_makerv3');
+
+    const quotesCell = container.querySelector('tbody tr td:nth-child(5)');
+    expect(quotesCell?.textContent).toContain('B 1/3 · A 2/3');
+  });
+
+  it('prefers explicit global inventory over risk_delta fallback', async () => {
+    const strategy: SignalStrategy = {
+      id: 'plumeusdt_bybit_spot_makerv3',
+      params: { bot_on: '0' } as any,
+      state: { state: 'bot_off', ts_ms: Date.now(), bot_on: false } as any,
+      risk_delta: -231161.2 as any,
+      pricing_adjustments: [
+        {
+          type: 'inventory_skew',
+          global_qty: 134961.863,
+          local_qty: -62145.1373,
+        } as any,
+      ],
+      legs: {
+        A: { coin: 'PLUME/USDT', exchange: 'bybit_spot', update_time: '2025-01-15 12:00:00' } as any,
+        B: { coin: 'PLUME/USDT', exchange: 'binance_spot', update_time: '2025-01-15 12:00:00' } as any,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    const { container } = renderSignalTable();
+    await screen.findByText('plumeusdt_bybit_spot_makerv3');
+
+    const globalQtyCell = container.querySelector('tbody tr td:nth-child(3)');
+    const localQtyCell = container.querySelector('tbody tr td:nth-child(4)');
+    expect(globalQtyCell?.textContent).toContain('134,961.8630');
+    expect(globalQtyCell?.textContent).not.toContain('-231,161.2000');
+    expect(localQtyCell?.textContent).toContain('-62,145.1373');
+  });
+
   it('renders spread from backend spread_net_bps fields', async () => {
     const strategy: SignalStrategy = {
       id: 'spread_mid_strategy',
