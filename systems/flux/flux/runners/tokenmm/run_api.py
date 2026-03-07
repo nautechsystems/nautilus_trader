@@ -8,10 +8,17 @@ import tomllib
 from pathlib import Path
 from typing import Any
 from typing import cast
+from urllib.error import HTTPError
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.parse import urlsplit
+from urllib.parse import urlunsplit
+import urllib.request as urllib_request
 
 import redis
 from flask import abort
 from flask import redirect
+from flask import Response
 from flask import request
 from flask import send_from_directory
 
@@ -52,6 +59,19 @@ def _repo_root() -> Path:
 
 DEFAULT_FLUXBOARD_DIST = _repo_root() / "fluxboard" / "dist"
 DEFAULT_PULSE_DIST = _repo_root() / "pulse-ui" / "dist"
+PROXY_TIMEOUT_SECS = 30.0
+HOP_BY_HOP_HEADERS = {
+    "connection",
+    "content-length",
+    "host",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+}
 
 
 def _optional_text(value: Any) -> str | None:
@@ -245,6 +265,79 @@ def _env_flag(name: str, *, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_equities_backend_url() -> str | None:
+    return _optional_text(os.getenv("EQUITIES_API_BACKEND_URL"))
+
+
+def _should_proxy_to_equities_backend() -> bool:
+    path = request.path or "/"
+    if path == "/equities" or path.startswith("/equities/"):
+        return True
+
+    profile = _optional_text(request.args.get("profile"))
+    if profile != "equities":
+        return False
+
+    return path == "/socket.io/" or path == "/socket.io" or path == "/api/v1" or path.startswith("/api/v1/")
+
+
+def _proxy_request_to_backend(backend_url: str) -> Response:
+    incoming = urlsplit(request.url)
+    backend = urlsplit(backend_url)
+    query = urlencode(list(request.args.items(multi=True)), doseq=True)
+    target_url = urlunsplit(
+        (
+            backend.scheme,
+            backend.netloc,
+            request.path,
+            query,
+            "",
+        ),
+    )
+    body = request.get_data(cache=True)
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in HOP_BY_HOP_HEADERS
+    }
+    headers["X-Forwarded-Proto"] = incoming.scheme
+    headers["X-Forwarded-Host"] = incoming.netloc
+    headers["X-Forwarded-For"] = request.remote_addr or "127.0.0.1"
+    proxy_request = urllib_request.Request(
+        target_url,
+        data=body if body else None,
+        headers=headers,
+        method=request.method,
+    )
+    try:
+        with urllib_request.urlopen(proxy_request, timeout=PROXY_TIMEOUT_SECS) as upstream:
+            response = Response(upstream.read(), status=upstream.status)
+            for key, value in upstream.headers.items():
+                if key.lower() in HOP_BY_HOP_HEADERS:
+                    continue
+                response.headers[key] = value
+            return response
+    except HTTPError as exc:
+        body = exc.read() if exc.fp is not None else b"Bad gateway"
+        response = Response(body, status=exc.code)
+        if exc.headers is not None:
+            for key, value in exc.headers.items():
+                if key.lower() in HOP_BY_HOP_HEADERS:
+                    continue
+                response.headers[key] = value
+        return response
+    except URLError:
+        return Response("Bad gateway", status=502, content_type="text/plain")
+
+
+def _attach_profile_router_proxy(app: Any, *, equities_backend_url: str) -> None:
+    @app.before_request
+    def _proxy_equities_requests() -> Response | None:
+        if not _should_proxy_to_equities_backend():
+            return None
+        return _proxy_request_to_backend(equities_backend_url)
 
 
 def _resolve_fluxboard_dist_path(args: argparse.Namespace, api_cfg: dict[str, Any]) -> Path:
@@ -443,6 +536,9 @@ def main() -> None:
     )
     if _should_enable_pulse_routes(args, api_cfg):
         PulseControlPlane().register_routes(app)
+    equities_backend_url = _resolve_equities_backend_url()
+    if equities_backend_url:
+        _attach_profile_router_proxy(app, equities_backend_url=equities_backend_url)
 
     serve_fluxboard = args.serve_fluxboard or _env_flag("FLUXBOARD_SERVE_DIST", default=False)
     if serve_fluxboard:

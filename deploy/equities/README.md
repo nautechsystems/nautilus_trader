@@ -23,6 +23,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
 - On the shared TokenMM host, Pulse is served by `tokenmm-api` at `/pulse` and manages the enrolled equities services from the same `/etc/flux` registry.
+- The shared host also runs an internal-only `equities-api` backend on loopback so `/equities` can read the dedicated equities Redis store without exposing a second public API port.
 - `ops/scripts/deploy/equities_stack.sh` is local smoke only and refuses live deploys.
 - Live trading is opt-in only when `EQUITIES_MODE=live`, `EQUITIES_CONFIRM_LIVE=1`, and `EQUITIES_ENABLE_EXECUTION=1` are set together through systemd/Pulse-managed services.
 
@@ -50,7 +51,7 @@ Installer behavior:
 - installs `flux@.service`
 - installs `/etc/flux/common.env` from `deploy/equities/systemd/common.env.example` if it does not already exist
 - installs `/etc/sudoers.d/flux-pulse` for the equities Pulse-managed service set
-- removes any stale `/etc/flux/equities-api.env` from older installs on the shared host
+- writes `/etc/flux/equities-api.env` for the internal loopback backend (`PULSE_ENABLED=0`, `127.0.0.1:5024`)
 - writes `/etc/flux/equities-portfolio.env`, `/etc/flux/equities-bridge.env`
 - writes one `/etc/flux/equities-node-<strategy_id>.env` per `deploy/equities/strategies/*.toml`
 - rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls every discovered equities node service
@@ -59,11 +60,12 @@ Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`
-- The equities target enrolls `equities-portfolio`, `equities-bridge`, and every discovered `equities-node-*` service
+- The equities target enrolls `equities-api`, `equities-portfolio`, `equities-bridge`, and every discovered `equities-node-*` service
 - The equities bridge consumes only the configured `api.equities_strategy_ids` scope by default.
 - Production hosts should inject the dedicated equities ElastiCache endpoint through `EQUITIES_REDIS_HOST`, `EQUITIES_REDIS_PORT`, `EQUITIES_REDIS_USERNAME`, `EQUITIES_REDIS_PASSWORD`, and `EQUITIES_REDIS_SSL` in `/etc/flux/common.env`.
 - `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` stay in `/etc/flux/common.env`; do not inline them into strategy TOMLs.
-- Shared-host Pulse control lives at `tokenmm-api`; the equities installer does not provision a second API on `:5022`.
+- Shared-host Pulse control lives at `tokenmm-api`; the equities installer does not provision a second public API on `:5022`.
+- Set `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024` in `/etc/flux/common.env` so the public `tokenmm-api` process can proxy `/equities`, equities-profile `/api/v1/*`, and equities-profile `/socket.io` to the hidden backend.
 
 Primary operator surfaces:
 

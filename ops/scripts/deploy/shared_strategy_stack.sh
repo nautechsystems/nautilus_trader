@@ -44,9 +44,10 @@ strategy_stack_write_env() {
   local cmd="$6"
   local port="${7:-}"
   local self_service_id="${8:-}"
+  local pulse_enabled="${9:-1}"
 
   {
-    echo 'PULSE_ENABLED=1'
+    echo "PULSE_ENABLED=${pulse_enabled}"
     echo "PULSE_DESCRIPTION=${pulse_description}"
     echo "PULSE_GROUP_KEY=${group_key}"
     echo "PULSE_GROUP_LABEL=${group_label}"
