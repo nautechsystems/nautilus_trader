@@ -243,7 +243,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
     namespace = _optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE
     schema_version = _optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION
 
-    enable_execution = bool(node_cfg.get("enable_execution", force_enable_execution))
+    enable_execution = bool(force_enable_execution or node_cfg.get("enable_execution", False))
     reconciliation_lookback_mins, reconciliation_startup_delay_secs = (
         _resolve_reconciliation_settings(mode=mode, node_cfg=node_cfg)
     )
@@ -279,6 +279,7 @@ def build_node(config: dict[str, Any], *, mode: str, force_enable_execution: boo
         ),
         exec_engine=LiveExecEngineConfig(
             reconciliation=bool(node_cfg.get("exec_reconciliation", True)),
+            generate_missing_orders=bool(node_cfg.get("exec_generate_missing_orders", False)),
             reconciliation_lookback_mins=reconciliation_lookback_mins,
             reconciliation_instrument_ids=[maker_instrument_id],
             reconciliation_startup_delay_secs=reconciliation_startup_delay_secs,

@@ -405,6 +405,19 @@ def test_tokenmm_strategy_configs_explicitly_set_manage_stop_false() -> None:
         assert "manage_stop = false" in config
 
 
+def test_tokenmm_live_configs_explicitly_disable_generate_missing_orders() -> None:
+    repo_root = _repo_root()
+    config_paths = [
+        repo_root / "deploy/tokenmm/tokenmm.live.toml",
+        repo_root / "deploy/tokenmm/strategies/tokenmm.strategy.template.toml",
+        *(_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS),
+    ]
+
+    for path in config_paths:
+        config = _read(path)
+        assert "exec_generate_missing_orders = false" in config
+
+
 def test_tokenmm_production_strategy_configs_use_descriptive_strategy_ids() -> None:
     strategy_paths = [_strategy_config_path(strategy_id) for strategy_id in TOKENMM_STRATEGY_IDS]
 
