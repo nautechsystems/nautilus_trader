@@ -383,6 +383,23 @@ def _carry_forward_cash_mark(
     return row
 
 
+def _cash_quantity_component_signature(value: Any) -> str:
+    parsed = _to_decimal(value)
+    if parsed is not None:
+        return _decimal_text(parsed)
+    return decode_text(value).strip()
+
+
+def _cash_quantity_signature(row: Mapping[str, Any]) -> tuple[str, str, str]:
+    return (
+        _cash_quantity_component_signature(row.get("free")),
+        _cash_quantity_component_signature(row.get("locked")),
+        _cash_quantity_component_signature(
+            row.get("total") or row.get("quantity") or row.get("signed_qty"),
+        ),
+    )
+
+
 def _cash_row_key(
     row: Mapping[str, Any],
     *,
@@ -457,6 +474,55 @@ def _should_replace_cash_row(
             return False
 
     return candidate_ts_ms >= previous_ts_ms
+
+
+def _collapse_duplicate_cash_scope_rows(
+    cash_latest: dict[tuple[str, str, str, str], tuple[int, dict[str, Any]]],
+    cash_source_strategy_ids: dict[tuple[str, str, str, str], set[str]],
+) -> None:
+    grouped: dict[tuple[str, str, str, str, str, str], list[tuple[str, str, str, str]]] = {}
+    for cash_key, (_ts_ms, row) in cash_latest.items():
+        exchange, account, asset, _merge_scope = cash_key
+        if asset in _STABLE_BALANCE_ASSETS:
+            continue
+        grouped.setdefault(
+            (exchange, account, asset, *_cash_quantity_signature(row)),
+            [],
+        ).append(cash_key)
+
+    for duplicate_keys in grouped.values():
+        if len(duplicate_keys) < 2:
+            continue
+
+        keep_key = max(
+            duplicate_keys,
+            key=lambda key: (
+                _row_product_type_hint(cash_latest[key][1]) == "spot",
+                safe_float(cash_latest[key][1].get("mark_raw") or cash_latest[key][1].get("mark"))
+                is not None,
+                cash_latest[key][0],
+                decode_text(cash_latest[key][1].get("row_id")).strip(),
+            ),
+        )
+        latest_ts_ms = max(cash_latest[key][0] for key in duplicate_keys)
+        merged_strategy_ids: set[str] = set()
+        for key in duplicate_keys:
+            merged_strategy_ids.update(cash_source_strategy_ids.get(key, set()))
+
+        kept_row = dict(cash_latest[keep_key][1])
+        if latest_ts_ms > 0:
+            kept_row["ts_ms"] = latest_ts_ms
+        if kept_row.get("account") and len(merged_strategy_ids) > 1:
+            kept_row["scope"] = "shared_account"
+
+        cash_latest[keep_key] = (latest_ts_ms, kept_row)
+        cash_source_strategy_ids[keep_key] = merged_strategy_ids
+
+        for key in duplicate_keys:
+            if key == keep_key:
+                continue
+            cash_latest.pop(key, None)
+            cash_source_strategy_ids.pop(key, None)
 
 
 def _row_exchange_hint(row: Mapping[str, Any]) -> str:
@@ -718,6 +784,8 @@ def merge_portfolio_balances_rows(
         if cash_key[1] and len(cash_source_strategy_ids.get(cash_key, set())) > 1:
             carried["scope"] = "shared_account"
         cash_latest[cash_key] = (latest_ts_ms, carried)
+
+    _collapse_duplicate_cash_scope_rows(cash_latest, cash_source_strategy_ids)
 
     merged_positions: list[dict[str, Any]] = []
     for key, agg in position_grouped.items():
