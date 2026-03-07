@@ -1,9 +1,5 @@
 # Allow the API service user to operate managed Flux services for Pulse.
 Cmnd_Alias FLUX_PULSE = \
-  /usr/bin/systemctl start flux@equities-api.service, \
-  /usr/bin/systemctl stop flux@equities-api.service, \
-  /usr/bin/systemctl restart flux@equities-api.service, \
-  /usr/bin/journalctl -u flux@equities-api.service, \
   /usr/bin/systemctl start flux@equities-portfolio.service, \
   /usr/bin/systemctl stop flux@equities-portfolio.service, \
   /usr/bin/systemctl restart flux@equities-portfolio.service, \

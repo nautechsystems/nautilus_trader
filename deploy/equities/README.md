@@ -22,7 +22,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - One stock uses one strategy file and one node process.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
-- Fluxboard and Pulse are served from the same API process at `/equities` and `/pulse`.
+- On the shared TokenMM host, Pulse is served by `tokenmm-api` at `/pulse` and manages the enrolled equities services from the same `/etc/flux` registry.
 - `ops/scripts/deploy/equities_stack.sh` is local smoke only and refuses live deploys.
 - Live trading is opt-in only when `EQUITIES_MODE=live`, `EQUITIES_CONFIRM_LIVE=1`, and `EQUITIES_ENABLE_EXECUTION=1` are set together through systemd/Pulse-managed services.
 
@@ -50,7 +50,8 @@ Installer behavior:
 - installs `flux@.service`
 - installs `/etc/flux/common.env` from `deploy/equities/systemd/common.env.example` if it does not already exist
 - installs `/etc/sudoers.d/flux-pulse` for the equities Pulse-managed service set
-- writes `/etc/flux/equities-api.env`, `/etc/flux/equities-portfolio.env`, `/etc/flux/equities-bridge.env`
+- removes any stale `/etc/flux/equities-api.env` from older installs on the shared host
+- writes `/etc/flux/equities-portfolio.env`, `/etc/flux/equities-bridge.env`
 - writes one `/etc/flux/equities-node-<strategy_id>.env` per `deploy/equities/strategies/*.toml`
 - rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls every discovered equities node service
 
@@ -58,13 +59,13 @@ Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`
-- The equities target enrolls `equities-api`, `equities-portfolio`, `equities-bridge`, and every discovered `equities-node-*` service
+- The equities target enrolls `equities-portfolio`, `equities-bridge`, and every discovered `equities-node-*` service
 - The equities bridge consumes only the configured `api.equities_strategy_ids` scope by default.
 - `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` stay in `/etc/flux/common.env`; do not inline them into strategy TOMLs.
+- Shared-host Pulse control lives at `tokenmm-api`; the equities installer does not provision a second API on `:5022`.
 
 Primary operator surfaces:
 
-- `http://<host>:5022/equities`
 - `http://<host>:5022/pulse`
 - `GET /api/pulse/jobs`
 - `POST /api/pulse/jobs/group/equities/restart`
@@ -112,4 +113,4 @@ Expected smoke result:
 
 Fluxboard contract reference:
 
-- See `fluxboard/docs/equities_contract.md` for the frozen HTTP route and payload expectations behind the `/equities` surface.
+- See `fluxboard/docs/equities_contract.md` for the frozen `/equities` route and payload expectations when an equities API is deployed separately from the shared-host Pulse control plane.

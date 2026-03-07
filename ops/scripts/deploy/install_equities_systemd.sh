@@ -30,7 +30,6 @@ discover_node_strategies() {
 build_service_ids() {
   local -n out_service_ids="$1"
   out_service_ids=(
-    "equities-api"
     "equities-portfolio"
     "equities-bridge"
   )
@@ -51,6 +50,10 @@ install_units() {
   install -d "${SUDOERS_DIR}"
 }
 
+cleanup_obsolete_envs() {
+  rm -f "${ENV_DIR}/equities-api.env"
+}
+
 install_sudoers() {
   local tmp_sudoers
   local service_ids=()
@@ -68,18 +71,6 @@ render_target() {
   local service_ids=()
   build_service_ids service_ids
   strategy_stack_render_target "${TARGET_PATH}" "Flux Equities Stack" "${service_ids[@]}"
-}
-
-render_api_env() {
-  strategy_stack_write_env \
-    "${ENV_DIR}/equities-api.env" \
-    "Equities API + Fluxboard + Pulse" \
-    "equities" \
-    "Equities" \
-    "20" \
-    "env FLUXBOARD_SERVE_DIST=1 PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.equities.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard --serve-pulse" \
-    "5022" \
-    "equities-api"
 }
 
 render_portfolio_env() {
@@ -124,9 +115,9 @@ main() {
   require_sudo
   discover_node_strategies
   install_units
+  cleanup_obsolete_envs
   install_sudoers
   render_target
-  render_api_env
   render_portfolio_env
   render_bridge_env
   render_node_envs

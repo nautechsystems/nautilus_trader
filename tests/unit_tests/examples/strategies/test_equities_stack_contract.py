@@ -73,7 +73,6 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
 
     assert "[Install]" in target
     assert "WantedBy=multi-user.target" in target
-    assert 'Wants=flux@equities-api.service' in target
     assert 'Wants=flux@equities-portfolio.service' in target
     assert 'Wants=flux@equities-bridge.service' in target
     assert 'Wants=flux@equities-node-aapl_tradexyz_makerv3.service' in target
@@ -83,19 +82,18 @@ def test_equities_systemd_assets_use_equities_service_names() -> None:
     assert '/etc/sudoers.d/flux-pulse' in install_script
     assert 'strategy_stack_render_sudoers' in install_script
     assert 'strategy_stack_write_env' in install_script
-    assert 'equities-api.env' in install_script
     assert 'equities-portfolio.env' in install_script
     assert 'equities-bridge.env' in install_script
+    assert 'rm -f "${ENV_DIR}/equities-api.env"' in install_script
+    assert 'cleanup_obsolete_envs' in install_script
     assert '"equities"' in install_script
     assert '"Equities"' in install_script
     assert '"20"' in install_script
-    assert '"equities-api"' in install_script
-    assert '--serve-pulse' in install_script
     assert 'strategy_stack_discover_strategy_ids' in install_script
     assert "--all-strategies" not in install_script
     assert 'TRADE_XYZ_AGENT_PK=' in common_env
     assert 'TRADE_XYZ_ACCOUNT_ADDRESS=' in common_env
-    assert "/usr/bin/systemctl start flux@equities-api.service" in sudoers
+    assert "/usr/bin/systemctl start flux@equities-api.service" not in sudoers
     assert "/usr/bin/systemctl restart flux@equities-portfolio.service" in sudoers
     assert "/usr/bin/systemctl restart flux@equities-node-aapl_tradexyz_makerv3.service" in sudoers
     assert "flux@*" not in sudoers
@@ -153,6 +151,8 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
 
     assert "/equities" in readme
     assert "POST /api/pulse/jobs/group/equities/restart" in readme
+    assert "tokenmm-api" in readme
+    assert "does not provision a second API on `:5022`" in readme
     assert "/api/v1/params?profile=equities" in readme
     assert "TRADE_XYZ_AGENT_PK" in readme
     assert "TRADE_XYZ_ACCOUNT_ADDRESS" in readme
