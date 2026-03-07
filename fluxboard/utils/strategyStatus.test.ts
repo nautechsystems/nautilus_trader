@@ -39,4 +39,15 @@ describe('strategyStatus', () => {
       subLabel: 'Runner On',
     });
   });
+
+  it('treats enabled-but-blocked strategies as pending', () => {
+    const status = deriveStrategyStatus({ running: true, trading: '1', blocked: true });
+
+    expect(statusToFilterValue(status)).toBe('Pending');
+    expect(describeTradingStatus(status)).toEqual({
+      variant: 'pending',
+      label: 'Pending',
+      subLabel: 'Runner On',
+    });
+  });
 });

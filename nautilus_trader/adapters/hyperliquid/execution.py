@@ -139,8 +139,13 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._user_address: str | None = None
         try:
             eoa_address = self._client.get_user_address()
-            self._user_address = config.vault_address or eoa_address
+            self._user_address = config.account_address or config.vault_address or eoa_address
             self._log.info(f"User address (EOA): {eoa_address}", LogColor.BLUE)
+            if config.account_address:
+                self._log.info(
+                    f"Account address (queries/WS subscriptions): {config.account_address}",
+                    LogColor.BLUE,
+                )
             if config.vault_address:
                 self._log.info(
                     f"Vault address (WS subscriptions): {config.vault_address}",
@@ -165,6 +170,16 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._ws_client.cache_spot_fill_coins(spot_fill_coins)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
+
+    def _user_scoped_request_kwargs(self, *, instrument_id: str | None = None) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {}
+        if instrument_id is not None:
+            kwargs["instrument_id"] = instrument_id
+        if self._user_address is not None:
+            kwargs["account_address"] = self._user_address
+        if self._config.dex is not None:
+            kwargs["dex"] = self._config.dex
+        return kwargs
 
     async def _connect(self) -> None:
         self._log.info("Loading instruments...", LogColor.BLUE)
@@ -227,7 +242,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             self._log.debug(f"Failed to cleanup cloid mapping for {client_order_id!r}: {e}")
 
     async def _update_account_state(self) -> None:
-        pyo3_account_state = await self._client.request_account_state()
+        pyo3_account_state = await self._client.request_account_state(
+            **self._user_scoped_request_kwargs(),
+        )
         account_state = AccountState.from_dict(pyo3_account_state.to_dict())
 
         self.generate_account_state(
@@ -264,7 +281,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             pyo3_reports = await self._client.request_order_status_reports(
-                instrument_id=instrument_id,
+                **self._user_scoped_request_kwargs(instrument_id=instrument_id),
             )
 
             for pyo3_report in pyo3_reports:
@@ -308,7 +325,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             pyo3_reports = await self._client.request_order_status_reports(
-                instrument_id=instrument_id,
+                **self._user_scoped_request_kwargs(instrument_id=instrument_id),
             )
 
             reports = []
@@ -341,7 +358,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     ) -> list[FillReport]:
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
-            pyo3_reports = await self._client.request_fill_reports(instrument_id=instrument_id)
+            pyo3_reports = await self._client.request_fill_reports(
+                **self._user_scoped_request_kwargs(instrument_id=instrument_id),
+            )
 
             reports = []
             for pyo3_report in pyo3_reports:
@@ -369,7 +388,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         try:
             instrument_id = command.instrument_id.value if command.instrument_id else None
             pyo3_reports = await self._client.request_position_status_reports(
-                instrument_id=instrument_id,
+                **self._user_scoped_request_kwargs(instrument_id=instrument_id),
             )
 
             reports = [PositionStatusReport.from_pyo3(r) for r in pyo3_reports]
@@ -392,7 +411,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     ) -> None:
         try:
             pyo3_reports = await self._client.request_fill_reports(
-                instrument_id=order.instrument_id.value,
+                **self._user_scoped_request_kwargs(instrument_id=order.instrument_id.value),
             )
 
             instrument = self._cache.instrument(order.instrument_id)

@@ -1757,3 +1757,4 @@ async def test_batch_cancel_orders_only_algo_orders(exec_client_builder, monkeyp
     http_client.cancel_algo_orders.assert_awaited_once()
     http_call_args = http_client.cancel_algo_orders.call_args[0][0]
     assert len(http_call_args) == 2  # Both algo orders
+

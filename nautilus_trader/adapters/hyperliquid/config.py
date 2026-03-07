@@ -29,6 +29,7 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws: str | None = None
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None
+    dex: str | None = None
     testnet: bool = False
     http_timeout_secs: PositiveInt = 10
 
@@ -79,10 +80,12 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     """
 
     private_key: str | None = None
+    account_address: str | None = None
     vault_address: str | None = None
     base_url_ws: str | None = None
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None
+    dex: str | None = None
     testnet: bool = False
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None

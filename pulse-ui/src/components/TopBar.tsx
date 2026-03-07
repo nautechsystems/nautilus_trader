@@ -12,6 +12,15 @@ interface TopBarProps {
   onToggleAutoRefresh: () => void;
 }
 
+const SUITE_LINKS = [
+  { href: "/tokenmm", label: "Dashboard" },
+  { href: "/tokenmm/signal", label: "Signal" },
+  { href: "/tokenmm/params", label: "Params" },
+  { href: "/tokenmm/balances", label: "Balances" },
+  { href: "/tokenmm/trades", label: "Trades" },
+  { href: "/tokenmm/alerts", label: "Alerts" },
+] as const;
+
 export function TopBar({
   stats,
   autoRefresh,
@@ -21,10 +30,26 @@ export function TopBar({
 }: TopBarProps) {
   return (
     <header className="topbar">
+      <div className="suite-nav" aria-label="Primary">
+        <div className="suite-nav__brand" aria-label="flux">
+          flux
+        </div>
+
+        <div className="suite-nav__links">
+          {SUITE_LINKS.map((link) => (
+            <a key={link.href} href={link.href} className="nav-link nav-link--primary">
+              {link.label}
+            </a>
+          ))}
+          <a href="/pulse/" className="nav-link nav-link--primary nav-link--active" aria-current="page">
+            Pulse
+          </a>
+        </div>
+      </div>
+
       <div className="topbar__title-row">
         <div>
           <h1 className="topbar__title">Pulse</h1>
-          <p className="topbar__subtitle">Flux deployment control for process jobs</p>
         </div>
 
         <div className="topbar__controls">

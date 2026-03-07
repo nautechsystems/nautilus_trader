@@ -12,6 +12,13 @@ type ExternalLink = {
 };
 
 export type PathProfile = 'default' | 'tokenmm' | 'equities';
+export type StableProfile = Exclude<PathProfile, 'default'>;
+
+export type ProfileDefinition = {
+  profile: StableProfile;
+  aliases: readonly string[];
+  basePath: `/${string}`;
+};
 
 export type UiSurfaceContract = {
   profile: PathProfile;
@@ -106,6 +113,19 @@ const TOKENMM_SURFACE_PROPS = {
   allowedPanels: MAKER_SUITE_CORE_PANEL_IDS,
 } as const;
 
+const PROFILE_DEFINITIONS: Record<StableProfile, ProfileDefinition> = {
+  tokenmm: {
+    profile: 'tokenmm',
+    aliases: ['tokenmm', 'tokenm'],
+    basePath: '/tokenmm',
+  },
+  equities: {
+    profile: 'equities',
+    aliases: ['equities'],
+    basePath: '/equities',
+  },
+} as const;
+
 const SURFACES: Record<PathProfile, UiSurfaceContract> = {
   default: {
     profile: 'default',
@@ -136,12 +156,10 @@ export function resolvePathProfile(value: string | null | undefined): PathProfil
     return 'default';
   }
 
-  if (raw === 'tokenmm' || raw === 'tokenm') {
-    return 'tokenmm';
-  }
-
-  if (raw === 'equities') {
-    return 'equities';
+  for (const definition of Object.values(PROFILE_DEFINITIONS)) {
+    if (definition.aliases.includes(raw)) {
+      return definition.profile;
+    }
   }
 
   return 'default';
@@ -159,12 +177,17 @@ export function buildProfilePath(profile: PathProfile, routePath: string): strin
   if (profile === 'default') {
     return normalizedPath;
   }
+  const definition = PROFILE_DEFINITIONS[profile];
   if (normalizedPath === '/') {
-    return `/${profile}`;
+    return definition.basePath;
   }
-  return `/${profile}${normalizedPath}`;
+  return `${definition.basePath}${normalizedPath}`;
 }
 
 export function getUiSurface(profile: PathProfile): UiSurfaceContract {
   return SURFACES[profile];
+}
+
+export function getProfileDefinition(profile: StableProfile): ProfileDefinition {
+  return PROFILE_DEFINITIONS[profile];
 }

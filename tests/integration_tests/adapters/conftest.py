@@ -1,7 +1,7 @@
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
-from pytest_mock import MockerFixture
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.common import Environment
@@ -163,8 +163,8 @@ def trader(
 
 
 @pytest.fixture
-def mock_data_engine_process(mocker: MockerFixture, msgbus, data_engine):
-    mock = mocker.MagicMock()
+def mock_data_engine_process(msgbus, data_engine):
+    mock = MagicMock()
     msgbus.deregister(endpoint="DataEngine.process", handler=data_engine.process)
     msgbus.register(
         endpoint="DataEngine.process",
@@ -174,8 +174,8 @@ def mock_data_engine_process(mocker: MockerFixture, msgbus, data_engine):
 
 
 @pytest.fixture
-def mock_exec_engine_process(mocker: MockerFixture, msgbus, exec_engine):
-    mock = mocker.MagicMock()
+def mock_exec_engine_process(msgbus, exec_engine):
+    mock = MagicMock()
     msgbus.deregister(endpoint="ExecEngine.process", handler=exec_engine.process)
     msgbus.register(
         endpoint="ExecEngine.process",

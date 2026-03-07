@@ -10,13 +10,9 @@ SUDOERS_PATH="${SUDOERS_DIR}/flux-pulse"
 COMMON_ENV_PATH="${ENV_DIR}/common.env"
 TARGET_PATH="${SYSTEMD_DIR}/flux-tokenmm.target"
 SHARED_CONFIG="${ROOT_DIR}/deploy/tokenmm/tokenmm.live.toml"
+STRATEGIES_DIR="${ROOT_DIR}/deploy/tokenmm/strategies"
 
-declare -a NODE_STRATEGIES=(
-  "plumeusdt_bybit_perp_makerv3"
-  "plumeusdt_bybit_spot_makerv3"
-  "plumeusdt_okx_perp_makerv3"
-  "plumeusdt_binance_spot_makerv3"
-)
+declare -a NODE_STRATEGIES=()
 
 require_sudo() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -24,6 +20,28 @@ require_sudo() {
     exit 1
   fi
 }
+
+discover_node_strategies() {
+  mapfile -t NODE_STRATEGIES < <(
+    strategy_stack_discover_strategy_ids "${STRATEGIES_DIR}" "tokenmm.strategy.template.toml"
+  )
+}
+
+
+build_service_ids() {
+  local -n out_service_ids="$1"
+  out_service_ids=(
+    "tokenmm-api"
+    "tokenmm-pulse"
+    "tokenmm-portfolio"
+    "tokenmm-bridge"
+  )
+  local strategy_id
+  for strategy_id in "${NODE_STRATEGIES[@]}"; do
+    out_service_ids+=("tokenmm-node-${strategy_id}")
+  done
+}
+
 
 install_units() {
   strategy_stack_install_base_units \
@@ -38,8 +56,10 @@ install_units() {
 
 install_sudoers() {
   local tmp_sudoers
+  local service_ids=()
   tmp_sudoers="$(mktemp)"
-  install -m 0440 "${ROOT_DIR}/deploy/tokenmm/systemd/flux-pulse.sudoers" "${tmp_sudoers}"
+  build_service_ids service_ids
+  strategy_stack_render_sudoers ubuntu "${tmp_sudoers}" "${service_ids[@]}"
   if command -v visudo >/dev/null 2>&1; then
     visudo -cf "${tmp_sudoers}"
   fi
@@ -48,56 +68,44 @@ install_sudoers() {
 }
 
 render_api_env() {
-  cat > "${ENV_DIR}/tokenmm-api.env" <<EOF
-PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM API + Fluxboard
-PULSE_GROUP_KEY=tokenmm
-PULSE_GROUP_LABEL=TokenMM
-PULSE_GROUP_ORDER=10
-PULSE_SELF_SERVICE_ID=tokenmm-api
-PORT=5022
-CMD="env FLUXBOARD_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard"
-EOF
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-api.env" \
+    "TokenMM API + Fluxboard" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "env FLUXBOARD_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 0.0.0.0 --port 5022 --serve-fluxboard" \
+    "5022" \
+    "tokenmm-api"
 }
 
 render_target() {
-  local service_ids=(
-    "tokenmm-api"
-    "tokenmm-pulse"
-    "tokenmm-portfolio"
-    "tokenmm-bridge"
-  )
-  local strategy_id
-  for strategy_id in "${NODE_STRATEGIES[@]}"; do
-    service_ids+=("tokenmm-node-${strategy_id}")
-  done
-
+  local service_ids=()
+  build_service_ids service_ids
   strategy_stack_render_target "${TARGET_PATH}" "Flux TokenMM Stack" "${service_ids[@]}"
 }
 
 
 render_pulse_env() {
-  cat > "${ENV_DIR}/tokenmm-pulse.env" <<EOF
-PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM Pulse
-PULSE_GROUP_KEY=tokenmm
-PULSE_GROUP_LABEL=TokenMM
-PULSE_GROUP_ORDER=10
-PULSE_SELF_SERVICE_ID=tokenmm-pulse
-PORT=5023
-CMD="env PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5023 --serve-pulse"
-EOF
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-pulse.env" \
+    "TokenMM Pulse" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "env PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5023 --serve-pulse" \
+    "5023" \
+    "tokenmm-pulse"
 }
 
 render_portfolio_env() {
-  cat > "${ENV_DIR}/tokenmm-portfolio.env" <<EOF
-PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM portfolio aggregator
-PULSE_GROUP_KEY=tokenmm
-PULSE_GROUP_LABEL=TokenMM
-PULSE_GROUP_ORDER=10
-CMD="python3 -m nautilus_trader.flux.runners.tokenmm.run_portfolio --config ${SHARED_CONFIG} --mode live --confirm-live"
-EOF
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-portfolio.env" \
+    "TokenMM portfolio aggregator" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "python3 -m nautilus_trader.flux.runners.tokenmm.run_portfolio --config ${SHARED_CONFIG} --mode live --confirm-live"
 }
 
 render_bridge_env() {
@@ -106,28 +114,27 @@ render_bridge_env() {
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
     strategy_args+=" --strategy-id ${strategy_id}"
   done
-  cat > "${ENV_DIR}/tokenmm-bridge.env" <<EOF
-PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM bridge consumer
-PULSE_GROUP_KEY=tokenmm
-PULSE_GROUP_LABEL=TokenMM
-PULSE_GROUP_ORDER=10
-CMD="python3 -m nautilus_trader.flux.runners.tokenmm.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live${strategy_args}"
-EOF
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-bridge.env" \
+    "TokenMM bridge consumer" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "python3 -m nautilus_trader.flux.runners.tokenmm.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live${strategy_args}"
 }
 
 render_node_envs() {
+  local strategy_id
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
     local service_id="tokenmm-node-${strategy_id}"
-    local strategy_config="${ROOT_DIR}/deploy/tokenmm/strategies/${strategy_id}.toml"
-    cat > "${ENV_DIR}/${service_id}.env" <<EOF
-PULSE_ENABLED=1
-PULSE_DESCRIPTION=TokenMM node ${strategy_id}
-PULSE_GROUP_KEY=tokenmm
-PULSE_GROUP_LABEL=TokenMM
-PULSE_GROUP_ORDER=10
-CMD="python3 -m nautilus_trader.flux.runners.tokenmm.run_node --config ${strategy_config} --shared-config ${SHARED_CONFIG} --mode live --confirm-live --enable-execution"
-EOF
+    local strategy_config="${STRATEGIES_DIR}/${strategy_id}.toml"
+    strategy_stack_write_env \
+      "${ENV_DIR}/${service_id}.env" \
+      "TokenMM node ${strategy_id}" \
+      "tokenmm" \
+      "TokenMM" \
+      "10" \
+      "python3 -m nautilus_trader.flux.runners.tokenmm.run_node --config ${strategy_config} --shared-config ${SHARED_CONFIG} --mode live --confirm-live --enable-execution"
   done
 }
 
@@ -138,6 +145,7 @@ enable_stack() {
 
 main() {
   require_sudo
+  discover_node_strategies
   install_units
   render_target
   render_api_env

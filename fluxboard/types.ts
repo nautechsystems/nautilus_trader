@@ -360,6 +360,9 @@ export type StrategyMeta = {
   quote_asset?: string;
   chain?: string;
   strategy_groups?: string;
+  param_set?: string;
+  strategy_family?: string;
+  strategy_version?: string;
 };
 
 export type StrategyRunState = 'running' | 'stopped' | 'unknown';
@@ -367,6 +370,7 @@ export type StrategyRunState = 'running' | 'stopped' | 'unknown';
 export type StrategyStatus = {
   runState: StrategyRunState;
   tradingEnabled: boolean;
+  blocked?: boolean;
   coolingDown?: boolean;
 };
 

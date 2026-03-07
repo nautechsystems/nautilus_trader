@@ -444,6 +444,7 @@ cdef class OrderEmulator(Actor):
                 order=order,
                 position_id=command.position_id,
                 client_id=command.client_id,
+                allow_cash_borrowing=command.allow_cash_borrowing,
             )
 
     cdef void _handle_modify_order(self, ModifyOrder command):

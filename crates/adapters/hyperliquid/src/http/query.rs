@@ -87,27 +87,45 @@ pub struct L2BookParams {
 
 /// Parameters for user fills request.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserFillsParams {
     pub user: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dex: Option<String>,
 }
 
 /// Parameters for order status request.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OrderStatusParams {
     pub user: String,
     pub oid: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dex: Option<String>,
 }
 
 /// Parameters for open orders request.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OpenOrdersParams {
     pub user: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dex: Option<String>,
 }
 
 /// Parameters for clearinghouse state request.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ClearinghouseStateParams {
     pub user: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dex: Option<String>,
+}
+
+/// Parameters for DEX-scoped metadata requests.
+#[derive(Debug, Clone, Serialize)]
+pub struct DexParams {
+    pub dex: String,
 }
 
 /// Parameters for candle snapshot request.
@@ -135,6 +153,7 @@ pub enum InfoRequestParams {
     OrderStatus(OrderStatusParams),
     OpenOrders(OpenOrdersParams),
     ClearinghouseState(ClearinghouseStateParams),
+    Dex(DexParams),
     CandleSnapshot(CandleSnapshotParams),
     None,
 }
@@ -150,10 +169,14 @@ pub struct InfoRequest {
 
 impl InfoRequest {
     /// Creates a request to get metadata about available markets.
-    pub fn meta() -> Self {
+    pub fn meta(dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::Meta,
-            params: InfoRequestParams::None,
+            params: dex.map_or(InfoRequestParams::None, |dex| {
+                InfoRequestParams::Dex(DexParams {
+                    dex: dex.to_string(),
+                })
+            }),
         }
     }
 
@@ -166,10 +189,14 @@ impl InfoRequest {
     }
 
     /// Creates a request to get metadata with asset contexts (for price precision).
-    pub fn meta_and_asset_ctxs() -> Self {
+    pub fn meta_and_asset_ctxs(dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::MetaAndAssetCtxs,
-            params: InfoRequestParams::None,
+            params: dex.map_or(InfoRequestParams::None, |dex| {
+                InfoRequestParams::Dex(DexParams {
+                    dex: dex.to_string(),
+                })
+            }),
         }
     }
 
@@ -192,62 +219,68 @@ impl InfoRequest {
     }
 
     /// Creates a request to get user fills.
-    pub fn user_fills(user: &str) -> Self {
+    pub fn user_fills(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::UserFills,
             params: InfoRequestParams::UserFills(UserFillsParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
 
     /// Creates a request to get order status for a user.
-    pub fn order_status(user: &str, oid: u64) -> Self {
+    pub fn order_status(user: &str, oid: u64, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::OrderStatus,
             params: InfoRequestParams::OrderStatus(OrderStatusParams {
                 user: user.to_string(),
                 oid,
+                dex: dex.map(str::to_string),
             }),
         }
     }
 
     /// Creates a request to get all open orders for a user.
-    pub fn open_orders(user: &str) -> Self {
+    pub fn open_orders(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::OpenOrders,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
 
     /// Creates a request to get frontend open orders (includes more detail).
-    pub fn frontend_open_orders(user: &str) -> Self {
+    pub fn frontend_open_orders(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::FrontendOpenOrders,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
 
     /// Creates a request to get user state (balances, positions, margin).
-    pub fn clearinghouse_state(user: &str) -> Self {
+    pub fn clearinghouse_state(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::ClearinghouseState,
             params: InfoRequestParams::ClearinghouseState(ClearinghouseStateParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
 
     /// Creates a request to get user fee schedule and effective rates.
-    pub fn user_fees(user: &str) -> Self {
+    pub fn user_fees(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::UserFees,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
@@ -382,10 +415,19 @@ mod tests {
 
     #[rstest]
     fn test_info_request_meta() {
-        let req = InfoRequest::meta();
+        let req = InfoRequest::meta(None);
 
         assert_eq!(req.request_type, HyperliquidInfoRequestType::Meta);
         assert!(matches!(req.params, InfoRequestParams::None));
+    }
+
+    #[rstest]
+    fn test_info_request_meta_with_dex() {
+        let req = InfoRequest::meta(Some("xyz"));
+
+        assert_eq!(req.request_type, HyperliquidInfoRequestType::Meta);
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains(r#""dex":"xyz""#));
     }
 
     #[rstest]

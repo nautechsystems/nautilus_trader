@@ -209,22 +209,7 @@ def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
 
 
 def _resolve_strategy_spec() -> FluxStrategySpec:
-    spec = get_strategy_spec("makerv3")
-    if (
-        MakerV3Strategy is _MAKERV3_SPEC.strategy_cls
-        and MakerV3StrategyConfig is _MAKERV3_SPEC.config_cls
-    ):
-        return spec
-    if MakerV3Strategy is spec.strategy_cls and MakerV3StrategyConfig is spec.config_cls:
-        return spec
-    return FluxStrategySpec(
-        name=getattr(spec, "name", "makerv3"),
-        strategy_cls=MakerV3Strategy,
-        config_cls=MakerV3StrategyConfig,
-        param_set=getattr(spec, "param_set", "makerv3"),
-        strategy_family=getattr(spec, "strategy_family", "maker_v3"),
-        strategy_version=getattr(spec, "strategy_version", "v3"),
-    )
+    return get_strategy_spec("makerv3")
 
 
 @contextmanager

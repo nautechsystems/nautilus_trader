@@ -435,7 +435,11 @@ cdef class RiskEngine(Component):
         if not self._check_order(instrument, order):
             return  # Denied
 
-        if not self._check_orders_risk(instrument, [order]):
+        if not self._check_orders_risk(
+            instrument,
+            [order],
+            allow_cash_borrowing=command.allow_cash_borrowing,
+        ):
             return # Denied
 
         self._execution_gateway(instrument, command)
@@ -463,7 +467,11 @@ cdef class RiskEngine(Component):
             if not self._check_order(instrument, order):
                 return  # Denied
 
-        if not self._check_orders_risk(instrument, command.order_list.orders):
+        if not self._check_orders_risk(
+            instrument,
+            command.order_list.orders,
+            allow_cash_borrowing=command.allow_cash_borrowing,
+        ):
             # Deny all orders in list
             self._deny_order_list(command.order_list, f"OrderList {command.order_list.id.to_str()} DENIED")
             return # Denied
@@ -611,7 +619,12 @@ cdef class RiskEngine(Component):
 
         return True  # Passed
 
-    cpdef bint _check_orders_risk(self, Instrument instrument, list orders):
+    cpdef bint _check_orders_risk(
+        self,
+        Instrument instrument,
+        list orders,
+        bint allow_cash_borrowing = False,
+    ):
         ########################################################################
         # RISK CHECKS
         ########################################################################
@@ -630,12 +643,23 @@ cdef class RiskEngine(Component):
         # Check each account group separately
         cdef list account_orders
         for account_id, account_orders in orders_by_account.items():
-            if not self._check_orders_risk_for_account(instrument, account_orders, account_id):
+            if not self._check_orders_risk_for_account(
+                instrument,
+                account_orders,
+                account_id,
+                allow_cash_borrowing=allow_cash_borrowing,
+            ):
                 return False  # Denied
 
         return True  # All checks passed
 
-    cpdef bint _check_orders_risk_for_account(self, Instrument instrument, list orders, AccountId account_id):
+    cpdef bint _check_orders_risk_for_account(
+        self,
+        Instrument instrument,
+        list orders,
+        AccountId account_id,
+        bint allow_cash_borrowing = False,
+    ):
         # Check orders for a specific account (or venue-based lookup if account_id is None)
         cdef QuoteTick last_quote = None
         cdef TradeTick last_trade = None
@@ -663,7 +687,11 @@ cdef class RiskEngine(Component):
         if account.is_margin_account:
             return True  # TODO: Determine risk controls for margin
 
-        cdef bint allow_borrowing = isinstance(account, CashAccount) and account.allow_borrowing
+        cdef bint allow_borrowing = (
+            allow_cash_borrowing
+            and isinstance(account, CashAccount)
+            and account.allow_borrowing
+        )
 
         free = account.balance_free(instrument.quote_currency)
 

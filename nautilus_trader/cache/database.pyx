@@ -659,35 +659,48 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         if not result:
             return None
 
-        cdef OrderInitialized init = self._serializer.deserialize(result.pop(0))
-        cdef Order order = OrderUnpacker.from_init_c(init)
-
+        cdef OrderInitialized init
+        cdef Order order
         cdef int event_count = 0
         cdef bytes event_bytes
         cdef OrderEvent event
-        for event_bytes in result:
-            try:
-                event = self._serializer.deserialize(event_bytes)
-            except ValueError as e:
-                raise RuntimeError(f"Error deserializing event for {client_order_id!r}: {e!r}") from e
 
-            # Check event integrity
-            if event in order._events:
-                raise RuntimeError(f"Corrupt cache with duplicate event for order {event}")
+        try:
+            init = self._serializer.deserialize(result.pop(0))
+            order = OrderUnpacker.from_init_c(init)
 
-            if event_count > 0 and isinstance(event, OrderInitialized):
-                if event.order_type == OrderType.MARKET:
-                    order = MarketOrder.transform(order, event.ts_init)
-                elif event.order_type == OrderType.LIMIT:
-                    price = Price.from_str_c(event.options["price"])
-                    order = LimitOrder.transform(order, event.ts_init, price)
+            for event_bytes in result:
+                try:
+                    event = self._serializer.deserialize(event_bytes)
+                except ValueError as e:
+                    raise RuntimeError(
+                        f"Error deserializing event for {client_order_id!r}: {e!r}",
+                    ) from e
+
+                # Check event integrity
+                if event in order._events:
+                    raise RuntimeError(f"Corrupt cache with duplicate event for order {event}")
+
+                if event_count > 0 and isinstance(event, OrderInitialized):
+                    if event.order_type == OrderType.MARKET:
+                        order = MarketOrder.transform(order, event.ts_init)
+                    elif event.order_type == OrderType.LIMIT:
+                        price = Price.from_str_c(event.options["price"])
+                        order = LimitOrder.transform(order, event.ts_init, price)
+                    else:
+                        raise RuntimeError(  # pragma: no cover (design-time error)
+                            f"Cannot transform order to {order_type_to_str(event.order_type)}",  # pragma: no cover (design-time error)
+                        )
                 else:
-                    raise RuntimeError(  # pragma: no cover (design-time error)
-                        f"Cannot transform order to {order_type_to_str(event.order_type)}",  # pragma: no cover (design-time error)
-                    )
-            else:
-                order.apply(event)
-            event_count += 1
+                    order.apply(event)
+                event_count += 1
+        except Exception as e:
+            # Redis is a hot cache in live trading; a corrupt order history should not block startup.
+            self._log.error(
+                f"Failed to load cached order {client_order_id!r}: {e!r}; deleting corrupt cached order history",
+            )
+            self.delete_order(client_order_id)
+            return None
 
         return order
 
@@ -866,12 +879,9 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         Condition.not_none(account_id, "account_id")
         Condition.not_none(event_id, "event_id")
 
-        self._log.warning(f"Deleting account events currently a no-op (pending redesign), {repr(account_id)}: {event_id}")
+        self._backing.delete_account_event(account_id.to_str(), event_id)
 
-        # TODO: No-op pending reimplementation to improve efficiency
-        # self._backing.delete_account_event(account_id.to_str(), event_id)
-        #
-        # self._log.info(f"Deleted account event {repr(account_id)}:{event_id}")
+        self._log.debug(f"Deleted account event {repr(account_id)}:{event_id}")
 
     cpdef void add(self, str key, bytes value):
         """

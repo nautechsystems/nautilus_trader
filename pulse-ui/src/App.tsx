@@ -139,6 +139,11 @@ export default function App() {
         return;
       }
 
+      // Keep browser/OS shortcuts like Ctrl+A and Cmd+A intact.
+      if (event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+
       if (event.key === "r" || event.key === "R") {
         event.preventDefault();
         void loadJobs();
@@ -160,6 +165,9 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
       <TopBar
         stats={stats}
         autoRefresh={autoRefresh}
@@ -168,7 +176,7 @@ export default function App() {
         onToggleAutoRefresh={() => setAutoRefresh((value) => !value)}
       />
 
-      <main className="content">
+      <main id="main" className="content">
         <section className="toolbar">
           <div className="toolbar__title-block">
             <h2 className="toolbar__title">Process Jobs</h2>

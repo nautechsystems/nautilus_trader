@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildProfilePath, getUiSurface, resolvePathProfile, resolvePathnameProfile } from './uiProfiles';
+import {
+  buildProfilePath,
+  getProfileDefinition,
+  getUiSurface,
+  resolvePathProfile,
+  resolvePathnameProfile,
+} from './uiProfiles';
 
 describe('uiProfiles', () => {
   it('resolves default path profile for empty/unknown segments', () => {
@@ -16,6 +22,19 @@ describe('uiProfiles', () => {
 
   it('maps equities segment to equities profile', () => {
     expect(resolvePathProfile('equities')).toBe('equities');
+  });
+
+  it('exposes stable maker profile definitions', () => {
+    expect(getProfileDefinition('tokenmm')).toMatchObject({
+      profile: 'tokenmm',
+      aliases: ['tokenmm', 'tokenm'],
+      basePath: '/tokenmm',
+    });
+    expect(getProfileDefinition('equities')).toMatchObject({
+      profile: 'equities',
+      aliases: ['equities'],
+      basePath: '/equities',
+    });
   });
 
   it('resolves profile consistently from pathname', () => {

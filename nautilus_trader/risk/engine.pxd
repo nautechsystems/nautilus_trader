@@ -72,8 +72,14 @@ cdef class RiskEngine(Component):
     cpdef bint _check_order(self, Instrument instrument, Order order)
     cpdef bint _check_order_price(self, Instrument instrument, Order order)
     cpdef bint _check_order_quantity(self, Instrument instrument, Order order)
-    cpdef bint _check_orders_risk(self, Instrument instrument, list orders)
-    cpdef bint _check_orders_risk_for_account(self, Instrument instrument, list orders, AccountId account_id)
+    cpdef bint _check_orders_risk(self, Instrument instrument, list orders, bint allow_cash_borrowing=*)
+    cpdef bint _check_orders_risk_for_account(
+        self,
+        Instrument instrument,
+        list orders,
+        AccountId account_id,
+        bint allow_cash_borrowing=*,
+    )
     cpdef str _check_price(self, Instrument instrument, Price price)
     cpdef str _check_quantity(self, Instrument instrument, Quantity quantity, bint is_quote_quantity=*)
 

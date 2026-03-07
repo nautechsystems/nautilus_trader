@@ -31,6 +31,25 @@ def test_makerv3_registry_exposes_schema_defaults_and_hot_path_bounds() -> None:
     assert schema["quote_fail_critical_after_count"]["maximum"] == 100
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bid_edge1",
+        "ask_edge1",
+        "bid_edge2",
+        "ask_edge2",
+        "bid_edge3",
+        "ask_edge3",
+    ],
+)
+def test_makerv3_registry_allows_signed_bid_and_ask_edges(name: str) -> None:
+    registry = MAKERV3_RUNTIME_PARAM_REGISTRY
+
+    assert registry.schema[name]["minimum"] == -100.0
+    assert registry.schema[name]["maximum"] == 1_000.0
+    assert registry.coerce_updates({name: -100}) == {name: -100.0}
+
+
 def test_registry_coerce_updates_normalizes_bool_int_and_number_types() -> None:
     registry = MAKERV3_RUNTIME_PARAM_REGISTRY
 

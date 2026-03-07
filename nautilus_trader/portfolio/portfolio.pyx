@@ -26,9 +26,11 @@ from nautilus_trader.portfolio.config import PortfolioConfig
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.accounting.manager cimport AccountsManager
 from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
@@ -1713,13 +1715,24 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef void _update_account(self, AccountState event):
         cdef Account account = self._cache.account(event.account_id)
+        cdef Account refreshed_account
         if account is None:
             # Generate account
             account = AccountFactory.create_c(event)
             self._cache.add_account(account)
         else:
-            account.apply(event)
-            self._cache.update_account(account)
+            if event.account_type == AccountType.CASH and isinstance(account, CashAccount):
+                refreshed_account = AccountFactory.create_c(event)
+                if (<CashAccount>refreshed_account).allow_borrowing != (<CashAccount>account).allow_borrowing:
+                    account = refreshed_account
+                    (<Cache>self._cache)._accounts[account.id] = account
+                    self._cache.update_account(account)
+                else:
+                    account.apply(event)
+                    self._cache.update_account(account)
+            else:
+                account.apply(event)
+                self._cache.update_account(account)
 
         cdef:
             bint should_log = True

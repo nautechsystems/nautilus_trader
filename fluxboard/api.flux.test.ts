@@ -412,6 +412,59 @@ describe('profile-scoped read APIs', () => {
     expect(path).toContain('profile=tokenmm');
   });
 
+  it('appends profile to params request on equities routes', async () => {
+    setPathname('/equities/params');
+    fetchJSONMock.mockResolvedValue({ ok: true, data: [] });
+
+    await api.getParams();
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/params?');
+    expect(path).toContain('profile=equities');
+  });
+
+  it('appends profile to trades request on equities routes', async () => {
+    setPathname('/equities/trades');
+    fetchJSONMock.mockResolvedValue({
+      ok: true,
+      data: { rows: [], total: 0, limit: 50, offset: 0 },
+    });
+
+    await api.getTrades(1, 50, { sort: 'ts_desc' });
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/trades?');
+    expect(path).toContain('profile=equities');
+  });
+
+  it('appends profile to balances request on equities routes', async () => {
+    setPathname('/equities/balances');
+    fetchJSONMock.mockResolvedValue({
+      ok: true,
+      data: { rows: [], total: 0 },
+    });
+
+    await api.getBalances();
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/balances?');
+    expect(path).toContain('profile=equities');
+  });
+
+  it('appends profile to alerts request on equities routes', async () => {
+    setPathname('/equities/alerts');
+    fetchJSONMock.mockResolvedValue({
+      ok: true,
+      data: { rows: [], total: 0, limit: 25, offset: 0 },
+    });
+
+    await api.getAlerts();
+
+    const [path] = fetchJSONMock.mock.calls[0];
+    expect(path).toContain('/api/v1/alerts?');
+    expect(path).toContain('profile=equities');
+  });
+
   it('normalizes tokenmm signal payloads with state bot_on and bid/ask legs', async () => {
     setPathname('/tokenmm/signal');
     fetchJSONMock.mockResolvedValue({
@@ -510,6 +563,33 @@ describe('profile-scoped read APIs', () => {
       label: 'qty',
       type: 'float',
       min_value: 0,
+      max_value: 1000,
+    });
+  });
+
+  it('preserves signed bid edge bounds from Flux params schema for the Params UI', async () => {
+    setPathname('/tokenmm/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        params: {
+          bid_edge1: {
+            type: 'number',
+            description: 'Band 1 bid edge in bps.',
+            minimum: -100,
+            maximum: 1000,
+          },
+        },
+        deprecated: {},
+      },
+    });
+
+    const schema = await api.getParamSchema();
+    expect(schema.params.bid_edge1).toMatchObject({
+      key: 'bid_edge1',
+      label: 'bid_edge1',
+      type: 'float',
+      min_value: -100,
       max_value: 1000,
     });
   });

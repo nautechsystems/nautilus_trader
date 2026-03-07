@@ -1,4 +1,5 @@
 import asyncio
+import json
 import math
 import os
 from asyncio import Queue
@@ -37,6 +38,8 @@ from nautilus_trader.execution.reports import ExecutionReport
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.flux.events import FluxBusPayload
+from nautilus_trader.flux.events import TOPIC_EXECUTION_ALERT
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
 from nautilus_trader.live.reconciliation import adjust_fills_for_partial_window
 from nautilus_trader.live.reconciliation import calculate_reconciliation_price
@@ -59,8 +62,11 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
 from nautilus_trader.model.events import OrderEvent
+from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -103,6 +109,9 @@ class LiveExecutionEngine(ExecutionEngine):
     """
 
     _sentinel: Final[None] = None
+    _EXECUTION_ALERT_BURST_THRESHOLD: Final[int] = 3
+    _EXECUTION_ALERT_BURST_WINDOW_NS: Final[int] = 60_000_000_000
+    _EXECUTION_ALERT_BURST_COOLDOWN_NS: Final[int] = 60_000_000_000
 
     def __init__(
         self,
@@ -137,6 +146,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self._fill_application_audit: dict[ClientOrderId, list[tuple[TradeId, str, int]]] = {}
         self._startup_reconciliation_event: asyncio.Event = asyncio.Event()
         self._filtered_external_orders_count: int = 0
+        self._execution_alert_windows: dict[tuple[str, str, str], list[int]] = {}
+        self._execution_alert_last_sent_ns: dict[tuple[str, str, str], int] = {}
 
         self._cmd_enqueuer: ThrottledEnqueuer[Command] = ThrottledEnqueuer(
             qname="cmd_queue",
@@ -404,6 +415,39 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._purge_account_events_loop(self.purge_account_events_interval_mins),
                 name="purge_account_events",
             )
+
+    def _run_startup_purges(self) -> None:
+        ts_now = self._clock.timestamp_ns()
+
+        if self.purge_closed_orders_interval_mins:
+            try:
+                self._cache.purge_closed_orders(
+                    ts_now=ts_now,
+                    buffer_secs=(self.purge_closed_orders_buffer_mins or 0) * 60,
+                    purge_from_database=self.purge_from_database,
+                )
+            except Exception as e:
+                self._log.exception("Error purging closed orders on start", e)
+
+        if self.purge_closed_positions_interval_mins:
+            try:
+                self._cache.purge_closed_positions(
+                    ts_now=ts_now,
+                    buffer_secs=(self.purge_closed_positions_buffer_mins or 0) * 60,
+                    purge_from_database=self.purge_from_database,
+                )
+            except Exception as e:
+                self._log.exception("Error purging closed positions on start", e)
+
+        if self.purge_account_events_interval_mins:
+            try:
+                self._cache.purge_account_events(
+                    ts_now=ts_now,
+                    lookback_secs=(self.purge_account_events_lookback_mins or 0) * 60,
+                    purge_from_database=self.purge_from_database,
+                )
+            except Exception as e:
+                self._log.exception("Error purging account events on start", e)
 
     async def _purge_closed_positions_loop(self, interval_mins: int) -> None:
         interval_secs = interval_mins * 60
@@ -3571,6 +3615,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._inferred_fill_ts[client_order_id] = event.ts_event
 
         self._handle_event(event)
+        self._publish_execution_alert_if_relevant(event)
 
         if event.client_order_id is None:
             return
@@ -3581,6 +3626,198 @@ class LiveExecutionEngine(ExecutionEngine):
             self._order_local_activity_ns.pop(order.client_order_id, None)
             self._inferred_fill_ts.pop(order.client_order_id, None)
             self._fill_application_audit.pop(order.client_order_id, None)
+
+    @staticmethod
+    def _normalize_alert_reason(reason: str | None) -> str:
+        return " ".join((reason or "").strip().lower().split())
+
+    def _owned_strategy_id_for_event(self, event: OrderEvent) -> StrategyId | None:
+        strategy_id = None
+        if event.client_order_id is not None:
+            strategy_id = self._cache.strategy_id_for_order(event.client_order_id)
+
+        if strategy_id is None:
+            strategy_id = getattr(event, "strategy_id", None)
+
+        if strategy_id is None or strategy_id.value == "EXTERNAL":
+            return None
+
+        return strategy_id
+
+    @classmethod
+    def _is_financial_reject_reason(cls, reason: str) -> bool:
+        return any(
+            text in reason
+            for text in (
+                "insufficient account balance",
+                "insufficient balance",
+                "insufficient margin",
+                "insufficient funds",
+                "insufficient equity",
+            )
+        )
+
+    @classmethod
+    def _is_cancel_state_mismatch_reason(cls, reason: str) -> bool:
+        return any(
+            text in reason
+            for text in (
+                "s_code=51400",
+                "filled, canceled or does not exist",
+                "already canceled",
+                "already cancelled",
+                "state mismatch",
+                "does not exist",
+            )
+        )
+
+    def _publish_execution_alert(self, payload: dict[str, Any]) -> None:
+        payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        self._msgbus.publish(
+            topic=TOPIC_EXECUTION_ALERT,
+            msg=FluxBusPayload(
+                topic=TOPIC_EXECUTION_ALERT,
+                payload=payload_json,
+                ts_event=int(payload.get("ts_event", 0)),
+                ts_init=int(payload.get("ts_event", 0)),
+            ),
+        )
+
+    def _build_execution_alert_payload(
+        self,
+        *,
+        event: OrderEvent,
+        strategy_id: StrategyId,
+        alert_key: str,
+        message: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        ts_event = int(event.ts_event or self._clock.timestamp_ns())
+        venue = event.instrument_id.venue.value if event.instrument_id is not None else ""
+        payload: dict[str, Any] = {
+            "strategy_id": strategy_id.value,
+            "level": "error",
+            "message": message,
+            "alert_key": alert_key,
+            "actionable": True,
+            "source": "execution",
+            "event_type": type(event).__name__,
+            "venue": venue,
+            "instrument_id": event.instrument_id.value if event.instrument_id is not None else "",
+            "client_order_id": event.client_order_id.value if event.client_order_id else "",
+            "ts_event": ts_event,
+            "ts_ms": ts_event // 1_000_000,
+        }
+        if reason:
+            payload["reason"] = reason
+        venue_order_id = getattr(event, "venue_order_id", None)
+        if venue_order_id is not None:
+            payload["venue_order_id"] = venue_order_id.value
+        return payload
+
+    def _publish_burst_execution_alert_if_needed(
+        self,
+        *,
+        event: OrderEvent,
+        strategy_id: StrategyId,
+        reason: str,
+        alert_key: str,
+        message: str,
+    ) -> None:
+        normalized_reason = self._normalize_alert_reason(reason) or "unknown"
+        now_ns = int(event.ts_event or self._clock.timestamp_ns())
+        burst_key = (strategy_id.value, event.instrument_id.venue.value, normalized_reason)
+        window = [
+            ts
+            for ts in self._execution_alert_windows.get(burst_key, [])
+            if now_ns - ts <= self._EXECUTION_ALERT_BURST_WINDOW_NS
+        ]
+        window.append(now_ns)
+        self._execution_alert_windows[burst_key] = window
+
+        if len(window) < self._EXECUTION_ALERT_BURST_THRESHOLD:
+            return
+
+        cooldown_key = (strategy_id.value, alert_key, normalized_reason)
+        last_sent_ns = self._execution_alert_last_sent_ns.get(cooldown_key, 0)
+        if now_ns - last_sent_ns < self._EXECUTION_ALERT_BURST_COOLDOWN_NS:
+            return
+
+        self._execution_alert_last_sent_ns[cooldown_key] = now_ns
+        self._publish_execution_alert(
+            self._build_execution_alert_payload(
+                event=event,
+                strategy_id=strategy_id,
+                alert_key=alert_key,
+                message=message,
+                reason=reason,
+            ),
+        )
+
+    def _publish_execution_alert_if_relevant(self, event: OrderEvent) -> None:
+        strategy_id = self._owned_strategy_id_for_event(event)
+        if strategy_id is None:
+            return
+
+        reason = self._normalize_alert_reason(getattr(event, "reason", None))
+
+        if isinstance(event, OrderRejected):
+            if event.due_post_only:
+                return
+            if self._is_financial_reject_reason(reason):
+                self._publish_execution_alert(
+                    self._build_execution_alert_payload(
+                        event=event,
+                        strategy_id=strategy_id,
+                        alert_key="exchange_order_rejected_insufficient_margin",
+                        message=f"Exchange rejected order on {event.instrument_id.venue}: {event.reason}",
+                        reason=event.reason,
+                    ),
+                )
+            return
+
+        if isinstance(event, OrderCancelRejected):
+            if self._is_cancel_state_mismatch_reason(reason):
+                self._publish_execution_alert(
+                    self._build_execution_alert_payload(
+                        event=event,
+                        strategy_id=strategy_id,
+                        alert_key="exchange_order_cancel_state_mismatch",
+                        message=f"Exchange cancel state mismatch on {event.instrument_id.venue}: {event.reason}",
+                        reason=event.reason,
+                    ),
+                )
+                return
+
+            self._publish_burst_execution_alert_if_needed(
+                event=event,
+                strategy_id=strategy_id,
+                reason=event.reason,
+                alert_key="exchange_order_cancel_rejected_burst",
+                message=f"Repeated exchange cancel rejects on {event.instrument_id.venue}: {event.reason}",
+            )
+            return
+
+        if isinstance(event, OrderModifyRejected):
+            if self._is_financial_reject_reason(reason):
+                self._publish_execution_alert(
+                    self._build_execution_alert_payload(
+                        event=event,
+                        strategy_id=strategy_id,
+                        alert_key="exchange_order_modify_rejected_insufficient_margin",
+                        message=f"Exchange modify rejected on {event.instrument_id.venue}: {event.reason}",
+                        reason=event.reason,
+                    ),
+                )
+                return
+
+            self._publish_burst_execution_alert_if_needed(
+                event=event,
+                strategy_id=strategy_id,
+                reason=event.reason,
+                alert_key="exchange_order_modify_rejected_burst",
+                message=f"Repeated exchange modify rejects on {event.instrument_id.venue}: {event.reason}",
+            )
 
     def _record_local_activity(self, event: OrderEvent | None) -> None:
         if event is None:

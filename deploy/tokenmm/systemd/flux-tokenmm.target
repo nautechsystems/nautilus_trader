@@ -9,3 +9,6 @@ Wants=flux@tokenmm-node-plumeusdt_bybit_spot_makerv3.service
 Wants=flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service
 Wants=flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service
 After=network-online.target
+
+[Install]
+WantedBy=multi-user.target

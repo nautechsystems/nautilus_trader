@@ -18,17 +18,17 @@ describe('signalRunState', () => {
     expect(deriveSignalRunState(strategy, nowMs)).toBe('running');
   });
 
-  it('treats stale running heartbeat as stopped', () => {
+  it('treats aged non-terminal state snapshots as still running when explicit running is absent', () => {
     const nowMs = 1_700_000_000_000;
     const strategy = {
       state: {
-        state: 'running',
+        state: 'quotes_replaced',
         ts_ms: nowMs - 10_000,
       },
     } as Pick<SignalStrategy, 'running' | 'state'>;
 
-    expect(resolveSignalRunning(strategy, nowMs)).toBe(false);
-    expect(deriveSignalRunState(strategy, nowMs)).toBe('stopped');
+    expect(resolveSignalRunning(strategy, nowMs)).toBe(true);
+    expect(deriveSignalRunState(strategy, nowMs)).toBe('running');
   });
 
   it('honors explicit running flag when present', () => {
@@ -45,4 +45,3 @@ describe('signalRunState', () => {
     expect(deriveSignalRunState(strategy, nowMs)).toBe('stopped');
   });
 });
-

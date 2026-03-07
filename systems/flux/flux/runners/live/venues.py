@@ -255,7 +255,11 @@ SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
         exec_factory_cls=HyperliquidLiveExecClientFactory,
         field_aliases={},
         field_coercers={},
-        secret_fields=(("private_key", "private_key_env"), ("vault_address", "vault_address_env")),
+        secret_fields=(
+            ("private_key", "private_key_env"),
+            ("account_address", "account_address_env"),
+            ("vault_address", "vault_address_env"),
+        ),
         mode_defaults={"testnet": lambda mode: mode != "live"},
     ),
     "kraken": VenueAdapterSpec(

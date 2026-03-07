@@ -345,6 +345,7 @@ function normalizeParamOptions(
   key: string,
   rawType: unknown,
   rawOptions: unknown,
+  opts?: { preferKeyLabel?: boolean },
 ): [string, string][] | null {
   if (Array.isArray(rawOptions) && rawOptions.length > 0) {
     const normalized = rawOptions
@@ -362,13 +363,15 @@ function normalizeParamOptions(
 
   const typeText = String(rawType ?? '').trim().toLowerCase();
   if (key === 'bot_on' || typeText === 'boolean' || typeText === 'bool') {
-    return [['0', 'Paused (0)'], ['1', 'Enabled (1)']];
+    return opts?.preferKeyLabel === true
+      ? [['0', 'Off (0)'], ['1', 'On (1)']]
+      : [['0', 'Paused (0)'], ['1', 'Enabled (1)']];
   }
   return null;
 }
 
-function botOnLabel(): string {
-  return 'Trading';
+function botOnLabel(opts?: { preferKeyLabel?: boolean }): string {
+  return opts?.preferKeyLabel === true ? 'bot_on' : 'Trading';
 }
 
 function botOnDescription(): string {
@@ -390,11 +393,11 @@ function normalizeParamDef(
   const preferKeyLabel = opts?.preferKeyLabel === true;
   const label =
     key === 'bot_on'
-      ? botOnLabel()
+      ? botOnLabel(opts)
       : preferKeyLabel
         ? key
         : (String(source.label ?? source.description ?? key).trim() || key);
-  const options = normalizeParamOptions(key, source.type, source.options);
+  const options = normalizeParamOptions(key, source.type, source.options, opts);
   const step = toFiniteOptionalNumber(source.step);
   const minValue = toFiniteOptionalNumber(source.min_value ?? source.minimum);
   const maxValue = toFiniteOptionalNumber(source.max_value ?? source.maximum);
@@ -1868,15 +1871,23 @@ export const api = {
     );
     const rows = unwrapFluxEnvelope(response) || [];
     if (!Array.isArray(rows)) return [];
+    const activeProfile = getActivePathProfile();
+    const deriveRunningFromTrading = activeProfile !== 'default';
     return rows.map((row) => {
       const candidate = row as Record<string, unknown>;
       const strategyId = String(candidate.strategy_id ?? '').trim();
       const params = normalizeParamsMap(candidate.params);
       const runningCandidate = candidate.running;
+      const runningFlag = normalizeTradingFlag(runningCandidate);
+      const paramRunningFlag = normalizeTradingFlag(params.bot_on);
       const running =
         typeof runningCandidate === 'boolean'
           ? runningCandidate
-          : null;
+          : runningFlag != null
+            ? runningFlag === '1'
+            : deriveRunningFromTrading && paramRunningFlag != null
+              ? paramRunningFlag === '1'
+              : null;
       return {
         ...(row as ParamsResponse),
         strategy_id: strategyId,

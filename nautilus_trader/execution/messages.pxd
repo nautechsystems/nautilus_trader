@@ -113,6 +113,8 @@ cdef class SubmitOrder(TradingCommand):
     """The execution algorithm ID for the order.\n\n:returns: `ExecAlgorithmId` or ``None``"""
     cdef readonly PositionId position_id
     """The position ID to associate with the order.\n\n:returns: `PositionId` or ``None``"""
+    cdef readonly bint allow_cash_borrowing
+    """If the order may borrow from a cash account.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values)
@@ -130,6 +132,8 @@ cdef class SubmitOrderList(TradingCommand):
     """The position ID to associate with the orders.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly bint has_emulated_order
     """If the contained order_list holds at least one emulated order.\n\n:returns: `bool`"""
+    cdef readonly bint allow_cash_borrowing
+    """If the order list may borrow from a cash account.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef SubmitOrderList from_dict_c(dict values)

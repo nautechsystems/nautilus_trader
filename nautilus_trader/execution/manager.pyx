@@ -209,6 +209,7 @@ cdef class OrderManager:
         Order order,
         PositionId position_id = None,
         ClientId client_id = None,
+        bint allow_cash_borrowing = False,
     ):
         """
         Create a new submit order command for the given `order`.
@@ -221,6 +222,9 @@ cdef class OrderManager:
             The position ID for the command.
         client_id : ClientId, optional
             The client ID for the command.
+        allow_cash_borrowing : bool, default False
+            If the order may borrow from a cash account when the venue/account
+            supports it.
 
         """
         Condition.not_none(order, "order")
@@ -239,6 +243,7 @@ cdef class OrderManager:
             client_id=client_id,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            allow_cash_borrowing=allow_cash_borrowing,
         )
 
         if order.emulation_trigger == TriggerType.NO_TRIGGER:

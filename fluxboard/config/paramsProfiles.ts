@@ -5,7 +5,12 @@ export type ParamsProfileId = 'taker' | 'maker_v2' | 'maker_v3';
 type StrategyProfileRow = {
   params?: Record<string, string>;
   hot_params?: string[];
-  meta?: { class?: string };
+  meta?: {
+    class?: string;
+    param_set?: string;
+    strategy_family?: string;
+    strategy_version?: string;
+  };
 };
 
 const PROFILE_LABELS: Record<ParamsProfileId, string> = {
@@ -171,6 +176,29 @@ export function listParamsProfiles(): ParamsProfileId[] {
 }
 
 export function deriveStrategyProfile(row: StrategyProfileRow): ParamsProfileId {
+  const paramSet = normalizeKey(row.meta?.param_set);
+  if (paramSet === 'makerv3') {
+    return 'maker_v3';
+  }
+  if (paramSet === 'makerv2') {
+    return 'maker_v2';
+  }
+  if (paramSet === 'taker') {
+    return 'taker';
+  }
+
+  const explicitFamily = normalizeKey(row.meta?.strategy_family);
+  const explicitVersion = normalizeKey(row.meta?.strategy_version);
+  if (explicitFamily === 'maker_v3' || explicitFamily === 'maker_v2' || explicitFamily === 'taker') {
+    return explicitFamily;
+  }
+  if (explicitFamily === 'maker' && explicitVersion === 'v3') {
+    return 'maker_v3';
+  }
+  if (explicitFamily === 'maker' && explicitVersion === 'v2') {
+    return 'maker_v2';
+  }
+
   const className = normalizeKey(row.meta?.class);
   if (className && PROFILE_ALIASES[className]) {
     return PROFILE_ALIASES[className];

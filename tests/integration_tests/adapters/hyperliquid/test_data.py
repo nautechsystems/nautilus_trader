@@ -59,6 +59,17 @@ def data_client_builder(
     return builder
 
 
+def test_data_client_builder_accepts_trade_xyz_dex(data_client_builder, monkeypatch):
+    # Arrange & Act
+    client, _, _, _ = data_client_builder(
+        monkeypatch,
+        config_kwargs={"dex": "xyz"},
+    )
+
+    # Assert
+    assert client._config.dex == "xyz"
+
+
 @pytest.mark.asyncio
 async def test_connect_and_disconnect_manage_resources(data_client_builder, monkeypatch):
     # Arrange

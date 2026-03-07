@@ -99,6 +99,24 @@ class TestHyperliquidInstrumentProvider:
         # Assert
         mock_http_client.load_instrument_definitions.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_load_all_async_passes_trade_xyz_dex(self, mock_http_client):
+        # Arrange
+        provider = HyperliquidInstrumentProvider(
+            client=mock_http_client,
+            config=InstrumentProviderConfig(filters={"dex": "xyz"}),
+        )
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert
+        mock_http_client.load_instrument_definitions.assert_called_once_with(
+            include_perp=True,
+            include_spot=True,
+            dex="xyz",
+        )
+
     def test_instruments_pyo3_returns_list(self, mock_http_client):
         # Arrange
         provider = HyperliquidInstrumentProvider(

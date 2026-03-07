@@ -75,6 +75,18 @@ def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
     assert '"PULSE_SERVE_DIST=1"' in script
 
 
+def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> None:
+    script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+
+    assert "strategy_stack_write_env" in script
+    assert '"tokenmm"' in script
+    assert '"TokenMM"' in script
+    assert '"10"' in script
+    assert '"tokenmm-api"' in script
+    assert '"tokenmm-pulse"' in script
+    assert "--serve-pulse" in script
+
+
 def test_tokenmm_stack_script_requires_explicit_tokenmm_env_and_never_falls_back_to_makerv3() -> (
     None
 ):
@@ -320,6 +332,8 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "SyslogIdentifier=flux-%i" in service_template
     assert "NoNewPrivileges=true" not in service_template
 
+    assert "[Install]" in target_unit
+    assert "WantedBy=multi-user.target" in target_unit
     assert "Wants=flux@tokenmm-api.service" in target_unit
     assert "Wants=flux@tokenmm-pulse.service" in target_unit
     assert "Wants=flux@tokenmm-portfolio.service" in target_unit
@@ -332,13 +346,15 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "deploy/tokenmm/tokenmm.live.toml" in install_script
     assert "/etc/flux" in install_script
     assert "/etc/sudoers.d/flux-pulse" in install_script
+    assert "strategy_stack_discover_strategy_ids" in install_script
+    assert "plumeusdt_bybit_perp_makerv3" not in install_script
     assert (
-        'CMD="env FLUXBOARD_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api'
+        'env FLUXBOARD_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api'
         in install_script
     )
     assert "--serve-fluxboard" in install_script
     assert "--host 0.0.0.0" in install_script
-    assert 'CMD="env PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5023 --serve-pulse"' in install_script
+    assert 'env PULSE_SERVE_DIST=1 python3 -m nautilus_trader.flux.runners.tokenmm.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5023 --serve-pulse' in install_script
     assert "tokenmm-portfolio" in install_script
     assert "tokenmm-pulse" in install_script
     assert 'service_id="tokenmm-node-${strategy_id}"' in install_script

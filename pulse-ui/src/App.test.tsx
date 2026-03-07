@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import App from "./App";
@@ -40,6 +40,37 @@ const jobsPayload = {
 };
 
 describe("App", () => {
+  it("renders a Fluxboard-style shell with Pulse active and TokenMM cross-links", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/pulse/jobs")) {
+        return new Response(JSON.stringify(jobsPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("flux")).toBeInTheDocument();
+    expect(screen.queryByText("Flux deployment control in the same operator shell as Fluxboard.")).not.toBeInTheDocument();
+
+    const pulseLink = screen.getByRole("link", { name: "Pulse" });
+    expect(pulseLink).toHaveAttribute("href", "/pulse/");
+    expect(pulseLink).toHaveAttribute("aria-current", "page");
+
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/tokenmm");
+    expect(screen.getByRole("link", { name: "Signal" })).toHaveAttribute("href", "/tokenmm/signal");
+    expect(screen.getByRole("link", { name: "Params" })).toHaveAttribute("href", "/tokenmm/params");
+    expect(screen.getByRole("link", { name: "Balances" })).toHaveAttribute("href", "/tokenmm/balances");
+    expect(screen.getByRole("link", { name: "Trades" })).toHaveAttribute("href", "/tokenmm/trades");
+    expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("href", "/tokenmm/alerts");
+  });
+
   it("loads process jobs, renders a grouped table, and exposes logs/actions", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -68,8 +99,14 @@ describe("App", () => {
 
     await userEvent.click(screen.getAllByRole("button", { name: /view logs/i })[0]);
 
-    expect(await screen.findByRole("dialog", { name: /logs for tokenmm-api/i })).toBeInTheDocument();
-    expect(await screen.findByText(/line 1/)).toBeInTheDocument();
+    const logsDialog = await screen.findByRole("dialog", { name: /logs for tokenmm-api/i });
+
+    expect(logsDialog).toBeInTheDocument();
+    expect(within(logsDialog).getByText("Job")).toBeInTheDocument();
+    expect(within(logsDialog).getByText("Command")).toBeInTheDocument();
+    expect(within(logsDialog).getByText("Showing last 300 lines")).toBeInTheDocument();
+    expect(within(logsDialog).getByLabelText("Log output")).toBeInTheDocument();
+    expect(await within(logsDialog).findByText(/line 1/)).toBeInTheDocument();
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/pulse/jobs", expect.any(Object));
@@ -115,5 +152,39 @@ describe("App", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "restarted 0 jobs in group 'tokenmm': tokenmm-bridge: sudo: The \"no new privileges\" flag is set. (+1 more)",
     );
+  });
+
+  it("does not treat Ctrl+A as the auto-refresh shortcut", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/pulse/jobs")) {
+        return new Response(JSON.stringify(jobsPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("TokenMM");
+
+    const autoRefreshToggle = screen.getByLabelText(/auto-refresh/i);
+    expect(autoRefreshToggle).toBeChecked();
+
+    const keydown = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    window.dispatchEvent(keydown);
+
+    expect(autoRefreshToggle).toBeChecked();
+    expect(keydown.defaultPrevented).toBe(false);
   });
 });

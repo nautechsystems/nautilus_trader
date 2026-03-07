@@ -73,15 +73,8 @@ cdef class AccountFactory:
         issuer : str
             The issuer for the account.
 
-        Raises
-        ------
-        KeyError
-            If cash borrowing has already been registered for the `issuer`.
-
         """
         Condition.not_none(issuer, "issuer")
-        Condition.not_in(issuer, _ISSUER_CASH_BORROWING, "issuer", "_ISSUER_CASH_BORROWING")
-
         _ISSUER_CASH_BORROWING[issuer] = True
 
     @staticmethod

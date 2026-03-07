@@ -14,6 +14,7 @@ export function LogsModal({ jobId, jobName, jobCmd, onClose }: LogsModalProps) {
   const [logs, setLogs] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasLogs = logs.trim().length > 0;
 
   async function loadLogs() {
     setLoading(true);
@@ -56,8 +57,7 @@ export function LogsModal({ jobId, jobName, jobCmd, onClose }: LogsModalProps) {
         <div className="modal__header">
           <div>
             <h2 className="modal__title">Logs</h2>
-            <p className="modal__subtitle mono">{jobName}</p>
-            {jobCmd ? <p className="modal__command mono">{jobCmd}</p> : null}
+            <p className="modal__subtitle">Recent output for the selected Pulse job.</p>
           </div>
 
           <div className="modal__actions">
@@ -72,13 +72,29 @@ export function LogsModal({ jobId, jobName, jobCmd, onClose }: LogsModalProps) {
         </div>
 
         <div className="modal__body">
-          {loading && !logs ? <p className="empty-state">Loading logs...</p> : null}
-          {error ? <p className="error-banner">{error}</p> : null}
-          {!loading && !error && !logs ? <p className="empty-state">No logs available</p> : null}
-          {logs ? <pre className="log-output">{logs}</pre> : null}
+          <div className="modal__meta" aria-label="Log details">
+            <div className="modal__meta-row">
+              <span className="modal__meta-label">Job</span>
+              <span className="modal__meta-value mono">{jobName}</span>
+            </div>
+            <div className="modal__meta-row">
+              <span className="modal__meta-label">Command</span>
+              <span className="modal__meta-value mono">{jobCmd ?? "Unavailable"}</span>
+            </div>
+          </div>
+
+          <section className="log-panel" aria-label="Log output">
+            {loading && !hasLogs ? <p className="empty-state">Loading logs...</p> : null}
+            {error ? <p className="error-banner">{error}</p> : null}
+            {!loading && !error && !hasLogs ? <p className="empty-state">No logs available</p> : null}
+            {hasLogs ? <pre className="log-output">{logs}</pre> : null}
+          </section>
         </div>
 
-        <div className="modal__footer">Showing last 300 lines. Press Esc to close.</div>
+        <div className="modal__footer">
+          <span>Showing last 300 lines</span>
+          <span>Press Esc to close</span>
+        </div>
       </div>
     </div>
   );

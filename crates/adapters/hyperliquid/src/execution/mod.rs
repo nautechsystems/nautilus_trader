@@ -154,6 +154,8 @@ impl HyperliquidExecutionClient {
         .context("failed to create Hyperliquid HTTP client")?;
 
         http_client.set_account_id(core.account_id);
+        http_client.set_account_address(config.account_address.clone());
+        http_client.set_dex(config.dex.clone());
 
         // Apply URL overrides from config (used for testing with mock servers)
         if let Some(url) = &config.base_url_http {
@@ -288,9 +290,12 @@ impl HyperliquidExecutionClient {
     }
 
     fn get_account_address(&self) -> anyhow::Result<String> {
-        match &self.config.vault_address {
-            Some(vault) => Ok(vault.clone()),
-            None => self.get_user_address(),
+        match &self.config.account_address {
+            Some(account_address) => Ok(account_address.clone()),
+            None => match &self.config.vault_address {
+                Some(vault) => Ok(vault.clone()),
+                None => self.get_user_address(),
+            },
         }
     }
 
@@ -1266,16 +1271,9 @@ impl HyperliquidExecutionClient {
             }
         }
 
-        let user_address = self.get_user_address()?;
-
-        // Use vault address for WS subscriptions when vault trading,
-        // otherwise order/fill updates for the vault will be missed
-        let subscription_address = self
-            .config
-            .vault_address
-            .as_ref()
-            .unwrap_or(&user_address)
-            .clone();
+        // Use the explicit account target for WS subscriptions first, then fall back to
+        // vault trading, and finally the signer address.
+        let subscription_address = self.get_account_address()?;
 
         let mut ws_client = self.ws_client.clone();
 

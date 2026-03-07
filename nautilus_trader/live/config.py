@@ -263,11 +263,16 @@ class LiveExecClientConfig(NautilusConfig, frozen=True):
         The clients instrument provider configuration.
     routing : RoutingConfig
         The clients message routing config.
+    allow_cash_borrowing : bool, default False
+        If cash-account orders submitted by this client may opt in to borrowing.
+        This only enables the venue capability; individual orders must still
+        request borrowing explicitly.
 
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
     routing: RoutingConfig = RoutingConfig()
+    allow_cash_borrowing: bool = False
 
 
 class ControllerConfig(ActorConfig, kw_only=True, frozen=True):

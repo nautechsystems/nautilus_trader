@@ -10,6 +10,9 @@ from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
 from nautilus_trader.adapters.bybit import BybitProductType
+from nautilus_trader.adapters.hyperliquid import HYPERLIQUID
+from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
 
 
 def test_resolve_strategy_venues_builds_clients_from_generic_node_venues_table() -> None:
@@ -211,3 +214,42 @@ def test_resolve_strategy_venues_legacy_fallback_keeps_prior_bybit_product_defau
     )
 
     assert resolved.data_clients[BYBIT].product_types == (BybitProductType.LINEAR,)
+
+
+def test_resolve_strategy_venues_supports_hyperliquid_dex_and_account_address() -> None:
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "HYPERLIQUID",
+                "reference_venue": "HYPERLIQUID",
+            },
+            "node": {
+                "venues": {
+                    "HYPERLIQUID": {
+                        "instrument_id": "AAPL-USD-PERP.HYPERLIQUID",
+                        "execution": True,
+                        "private_key": "0xdeadbeef",
+                        "account_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "dex": "xyz",
+                    },
+                },
+            },
+        },
+        mode="paper",
+        enable_execution=True,
+    )
+
+    assert resolved.execution_venue == "HYPERLIQUID"
+    assert resolved.reference_venue == "HYPERLIQUID"
+    assert str(resolved.execution_instrument_id) == "AAPL-USD-PERP.HYPERLIQUID"
+    assert str(resolved.reference_instrument_id) == "AAPL-USD-PERP.HYPERLIQUID"
+    assert set(resolved.data_clients) == {HYPERLIQUID}
+    assert set(resolved.exec_clients) == {HYPERLIQUID}
+    assert isinstance(resolved.data_clients[HYPERLIQUID], HyperliquidDataClientConfig)
+    assert isinstance(resolved.exec_clients[HYPERLIQUID], HyperliquidExecClientConfig)
+    assert resolved.data_clients[HYPERLIQUID].dex == "xyz"
+    assert resolved.exec_clients[HYPERLIQUID].dex == "xyz"
+    assert (
+        resolved.exec_clients[HYPERLIQUID].account_address
+        == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    )

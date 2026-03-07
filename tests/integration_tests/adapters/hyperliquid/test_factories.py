@@ -46,6 +46,13 @@ class TestHyperliquidDataClientConfig:
         # Assert
         assert config.http_proxy_url == "http://proxy:8080"
 
+    def test_trade_xyz_dex_config(self):
+        # Arrange & Act
+        config = HyperliquidDataClientConfig(dex="xyz")
+
+        # Assert
+        assert config.dex == "xyz"
+
 
 class TestHyperliquidExecClientConfig:
     def test_default_config(self):
@@ -54,7 +61,9 @@ class TestHyperliquidExecClientConfig:
 
         # Assert
         assert config.private_key is None
+        assert config.account_address is None
         assert config.vault_address is None
+        assert config.dex is None
         assert config.testnet is False
         assert config.http_timeout_secs == 10
 
@@ -75,6 +84,17 @@ class TestHyperliquidExecClientConfig:
 
         # Assert
         assert config.vault_address == "0xabcdef1234567890abcdef1234567890abcdef12"
+
+    def test_with_account_address_and_dex(self):
+        # Arrange & Act
+        config = HyperliquidExecClientConfig(
+            account_address="0xabcdef1234567890abcdef1234567890abcdef12",
+            dex="xyz",
+        )
+
+        # Assert
+        assert config.account_address == "0xabcdef1234567890abcdef1234567890abcdef12"
+        assert config.dex == "xyz"
 
     def test_testnet_config(self):
         # Arrange & Act

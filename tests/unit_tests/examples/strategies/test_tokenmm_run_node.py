@@ -32,6 +32,29 @@ class _DummyStrategy:
         self.portfolio_inventory_feed = kwargs
 
 
+def _install_strategy_spec(
+    monkeypatch,
+    strategy_cls: type[object],
+    *,
+    config_cls: type[object] | None = None,
+) -> None:
+    monkeypatch.setattr(
+        run_node,
+        "get_strategy_spec",
+        lambda name: (
+            SimpleNamespace(
+                name=name,
+                strategy_cls=strategy_cls,
+                config_cls=config_cls or run_node.MakerV3StrategyConfig,
+                param_set="makerv3",
+                strategy_family="maker_v3",
+                strategy_version="v3",
+            )
+        ),
+        raising=False,
+    )
+
+
 def test_tokenmm_startup_lock_uses_descriptor_specific_lock_dir(tmp_path: Path) -> None:
     config = {"identity": {"strategy_id": "plumeusdt_bybit_perp_makerv3"}}
 
@@ -158,7 +181,7 @@ def test_build_node_defaults_live_message_bus_streams_to_autotrim(monkeypatch) -
             return None
 
     monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
-    monkeypatch.setattr(run_node, "MakerV3Strategy", _CapturedStrategy)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
     monkeypatch.setattr(
         run_node,
         "resolve_strategy_venues",
@@ -310,7 +333,7 @@ def test_build_node_honors_explicit_message_bus_autotrim_override(monkeypatch) -
             return None
 
     monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
-    monkeypatch.setattr(run_node, "MakerV3Strategy", _CapturedStrategy)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
     monkeypatch.setattr(
         run_node,
         "resolve_strategy_venues",
@@ -375,7 +398,7 @@ def test_build_node_wires_exec_engine_purge_settings(monkeypatch) -> None:
             return None
 
     monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
-    monkeypatch.setattr(run_node, "MakerV3Strategy", _CapturedStrategy)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
     monkeypatch.setattr(
         run_node,
         "resolve_strategy_venues",
@@ -460,7 +483,7 @@ def test_build_node_defaults_manage_stop_graceful_shutdown_and_allowed_submit_in
     maker_instrument_id = InstrumentId.from_str("PLUMEUSDT-LINEAR.BYBIT")
 
     monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
-    monkeypatch.setattr(run_node, "MakerV3Strategy", _CapturedStrategy)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
     monkeypatch.setattr(
         run_node,
         "resolve_strategy_venues",
@@ -533,7 +556,7 @@ def test_build_node_honors_explicit_manage_stop_and_graceful_shutdown_overrides(
             return None
 
     monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
-    monkeypatch.setattr(run_node, "MakerV3Strategy", _CapturedStrategy)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
     monkeypatch.setattr(
         run_node,
         "resolve_strategy_venues",
@@ -611,7 +634,7 @@ def test_build_node_honors_explicit_cancel_all_instrument_orders_override(monkey
             return None
 
     monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
-    monkeypatch.setattr(run_node, "MakerV3Strategy", _CapturedStrategy)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
     monkeypatch.setattr(
         run_node,
         "resolve_strategy_venues",
@@ -720,7 +743,7 @@ def test_build_node_registers_cash_borrowing_before_trading_node(monkeypatch) ->
             return None
 
     monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
-    monkeypatch.setattr(run_node, "MakerV3Strategy", _CapturedStrategy)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
     monkeypatch.setattr(
         run_node,
         "resolve_strategy_venues",

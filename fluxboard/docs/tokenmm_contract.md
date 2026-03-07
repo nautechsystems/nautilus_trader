@@ -4,6 +4,8 @@
 
 This document freezes the HTTP contract for the TokenMM surface.
 It is implementation-facing and explicitly excludes order-view.
+The matching equities surface is documented separately in `fluxboard/docs/equities_contract.md`.
+
 
 ## Scope and Route Surface
 

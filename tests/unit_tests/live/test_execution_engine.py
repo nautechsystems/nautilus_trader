@@ -1,4 +1,5 @@
 import asyncio
+import json
 from decimal import Decimal
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
@@ -33,6 +34,9 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -47,6 +51,8 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.flux.events import FluxBusPayload
+from nautilus_trader.flux.events import TOPIC_EXECUTION_ALERT
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.mocks.exec_clients import MockLiveExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -576,6 +582,141 @@ class TestLiveExecutionEngine:
 
         # Assert
         assert order.status == OrderStatus.CANCELED
+
+    @pytest.mark.asyncio
+    async def test_order_rejected_with_insufficient_margin_publishes_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="Order failed. Insufficient account balance.",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+            due_post_only=False,
+        )
+
+        self.exec_engine.process(event)
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_rejected_insufficient_margin"
+        assert payload["source"] == "execution"
+        assert payload["event_type"] == "OrderRejected"
+        assert payload["instrument_id"] == order.instrument_id.value
+        assert payload["client_order_id"] == order.client_order_id.value
+
+    @pytest.mark.asyncio
+    async def test_order_rejected_due_post_only_does_not_publish_execution_alert(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        event = OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            account_id=TestIdStubs.account_id(),
+            reason="POST_ONLY_WOULD_CROSS",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=False,
+            due_post_only=True,
+        )
+
+        self.exec_engine.process(event)
+        await asyncio.sleep(0)
+
+        assert published == []
+
+    @pytest.mark.asyncio
+    async def test_cancel_rejected_state_mismatch_for_external_order_does_not_publish_execution_alert(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        event = OrderCancelRejected(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("EXTERNAL"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("EXT-001"),
+            venue_order_id=VenueOrderId("venue-ext-001"),
+            account_id=TestIdStubs.account_id(),
+            reason="s_code=51400, s_msg=order has been filled, canceled or does not exist",
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+            reconciliation=True,
+        )
+
+        self.exec_engine.process(event)
+        await asyncio.sleep(0)
+
+        assert published == []
+
+    @pytest.mark.asyncio
+    async def test_modify_rejected_burst_publishes_single_execution_alert_after_threshold(self):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        await eventually(lambda: order.status == OrderStatus.ACCEPTED)
+
+        for idx in range(4):
+            event = OrderModifyRejected(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                account_id=TestIdStubs.account_id(),
+                reason="AMEND_WINDOW_CLOSED",
+                event_id=UUID4(),
+                ts_event=self.clock.timestamp_ns() + idx,
+                ts_init=self.clock.timestamp_ns() + idx,
+                reconciliation=False,
+            )
+            self.exec_engine.process(event)
+
+        await eventually(lambda: len(published) == 1)
+
+        msg = published[0]
+        assert isinstance(msg, FluxBusPayload)
+        payload = json.loads(msg.payload)
+        assert payload["alert_key"] == "exchange_order_modify_rejected_burst"
+        assert payload["event_type"] == "OrderModifyRejected"
 
     @pytest.mark.asyncio
     async def test_graceful_shutdown_cmd_queue_exception_enabled_calls_shutdown_system(self):

@@ -435,6 +435,51 @@ describe('Signal MakerV2 truth overlay', () => {
     expect(localQtyCell?.textContent).toContain('150,000.0000');
   });
 
+  it('renders spread from backend spread_net_bps fields', async () => {
+    const strategy: SignalStrategy = {
+      id: 'spread_mid_strategy',
+      params: { bot_on: '1' } as any,
+      state: { state: 'running', ts_ms: Date.now() } as any,
+      spread_net_bps: -288.5 as any,
+      spread_net_case1_bps: -288.5 as any,
+      spread_net_case2_bps: -476.2 as any,
+      spread_net_best_case: 'case1' as any,
+      required_edge_bps: 45 as any,
+      edge2_bps: -333.5 as any,
+      legs: {
+        A: {
+          coin: 'PLUME/USDT',
+          exchange: 'bybit_perp',
+          decision_bid: 100,
+          decision_ask: 102,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        B: {
+          coin: 'PLUME/USDT',
+          exchange: 'binance_spot',
+          decision_bid: 103,
+          decision_ask: 105,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    const { container } = renderSignalTable();
+    await screen.findByText('spread_mid_strategy');
+
+    expect(screen.getByText('Spread')).toBeInTheDocument();
+    const spreadCell = container.querySelector('tbody tr td:nth-child(9)');
+    expect(spreadCell?.textContent).toContain('-288.5 bps');
+  });
+
   it('does not render a separate Run column in Signal', async () => {
     const nowMs = Date.now();
     const strategy: SignalStrategy = {
@@ -463,8 +508,85 @@ describe('Signal MakerV2 truth overlay', () => {
 
     await screen.findByText('plumeusdt_bybit_spot_makerv3');
     expect(screen.getByLabelText('Trading is paused for plumeusdt_bybit_spot_makerv3')).toBeInTheDocument();
+    expect(screen.getByText('Runner On')).toBeInTheDocument();
     expect(screen.queryByText('Run')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Run is running for plumeusdt_bybit_spot_makerv3')).not.toBeInTheDocument();
+  });
+
+  it('treats fresh state snapshots as runner-on for trading status when explicit running is absent', async () => {
+    const nowMs = Date.now();
+    const strategy: SignalStrategy = {
+      id: 'plumeusdt_bybit_perp_makerv3',
+      params: { bot_on: '1' } as any,
+      state: {
+        state: 'quotes_replaced',
+        ts_ms: nowMs,
+        bot_on: true,
+      } as any,
+      legs: {
+        A: { coin: 'PLUME/USDT', exchange: 'bybit_linear', update_time: '2025-01-15 12:00:00' } as any,
+        B: { coin: 'PLUME/USDT', exchange: 'binance_spot', update_time: '2025-01-15 12:00:00' } as any,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    renderSignalTable();
+
+    await screen.findByText('plumeusdt_bybit_perp_makerv3');
+    expect(screen.getByLabelText('Trading is enabled for plumeusdt_bybit_perp_makerv3')).toBeInTheDocument();
+    expect(screen.getByText('Enabled')).toBeInTheDocument();
+    expect(screen.getByText('Runner On')).toBeInTheDocument();
+    expect(screen.queryByText('Pending')).not.toBeInTheDocument();
+    expect(screen.queryByText('Runner Unknown')).not.toBeInTheDocument();
+  });
+
+  it('shows pending when params are enabled but the live signal is blocked and not tradeable', async () => {
+    const nowMs = Date.now();
+    const strategy: SignalStrategy = {
+      id: 'plumeusdt_bybit_perp_makerv3',
+      params: { bot_on: '1' } as any,
+      tradeable: false,
+      blocked: true,
+      state: {
+        state: 'bot_off',
+        ts_ms: nowMs,
+        bot_on: false,
+      } as any,
+      maker_v3: {
+        quote_snapshot: {
+          ts_ms: nowMs,
+          mode: 'OFF',
+          reason: 'bot_off',
+        },
+      } as any,
+      legs: {
+        A: { coin: 'PLUME/USDT', exchange: 'bybit_linear', update_time: '2025-01-15 12:00:00' } as any,
+        B: { coin: 'PLUME/USDT', exchange: 'binance_spot', update_time: '2025-01-15 12:00:00' } as any,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({
+      rows: [strategy],
+      setRows: mockSetRows,
+      mergeStrategy: mockMergeStrategy,
+      mergeStrategies: mockMergeStrategies,
+    });
+
+    renderSignalTable();
+
+    await screen.findByText('plumeusdt_bybit_perp_makerv3');
+    expect(screen.getByLabelText('Trading is pending for plumeusdt_bybit_perp_makerv3')).toBeInTheDocument();
+    expect(screen.getByText('Pending')).toBeInTheDocument();
+    expect(screen.getByText('Runner On')).toBeInTheDocument();
+    expect(screen.queryByText('Enabled')).not.toBeInTheDocument();
   });
 
   it('passes through contract_id keyed leg patches in signal_delta', async () => {
@@ -719,7 +841,11 @@ describe('Signal MakerV2 truth overlay', () => {
           place_ask: '0.01048',
         },
       } as any,
-    } as any;
+      spread_net_bps: -28.6 as any,
+      spread_net_case1_bps: -28.6 as any,
+      spread_net_case2_bps: -47.6 as any,
+      spread_net_best_case: 'case1' as any,
+      } as any;
 
     initSignalState({
       rows: [strategy],
@@ -736,11 +862,13 @@ describe('Signal MakerV2 truth overlay', () => {
 
     const legASlot = container.querySelector('tbody tr td:nth-child(7)');
     const legBSlot = container.querySelector('tbody tr td:nth-child(8)');
+    const spreadCell = container.querySelector('tbody tr td:nth-child(9)');
     expect(legASlot?.textContent).toContain('okx');
     expect(legASlot?.textContent).toContain('PLUME');
     expect(legBSlot?.textContent).toContain('binance_spot');
     expect(legBSlot?.textContent).toContain('PLUME');
     expect(legASlot?.textContent).not.toContain('bybit');
+    expect(spreadCell?.textContent).toContain('-28.6 bps');
   });
 
   it('maps maker overlay legs by canonical symbol when maker_role_map is missing', async () => {

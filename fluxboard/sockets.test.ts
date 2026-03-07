@@ -143,6 +143,17 @@ describe('sockets status state machine', () => {
     expect(ioCalls[0].options.query?.profile).toBe('tokenmm');
   });
 
+  it('passes equities profile in socket query when path is equities surface', async () => {
+    (window.location as any).pathname = '/equities/trades';
+    const sockets = await import('./sockets');
+
+    sockets.getSocket();
+
+    expect(ioMock).toHaveBeenCalledTimes(1);
+    expect(ioCalls[0].url).toBe('');
+    expect(ioCalls[0].options.query?.profile).toBe('equities');
+  });
+
   it('respects explicit VITE_BACKEND_URL override', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://127.0.0.1:5022');
     const sockets = await import('./sockets');

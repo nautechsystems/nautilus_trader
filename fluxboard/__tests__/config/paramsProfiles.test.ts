@@ -15,6 +15,19 @@ describe('paramsProfiles', () => {
     expect(deriveStrategyProfile({ meta: { class: 'maker_v3' } })).toBe('maker_v3');
   });
 
+  it('prefers explicit param_set metadata over class-name guessing', () => {
+    expect(
+      deriveStrategyProfile({
+        meta: {
+          class: 'equity_perp_maker',
+          param_set: 'makerv3',
+          strategy_family: 'maker_v3',
+          strategy_version: 'v3',
+        },
+      })
+    ).toBe('maker_v3');
+  });
+
   it('falls back to key signatures when class is missing', () => {
     expect(
       deriveStrategyProfile({

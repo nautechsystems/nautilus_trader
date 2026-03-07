@@ -57,6 +57,7 @@ use nautilus_model::{
     types::Currency,
 };
 use redis::{Pipeline, aio::ConnectionManager};
+use serde_json::Value;
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB, get_index_key};
@@ -435,11 +436,58 @@ impl RedisCacheDatabase {
     /// Returns an error if the command cannot be sent to the background task channel.
     pub fn delete_account_event(
         &self,
-        _account_id: &AccountId,
-        _event_id: &str,
+        account_id: &AccountId,
+        event_id: &str,
     ) -> anyhow::Result<()> {
-        log::warn!("Deleting account events currently a no-op (pending redesign)");
-        Ok(())
+        let mut con = self.con.clone();
+        let trader_key = self.trader_key.clone();
+        let encoding = self.encoding;
+        let account_id = account_id.to_owned();
+        let event_id = event_id.to_string();
+
+        get_runtime().block_on(async move {
+            let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
+            let full_key = format!("{trader_key}{REDIS_DELIMITER}{key}");
+            let result = DatabaseQueries::read(&con, &trader_key, &key).await?;
+
+            if result.is_empty() {
+                return Ok(());
+            }
+
+            let mut removed = 0usize;
+            let mut retained: Vec<Bytes> = Vec::with_capacity(result.len());
+
+            for payload in result {
+                let event: Value = DatabaseQueries::deserialize_payload(encoding, payload.as_ref())?;
+                let payload_event_id = event
+                    .get("event_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+
+                if payload_event_id == event_id {
+                    removed += 1;
+                    continue;
+                }
+
+                retained.push(payload);
+            }
+
+            if removed == 0 {
+                log::debug!("Account event {account_id}:{event_id} not found for deletion");
+                return Ok(());
+            }
+
+            let mut pipe = redis::pipe();
+            pipe.atomic();
+            pipe.del(&full_key);
+            for payload in &retained {
+                pipe.rpush(&full_key, payload.as_ref());
+            }
+            pipe.query_async::<()>(&mut con).await?;
+
+            log::debug!("Deleted {removed} account event(s) for {account_id}:{event_id}");
+            Ok(())
+        })
     }
 }
 
@@ -1206,7 +1254,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn delete_account_event(&self, account_id: &AccountId, event_id: &str) -> anyhow::Result<()> {
-        todo!()
+        self.database.delete_account_event(account_id, event_id)
     }
 
     fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {
