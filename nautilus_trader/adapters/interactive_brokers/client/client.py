@@ -199,6 +199,11 @@ class InteractiveBrokersClient(
                     await asyncio.sleep(self._reconnect_delay)
 
                 await self._connect()
+                if self._eclient.serverVersion() is None:
+                    raise ConnectionError(
+                        "Interactive Brokers handshake did not complete; "
+                        "server version was not received.",
+                    )
                 self._start_tws_incoming_msg_reader()
                 self._start_internal_msg_queue_processor()
                 self._eclient.startApi()

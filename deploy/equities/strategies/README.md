@@ -16,8 +16,10 @@ This directory holds one TOML file per equities node process enrolled into the P
 - `[identity].strategy_id` and `[identity].strategy_instance_id` stay aligned to the file name.
 - `[strategy].strategy_id` stays descriptive and unique across node processes.
 - `[strategy].strategy_groups` stays `equities`.
-- `[venues].execution_venue` and `[venues].reference_venue` stay `HYPERLIQUID` for v1.
+- `[venues].execution_venue` stays `HYPERLIQUID` and `[venues].reference_venue` stays `IBKR`.
 - `[node.venues.HYPERLIQUID].instrument_id` defines the trade[XYZ] builder-perp instrument.
+- `[node.venues.IBKR].instrument_id` defines the IBKR reference instrument, for example `AAPL.NASDAQ`.
+- `[node.venues.IBKR.dockerized_gateway]` carries the read-only live gateway runtime, including the nightly `11:45 PM America/New_York` restart window.
 - `[node.venues.HYPERLIQUID].dex = "xyz"` stays explicit.
 - `[node.venues.HYPERLIQUID].private_key_env` and `account_address_env` must reference env var names, not inline secrets.
 - Do not duplicate `[redis]` in per-node deploy files; nodes inherit it from `deploy/equities/equities.live.toml`.

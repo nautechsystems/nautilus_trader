@@ -240,7 +240,7 @@ config = {
     "node": {
         "venues": {
             "HYPERLIQUID": {
-                "instrument_id": "AAPL-USD-PERP.HYPERLIQUID",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                 "execution": True,
                 "dex": "xyz",
                 "private_key_env": "TRADE_XYZ_AGENT_PK",

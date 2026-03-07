@@ -1848,7 +1848,7 @@ export const api = {
   },
 
   // Get parameter schema with validation rules
-  getParamSchema: async () => {
+  getParamSchema: async (options?: { preferKeyLabel?: boolean }) => {
     const qs = new URLSearchParams();
     appendProfileQuery(qs);
     const response = await fetchJSON<FluxEnvelope<ParamSchema>>(
@@ -1856,9 +1856,10 @@ export const api = {
     );
     const payload = unwrapFluxEnvelope(response);
     const activeProfile = getActivePathProfile();
+    const preferKeyLabel = options?.preferKeyLabel ?? (activeProfile === 'tokenmm');
     return normalizeParamSchemaPayloadWithOptions(payload, {
       // TokenMM operators need compact param-key headers to keep the grid readable.
-      preferKeyLabel: activeProfile === 'tokenmm',
+      preferKeyLabel,
     });
   },
 

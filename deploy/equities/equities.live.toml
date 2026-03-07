@@ -22,9 +22,9 @@ read_timeout_secs = 5.0
 
 [venues]
 execution_venue = "HYPERLIQUID"
-reference_venue = "HYPERLIQUID"
+reference_venue = "IBKR"
 execution_symbol = "AAPL"
-reference_symbol = "AAPL"
+reference_symbol = "AAPL/USD"
 
 [node]
 enable_execution = false
@@ -41,12 +41,25 @@ filter_unclaimed_external_orders = true
 filter_position_reports = false
 
 [node.venues.HYPERLIQUID]
-instrument_id = "AAPL-USD-PERP.HYPERLIQUID"
+instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"
 execution = true
 private_key_env = "TRADE_XYZ_AGENT_PK"
 account_address_env = "TRADE_XYZ_ACCOUNT_ADDRESS"
 dex = "xyz"
 testnet = false
+
+[node.venues.IBKR]
+adapter = "interactive_brokers"
+instrument_id = "AAPL.NASDAQ"
+ibg_client_id = 7
+execution = false
+
+[node.venues.IBKR.dockerized_gateway]
+trading_mode = "live"
+read_only_api = true
+auto_restart_time = "11:45 PM"
+time_zone = "America/New_York"
+relogin_after_twofa_timeout = true
 
 [strategy]
 strategy_id = "equities_api"
@@ -97,6 +110,6 @@ portfolio_id = "equities"
 inventory_stale_after_ms = 3000
 
 [[contracts]]
-exchange = "hyperliquid"
+exchange = "ibkr"
 symbol = "AAPL/USD"
-instrument_id = "AAPL-USD-PERP.HYPERLIQUID"
+instrument_id = "AAPL.NASDAQ"

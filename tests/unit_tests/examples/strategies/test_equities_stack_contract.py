@@ -25,8 +25,18 @@ def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() ->
     template = _read(_repo_root() / "deploy/equities/strategies/equities.strategy.template.toml")
 
     assert 'execution_venue = "HYPERLIQUID"' in template
-    assert 'reference_venue = "HYPERLIQUID"' in template
+    assert 'reference_venue = "IBKR"' in template
+    assert 'reference_symbol = "AAPL/USD"' in template
     assert 'dex = "xyz"' in template
+    assert 'instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"' in template
+    assert '[node.venues.IBKR]' in template
+    assert 'instrument_id = "AAPL.NASDAQ"' in template
+    assert '[node.venues.IBKR.dockerized_gateway]' in template
+    assert 'trading_mode = "live"' in template
+    assert 'read_only_api = true' in template
+    assert 'auto_restart_time = "11:45 PM"' in template
+    assert 'time_zone = "America/New_York"' in template
+    assert "relogin_after_twofa_timeout = true" in template
     assert 'strategy_groups = "equities"' in template
     assert 'private_key_env = "TRADE_XYZ_AGENT_PK"' in template
     assert 'account_address_env = "TRADE_XYZ_ACCOUNT_ADDRESS"' in template

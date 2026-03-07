@@ -60,6 +60,7 @@ class VenueAdapterSpec:
     field_coercers: dict[str, FieldCoercer]
     secret_fields: tuple[tuple[str, str], ...]
     mode_defaults: dict[str, Callable[[str], Any]]
+    instrument_provider_factory: Callable[[InstrumentId], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -223,6 +224,58 @@ def _coerce_okx_vip_level(raw_value: Any, venue_name: str) -> Any:
     )
 
 
+def _load_interactive_brokers_spec() -> VenueAdapterSpec:
+    from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+    from nautilus_trader.adapters.interactive_brokers.config import (
+        DockerizedIBGatewayConfig,
+    )
+    from nautilus_trader.adapters.interactive_brokers.config import (
+        InteractiveBrokersDataClientConfig,
+    )
+    from nautilus_trader.adapters.interactive_brokers.config import (
+        InteractiveBrokersInstrumentProviderConfig,
+    )
+    from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
+    from nautilus_trader.adapters.interactive_brokers.factories import (
+        InteractiveBrokersLiveDataClientFactory,
+    )
+
+    def _coerce_ibg_client_id(raw_value: Any, venue_name: str) -> int:
+        return _positive_int(raw_value, field_name=f"node.venues.{venue_name}.ibg_client_id")
+
+    def _coerce_dockerized_gateway(raw_value: Any, venue_name: str) -> Any:
+        if raw_value is None or isinstance(raw_value, DockerizedIBGatewayConfig):
+            return raw_value
+        if not isinstance(raw_value, dict):
+            raise ValueError(
+                f"node.venues.{venue_name}.dockerized_gateway must be a TOML table",
+            )
+        return DockerizedIBGatewayConfig(**raw_value)
+
+    def _build_instrument_provider(instrument_id: InstrumentId) -> Any:
+        return InteractiveBrokersInstrumentProviderConfig(
+            load_ids=frozenset([instrument_id]),
+            symbology_method=SymbologyMethod.IB_SIMPLIFIED,
+        )
+
+    return VenueAdapterSpec(
+        adapter_id="interactive_brokers",
+        venue_key=IB_VENUE,
+        data_config_cls=InteractiveBrokersDataClientConfig,
+        data_factory_cls=InteractiveBrokersLiveDataClientFactory,
+        exec_config_cls=None,
+        exec_factory_cls=None,
+        field_aliases={},
+        field_coercers={
+            "ibg_client_id": _coerce_ibg_client_id,
+            "dockerized_gateway": _coerce_dockerized_gateway,
+        },
+        secret_fields=(),
+        mode_defaults={},
+        instrument_provider_factory=_build_instrument_provider,
+    )
+
+
 SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
     "binance": VenueAdapterSpec(
         adapter_id="binance",
@@ -310,6 +363,14 @@ SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
     ),
 }
 
+try:
+    _interactive_brokers_spec = _load_interactive_brokers_spec()
+except ImportError:
+    _interactive_brokers_spec = None
+else:
+    SUPPORTED_VENUE_ADAPTERS["interactive_brokers"] = _interactive_brokers_spec
+    SUPPORTED_VENUE_ADAPTERS["ibkr"] = _interactive_brokers_spec
+
 
 def _instrument_id_from_entry(
     entry: dict[str, Any],
@@ -337,7 +398,12 @@ def _build_client_config(
     kwargs: dict[str, Any] = {}
 
     if "instrument_provider" in parameter_names:
-        kwargs["instrument_provider"] = InstrumentProviderConfig(load_ids=frozenset([instrument_id]))
+        if spec.instrument_provider_factory is not None:
+            kwargs["instrument_provider"] = spec.instrument_provider_factory(instrument_id)
+        else:
+            kwargs["instrument_provider"] = InstrumentProviderConfig(
+                load_ids=frozenset([instrument_id]),
+            )
     if "routing" in parameter_names:
         kwargs["routing"] = RoutingConfig(default=default_routing, venues=frozenset([venue_name]))
     if "venue" in parameter_names:

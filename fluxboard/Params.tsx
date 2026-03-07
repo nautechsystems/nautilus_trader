@@ -177,6 +177,26 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.trunc(value)));
 }
 
+type SchemaCacheKey = 'default' | 'prefer_key_label';
+
+function resolveSchemaCacheKey(preferKeyLabel: boolean): SchemaCacheKey {
+  return preferKeyLabel ? 'prefer_key_label' : 'default';
+}
+
+function resolveSchemaProfile(
+  rows: Array<Pick<StrategyRow, 'params' | 'hot_params' | 'meta'>>,
+  fallbackProfile: ParamsProfileId,
+): ParamsProfileId {
+  const availableProfiles = listParamsProfiles().filter((profile) =>
+    rows.some((row) => deriveStrategyProfile(row) === profile)
+  );
+  return availableProfiles.length === 1 ? availableProfiles[0] : fallbackProfile;
+}
+
+function shouldPreferKeyLabel(profile: ParamsProfileId): boolean {
+  return profile === 'maker_v3';
+}
+
 type DragPosition = 'before' | 'after';
 type DragState = 'idle' | 'dragging' | 'over-before' | 'over-after';
 type BulkChangeOp = {
@@ -946,7 +966,7 @@ export default function Params({
   const remoteUpdateTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const originalValuesRef = useRef<Map<string, Record<string, string>>>(new Map());
   const paramValuesRef = useRef(paramValues);
-  const schemaCacheRef = useRef<ParamSchema | null>(null);
+  const schemaCacheRef = useRef<Partial<Record<SchemaCacheKey, ParamSchema>>>({});
   const conflictRowsRef = useRef(conflictRows);
 
   // Sync CSS variable with actual header height to keep bulk row flush under the header.
@@ -1131,36 +1151,26 @@ export default function Params({
       const prevOriginals = originalValuesRef.current;
       const prevParamValues = paramValuesRef.current;
       let schemaData: ParamSchema;
-      let paramsData: import('./types').ParamsResponse[];
+      const paramsResp = await api.getParams();
+      if (!Array.isArray(paramsResp)) {
+        throw new Error('Invalid params response: expected array');
+      }
+      const paramsData = paramsResp;
+      const effectiveProfile = resolveSchemaProfile(paramsData, activeProfile);
+      const preferKeyLabel = shouldPreferKeyLabel(effectiveProfile);
+      const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel);
 
-      if (!schemaCacheRef.current) {
-        const [schemaResp, paramsResp] = await Promise.all([
-          api.getParamSchema(),
-          api.getParams()
-        ]);
-
+      schemaData = schemaCacheRef.current[schemaCacheKey] ?? null;
+      if (!schemaData) {
+        const schemaResp = await api.getParamSchema({ preferKeyLabel });
         if (!schemaResp || !schemaResp.params) {
           throw new Error('Invalid schema response: missing params');
         }
-        if (!Array.isArray(paramsResp)) {
-          throw new Error('Invalid params response: expected array');
-        }
-
-        schemaCacheRef.current = schemaResp;
+        schemaCacheRef.current[schemaCacheKey] = schemaResp;
         schemaData = schemaResp;
-        paramsData = paramsResp;
-      } else {
-        schemaData = schemaCacheRef.current;
-        const paramsResp = await api.getParams();
-        if (!Array.isArray(paramsResp)) {
-          throw new Error('Invalid params response: expected array');
-        }
-        paramsData = paramsResp;
       }
 
-      if (!schema) {
-        setSchema(schemaData);
-      }
+      setSchema(schemaData);
 
       // Transform params data with validation
       const strategyRows: StrategyRow[] = paramsData
@@ -1328,7 +1338,7 @@ export default function Params({
         console.warn('[params] Autorefresh failed, will retry on next interval');
       }
     }
-  }, [initialLoadDone, schema, markLastUpdate]); // dirtyParams removed - use dirtyRef instead
+  }, [activeProfile, initialLoadDone, markLastUpdate]); // dirtyParams removed - use dirtyRef instead
 
   // Initial load on component mount
   useEffect(() => {
@@ -2622,6 +2632,50 @@ export default function Params({
     ),
     [strategies]
   );
+  const availableProfiles = useMemo(
+    () => profileIds.filter((profile) => familyCounts[profile] > 0),
+    [familyCounts, profileIds]
+  );
+  const lockedSingleProfile = availableProfiles.length === 1 ? availableProfiles[0] : null;
+
+  useEffect(() => {
+    if (!lockedSingleProfile) return;
+    if (activeProfile === lockedSingleProfile) return;
+    setActiveProfile(lockedSingleProfile);
+  }, [activeProfile, lockedSingleProfile, setActiveProfile]);
+
+  useEffect(() => {
+    if (!initialLoadDone) return;
+
+    const effectiveProfile = lockedSingleProfile ?? activeProfile;
+    const preferKeyLabel = shouldPreferKeyLabel(effectiveProfile);
+    const schemaCacheKey = resolveSchemaCacheKey(preferKeyLabel);
+    const cachedSchema = schemaCacheRef.current[schemaCacheKey];
+
+    if (cachedSchema) {
+      if (schema !== cachedSchema) {
+        setSchema(cachedSchema);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    api.getParamSchema({ preferKeyLabel })
+      .then((schemaResp) => {
+        if (cancelled || !schemaResp?.params) return;
+        schemaCacheRef.current[schemaCacheKey] = schemaResp;
+        setSchema(schemaResp);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Failed to refresh params schema view', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfile, initialLoadDone, lockedSingleProfile, schema]);
+
   const diffEntries = useMemo(() => {
     if (!diffStrategyId) return [];
     const keys = conflictRows.get(diffStrategyId);
@@ -2646,6 +2700,7 @@ export default function Params({
           <select
             value={activeProfile}
             onChange={(event) => setActiveProfile(event.target.value as ParamsProfileId)}
+            disabled={Boolean(lockedSingleProfile)}
             className="rounded border px-2 py-1 bg-bg-surface text-text-primary"
             style={{ borderColor: colors.border.DEFAULT }}
             aria-label="Params family"
@@ -2659,7 +2714,7 @@ export default function Params({
         </label>
       </div>
     ),
-    [activeProfile, familyCounts, profileIds, setActiveProfile]
+    [activeProfile, familyCounts, lockedSingleProfile, profileIds, setActiveProfile]
   );
 
   const panelHeaderActions = useMemo(() => {

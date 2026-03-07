@@ -23,6 +23,26 @@ async def test_start(event_loop, ib_client):
     assert ib_client._is_client_ready.is_set()
 
 
+@pytest.mark.asyncio
+async def test_start_waits_for_completed_handshake_before_start_api(ib_client):
+    # Arrange
+    ib_client._connect = AsyncMock()
+    ib_client._eclient = MagicMock()
+    ib_client._eclient.serverVersion.return_value = None
+    ib_client._eclient.startApi = MagicMock()
+    ib_client._stop = MagicMock()
+    ib_client._max_connection_attempts = 1
+    ib_client._indefinite_reconnect = False
+    ib_client._reconnect_delay = 0
+
+    # Act
+    await ib_client._start_async()
+
+    # Assert
+    ib_client._eclient.startApi.assert_not_called()
+    assert not ib_client._is_client_ready.is_set()
+
+
 def test_start_tasks(ib_client):
     # Arrange
     ib_client._eclient = MagicMock()

@@ -594,6 +594,41 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
+  it('can normalize makerv3 schema labels independently of the route profile', async () => {
+    setPathname('/equities/params');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        params: {
+          bot_on: {
+            type: 'boolean',
+            description: 'Enable quote publishing and management.',
+          },
+          bid_edge1: {
+            type: 'number',
+            description: 'Band 1 bid edge in bps.',
+            minimum: -100,
+            maximum: 1000,
+          },
+        },
+        deprecated: {},
+      },
+    });
+
+    const schema = await (api as any).getParamSchema({ preferKeyLabel: true });
+    expect(schema.params.bot_on).toMatchObject({
+      key: 'bot_on',
+      label: 'bot_on',
+      options: [['0', 'Off (0)'], ['1', 'On (1)']],
+    });
+    expect(schema.params.bid_edge1).toMatchObject({
+      key: 'bid_edge1',
+      label: 'bid_edge1',
+      min_value: -100,
+      max_value: 1000,
+    });
+  });
+
   it('normalizes typed params payload values to string map used by Params editor', async () => {
     setPathname('/tokenmm/params');
     fetchJSONMock.mockResolvedValueOnce({

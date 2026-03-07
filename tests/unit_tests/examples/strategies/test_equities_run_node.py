@@ -400,3 +400,74 @@ def test_build_node_honors_explicit_cancel_all_instrument_orders_override(monkey
     strategy = captured["strategy"]
 
     assert strategy.config.cancel_all_instrument_orders is True
+
+
+def test_build_node_uses_ibkr_reference_instrument_id(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["node_config"] = config
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    maker_instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    ref_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=maker_instrument_id,
+            reference_instrument_id=ref_instrument_id,
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "aapl_tradexyz_makerv3",
+                "external_strategy_id": "aapl_tradexyz_makerv3",
+                "trader_id": "EQUITIES-LIVE-TRADEXYZ",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {"enable_execution": False},
+            "strategy": {"strategy_id": "aapl_tradexyz_makerv3", "order_qty": "1000"},
+        },
+        mode="paper",
+        force_enable_execution=False,
+    )
+
+    strategy = captured["strategy"]
+
+    assert strategy.config.maker_instrument_id == maker_instrument_id
+    assert strategy.config.reference_instrument_id == ref_instrument_id

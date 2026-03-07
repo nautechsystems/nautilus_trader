@@ -585,6 +585,31 @@ def test_create_app_allows_same_exchange_pair_when_instrument_ids_differ(
     assert app is not None
 
 
+def test_create_app_allows_trade_xyz_prefixed_hyperliquid_instrument_id(
+    flux_config,
+    redis_client,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+        ),
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    assert app is not None
+
+
 def test_market_keys_skip_legacy_fallback_when_exchange_pair_is_ambiguous(
     flux_config,
     redis_client,

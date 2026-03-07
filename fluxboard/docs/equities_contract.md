@@ -19,8 +19,10 @@ Required routes:
 | `/equities/trades` | required | Trades page |
 | `/equities/alerts` | required | Alerts page |
 
-The equities rollout keeps trade[XYZ] on `HYPERLIQUID` plus `dex = "xyz"`.
-It does not define a separate venue family for the equities surface.
+The equities rollout keeps trade[XYZ] execution on `HYPERLIQUID` plus `dex = "xyz"`.
+The reference venue for FV inputs is `IBKR`.
+The canonical Hyperliquid execution instrument ID for the enrolled AAPL contract is `xyz:AAPL-USD-PERP.HYPERLIQUID`.
+The canonical IBKR reference instrument ID for the enrolled AAPL contract is `AAPL.NASDAQ`.
 
 ## Profile Contract
 
@@ -50,4 +52,5 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=equities'
 1. `signals.strategies[].meta.strategy_groups` is `equities`.
 2. `balances` represents the shared `equities` portfolio view.
 3. Per-row `strategy_id` values remain the enrolled equities strategy IDs.
-4. Clients should ignore unknown fields and tolerate additional metadata fields.
+4. `signals` should show an IBKR reference market identity even when the IBKR gateway is unavailable; in that state, the reference prices may be empty or stale, but they must not mirror the Hyperliquid maker leg.
+5. Clients should ignore unknown fields and tolerate additional metadata fields.
