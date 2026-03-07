@@ -1413,6 +1413,10 @@ cdef class DataEngine(Component):
             if str(inst.get_settlement_currency()) != series_settlement:
                 continue
 
+            # Match underlying
+            if str(inst.underlying) != series_underlying:
+                continue
+
             # Build instrument entry: strike as Price, kind as u8 (0=Call, 1=Put)
             try:
                 strike = inst.strike_price
@@ -1428,10 +1432,16 @@ cdef class DataEngine(Component):
             self._log.warning(f"No option instruments found for series {series_key}")
             return
 
+        # Default strike_range to all available strikes when None
+        strike_range = command.strike_range
+        if strike_range is None:
+            strikes = [strike for strike, _ in resolved.values()]
+            strike_range = nautilus_pyo3.StrikeRange.fixed(strikes)
+
         # Create OptionChainManager via PyO3
         manager = nautilus_pyo3.OptionChainManager(
             series_id=command.series_id,
-            strike_range=command.strike_range,
+            strike_range=strike_range,
             instruments=resolved,
             snapshot_interval_ms=command.snapshot_interval_ms,
             initial_atm_price=initial_atm_price,
@@ -1485,7 +1495,9 @@ cdef class DataEngine(Component):
             inst = self._cache.instrument(InstrumentId.from_str(str(fp.instrument_id)))
             if inst is not None:
                 if (hasattr(inst, 'expiration_ns') and inst.expiration_ns == series_id.expiration_ns
-                        and str(inst.get_settlement_currency()) == str(series_id.settlement_currency)):
+                        and str(inst.get_settlement_currency()) == str(series_id.settlement_currency)
+                        and getattr(inst, 'underlying', None) is not None
+                        and str(inst.underlying) == str(series_id.underlying)):
                     initial_atm_price = nautilus_pyo3.Price.from_str(str(fp.forward_price))
                     break
 
@@ -1504,8 +1516,9 @@ cdef class DataEngine(Component):
                 continue
             if not hasattr(inst, 'option_kind'):
                 continue
-            if (hasattr(inst, 'expiration_ns') and inst.expiration_ns == series_id.expiration_ns
-                    and str(inst.get_settlement_currency()) == str(series_id.settlement_currency)):
+            if (inst.expiration_ns == series_id.expiration_ns
+                    and str(inst.get_settlement_currency()) == str(series_id.settlement_currency)
+                    and str(inst.underlying) == str(series_id.underlying)):
                 return InstrumentId.from_str(str(inst.id))
         return None
 
@@ -1812,17 +1825,29 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe for synthetic instrument `OptionGreeks` data")
             return
 
-        # Only unsubscribe if currently subscribed
-        if command.instrument_id in client.subscribed_option_greeks():
-            client.unsubscribe_option_greeks(command)
+        if not self._msgbus.has_subscribers(
+            self._topic_cache.get_option_greeks_topic(command.instrument_id),
+        ):
+            if command.instrument_id in client.subscribed_option_greeks():
+                client.unsubscribe_option_greeks(command)
 
     cpdef void _handle_unsubscribe_option_chain(self, MarketDataClient client, UnsubscribeOptionChain command):
         Condition.not_none(client, "client")
 
         cdef str series_key = str(command.series_id)
 
+        # Only tear down if no other subscribers remain on this topic
+        cdef str topic = self._topic_cache.get_option_chain_topic(series_key)
+        if self._msgbus.has_subscribers(topic):
+            return
+
+        # Clear any pending bootstrap request for this series
+        stale = [rid for rid, cmd in self._pending_option_chain_requests.items()
+                 if str(cmd.series_id) == series_key]
+        for rid in stale:
+            del self._pending_option_chain_requests[rid]
+
         if series_key not in self._option_chain_managers:
-            self._log.warning(f"No option chain manager found for {series_key}")
             return
 
         self._teardown_option_chain(series_key, client)

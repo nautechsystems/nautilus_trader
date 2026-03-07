@@ -1282,7 +1282,7 @@ cdef class SubscribeOptionChain(SubscribeData):
     def __init__(
         self,
         object series_id not None,
-        object strike_range not None,
+        object strike_range,
         object snapshot_interval_ms,
         ClientId client_id: ClientId | None,
         Venue venue: Venue | None,
