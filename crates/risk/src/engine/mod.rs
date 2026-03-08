@@ -21,15 +21,19 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
 use config::RiskEngineConfig;
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
+    messages::{
+        execution::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
+        system::trading::TradingStateChanged,
+    },
     msgbus,
-    msgbus::{MessagingSwitchboard, TypedIntoHandler},
+    msgbus::{MessagingSwitchboard, TypedIntoHandler, get_message_bus},
     runner::try_get_trading_cmd_sender,
-    throttler::Throttler,
+    throttler::{RateLimit, Throttler},
 };
 use nautilus_core::{UUID4, WeakCell};
 use nautilus_execution::trailing::{
@@ -42,7 +46,7 @@ use nautilus_model::{
         TrailingOffsetType, TriggerType,
     },
     events::{OrderDenied, OrderEventAny, OrderModifyRejected},
-    identifiers::InstrumentId,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
@@ -51,7 +55,25 @@ use nautilus_portfolio::Portfolio;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
-type SubmitOrderFn = Box<dyn Fn(SubmitOrder)>;
+fn format_rate_limit(rate_limit: &RateLimit) -> String {
+    let total_secs = rate_limit.interval_ns / 1_000_000_000;
+    let remainder_ns = rate_limit.interval_ns % 1_000_000_000;
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let seconds = total_secs % 60;
+
+    if remainder_ns == 0 {
+        format!("{}/{hours:02}:{minutes:02}:{seconds:02}", rate_limit.limit)
+    } else {
+        let micros = remainder_ns / 1_000;
+        format!(
+            "{}/{hours:02}:{minutes:02}:{seconds:02}.{micros:06}",
+            rate_limit.limit
+        )
+    }
+}
+
+type SubmitCommandFn = Box<dyn Fn(TradingCommand)>;
 type ModifyOrderFn = Box<dyn Fn(ModifyOrder)>;
 
 /// Central risk management engine that validates and controls trading operations.
@@ -65,7 +87,7 @@ pub struct RiskEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     portfolio: Portfolio,
-    pub throttled_submit_order: Throttler<SubmitOrder, SubmitOrderFn>,
+    pub throttled_submit: Throttler<TradingCommand, SubmitCommandFn>,
     pub throttled_modify_order: Throttler<ModifyOrder, ModifyOrderFn>,
     max_notional_per_order: AHashMap<InstrumentId, Decimal>,
     trading_state: TradingState,
@@ -86,8 +108,7 @@ impl RiskEngine {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> Self {
-        let throttled_submit_order =
-            Self::create_submit_order_throttler(&config, clock.clone(), cache.clone());
+        let throttled_submit = Self::create_submit_throttler(&config, clock.clone(), cache.clone());
 
         let throttled_modify_order =
             Self::create_modify_order_throttler(&config, clock.clone(), cache.clone());
@@ -96,9 +117,9 @@ impl RiskEngine {
             clock,
             cache,
             portfolio,
-            throttled_submit_order,
+            throttled_submit,
             throttled_modify_order,
-            max_notional_per_order: AHashMap::new(),
+            max_notional_per_order: config.max_notional_per_order.clone(),
             trading_state: TradingState::Active,
             config,
         }
@@ -138,36 +159,72 @@ impl RiskEngine {
         );
     }
 
-    fn create_submit_order_throttler(
+    fn create_submit_throttler(
         config: &RiskEngineConfig,
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
-    ) -> Throttler<SubmitOrder, SubmitOrderFn> {
+    ) -> Throttler<TradingCommand, SubmitCommandFn> {
         let success_handler = {
-            Box::new(move |submit_order: SubmitOrder| {
+            Box::new(move |command: TradingCommand| {
                 let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
-                msgbus::send_trading_command(endpoint, TradingCommand::SubmitOrder(submit_order));
-            }) as Box<dyn Fn(SubmitOrder)>
+                msgbus::send_trading_command(endpoint, command);
+            }) as Box<dyn Fn(TradingCommand)>
         };
 
         let failure_handler = {
             let cache = cache;
             let clock = clock.clone();
-            Box::new(move |submit_order: SubmitOrder| {
+            Box::new(move |command: TradingCommand| {
                 let reason = "REJECTED BY THROTTLER";
-                log::warn!(
-                    "SubmitOrder for {} DENIED: {}",
-                    submit_order.client_order_id,
-                    reason
-                );
 
-                Self::handle_submit_order_cache(&cache, &submit_order);
+                match command {
+                    TradingCommand::SubmitOrder(submit_order) => {
+                        log::warn!(
+                            "SubmitOrder for {} DENIED: {reason}",
+                            submit_order.client_order_id,
+                        );
 
-                let denied = Self::create_order_denied(&submit_order, reason, &clock);
+                        Self::handle_submit_order_cache(&cache, &submit_order);
 
-                let endpoint = MessagingSwitchboard::exec_engine_process();
-                msgbus::send_order_event(endpoint, denied);
-            }) as Box<dyn Fn(SubmitOrder)>
+                        let denied = Self::create_order_denied(&submit_order, reason, &clock);
+
+                        let endpoint = MessagingSwitchboard::exec_engine_process();
+                        msgbus::send_order_event(endpoint, denied);
+                    }
+                    TradingCommand::SubmitOrderList(submit_order_list) => {
+                        log::warn!(
+                            "SubmitOrderList for {} DENIED: {reason}",
+                            submit_order_list.order_list.id,
+                        );
+
+                        let orders: Vec<OrderAny> = cache.borrow().orders_for_ids(
+                            &submit_order_list.order_list.client_order_ids,
+                            &submit_order_list,
+                        );
+
+                        let timestamp = clock.borrow().timestamp_ns();
+                        for order in &orders {
+                            if order.status() == OrderStatus::Initialized {
+                                let denied = OrderEventAny::Denied(OrderDenied::new(
+                                    order.trader_id(),
+                                    order.strategy_id(),
+                                    order.instrument_id(),
+                                    order.client_order_id(),
+                                    reason.into(),
+                                    UUID4::new(),
+                                    timestamp,
+                                    timestamp,
+                                ));
+                                let endpoint = MessagingSwitchboard::exec_engine_process();
+                                msgbus::send_order_event(endpoint, denied);
+                            }
+                        }
+                    }
+                    _ => {
+                        log::error!("Unexpected command type in submit throttler: {command}");
+                    }
+                }
+            }) as Box<dyn Fn(TradingCommand)>
         };
 
         Throttler::new(
@@ -310,12 +367,14 @@ impl RiskEngine {
 
         self.trading_state = state;
 
-        let _ts_now = self.clock.borrow().timestamp_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let trader_id = get_message_bus().borrow().trader_id;
 
-        // TODO: Create a new Event "TradingStateChanged" in OrderEventAny enum.
-        // let event = OrderEventAny::TradingStateChanged(TradingStateChanged::new(..,self.trading_state,..));
+        let config = self.config_as_map();
+        let event =
+            TradingStateChanged::new(trader_id, state, config, UUID4::new(), ts_now, ts_now);
 
-        msgbus::publish_any("events.risk".into(), &"message"); // TODO: Send the new Event here
+        msgbus::publish_any("events.risk".into(), &event);
 
         log::info!("Trading state set to {state:?}");
     }
@@ -340,9 +399,9 @@ impl RiskEngine {
 
     /// Resets the risk engine to its initial state.
     pub fn reset(&mut self) {
-        self.throttled_submit_order.reset();
+        self.throttled_submit.reset();
         self.throttled_modify_order.reset();
-        self.max_notional_per_order.clear();
+        self.max_notional_per_order = self.config.max_notional_per_order.clone();
         self.trading_state = TradingState::Active;
 
         log::info!("Reset");
@@ -381,6 +440,29 @@ impl RiskEngine {
     #[must_use]
     pub const fn max_notional_per_order(&self) -> &AHashMap<InstrumentId, Decimal> {
         &self.max_notional_per_order
+    }
+
+    fn config_as_map(&self) -> IndexMap<String, String> {
+        let mut map = IndexMap::new();
+        map.insert("bypass".to_string(), self.config.bypass.to_string());
+        map.insert(
+            "max_order_submit_rate".to_string(),
+            format_rate_limit(&self.config.max_order_submit),
+        );
+        map.insert(
+            "max_order_modify_rate".to_string(),
+            format_rate_limit(&self.config.max_order_modify),
+        );
+
+        for (instrument_id, value) in &self.max_notional_per_order {
+            map.insert(
+                format!("max_notional_per_order.{instrument_id}"),
+                value.to_string(),
+            );
+        }
+
+        map.insert("debug".to_string(), self.config.debug.to_string());
+        map
     }
 
     fn handle_command(&mut self, command: TradingCommand) {
@@ -683,6 +765,29 @@ impl RiskEngine {
     }
 
     fn check_orders_risk(&self, instrument: InstrumentAny, orders: &[OrderAny]) -> bool {
+        let mut orders_by_account: AHashMap<Option<AccountId>, Vec<&OrderAny>> = AHashMap::new();
+        for order in orders {
+            orders_by_account
+                .entry(order.account_id())
+                .or_default()
+                .push(order);
+        }
+
+        for (account_id, account_orders) in &orders_by_account {
+            if !self.check_orders_risk_for_account(&instrument, account_orders, *account_id) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn check_orders_risk_for_account(
+        &self,
+        instrument: &InstrumentAny,
+        orders: &[&OrderAny],
+        account_id: Option<AccountId>,
+    ) -> bool {
         let mut last_px: Option<Price> = None;
         let mut max_notional: Option<Money> = None;
 
@@ -697,17 +802,28 @@ impl RiskEngine {
             ));
         }
 
-        // Get account for risk checks
-        let account_exists = {
+        // Get account for risk checks: prefer explicit account_id, fall back to venue lookup
+        let resolved_account = {
             let cache = self.cache.borrow();
-            cache.account_for_venue(&instrument.id().venue).cloned()
+
+            if let Some(account_id) = account_id {
+                cache
+                    .account(&account_id)
+                    .or_else(|| cache.account_for_venue(&instrument.id().venue))
+                    .cloned()
+            } else {
+                cache.account_for_venue(&instrument.id().venue).cloned()
+            }
         };
 
-        let account = if let Some(account) = account_exists {
+        let account = if let Some(account) = resolved_account {
             account
         } else {
-            log::debug!("Cannot find account for venue {}", instrument.id().venue);
-            return true; // TODO: Temporary early return until handling routing/multiple venues
+            log::debug!(
+                "Cannot find account for venue {} (account_id={account_id:?})",
+                instrument.id().venue
+            );
+            return true;
         };
         let cash_account = match account {
             AccountAny::Cash(cash_account) => cash_account,
@@ -809,7 +925,7 @@ impl RiskEngine {
                                 | TrailingOffsetType::Ticks
                         ) {
                             self.deny_order(
-                                order.clone(),
+                                (*order).clone(),
                                 &format!("UNSUPPORTED_TRAILING_OFFSET_TYPE: {offset_type:?}"),
                             );
                             return false;
@@ -944,7 +1060,7 @@ impl RiskEngine {
                 && effective_quantity > max_quantity
             {
                 self.deny_order(
-                    order.clone(),
+                    (*order).clone(),
                     &format!(
                         "QUANTITY_EXCEEDS_MAXIMUM: effective_quantity={effective_quantity}, max_quantity={max_quantity}"
                     ),
@@ -956,7 +1072,7 @@ impl RiskEngine {
                 && effective_quantity < min_quantity
             {
                 self.deny_order(
-                    order.clone(),
+                    (*order).clone(),
                     &format!(
                         "QUANTITY_BELOW_MINIMUM: effective_quantity={effective_quantity}, min_quantity={min_quantity}"
                     ),
@@ -976,7 +1092,7 @@ impl RiskEngine {
                 && notional > max_notional_value
             {
                 self.deny_order(
-                        order.clone(),
+                        (*order).clone(),
                         &format!(
                             "NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional={max_notional_value:?}, notional={notional:?}"
                         ),
@@ -990,7 +1106,7 @@ impl RiskEngine {
                 && notional < min_notional
             {
                 self.deny_order(
-                        order.clone(),
+                        (*order).clone(),
                         &format!(
                             "NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT: min_notional={min_notional:?}, notional={notional:?}"
                         ),
@@ -998,13 +1114,13 @@ impl RiskEngine {
                 return false; // Denied
             }
 
-            // // Check MAX notional instrument limit
+            // Check MAX notional instrument limit
             if let Some(max_notional) = instrument.max_notional()
                 && notional.currency == max_notional.currency
                 && notional > max_notional
             {
                 self.deny_order(
-                        order.clone(),
+                        (*order).clone(),
                         &format!(
                             "NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT: max_notional={max_notional:?}, notional={notional:?}"
                         ),
@@ -1032,7 +1148,7 @@ impl RiskEngine {
                 && (free_val.as_decimal() + order_balance_impact.as_decimal()) < Decimal::ZERO
             {
                 self.deny_order(
-                    order.clone(),
+                    (*order).clone(),
                     &format!(
                         "NOTIONAL_EXCEEDS_FREE_BALANCE: free={free_val:?}, notional={notional:?}"
                     ),
@@ -1065,7 +1181,7 @@ impl RiskEngine {
                     && let (Some(free), Some(cum_notional_buy)) = (free, cum_notional_buy)
                     && cum_notional_buy > free
                 {
-                    self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_buy}"));
+                    self.deny_order((*order).clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_buy}"));
                     return false; // Denied
                 }
             } else if order.is_sell() {
@@ -1101,7 +1217,7 @@ impl RiskEngine {
                         && let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
                         && cum_notional_sell > free
                     {
-                        self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                        self.deny_order((*order).clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
                         return false; // Denied
                     }
                 }
@@ -1145,7 +1261,7 @@ impl RiskEngine {
                         && let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
                         && cum_notional_sell.raw > free.raw
                     {
-                        self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                        self.deny_order((*order).clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
                         return false; // Denied
                     }
                 }
@@ -1401,12 +1517,8 @@ impl RiskEngine {
                 _ => {}
             },
             TradingState::Active => match command {
-                TradingCommand::SubmitOrder(submit_order) => {
-                    self.throttled_submit_order.send(submit_order);
-                }
-                TradingCommand::SubmitOrderList(submit_order_list) => {
-                    // TODO: implement throttler for order lists
-                    self.send_to_execution(TradingCommand::SubmitOrderList(submit_order_list));
+                TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_) => {
+                    self.throttled_submit.send(command);
                 }
                 _ => {}
             },
