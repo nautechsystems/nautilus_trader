@@ -421,7 +421,8 @@ impl GreeksCalculator {
                 .to_string()
                 .parse::<i32>()
                 .unwrap_or(0);
-            let expiry_in_days = (expiry_utc - utc_now).num_days().min(1) as i32;
+            let raw_days = (expiry_utc - utc_now).num_days();
+            let expiry_in_days = raw_days.max(1) as i32;
             let expiry_in_years = expiry_in_days as f64 / 365.25;
             let currency = instrument.quote_currency().code.to_string();
             let interest_rate = match cache.yield_curve(&currency) {
@@ -821,11 +822,16 @@ impl GreeksCalculator {
 mod tests {
     use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+    use chrono::{TimeZone, Utc};
     use nautilus_model::{
-        enums::PositionSide,
-        identifiers::{InstrumentId, StrategyId, Venue},
+        data::QuoteTick,
+        enums::{AssetClass, OptionKind, PositionSide},
+        identifiers::{InstrumentId, StrategyId, Symbol, Venue},
+        instruments::{Equity, OptionContract, any::InstrumentAny},
+        types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{cache::Cache, clock::TestClock};
@@ -1298,5 +1304,171 @@ mod tests {
         );
 
         assert!(greeks_filter(&greeks_data));
+    }
+
+    fn option_with_expiration(instrument_id: &str, expiration_ns: UnixNanos) -> OptionContract {
+        let activation_ns = UnixNanos::from(Utc.with_ymd_and_hms(2021, 9, 17, 0, 0, 0).unwrap());
+        OptionContract::new(
+            InstrumentId::from(instrument_id),
+            Symbol::from("AAPL211217C00150000"),
+            AssetClass::Equity,
+            Some(Ustr::from("GMNI")),
+            Ustr::from("AAPL"),
+            OptionKind::Call,
+            Price::from("149.0"),
+            Currency::from("USD"),
+            activation_ns,
+            expiration_ns,
+            2,
+            Price::from("0.01"),
+            Quantity::from(100),
+            Quantity::from(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+    }
+
+    fn equity_aapl_opra() -> Equity {
+        Equity::new(
+            InstrumentId::from("AAPL.OPRA"),
+            Symbol::from("AAPL"),
+            Some(Ustr::from("US0378331005")),
+            Currency::from("USD"),
+            2,
+            Price::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+    }
+
+    fn setup_cache_with_option_and_quotes(
+        option: OptionContract,
+        underlying_id: InstrumentId,
+        now_ns: UnixNanos,
+    ) -> Rc<RefCell<Cache>> {
+        let option_id = option.id();
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::OptionContract(option))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Equity(equity_aapl_opra()))
+            .unwrap();
+        let option_quote = QuoteTick::new(
+            option_id,
+            Price::from("10.50"),
+            Price::from("10.60"),
+            Quantity::from(100),
+            Quantity::from(100),
+            now_ns,
+            now_ns,
+        );
+        let underlying_quote = QuoteTick::new(
+            underlying_id,
+            Price::from("150.00"),
+            Price::from("150.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            now_ns,
+            now_ns,
+        );
+        cache.borrow_mut().add_quote(option_quote).unwrap();
+        cache.borrow_mut().add_quote(underlying_quote).unwrap();
+        cache
+    }
+
+    #[rstest]
+    fn test_expiry_in_days_multi_day_unchanged() {
+        let now = Utc.with_ymd_and_hms(2025, 3, 8, 12, 0, 0).unwrap();
+        let expiry = now + chrono::Duration::days(30);
+        let now_ns = UnixNanos::from(now);
+        let expiry_ns = UnixNanos::from(expiry);
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", expiry_ns);
+        let option_id = option.id();
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let cache = setup_cache_with_option_and_quotes(option, underlying_id, now_ns);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let calculator = GreeksCalculator::new(cache, clock);
+
+        let greeks = calculator
+            .instrument_greeks(
+                option_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(greeks.expiry_in_days, 30);
+        assert!((greeks.expiry_in_years - 30.0 / 365.25).abs() < 1e-9);
+    }
+
+    #[rstest]
+    fn test_expiry_in_days_same_day_clamped_to_one() {
+        let now = Utc.with_ymd_and_hms(2025, 3, 8, 12, 0, 0).unwrap();
+        let expiry_same_day = Utc.with_ymd_and_hms(2025, 3, 8, 18, 0, 0).unwrap();
+        let now_ns = UnixNanos::from(now);
+        let expiry_ns = UnixNanos::from(expiry_same_day);
+        let option = option_with_expiration("AAPL250308C00150000.OPRA", expiry_ns);
+        let option_id = option.id();
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let cache = setup_cache_with_option_and_quotes(option, underlying_id, now_ns);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let calculator = GreeksCalculator::new(cache, clock);
+
+        let greeks = calculator
+            .instrument_greeks(
+                option_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(greeks.expiry_in_days, 1);
+        assert!((greeks.expiry_in_years - 1.0 / 365.25).abs() < 1e-9);
     }
 }
