@@ -2230,6 +2230,7 @@ mod tests {
 
         assert_eq!(funding_rate.instrument_id, instrument_id);
         assert_eq!(funding_rate.rate, dec!(0.0001));
+        assert_eq!(funding_rate.interval, Some(8 * 60));
         assert_eq!(
             funding_rate.next_funding_ns,
             Some(UnixNanos::from(1744590349506000000))
