@@ -186,7 +186,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         try:
             await asyncio.gather(
                 asyncio.ensure_future(
-                    live_client.start(callback=receive_instruments, callback_pyo3=print),
+                    live_client.start(callback=receive_instruments, callback_pyo3=lambda _: None),
                 ),
                 monitor_inactivity(),
             )

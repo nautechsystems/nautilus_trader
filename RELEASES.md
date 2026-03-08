@@ -33,6 +33,7 @@ Released on TBD (UTC).
 - Added backtest margin models, `FXRolloverInterestModule`, `PerContractFeeModel`, and `SimulationModule` trait in Rust
 - Refactored computation of greeks (#3691), thanks @faysou
 - Improved socket clients reconnect and shutdown reliability
+- Improved Databento live price precision handling with maps populated from instrument definitions
 - Refined `AtomicTime` mode switching and datetime panics
 - Standardized `type_name()` across order events and instruments
 - Optimized network client performance and add benchmarks

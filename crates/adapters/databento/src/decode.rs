@@ -1635,17 +1635,17 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 0, 0)]
-    #[case(1, 0, 9)] // 0.000000001 needs 9 decimal places
-    #[case(10, 0, 8)] // 0.00000001 needs 8
-    #[case(3_906_250, 0, 8)] // ZT: 1/256 = 0.00390625
-    #[case(7_812_500, 0, 7)] // ZF: 1/128 = 0.0078125
-    #[case(15_625_000, 0, 6)] // ZN: 1/64 = 0.015625
-    #[case(31_250_000, 0, 5)] // ZB: 1/32 = 0.03125
-    #[case(250_000_000, 0, 2)] // ES: 0.25
-    #[case(1_000_000_000, 0, 0)] // 1.0
-    #[case(10_000_000_000, 0, 0)] // 10.0
-    fn test_precision_from_raw(#[case] value: i64, #[case] _unused: u8, #[case] expected: u8) {
+    #[case(0, 0)]
+    #[case(1, 9)] // 0.000000001 needs 9 decimal places
+    #[case(10, 8)] // 0.00000001 needs 8
+    #[case(3_906_250, 8)] // ZT: 1/256 = 0.00390625
+    #[case(7_812_500, 7)] // ZF: 1/128 = 0.0078125
+    #[case(15_625_000, 6)] // ZN: 1/64 = 0.015625
+    #[case(31_250_000, 5)] // ZB: 1/32 = 0.03125
+    #[case(250_000_000, 2)] // ES: 0.25
+    #[case(1_000_000_000, 0)] // 1.0
+    #[case(10_000_000_000, 0)] // 10.0
+    fn test_precision_from_raw(#[case] value: i64, #[case] expected: u8) {
         assert_eq!(precision_from_raw(value), expected);
     }
 
