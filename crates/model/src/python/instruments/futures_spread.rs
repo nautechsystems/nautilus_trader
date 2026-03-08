@@ -115,7 +115,7 @@ impl FuturesSpread {
     }
 
     #[getter]
-    fn type_str(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(FuturesSpread)
     }
 

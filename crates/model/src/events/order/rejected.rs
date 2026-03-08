@@ -142,7 +142,7 @@ impl OrderEvent for OrderRejected {
         self.event_id
     }
 
-    fn kind(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(OrderRejected)
     }
 
@@ -441,7 +441,7 @@ mod tests {
         let order_rejected = create_test_order_rejected();
 
         assert_eq!(order_rejected.id(), order_rejected.event_id);
-        assert_eq!(order_rejected.kind(), "OrderRejected");
+        assert_eq!(order_rejected.type_name(), "OrderRejected");
         assert_eq!(order_rejected.order_type(), None);
         assert_eq!(order_rejected.order_side(), None);
         assert_eq!(order_rejected.trader_id(), TraderId::from("TRADER-001"));

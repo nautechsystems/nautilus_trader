@@ -27,7 +27,7 @@ impl DydxDataClientFactory {
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "DYDX"
     }
 }
@@ -40,7 +40,7 @@ impl DydxExecutionClientFactory {
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "DYDX"
     }
 }

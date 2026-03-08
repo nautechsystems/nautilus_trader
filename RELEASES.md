@@ -10,7 +10,8 @@ Released on TBD (UTC).
 - Added Hyperliquid agent wallet support (#3668), thanks @oh92
 
 ### Breaking Changes
-- None
+- Renamed `OrderEvent.kind()` to `type_name()` in Rust
+- Renamed instrument `type_str` PyO3 getter to `type_name`
 
 ### Security
 - Hardened Docker Compose to bind all ports to localhost and add `no-new-privileges` to all services
@@ -32,6 +33,7 @@ Released on TBD (UTC).
 - Refactored computation of greeks (#3691), thanks @faysou
 - Improved socket clients reconnect and shutdown reliability
 - Refined `AtomicTime` mode switching and datetime panics
+- Standardized `type_name()` across order events and instruments
 - Optimized network client performance and add benchmarks
 - Upgraded Rust (MSRV) to 1.94.0
 - Upgraded `databento` crate to v0.43.0

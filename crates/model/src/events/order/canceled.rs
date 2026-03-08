@@ -144,7 +144,7 @@ impl OrderEvent for OrderCanceled {
         self.event_id
     }
 
-    fn kind(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(OrderCanceled)
     }
 

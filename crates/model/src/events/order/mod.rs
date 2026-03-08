@@ -75,7 +75,7 @@ pub enum OrderEventType {
 
 pub trait OrderEvent: 'static + Send {
     fn id(&self) -> UUID4;
-    fn kind(&self) -> &str;
+    fn type_name(&self) -> &'static str;
     fn order_type(&self) -> Option<OrderType>;
     fn order_side(&self) -> Option<OrderSide>;
     fn trader_id(&self) -> TraderId;

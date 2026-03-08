@@ -672,7 +672,7 @@ impl DatabaseQueries {
 
         "#)
             .bind(order_event.id().to_string())
-            .bind(order_event.kind())
+            .bind(order_event.type_name())
             .bind(order_event.client_order_id().to_string())
             .bind(order_event.order_type().map(|x| x.to_string()))
             .bind(order_event.order_side().map(|x| x.to_string()))

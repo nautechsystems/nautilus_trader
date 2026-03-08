@@ -178,7 +178,7 @@ impl OrderEvent for OrderUpdated {
         self.event_id
     }
 
-    fn kind(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(OrderUpdated)
     }
 
