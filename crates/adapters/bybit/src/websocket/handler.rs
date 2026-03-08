@@ -954,7 +954,10 @@ impl FeedHandler {
                         }
                     }
 
-                    if msg.data.funding_rate.is_some() && msg.data.next_funding_time.is_some() {
+                    if msg.data.funding_rate.is_some()
+                        && msg.data.funding_interval_hour.is_some()
+                        && msg.data.next_funding_time.is_some()
+                    {
                         let should_publish = {
                             let cache = funding_cache.read().await;
                             match cache.get(&symbol) {

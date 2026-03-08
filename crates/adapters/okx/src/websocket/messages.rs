@@ -609,9 +609,12 @@ pub struct OKXFundingRateMsg {
     pub funding_rate: Ustr,
     /// Predicted next funding rate.
     pub next_funding_rate: Ustr,
-    /// Next funding time, Unix timestamp format in milliseconds.
+    /// Funding time, Unix timestamp format in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub funding_time: u64,
+    /// Next funding time, Unix timestamp format in milliseconds (used to determine funding interval).
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub next_funding_time: u64,
     /// Message timestamp, Unix timestamp format in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub ts: u64,

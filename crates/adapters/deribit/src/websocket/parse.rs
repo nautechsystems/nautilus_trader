@@ -546,6 +546,7 @@ pub fn parse_ticker_to_funding_rate(
     Some(FundingRateUpdate::new(
         instrument_id,
         rate,
+        None, // Deribit exchanges funding every few seconds, instead of in set intervals like other exchanges
         None, // next_funding_ns not available in ticker
         ts_event,
         ts_init,
@@ -594,6 +595,7 @@ pub fn parse_perpetual_to_funding_rate(
     FundingRateUpdate::new(
         instrument_id,
         msg.interest,
+        None, // Deribit exchanges funding every few seconds, instead of in set intervals like other exchanges
         None, // next_funding_ns not available in perpetual channel
         ts_event,
         ts_init,

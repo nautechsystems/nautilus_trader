@@ -18,6 +18,7 @@
 use std::{num::NonZero, str::FromStr};
 
 use ahash::AHashMap;
+use chrono::{TimeZone, Utc};
 use nautilus_core::{UnixNanos, uuid::UUID4};
 #[cfg(test)]
 use nautilus_model::types::Currency;
@@ -980,11 +981,13 @@ pub fn parse_instrument_msg(
 #[must_use]
 pub fn parse_funding_msg(msg: BitmexFundingMsg, ts_init: UnixNanos) -> FundingRateUpdate {
     let instrument_id = InstrumentId::from(format!("{}.BITMEX", msg.symbol));
+    let interval = msg.funding_interval - Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap();
     let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "");
 
     FundingRateUpdate::new(
         instrument_id,
         msg.funding_rate,
+        Some(interval),
         None, // Next funding time not provided in this message
         ts_event,
         ts_init,

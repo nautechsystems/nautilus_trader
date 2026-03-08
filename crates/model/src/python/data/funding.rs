@@ -15,12 +15,7 @@
 
 //! Python bindings for funding rate data types.
 
-use std::{
-    collections::HashMap,
-    hash::{Hash, Hasher},
-    str::FromStr,
-};
-
+use chrono::TimeDelta;
 use nautilus_core::{
     UnixNanos,
     python::{IntoPyObjectNautilusExt, to_pykey_err, to_pyvalue_err},
@@ -35,18 +30,24 @@ use pyo3::{
     types::{PyString, PyTuple},
 };
 use rust_decimal::Decimal;
+use std::{
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    str::FromStr,
+};
 
 use crate::{data::FundingRateUpdate, identifiers::InstrumentId, python::common::PY_MODULE_MODEL};
 
 #[pymethods]
 impl FundingRateUpdate {
     #[new]
-    #[pyo3(signature = (instrument_id, rate, ts_event, ts_init, next_funding_ns=None))]
+    #[pyo3(signature = (instrument_id, rate, ts_event, ts_init, interval=None, next_funding_ns=None))]
     fn py_new(
         instrument_id: InstrumentId,
         rate: Decimal,
         ts_event: u64,
         ts_init: u64,
+        interval: Option<TimeDelta>,
         next_funding_ns: Option<u64>,
     ) -> Self {
         let ts_event_nanos = UnixNanos::from(ts_event);
@@ -56,6 +57,7 @@ impl FundingRateUpdate {
         Self::new(
             instrument_id,
             rate,
+            interval,
             next_funding_nanos,
             ts_event_nanos,
             ts_init_nanos,
@@ -94,6 +96,12 @@ impl FundingRateUpdate {
     #[pyo3(name = "rate")]
     fn py_rate(&self) -> Decimal {
         self.rate
+    }
+
+    #[getter]
+    #[pyo3(name = "interval")]
+    fn py_interval(&self) -> Option<TimeDelta> {
+        self.interval
     }
 
     #[getter]
@@ -148,6 +156,13 @@ impl FundingRateUpdate {
             self.rate.to_string().into_py_any_unwrap(py),
         );
 
+        if let Some(interval) = self.interval {
+            dict.insert(
+                "interval".to_string(),
+                interval.num_milliseconds().into_py_any_unwrap(py),
+            );
+        }
+
         if let Some(next_funding_ns) = self.next_funding_ns {
             dict.insert(
                 "next_funding_ns".to_string(),
@@ -192,6 +207,12 @@ impl FundingRateUpdate {
             .ok_or_else(|| to_pykey_err("Missing 'ts_init' field"))?
             .extract()?;
 
+        let interval: Option<i64> = dict
+            .get_item("interval")
+            .ok()
+            .flatten()
+            .and_then(|v| v.extract().ok());
+
         let next_funding_ns: Option<u64> = dict
             .get_item("next_funding_ns")
             .ok()
@@ -201,6 +222,7 @@ impl FundingRateUpdate {
         Ok(Self::new(
             instrument_id,
             rate,
+            interval.map(TimeDelta::milliseconds),
             next_funding_ns.map(UnixNanos::from),
             UnixNanos::from(ts_event),
             UnixNanos::from(ts_init),
@@ -242,18 +264,26 @@ impl FundingRateUpdate {
         let item1 = py_tuple.get_item(1)?;
         let rate_str: String = item1.cast::<PyString>()?.extract()?;
 
-        let next_funding_ns: Option<u64> = py_tuple.get_item(2).ok().and_then(|item| {
+        let interval: Option<TimeDelta> = py_tuple.get_item(2).ok().and_then(|item| {
             if item.is_none() {
                 None
             } else {
                 item.extract().ok()
             }
         });
-        let ts_event: u64 = py_tuple.get_item(3)?.extract()?;
-        let ts_init: u64 = py_tuple.get_item(4)?.extract()?;
+        let next_funding_ns: Option<u64> = py_tuple.get_item(3).ok().and_then(|item| {
+            if item.is_none() {
+                None
+            } else {
+                item.extract().ok()
+            }
+        });
+        let ts_event: u64 = py_tuple.get_item(4)?.extract()?;
+        let ts_init: u64 = py_tuple.get_item(5)?.extract()?;
 
         self.instrument_id = InstrumentId::from_str(&instrument_id_str).map_err(to_pyvalue_err)?;
         self.rate = Decimal::from_str(&rate_str).map_err(to_pyvalue_err)?;
+        self.interval = interval;
         self.next_funding_ns = next_funding_ns.map(UnixNanos::from);
         self.ts_event = UnixNanos::from(ts_event);
         self.ts_init = UnixNanos::from(ts_init);
@@ -265,6 +295,7 @@ impl FundingRateUpdate {
         (
             self.instrument_id.to_string(),
             self.rate.to_string(),
+            self.interval,
             self.next_funding_ns.map(|ts| ts.as_u64()),
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
@@ -284,6 +315,7 @@ impl FundingRateUpdate {
         Self::new(
             InstrumentId::from("NULL.NULL"),
             Decimal::ZERO,
+            None,
             None,
             UnixNanos::default(),
             UnixNanos::default(),
@@ -307,6 +339,8 @@ impl FundingRateUpdate {
         let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
         let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
 
+        let interval: Option<TimeDelta> =
+            obj.getattr("interval").ok().and_then(|x| x.extract().ok());
         let next_funding_ns: Option<u64> = obj
             .getattr("next_funding_ns")
             .ok()
@@ -315,6 +349,7 @@ impl FundingRateUpdate {
         Ok(Self::new(
             instrument_id,
             rate,
+            interval,
             next_funding_ns.map(UnixNanos::from),
             UnixNanos::from(ts_event),
             UnixNanos::from(ts_init),
@@ -343,10 +378,12 @@ mod tests {
                 ts_event.as_u64(),
                 ts_init.as_u64(),
                 None,
+                None,
             );
 
             assert_eq!(funding_rate.instrument_id, instrument_id);
             assert_eq!(funding_rate.rate, rate);
+            assert_eq!(funding_rate.interval, None);
             assert_eq!(funding_rate.next_funding_ns, None);
             assert_eq!(funding_rate.ts_event, ts_event);
             assert_eq!(funding_rate.ts_init, ts_init);

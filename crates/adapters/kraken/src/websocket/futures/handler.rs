@@ -724,6 +724,7 @@ impl FuturesFeedHandler {
             let update = FundingRateUpdate::new(
                 instrument_id,
                 Decimal::from_f64_retain(funding_rate).unwrap_or_default(),
+                None,
                 next_funding_ns,
                 ts_event,
                 ts_init,

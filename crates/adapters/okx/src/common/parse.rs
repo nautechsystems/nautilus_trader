@@ -15,8 +15,8 @@
 
 //! Parsing utilities that convert OKX payloads into Nautilus domain models.
 
-use std::str::FromStr;
-
+use anyhow::Context;
+use chrono::TimeDelta;
 pub use nautilus_core::serialization::{
     deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
     deserialize_optional_string_to_u64, deserialize_string_to_u64,
@@ -50,6 +50,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
+use std::str::FromStr;
 use ustr::Ustr;
 
 use super::enums::OKXContractType;
@@ -404,7 +405,7 @@ pub fn parse_index_price_update(
 /// # Errors
 ///
 /// Returns an error if the `funding_rate` or `next_funding_rate` fields fail
-/// to parse into Decimal values.
+/// to parse into Decimal values or `next_funding_time` fails to parse into a positive, in bounds interval.
 pub fn parse_funding_rate_msg(
     msg: &OKXFundingRateMsg,
     instrument_id: InstrumentId,
@@ -416,13 +417,24 @@ pub fn parse_funding_rate_msg(
         .parse::<Decimal>()
         .map_err(|e| anyhow::anyhow!("Invalid funding_rate value: {e}"))?;
 
-    let funding_time = Some(parse_millisecond_timestamp(msg.funding_time));
+    let funding_time = parse_millisecond_timestamp(msg.funding_time);
+    let next_funding_time = parse_millisecond_timestamp(msg.next_funding_time);
+    let funding_interval_nanos =
+        next_funding_time
+            .duration_since(&funding_time)
+            .ok_or(anyhow::anyhow!(
+                "Invalid funding_interval, cannot be negative"
+            ))?;
+    let funding_interval = TimeDelta::nanoseconds(
+        i64::try_from(funding_interval_nanos).context("funding interval nanos out of bounds")?,
+    );
     let ts_event = parse_millisecond_timestamp(msg.ts);
 
     Ok(FundingRateUpdate::new(
         instrument_id,
         funding_rate,
-        funding_time,
+        Some(funding_interval),
+        Some(funding_time),
         ts_event,
         ts_init,
     ))

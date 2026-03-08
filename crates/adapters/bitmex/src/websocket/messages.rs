@@ -911,6 +911,8 @@ pub struct BitmexFundingMsg {
     pub timestamp: DateTime<Utc>,
     /// The instrument symbol the funding applies to.
     pub symbol: Ustr,
+    /// The interval for this funding.
+    pub funding_interval: DateTime<Utc>,
     /// The funding rate for this interval.
     #[serde(with = "rust_decimal::serde::float")]
     pub funding_rate: Decimal,

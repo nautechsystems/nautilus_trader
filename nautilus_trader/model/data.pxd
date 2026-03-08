@@ -541,6 +541,8 @@ cdef class FundingRateUpdate(Data):
     """The instrument ID for the funding rate.\n\n:returns: `InstrumentId`"""
     cdef readonly object rate
     """The current funding rate.\n\n:returns: `Decimal`"""
+    cdef readonly object interval
+    """Time interval between funding payments.\n\n:returns: `pd.Timedelta` or ``None``"""
     cdef readonly object next_funding_ns
     """UNIX timestamp (nanoseconds) of the next funding payment (if available, otherwise zero).\n\n:returns: `int` or ``None``"""
     cdef readonly uint64_t _ts_event

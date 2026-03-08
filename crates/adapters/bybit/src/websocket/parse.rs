@@ -18,6 +18,7 @@
 use std::convert::TryFrom;
 
 use anyhow::Context;
+use chrono::TimeDelta;
 use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
@@ -330,7 +331,7 @@ pub fn parse_ticker_option_quote(
 ///
 /// # Errors
 ///
-/// Returns an error if funding rate or next funding time fields are missing or cannot be parsed.
+/// Returns an error if funding rate, funding interval or next funding time fields are missing or cannot be parsed.
 pub fn parse_ticker_linear_funding(
     data: &BybitWsTickerLinear,
     instrument_id: InstrumentId,
@@ -347,6 +348,19 @@ pub fn parse_ticker_linear_funding(
         .parse::<Decimal>()
         .context("invalid funding_rate value")?;
 
+    let funding_interval = if let Some(funding_interval_hour) = &data.funding_interval_hour {
+        let funding_interval_hour = funding_interval_hour
+            .as_str()
+            .parse::<i64>()
+            .context("invalid funding_interval_hour value")?;
+        Some(
+            TimeDelta::try_hours(funding_interval_hour)
+                .ok_or_else(|| anyhow::anyhow!("funding interval hour out of bounds"))?,
+        )
+    } else {
+        None
+    };
+
     let next_funding_ns = if let Some(next_funding_time) = &data.next_funding_time {
         let next_funding_millis = next_funding_time
             .as_str()
@@ -360,6 +374,7 @@ pub fn parse_ticker_linear_funding(
     Ok(FundingRateUpdate::new(
         instrument_id,
         funding_rate,
+        funding_interval,
         next_funding_ns,
         ts_event,
         ts_init,
