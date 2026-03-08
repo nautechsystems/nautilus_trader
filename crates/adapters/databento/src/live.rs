@@ -580,7 +580,7 @@ impl DatabentoFeedHandler {
     }
 
     /// Sends a message to the message processing task.
-    async fn send_msg(&mut self, msg: LiveMessage) {
+    async fn send_msg(&self, msg: LiveMessage) {
         log::trace!("Sending {msg:?}");
         match self.msg_tx.send(msg).await {
             Ok(()) => {}

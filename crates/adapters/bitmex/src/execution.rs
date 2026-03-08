@@ -301,7 +301,7 @@ impl BitmexExecutionClient {
         }
     }
 
-    async fn ensure_instruments_initialized_async(&mut self) -> anyhow::Result<()> {
+    async fn ensure_instruments_initialized_async(&self) -> anyhow::Result<()> {
         if self.core.instruments_initialized() {
             return Ok(());
         }

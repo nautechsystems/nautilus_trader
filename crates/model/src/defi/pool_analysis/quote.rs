@@ -105,7 +105,7 @@ impl SwapQuote {
         }
     }
 
-    fn check_if_trade_info_initialized(&mut self) -> anyhow::Result<&SwapTradeInfo> {
+    fn check_if_trade_info_initialized(&self) -> anyhow::Result<&SwapTradeInfo> {
         if self.trade_info.is_none() {
             anyhow::bail!(
                 "Trade info is not initialized. Please call calculate_trade_info() first."

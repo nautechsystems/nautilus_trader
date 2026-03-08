@@ -132,7 +132,7 @@ impl KrakenFuturesDataClient {
             .and_then(|guard| guard.get(instrument_id).cloned())
     }
 
-    async fn load_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
+    async fn load_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let instruments = self
             .http
             .request_instruments()

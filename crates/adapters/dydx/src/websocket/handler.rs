@@ -611,7 +611,7 @@ impl FeedHandler {
     }
 
     fn parse_orderbook_from_data(
-        &mut self,
+        &self,
         data: &DydxWsChannelDataMsg,
         is_snapshot: bool,
     ) -> Vec<NautilusWsMessage> {
@@ -625,7 +625,7 @@ impl FeedHandler {
     }
 
     fn parse_orderbook_batch_from_data(
-        &mut self,
+        &self,
         data: &DydxWsChannelBatchDataMsg,
     ) -> Vec<NautilusWsMessage> {
         match self.parse_orderbook_batch(data) {
@@ -849,7 +849,7 @@ impl FeedHandler {
     }
 
     fn parse_orderbook(
-        &mut self,
+        &self,
         data: &DydxWsChannelDataMsg,
         is_snapshot: bool,
     ) -> DydxWsResult<Vec<NautilusWsMessage>> {
@@ -899,7 +899,7 @@ impl FeedHandler {
     }
 
     fn parse_orderbook_batch(
-        &mut self,
+        &self,
         data: &DydxWsChannelBatchDataMsg,
     ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         let symbol = data

@@ -496,7 +496,7 @@ impl BinanceFuturesExecWsFeedHandler {
     }
 
     fn handle_account_update(
-        &mut self,
+        &self,
         msg: &BinanceFuturesAccountUpdateMsg,
     ) -> Option<NautilusExecWsMessage> {
         let ts_event = UnixNanos::from((msg.event_time * 1_000_000) as u64);

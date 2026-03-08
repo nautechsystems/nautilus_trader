@@ -1008,7 +1008,7 @@ impl Portfolio {
         );
     }
 
-    fn update_net_position(&mut self, instrument_id: &InstrumentId, positions_open: &[Position]) {
+    fn update_net_position(&self, instrument_id: &InstrumentId, positions_open: &[Position]) {
         let mut net_position = Decimal::ZERO;
 
         for open_position in positions_open {
@@ -1026,7 +1026,7 @@ impl Portfolio {
         }
     }
 
-    fn calculate_unrealized_pnl(&mut self, instrument_id: &InstrumentId) -> Option<Money> {
+    fn calculate_unrealized_pnl(&self, instrument_id: &InstrumentId) -> Option<Money> {
         let cache = self.cache.borrow();
         let account = if let Some(account) = cache.account_for_venue(&instrument_id.venue) {
             account
@@ -1108,7 +1108,7 @@ impl Portfolio {
         Some(Money::new(total_pnl, currency))
     }
 
-    fn ensure_snapshot_pnls_cached_for(&mut self, instrument_id: &InstrumentId) {
+    fn ensure_snapshot_pnls_cached_for(&self, instrument_id: &InstrumentId) {
         // Performance: This method maintains an incremental cache of snapshot PnLs
         // It only deserializes new snapshots that haven't been processed yet
         // Tracks sum and last PnL per position for efficient NETTING OMS support
@@ -1327,7 +1327,7 @@ impl Portfolio {
         }
     }
 
-    fn calculate_realized_pnl(&mut self, instrument_id: &InstrumentId) -> Option<Money> {
+    fn calculate_realized_pnl(&self, instrument_id: &InstrumentId) -> Option<Money> {
         // Ensure snapshot PnLs are cached for this instrument
         self.ensure_snapshot_pnls_cached_for(instrument_id);
 
@@ -1723,7 +1723,7 @@ fn update_instrument_id(
         account
     };
 
-    let mut portfolio_clone = Portfolio {
+    let portfolio_clone = Portfolio {
         clock: clock.clone(),
         cache,
         inner: inner.clone(),
@@ -1821,7 +1821,7 @@ fn update_order(
             .accounts
             .update_balances(account.clone(), instrument, *order_filled);
 
-        let mut portfolio_clone = Portfolio {
+        let portfolio_clone = Portfolio {
             clock: clock.clone(),
             cache: cache.clone(),
             inner: inner.clone(),
@@ -1890,7 +1890,7 @@ fn update_position(
 
     log::debug!("position fresh from cache -> {positions_open:?}");
 
-    let mut portfolio_clone = Portfolio {
+    let portfolio_clone = Portfolio {
         clock: clock.clone(),
         cache: cache.clone(),
         inner: inner.clone(),

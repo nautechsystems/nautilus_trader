@@ -483,7 +483,7 @@ impl BitmexDataClient {
         }
     }
 
-    async fn bootstrap_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
+    async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let http = self.http_client.clone();
         let mut instruments = http
             .request_instruments(self.config.active_only)

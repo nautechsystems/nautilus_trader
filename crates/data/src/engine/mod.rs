@@ -1080,12 +1080,12 @@ impl DataEngine {
         }
     }
 
-    fn handle_depth10(&mut self, depth: OrderBookDepth10) {
+    fn handle_depth10(&self, depth: OrderBookDepth10) {
         let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
         msgbus::publish_depth10(topic, &depth);
     }
 
-    fn handle_quote(&mut self, quote: QuoteTick) {
+    fn handle_quote(&self, quote: QuoteTick) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_quote(quote) {
             log_error_on_cache_insert(&e);
         }
@@ -1096,7 +1096,7 @@ impl DataEngine {
         msgbus::publish_quote(topic, &quote);
     }
 
-    fn handle_trade(&mut self, trade: TradeTick) {
+    fn handle_trade(&self, trade: TradeTick) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_trade(trade) {
             log_error_on_cache_insert(&e);
         }
@@ -1107,7 +1107,7 @@ impl DataEngine {
         msgbus::publish_trade(topic, &trade);
     }
 
-    fn handle_bar(&mut self, bar: Bar) {
+    fn handle_bar(&self, bar: Bar) {
         // TODO: Handle additional bar logic
         if self.config.validate_data_sequence
             && let Some(last_bar) = self.cache.as_ref().borrow().bar(&bar.bar_type)
@@ -1138,7 +1138,7 @@ impl DataEngine {
         msgbus::publish_bar(topic, &bar);
     }
 
-    fn handle_mark_price(&mut self, mark_price: MarkPriceUpdate) {
+    fn handle_mark_price(&self, mark_price: MarkPriceUpdate) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_mark_price(mark_price) {
             log_error_on_cache_insert(&e);
         }
@@ -1147,7 +1147,7 @@ impl DataEngine {
         msgbus::publish_mark_price(topic, &mark_price);
     }
 
-    fn handle_index_price(&mut self, index_price: IndexPriceUpdate) {
+    fn handle_index_price(&self, index_price: IndexPriceUpdate) {
         if let Err(e) = self
             .cache
             .as_ref()
@@ -1227,12 +1227,12 @@ impl DataEngine {
         }
     }
 
-    fn handle_instrument_close(&mut self, close: InstrumentClose) {
+    fn handle_instrument_close(&self, close: InstrumentClose) {
         let topic = switchboard::get_instrument_close_topic(close.instrument_id);
         msgbus::publish_any(topic, &close);
     }
 
-    fn handle_custom_data(&mut self, custom: CustomData) {
+    fn handle_custom_data(&self, custom: CustomData) {
         log::debug!("Processing custom data: {}", custom.data.type_name());
         let topic = switchboard::get_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, &custom);
@@ -1907,7 +1907,7 @@ impl DataEngine {
     }
 
     fn create_bar_aggregator(
-        &mut self,
+        &self,
         instrument: &InstrumentAny,
         bar_type: BarType,
     ) -> Box<dyn BarAggregator> {
@@ -2097,7 +2097,7 @@ impl DataEngine {
     /// Sets up a bar aggregator, matching Cython _setup_bar_aggregator logic.
     ///
     /// This method handles historical mode, message bus subscriptions, and time bar aggregator setup.
-    fn setup_bar_aggregator(&mut self, bar_type: BarType, historical: bool) -> anyhow::Result<()> {
+    fn setup_bar_aggregator(&self, bar_type: BarType, historical: bool) -> anyhow::Result<()> {
         let bar_key = bar_type.standard();
         let aggregator = self.bar_aggregators.get(&bar_key).ok_or_else(|| {
             anyhow::anyhow!("Cannot setup bar aggregator: no aggregator found for {bar_type}")

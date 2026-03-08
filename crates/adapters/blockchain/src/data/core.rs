@@ -659,7 +659,7 @@ impl BlockchainDataClientCore {
 
     #[allow(clippy::too_many_arguments)]
     async fn flush_event_batches(
-        &mut self,
+        &self,
         event_batch_size: usize,
         swap_batch: &mut Vec<PoolSwap>,
         liquidity_batch: &mut Vec<PoolLiquidityUpdate>,

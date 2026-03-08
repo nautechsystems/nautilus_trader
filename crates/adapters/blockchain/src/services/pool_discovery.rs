@@ -411,7 +411,7 @@ impl<'a> PoolDiscoveryService<'a> {
     /// Logs errors for pools that cannot be constructed (missing tokens),
     /// but does not fail the entire batch.
     async fn construct_pools_batch(
-        &mut self,
+        &self,
         pool_events: &mut Vec<PoolCreatedEvent>,
         dex: &SharedDex,
     ) -> anyhow::Result<Vec<Pool>> {

@@ -164,6 +164,7 @@ impl DerefMut for PyDataActorInner {
     }
 }
 
+#[allow(clippy::needless_pass_by_ref_mut)]
 impl PyDataActorInner {
     fn dispatch_on_start(&self) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {

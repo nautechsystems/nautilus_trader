@@ -662,7 +662,7 @@ impl DydxExecutionClient {
     ///
     /// The instruments are stored in the shared `InstrumentCache` which is automatically
     /// populated by the HTTP client during `fetch_and_cache_instruments()`.
-    fn mark_instruments_initialized(&mut self) {
+    fn mark_instruments_initialized(&self) {
         let count = self.instrument_cache.len();
         self.core.set_instruments_initialized();
         log::debug!("Instruments initialized: {count} instruments in shared cache");

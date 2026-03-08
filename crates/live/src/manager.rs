@@ -430,7 +430,7 @@ impl ExecutionManager {
                     continue;
                 }
 
-                if let Some(mut order) = self.get_order(client_order_id) {
+                if let Some(order) = self.get_order(client_order_id) {
                     let instrument = self.get_instrument(&report.instrument_id);
                     log::info!(
                         color = LogColor::Blue as u8;
@@ -447,7 +447,7 @@ impl ExecutionManager {
                         .map(|f| f.iter().collect())
                         .unwrap_or_default();
                     let order_events = self.reconcile_order_with_fills(
-                        &mut order,
+                        &order,
                         report,
                         &order_fills,
                         instrument.as_ref(),
@@ -470,8 +470,7 @@ impl ExecutionManager {
                     ) {
                         log::warn!("Failed to add venue order ID index: {e}");
                     }
-                } else if let Some(mut order) =
-                    self.get_order_by_venue_order_id(&report.venue_order_id)
+                } else if let Some(order) = self.get_order_by_venue_order_id(&report.venue_order_id)
                 {
                     // Fallback: match by venue_order_id
                     let instrument = self.get_instrument(&report.instrument_id);
@@ -491,7 +490,7 @@ impl ExecutionManager {
                         .map(|f| f.iter().collect())
                         .unwrap_or_default();
                     let order_events = self.reconcile_order_with_fills(
-                        &mut order,
+                        &order,
                         report,
                         &order_fills,
                         instrument.as_ref(),
@@ -548,8 +547,7 @@ impl ExecutionManager {
                         orders_skipped_no_instrument += 1;
                     }
                 }
-            } else if let Some(mut order) = self.get_order_by_venue_order_id(&report.venue_order_id)
-            {
+            } else if let Some(order) = self.get_order_by_venue_order_id(&report.venue_order_id) {
                 // Fallback: match by venue_order_id
                 let instrument = self.get_instrument(&report.instrument_id);
                 log::info!(
@@ -567,7 +565,7 @@ impl ExecutionManager {
                     .map(|f| f.iter().collect())
                     .unwrap_or_default();
                 let order_events = self.reconcile_order_with_fills(
-                    &mut order,
+                    &order,
                     report,
                     &order_fills,
                     instrument.as_ref(),
@@ -681,14 +679,14 @@ impl ExecutionManager {
                 continue;
             }
 
-            if let Some(mut order) = order {
+            if let Some(order) = order {
                 let instrument_id = order.instrument_id();
                 if let Some(instrument) = self.get_instrument(&instrument_id) {
                     let mut sorted_fills: Vec<&FillReport> = fills.iter().collect();
                     sorted_fills.sort_by_key(|f| f.ts_event);
 
                     for fill in sorted_fills {
-                        if let Some(event) = self.create_order_fill(&mut order, fill, &instrument) {
+                        if let Some(event) = self.create_order_fill(&order, fill, &instrument) {
                             fills_applied += 1;
                             events.push(event);
                         }
@@ -2074,7 +2072,7 @@ impl ExecutionManager {
     /// to ensure correct state transitions (matching Python behavior).
     fn reconcile_order_with_fills(
         &mut self,
-        order: &mut OrderAny,
+        order: &OrderAny,
         report: &OrderStatusReport,
         fills: &[&FillReport],
         instrument: Option<&InstrumentAny>,
@@ -2261,7 +2259,7 @@ impl ExecutionManager {
             generate_external_order_status_events(&order, report, account_id, instrument, ts_now);
 
         if !fills.is_empty() {
-            let mut cached_order = self.get_order(&client_order_id).unwrap();
+            let cached_order = self.get_order(&client_order_id).unwrap();
             let mut sorted_fills: Vec<&FillReport> = fills.to_vec();
             sorted_fills.sort_by_key(|f| f.ts_event);
 
@@ -2270,7 +2268,7 @@ impl ExecutionManager {
                     let terminal_event = order_events.pop();
                     for fill in sorted_fills {
                         if let Some(fill_event) =
-                            self.create_order_fill(&mut cached_order, fill, instrument)
+                            self.create_order_fill(&cached_order, fill, instrument)
                         {
                             order_events.push(fill_event);
                         }
@@ -2292,7 +2290,7 @@ impl ExecutionManager {
                     let mut real_fill_total = Decimal::ZERO;
                     for fill in &sorted_fills {
                         if let Some(fill_event) =
-                            self.create_order_fill(&mut cached_order, fill, instrument)
+                            self.create_order_fill(&cached_order, fill, instrument)
                         {
                             real_fill_total += fill.last_qty.as_decimal();
                             order_events.push(fill_event);
@@ -2480,7 +2478,7 @@ impl ExecutionManager {
 
     fn create_order_fill(
         &mut self,
-        order: &mut OrderAny,
+        order: &OrderAny,
         fill: &FillReport,
         instrument: &InstrumentAny,
     ) -> Option<OrderEventAny> {

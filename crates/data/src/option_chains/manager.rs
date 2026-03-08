@@ -455,7 +455,7 @@ impl OptionChainManager {
     }
 
     /// Registers msgbus handlers for a batch of instruments.
-    fn register_handlers_for_instruments_bulk(&mut self, instrument_ids: &[InstrumentId]) {
+    fn register_handlers_for_instruments_bulk(&self, instrument_ids: &[InstrumentId]) {
         for &id in instrument_ids {
             self.register_handlers_for_instrument(id);
         }
@@ -494,7 +494,7 @@ impl OptionChainManager {
         true
     }
 
-    fn register_handlers_for_instrument(&mut self, instrument_id: InstrumentId) {
+    fn register_handlers_for_instrument(&self, instrument_id: InstrumentId) {
         if let Some(qh) = self.quote_handlers.first().cloned() {
             let topic = switchboard::get_quotes_topic(instrument_id);
             msgbus::subscribe_quotes(topic.into(), qh, Some(self.msgbus_priority));

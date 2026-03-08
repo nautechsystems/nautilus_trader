@@ -24,6 +24,7 @@ use crate::{
 };
 
 #[pymethods]
+#[allow(clippy::needless_pass_by_ref_mut)]
 impl BusMessage {
     #[getter]
     #[pyo3(name = "topic")]

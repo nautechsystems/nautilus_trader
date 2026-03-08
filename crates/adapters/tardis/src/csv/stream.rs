@@ -1005,7 +1005,7 @@ impl Depth10StreamIterator {
         })
     }
 
-    fn process_snapshot5(&mut self, data: TardisOrderBookSnapshot5Record) -> OrderBookDepth10 {
+    fn process_snapshot5(&self, data: TardisOrderBookSnapshot5Record) -> OrderBookDepth10 {
         let instrument_id = self
             .instrument_id
             .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
@@ -1074,7 +1074,7 @@ impl Depth10StreamIterator {
         )
     }
 
-    fn process_snapshot25(&mut self, data: TardisOrderBookSnapshot25Record) -> OrderBookDepth10 {
+    fn process_snapshot25(&self, data: TardisOrderBookSnapshot25Record) -> OrderBookDepth10 {
         let instrument_id = self
             .instrument_id
             .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));

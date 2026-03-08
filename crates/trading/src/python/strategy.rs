@@ -251,6 +251,7 @@ impl Debug for PyStrategyInner {
     }
 }
 
+#[allow(clippy::needless_pass_by_ref_mut)]
 impl PyStrategyInner {
     fn dispatch_on_start(&self) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {

@@ -447,7 +447,7 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket connection fails or if authentication fails (when credentials are provided).
     async fn connect_inner(
-        &mut self,
+        &self,
     ) -> Result<
         (
             WebSocketClient,

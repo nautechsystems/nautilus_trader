@@ -184,7 +184,7 @@ impl BinanceSpotWsFeedHandler {
     }
 
     /// Handle binary SBE frame.
-    fn handle_binary_frame(&mut self, data: &[u8]) -> Vec<BinanceSpotWsMessage> {
+    fn handle_binary_frame(&self, data: &[u8]) -> Vec<BinanceSpotWsMessage> {
         match decode_sbe(data) {
             Ok(MarketDataMessage::Trades(event)) => self.handle_trades_event(&event),
             Ok(MarketDataMessage::BestBidAsk(event)) => self.handle_bbo_event(&event),
@@ -369,7 +369,7 @@ impl BinanceSpotWsFeedHandler {
     }
 
     /// Handle unsubscribe command.
-    async fn handle_unsubscribe(&mut self, streams: Vec<String>) -> anyhow::Result<()> {
+    async fn handle_unsubscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
         let request_id = self.request_id_counter.fetch_add(1, Ordering::SeqCst);
         let request = BinanceWsSubscription::unsubscribe(streams.clone(), request_id);
         let payload = serde_json::to_string(&request)?;

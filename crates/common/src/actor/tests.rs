@@ -352,7 +352,7 @@ impl TestDataActor {
     }
 
     #[allow(dead_code)]
-    pub fn custom_function(&mut self) {}
+    pub fn custom_function(&self) {}
 }
 
 #[fixture]

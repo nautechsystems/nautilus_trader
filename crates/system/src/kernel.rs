@@ -501,7 +501,7 @@ impl NautilusKernel {
     ///
     /// Note: Async connection (connect/disconnect) is handled by LiveNode for live clients.
     /// This method only handles synchronous start operations on execution clients.
-    fn start_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
+    fn start_clients(&self) -> Result<(), Vec<anyhow::Error>> {
         let mut errors = Vec::new();
 
         {
@@ -527,7 +527,7 @@ impl NautilusKernel {
     ///
     /// Note: Async disconnection is handled by LiveNode for live clients.
     /// This method only handles synchronous stop operations on execution clients.
-    fn stop_all_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
+    fn stop_all_clients(&self) -> Result<(), Vec<anyhow::Error>> {
         let mut errors = Vec::new();
 
         {

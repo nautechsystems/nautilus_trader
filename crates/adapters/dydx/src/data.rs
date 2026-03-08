@@ -268,7 +268,7 @@ impl DydxDataClient {
         }
     }
 
-    async fn bootstrap_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
+    async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         self.http_client
             .fetch_and_cache_instruments()
             .await

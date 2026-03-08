@@ -403,7 +403,7 @@ impl FeedHandler {
         }
     }
 
-    fn handle_event(&mut self, event: AxWsOrderEvent) -> Option<Vec<AxOrdersWsMessage>> {
+    fn handle_event(&self, event: AxWsOrderEvent) -> Option<Vec<AxOrdersWsMessage>> {
         if matches!(event, AxWsOrderEvent::Heartbeat) {
             log::trace!("Received heartbeat");
             return None;
@@ -463,7 +463,7 @@ mod tests {
 
     #[rstest]
     fn test_handle_event_forwards_venue_event() {
-        let mut handler = test_handler();
+        let handler = test_handler();
 
         let event = AxWsOrderEvent::Heartbeat;
         let result = handler.handle_event(event);

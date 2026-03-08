@@ -1530,7 +1530,7 @@ impl RiskEngine {
         msgbus::send_trading_command(endpoint, command);
     }
 
-    fn handle_event(&mut self, event: OrderEventAny) {
+    fn handle_event(&self, event: OrderEventAny) {
         // We intend to extend the risk engine to be able to handle additional events.
         // For now we just log.
         if self.config.debug {

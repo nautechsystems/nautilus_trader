@@ -1257,7 +1257,7 @@ impl OrderEmulator {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn update_trailing_stop_order(&mut self, order: &mut OrderAny) {
+    fn update_trailing_stop_order(&self, order: &mut OrderAny) {
         let Some(matching_core) = self.matching_cores.get(&order.instrument_id()) else {
             log::error!(
                 "Cannot update trailing-stop order: no matching core for instrument {}",
