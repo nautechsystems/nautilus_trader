@@ -92,7 +92,7 @@ repos:
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.22.0
+    rev: v1.23.0
     hooks:
       - id: zizmor
         name: zizmor (security)

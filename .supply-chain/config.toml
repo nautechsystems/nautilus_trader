@@ -159,7 +159,7 @@ version = "1.7.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-chains]]
-version = "0.2.30"
+version = "0.2.31"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-consensus]]
@@ -1439,7 +1439,7 @@ version = "1.0.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.libc]]
-version = "0.2.182"
+version = "0.2.183"
 criteria = "safe-to-deploy"
 
 [[exemptions.libm]]
@@ -1979,7 +1979,7 @@ version = "0.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.redis]]
-version = "1.0.4"
+version = "1.0.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.redox_syscall]]
@@ -2303,7 +2303,7 @@ version = "0.5.10"
 criteria = "safe-to-deploy"
 
 [[exemptions.socket2]]
-version = "0.6.2"
+version = "0.6.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.spin]]
@@ -2487,7 +2487,7 @@ version = "0.9.12+spec-1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.toml]]
-version = "1.0.4+spec-1.1.0"
+version = "1.0.6+spec-1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.toml_datetime]]

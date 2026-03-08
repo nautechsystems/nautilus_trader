@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Fixed Betfair order modify `Quantity` serialization for partial cancel size reduction
 - Fixed Binance algo order update (#3665), thanks @qu1zzyboy
 - Fixed Binance SBE price/quantity precision derivation (#3670), thanks @husariancom
+- Fixed Databento price precision truncation for fractional tick sizes (#3696), thanks @pandashark
 - Fixed dYdX WebSocket handler repeatedly emitting `NewInstrumentDiscovered` for uncached instruments on every `v4_markets` update
 - Fixed Kraken post-only order rejection not setting `due_post_only` on `OrderRejected` events (Spot and Futures)
 
@@ -37,6 +38,7 @@ Released on TBD (UTC).
 - Optimized network client performance and add benchmarks
 - Upgraded Rust (MSRV) to 1.94.0
 - Upgraded `databento` crate to v0.43.0
+- Upgraded `redis` crate to v1.0.5
 - Upgraded `tokio` crate to v1.50.0
 
 ---
