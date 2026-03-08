@@ -16,7 +16,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_okx::websocket::messages::OKXWsMessage;
+use nautilus_okx::websocket::messages::OKXWsFrame;
 use serde_json::Value;
 
 const TICKERS: &str = include_str!("../test_data/ws_tickers.json");
@@ -44,11 +44,11 @@ fn bench_message_parsing(c: &mut Criterion) {
         ("account", ACCOUNT),
     ];
 
-    // Benchmark parsing JSON string to OKXWsMessage (custom deserializer)
+    // Benchmark parsing JSON string to OKXWsFrame (custom deserializer)
     for (name, msg) in &messages {
         group.bench_with_input(BenchmarkId::new("to_struct", name), msg, |b, msg| {
             b.iter(|| {
-                let ws_msg: OKXWsMessage = serde_json::from_str(black_box(msg)).unwrap();
+                let ws_msg: OKXWsFrame = serde_json::from_str(black_box(msg)).unwrap();
                 black_box(ws_msg);
             });
         });
@@ -103,7 +103,7 @@ fn bench_batch_processing(c: &mut Criterion) {
                 b.iter(|| {
                     for i in 0..size {
                         let msg = messages[i % messages.len()];
-                        let ws_msg: OKXWsMessage = serde_json::from_str(msg).unwrap();
+                        let ws_msg: OKXWsFrame = serde_json::from_str(msg).unwrap();
                         black_box(ws_msg);
                     }
                 });
@@ -128,7 +128,7 @@ fn bench_book_updates_batch(c: &mut Criterion) {
             |b, &size| {
                 b.iter(|| {
                     for _ in 0..size {
-                        let ws_msg: OKXWsMessage = serde_json::from_str(BOOKS_UPDATE).unwrap();
+                        let ws_msg: OKXWsFrame = serde_json::from_str(BOOKS_UPDATE).unwrap();
                         black_box(ws_msg);
                     }
                 });
@@ -158,22 +158,22 @@ fn bench_channel_routing(c: &mut Criterion) {
     for (name, msg) in &messages {
         group.bench_with_input(BenchmarkId::new("parse_and_route", name), msg, |b, msg| {
             b.iter(|| {
-                let ws_msg: OKXWsMessage = serde_json::from_str(black_box(msg)).unwrap();
+                let ws_msg: OKXWsFrame = serde_json::from_str(black_box(msg)).unwrap();
                 // Simulate routing by matching on variant
                 let channel_type = match &ws_msg {
-                    OKXWsMessage::BookData { .. } => "book",
-                    OKXWsMessage::Data { arg, .. } => {
+                    OKXWsFrame::BookData { .. } => "book",
+                    OKXWsFrame::Data { arg, .. } => {
                         // Access arg.channel to simulate routing
                         let _ = &arg.channel;
                         "data"
                     }
-                    OKXWsMessage::OrderResponse { .. } => "order_response",
-                    OKXWsMessage::Login { .. } => "login",
-                    OKXWsMessage::Subscription { .. } => "subscription",
-                    OKXWsMessage::ChannelConnCount { .. } => "conn_count",
-                    OKXWsMessage::Error { .. } => "error",
-                    OKXWsMessage::Ping => "ping",
-                    OKXWsMessage::Reconnected => "reconnected",
+                    OKXWsFrame::OrderResponse { .. } => "order_response",
+                    OKXWsFrame::Login { .. } => "login",
+                    OKXWsFrame::Subscription { .. } => "subscription",
+                    OKXWsFrame::ChannelConnCount { .. } => "conn_count",
+                    OKXWsFrame::Error { .. } => "error",
+                    OKXWsFrame::Ping => "ping",
+                    OKXWsFrame::Reconnected => "reconnected",
                 };
                 black_box(channel_type);
             });
@@ -189,7 +189,7 @@ fn bench_parsing_comparison(c: &mut Criterion) {
     // Compare custom deserializer vs Value parsing for same message
     group.bench_function("books_update_to_struct", |b| {
         b.iter(|| {
-            let ws_msg: OKXWsMessage = serde_json::from_str(black_box(BOOKS_UPDATE)).unwrap();
+            let ws_msg: OKXWsFrame = serde_json::from_str(black_box(BOOKS_UPDATE)).unwrap();
             black_box(ws_msg);
         });
     });
@@ -203,7 +203,7 @@ fn bench_parsing_comparison(c: &mut Criterion) {
 
     group.bench_function("trades_to_struct", |b| {
         b.iter(|| {
-            let ws_msg: OKXWsMessage = serde_json::from_str(black_box(TRADES)).unwrap();
+            let ws_msg: OKXWsFrame = serde_json::from_str(black_box(TRADES)).unwrap();
             black_box(ws_msg);
         });
     });

@@ -2055,6 +2055,11 @@ pub fn parse_account_state(
     ))
 }
 
+/// Converts an optional `UnixNanos` to an optional `DateTime<Utc>`.
+pub fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<chrono::DateTime<chrono::Utc>> {
+    value.map(|nanos| nanos.to_datetime_utc())
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{identifiers::PositionId, instruments::Instrument};

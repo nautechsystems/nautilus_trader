@@ -26,7 +26,12 @@ defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
 streaming = ["nautilus-persistence"]
 extension-module = ["python", "pyo3/extension-module", "streaming"]
 live = ["nautilus-common/live"]
-python = ["nautilus-core/python", "pyo3", "streaming"]
+python = [
+  "nautilus-core/python",
+  "nautilus-persistence/python",
+  "pyo3",
+  "streaming",
+]
 tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.docs.rs]

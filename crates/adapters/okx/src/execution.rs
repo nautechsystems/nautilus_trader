@@ -17,17 +17,13 @@
 
 use std::{
     future::Future,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
+use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use dashmap::DashSet;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
@@ -47,77 +43,32 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderStatus, OrderType, TrailingOffsetType},
-    events::OrderEventAny,
+    enums::{AccountType, OmsType, OrderSide, OrderType, TrailingOffsetType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
     },
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance},
+    types::{AccountBalance, MarginBalance, Money, Quantity},
 };
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
+use ustr::Ustr;
 
 use crate::{
     common::{
         consts::{OKX_CONDITIONAL_ORDER_TYPES, OKX_VENUE},
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
+        parse::nanos_to_datetime,
     },
     config::OKXExecClientConfig,
     http::{client::OKXHttpClient, models::OKXCancelAlgoOrderRequest},
     websocket::{
         client::OKXWebSocketClient,
-        messages::{ExecutionReport, NautilusWsMessage},
+        dispatch::{OrderIdentity, WsDispatchState, dispatch_ws_message},
+        parse::OrderStateSnapshot,
     },
 };
-
-/// Maximum entries in the dedup sets before they are cleared.
-const DEDUP_CAPACITY: usize = 10_000;
-
-/// Shared state for cross-stream event deduplication between the private
-/// and business WebSocket dispatch loops.
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct WsDispatchState {
-    pub filled_orders: DashSet<ClientOrderId>,
-    pub triggered_orders: DashSet<ClientOrderId>,
-    clearing: AtomicBool,
-}
-
-impl Default for WsDispatchState {
-    fn default() -> Self {
-        Self {
-            filled_orders: DashSet::default(),
-            triggered_orders: DashSet::default(),
-            clearing: AtomicBool::new(false),
-        }
-    }
-}
-
-impl WsDispatchState {
-    fn evict_if_full(&self, set: &DashSet<ClientOrderId>) {
-        if set.len() >= DEDUP_CAPACITY
-            && self
-                .clearing
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-                .is_ok()
-        {
-            set.clear();
-            self.clearing.store(false, Ordering::Release);
-        }
-    }
-
-    fn insert_filled(&self, cid: ClientOrderId) {
-        self.evict_if_full(&self.filled_orders);
-        self.filled_orders.insert(cid);
-    }
-
-    fn insert_triggered(&self, cid: ClientOrderId) {
-        self.evict_if_full(&self.triggered_orders);
-        self.triggered_orders.insert(cid);
-    }
-}
 
 #[derive(Debug)]
 pub struct OKXExecutionClient {
@@ -142,7 +93,6 @@ impl OKXExecutionClient {
     ///
     /// Returns an error if the client fails to initialize.
     pub fn new(core: ExecutionClientCore, config: OKXExecClientConfig) -> anyhow::Result<Self> {
-        // Always use with_credentials which loads from env vars when config values are None
         let http_client = OKXHttpClient::with_credentials(
             config.api_key.clone(),
             config.api_secret.clone(),
@@ -270,6 +220,16 @@ impl OKXExecutionClient {
         let client_order_id = order.client_order_id();
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
+
+        self.ws_dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side: order.order_side(),
+                order_type: order.order_type(),
+            },
+        );
         let order_side = order.order_side();
         let order_type = order.order_type();
         let quantity = order.quantity();
@@ -339,6 +299,16 @@ impl OKXExecutionClient {
         let instrument_id = order.instrument_id();
         let order_side = order.order_side();
         let order_type = order.order_type();
+
+        self.ws_dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side,
+                order_type,
+            },
+        );
         let quantity = order.quantity();
         let trigger_type = order.trigger_type();
         let trigger_price = order.trigger_price();
@@ -410,6 +380,8 @@ impl OKXExecutionClient {
     }
 
     fn cancel_ws_order(&self, cmd: &CancelOrder) {
+        self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
+
         let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
@@ -523,6 +495,42 @@ impl OKXExecutionClient {
             ws_private.mass_cancel_orders(instrument_id).await?;
             Ok(())
         });
+    }
+
+    /// Populates `order_identities` for an order if not already present.
+    ///
+    /// Needed for cancel/modify commands on orders loaded via reconciliation
+    /// (which bypass `submit_order` and therefore have no identity entry).
+    fn ensure_order_identity(
+        &self,
+        client_order_id: ClientOrderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) {
+        if self
+            .ws_dispatch_state
+            .order_identities
+            .contains_key(&client_order_id)
+        {
+            return;
+        }
+        let cache = self.core.cache();
+        let (order_side, order_type) = cache
+            .order(&client_order_id)
+            .map_or((OrderSide::NoOrderSide, OrderType::Market), |o| {
+                (o.order_side(), o.order_type())
+            });
+        drop(cache);
+
+        self.ws_dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side,
+                order_type,
+            },
+        );
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -662,10 +670,27 @@ impl ExecutionClient for OKXExecutionClient {
             let stream = self.ws_private.stream();
             let emitter = self.emitter.clone();
             let state = Arc::clone(&self.ws_dispatch_state);
+            let account_id = self.core.account_id;
+            let instruments = self.ws_private.instruments_snapshot();
+            let clock = self.clock;
             let handle = get_runtime().spawn(async move {
+                let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
+                let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
+                let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> =
+                    AHashMap::new();
                 pin_mut!(stream);
                 while let Some(message) = stream.next().await {
-                    dispatch_ws_message(message, &emitter, &state);
+                    dispatch_ws_message(
+                        message,
+                        &emitter,
+                        &state,
+                        account_id,
+                        &instruments,
+                        &mut fee_cache,
+                        &mut filled_qty_cache,
+                        &mut order_state_cache,
+                        clock,
+                    );
                 }
             });
             self.ws_stream_handle = Some(handle);
@@ -679,10 +704,27 @@ impl ExecutionClient for OKXExecutionClient {
             let stream = self.ws_business.stream();
             let emitter = self.emitter.clone();
             let state = Arc::clone(&self.ws_dispatch_state);
+            let account_id = self.core.account_id;
+            let instruments = self.ws_business.instruments_snapshot();
+            let clock = self.clock;
             let handle = get_runtime().spawn(async move {
+                let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
+                let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
+                let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> =
+                    AHashMap::new();
                 pin_mut!(stream);
                 while let Some(message) = stream.next().await {
-                    dispatch_ws_message(message, &emitter, &state);
+                    dispatch_ws_message(
+                        message,
+                        &emitter,
+                        &state,
+                        account_id,
+                        &instruments,
+                        &mut fee_cache,
+                        &mut filled_qty_cache,
+                        &mut order_state_cache,
+                        clock,
+                    );
                 }
             });
             self.ws_business_stream_handle = Some(handle);
@@ -794,7 +836,6 @@ impl ExecutionClient for OKXExecutionClient {
         self.emitter.set_sender(sender);
         self.core.set_started();
 
-        // Spawn instrument bootstrap task
         let http_client = self.http_client.clone();
         let ws_private = self.ws_private.clone();
         let ws_business = self.ws_business.clone();
@@ -869,6 +910,246 @@ impl ExecutionClient for OKXExecutionClient {
         Ok(())
     }
 
+    async fn generate_order_status_report(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let Some(instrument_id) = cmd.instrument_id else {
+            log::warn!("generate_order_status_report requires instrument_id: {cmd:?}");
+            return Ok(None);
+        };
+
+        let mut reports = self
+            .http_client
+            .request_order_status_reports(
+                self.core.account_id,
+                None,
+                Some(instrument_id),
+                None,
+                None,
+                false,
+                None,
+            )
+            .await?;
+
+        if let Some(client_order_id) = cmd.client_order_id {
+            reports.retain(|report| report.client_order_id == Some(client_order_id));
+        }
+
+        if let Some(venue_order_id) = cmd.venue_order_id {
+            reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
+        }
+
+        Ok(reports.into_iter().next())
+    }
+
+    async fn generate_order_status_reports(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let mut reports = Vec::new();
+
+        if let Some(instrument_id) = cmd.instrument_id {
+            let mut fetched = self
+                .http_client
+                .request_order_status_reports(
+                    self.core.account_id,
+                    None,
+                    Some(instrument_id),
+                    None,
+                    None,
+                    false,
+                    None,
+                )
+                .await?;
+            reports.append(&mut fetched);
+        } else {
+            for inst_type in self.instrument_types() {
+                let mut fetched = self
+                    .http_client
+                    .request_order_status_reports(
+                        self.core.account_id,
+                        Some(inst_type),
+                        None,
+                        None,
+                        None,
+                        false,
+                        None,
+                    )
+                    .await?;
+                reports.append(&mut fetched);
+            }
+        }
+
+        if cmd.open_only {
+            reports.retain(|r| r.order_status.is_open());
+        }
+
+        if let Some(start) = cmd.start {
+            reports.retain(|r| r.ts_last >= start);
+        }
+
+        if let Some(end) = cmd.end {
+            reports.retain(|r| r.ts_last <= end);
+        }
+
+        Ok(reports)
+    }
+
+    async fn generate_fill_reports(
+        &self,
+        cmd: GenerateFillReports,
+    ) -> anyhow::Result<Vec<FillReport>> {
+        let start_dt = nanos_to_datetime(cmd.start);
+        let end_dt = nanos_to_datetime(cmd.end);
+        let mut reports = Vec::new();
+
+        if let Some(instrument_id) = cmd.instrument_id {
+            let mut fetched = self
+                .http_client
+                .request_fill_reports(
+                    self.core.account_id,
+                    None,
+                    Some(instrument_id),
+                    start_dt,
+                    end_dt,
+                    None,
+                )
+                .await?;
+            reports.append(&mut fetched);
+        } else {
+            for inst_type in self.instrument_types() {
+                let mut fetched = self
+                    .http_client
+                    .request_fill_reports(
+                        self.core.account_id,
+                        Some(inst_type),
+                        None,
+                        start_dt,
+                        end_dt,
+                        None,
+                    )
+                    .await?;
+                reports.append(&mut fetched);
+            }
+        }
+
+        if let Some(venue_order_id) = cmd.venue_order_id {
+            reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
+        }
+
+        Ok(reports)
+    }
+
+    async fn generate_position_status_reports(
+        &self,
+        cmd: &GeneratePositionStatusReports,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let mut reports = Vec::new();
+
+        // Query derivative positions (SWAP/FUTURES/OPTION) from /api/v5/account/positions
+        // Note: The positions endpoint does not support Spot or Margin - those are handled separately
+        if let Some(instrument_id) = cmd.instrument_id {
+            let mut fetched = self
+                .http_client
+                .request_position_status_reports(self.core.account_id, None, Some(instrument_id))
+                .await?;
+            reports.append(&mut fetched);
+        } else {
+            for inst_type in self.instrument_types() {
+                // Skip Spot and Margin - positions API only supports derivatives
+                if inst_type == OKXInstrumentType::Spot || inst_type == OKXInstrumentType::Margin {
+                    continue;
+                }
+                let mut fetched = self
+                    .http_client
+                    .request_position_status_reports(self.core.account_id, Some(inst_type), None)
+                    .await?;
+                reports.append(&mut fetched);
+            }
+        }
+
+        // Query spot margin positions from /api/v5/account/balance
+        // Spot margin positions appear as balance sheet items (liab/spotInUseAmt fields)
+        let mut margin_reports = self
+            .http_client
+            .request_spot_margin_position_reports(self.core.account_id)
+            .await?;
+
+        if let Some(instrument_id) = cmd.instrument_id {
+            margin_reports.retain(|report| report.instrument_id == instrument_id);
+        }
+
+        reports.append(&mut margin_reports);
+
+        if let Some(start) = cmd.start {
+            reports.retain(|r| r.ts_last >= start);
+        }
+
+        if let Some(end) = cmd.end {
+            reports.retain(|r| r.ts_last <= end);
+        }
+
+        Ok(reports)
+    }
+
+    async fn generate_mass_status(
+        &self,
+        lookback_mins: Option<u64>,
+    ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+        log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
+
+        let ts_now = self.clock.get_time_ns();
+
+        let start = lookback_mins.map(|mins| {
+            let lookback_ns = mins * 60 * 1_000_000_000;
+            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
+        });
+
+        let order_cmd = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .open_only(false) // get all orders for mass status
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        let fill_cmd = GenerateFillReportsBuilder::default()
+            .ts_init(ts_now)
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        let position_cmd = GeneratePositionStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        let (order_reports, fill_reports, position_reports) = tokio::try_join!(
+            self.generate_order_status_reports(&order_cmd),
+            self.generate_fill_reports(fill_cmd),
+            self.generate_position_status_reports(&position_cmd),
+        )?;
+
+        log::info!("Received {} OrderStatusReports", order_reports.len());
+        log::info!("Received {} FillReports", fill_reports.len());
+        log::info!("Received {} PositionReports", position_reports.len());
+
+        let mut mass_status = ExecutionMassStatus::new(
+            self.core.client_id,
+            self.core.account_id,
+            *OKX_VENUE,
+            ts_now,
+            None,
+        );
+
+        mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
+        mass_status.add_position_reports(position_reports);
+
+        Ok(Some(mass_status))
+    }
+
     fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let order_type = {
             let cache = self.core.cache();
@@ -902,6 +1183,8 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+        self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
+
         let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
@@ -1156,386 +1439,4 @@ impl ExecutionClient for OKXExecutionClient {
 
         Ok(())
     }
-
-    async fn generate_order_status_report(
-        &self,
-        cmd: &GenerateOrderStatusReport,
-    ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let Some(instrument_id) = cmd.instrument_id else {
-            log::warn!("generate_order_status_report requires instrument_id: {cmd:?}");
-            return Ok(None);
-        };
-
-        let mut reports = self
-            .http_client
-            .request_order_status_reports(
-                self.core.account_id,
-                None,
-                Some(instrument_id),
-                None,
-                None,
-                false,
-                None,
-            )
-            .await?;
-
-        if let Some(client_order_id) = cmd.client_order_id {
-            reports.retain(|report| report.client_order_id == Some(client_order_id));
-        }
-
-        if let Some(venue_order_id) = cmd.venue_order_id {
-            reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
-        }
-
-        Ok(reports.into_iter().next())
-    }
-
-    async fn generate_order_status_reports(
-        &self,
-        cmd: &GenerateOrderStatusReports,
-    ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let mut reports = Vec::new();
-
-        if let Some(instrument_id) = cmd.instrument_id {
-            let mut fetched = self
-                .http_client
-                .request_order_status_reports(
-                    self.core.account_id,
-                    None,
-                    Some(instrument_id),
-                    None,
-                    None,
-                    false,
-                    None,
-                )
-                .await?;
-            reports.append(&mut fetched);
-        } else {
-            for inst_type in self.instrument_types() {
-                let mut fetched = self
-                    .http_client
-                    .request_order_status_reports(
-                        self.core.account_id,
-                        Some(inst_type),
-                        None,
-                        None,
-                        None,
-                        false,
-                        None,
-                    )
-                    .await?;
-                reports.append(&mut fetched);
-            }
-        }
-
-        // Filter by open_only if specified
-        if cmd.open_only {
-            reports.retain(|r| r.order_status.is_open());
-        }
-
-        // Filter by time range if specified
-        if let Some(start) = cmd.start {
-            reports.retain(|r| r.ts_last >= start);
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end);
-        }
-
-        Ok(reports)
-    }
-
-    async fn generate_fill_reports(
-        &self,
-        cmd: GenerateFillReports,
-    ) -> anyhow::Result<Vec<FillReport>> {
-        let start_dt = nanos_to_datetime(cmd.start);
-        let end_dt = nanos_to_datetime(cmd.end);
-        let mut reports = Vec::new();
-
-        if let Some(instrument_id) = cmd.instrument_id {
-            let mut fetched = self
-                .http_client
-                .request_fill_reports(
-                    self.core.account_id,
-                    None,
-                    Some(instrument_id),
-                    start_dt,
-                    end_dt,
-                    None,
-                )
-                .await?;
-            reports.append(&mut fetched);
-        } else {
-            for inst_type in self.instrument_types() {
-                let mut fetched = self
-                    .http_client
-                    .request_fill_reports(
-                        self.core.account_id,
-                        Some(inst_type),
-                        None,
-                        start_dt,
-                        end_dt,
-                        None,
-                    )
-                    .await?;
-                reports.append(&mut fetched);
-            }
-        }
-
-        if let Some(venue_order_id) = cmd.venue_order_id {
-            reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
-        }
-
-        Ok(reports)
-    }
-
-    async fn generate_position_status_reports(
-        &self,
-        cmd: &GeneratePositionStatusReports,
-    ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        let mut reports = Vec::new();
-
-        // Query derivative positions (SWAP/FUTURES/OPTION) from /api/v5/account/positions
-        // Note: The positions endpoint does not support Spot or Margin - those are handled separately
-        if let Some(instrument_id) = cmd.instrument_id {
-            let mut fetched = self
-                .http_client
-                .request_position_status_reports(self.core.account_id, None, Some(instrument_id))
-                .await?;
-            reports.append(&mut fetched);
-        } else {
-            for inst_type in self.instrument_types() {
-                // Skip Spot and Margin - positions API only supports derivatives
-                if inst_type == OKXInstrumentType::Spot || inst_type == OKXInstrumentType::Margin {
-                    continue;
-                }
-                let mut fetched = self
-                    .http_client
-                    .request_position_status_reports(self.core.account_id, Some(inst_type), None)
-                    .await?;
-                reports.append(&mut fetched);
-            }
-        }
-
-        // Query spot margin positions from /api/v5/account/balance
-        // Spot margin positions appear as balance sheet items (liab/spotInUseAmt fields)
-        let mut margin_reports = self
-            .http_client
-            .request_spot_margin_position_reports(self.core.account_id)
-            .await?;
-
-        if let Some(instrument_id) = cmd.instrument_id {
-            margin_reports.retain(|report| report.instrument_id == instrument_id);
-        }
-
-        reports.append(&mut margin_reports);
-
-        if let Some(start) = cmd.start {
-            reports.retain(|r| r.ts_last >= start);
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end);
-        }
-
-        Ok(reports)
-    }
-
-    async fn generate_mass_status(
-        &self,
-        lookback_mins: Option<u64>,
-    ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
-
-        let ts_now = self.clock.get_time_ns();
-
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins * 60 * 1_000_000_000;
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
-
-        let order_cmd = GenerateOrderStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .open_only(false) // get all orders for mass status
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-        let fill_cmd = GenerateFillReportsBuilder::default()
-            .ts_init(ts_now)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-        let position_cmd = GeneratePositionStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-        let (order_reports, fill_reports, position_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
-            self.generate_fill_reports(fill_cmd),
-            self.generate_position_status_reports(&position_cmd),
-        )?;
-
-        log::info!("Received {} OrderStatusReports", order_reports.len());
-        log::info!("Received {} FillReports", fill_reports.len());
-        log::info!("Received {} PositionReports", position_reports.len());
-
-        let mut mass_status = ExecutionMassStatus::new(
-            self.core.client_id,
-            self.core.account_id,
-            *OKX_VENUE,
-            ts_now,
-            None,
-        );
-
-        mass_status.add_order_reports(order_reports);
-        mass_status.add_fill_reports(fill_reports);
-        mass_status.add_position_reports(position_reports);
-
-        Ok(Some(mass_status))
-    }
-}
-
-/// Dispatches a WebSocket message with cross-stream deduplication.
-#[doc(hidden)]
-pub fn dispatch_ws_message(
-    message: NautilusWsMessage,
-    emitter: &ExecutionEventEmitter,
-    state: &WsDispatchState,
-) {
-    match message {
-        NautilusWsMessage::AccountUpdate(account_state) => {
-            emitter.send_account_state(account_state);
-        }
-        NautilusWsMessage::PositionUpdate(report) => {
-            emitter.send_position_report(report);
-        }
-        NautilusWsMessage::ExecutionReports(reports) => {
-            log::debug!("Processing {} execution report(s)", reports.len());
-            for report in reports {
-                match report {
-                    ExecutionReport::Order(order_report) => {
-                        if let Some(cid) = order_report.client_order_id {
-                            match order_report.order_status {
-                                OrderStatus::Accepted => {
-                                    if state.filled_orders.contains(&cid)
-                                        || state.triggered_orders.contains(&cid)
-                                    {
-                                        log::debug!(
-                                            "Skipping stale OrderStatusReport(Accepted) \
-                                             for {cid} (already triggered/filled)"
-                                        );
-                                        continue;
-                                    }
-                                }
-                                OrderStatus::Triggered => {
-                                    if state.filled_orders.contains(&cid) {
-                                        log::debug!(
-                                            "Skipping stale OrderStatusReport(Triggered) \
-                                             for {cid} (already filled)"
-                                        );
-                                        continue;
-                                    }
-                                    state.insert_triggered(cid);
-                                }
-                                OrderStatus::Filled => {
-                                    state.insert_filled(cid);
-                                    state.triggered_orders.remove(&cid);
-                                }
-                                OrderStatus::Canceled
-                                | OrderStatus::Expired
-                                | OrderStatus::Rejected => {
-                                    state.triggered_orders.remove(&cid);
-                                    state.filled_orders.remove(&cid);
-                                }
-                                _ => {}
-                            }
-                        }
-                        emitter.send_order_status_report(order_report);
-                    }
-                    ExecutionReport::Fill(fill_report) => {
-                        if let Some(cid) = fill_report.client_order_id {
-                            state.insert_filled(cid);
-                            state.triggered_orders.remove(&cid);
-                        }
-                        emitter.send_fill_report(fill_report);
-                    }
-                }
-            }
-        }
-        NautilusWsMessage::OrderAccepted(event) => {
-            let cid = event.client_order_id;
-            if state.filled_orders.contains(&cid) || state.triggered_orders.contains(&cid) {
-                log::debug!("Skipping stale OrderAccepted for {cid} (already triggered/filled)");
-                return;
-            }
-            emitter.send_order_event(OrderEventAny::Accepted(event));
-        }
-        NautilusWsMessage::OrderCanceled(event) => {
-            let cid = event.client_order_id;
-            state.triggered_orders.remove(&cid);
-            state.filled_orders.remove(&cid);
-            emitter.send_order_event(OrderEventAny::Canceled(event));
-        }
-        NautilusWsMessage::OrderExpired(event) => {
-            let cid = event.client_order_id;
-            state.triggered_orders.remove(&cid);
-            state.filled_orders.remove(&cid);
-            emitter.send_order_event(OrderEventAny::Expired(event));
-        }
-        NautilusWsMessage::OrderRejected(event) => {
-            let cid = event.client_order_id;
-            state.triggered_orders.remove(&cid);
-            state.filled_orders.remove(&cid);
-            emitter.send_order_event(OrderEventAny::Rejected(event));
-        }
-        NautilusWsMessage::OrderCancelRejected(event) => {
-            emitter.send_order_event(OrderEventAny::CancelRejected(event));
-        }
-        NautilusWsMessage::OrderModifyRejected(event) => {
-            emitter.send_order_event(OrderEventAny::ModifyRejected(event));
-        }
-        NautilusWsMessage::OrderTriggered(event) => {
-            let cid = event.client_order_id;
-            if state.filled_orders.contains(&cid) {
-                log::debug!("Skipping stale OrderTriggered for {cid} (already filled)");
-                return;
-            }
-            state.insert_triggered(cid);
-            emitter.send_order_event(OrderEventAny::Triggered(event));
-        }
-        NautilusWsMessage::OrderUpdated(event) => {
-            emitter.send_order_event(OrderEventAny::Updated(event));
-        }
-        NautilusWsMessage::Error(e) => {
-            log::warn!(
-                "Websocket error: code={} message={} conn_id={:?}",
-                e.code,
-                e.message,
-                e.conn_id
-            );
-        }
-        NautilusWsMessage::Reconnected => {
-            log::info!("Websocket reconnected");
-        }
-        NautilusWsMessage::Authenticated => {
-            log::debug!("Websocket authenticated");
-        }
-        NautilusWsMessage::Deltas(_)
-        | NautilusWsMessage::Raw(_)
-        | NautilusWsMessage::Data(_)
-        | NautilusWsMessage::FundingRates(_)
-        | NautilusWsMessage::Instrument(_, _)
-        | NautilusWsMessage::InstrumentStatus(_) => {
-            log::debug!("Ignoring websocket data message");
-        }
-    }
-}
-
-fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<DateTime<Utc>> {
-    value.map(|nanos| nanos.to_datetime_utc())
 }

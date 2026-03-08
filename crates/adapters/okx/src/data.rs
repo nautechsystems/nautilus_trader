@@ -20,7 +20,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
@@ -41,28 +41,42 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED,
+    MUTEX_POISONED, UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, OrderBookDeltas_API},
-    enums::BookType,
+    data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas_API},
+    enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
 use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 use crate::{
     common::{
         consts::OKX_VENUE,
-        enums::{OKXBookChannel, OKXContractType, OKXInstrumentType, OKXVipLevel},
-        parse::okx_instrument_type_from_symbol,
+        enums::{
+            OKXBookChannel, OKXContractType, OKXInstrumentStatus, OKXInstrumentType, OKXVipLevel,
+        },
+        parse::{
+            okx_instrument_type_from_symbol, okx_status_to_market_action,
+            parse_base_quote_from_symbol, parse_instrument_any, parse_instrument_id,
+        },
     },
     config::OKXDataClientConfig,
     http::client::OKXHttpClient,
-    websocket::{client::OKXWebSocketClient, messages::NautilusWsMessage},
+    websocket::{
+        client::OKXWebSocketClient,
+        enums::OKXWsChannel,
+        messages::{NautilusWsMessage, OKXWsMessage},
+        parse::{
+            extract_fees_from_cached_instrument, parse_book_msg_vec, parse_index_price_msg_vec,
+            parse_ws_message_data,
+        },
+    },
 };
 
 #[derive(Debug)]
@@ -78,6 +92,7 @@ pub struct OKXDataClient {
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
     book_channels: Arc<RwLock<AHashMap<InstrumentId, OKXBookChannel>>>,
+    index_ticker_map: Arc<RwLock<AHashMap<Ustr, AHashSet<Ustr>>>>,
     clock: &'static AtomicTime,
 }
 
@@ -162,6 +177,7 @@ impl OKXDataClient {
             data_sender,
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             book_channels: Arc::new(RwLock::new(AHashMap::new())),
+            index_ticker_map: Arc::new(RwLock::new(AHashMap::new())),
             clock,
         })
     }
@@ -204,62 +220,231 @@ impl OKXDataClient {
     }
 
     fn handle_ws_message(
-        message: NautilusWsMessage,
+        message: OKXWsMessage,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
         instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
+        funding_cache: &mut AHashMap<Ustr, (Ustr, u64)>,
+        index_ticker_map: &Arc<RwLock<AHashMap<Ustr, AHashSet<Ustr>>>>,
+        clock: &AtomicTime,
     ) {
         match message {
-            NautilusWsMessage::Data(payloads) => {
-                for data in payloads {
-                    Self::send_data(data_sender, data);
+            OKXWsMessage::BookData { arg, action, data } => {
+                let Some(inst_id) = arg.inst_id else {
+                    log::warn!("Book data without inst_id");
+                    return;
+                };
+                let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
+                    log::warn!("No cached instrument for book data: {inst_id}");
+                    return;
+                };
+                let ts_init = clock.get_time_ns();
+                match parse_book_msg_vec(
+                    data,
+                    &instrument.id(),
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    action,
+                    ts_init,
+                ) {
+                    Ok(data_vec) => {
+                        for data in data_vec {
+                            Self::send_data(data_sender, data);
+                        }
+                    }
+                    Err(e) => log::error!("Failed to parse book data: {e}"),
                 }
             }
-            NautilusWsMessage::Deltas(deltas) => {
-                Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
-            }
-            NautilusWsMessage::FundingRates(updates) => {
-                emit_funding_rates(data_sender, updates);
-            }
-            NautilusWsMessage::Instrument(instrument, status) => {
-                upsert_instrument(instruments, *instrument);
+            OKXWsMessage::ChannelData {
+                channel,
+                inst_id,
+                data,
+            } => {
+                let Some(inst_id) = inst_id else {
+                    log::debug!("Channel data without inst_id: {channel:?}");
+                    return;
+                };
 
-                if let Some(status) = status
-                    && let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status))
-                {
-                    log::error!("Failed to emit instrument status event: {e}");
+                // Index tickers use base pair format (e.g., "BTC-USDT") but instruments
+                // are keyed by full symbol (e.g., "BTC-USDT-SWAP"). Dispatch index price
+                // updates only to instruments that subscribed via subscribe_index_prices.
+                if matches!(channel, OKXWsChannel::IndexTickers) {
+                    let ts_init = clock.get_time_ns();
+                    let map_guard = index_ticker_map.read().expect(MUTEX_POISONED);
+                    let Some(subscribed_symbols) = map_guard.get(&inst_id) else {
+                        log::debug!("No subscribed instruments for index ticker: {inst_id}");
+                        return;
+                    };
+                    let symbols: Vec<Ustr> = subscribed_symbols.iter().copied().collect();
+                    drop(map_guard);
+
+                    for sym in &symbols {
+                        let Some(instrument) = instruments_by_symbol.get(sym) else {
+                            log::warn!("No cached instrument for index ticker symbol: {sym}");
+                            continue;
+                        };
+                        match parse_index_price_msg_vec(
+                            data.clone(),
+                            &instrument.id(),
+                            instrument.price_precision(),
+                            ts_init,
+                        ) {
+                            Ok(data_vec) => {
+                                for d in data_vec {
+                                    Self::send_data(data_sender, d);
+                                }
+                            }
+                            Err(e) => log::error!("Failed to parse index price data: {e}"),
+                        }
+                    }
+                    return;
+                }
+
+                let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
+                    log::warn!("No cached instrument for {channel:?}: {inst_id}");
+                    return;
+                };
+                let instrument_id = instrument.id();
+                let price_precision = instrument.price_precision();
+                let size_precision = instrument.size_precision();
+                let ts_init = clock.get_time_ns();
+                match parse_ws_message_data(
+                    &channel,
+                    data,
+                    &instrument_id,
+                    price_precision,
+                    size_precision,
+                    ts_init,
+                    funding_cache,
+                    instruments_by_symbol,
+                ) {
+                    Ok(Some(ws_msg)) => {
+                        dispatch_parsed_data(
+                            ws_msg,
+                            data_sender,
+                            instruments,
+                            instruments_by_symbol,
+                        );
+                    }
+                    Ok(None) => {}
+                    Err(e) => log::error!("Failed to parse {channel:?} data: {e}"),
                 }
             }
-            NautilusWsMessage::InstrumentStatus(status) => {
-                if let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status)) {
-                    log::error!("Failed to emit instrument status event: {e}");
+            OKXWsMessage::Instruments(okx_instruments) => {
+                let ts_init = clock.get_time_ns();
+                for okx_inst in okx_instruments {
+                    let inst_key = Ustr::from(&okx_inst.inst_id);
+                    let (margin_init, margin_maint, maker_fee, taker_fee) =
+                        instruments_by_symbol.get(&inst_key).map_or(
+                            (None, None, None, None),
+                            extract_fees_from_cached_instrument,
+                        );
+                    let status_action = okx_status_to_market_action(okx_inst.state);
+                    let is_live = matches!(okx_inst.state, OKXInstrumentStatus::Live);
+                    match parse_instrument_any(
+                        &okx_inst,
+                        margin_init,
+                        margin_maint,
+                        maker_fee,
+                        taker_fee,
+                        ts_init,
+                    ) {
+                        Ok(Some(inst_any)) => {
+                            let instrument_id = inst_any.id();
+                            instruments_by_symbol
+                                .insert(inst_any.symbol().inner(), inst_any.clone());
+                            upsert_instrument(instruments, inst_any);
+                            emit_instrument_status(
+                                data_sender,
+                                instrument_id,
+                                status_action,
+                                is_live,
+                                ts_init,
+                            );
+                        }
+                        Ok(None) => {
+                            let instrument_id = instruments_by_symbol
+                                .get(&inst_key)
+                                .map_or_else(|| parse_instrument_id(inst_key), |i| i.id());
+                            emit_instrument_status(
+                                data_sender,
+                                instrument_id,
+                                status_action,
+                                is_live,
+                                ts_init,
+                            );
+                        }
+                        Err(e) => {
+                            log::error!("Failed to parse instrument: {e}");
+                            let instrument_id = instruments_by_symbol
+                                .get(&inst_key)
+                                .map_or_else(|| parse_instrument_id(inst_key), |i| i.id());
+                            emit_instrument_status(
+                                data_sender,
+                                instrument_id,
+                                status_action,
+                                is_live,
+                                ts_init,
+                            );
+                        }
+                    }
                 }
             }
-            NautilusWsMessage::AccountUpdate(_)
-            | NautilusWsMessage::PositionUpdate(_)
-            | NautilusWsMessage::OrderAccepted(_)
-            | NautilusWsMessage::OrderCanceled(_)
-            | NautilusWsMessage::OrderExpired(_)
-            | NautilusWsMessage::OrderRejected(_)
-            | NautilusWsMessage::OrderCancelRejected(_)
-            | NautilusWsMessage::OrderModifyRejected(_)
-            | NautilusWsMessage::OrderTriggered(_)
-            | NautilusWsMessage::OrderUpdated(_)
-            | NautilusWsMessage::ExecutionReports(_) => {
-                log::debug!("Ignoring trading message on data client");
+            OKXWsMessage::Orders(_)
+            | OKXWsMessage::AlgoOrders(_)
+            | OKXWsMessage::OrderResponse { .. }
+            | OKXWsMessage::Account(_)
+            | OKXWsMessage::Positions(_)
+            | OKXWsMessage::SendFailed { .. } => {
+                log::debug!("Ignoring execution message on data client");
             }
-            NautilusWsMessage::Error(e) => {
+            OKXWsMessage::Error(e) => {
                 log::error!("OKX websocket error: {e:?}");
             }
-            NautilusWsMessage::Raw(value) => {
-                log::debug!("Unhandled websocket payload: {value:?}");
-            }
-            NautilusWsMessage::Reconnected => {
+            OKXWsMessage::Reconnected => {
                 log::info!("Websocket reconnected");
             }
-            NautilusWsMessage::Authenticated => {
+            OKXWsMessage::Authenticated => {
                 log::debug!("Websocket authenticated");
             }
         }
+    }
+}
+
+fn dispatch_parsed_data(
+    msg: NautilusWsMessage,
+    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
+) {
+    match msg {
+        NautilusWsMessage::Data(payloads) => {
+            for data in payloads {
+                if let Err(e) = data_sender.send(DataEvent::Data(data)) {
+                    log::error!("Failed to emit data event: {e}");
+                }
+            }
+        }
+        NautilusWsMessage::Deltas(deltas) => {
+            let data = Data::Deltas(OrderBookDeltas_API::new(deltas));
+            if let Err(e) = data_sender.send(DataEvent::Data(data)) {
+                log::error!("Failed to emit data event: {e}");
+            }
+        }
+        NautilusWsMessage::FundingRates(updates) => {
+            emit_funding_rates(data_sender, updates);
+        }
+        NautilusWsMessage::Instrument(instrument, status) => {
+            instruments_by_symbol.insert(instrument.symbol().inner(), (*instrument).clone());
+            upsert_instrument(instruments, *instrument);
+
+            if let Some(status) = status
+                && let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status))
+            {
+                log::error!("Failed to emit instrument status event: {e}");
+            }
+        }
+        _ => {}
     }
 }
 
@@ -271,6 +456,30 @@ fn emit_funding_rates(
         if let Err(e) = sender.send(DataEvent::FundingRate(update)) {
             log::error!("Failed to emit funding rate event: {e}");
         }
+    }
+}
+
+fn emit_instrument_status(
+    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    instrument_id: InstrumentId,
+    status_action: MarketStatusAction,
+    is_live: bool,
+    ts_init: UnixNanos,
+) {
+    let status = InstrumentStatus::new(
+        instrument_id,
+        status_action,
+        ts_init,
+        ts_init,
+        None,
+        None,
+        Some(is_live),
+        None,
+        None,
+    );
+
+    if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
+        log::error!("Failed to emit instrument status event: {e}");
     }
 }
 
@@ -410,13 +619,31 @@ impl DataClient for OKXDataClient {
             let stream = ws.stream();
             let sender = self.data_sender.clone();
             let insts = self.instruments.clone();
+            let idx_map = self.index_ticker_map.clone();
             let cancel = self.cancellation_token.clone();
+            let clock = self.clock;
             let handle = get_runtime().spawn(async move {
+                let mut instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = {
+                    let guard = insts.read().expect(MUTEX_POISONED);
+                    guard
+                        .values()
+                        .map(|i| (i.symbol().inner(), i.clone()))
+                        .collect()
+                };
+                let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
                 pin_mut!(stream);
                 loop {
                     tokio::select! {
                         Some(message) = stream.next() => {
-                            Self::handle_ws_message(message, &sender, &insts);
+                            Self::handle_ws_message(
+                                message,
+                                &sender,
+                                &insts,
+                                &mut instruments_by_symbol,
+                                &mut funding_cache,
+                                &idx_map,
+                                clock,
+                            );
                         }
                         () = cancel.cancelled() => {
                             log::debug!("Public websocket stream task cancelled");
@@ -457,13 +684,31 @@ impl DataClient for OKXDataClient {
             let stream = ws.stream();
             let sender = self.data_sender.clone();
             let insts = self.instruments.clone();
+            let idx_map = self.index_ticker_map.clone();
             let cancel = self.cancellation_token.clone();
+            let clock = self.clock;
             let handle = get_runtime().spawn(async move {
+                let mut instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = {
+                    let guard = insts.read().expect(MUTEX_POISONED);
+                    guard
+                        .values()
+                        .map(|i| (i.symbol().inner(), i.clone()))
+                        .collect()
+                };
+                let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
                 pin_mut!(stream);
                 loop {
                     tokio::select! {
                         Some(message) = stream.next() => {
-                            Self::handle_ws_message(message, &sender, &insts);
+                            Self::handle_ws_message(
+                                message,
+                                &sender,
+                                &insts,
+                                &mut instruments_by_symbol,
+                                &mut funding_cache,
+                                &idx_map,
+                                clock,
+                            );
                         }
                         () = cancel.cancelled() => {
                             log::debug!("Business websocket stream task cancelled");
@@ -677,6 +922,14 @@ impl DataClient for OKXDataClient {
     fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
+        let symbol = instrument_id.symbol.inner();
+
+        let (base, quote) = parse_base_quote_from_symbol(symbol.as_str())?;
+        let base_pair = Ustr::from(&format!("{base}-{quote}"));
+        {
+            let mut map = self.index_ticker_map.write().expect(MUTEX_POISONED);
+            map.entry(base_pair).or_default().insert(symbol);
+        }
 
         self.spawn_ws(
             async move {
@@ -825,6 +1078,18 @@ impl DataClient for OKXDataClient {
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
+        let symbol = instrument_id.symbol.inner();
+
+        if let Ok((base, quote)) = parse_base_quote_from_symbol(symbol.as_str()) {
+            let base_pair = Ustr::from(&format!("{base}-{quote}"));
+            let mut map = self.index_ticker_map.write().expect(MUTEX_POISONED);
+            if let Some(set) = map.get_mut(&base_pair) {
+                set.remove(&symbol);
+                if set.is_empty() {
+                    map.remove(&base_pair);
+                }
+            }
+        }
 
         self.spawn_ws(
             async move {

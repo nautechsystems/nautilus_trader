@@ -1931,7 +1931,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 strategy_id=order.strategy_id,
                 instrument_id=report.instrument_id,
                 client_order_id=report.client_order_id,
-                reason=report.reason,
+                reason=report.cancel_reason or "",
                 ts_event=report.ts_last,
             )
             self._clear_client_order_aliases(report)
