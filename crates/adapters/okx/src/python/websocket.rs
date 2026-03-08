@@ -49,7 +49,7 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::{
     UUID4,
     python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err},
-    time::get_atomic_clock_realtime,
+    time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
     data::{BarType, Data, InstrumentStatus, OrderBookDeltas_API},
@@ -68,7 +68,8 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        enums::{OKXInstrumentStatus, OKXInstrumentType, OKXTradeMode, OKXVipLevel},
+        enums::{OKXBookAction, OKXInstrumentStatus, OKXInstrumentType, OKXTradeMode, OKXVipLevel},
+        models::OKXInstrument,
         parse::{
             okx_status_to_market_action, parse_account_state, parse_instrument_any,
             parse_position_status_report,
@@ -78,7 +79,10 @@ use crate::{
     websocket::{
         OKXWebSocketClient,
         enums::{OKXWsChannel, OKXWsOperation},
-        messages::{ExecutionReport, NautilusWsMessage, OKXWebSocketError, OKXWsMessage},
+        messages::{
+            ExecutionReport, NautilusWsMessage, OKXAlgoOrderMsg, OKXBookMsg, OKXOrderMsg,
+            OKXWebSocketError, OKXWsMessage,
+        },
         parse::{
             extract_fees_from_cached_instrument, parse_algo_order_msg, parse_book_msg_vec,
             parse_index_price_msg_vec, parse_order_msg_vec, parse_ws_message_data,
@@ -272,228 +276,75 @@ impl OKXWebSocketClient {
                 while let Some(msg) = stream.next().await {
                     match msg {
                         OKXWsMessage::BookData { arg, action, data } => {
-                            let Some(inst_id) = arg.inst_id else { continue };
-                            let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
-                                continue;
-                            };
-                            let ts_init = clock.get_time_ns();
-                            match parse_book_msg_vec(
-                                data,
-                                &instrument.id(),
-                                instrument.price_precision(),
-                                instrument.size_precision(),
+                            handle_book_data(
+                                arg.inst_id,
                                 action,
-                                ts_init,
-                            ) {
-                                Ok(data_vec) => Python::attach(|py| {
-                                    for d in data_vec {
-                                        let py_obj = data_to_pycapsule(py, d);
-                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                    }
-                                }),
-                                Err(e) => log::error!("Failed to parse book data: {e}"),
-                            }
+                                data,
+                                &instruments_by_symbol,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
                         OKXWsMessage::ChannelData {
                             channel,
                             inst_id,
                             data,
                         } => {
-                            let Some(inst_id) = inst_id else { continue };
-
-                            if matches!(channel, OKXWsChannel::IndexTickers) {
-                                let ts_init = clock.get_time_ns();
-                                let prefix = format!("{inst_id}-");
-                                let matching: Vec<_> = instruments_by_symbol
-                                    .values()
-                                    .filter(|i| {
-                                        let s = i.symbol().inner();
-                                        s == inst_id || s.as_str().starts_with(&prefix)
-                                    })
-                                    .collect();
-
-                                for instrument in matching {
-                                    if let Ok(data_vec) = parse_index_price_msg_vec(
-                                        data.clone(),
-                                        &instrument.id(),
-                                        instrument.price_precision(),
-                                        ts_init,
-                                    ) {
-                                        Python::attach(|py| {
-                                            for d in data_vec {
-                                                let py_obj = data_to_pycapsule(py, d);
-                                                call_python_threadsafe(
-                                                    py, &call_soon, &callback, py_obj,
-                                                );
-                                            }
-                                        });
-                                    }
-                                }
-                                continue;
-                            }
-
-                            let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
-                                continue;
-                            };
-                            let instrument_id = instrument.id();
-                            let price_precision = instrument.price_precision();
-                            let size_precision = instrument.size_precision();
-                            let ts_init = clock.get_time_ns();
-
-                            match parse_ws_message_data(
-                                &channel,
+                            handle_channel_data(
+                                channel,
+                                inst_id,
                                 data,
-                                &instrument_id,
-                                price_precision,
-                                size_precision,
-                                ts_init,
+                                &mut instruments_by_symbol,
                                 &mut funding_cache,
-                                &instruments_by_symbol,
-                            ) {
-                                Ok(Some(ws_msg)) => {
-                                    dispatch_nautilus_ws_msg_to_python(
-                                        ws_msg,
-                                        &call_soon,
-                                        &callback,
-                                        &mut instruments_by_symbol,
-                                    );
-                                }
-                                Ok(None) => {}
-                                Err(e) => {
-                                    log::error!("Failed to parse {channel:?} data: {e}");
-                                }
-                            }
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
                         OKXWsMessage::Instruments(okx_instruments) => {
-                            let ts_init = clock.get_time_ns();
-                            for okx_inst in okx_instruments {
-                                let inst_key = Ustr::from(&okx_inst.inst_id);
-                                let (margin_init, margin_maint, maker_fee, taker_fee) =
-                                    instruments_by_symbol.get(&inst_key).map_or(
-                                        (None, None, None, None),
-                                        extract_fees_from_cached_instrument,
-                                    );
-                                let status_action = okx_status_to_market_action(okx_inst.state);
-                                let is_live = matches!(okx_inst.state, OKXInstrumentStatus::Live);
-
-                                if let Ok(Some(inst_any)) = parse_instrument_any(
-                                    &okx_inst,
-                                    margin_init,
-                                    margin_maint,
-                                    maker_fee,
-                                    taker_fee,
-                                    ts_init,
-                                ) {
-                                    let instrument_id = inst_any.id();
-                                    instruments_by_symbol
-                                        .insert(inst_any.symbol().inner(), inst_any.clone());
-                                    call_python_with_data(&call_soon, &callback, |py| {
-                                        instrument_any_to_pyobject(py, inst_any)
-                                    });
-                                    let status = InstrumentStatus::new(
-                                        instrument_id,
-                                        status_action,
-                                        ts_init,
-                                        ts_init,
-                                        None,
-                                        None,
-                                        Some(is_live),
-                                        None,
-                                        None,
-                                    );
-                                    call_python_with_data(&call_soon, &callback, |py| {
-                                        status.into_py_any(py)
-                                    });
-                                }
-                            }
+                            handle_instruments(
+                                okx_instruments,
+                                &mut instruments_by_symbol,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
                         OKXWsMessage::Orders(order_msgs) => {
-                            let ts_init = clock.get_time_ns();
-                            match parse_order_msg_vec(
+                            handle_orders(
                                 order_msgs,
                                 account_id,
                                 &instruments_by_symbol,
                                 &mut fee_cache,
                                 &mut filled_qty_cache,
-                                ts_init,
-                            ) {
-                                Ok(reports) => {
-                                    dispatch_execution_reports_to_python(
-                                        reports, &call_soon, &callback,
-                                    );
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to parse order messages: {e}");
-                                }
-                            }
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
                         OKXWsMessage::AlgoOrders(algo_msgs) => {
-                            let ts_init = clock.get_time_ns();
-                            for algo_msg in algo_msgs {
-                                match parse_algo_order_msg(
-                                    algo_msg,
-                                    account_id,
-                                    &instruments_by_symbol,
-                                    ts_init,
-                                ) {
-                                    Ok(Some(report)) => {
-                                        dispatch_execution_reports_to_python(
-                                            vec![report],
-                                            &call_soon,
-                                            &callback,
-                                        );
-                                    }
-                                    Ok(None) => {}
-                                    Err(e) => {
-                                        log::error!("Failed to parse algo order: {e}");
-                                    }
-                                }
-                            }
+                            handle_algo_orders(
+                                algo_msgs,
+                                account_id,
+                                &instruments_by_symbol,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
                         OKXWsMessage::Account(data) => {
-                            if let Ok(accounts) = serde_json::from_value::<Vec<OKXAccount>>(data) {
-                                let ts_init = clock.get_time_ns();
-
-                                for account in &accounts {
-                                    if let Ok(account_state) =
-                                        parse_account_state(account, account_id, ts_init)
-                                    {
-                                        call_python_with_data(&call_soon, &callback, |py| {
-                                            account_state.into_py_any(py)
-                                        });
-                                    }
-                                }
-                            }
+                            handle_account(data, account_id, clock, &call_soon, &callback);
                         }
                         OKXWsMessage::Positions(data) => {
-                            if let Ok(positions) = serde_json::from_value::<Vec<OKXPosition>>(data)
-                            {
-                                let ts_init = clock.get_time_ns();
-
-                                for position in positions {
-                                    let inst_key = Ustr::from(&position.inst_id);
-                                    if let Some(instrument) = instruments_by_symbol.get(&inst_key) {
-                                        match parse_position_status_report(
-                                            position,
-                                            account_id,
-                                            instrument.id(),
-                                            instrument.size_precision(),
-                                            ts_init,
-                                        ) {
-                                            Ok(report) => {
-                                                call_python_with_data(
-                                                    &call_soon,
-                                                    &callback,
-                                                    |py| report.into_py_any(py),
-                                                );
-                                            }
-                                            Err(e) => {
-                                                log::error!("Failed to parse position: {e}");
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            handle_positions(
+                                data,
+                                account_id,
+                                &instruments_by_symbol,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
                         OKXWsMessage::OrderResponse {
                             id,
@@ -502,178 +353,10 @@ impl OKXWebSocketClient {
                             msg,
                             data,
                         } => {
-                            for item in &data {
-                                let s_code =
-                                    item.get("sCode").and_then(|v| v.as_str()).unwrap_or("");
-                                let s_msg = item.get("sMsg").and_then(|v| v.as_str()).unwrap_or("");
-                                let cl_ord_id =
-                                    item.get("clOrdId").and_then(|v| v.as_str()).unwrap_or("");
-
-                                if s_code == "0" {
-                                    log::debug!(
-                                        "Order response ok: op={op:?} cl_ord_id={cl_ord_id}"
-                                    );
-                                    match op {
-                                        OKXWsOperation::Order | OKXWsOperation::BatchOrders => {
-                                            if let Some((_, info)) =
-                                                _client.pending_orders.remove(cl_ord_id)
-                                            {
-                                                let venue_order_id = item
-                                                    .get("ordId")
-                                                    .and_then(|v| v.as_str())
-                                                    .filter(|s| !s.is_empty());
-
-                                                if let Some(ord_id) = venue_order_id {
-                                                    let ts_init = clock.get_time_ns();
-                                                    let accepted = OrderAccepted::new(
-                                                        info.trader_id,
-                                                        info.strategy_id,
-                                                        info.instrument_id,
-                                                        ClientOrderId::from(cl_ord_id),
-                                                        VenueOrderId::new(ord_id),
-                                                        account_id,
-                                                        UUID4::new(),
-                                                        ts_init,
-                                                        ts_init,
-                                                        false,
-                                                    );
-                                                    call_python_with_data(
-                                                        &call_soon,
-                                                        &callback,
-                                                        |py| accepted.into_py_any(py),
-                                                    );
-                                                } else {
-                                                    log::error!(
-                                                        "No venue_order_id for accepted \
-                                                         order: cl_ord_id={cl_ord_id}"
-                                                    );
-                                                }
-                                            }
-                                        }
-                                        OKXWsOperation::OrderAlgo => {
-                                            // Algo order placement confirmed; OrderAccepted
-                                            // arrives via the algo orders push channel
-                                            _client.pending_orders.remove(cl_ord_id);
-                                            log::debug!(
-                                                "Algo order placement confirmed: \
-                                                 cl_ord_id={cl_ord_id}"
-                                            );
-                                        }
-                                        OKXWsOperation::CancelOrder
-                                        | OKXWsOperation::BatchCancelOrders
-                                        | OKXWsOperation::MassCancel
-                                        | OKXWsOperation::CancelAlgos => {
-                                            _client.pending_cancels.remove(cl_ord_id);
-                                        }
-                                        OKXWsOperation::AmendOrder
-                                        | OKXWsOperation::BatchAmendOrders => {
-                                            _client.pending_amends.remove(cl_ord_id);
-                                        }
-                                        _ => {}
-                                    }
-                                } else if !cl_ord_id.is_empty() {
-                                    log::warn!(
-                                        "Order response rejected: op={op:?} cl_ord_id={cl_ord_id} \
-                                         s_code={s_code} s_msg={s_msg}"
-                                    );
-                                    let ts_init = clock.get_time_ns();
-                                    let client_order_id = ClientOrderId::from(cl_ord_id);
-                                    let venue_order_id = item
-                                        .get("ordId")
-                                        .and_then(|v| v.as_str())
-                                        .filter(|s| !s.is_empty())
-                                        .map(VenueOrderId::new);
-
-                                    match op {
-                                        OKXWsOperation::Order
-                                        | OKXWsOperation::BatchOrders
-                                        | OKXWsOperation::OrderAlgo => {
-                                            if let Some((_, info)) =
-                                                _client.pending_orders.remove(cl_ord_id)
-                                            {
-                                                let rejected = OrderRejected::new(
-                                                    info.trader_id,
-                                                    info.strategy_id,
-                                                    info.instrument_id,
-                                                    client_order_id,
-                                                    account_id,
-                                                    Ustr::from(s_msg),
-                                                    UUID4::new(),
-                                                    ts_init,
-                                                    ts_init,
-                                                    false,
-                                                    false,
-                                                );
-                                                call_python_with_data(
-                                                    &call_soon,
-                                                    &callback,
-                                                    |py| rejected.into_py_any(py),
-                                                );
-                                            }
-                                        }
-                                        OKXWsOperation::CancelOrder
-                                        | OKXWsOperation::BatchCancelOrders
-                                        | OKXWsOperation::MassCancel
-                                        | OKXWsOperation::CancelAlgos => {
-                                            if let Some((_, info)) =
-                                                _client.pending_cancels.remove(cl_ord_id)
-                                            {
-                                                let rejected = OrderCancelRejected::new(
-                                                    info.trader_id,
-                                                    info.strategy_id,
-                                                    info.instrument_id,
-                                                    client_order_id,
-                                                    Ustr::from(s_msg),
-                                                    UUID4::new(),
-                                                    ts_init,
-                                                    ts_init,
-                                                    false,
-                                                    venue_order_id,
-                                                    Some(account_id),
-                                                );
-                                                call_python_with_data(
-                                                    &call_soon,
-                                                    &callback,
-                                                    |py| rejected.into_py_any(py),
-                                                );
-                                            }
-                                        }
-                                        OKXWsOperation::AmendOrder
-                                        | OKXWsOperation::BatchAmendOrders => {
-                                            if let Some((_, info)) =
-                                                _client.pending_amends.remove(cl_ord_id)
-                                            {
-                                                let rejected = OrderModifyRejected::new(
-                                                    info.trader_id,
-                                                    info.strategy_id,
-                                                    info.instrument_id,
-                                                    client_order_id,
-                                                    Ustr::from(s_msg),
-                                                    UUID4::new(),
-                                                    ts_init,
-                                                    ts_init,
-                                                    false,
-                                                    venue_order_id,
-                                                    Some(account_id),
-                                                );
-                                                call_python_with_data(
-                                                    &call_soon,
-                                                    &callback,
-                                                    |py| rejected.into_py_any(py),
-                                                );
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-
-                            if code != "0" && data.is_empty() {
-                                log::warn!(
-                                    "Order response error (no data): id={id:?} op={op:?} \
-                                     code={code} msg={msg}"
-                                );
-                            }
+                            handle_order_response(
+                                id, op, code, msg, data, &_client, account_id, clock, &call_soon,
+                                &callback,
+                            );
                         }
                         OKXWsMessage::SendFailed {
                             request_id,
@@ -681,100 +364,17 @@ impl OKXWebSocketClient {
                             op,
                             error,
                         } => {
-                            log::error!(
-                                "WebSocket send failed: request_id={request_id} error={error}"
+                            handle_send_failed(
+                                request_id,
+                                client_order_id,
+                                op,
+                                error,
+                                &_client,
+                                account_id,
+                                clock,
+                                &call_soon,
+                                &callback,
                             );
-
-                            if let Some(client_order_id) = client_order_id {
-                                let cl_ord_str = client_order_id.to_string();
-                                let ts_init = clock.get_time_ns();
-                                match op {
-                                    Some(
-                                        OKXWsOperation::Order
-                                        | OKXWsOperation::BatchOrders
-                                        | OKXWsOperation::OrderAlgo,
-                                    ) => {
-                                        if let Some((_, info)) =
-                                            _client.pending_orders.remove(&cl_ord_str)
-                                        {
-                                            let rejected = OrderRejected::new(
-                                                info.trader_id,
-                                                info.strategy_id,
-                                                info.instrument_id,
-                                                client_order_id,
-                                                account_id,
-                                                Ustr::from(&error),
-                                                UUID4::new(),
-                                                ts_init,
-                                                ts_init,
-                                                false,
-                                                false,
-                                            );
-                                            call_python_with_data(&call_soon, &callback, |py| {
-                                                rejected.into_py_any(py)
-                                            });
-                                        }
-                                    }
-                                    Some(
-                                        OKXWsOperation::CancelOrder
-                                        | OKXWsOperation::BatchCancelOrders
-                                        | OKXWsOperation::MassCancel
-                                        | OKXWsOperation::CancelAlgos,
-                                    ) => {
-                                        if let Some((_, info)) =
-                                            _client.pending_cancels.remove(&cl_ord_str)
-                                        {
-                                            let rejected = OrderCancelRejected::new(
-                                                info.trader_id,
-                                                info.strategy_id,
-                                                info.instrument_id,
-                                                client_order_id,
-                                                Ustr::from(&error),
-                                                UUID4::new(),
-                                                ts_init,
-                                                ts_init,
-                                                false,
-                                                None,
-                                                Some(account_id),
-                                            );
-                                            call_python_with_data(&call_soon, &callback, |py| {
-                                                rejected.into_py_any(py)
-                                            });
-                                        }
-                                    }
-                                    Some(
-                                        OKXWsOperation::AmendOrder
-                                        | OKXWsOperation::BatchAmendOrders,
-                                    ) => {
-                                        if let Some((_, info)) =
-                                            _client.pending_amends.remove(&cl_ord_str)
-                                        {
-                                            let rejected = OrderModifyRejected::new(
-                                                info.trader_id,
-                                                info.strategy_id,
-                                                info.instrument_id,
-                                                client_order_id,
-                                                Ustr::from(&error),
-                                                UUID4::new(),
-                                                ts_init,
-                                                ts_init,
-                                                false,
-                                                None,
-                                                Some(account_id),
-                                            );
-                                            call_python_with_data(&call_soon, &callback, |py| {
-                                                rejected.into_py_any(py)
-                                            });
-                                        }
-                                    }
-                                    _ => {
-                                        log::warn!(
-                                            "SendFailed for {client_order_id} with unknown op, \
-                                             cannot emit rejection"
-                                        );
-                                    }
-                                }
-                            }
                         }
                         OKXWsMessage::Error(msg) => {
                             call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
@@ -1685,6 +1285,489 @@ impl OKXWebSocketClient {
             .into_iter()
             .map(|(inst_id, code)| (Ustr::from(&inst_id), code));
         self.cache_inst_id_codes(ustr_mappings);
+    }
+}
+
+fn handle_book_data(
+    inst_id: Option<Ustr>,
+    action: OKXBookAction,
+    data: Vec<OKXBookMsg>,
+    instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let Some(inst_id) = inst_id else { return };
+    let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
+        return;
+    };
+    let ts_init = clock.get_time_ns();
+    match parse_book_msg_vec(
+        data,
+        &instrument.id(),
+        instrument.price_precision(),
+        instrument.size_precision(),
+        action,
+        ts_init,
+    ) {
+        Ok(data_vec) => Python::attach(|py| {
+            for d in data_vec {
+                let py_obj = data_to_pycapsule(py, d);
+                call_python_threadsafe(py, call_soon, callback, py_obj);
+            }
+        }),
+        Err(e) => log::error!("Failed to parse book data: {e}"),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_channel_data(
+    channel: OKXWsChannel,
+    inst_id: Option<Ustr>,
+    data: serde_json::Value,
+    instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
+    funding_cache: &mut AHashMap<Ustr, (Ustr, u64)>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let Some(inst_id) = inst_id else { return };
+
+    if matches!(channel, OKXWsChannel::IndexTickers) {
+        let ts_init = clock.get_time_ns();
+        let prefix = format!("{inst_id}-");
+        let matching: Vec<_> = instruments_by_symbol
+            .values()
+            .filter(|i| {
+                let s = i.symbol().inner();
+                s == inst_id || s.as_str().starts_with(&prefix)
+            })
+            .collect();
+
+        for instrument in matching {
+            if let Ok(data_vec) = parse_index_price_msg_vec(
+                data.clone(),
+                &instrument.id(),
+                instrument.price_precision(),
+                ts_init,
+            ) {
+                Python::attach(|py| {
+                    for d in data_vec {
+                        let py_obj = data_to_pycapsule(py, d);
+                        call_python_threadsafe(py, call_soon, callback, py_obj);
+                    }
+                });
+            }
+        }
+        return;
+    }
+
+    let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
+        return;
+    };
+    let instrument_id = instrument.id();
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+    let ts_init = clock.get_time_ns();
+
+    match parse_ws_message_data(
+        &channel,
+        data,
+        &instrument_id,
+        price_precision,
+        size_precision,
+        ts_init,
+        funding_cache,
+        instruments_by_symbol,
+    ) {
+        Ok(Some(ws_msg)) => {
+            dispatch_nautilus_ws_msg_to_python(ws_msg, call_soon, callback, instruments_by_symbol);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            log::error!("Failed to parse {channel:?} data: {e}");
+        }
+    }
+}
+
+fn handle_instruments(
+    okx_instruments: Vec<OKXInstrument>,
+    instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let ts_init = clock.get_time_ns();
+    for okx_inst in okx_instruments {
+        let inst_key = Ustr::from(&okx_inst.inst_id);
+        let (margin_init, margin_maint, maker_fee, taker_fee) =
+            instruments_by_symbol.get(&inst_key).map_or(
+                (None, None, None, None),
+                extract_fees_from_cached_instrument,
+            );
+        let status_action = okx_status_to_market_action(okx_inst.state);
+        let is_live = matches!(okx_inst.state, OKXInstrumentStatus::Live);
+
+        if let Ok(Some(inst_any)) = parse_instrument_any(
+            &okx_inst,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            ts_init,
+        ) {
+            let instrument_id = inst_any.id();
+            instruments_by_symbol.insert(inst_any.symbol().inner(), inst_any.clone());
+            call_python_with_data(call_soon, callback, |py| {
+                instrument_any_to_pyobject(py, inst_any)
+            });
+            let status = InstrumentStatus::new(
+                instrument_id,
+                status_action,
+                ts_init,
+                ts_init,
+                None,
+                None,
+                Some(is_live),
+                None,
+                None,
+            );
+            call_python_with_data(call_soon, callback, |py| status.into_py_any(py));
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_orders(
+    order_msgs: Vec<OKXOrderMsg>,
+    account_id: AccountId,
+    instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
+    fee_cache: &mut AHashMap<Ustr, Money>,
+    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let ts_init = clock.get_time_ns();
+    match parse_order_msg_vec(
+        order_msgs,
+        account_id,
+        instruments_by_symbol,
+        fee_cache,
+        filled_qty_cache,
+        ts_init,
+    ) {
+        Ok(reports) => {
+            dispatch_execution_reports_to_python(reports, call_soon, callback);
+        }
+        Err(e) => {
+            log::error!("Failed to parse order messages: {e}");
+        }
+    }
+}
+
+fn handle_algo_orders(
+    algo_msgs: Vec<OKXAlgoOrderMsg>,
+    account_id: AccountId,
+    instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let ts_init = clock.get_time_ns();
+    for algo_msg in algo_msgs {
+        match parse_algo_order_msg(algo_msg, account_id, instruments_by_symbol, ts_init) {
+            Ok(Some(report)) => {
+                dispatch_execution_reports_to_python(vec![report], call_soon, callback);
+            }
+            Ok(None) => {}
+            Err(e) => {
+                log::error!("Failed to parse algo order: {e}");
+            }
+        }
+    }
+}
+
+fn handle_account(
+    data: serde_json::Value,
+    account_id: AccountId,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    if let Ok(accounts) = serde_json::from_value::<Vec<OKXAccount>>(data) {
+        let ts_init = clock.get_time_ns();
+        for account in &accounts {
+            if let Ok(account_state) = parse_account_state(account, account_id, ts_init) {
+                call_python_with_data(call_soon, callback, |py| account_state.into_py_any(py));
+            }
+        }
+    }
+}
+
+fn handle_positions(
+    data: serde_json::Value,
+    account_id: AccountId,
+    instruments_by_symbol: &AHashMap<Ustr, InstrumentAny>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    if let Ok(positions) = serde_json::from_value::<Vec<OKXPosition>>(data) {
+        let ts_init = clock.get_time_ns();
+        for position in positions {
+            let inst_key = Ustr::from(&position.inst_id);
+            if let Some(instrument) = instruments_by_symbol.get(&inst_key) {
+                match parse_position_status_report(
+                    position,
+                    account_id,
+                    instrument.id(),
+                    instrument.size_precision(),
+                    ts_init,
+                ) {
+                    Ok(report) => {
+                        call_python_with_data(call_soon, callback, |py| report.into_py_any(py));
+                    }
+                    Err(e) => {
+                        log::error!("Failed to parse position: {e}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_order_response(
+    id: Option<String>,
+    op: OKXWsOperation,
+    code: String,
+    msg: String,
+    data: Vec<serde_json::Value>,
+    client: &OKXWebSocketClient,
+    account_id: AccountId,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    for item in &data {
+        let s_code = item.get("sCode").and_then(|v| v.as_str()).unwrap_or("");
+        let s_msg = item.get("sMsg").and_then(|v| v.as_str()).unwrap_or("");
+        let cl_ord_id = item.get("clOrdId").and_then(|v| v.as_str()).unwrap_or("");
+
+        if s_code == "0" {
+            log::debug!("Order response ok: op={op:?} cl_ord_id={cl_ord_id}");
+            match op {
+                OKXWsOperation::Order | OKXWsOperation::BatchOrders => {
+                    if let Some((_, info)) = client.pending_orders.remove(cl_ord_id) {
+                        let venue_order_id = item
+                            .get("ordId")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty());
+
+                        if let Some(ord_id) = venue_order_id {
+                            let ts_init = clock.get_time_ns();
+                            let accepted = OrderAccepted::new(
+                                info.trader_id,
+                                info.strategy_id,
+                                info.instrument_id,
+                                ClientOrderId::from(cl_ord_id),
+                                VenueOrderId::new(ord_id),
+                                account_id,
+                                UUID4::new(),
+                                ts_init,
+                                ts_init,
+                                false,
+                            );
+                            call_python_with_data(call_soon, callback, |py| {
+                                accepted.into_py_any(py)
+                            });
+                        } else {
+                            log::error!(
+                                "No venue_order_id for accepted order: cl_ord_id={cl_ord_id}"
+                            );
+                        }
+                    }
+                }
+                OKXWsOperation::OrderAlgo => {
+                    client.pending_orders.remove(cl_ord_id);
+                    log::debug!("Algo order placement confirmed: cl_ord_id={cl_ord_id}");
+                }
+                OKXWsOperation::CancelOrder
+                | OKXWsOperation::BatchCancelOrders
+                | OKXWsOperation::MassCancel
+                | OKXWsOperation::CancelAlgos => {
+                    client.pending_cancels.remove(cl_ord_id);
+                }
+                OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders => {
+                    client.pending_amends.remove(cl_ord_id);
+                }
+                _ => {}
+            }
+        } else if !cl_ord_id.is_empty() {
+            log::warn!(
+                "Order response rejected: op={op:?} cl_ord_id={cl_ord_id} \
+                 s_code={s_code} s_msg={s_msg}"
+            );
+            let ts_init = clock.get_time_ns();
+            let client_order_id = ClientOrderId::from(cl_ord_id);
+            let venue_order_id = item
+                .get("ordId")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(VenueOrderId::new);
+
+            match op {
+                OKXWsOperation::Order | OKXWsOperation::BatchOrders | OKXWsOperation::OrderAlgo => {
+                    if let Some((_, info)) = client.pending_orders.remove(cl_ord_id) {
+                        let rejected = OrderRejected::new(
+                            info.trader_id,
+                            info.strategy_id,
+                            info.instrument_id,
+                            client_order_id,
+                            account_id,
+                            Ustr::from(s_msg),
+                            UUID4::new(),
+                            ts_init,
+                            ts_init,
+                            false,
+                            false,
+                        );
+                        call_python_with_data(call_soon, callback, |py| rejected.into_py_any(py));
+                    }
+                }
+                OKXWsOperation::CancelOrder
+                | OKXWsOperation::BatchCancelOrders
+                | OKXWsOperation::MassCancel
+                | OKXWsOperation::CancelAlgos => {
+                    if let Some((_, info)) = client.pending_cancels.remove(cl_ord_id) {
+                        let rejected = OrderCancelRejected::new(
+                            info.trader_id,
+                            info.strategy_id,
+                            info.instrument_id,
+                            client_order_id,
+                            Ustr::from(s_msg),
+                            UUID4::new(),
+                            ts_init,
+                            ts_init,
+                            false,
+                            venue_order_id,
+                            Some(account_id),
+                        );
+                        call_python_with_data(call_soon, callback, |py| rejected.into_py_any(py));
+                    }
+                }
+                OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders => {
+                    if let Some((_, info)) = client.pending_amends.remove(cl_ord_id) {
+                        let rejected = OrderModifyRejected::new(
+                            info.trader_id,
+                            info.strategy_id,
+                            info.instrument_id,
+                            client_order_id,
+                            Ustr::from(s_msg),
+                            UUID4::new(),
+                            ts_init,
+                            ts_init,
+                            false,
+                            venue_order_id,
+                            Some(account_id),
+                        );
+                        call_python_with_data(call_soon, callback, |py| rejected.into_py_any(py));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if code != "0" && data.is_empty() {
+        log::warn!("Order response error (no data): id={id:?} op={op:?} code={code} msg={msg}");
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_send_failed(
+    request_id: String,
+    client_order_id: Option<ClientOrderId>,
+    op: Option<OKXWsOperation>,
+    error: String,
+    client: &OKXWebSocketClient,
+    account_id: AccountId,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    log::error!("WebSocket send failed: request_id={request_id} error={error}");
+
+    let Some(client_order_id) = client_order_id else {
+        return;
+    };
+    let cl_ord_str = client_order_id.to_string();
+    let ts_init = clock.get_time_ns();
+
+    match op {
+        Some(OKXWsOperation::Order | OKXWsOperation::BatchOrders | OKXWsOperation::OrderAlgo) => {
+            if let Some((_, info)) = client.pending_orders.remove(&cl_ord_str) {
+                let rejected = OrderRejected::new(
+                    info.trader_id,
+                    info.strategy_id,
+                    info.instrument_id,
+                    client_order_id,
+                    account_id,
+                    Ustr::from(&error),
+                    UUID4::new(),
+                    ts_init,
+                    ts_init,
+                    false,
+                    false,
+                );
+                call_python_with_data(call_soon, callback, |py| rejected.into_py_any(py));
+            }
+        }
+        Some(
+            OKXWsOperation::CancelOrder
+            | OKXWsOperation::BatchCancelOrders
+            | OKXWsOperation::MassCancel
+            | OKXWsOperation::CancelAlgos,
+        ) => {
+            if let Some((_, info)) = client.pending_cancels.remove(&cl_ord_str) {
+                let rejected = OrderCancelRejected::new(
+                    info.trader_id,
+                    info.strategy_id,
+                    info.instrument_id,
+                    client_order_id,
+                    Ustr::from(&error),
+                    UUID4::new(),
+                    ts_init,
+                    ts_init,
+                    false,
+                    None,
+                    Some(account_id),
+                );
+                call_python_with_data(call_soon, callback, |py| rejected.into_py_any(py));
+            }
+        }
+        Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
+            if let Some((_, info)) = client.pending_amends.remove(&cl_ord_str) {
+                let rejected = OrderModifyRejected::new(
+                    info.trader_id,
+                    info.strategy_id,
+                    info.instrument_id,
+                    client_order_id,
+                    Ustr::from(&error),
+                    UUID4::new(),
+                    ts_init,
+                    ts_init,
+                    false,
+                    None,
+                    Some(account_id),
+                );
+                call_python_with_data(call_soon, callback, |py| rejected.into_py_any(py));
+            }
+        }
+        _ => {
+            log::warn!("SendFailed for {client_order_id} with unknown op, cannot emit rejection");
+        }
     }
 }
 
