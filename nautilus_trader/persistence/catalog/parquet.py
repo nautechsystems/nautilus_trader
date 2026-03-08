@@ -1632,8 +1632,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 **kwargs,
             )
 
-        if not is_nautilus_class(data_cls):
-            # Special handling for generic data
+        if not is_nautilus_class(data_cls) and data and isinstance(data[0], Data):
             metadata = kwargs.get("metadata")
 
             if callable(metadata):
@@ -2652,8 +2651,9 @@ class ParquetDataCatalog(BaseDataCatalog):
                 "QuoteTick": QuoteTick,
                 "TradeTick": TradeTick,
                 "Bar": Bar,
-            }.get(data_cls.__name__, data_cls.__name__)
-            data = cython_cls.from_pyo3_list(data)
+            }.get(data_cls.__name__)
+            if cython_cls is not None:
+                data = cython_cls.from_pyo3_list(data)
 
         return data
 

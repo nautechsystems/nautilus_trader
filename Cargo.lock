@@ -5266,6 +5266,7 @@ version = "0.55.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
+ "arrow",
  "async-trait",
  "databento",
  "dotenvy",
@@ -5278,6 +5279,7 @@ dependencies = [
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
+ "nautilus-serialization",
  "nautilus-system",
  "nautilus-testkit",
  "pyo3",

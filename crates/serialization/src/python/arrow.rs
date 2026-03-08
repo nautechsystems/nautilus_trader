@@ -41,8 +41,12 @@ use crate::arrow::{
     quotes_to_arrow_record_batch_bytes, trades_to_arrow_record_batch_bytes,
 };
 
-/// Transforms the given record `batches` into Python `bytes`.
-fn arrow_record_batch_to_pybytes(py: Python, batch: RecordBatch) -> PyResult<Py<PyBytes>> {
+/// Transforms the given record `batch` into Python `bytes`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if writing the Arrow IPC stream fails.
+pub fn arrow_record_batch_to_pybytes(py: Python, batch: RecordBatch) -> PyResult<Py<PyBytes>> {
     // Create a cursor to write to a byte array in memory
     let mut cursor = Cursor::new(Vec::new());
     {

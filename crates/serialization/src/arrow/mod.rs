@@ -56,8 +56,8 @@ use pyo3::prelude::*;
 // Define metadata key constants constants
 const KEY_BAR_TYPE: &str = "bar_type";
 pub const KEY_INSTRUMENT_ID: &str = "instrument_id";
-const KEY_PRICE_PRECISION: &str = "price_precision";
-const KEY_SIZE_PRECISION: &str = "size_precision";
+pub const KEY_PRICE_PRECISION: &str = "price_precision";
+pub const KEY_SIZE_PRECISION: &str = "size_precision";
 
 #[derive(thiserror::Error, Debug)]
 pub enum DataStreamingError {
@@ -157,7 +157,11 @@ fn get_corrected_raw_quantity(bytes: &[u8], precision: u8) -> QuantityRaw {
 ///
 /// Uses corrected raw values to handle floating-point precision errors in stored data.
 /// Sentinel values (`PRICE_UNDEF`, `PRICE_ERROR`) are preserved unchanged.
-fn decode_price(
+///
+/// # Errors
+///
+/// Returns an [`EncodingError::ParseError`] if the price value is out of bounds.
+pub fn decode_price(
     bytes: &[u8],
     precision: u8,
     field: &'static str,
@@ -172,7 +176,11 @@ fn decode_price(
 ///
 /// Uses corrected raw values to handle floating-point precision errors in stored data.
 /// Sentinel values (`QUANTITY_UNDEF`) are preserved unchanged.
-fn decode_quantity(
+///
+/// # Errors
+///
+/// Returns an [`EncodingError::ParseError`] if the quantity value is out of bounds.
+pub fn decode_quantity(
     bytes: &[u8],
     precision: u8,
     field: &'static str,
@@ -186,7 +194,11 @@ fn decode_quantity(
 /// Decodes a [`Price`] from raw bytes, using precision 0 for sentinel values.
 ///
 /// For order book data where sentinel values indicate empty levels.
-fn decode_price_with_sentinel(
+///
+/// # Errors
+///
+/// Returns an [`EncodingError::ParseError`] if the price value is out of bounds.
+pub fn decode_price_with_sentinel(
     bytes: &[u8],
     precision: u8,
     field: &'static str,
@@ -205,7 +217,11 @@ fn decode_price_with_sentinel(
 /// Decodes a [`Quantity`] from raw bytes, using precision 0 for sentinel values.
 ///
 /// For order book data where sentinel values indicate empty levels.
-fn decode_quantity_with_sentinel(
+///
+/// # Errors
+///
+/// Returns an [`EncodingError::ParseError`] if the quantity value is out of bounds.
+pub fn decode_quantity_with_sentinel(
     bytes: &[u8],
     precision: u8,
     field: &'static str,

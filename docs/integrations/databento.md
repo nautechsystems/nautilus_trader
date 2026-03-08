@@ -443,6 +443,68 @@ self.request_data(
 )
 ```
 
+### Catalog persistence
+
+Both types support Arrow serialization for catalog storage. The Arrow
+serializers register automatically when you import the adapter package.
+
+#### Writing to the catalog
+
+```python
+from nautilus_trader.adapters.databento import DatabentoDataLoader
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
+
+catalog = ParquetDataCatalog.from_env()
+loader = DatabentoDataLoader()
+
+imbalances = loader.from_dbn_file(
+    path="aapl-imbalance.dbn.zst",
+    instrument_id=InstrumentId.from_str("AAPL.XNAS"),
+    as_legacy_cython=False,  # Required for Databento-specific types
+)
+
+catalog.write_data(imbalances)
+```
+
+#### Reading from the catalog
+
+```python
+from nautilus_trader.adapters.databento import DatabentoImbalance
+
+results = catalog.query(DatabentoImbalance, identifiers=["AAPL.XNAS"])
+
+for imbalance in results:
+    print(imbalance.ref_price)  # DatabentoImbalance fields
+```
+
+:::warning
+Catalog persistence supports writing and querying these types, but streaming
+them through `BacktestNode` or `BacktestEngine` is not yet supported. For
+backtesting with imbalance or statistics data, query the catalog directly and
+process the results in your strategy or analysis code.
+:::
+
+#### Encoding and decoding in Rust
+
+The `nautilus_databento::arrow` module provides direct Arrow record batch
+encoding and decoding. This module requires the `arrow` feature flag.
+
+```rust
+use nautilus_databento::arrow::imbalance::{
+    decode_imbalance_batch,
+    imbalance_to_arrow_record_batch,
+};
+
+let batch = imbalance_to_arrow_record_batch(imbalances)?;
+
+let metadata = batch.schema().metadata().clone();
+let decoded = decode_imbalance_batch(&metadata, batch)?;
+```
+
+The `statistics` module follows the same pattern with
+`decode_statistics_batch` and `statistics_to_arrow_record_batch`.
+
 ## Performance considerations
 
 When backtesting with Databento DBN data, there are two options:

@@ -22,6 +22,7 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = ["live", "high-precision"]
+arrow = ["dep:arrow", "nautilus-serialization"]
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
@@ -30,16 +31,21 @@ extension-module = [
 ]
 live = ["nautilus-live", "nautilus-system", "dotenvy"]
 python = [
+  "arrow",
   "live",
   "nautilus-core/ffi",
   "nautilus-core/python",
   "nautilus-model/ffi",
   "nautilus-model/python",
+  "nautilus-serialization/python",
   "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
 ]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization?/high-precision",
+]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -51,6 +57,9 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true, optional = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
+nautilus-serialization = { workspace = true, features = [
+  "arrow",
+], optional = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
@@ -70,6 +79,7 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+arrow = { workspace = true, optional = true }
 dotenvy = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
