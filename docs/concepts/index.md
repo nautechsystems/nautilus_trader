@@ -32,6 +32,17 @@ including their arithmetic behavior, precision handling, and type-specific const
 
 Built-in data types for the trading domain, and how to work with custom data.
 
+## Options
+
+Option instrument types, venue-provided Greeks streaming, option chain subscriptions
+with strike range filtering, and snapshot aggregation.
+
+## Greeks
+
+Option Greeks (delta, gamma, vega, theta) from two paths: venue-provided real-time
+Greeks via the Rust/PyO3 `OptionGreeks` type, and the local `GreeksCalculator` for
+Black-Scholes computation with shock scenarios, beta weighting, and portfolio aggregation.
+
 ## Custom data
 
 How the custom data system works across Python and Rust: registration, persistence,

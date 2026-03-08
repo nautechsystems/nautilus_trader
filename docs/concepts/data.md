@@ -1887,5 +1887,7 @@ class GreeksData(Data):
 ## Related guides
 
 - [Instruments](instruments.md) - Financial instruments referenced by data.
+- [Options](options.md) - Option instruments, chain subscriptions, and strike filtering.
+- [Greeks](greeks.md) - Venue-provided and locally computed option Greeks.
 - [Cache](cache.md) - Data storage and retrieval.
 - [Adapters](adapters.md) - Data sources and connectivity.
