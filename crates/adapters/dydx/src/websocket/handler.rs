@@ -31,6 +31,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use chrono::TimeDelta;
 use nautilus_core::{
     UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -1114,6 +1115,7 @@ impl FeedHandler {
             messages.push(NautilusWsMessage::FundingRate(FundingRateUpdate::new(
                 instrument_id,
                 rate,
+                Some(TimeDelta::hours(1)),
                 None,
                 ts_init,
                 ts_init,

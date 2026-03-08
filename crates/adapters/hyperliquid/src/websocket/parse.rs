@@ -18,6 +18,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
+use chrono::TimeDelta;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
@@ -385,6 +386,7 @@ pub fn parse_ws_asset_context(
             let funding_rate_update = FundingRateUpdate::new(
                 instrument_id,
                 funding_rate_decimal,
+                Some(TimeDelta::hours(1)),
                 None, // Hyperliquid doesn't provide next funding time in this message
                 ts_init,
                 ts_init,

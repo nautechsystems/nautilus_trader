@@ -45,7 +45,8 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use chrono::{DateTime, Utc};
+use anyhow::Context;
+use chrono::{DateTime, TimeDelta, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
     AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, datetime::NANOSECONDS_IN_MILLISECOND,
@@ -1723,12 +1724,30 @@ impl OKXHttpClient {
         let ts_init = self.generate_ts_init();
         let mut rates = Vec::with_capacity(resp.len());
 
-        for raw in &resp {
+        for window in resp.windows(2) {
+            let raw = &window[0];
             let rate = Decimal::from_str(&raw.funding_rate)?;
             let ts_event = UnixNanos::from(raw.funding_time * NANOSECONDS_IN_MILLISECOND);
+            let interval_millis = i64::try_from(raw.funding_time - window[1].funding_time)
+                .context("funding interval out of bounds")?;
+            let interval = TimeDelta::milliseconds(interval_millis);
             rates.push(FundingRateUpdate::new(
                 instrument_id,
                 rate,
+                Some(interval),
+                None,
+                ts_event,
+                ts_init,
+            ));
+        }
+
+        if let Some(last_raw) = resp.last() {
+            let rate = Decimal::from_str(&last_raw.funding_rate)?;
+            let ts_event = UnixNanos::from(last_raw.funding_time * NANOSECONDS_IN_MILLISECOND);
+            rates.push(FundingRateUpdate::new(
+                instrument_id,
+                rate,
+                None, // oldest funding update has no previous one to compute interval
                 None,
                 ts_event,
                 ts_init,

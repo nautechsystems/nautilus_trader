@@ -2948,12 +2948,20 @@ impl BybitHttpClient {
     ) -> anyhow::Result<Vec<FundingRateUpdate>> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
+        let limit = match (limit, start.is_none()) {
+            (Some(l), _) => l,
+            (None, true) => {
+                log::warn!(
+                    "Bybit funding rate request has no limit or start time, clamping limit to 200"
+                );
+                200
+            }
+            (None, false) => u32::MAX,
+        };
 
         let start_ms = start.map(|dt| dt.timestamp_millis());
-        let mut seen_timestamps: AHashSet<i64> = AHashSet::new();
 
-        let mut pages: Vec<Vec<FundingRateUpdate>> = Vec::new();
-        let mut total_funding_rates = 0usize;
+        let mut raw_funding_rates = Vec::new();
 
         // Bybit requires endTime when startTime is provided
         let mut current_end = match (start, end) {
@@ -2965,7 +2973,8 @@ impl BybitHttpClient {
             let mut params_builder = BybitFundingParamsBuilder::default();
             params_builder.category(product_type);
             params_builder.symbol(bybit_symbol.raw_symbol().to_string());
-            params_builder.limit(200u32); // Limit for data size per page (maximum for the Bybit API)
+            let limit_param = limit.clamp(0, 200); // 200 is the maximum for the Bybit API
+            params_builder.limit(limit_param);
 
             if let Some(start_val) = start_ms {
                 params_builder.start_time(start_val);
@@ -2979,63 +2988,21 @@ impl BybitHttpClient {
             let response = self.inner.get_funding_history(&params).await?;
 
             let funding_rates = response.result.list;
-            if funding_rates.is_empty() {
-                break;
-            }
 
-            let mut funding_rates_with_ts: Vec<(i64, _)> = funding_rates
-                .into_iter()
-                .filter_map(|f| {
-                    f.funding_rate_timestamp
-                        .parse::<i64>()
-                        .ok()
-                        .map(|ts| (ts, f))
-                })
-                .collect();
+            let earliest_funding_time = match funding_rates.last() {
+                Some(last) => last
+                    .funding_rate_timestamp
+                    .parse::<i64>()
+                    .map_err(|_| anyhow::anyhow!("invalid funding_rate_timestamp"))?,
+                None => break,
+            };
 
-            funding_rates_with_ts.sort_by_key(|(ts, _)| *ts);
-
-            let has_new = funding_rates_with_ts
-                .iter()
-                .any(|(ts, _)| !seen_timestamps.contains(ts));
-
-            if !has_new {
-                break;
-            }
-
-            let mut page_funding_rates = Vec::with_capacity(funding_rates_with_ts.len());
-
-            let mut earliest_ts: Option<i64> = None;
-
-            for (time, funding) in &funding_rates_with_ts {
-                // Track earliest timestamp for pagination
-                if earliest_ts.is_none_or(|ts| *time < ts) {
-                    earliest_ts = Some(*time);
-                }
-
-                if !seen_timestamps.contains(time)
-                    && let Ok(funding_rate) = parse_funding_rate(funding, &instrument)
-                {
-                    page_funding_rates.push(funding_rate);
-                    seen_timestamps.insert(*time);
-                }
-            }
-
-            total_funding_rates += page_funding_rates.len();
-            pages.push(page_funding_rates);
+            raw_funding_rates.extend(funding_rates);
 
             // Check if we've reached the requested limit
-            if let Some(limit_val) = limit
-                && total_funding_rates >= limit_val as usize
-            {
+            if raw_funding_rates.len() >= limit as usize {
                 break;
             }
-
-            // Move end time backwards to get earlier data
-            // Set new end to be 1ms before the first bar of this page
-            let Some(earliest_funding_time) = earliest_ts else {
-                break;
-            };
 
             if let Some(start_val) = start_ms
                 && earliest_funding_time <= start_val
@@ -3043,25 +3010,38 @@ impl BybitHttpClient {
                 break;
             }
 
+            // Move end time backwards to get earlier data
             current_end = Some(earliest_funding_time - 1);
         }
 
-        // Reverse pages and flatten to get chronological order (oldest to newest)
-        let mut all_funding_rates: Vec<FundingRateUpdate> = Vec::with_capacity(total_funding_rates);
-        for page in pages.into_iter().rev() {
-            all_funding_rates.extend(page);
+        raw_funding_rates.truncate(limit as usize);
+        let mut rates: Vec<FundingRateUpdate> = Vec::with_capacity(raw_funding_rates.len());
+
+        for window in raw_funding_rates.windows(2) {
+            let raw = &window[0];
+            let timestamp = raw
+                .funding_rate_timestamp
+                .parse::<i64>()
+                .map_err(|_| anyhow::anyhow!("invalid funding_rate_timestamp"))?;
+            let older_timestamp = window[1]
+                .funding_rate_timestamp
+                .parse::<i64>()
+                .map_err(|_| anyhow::anyhow!("invalid funding_rate_timestamp"))?;
+
+            let interval_millis = timestamp - older_timestamp;
+            let rate = parse_funding_rate(raw, &instrument, Some(interval_millis))?;
+
+            rates.push(rate);
         }
 
-        // If limit is specified and we have more funding rates, return the last N rates (most recent)
-        if let Some(limit_val) = limit {
-            let limit_usize = limit_val as usize;
-            if all_funding_rates.len() > limit_usize {
-                let start_idx = all_funding_rates.len() - limit_usize;
-                return Ok(all_funding_rates[start_idx..].to_vec());
-            }
+        if let Some(last_raw) = raw_funding_rates.last() {
+            let rate = parse_funding_rate(last_raw, &instrument, None)?;
+            rates.push(rate);
         }
 
-        Ok(all_funding_rates)
+        rates.reverse();
+
+        Ok(rates)
     }
 
     /// Request an orderbook snapshot for a given symbol.
