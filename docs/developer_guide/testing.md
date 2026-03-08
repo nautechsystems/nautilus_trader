@@ -203,3 +203,87 @@ Open and run the example notebook: `debug_mixed_jupyter.ipynb`.
 ### Reference
 
 - [PyO3 debugging](https://pyo3.rs/v0.25.1/debugging.html?highlight=deb#debugging-from-jupyter-notebooks)
+
+## Data type testing
+
+Each data type flows through multiple layers of the platform. The table below shows where
+existing types are tested, so new types can follow the same pattern.
+
+### Test layer matrix
+
+| Layer                  | Location                                    | What it covers                                             |
+|------------------------|---------------------------------------------|------------------------------------------------------------|
+| DataEngine subscribe   | `crates/data/tests/engine.rs`               | Engine processes subscribe/unsubscribe commands correctly. |
+| DataEngine publish     | `crates/data/tests/engine.rs`               | Engine routes published data to the message bus.           |
+| DataActor subscribe    | `crates/common/src/actor/tests.rs`          | Actor subscribes and receives data via typed publish.      |
+| DataActor unsubscribe  | `crates/common/src/actor/tests.rs`          | Actor stops receiving data after unsubscribe.              |
+| PyO3 actor dispatch    | `crates/common/src/python/actor.rs`         | Rust handler dispatches to Python `on_*` method.           |
+| Python Actor subscribe | `tests/unit_tests/common/test_actor.py`     | Python actor subscribes; command count increments.         |
+| Python Actor unsub     | `tests/unit_tests/common/test_actor.py`     | Python actor unsubscribes; subscription list clears.       |
+| Backtest client        | `nautilus_trader/backtest/data_client.pyx`  | Backtest client overrides base subscribe/unsubscribe.      |
+| Adapter live tests     | `docs/developer_guide/spec_data_testing.md` | Live data acceptance tests (DataTester).                   |
+
+### Coverage per data type
+
+The following table shows which layers have test coverage for each data type.
+Use this as a checklist when adding a new type.
+
+| Data type           | Engine | Actor (Rust) | PyO3 dispatch | Actor (Python) | Backtest client | Adapter spec |
+|---------------------|--------|--------------|---------------|----------------|-----------------|--------------|
+| `InstrumentAny`     | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `OrderBookDeltas`   | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `OrderBook`         | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `QuoteTick`         | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `TradeTick`         | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `Bar`               | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `MarkPriceUpdate`   | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `IndexPriceUpdate`  | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `FundingRateUpdate` | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `InstrumentStatus`  | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `InstrumentClose`   | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `OptionGreeks`      | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
+| `OptionChainSlice`  | -      | ✓            | ✓             | ✓              | -               | ✓            |
+| `CustomData`        | ✓      | ✓            | ✓             | ✓              | ✓               | -            |
+
+`OptionChainSlice` is assembled by the DataEngine's `OptionChainManager` from per-instrument
+greeks and quote subscriptions. It does not have its own engine subscribe command or
+backtest client override.
+
+### Adding a new data type
+
+When introducing a new data type, add tests at each layer:
+
+1. **DataEngine** (`crates/data/tests/engine.rs`): Add `test_execute_subscribe_<type>` and
+   `test_execute_unsubscribe_<type>` tests. Follow the pattern in existing subscribe tests:
+   register client, build command, call `engine.execute`, assert subscription list.
+
+2. **DataActor Rust** (`crates/common/src/actor/tests.rs`):
+   - Add `received_<type>: Vec<Type>` field to `TestDataActor`.
+   - Implement the `on_<type>` handler in the `DataActor` trait impl.
+   - Add `test_subscribe_and_receive_<type>` and `test_unsubscribe_<type>` tests.
+   - Use the typed publish function (`msgbus::publish_<type>`), not `publish_any`,
+     for types that use `TypedHandler` routing.
+
+3. **PyO3 actor dispatch** (`crates/common/src/python/actor.rs`):
+   - Add `dispatch_on_<type>` method that calls `py_self.call_method1("on_<type>", ...)`.
+   - Add `on_<type>` in the `DataActor` trait impl that calls the dispatch method.
+   - Add `#[pyo3(name = "on_<type>")]` method in the `#[pymethods]` block.
+   - Add `on_<type>` to `RustTestDataActor` wrapper and the inline Python test class.
+   - Add handler test and dispatch test.
+
+4. **Python Actor** (`tests/unit_tests/common/test_actor.py`):
+   - Add `test_subscribe_<type>` and `test_unsubscribe_<type>` tests.
+   - Assert `actor.subscribed_<type>()` returns expected entries after subscribe and
+     is empty after unsubscribe.
+
+5. **Backtest client** (`nautilus_trader/backtest/data_client.pyx`): Override
+   `subscribe_<type>` and `unsubscribe_<type>` if the base `MarketDataClient` raises
+   `NotImplementedError` for the method.
+
+6. **Documentation**: Add entries to `actors.md` callback table, `strategies.md` handler
+   signatures, `adapters.md` subscribe method stubs, and `spec_data_testing.md` test cards.
+
+:::tip
+Search for an existing type like `instrument_close` or `funding_rate` across all six layers
+to find concrete examples of the patterns described above.
+:::

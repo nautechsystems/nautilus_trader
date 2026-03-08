@@ -31,10 +31,15 @@ use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DataType, FundingRateUpdate, HasTsInit,
         IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        QuoteTick, TradeTick, close::InstrumentClose, custom::CustomDataTrait, stubs::*,
+        QuoteTick, TradeTick,
+        close::InstrumentClose,
+        custom::CustomDataTrait,
+        greeks::OptionGreekValues,
+        option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
+        stubs::*,
     },
     enums::{BookAction, BookType, OrderSide},
-    identifiers::{ClientId, TraderId, Venue},
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, TraderId, Venue},
     instruments::{CurrencyPair, InstrumentAny, stubs::*},
     orderbook::OrderBook,
     stubs::TestDefault,
@@ -47,12 +52,9 @@ use ustr::Ustr;
 #[cfg(feature = "defi")]
 use {
     alloy_primitives::{Address, I256, U160},
-    nautilus_model::{
-        defi::{
-            Block, Blockchain, Dex, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap,
-            Token, chain::chains, dex::AmmType,
-        },
-        identifiers::InstrumentId,
+    nautilus_model::defi::{
+        Block, Blockchain, Dex, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap,
+        Token, chain::chains, dex::AmmType,
     },
 };
 
@@ -77,7 +79,8 @@ use crate::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
             get_custom_topic, get_funding_rate_topic, get_index_price_topic,
             get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
-            get_instruments_topic, get_mark_price_topic, get_quotes_topic, get_trades_topic,
+            get_instruments_topic, get_mark_price_topic, get_option_chain_topic,
+            get_option_greeks_topic, get_quotes_topic, get_trades_topic,
         },
     },
     runner::{SyncDataCommandSender, set_data_cmd_sender},
@@ -154,6 +157,8 @@ struct TestDataActor {
     pub received_funding_rates: Vec<FundingRateUpdate>,
     pub received_status: Vec<InstrumentStatus>,
     pub received_closes: Vec<InstrumentClose>,
+    pub received_greeks: Vec<OptionGreeks>,
+    pub received_chain_slices: Vec<OptionChainSlice>,
     #[cfg(feature = "defi")]
     pub received_blocks: Vec<Block>,
     #[cfg(feature = "defi")]
@@ -280,6 +285,16 @@ impl DataActor for TestDataActor {
         Ok(())
     }
 
+    fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
+        self.received_greeks.push(*greeks);
+        Ok(())
+    }
+
+    fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
+        self.received_chain_slices.push(slice.clone());
+        Ok(())
+    }
+
     #[cfg(feature = "defi")]
     fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
         self.received_blocks.push(block.clone());
@@ -323,6 +338,8 @@ impl TestDataActor {
             received_funding_rates: Vec::new(),
             received_status: Vec::new(),
             received_closes: Vec::new(),
+            received_greeks: Vec::new(),
+            received_chain_slices: Vec::new(),
             #[cfg(feature = "defi")]
             received_blocks: Vec::new(),
             #[cfg(feature = "defi")]
@@ -1236,6 +1253,82 @@ fn test_subscribe_and_receive_instrument_close(
 }
 
 #[rstest]
+fn test_subscribe_and_receive_option_greeks(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let instrument_id = InstrumentId::from("AAPL-20250321-200C.OPRA");
+    actor.subscribe_option_greeks(instrument_id, None, None);
+
+    let greeks = OptionGreeks {
+        instrument_id,
+        greeks: OptionGreekValues {
+            delta: 0.55,
+            gamma: 0.03,
+            vega: 0.12,
+            theta: -0.05,
+            rho: 0.01,
+        },
+        mark_iv: Some(0.25),
+        bid_iv: Some(0.24),
+        ask_iv: Some(0.26),
+        underlying_price: Some(195.0),
+        open_interest: Some(1000.0),
+        ts_event: UnixNanos::default(),
+        ts_init: UnixNanos::default(),
+    };
+
+    let topic = get_option_greeks_topic(instrument_id);
+    msgbus::publish_option_greeks(topic, &greeks);
+
+    assert_eq!(actor.received_greeks.len(), 1);
+    assert_eq!(actor.received_greeks[0], greeks);
+}
+
+#[rstest]
+fn test_subscribe_and_receive_option_chain(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let series_id = OptionSeriesId::new(
+        Venue::from("OPRA"),
+        Ustr::from("AAPL"),
+        Ustr::from("USD"),
+        UnixNanos::from(1_711_036_800_000_000_000),
+    );
+    let strike_range = StrikeRange::AtmRelative {
+        strikes_above: 5,
+        strikes_below: 5,
+    };
+    actor.subscribe_option_chain(series_id, strike_range, None, None);
+
+    let slice = OptionChainSlice {
+        series_id,
+        atm_strike: Some(Price::from("200.00")),
+        calls: Default::default(),
+        puts: Default::default(),
+        ts_event: UnixNanos::default(),
+        ts_init: UnixNanos::default(),
+    };
+
+    let topic = get_option_chain_topic(series_id);
+    msgbus::publish_option_chain(topic, &slice);
+
+    assert_eq!(actor.received_chain_slices.len(), 1);
+    assert_eq!(actor.received_chain_slices[0].series_id, series_id);
+}
+
+#[rstest]
 fn test_unsubscribe_instruments(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -1478,6 +1571,92 @@ fn test_unsubscribe_instrument_close(
     msgbus::publish_any(topic, &stub2);
 
     assert_eq!(actor.received_closes.len(), 1);
+}
+
+#[rstest]
+fn test_unsubscribe_option_greeks(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let instrument_id = InstrumentId::from("AAPL-20250321-200C.OPRA");
+    actor.subscribe_option_greeks(instrument_id, None, None);
+
+    let greeks = OptionGreeks {
+        instrument_id,
+        greeks: OptionGreekValues {
+            delta: 0.55,
+            gamma: 0.03,
+            vega: 0.12,
+            theta: -0.05,
+            rho: 0.01,
+        },
+        mark_iv: Some(0.25),
+        bid_iv: None,
+        ask_iv: None,
+        underlying_price: None,
+        open_interest: None,
+        ts_event: UnixNanos::default(),
+        ts_init: UnixNanos::default(),
+    };
+
+    let topic = get_option_greeks_topic(instrument_id);
+    msgbus::publish_option_greeks(topic, &greeks);
+
+    assert_eq!(actor.received_greeks.len(), 1);
+
+    actor.unsubscribe_option_greeks(instrument_id, None, None);
+
+    msgbus::publish_option_greeks(topic, &greeks);
+
+    assert_eq!(actor.received_greeks.len(), 1);
+}
+
+#[rstest]
+fn test_unsubscribe_option_chain(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let series_id = OptionSeriesId::new(
+        Venue::from("OPRA"),
+        Ustr::from("AAPL"),
+        Ustr::from("USD"),
+        UnixNanos::from(1_711_036_800_000_000_000),
+    );
+    let strike_range = StrikeRange::AtmRelative {
+        strikes_above: 5,
+        strikes_below: 5,
+    };
+    actor.subscribe_option_chain(series_id, strike_range, None, None);
+
+    let slice = OptionChainSlice {
+        series_id,
+        atm_strike: None,
+        calls: Default::default(),
+        puts: Default::default(),
+        ts_event: UnixNanos::default(),
+        ts_init: UnixNanos::default(),
+    };
+
+    let topic = get_option_chain_topic(series_id);
+    msgbus::publish_option_chain(topic, &slice);
+
+    assert_eq!(actor.received_chain_slices.len(), 1);
+
+    actor.unsubscribe_option_chain(series_id, None);
+
+    msgbus::publish_option_chain(topic, &slice);
+
+    assert_eq!(actor.received_chain_slices.len(), 1);
 }
 
 #[rstest]

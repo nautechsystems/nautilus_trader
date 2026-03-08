@@ -108,6 +108,8 @@ from nautilus_trader.model import TradeTick
 from nautilus_trader.model import OrderBookDeltas
 from nautilus_trader.model import InstrumentClose
 from nautilus_trader.model import InstrumentStatus
+from nautilus_trader.model import OptionChainSlice
+from nautilus_trader.model import OptionGreeks
 from nautilus_trader.model.instruments import Instrument
 
 def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
@@ -118,6 +120,8 @@ def on_bar(self, bar: Bar) -> None:
 def on_instrument(self, instrument: Instrument) -> None:
 def on_instrument_status(self, data: InstrumentStatus) -> None:
 def on_instrument_close(self, data: InstrumentClose) -> None:
+def on_option_greeks(self, greeks: OptionGreeks) -> None:
+def on_option_chain(self, chain: OptionChainSlice) -> None:
 def on_historical_data(self, data: Data) -> None:
 def on_data(self, data: Data) -> None:  # Custom data passed to this handler
 def on_signal(self, signal: Data) -> None:  # Custom signals passed to this handler

@@ -155,6 +155,8 @@ Here's how different data operations map to their handlers:
 | `subscribe_funding_rates()`          | Real-time  | `on_funding_rate()`      | Live funding rate updates.                        |
 | `subscribe_instrument_status()`      | Real-time  | `on_instrument_status()` | Live instrument status updates.                   |
 | `subscribe_instrument_close()`       | Real-time  | `on_instrument_close()`  | Live instrument close updates.                    |
+| `subscribe_option_greeks()`          | Real-time  | `on_option_greeks()`     | Live option greeks updates.                       |
+| `subscribe_option_chain()`           | Real-time  | `on_option_chain()`      | Live option chain slice snapshots.                |
 | `subscribe_order_fills()`            | Real-time  | `on_order_filled()`      | Live order fill events for an instrument.         |
 | `subscribe_order_cancels()`          | Real-time  | `on_order_canceled()`    | Live order cancel events for an instrument.       |
 | `request_data()`                     | Historical | `on_historical_data()`   | Historical data processing.                       |

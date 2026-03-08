@@ -35,7 +35,9 @@ use nautilus_model::defi::{
 use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
+        MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
+        close::InstrumentClose,
+        option_chain::{OptionChainSlice, OptionGreeks},
     },
     enums::BookType,
     identifiers::{ActorId, ClientId, InstrumentId, TraderId, Venue},
@@ -331,6 +333,24 @@ impl PyDataActorInner {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_instrument_close", (update.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_option_greeks(&mut self, greeks: OptionGreeks) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_option_greeks", (greeks.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_option_chain(&mut self, slice: OptionChainSlice) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_option_chain", (slice.into_py_any_unwrap(py),))
             })?;
         }
         Ok(())
@@ -778,6 +798,16 @@ impl DataActor for PyDataActorInner {
             .map_err(|e| anyhow::anyhow!("Python on_instrument_close failed: {e}"))
     }
 
+    fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
+        self.dispatch_on_option_greeks(*greeks)
+            .map_err(|e| anyhow::anyhow!("Python on_option_greeks failed: {e}"))
+    }
+
+    fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
+        self.dispatch_on_option_chain(slice.clone())
+            .map_err(|e| anyhow::anyhow!("Python on_option_chain failed: {e}"))
+    }
+
     #[cfg(feature = "defi")]
     fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
         self.dispatch_on_block(block.clone())
@@ -1082,6 +1112,16 @@ impl PyDataActor {
     #[pyo3(name = "on_instrument_close")]
     fn py_on_instrument_close(&mut self, close: InstrumentClose) -> PyResult<()> {
         self.inner_mut().dispatch_on_instrument_close(close)
+    }
+
+    #[pyo3(name = "on_option_greeks")]
+    fn py_on_option_greeks(&mut self, greeks: OptionGreeks) -> PyResult<()> {
+        self.inner_mut().dispatch_on_option_greeks(greeks)
+    }
+
+    #[pyo3(name = "on_option_chain")]
+    fn py_on_option_chain(&mut self, slice: OptionChainSlice) -> PyResult<()> {
+        self.inner_mut().dispatch_on_option_chain(slice)
     }
 
     #[cfg(feature = "defi")]
@@ -1995,9 +2035,11 @@ mod tests {
             Bar, BarType, CustomData, DataType, IndexPriceUpdate, InstrumentStatus,
             MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
             close::InstrumentClose,
+            greeks::OptionGreekValues,
+            option_chain::{OptionChainSlice, OptionGreeks},
         },
         enums::{AggressorSide, BookType, InstrumentCloseType, MarketStatusAction},
-        identifiers::{ClientId, TradeId, TraderId, Venue},
+        identifiers::{ClientId, OptionSeriesId, TradeId, TraderId, Venue},
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
         types::{Price, Quantity},
@@ -2352,6 +2394,16 @@ mod tests {
             self.inner.inner_mut().on_instrument_close(update)
         }
 
+        fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
+            self.track_call("on_option_greeks");
+            self.inner.inner_mut().on_option_greeks(greeks)
+        }
+
+        fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
+            self.track_call("on_option_chain");
+            self.inner.inner_mut().on_option_chain(slice)
+        }
+
         #[cfg(feature = "defi")]
         fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
             self.track_call("on_block");
@@ -2651,6 +2703,65 @@ mod tests {
         assert!(rust_actor.inner_mut().on_instrument_close(&close).is_ok());
     }
 
+    #[rstest]
+    fn test_python_on_option_greeks_handler(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        let mut rust_actor = PyDataActor::new(None);
+        rust_actor.register(trader_id, clock, cache).unwrap();
+
+        let greeks = OptionGreeks {
+            instrument_id: audusd_sim.id,
+            greeks: OptionGreekValues {
+                delta: 0.55,
+                gamma: 0.03,
+                vega: 0.12,
+                theta: -0.05,
+                rho: 0.01,
+            },
+            mark_iv: Some(0.25),
+            bid_iv: None,
+            ask_iv: None,
+            underlying_price: None,
+            open_interest: None,
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+        };
+
+        assert!(rust_actor.inner_mut().on_option_greeks(&greeks).is_ok());
+    }
+
+    #[rstest]
+    fn test_python_on_option_chain_handler(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        let mut rust_actor = PyDataActor::new(None);
+        rust_actor.register(trader_id, clock, cache).unwrap();
+
+        let slice = OptionChainSlice {
+            series_id: OptionSeriesId::new(
+                Venue::from("SIM"),
+                Ustr::from("AUD"),
+                Ustr::from("USD"),
+                UnixNanos::from(1_711_036_800_000_000_000),
+            ),
+            atm_strike: None,
+            calls: Default::default(),
+            puts: Default::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+        };
+
+        assert!(rust_actor.inner_mut().on_option_chain(&slice).is_ok());
+    }
+
     #[cfg(feature = "defi")]
     #[rstest]
     fn test_python_on_block_handler(
@@ -2870,6 +2981,12 @@ class TrackingActor:
 
     def on_instrument_close(self, close):
         self._record("on_instrument_close", close)
+
+    def on_option_greeks(self, greeks):
+        self._record("on_option_greeks", greeks)
+
+    def on_option_chain(self, chain):
+        self._record("on_option_chain", chain)
 
     def on_historical_data(self, data):
         self._record("on_historical_data", data)
@@ -3416,6 +3533,81 @@ class TrackingActor:
                 py,
                 "on_instrument_close"
             ));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_option_greeks(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let greeks = OptionGreeks {
+                instrument_id: audusd_sim.id,
+                greeks: OptionGreekValues {
+                    delta: 0.55,
+                    gamma: 0.03,
+                    vega: 0.12,
+                    theta: -0.05,
+                    rho: 0.01,
+                },
+                mark_iv: Some(0.25),
+                bid_iv: None,
+                ask_iv: None,
+                underlying_price: None,
+                open_interest: None,
+                ts_event: UnixNanos::default(),
+                ts_init: UnixNanos::default(),
+            };
+
+            let result = rust_actor.inner_mut().on_option_greeks(&greeks);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_option_greeks"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_option_chain(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let slice = OptionChainSlice {
+                series_id: OptionSeriesId::new(
+                    Venue::from("SIM"),
+                    Ustr::from("AUD"),
+                    Ustr::from("USD"),
+                    UnixNanos::from(1_711_036_800_000_000_000),
+                ),
+                atm_strike: None,
+                calls: Default::default(),
+                puts: Default::default(),
+                ts_event: UnixNanos::default(),
+                ts_init: UnixNanos::default(),
+            };
+
+            let result = rust_actor.inner_mut().on_option_chain(&slice);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_option_chain"));
         });
     }
 

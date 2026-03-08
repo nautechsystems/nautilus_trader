@@ -1538,6 +1538,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
         raise NotImplementedError("implement `_subscribe_instrument_close` in your adapter subclass")
 
+    async def _subscribe_option_greeks(self, command: SubscribeOptionGreeks) -> None:
+        raise NotImplementedError("implement `_subscribe_option_greeks` in your adapter subclass")
+
     async def _unsubscribe(self, command: UnsubscribeData) -> None:
         raise NotImplementedError("implement `_unsubscribe` in your adapter subclass")
 
@@ -1576,6 +1579,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_instrument_close(self, command: UnsubscribeInstrumentClose) -> None:
         raise NotImplementedError("implement `_unsubscribe_instrument_close` in your adapter subclass")
+
+    async def _unsubscribe_option_greeks(self, command: UnsubscribeOptionGreeks) -> None:
+        raise NotImplementedError("implement `_unsubscribe_option_greeks` in your adapter subclass")
 
     async def _request(self, request: RequestData) -> None:
         raise NotImplementedError("implement `_request` in your adapter subclass")
@@ -1623,6 +1629,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 | `_subscribe_funding_rates`         | Subscribes to funding rate updates.                     |
 | `_subscribe_instrument_status`     | Subscribes to instrument status updates.                |
 | `_subscribe_instrument_close`      | Subscribes to instrument close price updates.           |
+| `_subscribe_option_greeks`         | Subscribes to option greeks updates.                    |
 | `_unsubscribe`                     | Unsubscribes from generic data (base for custom types). |
 | `_unsubscribe_instruments`         | Unsubscribes from market data for multiple instruments. |
 | `_unsubscribe_instrument`          | Unsubscribes from market data for a single instrument.  |
@@ -1636,6 +1643,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 | `_unsubscribe_funding_rates`       | Unsubscribes from funding rate updates.                 |
 | `_unsubscribe_instrument_status`   | Unsubscribes from instrument status updates.            |
 | `_unsubscribe_instrument_close`    | Unsubscribes from instrument close price updates.       |
+| `_unsubscribe_option_greeks`       | Unsubscribes from option greeks updates.                |
 | `_request`                         | Requests generic data (base for custom types).          |
 | `_request_instrument`              | Requests historical data for a single instrument.       |
 | `_request_instruments`             | Requests historical data for multiple instruments.      |
