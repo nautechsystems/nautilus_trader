@@ -22,10 +22,12 @@
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{BookOrder, InstrumentStatus, OrderBookDelta, OrderBookDeltas, TradeTick},
+    data::{
+        BookOrder, InstrumentClose, InstrumentStatus, OrderBookDelta, OrderBookDeltas, TradeTick,
+    },
     enums::{
-        AggressorSide, BookAction, LiquiditySide, MarketStatusAction, OrderSide, OrderType,
-        RecordFlag, TimeInForce,
+        AggressorSide, BookAction, InstrumentCloseType, LiquiditySide, MarketStatusAction,
+        OrderSide, OrderType, RecordFlag, TimeInForce,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
@@ -36,10 +38,16 @@ use rust_decimal::Decimal;
 use crate::{
     common::{
         consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION},
-        enums::{MarketStatus, StreamingOrderStatus, resolve_streaming_order_status},
-        parse::parse_millis_timestamp,
+        enums::{MarketStatus, RunnerStatus, StreamingOrderStatus, resolve_streaming_order_status},
+        parse::{make_instrument_id, parse_millis_timestamp},
     },
-    stream::messages::{RunnerChange, UnmatchedOrder},
+    data_types::{
+        BetfairBspBookDelta, BetfairRaceProgress, BetfairRaceRunnerData, BetfairStartingPrice,
+        BetfairTicker,
+    },
+    stream::messages::{
+        MarketDefinition, RaceProgressChange, RaceRunnerChange, RunnerChange, UnmatchedOrder,
+    },
 };
 
 /// Parses a single runner's book data into [`OrderBookDeltas`].
@@ -498,6 +506,236 @@ pub fn make_fill_report(
     )
 }
 
+/// Extracts a [`BetfairTicker`] from a runner change if any ticker fields are present.
+///
+/// Returns `None` when the runner change contains no ltp, tv, spn, or spf data.
+#[must_use]
+pub fn parse_betfair_ticker(
+    instrument_id: InstrumentId,
+    rc: &RunnerChange,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> Option<BetfairTicker> {
+    if rc.ltp.is_none() && rc.tv.is_none() && rc.spn.is_none() && rc.spf.is_none() {
+        return None;
+    }
+
+    Some(BetfairTicker::new(
+        instrument_id,
+        rc.ltp.map_or(f64::NAN, |d| {
+            d.to_string().parse::<f64>().unwrap_or(f64::NAN)
+        }),
+        rc.tv.map_or(f64::NAN, |d| {
+            d.to_string().parse::<f64>().unwrap_or(f64::NAN)
+        }),
+        rc.spn.map_or(f64::NAN, |d| {
+            d.to_string().parse::<f64>().unwrap_or(f64::NAN)
+        }),
+        rc.spf.map_or(f64::NAN, |d| {
+            d.to_string().parse::<f64>().unwrap_or(f64::NAN)
+        }),
+        ts_event,
+        ts_init,
+    ))
+}
+
+/// Extracts [`BetfairStartingPrice`] values from a market definition's runners.
+///
+/// Returns one entry per runner that has a non-None BSP value.
+#[must_use]
+pub fn parse_betfair_starting_prices(
+    market_id: &str,
+    def: &MarketDefinition,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> Vec<BetfairStartingPrice> {
+    let Some(runners) = &def.runners else {
+        return Vec::new();
+    };
+
+    runners
+        .iter()
+        .filter_map(|rd| {
+            let bsp = rd.bsp?;
+            let handicap = rd.hc.unwrap_or(Decimal::ZERO);
+            let instrument_id = make_instrument_id(market_id, rd.id, handicap);
+            let bsp_f64 = bsp.to_string().parse::<f64>().unwrap_or(f64::NAN);
+            Some(BetfairStartingPrice::new(
+                instrument_id,
+                bsp_f64,
+                ts_event,
+                ts_init,
+            ))
+        })
+        .collect()
+}
+
+/// Extracts BSP order book deltas from a runner change's `spb`/`spl` fields.
+///
+/// Returns an empty vec when neither `spb` nor `spl` data is present.
+/// The `side` field uses `OrderSide::Sell` for `spb` (back) and
+/// `OrderSide::Buy` for `spl` (lay), following Betfair's inverted convention.
+#[must_use]
+pub fn parse_bsp_book_deltas(
+    instrument_id: InstrumentId,
+    rc: &RunnerChange,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> Vec<BetfairBspBookDelta> {
+    let spb_len = rc.spb.as_ref().map_or(0, Vec::len);
+    let spl_len = rc.spl.as_ref().map_or(0, Vec::len);
+
+    if spb_len + spl_len == 0 {
+        return Vec::new();
+    }
+
+    let mut result = Vec::with_capacity(spb_len + spl_len);
+
+    // spb (starting price back) -> Sell side (Betfair convention)
+    for pv in rc.spb.as_deref().unwrap_or(&[]) {
+        let action = if pv.volume == Decimal::ZERO {
+            BookAction::Delete as u32
+        } else {
+            BookAction::Update as u32
+        };
+
+        result.push(BetfairBspBookDelta::new(
+            instrument_id,
+            action,
+            OrderSide::Sell as u32,
+            pv.price.to_string().parse::<f64>().unwrap_or(f64::NAN),
+            pv.volume.to_string().parse::<f64>().unwrap_or(0.0),
+            ts_event,
+            ts_init,
+        ));
+    }
+
+    // spl (starting price lay) -> Buy side (Betfair convention)
+    for pv in rc.spl.as_deref().unwrap_or(&[]) {
+        let action = if pv.volume == Decimal::ZERO {
+            BookAction::Delete as u32
+        } else {
+            BookAction::Update as u32
+        };
+
+        result.push(BetfairBspBookDelta::new(
+            instrument_id,
+            action,
+            OrderSide::Buy as u32,
+            pv.price.to_string().parse::<f64>().unwrap_or(f64::NAN),
+            pv.volume.to_string().parse::<f64>().unwrap_or(0.0),
+            ts_event,
+            ts_init,
+        ));
+    }
+
+    result
+}
+
+/// Produces [`InstrumentClose`] events from a market definition's runner statuses.
+///
+/// Winners and placed runners get close price 1.0; losers and removed runners
+/// get close price 0.0. Active runners produce no close event.
+#[must_use]
+pub fn parse_instrument_closes(
+    market_id: &str,
+    def: &MarketDefinition,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> Vec<InstrumentClose> {
+    let Some(runners) = &def.runners else {
+        return Vec::new();
+    };
+
+    runners
+        .iter()
+        .filter_map(|rd| {
+            let status = rd.status.as_ref()?;
+            let close_price = match status {
+                RunnerStatus::Winner | RunnerStatus::Placed => Price::from("1.00"),
+                RunnerStatus::Loser | RunnerStatus::Removed | RunnerStatus::RemovedVacant => {
+                    Price::from("0.00")
+                }
+                RunnerStatus::Active | RunnerStatus::Hidden => return None,
+            };
+
+            let handicap = rd.hc.unwrap_or(Decimal::ZERO);
+            let instrument_id = make_instrument_id(market_id, rd.id, handicap);
+
+            Some(InstrumentClose::new(
+                instrument_id,
+                close_price,
+                InstrumentCloseType::ContractExpired,
+                ts_event,
+                ts_init,
+            ))
+        })
+        .collect()
+}
+
+/// Parses a single [`RaceRunnerChange`] into a [`BetfairRaceRunnerData`].
+///
+/// Returns `None` if the runner change has no selection ID.
+#[must_use]
+pub fn parse_race_runner_data(
+    race_id: &str,
+    market_id: &str,
+    rrc: &RaceRunnerChange,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> Option<BetfairRaceRunnerData> {
+    let selection_id = rrc.id?;
+
+    Some(BetfairRaceRunnerData::new(
+        race_id.to_string(),
+        market_id.to_string(),
+        selection_id,
+        rrc.lat.unwrap_or(f64::NAN),
+        rrc.lng.unwrap_or(f64::NAN),
+        rrc.spd.unwrap_or(f64::NAN),
+        rrc.prg.unwrap_or(f64::NAN),
+        rrc.sfq.unwrap_or(f64::NAN),
+        ts_event,
+        ts_init,
+    ))
+}
+
+/// Parses a [`RaceProgressChange`] into a [`BetfairRaceProgress`].
+#[must_use]
+pub fn parse_race_progress(
+    race_id: &str,
+    market_id: &str,
+    rpc: &RaceProgressChange,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> BetfairRaceProgress {
+    let order_json = rpc
+        .ord
+        .as_ref()
+        .map(|v| serde_json::to_string(v).unwrap_or_default())
+        .unwrap_or_default();
+
+    let jumps_json = rpc
+        .jumps
+        .as_ref()
+        .map(|v| serde_json::to_string(v).unwrap_or_default())
+        .unwrap_or_default();
+
+    BetfairRaceProgress::new(
+        race_id.to_string(),
+        market_id.to_string(),
+        rpc.g.clone().unwrap_or_default(),
+        rpc.st.unwrap_or(f64::NAN),
+        rpc.rt.unwrap_or(f64::NAN),
+        rpc.spd.unwrap_or(f64::NAN),
+        rpc.prg.unwrap_or(f64::NAN),
+        order_json,
+        jumps_json,
+        ts_event,
+        ts_init,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::enums::{MarketStatusAction, OrderStatus};
@@ -505,8 +743,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::{parse::make_instrument_id, testing::load_test_json},
-        stream::messages::StreamMessage,
+        common::testing::load_test_json,
+        stream::messages::{PV, StreamMessage, stream_decode},
     };
 
     #[rstest]
@@ -1208,5 +1446,539 @@ mod tests {
         } else {
             panic!("expected OrderChange")
         }
+    }
+
+    #[rstest]
+    fn test_parse_race_runner_data_from_fixture() {
+        let data = load_test_json("stream/rcm_single.json");
+        let msg = stream_decode(data.as_bytes()).unwrap();
+
+        let StreamMessage::RaceChange(rcm) = msg else {
+            panic!("expected RaceChange");
+        };
+
+        let race = &rcm.rc.as_ref().unwrap()[0];
+        let rrc = &race.rrc.as_ref().unwrap()[0];
+        let ts = parse_millis_timestamp(rcm.pt);
+
+        let runner = parse_race_runner_data(
+            race.id.as_deref().unwrap(),
+            race.mid.as_deref().unwrap(),
+            rrc,
+            ts,
+            ts,
+        )
+        .unwrap();
+
+        assert_eq!(runner.race_id, "28587288.1650");
+        assert_eq!(runner.market_id, "1.1234567");
+        assert_eq!(runner.selection_id, 7390417);
+        assert!((runner.latitude - 51.4189543).abs() < 1e-6);
+        assert!((runner.longitude - (-0.4058491)).abs() < 1e-6);
+        assert!((runner.speed - 17.8).abs() < 1e-6);
+        assert!((runner.progress - 2051.0).abs() < 1e-6);
+        assert!((runner.stride_frequency - 2.07).abs() < 1e-6);
+    }
+
+    #[rstest]
+    fn test_parse_race_progress_from_fixture() {
+        let data = load_test_json("stream/rcm_single.json");
+        let msg = stream_decode(data.as_bytes()).unwrap();
+
+        let StreamMessage::RaceChange(rcm) = msg else {
+            panic!("expected RaceChange");
+        };
+
+        let race = &rcm.rc.as_ref().unwrap()[0];
+        let rpc = race.rpc.as_ref().unwrap();
+        let ts = parse_millis_timestamp(rcm.pt);
+
+        let progress = parse_race_progress(
+            race.id.as_deref().unwrap(),
+            race.mid.as_deref().unwrap(),
+            rpc,
+            ts,
+            ts,
+        );
+
+        assert_eq!(progress.race_id, "28587288.1650");
+        assert_eq!(progress.market_id, "1.1234567");
+        assert_eq!(progress.gate_name, "1f");
+        assert!((progress.sectional_time - 10.6).abs() < 1e-6);
+        assert!((progress.running_time - 46.7).abs() < 1e-6);
+        assert!((progress.speed - 17.8).abs() < 1e-6);
+        assert!((progress.progress - 87.5).abs() < 1e-6);
+
+        let order: Vec<i64> = serde_json::from_str(&progress.order).unwrap();
+        assert_eq!(order, vec![7390417, 5600338, 11527189, 6395118, 8706072]);
+
+        let jumps: Vec<serde_json::Value> = serde_json::from_str(&progress.jumps).unwrap();
+        assert_eq!(jumps.len(), 2);
+        assert_eq!(jumps[0]["J"], 2);
+    }
+
+    #[rstest]
+    fn test_parse_race_runner_data_multi_runner() {
+        let data = load_test_json("stream/rcm_multi_runner.json");
+        let msg = stream_decode(data.as_bytes()).unwrap();
+
+        let StreamMessage::RaceChange(rcm) = msg else {
+            panic!("expected RaceChange");
+        };
+
+        let race = &rcm.rc.as_ref().unwrap()[0];
+        let ts = parse_millis_timestamp(rcm.pt);
+        let race_id = race.id.as_deref().unwrap();
+        let market_id = race.mid.as_deref().unwrap();
+
+        let runners: Vec<_> = race
+            .rrc
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter_map(|rrc| parse_race_runner_data(race_id, market_id, rrc, ts, ts))
+            .collect();
+
+        assert_eq!(runners.len(), 5);
+        assert_eq!(runners[0].selection_id, 35467839);
+        assert_eq!(runners[4].selection_id, 41694785);
+        assert!((runners[0].speed - 16.33).abs() < 1e-6);
+        assert!((runners[4].speed - 17.11).abs() < 1e-6);
+    }
+
+    #[rstest]
+    fn test_parse_race_runner_data_missing_id_returns_none() {
+        let rrc = RaceRunnerChange {
+            ft: Some(1000),
+            id: None,
+            lat: Some(51.0),
+            lng: Some(-0.4),
+            spd: Some(15.0),
+            prg: Some(500.0),
+            sfq: Some(2.0),
+        };
+        let ts = UnixNanos::from(1_000_000_000u64);
+        let result = parse_race_runner_data("race1", "market1", &rrc, ts, ts);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_race_runner_data_absent_fields_are_nan() {
+        let rrc = RaceRunnerChange {
+            ft: None,
+            id: Some(12345),
+            lat: None,
+            lng: None,
+            spd: None,
+            prg: None,
+            sfq: None,
+        };
+        let ts = UnixNanos::from(1_000_000_000u64);
+        let runner = parse_race_runner_data("race1", "market1", &rrc, ts, ts).unwrap();
+        assert!(runner.latitude.is_nan());
+        assert!(runner.longitude.is_nan());
+        assert!(runner.speed.is_nan());
+        assert!(runner.progress.is_nan());
+        assert!(runner.stride_frequency.is_nan());
+    }
+
+    #[rstest]
+    fn test_parse_race_progress_absent_fields() {
+        let rpc = RaceProgressChange {
+            ft: None,
+            g: None,
+            st: None,
+            rt: None,
+            spd: None,
+            prg: None,
+            ord: None,
+            jumps: None,
+        };
+        let ts = UnixNanos::from(1_000_000_000u64);
+        let progress = parse_race_progress("race1", "market1", &rpc, ts, ts);
+        assert_eq!(progress.gate_name, "");
+        assert!(progress.sectional_time.is_nan());
+        assert!(progress.running_time.is_nan());
+        assert_eq!(progress.order, "");
+        assert_eq!(progress.jumps, "");
+    }
+
+    fn runner_change_with_ticker(
+        id: u64,
+        ltp: Option<Decimal>,
+        tv: Option<Decimal>,
+        spn: Option<Decimal>,
+        spf: Option<Decimal>,
+    ) -> RunnerChange {
+        RunnerChange {
+            id,
+            hc: None,
+            atb: None,
+            atl: None,
+            batb: None,
+            batl: None,
+            bdatb: None,
+            bdatl: None,
+            spb: None,
+            spl: None,
+            spn,
+            spf,
+            trd: None,
+            ltp,
+            tv,
+        }
+    }
+
+    #[rstest]
+    fn test_parse_betfair_ticker_all_fields() {
+        let rc = runner_change_with_ticker(
+            9249757,
+            Some(Decimal::new(55, 1)),
+            Some(Decimal::new(189032, 2)),
+            Some(Decimal::new(568, 2)),
+            Some(Decimal::new(573, 2)),
+        );
+        let ts = UnixNanos::from(1_000_000_000u64);
+        let instrument_id = make_instrument_id("1.185781465", 9249757, Decimal::ZERO);
+
+        let ticker = parse_betfair_ticker(instrument_id, &rc, ts, ts).unwrap();
+
+        assert_eq!(ticker.instrument_id, instrument_id);
+        assert!((ticker.last_traded_price - 5.5).abs() < f64::EPSILON);
+        assert!((ticker.traded_volume - 1890.32).abs() < f64::EPSILON);
+        assert!((ticker.starting_price_near - 5.68).abs() < f64::EPSILON);
+        assert!((ticker.starting_price_far - 5.73).abs() < f64::EPSILON);
+    }
+
+    #[rstest]
+    fn test_parse_betfair_ticker_partial_fields() {
+        let rc = runner_change_with_ticker(
+            9249757,
+            Some(Decimal::new(55, 1)),
+            Some(Decimal::new(189032, 2)),
+            None,
+            None,
+        );
+        let ts = UnixNanos::from(1_000_000_000u64);
+        let instrument_id = make_instrument_id("1.185781465", 9249757, Decimal::ZERO);
+
+        let ticker = parse_betfair_ticker(instrument_id, &rc, ts, ts).unwrap();
+
+        assert!((ticker.last_traded_price - 5.5).abs() < f64::EPSILON);
+        assert!((ticker.traded_volume - 1890.32).abs() < f64::EPSILON);
+        assert!(ticker.starting_price_near.is_nan());
+        assert!(ticker.starting_price_far.is_nan());
+    }
+
+    #[rstest]
+    fn test_parse_betfair_ticker_no_fields_returns_none() {
+        let rc = runner_change_with_ticker(9249757, None, None, None, None);
+        let ts = UnixNanos::from(1_000_000_000u64);
+        let instrument_id = make_instrument_id("1.185781465", 9249757, Decimal::ZERO);
+
+        assert!(parse_betfair_ticker(instrument_id, &rc, ts, ts).is_none());
+    }
+
+    #[rstest]
+    fn test_parse_betfair_ticker_only_tv() {
+        let rc =
+            runner_change_with_ticker(40273293, None, Some(Decimal::new(320115, 2)), None, None);
+        let ts = UnixNanos::from(1_000_000_000u64);
+        let instrument_id = make_instrument_id("1.185781465", 40273293, Decimal::ZERO);
+
+        let ticker = parse_betfair_ticker(instrument_id, &rc, ts, ts).unwrap();
+
+        assert!(ticker.last_traded_price.is_nan());
+        assert!((ticker.traded_volume - 3201.15).abs() < f64::EPSILON);
+        assert!(ticker.starting_price_near.is_nan());
+        assert!(ticker.starting_price_far.is_nan());
+    }
+
+    #[rstest]
+    fn test_parse_betfair_ticker_from_fixture() {
+        let data = load_test_json("stream/mcm_BSP_settled.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::MarketChange(mcm) = msg {
+            let mc = mcm.mc.as_ref().unwrap();
+            let change = &mc[0];
+            let rc_list = change.rc.as_ref().unwrap();
+
+            // Runner 9249757 has ltp=5.5, tv=1890.32, spn=5.68, spf=5.73
+            let rc = rc_list.iter().find(|r| r.id == 9249757).unwrap();
+            let instrument_id = make_instrument_id(&change.id, rc.id, Decimal::ZERO);
+            let ts = parse_millis_timestamp(mcm.pt);
+
+            let ticker = parse_betfair_ticker(instrument_id, rc, ts, ts).unwrap();
+
+            assert!((ticker.last_traded_price - 5.5).abs() < f64::EPSILON);
+            assert!((ticker.traded_volume - 1890.32).abs() < f64::EPSILON);
+            assert!((ticker.starting_price_near - 5.68).abs() < f64::EPSILON);
+            assert!((ticker.starting_price_far - 5.73).abs() < f64::EPSILON);
+
+            // Runner 40273293 has ltp=2.1, tv=3201.15 but no spn/spf
+            let rc2 = rc_list.iter().find(|r| r.id == 40273293).unwrap();
+            let instrument_id2 = make_instrument_id(&change.id, rc2.id, Decimal::ZERO);
+            let ticker2 = parse_betfair_ticker(instrument_id2, rc2, ts, ts).unwrap();
+
+            assert!((ticker2.last_traded_price - 2.1).abs() < f64::EPSILON);
+            assert!((ticker2.traded_volume - 3201.15).abs() < f64::EPSILON);
+            assert!(ticker2.starting_price_near.is_nan());
+            assert!(ticker2.starting_price_far.is_nan());
+
+            // Runner 23678734 has only tv=0, no ltp
+            let rc3 = rc_list.iter().find(|r| r.id == 23678734).unwrap();
+            let instrument_id3 = make_instrument_id(&change.id, rc3.id, Decimal::ZERO);
+            let ticker3 = parse_betfair_ticker(instrument_id3, rc3, ts, ts).unwrap();
+
+            assert!(ticker3.last_traded_price.is_nan());
+            assert!((ticker3.traded_volume - 0.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected MarketChange");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_betfair_starting_prices_from_fixture() {
+        let data = load_test_json("stream/mcm_BSP_settled.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::MarketChange(mcm) = msg {
+            let mc = mcm.mc.as_ref().unwrap();
+            let def = mc[0].market_definition.as_ref().unwrap();
+            let ts = parse_millis_timestamp(mcm.pt);
+
+            let prices = parse_betfair_starting_prices(&mc[0].id, def, ts, ts);
+
+            // 3 runners have bsp values, 1 (REMOVED) does not
+            assert_eq!(prices.len(), 3);
+
+            let bsp_map: std::collections::HashMap<String, f64> = prices
+                .iter()
+                .map(|p| (p.instrument_id.to_string(), p.bsp))
+                .collect();
+
+            let id_winner = make_instrument_id("1.185781465", 9249757, Decimal::ZERO).to_string();
+            let id_placed = make_instrument_id("1.185781465", 40273293, Decimal::ZERO).to_string();
+            let id_loser = make_instrument_id("1.185781465", 11120000, Decimal::ZERO).to_string();
+
+            assert!((bsp_map[&id_winner] - 5.73).abs() < f64::EPSILON);
+            assert!((bsp_map[&id_placed] - 2.14).abs() < f64::EPSILON);
+            assert!((bsp_map[&id_loser] - 28.56).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected MarketChange");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_betfair_starting_prices_no_runners() {
+        let def = MarketDefinition {
+            runners: None,
+            bet_delay: None,
+            betting_type: None,
+            bsp_market: None,
+            bsp_reconciled: None,
+            competition_id: None,
+            competition_name: None,
+            complete: None,
+            country_code: None,
+            cross_matching: None,
+            discount_allowed: None,
+            each_way_divisor: None,
+            event_id: None,
+            event_name: None,
+            event_type_id: None,
+            event_type_name: None,
+            in_play: None,
+            line_interval: None,
+            line_max_unit: None,
+            line_min_unit: None,
+            market_base_rate: None,
+            market_id: None,
+            market_name: None,
+            market_time: None,
+            market_type: None,
+            number_of_active_runners: None,
+            number_of_winners: None,
+            open_date: None,
+            persistence_enabled: None,
+            price_ladder_definition: None,
+            race_type: None,
+            regulators: None,
+            runners_voidable: None,
+            settled_time: None,
+            status: None,
+            suspend_time: None,
+            timezone: None,
+            turn_in_play_enabled: None,
+            venue: None,
+            version: None,
+        };
+        let ts = UnixNanos::from(1_000_000_000u64);
+
+        let prices = parse_betfair_starting_prices("1.12345", &def, ts, ts);
+
+        assert!(prices.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_bsp_book_deltas_from_fixture() {
+        let data = load_test_json("stream/mcm_BSP.json");
+        let messages: Vec<StreamMessage> = serde_json::from_str(&data).unwrap();
+
+        // Find the MCM with runner changes containing spb/spl data
+        let mcm = messages
+            .iter()
+            .find_map(|m| match m {
+                StreamMessage::MarketChange(mcm) => {
+                    let mc = mcm.mc.as_ref()?;
+                    let has_spb = mc.iter().any(|c| {
+                        c.rc.as_ref()
+                            .is_some_and(|rcs| rcs.iter().any(|r| r.spb.is_some()))
+                    });
+
+                    if has_spb { Some(mcm) } else { None }
+                }
+                _ => None,
+            })
+            .expect("fixture should contain MCM with spb data");
+
+        let mc = mcm.mc.as_ref().unwrap();
+        let change = &mc[0];
+        let rc_list = change.rc.as_ref().unwrap();
+
+        // Runner 9249757 has spb and spl arrays
+        let rc = rc_list.iter().find(|r| r.id == 9249757).unwrap();
+        let instrument_id = make_instrument_id(&change.id, rc.id, Decimal::ZERO);
+        let ts = parse_millis_timestamp(mcm.pt);
+
+        let deltas = parse_bsp_book_deltas(instrument_id, rc, ts, ts);
+
+        let spb_count = rc.spb.as_ref().unwrap().len();
+        let spl_count = rc.spl.as_ref().unwrap().len();
+        assert_eq!(deltas.len(), spb_count + spl_count);
+
+        // SPB entries are Sell side
+        assert_eq!(deltas[0].side, OrderSide::Sell as u32);
+        assert!((deltas[0].price - 1000.0).abs() < f64::EPSILON);
+        assert!((deltas[0].size - 33.38).abs() < f64::EPSILON);
+        assert_eq!(deltas[0].action, BookAction::Update as u32);
+
+        // SPL entries are Buy side
+        let spl_start = spb_count;
+        assert_eq!(deltas[spl_start].side, OrderSide::Buy as u32);
+        assert!((deltas[spl_start].price - 7.0).abs() < f64::EPSILON);
+        assert!((deltas[spl_start].size - 10.0).abs() < f64::EPSILON);
+    }
+
+    #[rstest]
+    fn test_parse_bsp_book_deltas_zero_volume_is_delete() {
+        let rc = RunnerChange {
+            id: 12345,
+            hc: None,
+            atb: None,
+            atl: None,
+            batb: None,
+            batl: None,
+            bdatb: None,
+            bdatl: None,
+            spb: Some(vec![PV {
+                price: Decimal::new(50, 1),
+                volume: Decimal::ZERO,
+            }]),
+            spl: None,
+            spn: None,
+            spf: None,
+            trd: None,
+            ltp: None,
+            tv: None,
+        };
+        let ts = UnixNanos::from(1_000_000_000u64);
+        let instrument_id = make_instrument_id("1.12345", 12345, Decimal::ZERO);
+
+        let deltas = parse_bsp_book_deltas(instrument_id, &rc, ts, ts);
+
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].action, BookAction::Delete as u32);
+        assert!((deltas[0].price - 5.0).abs() < f64::EPSILON);
+        assert!((deltas[0].size - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[rstest]
+    fn test_parse_bsp_book_deltas_no_spb_spl_returns_empty() {
+        let rc = runner_change_with_ticker(12345, None, None, None, None);
+        let ts = UnixNanos::from(1_000_000_000u64);
+        let instrument_id = make_instrument_id("1.12345", 12345, Decimal::ZERO);
+
+        let deltas = parse_bsp_book_deltas(instrument_id, &rc, ts, ts);
+
+        assert!(deltas.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_instrument_closes_from_fixture() {
+        let data = load_test_json("stream/mcm_BSP_settled.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::MarketChange(mcm) = msg {
+            let mc = mcm.mc.as_ref().unwrap();
+            let def = mc[0].market_definition.as_ref().unwrap();
+            let ts = parse_millis_timestamp(mcm.pt);
+
+            let closes = parse_instrument_closes(&mc[0].id, def, ts, ts);
+
+            // 4 runners: WINNER, PLACED, LOSER, REMOVED - all produce close events
+            assert_eq!(closes.len(), 4);
+
+            let close_map: std::collections::HashMap<String, Price> = closes
+                .iter()
+                .map(|c| (c.instrument_id.to_string(), c.close_price))
+                .collect();
+
+            let id_winner = make_instrument_id("1.185781465", 9249757, Decimal::ZERO).to_string();
+            let id_placed = make_instrument_id("1.185781465", 40273293, Decimal::ZERO).to_string();
+            let id_loser = make_instrument_id("1.185781465", 11120000, Decimal::ZERO).to_string();
+            let id_removed = make_instrument_id("1.185781465", 37433527, Decimal::ZERO).to_string();
+
+            assert_eq!(close_map[&id_winner], Price::from("1.00"));
+            assert_eq!(close_map[&id_placed], Price::from("1.00"));
+            assert_eq!(close_map[&id_loser], Price::from("0.00"));
+            assert_eq!(close_map[&id_removed], Price::from("0.00"));
+        } else {
+            panic!("Expected MarketChange");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_instrument_closes_active_runners_excluded() {
+        let data = load_test_json("stream/mcm_BSP.json");
+        let messages: Vec<StreamMessage> = serde_json::from_str(&data).unwrap();
+
+        // Find the MCM with a market definition containing ACTIVE runners
+        let mcm = messages
+            .iter()
+            .find_map(|m| match m {
+                StreamMessage::MarketChange(mcm) => {
+                    let mc = mcm.mc.as_ref()?;
+                    mc.iter()
+                        .find(|c| c.market_definition.is_some())
+                        .map(|_| mcm)
+                }
+                _ => None,
+            })
+            .expect("fixture should contain MCM with market definition");
+
+        let mc = mcm.mc.as_ref().unwrap();
+        let change = mc.iter().find(|c| c.market_definition.is_some()).unwrap();
+        let def = change.market_definition.as_ref().unwrap();
+        let ts = parse_millis_timestamp(mcm.pt);
+
+        let closes = parse_instrument_closes(&change.id, def, ts, ts);
+
+        assert!(
+            closes.is_empty(),
+            "Active runners should not produce close events, found {}",
+            closes.len()
+        );
     }
 }

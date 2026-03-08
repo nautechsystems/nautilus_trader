@@ -34,8 +34,9 @@ use nautilus_common::{
     },
     providers::InstrumentProvider,
 };
+use nautilus_core::Params;
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API, TradeTick},
+    data::{CustomData, CustomDataTrait, Data, DataType, OrderBookDeltas_API, TradeTick},
     identifiers::{ClientId, InstrumentId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny},
     types::{Currency, Money, Price, Quantity},
@@ -53,18 +54,43 @@ use crate::{
             extract_market_id, make_instrument_id, parse_market_definition, parse_millis_timestamp,
         },
     },
+    config::BetfairDataConfig,
+    data_types::{BetfairSequenceCompleted, register_betfair_custom_data},
     http::client::BetfairHttpClient,
     provider::{BetfairInstrumentProvider, NavigationFilter},
     stream::{
         client::BetfairStreamClient,
         config::BetfairStreamConfig,
         messages::{MarketDataFilter, StreamMarketFilter, StreamMessage, stream_decode},
-        parse::{make_trade_tick, parse_instrument_status, parse_runner_book_deltas},
+        parse::{
+            make_trade_tick, parse_betfair_starting_prices, parse_betfair_ticker,
+            parse_bsp_book_deltas, parse_instrument_closes, parse_instrument_status,
+            parse_race_progress, parse_race_runner_data, parse_runner_book_deltas,
+        },
     },
 };
 
 /// Keep-alive interval in seconds (10 hours, matching Python default).
 const KEEP_ALIVE_INTERVAL_SECS: u64 = 36_000;
+
+/// Wraps a custom data value with its instrument_id in both metadata (for
+/// topic routing) and identifier (for catalog partitioning).
+pub(crate) fn custom_data_with_instrument(
+    value: Arc<dyn CustomDataTrait>,
+    instrument_id: InstrumentId,
+) -> CustomData {
+    let mut metadata = Params::new();
+    metadata.insert(
+        "instrument_id".to_string(),
+        serde_json::Value::String(instrument_id.to_string()),
+    );
+    let data_type = DataType::new(
+        value.type_name(),
+        Some(metadata),
+        Some(instrument_id.to_string()),
+    );
+    CustomData::new(value, data_type)
+}
 
 /// Betfair live data client.
 #[derive(Debug)]
@@ -75,6 +101,7 @@ pub struct BetfairDataClient {
     stream_client: Option<Arc<BetfairStreamClient>>,
     credential: BetfairCredential,
     stream_config: BetfairStreamConfig,
+    config: BetfairDataConfig,
     currency: Currency,
     is_connected: AtomicBool,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -86,11 +113,13 @@ pub struct BetfairDataClient {
 impl BetfairDataClient {
     /// Creates a new [`BetfairDataClient`] instance.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         client_id: ClientId,
         http_client: BetfairHttpClient,
         credential: BetfairCredential,
         stream_config: BetfairStreamConfig,
+        config: BetfairDataConfig,
         nav_filter: NavigationFilter,
         currency: Currency,
         min_notional: Option<Money>,
@@ -111,6 +140,7 @@ impl BetfairDataClient {
             stream_client: None,
             credential,
             stream_config,
+            config,
             currency,
             is_connected: AtomicBool::new(false),
             data_sender,
@@ -180,6 +210,30 @@ impl BetfairDataClient {
                                                 log::warn!("Failed to send instrument status: {e}");
                                             }
                                         }
+                                    }
+                                }
+                            }
+
+                            for sp in parse_betfair_starting_prices(&mc.id, def, ts_event, ts_init)
+                            {
+                                let instrument_id = sp.instrument_id;
+                                let custom =
+                                    custom_data_with_instrument(Arc::new(sp), instrument_id);
+
+                                if let Err(e) =
+                                    data_sender.send(DataEvent::Data(Data::Custom(custom)))
+                                {
+                                    log::warn!("Failed to send starting price: {e}");
+                                }
+                            }
+
+                            if market_closed {
+                                for close in parse_instrument_closes(&mc.id, def, ts_event, ts_init)
+                                {
+                                    if let Err(e) = data_sender
+                                        .send(DataEvent::Data(Data::InstrumentClose(close)))
+                                    {
+                                        log::warn!("Failed to send instrument close: {e}");
                                     }
                                 }
                             }
@@ -300,6 +354,36 @@ impl BetfairDataClient {
                                         }
                                     }
                                 }
+
+                                if let Some(ticker) =
+                                    parse_betfair_ticker(instrument_id, rc, ts_event, ts_init)
+                                {
+                                    let custom = custom_data_with_instrument(
+                                        Arc::new(ticker),
+                                        instrument_id,
+                                    );
+
+                                    if let Err(e) =
+                                        data_sender.send(DataEvent::Data(Data::Custom(custom)))
+                                    {
+                                        log::warn!("Failed to send ticker: {e}");
+                                    }
+                                }
+
+                                for bsp_delta in
+                                    parse_bsp_book_deltas(instrument_id, rc, ts_event, ts_init)
+                                {
+                                    let custom = custom_data_with_instrument(
+                                        Arc::new(bsp_delta),
+                                        instrument_id,
+                                    );
+
+                                    if let Err(e) =
+                                        data_sender.send(DataEvent::Data(Data::Custom(custom)))
+                                    {
+                                        log::warn!("Failed to send BSP book delta: {e}");
+                                    }
+                                }
                             }
                         }
 
@@ -310,6 +394,12 @@ impl BetfairDataClient {
                                 volumes.retain(|k, _| !k.0.symbol.as_str().starts_with(&prefix));
                             }
                         }
+                    }
+
+                    let completed = BetfairSequenceCompleted::new(ts_event, ts_init);
+                    let custom = CustomData::from_arc(Arc::new(completed));
+                    if let Err(e) = data_sender.send(DataEvent::Data(Data::Custom(custom))) {
+                        log::warn!("Failed to send sequence completed: {e}");
                     }
                 }
                 StreamMessage::Connection(_) => {
@@ -322,6 +412,66 @@ impl BetfairDataClient {
                             status.error_code,
                             status.error_message,
                         );
+                    }
+                }
+                StreamMessage::RaceChange(rcm) => {
+                    if let Some(race_changes) = &rcm.rc {
+                        let fallback_ts = parse_millis_timestamp(rcm.pt);
+
+                        for rc in race_changes {
+                            let race_id = rc.id.as_deref().unwrap_or("");
+                            let market_id = rc.mid.as_deref().unwrap_or("");
+
+                            if let Some(runners) = &rc.rrc {
+                                for rrc in runners {
+                                    let ts_event =
+                                        rrc.ft.map_or(fallback_ts, parse_millis_timestamp);
+
+                                    if let Some(runner) = parse_race_runner_data(
+                                        race_id, market_id, rrc, ts_event, ts_event,
+                                    ) {
+                                        let selection_id = rrc.id.unwrap_or(0);
+                                        let mut metadata = Params::new();
+                                        metadata.insert(
+                                            "selection_id".to_string(),
+                                            serde_json::Value::Number(selection_id.into()),
+                                        );
+                                        let value: Arc<dyn CustomDataTrait> = Arc::new(runner);
+                                        let data_type =
+                                            DataType::new(value.type_name(), Some(metadata), None);
+                                        let custom = CustomData::new(value, data_type);
+
+                                        if let Err(e) =
+                                            data_sender.send(DataEvent::Data(Data::Custom(custom)))
+                                        {
+                                            log::warn!("Failed to send race runner data: {e}");
+                                        }
+                                    }
+                                }
+                            }
+
+                            if let Some(rpc) = &rc.rpc {
+                                let ts_event = rpc.ft.map_or(fallback_ts, parse_millis_timestamp);
+                                let progress = parse_race_progress(
+                                    race_id, market_id, rpc, ts_event, ts_event,
+                                );
+                                let mut metadata = Params::new();
+                                metadata.insert(
+                                    "race_id".to_string(),
+                                    serde_json::Value::String(race_id.to_string()),
+                                );
+                                let value: Arc<dyn CustomDataTrait> = Arc::new(progress);
+                                let data_type =
+                                    DataType::new(value.type_name(), Some(metadata), None);
+                                let custom = CustomData::new(value, data_type);
+
+                                if let Err(e) =
+                                    data_sender.send(DataEvent::Data(Data::Custom(custom)))
+                                {
+                                    log::warn!("Failed to send race progress: {e}");
+                                }
+                            }
+                        }
                     }
                 }
                 StreamMessage::OrderChange(_) => {}
@@ -388,6 +538,8 @@ impl DataClient for BetfairDataClient {
         if self.is_connected() {
             return Ok(());
         }
+
+        register_betfair_custom_data();
 
         self.http_client
             .connect()
@@ -516,14 +668,19 @@ impl DataClient for BetfairDataClient {
                 MarketDataFilterField::ExAllOffers,
                 MarketDataFilterField::ExTraded,
                 MarketDataFilterField::ExTradedVol,
+                MarketDataFilterField::ExLtp,
                 MarketDataFilterField::ExMarketDef,
+                MarketDataFilterField::SpTraded,
+                MarketDataFilterField::SpProjected,
             ]),
             ladder_levels: None,
         };
 
+        let conflate_ms = self.config.stream_conflate_ms;
+
         nautilus_common::live::get_runtime().spawn(async move {
             if let Err(e) = stream_client
-                .subscribe_markets(market_filter, data_filter, None, None)
+                .subscribe_markets(market_filter, data_filter, None, conflate_ms)
                 .await
             {
                 log::error!("Failed to subscribe to market data: {e}");

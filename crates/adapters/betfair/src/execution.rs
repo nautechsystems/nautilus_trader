@@ -23,9 +23,15 @@ use std::{
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
-    messages::execution::{
-        CancelAllOrders, CancelOrder, GenerateOrderStatusReports, ModifyOrder, SubmitOrder,
+    live::{
+        get_runtime,
+        runner::{get_data_event_sender, get_exec_event_sender},
+    },
+    messages::{
+        DataEvent,
+        execution::{
+            CancelAllOrders, CancelOrder, GenerateOrderStatusReports, ModifyOrder, SubmitOrder,
+        },
     },
 };
 use nautilus_core::{
@@ -35,6 +41,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
+    data::Data,
     enums::{AccountType, OmsType, OrderType, TimeInForce},
     identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
     orders::Order,
@@ -51,7 +58,7 @@ use crate::{
         credential::BetfairCredential,
         enums::{
             BetfairOrderType, BetfairSide, BetfairTimeInForce, ExecutionReportStatus,
-            PersistenceType, StreamingOrderStatus,
+            OrderProjection, PersistenceType, StreamingOrderStatus, StreamingSide,
         },
         parse::{
             extract_market_id, extract_selection_id, make_customer_order_ref, make_instrument_id,
@@ -59,13 +66,18 @@ use crate::{
         },
         types::BetId,
     },
+    config::BetfairExecConfig,
+    data::custom_data_with_instrument,
+    data_types::{BetfairOrderVoided, register_betfair_custom_data},
     http::{
         client::BetfairHttpClient,
         models::{
             AccountFundsResponse, CancelExecutionReport, CancelInstruction, CancelOrdersParams,
-            LimitOrder, MarketOnCloseOrder, PlaceExecutionReport, PlaceInstruction,
-            PlaceOrdersParams, ReplaceExecutionReport, ReplaceInstruction, ReplaceOrdersParams,
+            CurrentOrderSummaryReport, LimitOnCloseOrder, LimitOrder, ListCurrentOrdersParams,
+            MarketOnCloseOrder, PlaceExecutionReport, PlaceInstruction, PlaceOrdersParams,
+            ReplaceExecutionReport, ReplaceInstruction, ReplaceOrdersParams,
         },
+        parse::parse_current_order_report,
     },
     stream::{
         client::BetfairStreamClient,
@@ -78,9 +90,6 @@ use crate::{
 /// Keep-alive interval in seconds (10 hours, matching Python default).
 const KEEP_ALIVE_INTERVAL_SECS: u64 = 36_000;
 
-/// Account state polling interval in seconds (5 minutes, matching Python default).
-const ACCOUNT_STATE_INTERVAL_SECS: u64 = 300;
-
 /// Betfair live execution client.
 #[derive(Debug)]
 pub struct BetfairExecutionClient {
@@ -91,6 +100,7 @@ pub struct BetfairExecutionClient {
     stream_client: Option<Arc<BetfairStreamClient>>,
     credential: BetfairCredential,
     stream_config: BetfairStreamConfig,
+    config: BetfairExecConfig,
     currency: Currency,
     fill_tracker: Arc<Mutex<FillTracker>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
@@ -106,6 +116,7 @@ impl BetfairExecutionClient {
         http_client: BetfairHttpClient,
         credential: BetfairCredential,
         stream_config: BetfairStreamConfig,
+        config: BetfairExecConfig,
         currency: Currency,
     ) -> Self {
         let clock = get_atomic_clock_realtime();
@@ -125,6 +136,7 @@ impl BetfairExecutionClient {
             stream_client: None,
             credential,
             stream_config,
+            config,
             currency,
             fill_tracker: Arc::new(Mutex::new(FillTracker::new())),
             pending_tasks: Mutex::new(Vec::new()),
@@ -171,6 +183,9 @@ impl BetfairExecutionClient {
         account_id: AccountId,
         currency: Currency,
         fill_tracker: Arc<Mutex<FillTracker>>,
+        data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        market_ids_filter: Option<ahash::AHashSet<String>>,
+        ignore_external_orders: bool,
     ) -> TcpMessageHandler {
         Arc::new(move |data: &[u8]| {
             let msg = match stream_decode(data) {
@@ -195,6 +210,11 @@ impl BetfairExecutionClient {
                     let ts_init = ts_event;
 
                     for omc in order_changes {
+                        if let Some(ref filter) = market_ids_filter
+                            && !filter.contains(&omc.id)
+                        {
+                            continue;
+                        }
                         let Some(orc_list) = &omc.orc else {
                             continue;
                         };
@@ -208,6 +228,10 @@ impl BetfairExecutionClient {
                             };
 
                             for uo in unmatched_orders {
+                                if ignore_external_orders && uo.rfo.is_none() {
+                                    continue;
+                                }
+
                                 Self::process_unmatched_order(
                                     uo,
                                     instrument_id,
@@ -218,6 +242,46 @@ impl BetfairExecutionClient {
                                     ts_event,
                                     ts_init,
                                 );
+
+                                // Emit voided event when matched bets are
+                                // retroactively voided (e.g. VAR decision)
+                                if uo.status == StreamingOrderStatus::ExecutionComplete
+                                    && uo.sv.is_some_and(|sv| sv > Decimal::ZERO)
+                                {
+                                    let sv = uo.sv.unwrap();
+                                    let side_str = match uo.side {
+                                        StreamingSide::Back => "BACK",
+                                        StreamingSide::Lay => "LAY",
+                                    };
+                                    let dec_to_f64 = |d: Decimal| -> f64 {
+                                        d.to_string().parse::<f64>().unwrap_or(0.0)
+                                    };
+                                    let voided = BetfairOrderVoided::new(
+                                        instrument_id,
+                                        uo.rfo.as_deref().unwrap_or("").to_string(),
+                                        uo.id.clone(),
+                                        dec_to_f64(sv),
+                                        dec_to_f64(uo.p),
+                                        dec_to_f64(uo.s),
+                                        side_str.to_string(),
+                                        uo.avp.map_or(f64::NAN, dec_to_f64),
+                                        uo.sm.map_or(f64::NAN, dec_to_f64),
+                                        String::new(),
+                                        ts_event,
+                                        ts_init,
+                                    );
+                                    log::info!("Order voided: bet_id={}, size_voided={sv}", uo.id,);
+                                    let custom = custom_data_with_instrument(
+                                        Arc::new(voided),
+                                        instrument_id,
+                                    );
+
+                                    if let Err(e) =
+                                        data_sender.send(DataEvent::Data(Data::Custom(custom)))
+                                    {
+                                        log::warn!("Failed to send voided event: {e}");
+                                    }
+                                }
                             }
                         }
                     }
@@ -234,7 +298,7 @@ impl BetfairExecutionClient {
                         );
                     }
                 }
-                StreamMessage::MarketChange(_) => {}
+                StreamMessage::MarketChange(_) | StreamMessage::RaceChange(_) => {}
             }
         })
     }
@@ -366,6 +430,8 @@ impl ExecutionClient for BetfairExecutionClient {
             return Ok(());
         }
 
+        register_betfair_custom_data();
+
         self.http_client
             .connect()
             .await
@@ -393,11 +459,20 @@ impl ExecutionClient for BetfairExecutionClient {
             .await
             .ok_or_else(|| anyhow::anyhow!("No session token after login"))?;
 
+        let market_ids_filter = self
+            .config
+            .stream_market_ids_filter
+            .as_ref()
+            .map(|ids| ids.iter().cloned().collect::<ahash::AHashSet<String>>());
+
         let handler = Self::create_ocm_handler(
             self.emitter.clone(),
             self.core.account_id,
             self.currency,
             Arc::clone(&self.fill_tracker),
+            get_data_event_sender(),
+            market_ids_filter,
+            self.config.ignore_external_orders,
         );
 
         let stream_client = BetfairStreamClient::connect(
@@ -433,35 +508,42 @@ impl ExecutionClient for BetfairExecutionClient {
             }
         }));
 
-        // Spawn periodic account state polling
-        let acct_client = Arc::clone(&self.http_client);
-        let acct_emitter = self.emitter.clone();
-        let acct_id = self.core.account_id;
-        let acct_currency = self.currency;
-        let acct_clock = self.clock;
-        self.account_state_handle = Some(get_runtime().spawn(async move {
-            let interval = tokio::time::Duration::from_secs(ACCOUNT_STATE_INTERVAL_SECS);
-            loop {
-                tokio::time::sleep(interval).await;
-                match acct_client
-                    .send_accounts::<AccountFundsResponse, _>(
-                        "AccountAPING/v1.0/getAccountFunds",
-                        serde_json::json!({}),
-                    )
-                    .await
-                {
-                    Ok(funds) => {
-                        let ts_init = acct_clock.get_time_ns();
-                        match parse_account_state(&funds, acct_id, acct_currency, ts_init, ts_init)
-                        {
-                            Ok(state) => acct_emitter.send_account_state(state),
-                            Err(e) => log::warn!("Failed to parse account state: {e}"),
+        if self.config.calculate_account_state && self.config.request_account_state_secs > 0 {
+            let acct_client = Arc::clone(&self.http_client);
+            let acct_emitter = self.emitter.clone();
+            let acct_id = self.core.account_id;
+            let acct_currency = self.currency;
+            let acct_clock = self.clock;
+            let interval_secs = self.config.request_account_state_secs;
+            self.account_state_handle = Some(get_runtime().spawn(async move {
+                let interval = tokio::time::Duration::from_secs(interval_secs);
+                loop {
+                    tokio::time::sleep(interval).await;
+                    match acct_client
+                        .send_accounts::<AccountFundsResponse, _>(
+                            "AccountAPING/v1.0/getAccountFunds",
+                            serde_json::json!({}),
+                        )
+                        .await
+                    {
+                        Ok(funds) => {
+                            let ts_init = acct_clock.get_time_ns();
+                            match parse_account_state(
+                                &funds,
+                                acct_id,
+                                acct_currency,
+                                ts_init,
+                                ts_init,
+                            ) {
+                                Ok(state) => acct_emitter.send_account_state(state),
+                                Err(e) => log::warn!("Failed to parse account state: {e}"),
+                            }
                         }
+                        Err(e) => log::warn!("Failed to fetch account state: {e}"),
                     }
-                    Err(e) => log::warn!("Failed to fetch account state: {e}"),
                 }
-            }
-        }));
+            }));
+        }
 
         self.core.set_connected();
 
@@ -516,35 +598,56 @@ impl ExecutionClient for BetfairExecutionClient {
                     .ok_or_else(|| anyhow::anyhow!("Limit order missing price"))?
                     .as_decimal();
 
-                let (persistence_type, time_in_force, min_fill_size) = match order.time_in_force() {
-                    TimeInForce::Ioc => (
-                        None,
-                        Some(BetfairTimeInForce::FillOrKill),
-                        Some(Decimal::ZERO),
-                    ),
-                    TimeInForce::Fok => (None, Some(BetfairTimeInForce::FillOrKill), None),
-                    TimeInForce::Gtc => (Some(PersistenceType::Persist), None, None),
-                    TimeInForce::AtTheClose => (Some(PersistenceType::MarketOnClose), None, None),
-                    _ => (Some(PersistenceType::Lapse), None, None),
-                };
+                // BSP LimitOnClose: participates in starting price calculation
+                // with a price limit, using liability instead of size
+                if matches!(
+                    order.time_in_force(),
+                    TimeInForce::AtTheClose | TimeInForce::AtTheOpen
+                ) {
+                    PlaceInstruction {
+                        order_type: BetfairOrderType::LimitOnClose,
+                        selection_id,
+                        handicap: handicap_opt,
+                        side,
+                        limit_order: None,
+                        limit_on_close_order: Some(LimitOnCloseOrder {
+                            liability: size,
+                            price,
+                        }),
+                        market_on_close_order: None,
+                        customer_order_ref,
+                    }
+                } else {
+                    let (persistence_type, time_in_force, min_fill_size) =
+                        match order.time_in_force() {
+                            TimeInForce::Ioc => (
+                                None,
+                                Some(BetfairTimeInForce::FillOrKill),
+                                Some(Decimal::ZERO),
+                            ),
+                            TimeInForce::Fok => (None, Some(BetfairTimeInForce::FillOrKill), None),
+                            TimeInForce::Gtc => (Some(PersistenceType::Persist), None, None),
+                            _ => (Some(PersistenceType::Lapse), None, None),
+                        };
 
-                PlaceInstruction {
-                    order_type: BetfairOrderType::Limit,
-                    selection_id,
-                    handicap: handicap_opt,
-                    side,
-                    limit_order: Some(LimitOrder {
-                        size,
-                        price,
-                        persistence_type,
-                        time_in_force,
-                        min_fill_size,
-                        bet_target_type: None,
-                        bet_target_size: None,
-                    }),
-                    limit_on_close_order: None,
-                    market_on_close_order: None,
-                    customer_order_ref,
+                    PlaceInstruction {
+                        order_type: BetfairOrderType::Limit,
+                        selection_id,
+                        handicap: handicap_opt,
+                        side,
+                        limit_order: Some(LimitOrder {
+                            size,
+                            price,
+                            persistence_type,
+                            time_in_force,
+                            min_fill_size,
+                            bet_target_type: None,
+                            bet_target_size: None,
+                        }),
+                        limit_on_close_order: None,
+                        market_on_close_order: None,
+                        customer_order_ref,
+                    }
                 }
             }
             OrderType::Market => {
@@ -595,6 +698,17 @@ impl ExecutionClient for BetfairExecutionClient {
             {
                 Ok(r) => r,
                 Err(e) => {
+                    // Transport errors (502, timeout, network reset) may mean the
+                    // order was placed but the response was lost. Do not reject
+                    // because the OCM stream will reconcile via customerOrderRef.
+                    if e.is_order_placement_ambiguous() {
+                        log::warn!(
+                            "Ambiguous submit response for {client_order_id}: {e}. \
+                             Order may be live, awaiting OCM reconciliation",
+                        );
+                        return Ok(());
+                    }
+
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
@@ -621,9 +735,17 @@ impl ExecutionClient for BetfairExecutionClient {
                         emitter.emit_order_accepted(&order, venue_order_id, ts_event);
                     }
                 }
-                ExecutionReportStatus::Failure
-                | ExecutionReportStatus::ProcessedWithErrors
-                | ExecutionReportStatus::Timeout => {
+
+                // Betfair Timeout means the operation may have been processed.
+                // Do not reject; the OCM stream will reconcile the order state.
+                ExecutionReportStatus::Timeout => {
+                    log::warn!(
+                        "Betfair Timeout for {client_order_id}. \
+                         Order may be live, awaiting OCM reconciliation",
+                    );
+                }
+
+                ExecutionReportStatus::Failure | ExecutionReportStatus::ProcessedWithErrors => {
                     let reason = report
                         .error_code
                         .map_or_else(|| "unknown error".to_string(), |c| format!("{c:?}"));
@@ -909,9 +1031,61 @@ impl ExecutionClient for BetfairExecutionClient {
 
     async fn generate_order_status_reports(
         &self,
-        _cmd: &GenerateOrderStatusReports,
+        cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        log::info!("Generating order status reports not yet supported for Betfair");
-        Ok(Vec::new())
+        let order_projection = if cmd.open_only {
+            Some(OrderProjection::Executable)
+        } else {
+            Some(OrderProjection::All)
+        };
+
+        let ts_init = self.clock.get_time_ns();
+        let mut reports = Vec::new();
+        let mut from_record: u32 = 0;
+
+        loop {
+            let params = ListCurrentOrdersParams {
+                bet_ids: None,
+                market_ids: self.config.stream_market_ids_filter.clone(),
+                order_projection,
+                customer_order_refs: None,
+                customer_strategy_refs: None,
+                date_range: None,
+                order_by: None,
+                sort_dir: None,
+                from_record: if from_record > 0 {
+                    Some(from_record)
+                } else {
+                    None
+                },
+                record_count: None,
+            };
+
+            let response: CurrentOrderSummaryReport = self
+                .http_client
+                .send_betting("SportsAPING/v1.0/listCurrentOrders", &params)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+            let page_size = response.current_orders.len() as u32;
+
+            for order in &response.current_orders {
+                match parse_current_order_report(order, self.core.account_id, ts_init) {
+                    Ok(r) => reports.push(r),
+                    Err(e) => {
+                        log::warn!("Failed to parse order report for {}: {e}", order.bet_id);
+                    }
+                }
+            }
+
+            if !response.more_available {
+                break;
+            }
+
+            from_record += page_size;
+        }
+
+        log::info!("Generated {} order status reports", reports.len());
+        Ok(reports)
     }
 }

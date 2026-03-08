@@ -19,7 +19,9 @@ mod common;
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use nautilus_betfair::{data::BetfairDataClient, provider::NavigationFilter};
+use nautilus_betfair::{
+    config::BetfairDataConfig, data::BetfairDataClient, provider::NavigationFilter,
+};
 use nautilus_common::{
     clients::DataClient,
     live::runner::set_data_event_sender,
@@ -56,6 +58,7 @@ fn create_test_data_client(
         http_client,
         test_credential(),
         plain_stream_config(stream_port),
+        BetfairDataConfig::default(),
         NavigationFilter::default(),
         currency,
         None,

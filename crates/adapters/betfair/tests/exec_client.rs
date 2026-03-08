@@ -19,13 +19,16 @@ mod common;
 
 use std::{cell::RefCell, net::SocketAddr, rc::Rc, time::Duration};
 
-use nautilus_betfair::execution::BetfairExecutionClient;
+use nautilus_betfair::{config::BetfairExecConfig, execution::BetfairExecutionClient};
 use nautilus_common::{
-    cache::Cache, clients::ExecutionClient, live::runner::set_exec_event_sender,
-    messages::ExecutionEvent,
+    cache::Cache,
+    clients::ExecutionClient,
+    live::runner::{set_data_event_sender, set_exec_event_sender},
+    messages::{DataEvent, ExecutionEvent},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
+    data::Data,
     enums::{AccountType, OmsType},
     identifiers::{AccountId, ClientId, TraderId, Venue},
     types::Currency,
@@ -35,12 +38,14 @@ use serde_json::Value;
 
 use crate::common::*;
 
+#[allow(clippy::type_complexity)]
 fn create_test_execution_client(
     addr: SocketAddr,
     stream_port: u16,
 ) -> (
     BetfairExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     Rc<RefCell<Cache>>,
 ) {
     let trader_id = TraderId::from("TESTER-001");
@@ -65,16 +70,20 @@ fn create_test_execution_client(
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
 
+    let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(data_tx);
+
     let mut client = BetfairExecutionClient::new(
         core,
         http_client,
         test_credential(),
         plain_stream_config(stream_port),
+        BetfairExecConfig::default(),
         currency,
     );
     client.start().unwrap();
 
-    (client, rx, cache)
+    (client, rx, data_rx, cache)
 }
 
 #[rstest]
@@ -82,7 +91,7 @@ fn create_test_execution_client(
 async fn test_exec_client_creation() {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, _listener) = start_mock_stream().await;
-    let (client, _rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
 
     assert_eq!(client.client_id(), ClientId::from("BETFAIR"));
     assert_eq!(client.account_id(), AccountId::from("BETFAIR-001"));
@@ -96,7 +105,7 @@ async fn test_exec_client_creation() {
 async fn test_exec_client_connect_disconnect() {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
-    let (mut client, _rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
 
     let server = tokio::spawn(async move {
         let (mut reader, write_half) = accept_and_auth(&listener).await;
@@ -134,7 +143,7 @@ async fn test_exec_client_connect_disconnect() {
 async fn test_exec_client_connect_emits_account_state() {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
-    let (mut client, mut rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
 
     let server = tokio::spawn(async move {
         let (_reader, write_half) = accept_and_auth(&listener).await;
@@ -166,7 +175,7 @@ async fn test_exec_client_connect_emits_account_state() {
 async fn test_ocm_handler_emits_order_status_report() {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
-    let (mut client, mut rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
 
     let ocm_fixture = load_fixture("stream/ocm_FILLED.json");
     let server = tokio::spawn(async move {
@@ -198,6 +207,44 @@ async fn test_ocm_handler_emits_order_status_report() {
     assert!(
         matches!(event, ExecutionEvent::Report(_)),
         "Expected Report event from OCM, found: {event:?}"
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ocm_voided_order_emits_data_event() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, _rx, mut data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let ocm_fixture = load_fixture("stream/ocm_VOIDED.json");
+    let server = tokio::spawn(async move {
+        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            format!("{}\r\n", ocm_fixture.trim()).as_bytes(),
+        )
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+    while data_rx.try_recv().is_ok() {}
+
+    let event = tokio::time::timeout(Duration::from_secs(5), data_rx.recv())
+        .await
+        .expect("timeout waiting for voided data event")
+        .expect("channel closed");
+
+    assert!(
+        matches!(event, DataEvent::Data(Data::Custom(_))),
+        "Expected Custom data event for voided order, found: {event:?}"
     );
 
     client.disconnect().await.unwrap();

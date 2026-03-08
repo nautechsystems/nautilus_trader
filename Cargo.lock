@@ -4923,6 +4923,7 @@ version = "0.55.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
+ "arrow",
  "async-trait",
  "axum",
  "bytes",
@@ -4934,7 +4935,10 @@ dependencies = [
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
+ "nautilus-persistence-macros",
+ "nautilus-serialization",
  "nautilus-testkit",
+ "pyo3",
  "rstest",
  "rust_decimal",
  "serde",

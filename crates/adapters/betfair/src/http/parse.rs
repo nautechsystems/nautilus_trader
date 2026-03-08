@@ -193,4 +193,66 @@ mod tests {
             "fixture should contain at least one filled order"
         );
     }
+
+    #[rstest]
+    fn test_parse_current_order_lapsed() {
+        let data = load_test_json("rest/list_current_orders_lapsed.json");
+        let resp: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+
+        // First order: BACK, fully lapsed, no matches
+        let order = &resp.current_orders[0];
+        let report =
+            parse_current_order_report(order, AccountId::from("BETFAIR-001"), UnixNanos::default())
+                .unwrap();
+
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.filled_qty, Quantity::from("0.00"));
+        assert_eq!(report.quantity, Quantity::from("20.00"));
+        assert_eq!(report.venue_order_id, VenueOrderId::from("229430281400"));
+    }
+
+    #[rstest]
+    fn test_parse_current_order_partially_filled_and_voided() {
+        let data = load_test_json("rest/list_current_orders_lapsed.json");
+        let resp: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+
+        // Second order: LAY, sizeMatched=30, sizeLapsed=10, sizeVoided=10
+        let order = &resp.current_orders[1];
+        let report =
+            parse_current_order_report(order, AccountId::from("BETFAIR-001"), UnixNanos::default())
+                .unwrap();
+
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.filled_qty, Quantity::from("30.00"));
+        assert_eq!(report.quantity, Quantity::from("50.00"));
+        assert_eq!(report.avg_px, Some(Decimal::new(24, 1)));
+    }
+
+    #[rstest]
+    fn test_parse_current_order_customer_order_ref() {
+        let data = load_test_json("rest/list_current_orders_lapsed.json");
+        let resp: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+
+        // First order has customerOrderRef, second does not
+        let report1 = parse_current_order_report(
+            &resp.current_orders[0],
+            AccountId::from("BETFAIR-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let report2 = parse_current_order_report(
+            &resp.current_orders[1],
+            AccountId::from("BETFAIR-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            report1.client_order_id,
+            Some(ClientOrderId::from("O-20210730-001"))
+        );
+        assert!(report2.client_order_id.is_none());
+    }
 }

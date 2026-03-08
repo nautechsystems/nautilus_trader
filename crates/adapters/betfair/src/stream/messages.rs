@@ -56,6 +56,8 @@ pub enum StreamMessage {
     MarketChange(MCM),
     #[serde(rename = "ocm")]
     OrderChange(OCM),
+    #[serde(rename = "rcm")]
+    RaceChange(RCM),
 }
 
 /// Connection confirmation sent on stream connect.
@@ -631,6 +633,84 @@ fn default_true() -> bool {
     true
 }
 
+/// Race Change Message (RCM) - live GPS tracking data (Total Performance Data).
+#[derive(Debug, Clone, Deserialize)]
+pub struct RCM {
+    pub id: Option<u64>,
+    /// Publish time (epoch millis).
+    pub pt: u64,
+    /// Clock token (may be integer or string depending on feed state).
+    pub clk: Option<serde_json::Value>,
+    /// Race changes (None on heartbeat).
+    pub rc: Option<Vec<RaceChange>>,
+}
+
+/// Delta update for a single race within an RCM.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RaceChange {
+    /// Race identifier (e.g. "28587288.1650").
+    pub id: Option<String>,
+    /// Betfair market identifier.
+    pub mid: Option<String>,
+    /// Individual runner GPS data changes.
+    pub rrc: Option<Vec<RaceRunnerChange>>,
+    /// Overall race progress summary.
+    pub rpc: Option<RaceProgressChange>,
+}
+
+/// GPS tracking data for a single runner.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RaceRunnerChange {
+    /// Feed time (epoch millis).
+    pub ft: Option<u64>,
+    /// Selection identifier.
+    pub id: Option<i64>,
+    /// Latitude (GPS coordinate).
+    pub lat: Option<f64>,
+    /// Longitude (GPS coordinate).
+    #[serde(rename = "long")]
+    pub lng: Option<f64>,
+    /// Speed in m/s (Doppler-derived).
+    pub spd: Option<f64>,
+    /// Distance to finish in meters.
+    pub prg: Option<f64>,
+    /// Stride frequency in Hz.
+    pub sfq: Option<f64>,
+}
+
+/// Race-level progress summary.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RaceProgressChange {
+    /// Feed time (epoch millis).
+    pub ft: Option<u64>,
+    /// Gate/sectional name (e.g. "1f", "2f", "Finish").
+    pub g: Option<String>,
+    /// Sectional time in seconds.
+    pub st: Option<f64>,
+    /// Running time since race start in seconds.
+    pub rt: Option<f64>,
+    /// Speed of lead horse in m/s.
+    pub spd: Option<f64>,
+    /// Distance to finish for leading horse in meters.
+    pub prg: Option<f64>,
+    /// Runner order by selection ID (current race position).
+    pub ord: Option<Vec<i64>>,
+    /// Obstacle data for jump races.
+    #[serde(rename = "J")]
+    pub jumps: Option<Vec<Jump>>,
+}
+
+/// Jump obstacle location data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Jump {
+    /// Jump number.
+    #[serde(rename = "J")]
+    pub number: i32,
+    /// Distance from finish line in meters.
+    #[serde(rename = "L")]
+    pub distance: f64,
+}
+
 /// Decode a single JSON stream line into a [`StreamMessage`].
 ///
 /// # Errors
@@ -745,5 +825,77 @@ mod tests {
     fn test_market_definition_response_fixtures(#[case] fixture: &str) {
         let data = load_test_json(fixture);
         let _def: MarketDefinition = serde_json::from_str(&data).unwrap();
+    }
+
+    #[rstest]
+    fn test_stream_decode_rcm_single() {
+        let data = load_test_json("stream/rcm_single.json");
+        let msg = stream_decode(data.as_bytes()).unwrap();
+        match msg {
+            StreamMessage::RaceChange(rcm) => {
+                let rc = rcm.rc.as_ref().unwrap();
+                assert_eq!(rc.len(), 1);
+
+                let race = &rc[0];
+                assert_eq!(race.id.as_deref(), Some("28587288.1650"));
+                assert_eq!(race.mid.as_deref(), Some("1.1234567"));
+
+                let runners = race.rrc.as_ref().unwrap();
+                assert_eq!(runners.len(), 1);
+                assert_eq!(runners[0].id, Some(7390417));
+                assert!((runners[0].lat.unwrap() - 51.4189543).abs() < 1e-6);
+                assert!((runners[0].spd.unwrap() - 17.8).abs() < 1e-6);
+                assert!((runners[0].sfq.unwrap() - 2.07).abs() < 1e-6);
+
+                let progress = race.rpc.as_ref().unwrap();
+                assert_eq!(progress.g.as_deref(), Some("1f"));
+                assert!((progress.st.unwrap() - 10.6).abs() < 1e-6);
+                assert!((progress.rt.unwrap() - 46.7).abs() < 1e-6);
+
+                let order = progress.ord.as_ref().unwrap();
+                assert_eq!(order.len(), 5);
+                assert_eq!(order[0], 7390417);
+
+                let jumps = progress.jumps.as_ref().unwrap();
+                assert_eq!(jumps.len(), 2);
+                assert_eq!(jumps[0].number, 2);
+                assert!((jumps[0].distance - 370.1).abs() < 1e-6);
+            }
+            other => panic!("Expected RaceChange, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_stream_decode_rcm_multi_runner() {
+        let data = load_test_json("stream/rcm_multi_runner.json");
+        let msg = stream_decode(data.as_bytes()).unwrap();
+        match msg {
+            StreamMessage::RaceChange(rcm) => {
+                let rc = rcm.rc.as_ref().unwrap();
+                let runners = rc[0].rrc.as_ref().unwrap();
+                assert_eq!(runners.len(), 5);
+
+                let ids: Vec<i64> = runners.iter().filter_map(|r| r.id).collect();
+                assert_eq!(ids, vec![35467839, 24947967, 299569, 31422647, 41694785]);
+            }
+            other => panic!("Expected RaceChange, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_stream_decode_ocm_voided() {
+        let data = load_test_json("stream/ocm_VOIDED.json");
+        let msg = stream_decode(data.as_bytes()).unwrap();
+        match msg {
+            StreamMessage::OrderChange(ocm) => {
+                let oc = ocm.oc.as_ref().unwrap();
+                let orc = oc[0].orc.as_ref().unwrap();
+                let uo = &orc[0].uo.as_ref().unwrap()[0];
+                assert_eq!(uo.sv.unwrap(), rust_decimal::Decimal::from(50));
+                assert_eq!(uo.sm.unwrap(), rust_decimal::Decimal::from(50));
+                assert_eq!(uo.s, rust_decimal::Decimal::from(100));
+            }
+            other => panic!("Expected OrderChange, was {other:?}"),
+        }
     }
 }
