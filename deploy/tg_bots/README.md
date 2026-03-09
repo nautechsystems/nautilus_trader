@@ -35,9 +35,35 @@ sudo systemctl daemon-reload
 sudo systemctl start flux@tg-bot-lan-rogue-trader-alert.service
 ```
 
+Required live values:
+
+- `LAN_ROGUE_TRADER_BOT_BINANCE_API_KEY`
+- `LAN_ROGUE_TRADER_BOT_BINANCE_API_SECRET`
+- `LAN_ROGUE_TRADER_BOT_TELEGRAM_BOT_TOKEN`
+- `/etc/flux/tg-bot-lan-rogue-trader-alert.ini`
+  Set `telegram_chat_id` and optional `telegram_thread_id` here.
+
+Optional AWS Secrets Manager backup writes:
+
+```bash
+aws secretsmanager create-secret \
+  --region ap-southeast-1 \
+  --name /nautilus/tg-bots/lan_rogue_trader_bot/binance \
+  --secret-string '{"LAN_ROGUE_TRADER_BOT_BINANCE_API_KEY":"...","LAN_ROGUE_TRADER_BOT_BINANCE_API_SECRET":"..."}'
+
+aws secretsmanager create-secret \
+  --region ap-southeast-1 \
+  --name /nautilus/tg-bots/lan_rogue_trader_bot/telegram_bot \
+  --secret-string '{"LAN_ROGUE_TRADER_BOT_TELEGRAM_BOT_TOKEN":"..."}'
+```
+
 Runtime registration is explicit:
 
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
 - The installer seeds `/etc/flux/tg-bot-lan-rogue-trader-alert.ini` from the sanitized template if it does not already exist.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`.
 - The TG bot group renders under `TG Bots` at `http://<host>:5022/pulse`.
+
+Runbook:
+
+- `docs/runbooks/lan-rogue-trader-alert.md`
