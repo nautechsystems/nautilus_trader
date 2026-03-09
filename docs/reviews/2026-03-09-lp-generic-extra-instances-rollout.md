@@ -6,6 +6,7 @@
 - Shared host base URL: `http://13.213.194.42:5022`
 - Backup root: `/root/flux-lp-rollout-backups/20260309T170510Z-generic-extra`
 - Final successful cutover window: `2026-03-09 17:05-17:08 UTC`
+- Final deployed worktree: `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod-finalize` at commit `06ffe457e`
 
 ## Verification Evidence
 
@@ -27,6 +28,9 @@
 - Host rollout check:
   - `bash ops/scripts/deploy/check_lp_rollout.sh --base-url http://127.0.0.1:5022`
   - Result: `rollout checks passed against http://127.0.0.1:5022`
+- Final clean-worktree repoint:
+  - Rebuilt `fluxboard/dist` in `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod-finalize`, updated `/etc/flux/common.env` and `/etc/flux/tokenmm-api.env` to that worktree, restarted the shared services, and reran the localhost/public rollout smokes.
+  - Result: `PASS`
 
 ## Live Smoke Evidence
 
@@ -47,15 +51,14 @@
 
 ## Host Drift Corrected During Rollout
 
-- `/etc/flux/common.env` still pointed `WORKDIR` and `PYTHONPATH` at `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr`. That caused the shared host to import stale code until those pointers were updated to `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod`.
-- `/etc/flux/tokenmm-api.env` still pointed `FLUXBOARD_DIST` at `/home/ubuntu/nautilus_trader/fluxboard/dist`, which served stale `/tokenmm/assets/*` HTML on `/lp`. Updating it to `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod/fluxboard/dist` restored the neutral `/static/fluxboard/assets/*` contract.
+- `/etc/flux/common.env` still pointed `WORKDIR` and `PYTHONPATH` at `/home/ubuntu/nautilus_trader/.worktrees/makerv3-mono-pr`. That caused the shared host to import stale code until those pointers were updated first to `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod` for the initial cutover and then to the clean final deployment worktree `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod-finalize`.
+- `/etc/flux/tokenmm-api.env` still pointed `FLUXBOARD_DIST` at `/home/ubuntu/nautilus_trader/fluxboard/dist`, which served stale `/tokenmm/assets/*` HTML on `/lp`. Updating it first to `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod/fluxboard/dist` restored the neutral `/static/fluxboard/assets/*` contract, and the final deployment now serves from `/home/ubuntu/nautilus_trader/.worktrees/lp-hedger-go-prod-finalize/fluxboard/dist`.
 
 ## Residual Risks
 
 - Band1 and Band2 are active again, but they still log `ccxt.base.errors.AuthenticationError` because the configured Bybit key on the host is expired. Live hedging remains credential-blocked until the key is rotated outside the repo.
 - `service-hedger3` and `service-hedger4` are intentionally inactive because their staged configs still fail readiness on zero pool addresses and missing Bybit credentials.
 - `/api/pulse/jobs` still reports unrelated non-LP shared-host failures (`failed=3`).
-- The deployment worktree contains an unrelated uncommitted local diff in `systems/flux/flux/runners/tokenmm/run_api.py`; it was not part of this LP rollout commit set and should be handled separately.
 
 ## Rollback Note
 
