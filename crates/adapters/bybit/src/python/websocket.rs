@@ -15,24 +15,51 @@
 
 //! Python bindings for the Bybit WebSocket client.
 
+use std::sync::Arc;
+
+use ahash::AHashMap;
+use dashmap::{DashMap, DashSet};
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err},
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::{
-    data::{BarType, Data, OrderBookDeltas_API},
+    data::{BarType, Data, OrderBookDeltas_API, QuoteTick},
     enums::{AggregationSource, BarAggregation, OrderSide, OrderType, PriceType, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    events::{OrderCancelRejected, OrderModifyRejected, OrderRejected},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
+    },
+    instruments::{Instrument, InstrumentAny},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
 use pyo3::{IntoPyObjectExt, prelude::*};
+use ustr::Ustr;
 
 use crate::{
-    common::enums::{BybitEnvironment, BybitProductType},
+    common::{
+        consts::BYBIT_VENUE,
+        enums::{BybitEnvironment, BybitProductType},
+        parse::make_bybit_symbol,
+    },
     python::params::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams},
     websocket::{
-        client::BybitWebSocketClient,
-        messages::{BybitWebSocketError, NautilusWsMessage},
+        client::{BATCH_PROCESSING_LIMIT, BybitWebSocketClient, PendingPyRequest},
+        dispatch::PendingOperation,
+        messages::{BybitWebSocketError, BybitWsMessage},
+        parse::{
+            parse_kline_topic, parse_millis_i64, parse_orderbook_deltas, parse_orderbook_quote,
+            parse_ticker_linear_funding, parse_ticker_linear_index_price,
+            parse_ticker_linear_mark_price, parse_ticker_linear_quote, parse_ticker_option_greeks,
+            parse_ticker_option_index_price, parse_ticker_option_mark_price,
+            parse_ticker_option_quote, parse_ws_account_state, parse_ws_fill_report,
+            parse_ws_kline_bar, parse_ws_order_status_report, parse_ws_position_status_report,
+            parse_ws_trade_tick,
+        },
     },
 };
 
@@ -176,8 +203,18 @@ impl BybitWebSocketClient {
     }
 
     #[pyo3(name = "set_bars_timestamp_on_close")]
-    fn py_set_bars_timestamp_on_close(&mut self, value: bool) {
+    fn py_set_bars_timestamp_on_close(&self, value: bool) {
         self.set_bars_timestamp_on_close(value);
+    }
+
+    #[pyo3(name = "add_option_greeks_sub")]
+    fn py_add_option_greeks_sub(&self, instrument_id: InstrumentId) {
+        self.add_option_greeks_sub(instrument_id);
+    }
+
+    #[pyo3(name = "remove_option_greeks_sub")]
+    fn py_remove_option_greeks_sub(&self, instrument_id: InstrumentId) {
+        self.remove_option_greeks_sub(&instrument_id);
     }
 
     #[pyo3(name = "connect")]
@@ -194,105 +231,142 @@ impl BybitWebSocketClient {
             client.connect().await.map_err(to_pyruntime_err)?;
 
             let stream = client.stream();
+            let clock = get_atomic_clock_realtime();
+            let product_type = client.product_type();
+            let account_id = client.account_id();
+            let bar_types_cache = client.bar_types_cache().clone();
+            let option_greeks_subs = client.option_greeks_subs().clone();
+            let bars_timestamp_on_close = client.bars_timestamp_on_close();
+            let instruments = Arc::clone(client.instruments_cache_ref());
+            let pending_py_requests = Arc::clone(client.pending_py_requests());
 
             get_runtime().spawn(async move {
+                let mut quote_cache = AHashMap::new();
+                let mut funding_cache: AHashMap<Ustr, (Option<String>, Option<String>)> =
+                    AHashMap::new();
+                let _client = client;
+                let _resolve = |raw_symbol: &Ustr| -> Option<InstrumentAny> {
+                    let key =
+                        product_type.map_or(*raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
+                    instruments.get(&key).map(|r| r.value().clone())
+                };
+
                 tokio::pin!(stream);
 
                 while let Some(msg) = stream.next().await {
                     match msg {
-                        NautilusWsMessage::Data(data_vec) => {
-                            Python::attach(|py| {
-                                for data in data_vec {
-                                    let py_obj = data_to_pycapsule(py, data);
-                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                                }
-                            });
+                        BybitWsMessage::Orderbook(ref msg) => {
+                            handle_orderbook(
+                                msg,
+                                product_type,
+                                &instruments,
+                                &mut quote_cache,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
-                        NautilusWsMessage::Deltas(deltas) => {
-                            Python::attach(|py| {
-                                let py_obj = data_to_pycapsule(
-                                    py,
-                                    Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                                );
-                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
-                            });
+                        BybitWsMessage::Trade(ref msg) => {
+                            handle_trade(
+                                msg,
+                                product_type,
+                                &instruments,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
-                        NautilusWsMessage::FundingRates(rates) => {
-                            for rate in rates {
-                                call_python_with_data(&call_soon, &callback, move |py| {
-                                    rate.into_py_any(py).map(|obj| obj.into_bound(py))
-                                });
-                            }
+                        BybitWsMessage::Kline(ref msg) => {
+                            handle_kline(
+                                msg,
+                                product_type,
+                                &instruments,
+                                &bar_types_cache,
+                                bars_timestamp_on_close,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
-                        NautilusWsMessage::MarkPrices(prices) => {
-                            for price in prices {
-                                call_python_with_data(&call_soon, &callback, move |py| {
-                                    price.into_py_any(py).map(|obj| obj.into_bound(py))
-                                });
-                            }
+                        BybitWsMessage::TickerLinear(ref msg) => {
+                            handle_ticker_linear(
+                                msg,
+                                product_type,
+                                &instruments,
+                                &mut quote_cache,
+                                &mut funding_cache,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
-                        NautilusWsMessage::IndexPrices(prices) => {
-                            for price in prices {
-                                call_python_with_data(&call_soon, &callback, move |py| {
-                                    price.into_py_any(py).map(|obj| obj.into_bound(py))
-                                });
-                            }
+                        BybitWsMessage::TickerOption(ref msg) => {
+                            handle_ticker_option(
+                                msg,
+                                product_type,
+                                &instruments,
+                                &mut quote_cache,
+                                &option_greeks_subs,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
-                        NautilusWsMessage::OrderStatusReports(reports) => {
-                            for report in reports {
-                                call_python_with_data(&call_soon, &callback, move |py| {
-                                    report.into_py_any(py).map(|obj| obj.into_bound(py))
-                                });
-                            }
+                        BybitWsMessage::AccountOrder(ref msg) => {
+                            handle_account_order(
+                                msg,
+                                &instruments,
+                                account_id,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
-                        NautilusWsMessage::FillReports(reports) => {
-                            for report in reports {
-                                call_python_with_data(&call_soon, &callback, move |py| {
-                                    report.into_py_any(py).map(|obj| obj.into_bound(py))
-                                });
-                            }
+                        BybitWsMessage::AccountExecution(ref msg) => {
+                            handle_account_execution(
+                                msg,
+                                &instruments,
+                                account_id,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
-                        NautilusWsMessage::PositionStatusReport(report) => {
-                            call_python_with_data(&call_soon, &callback, move |py| {
-                                report.into_py_any(py).map(|obj| obj.into_bound(py))
-                            });
+                        BybitWsMessage::AccountWallet(ref msg) => {
+                            handle_account_wallet(msg, account_id, clock, &call_soon, &callback);
                         }
-                        NautilusWsMessage::AccountState(state) => {
-                            call_python_with_data(&call_soon, &callback, move |py| {
-                                state.into_py_any(py).map(|obj| obj.into_bound(py))
-                            });
+                        BybitWsMessage::AccountPosition(ref msg) => {
+                            handle_account_position(
+                                msg,
+                                &instruments,
+                                account_id,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
-                        NautilusWsMessage::OrderRejected(event) => {
-                            call_python_with_data(&call_soon, &callback, move |py| {
-                                event.into_py_any(py).map(|obj| obj.into_bound(py))
-                            });
+                        BybitWsMessage::OrderResponse(ref resp) => {
+                            handle_order_response(
+                                resp,
+                                &pending_py_requests,
+                                account_id,
+                                clock,
+                                &call_soon,
+                                &callback,
+                            );
                         }
-                        NautilusWsMessage::OrderCancelRejected(event) => {
-                            call_python_with_data(&call_soon, &callback, move |py| {
-                                event.into_py_any(py).map(|obj| obj.into_bound(py))
-                            });
+                        BybitWsMessage::Error(err) => {
+                            send_to_python(err, &call_soon, &callback);
                         }
-                        NautilusWsMessage::OrderModifyRejected(event) => {
-                            call_python_with_data(&call_soon, &callback, move |py| {
-                                event.into_py_any(py).map(|obj| obj.into_bound(py))
-                            });
-                        }
-                        NautilusWsMessage::Error(err) => {
-                            call_python_with_data(&call_soon, &callback, move |py| {
-                                err.into_py_any(py).map(|obj| obj.into_bound(py))
-                            });
-                        }
-                        NautilusWsMessage::OptionGreeks(greeks) => {
-                            call_python_with_data(&call_soon, &callback, move |py| {
-                                greeks.into_py_any(py).map(|obj| obj.into_bound(py))
-                            });
-                        }
-                        NautilusWsMessage::Reconnected => {
+                        BybitWsMessage::Reconnected => {
+                            quote_cache.clear();
+                            funding_cache.clear();
                             log::info!("WebSocket reconnected");
                         }
-                        NautilusWsMessage::Authenticated => {
+                        BybitWsMessage::Auth(_) => {
                             log::info!("WebSocket authenticated");
                         }
+                        _ => {}
                     }
                 }
             });
@@ -444,20 +518,6 @@ impl BybitWebSocketClient {
                 .map_err(to_pyruntime_err)?;
             Ok(())
         })
-    }
-
-    /// Registers an instrument for option greeks emission without subscribing
-    /// the ticker channel.
-    #[pyo3(name = "add_option_greeks_sub")]
-    fn py_add_option_greeks_sub(&self, instrument_id: InstrumentId) {
-        self.add_option_greeks_sub(instrument_id);
-    }
-
-    /// Removes an instrument from the option greeks subscription set without
-    /// touching the underlying ticker channel.
-    #[pyo3(name = "remove_option_greeks_sub")]
-    fn py_remove_option_greeks_sub(&self, instrument_id: InstrumentId) {
-        self.remove_option_greeks_sub(&instrument_id);
     }
 
     #[pyo3(name = "unsubscribe_option_greeks")]
@@ -685,13 +745,12 @@ impl BybitWebSocketClient {
         is_leverage: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let pending_py_requests = Arc::clone(self.pending_py_requests());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
+            let req_id = client
                 .submit_order(
                     product_type,
-                    trader_id,
-                    strategy_id,
                     instrument_id,
                     client_order_id,
                     order_side,
@@ -707,6 +766,17 @@ impl BybitWebSocketClient {
                 )
                 .await
                 .map_err(to_pyruntime_err)?;
+            pending_py_requests.insert(
+                req_id,
+                vec![PendingPyRequest {
+                    client_order_id,
+                    operation: PendingOperation::Place,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    venue_order_id: None,
+                }],
+            );
             Ok(())
         })
     }
@@ -736,13 +806,12 @@ impl BybitWebSocketClient {
         price: Option<Price>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let pending_py_requests = Arc::clone(self.pending_py_requests());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
+            let req_id = client
                 .modify_order(
                     product_type,
-                    trader_id,
-                    strategy_id,
                     instrument_id,
                     client_order_id,
                     venue_order_id,
@@ -751,6 +820,17 @@ impl BybitWebSocketClient {
                 )
                 .await
                 .map_err(to_pyruntime_err)?;
+            pending_py_requests.insert(
+                req_id,
+                vec![PendingPyRequest {
+                    client_order_id,
+                    operation: PendingOperation::Amend,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    venue_order_id,
+                }],
+            );
             Ok(())
         })
     }
@@ -776,19 +856,24 @@ impl BybitWebSocketClient {
         venue_order_id: Option<VenueOrderId>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let pending_py_requests = Arc::clone(self.pending_py_requests());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .cancel_order_by_id(
-                    product_type,
+            let req_id = client
+                .cancel_order_by_id(product_type, instrument_id, client_order_id, venue_order_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            pending_py_requests.insert(
+                req_id,
+                vec![PendingPyRequest {
+                    client_order_id,
+                    operation: PendingOperation::Cancel,
                     trader_id,
                     strategy_id,
                     instrument_id,
-                    client_order_id,
                     venue_order_id,
-                )
-                .await
-                .map_err(to_pyruntime_err)?;
+                }],
+            );
             Ok(())
         })
     }
@@ -861,19 +946,28 @@ impl BybitWebSocketClient {
         orders: Vec<BybitWsCancelOrderParams>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let pending_py_requests = Arc::clone(self.pending_py_requests());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let order_params: Vec<_> = orders
+            let order_params: Vec<crate::websocket::messages::BybitWsCancelOrderParams> = orders
                 .into_iter()
                 .map(|p| p.try_into())
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(to_pyruntime_err)?;
 
-            client
-                .batch_cancel_orders(trader_id, strategy_id, order_params)
+            let per_order = build_pending_entries(
+                &order_params,
+                PendingOperation::Cancel,
+                trader_id,
+                strategy_id,
+            );
+
+            let req_ids = client
+                .batch_cancel_orders(order_params)
                 .await
                 .map_err(to_pyruntime_err)?;
 
+            register_batch_pending(req_ids, per_order, &pending_py_requests);
             Ok(())
         })
     }
@@ -925,19 +1019,28 @@ impl BybitWebSocketClient {
         orders: Vec<BybitWsAmendOrderParams>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let pending_py_requests = Arc::clone(self.pending_py_requests());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let order_params: Vec<_> = orders
+            let order_params: Vec<crate::websocket::messages::BybitWsAmendOrderParams> = orders
                 .into_iter()
                 .map(|p| p.try_into())
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(to_pyruntime_err)?;
 
-            client
-                .batch_amend_orders(trader_id, strategy_id, order_params)
+            let per_order = build_pending_entries(
+                &order_params,
+                PendingOperation::Amend,
+                trader_id,
+                strategy_id,
+            );
+
+            let req_ids = client
+                .batch_amend_orders(order_params)
                 .await
                 .map_err(to_pyruntime_err)?;
 
+            register_batch_pending(req_ids, per_order, &pending_py_requests);
             Ok(())
         })
     }
@@ -951,35 +1054,620 @@ impl BybitWebSocketClient {
         orders: Vec<BybitWsPlaceOrderParams>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let pending_py_requests = Arc::clone(self.pending_py_requests());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let order_params: Vec<_> = orders
+            let order_params: Vec<crate::websocket::messages::BybitWsPlaceOrderParams> = orders
                 .into_iter()
                 .map(|p| p.try_into())
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(to_pyruntime_err)?;
 
-            client
-                .batch_place_orders(trader_id, strategy_id, order_params)
+            let per_order = build_pending_entries(
+                &order_params,
+                PendingOperation::Place,
+                trader_id,
+                strategy_id,
+            );
+
+            let req_ids = client
+                .batch_place_orders(order_params)
                 .await
                 .map_err(to_pyruntime_err)?;
 
+            register_batch_pending(req_ids, per_order, &pending_py_requests);
             Ok(())
         })
     }
 }
 
-fn call_python_with_data<F>(call_soon: &Py<PyAny>, callback: &Py<PyAny>, data_fn: F)
-where
-    F: FnOnce(Python<'_>) -> PyResult<Bound<'_, PyAny>> + Send + 'static,
-{
-    Python::attach(|py| match data_fn(py) {
-        Ok(data) => {
-            let py_obj = data.unbind();
+trait BatchOrderParams {
+    fn order_link_id(&self) -> Option<&str>;
+    fn symbol(&self) -> Ustr;
+    fn category(&self) -> BybitProductType;
+    fn venue_order_id(&self) -> Option<VenueOrderId>;
+}
+
+impl BatchOrderParams for crate::websocket::messages::BybitWsCancelOrderParams {
+    fn order_link_id(&self) -> Option<&str> {
+        self.order_link_id.as_deref()
+    }
+    fn symbol(&self) -> Ustr {
+        self.symbol
+    }
+    fn category(&self) -> BybitProductType {
+        self.category
+    }
+    fn venue_order_id(&self) -> Option<VenueOrderId> {
+        self.order_id.as_ref().map(VenueOrderId::new)
+    }
+}
+
+impl BatchOrderParams for crate::websocket::messages::BybitWsAmendOrderParams {
+    fn order_link_id(&self) -> Option<&str> {
+        self.order_link_id.as_deref()
+    }
+    fn symbol(&self) -> Ustr {
+        self.symbol
+    }
+    fn category(&self) -> BybitProductType {
+        self.category
+    }
+    fn venue_order_id(&self) -> Option<VenueOrderId> {
+        self.order_id.as_ref().map(VenueOrderId::new)
+    }
+}
+
+impl BatchOrderParams for crate::websocket::messages::BybitWsPlaceOrderParams {
+    fn order_link_id(&self) -> Option<&str> {
+        self.order_link_id.as_deref()
+    }
+    fn symbol(&self) -> Ustr {
+        self.symbol
+    }
+    fn category(&self) -> BybitProductType {
+        self.category
+    }
+    fn venue_order_id(&self) -> Option<VenueOrderId> {
+        None
+    }
+}
+
+fn build_pending_entries<P: BatchOrderParams>(
+    params: &[P],
+    operation: PendingOperation,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+) -> Vec<PendingPyRequest> {
+    params
+        .iter()
+        .map(|p| PendingPyRequest {
+            client_order_id: p
+                .order_link_id()
+                .filter(|s| !s.is_empty())
+                .map_or(ClientOrderId::from("UNKNOWN"), ClientOrderId::new),
+            operation,
+            trader_id,
+            strategy_id,
+            instrument_id: InstrumentId::new(
+                Symbol::new(make_bybit_symbol(p.symbol().as_str(), p.category()).as_str()),
+                *BYBIT_VENUE,
+            ),
+            venue_order_id: p.venue_order_id(),
+        })
+        .collect()
+}
+
+fn register_batch_pending(
+    req_ids: Vec<String>,
+    per_order: Vec<PendingPyRequest>,
+    pending_py_requests: &DashMap<String, Vec<PendingPyRequest>>,
+) {
+    for (req_id, chunk) in req_ids
+        .into_iter()
+        .zip(per_order.chunks(BATCH_PROCESSING_LIMIT))
+    {
+        pending_py_requests.insert(req_id, chunk.to_vec());
+    }
+}
+
+fn resolve_instrument(
+    raw_symbol: &Ustr,
+    product_type: Option<BybitProductType>,
+    instruments: &DashMap<Ustr, InstrumentAny>,
+) -> Option<InstrumentAny> {
+    let key = product_type.map_or(*raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
+    instruments.get(&key).map(|r| r.value().clone())
+}
+
+fn send_data_to_python(data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
+    Python::attach(|py| {
+        let py_obj = data_to_pycapsule(py, data);
+        call_python_threadsafe(py, call_soon, callback, py_obj);
+    });
+}
+
+fn send_to_python<T: for<'py> IntoPyObjectExt<'py>>(
+    value: T,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    Python::attach(|py| {
+        if let Ok(py_obj) = value.into_py_any(py) {
             call_python_threadsafe(py, call_soon, callback, py_obj);
         }
-        Err(e) => {
-            log::error!("Error converting data to Python: {e}");
-        }
     });
+}
+
+fn handle_orderbook(
+    msg: &crate::websocket::messages::BybitWsOrderbookDepthMsg,
+    product_type: Option<BybitProductType>,
+    instruments: &DashMap<Ustr, InstrumentAny>,
+    quote_cache: &mut AHashMap<InstrumentId, QuoteTick>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let Some(instrument) = resolve_instrument(&msg.data.s, product_type, instruments) else {
+        return;
+    };
+    let ts_init = clock.get_time_ns();
+
+    match parse_orderbook_deltas(msg, &instrument, ts_init) {
+        Ok(deltas) => {
+            send_data_to_python(
+                Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                call_soon,
+                callback,
+            );
+        }
+        Err(e) => log::error!("Failed to parse orderbook deltas: {e}"),
+    }
+
+    let instrument_id = instrument.id();
+    let last_quote = quote_cache.get(&instrument_id);
+
+    match parse_orderbook_quote(msg, &instrument, last_quote, ts_init) {
+        Ok(quote) => {
+            quote_cache.insert(instrument_id, quote);
+            send_data_to_python(Data::Quote(quote), call_soon, callback);
+        }
+        Err(e) => log::error!("Failed to parse orderbook quote: {e}"),
+    }
+}
+
+fn handle_trade(
+    msg: &crate::websocket::messages::BybitWsTradeMsg,
+    product_type: Option<BybitProductType>,
+    instruments: &DashMap<Ustr, InstrumentAny>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let ts_init = clock.get_time_ns();
+    for trade in &msg.data {
+        let Some(instrument) = resolve_instrument(&trade.s, product_type, instruments) else {
+            continue;
+        };
+
+        match parse_ws_trade_tick(trade, &instrument, ts_init) {
+            Ok(tick) => send_data_to_python(Data::Trade(tick), call_soon, callback),
+            Err(e) => log::error!("Failed to parse trade tick: {e}"),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_kline(
+    msg: &crate::websocket::messages::BybitWsKlineMsg,
+    product_type: Option<BybitProductType>,
+    instruments: &DashMap<Ustr, InstrumentAny>,
+    bar_types_cache: &DashMap<String, BarType>,
+    bars_timestamp_on_close: bool,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let Ok((_, raw_symbol)) = parse_kline_topic(msg.topic.as_str()) else {
+        return;
+    };
+    let ustr_symbol = Ustr::from(raw_symbol);
+    let Some(instrument) = resolve_instrument(&ustr_symbol, product_type, instruments) else {
+        return;
+    };
+    let Some(bar_type) = bar_types_cache.get(msg.topic.as_str()).map(|e| *e.value()) else {
+        return;
+    };
+
+    let ts_init = clock.get_time_ns();
+    for kline in &msg.data {
+        if !kline.confirm {
+            continue;
+        }
+
+        match parse_ws_kline_bar(
+            kline,
+            &instrument,
+            bar_type,
+            bars_timestamp_on_close,
+            ts_init,
+        ) {
+            Ok(bar) => send_data_to_python(Data::Bar(bar), call_soon, callback),
+            Err(e) => log::error!("Failed to parse kline bar: {e}"),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_ticker_linear(
+    msg: &crate::websocket::messages::BybitWsTickerLinearMsg,
+    product_type: Option<BybitProductType>,
+    instruments: &DashMap<Ustr, InstrumentAny>,
+    quote_cache: &mut AHashMap<InstrumentId, QuoteTick>,
+    funding_cache: &mut AHashMap<Ustr, (Option<String>, Option<String>)>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let Some(instrument) = resolve_instrument(&msg.data.symbol, product_type, instruments) else {
+        return;
+    };
+    let instrument_id = instrument.id();
+    let ts_init = clock.get_time_ns();
+
+    if msg.data.bid1_price.is_some() {
+        match parse_ticker_linear_quote(msg, &instrument, ts_init) {
+            Ok(quote) => {
+                let last = quote_cache.get(&instrument_id);
+
+                if last.is_none_or(|q| *q != quote) {
+                    quote_cache.insert(instrument_id, quote);
+                    send_data_to_python(Data::Quote(quote), call_soon, callback);
+                }
+            }
+            Err(e) => log::debug!("Skipping partial ticker update: {e}"),
+        }
+    }
+
+    let ts_event = match parse_millis_i64(msg.ts, "ticker.ts") {
+        Ok(ts) => ts,
+        Err(e) => {
+            log::error!("Failed to parse ticker timestamp: {e}");
+            return;
+        }
+    };
+
+    let cache_entry = funding_cache.entry(msg.data.symbol).or_insert((None, None));
+    let mut changed = false;
+
+    if let Some(rate) = &msg.data.funding_rate
+        && cache_entry.0.as_ref() != Some(rate)
+    {
+        cache_entry.0 = Some(rate.clone());
+        changed = true;
+    }
+
+    if let Some(next_time) = &msg.data.next_funding_time
+        && cache_entry.1.as_ref() != Some(next_time)
+    {
+        cache_entry.1 = Some(next_time.clone());
+        changed = true;
+    }
+
+    if changed {
+        match parse_ticker_linear_funding(&msg.data, instrument_id, ts_event, ts_init) {
+            Ok(update) => send_to_python(update, call_soon, callback),
+            Err(e) => log::debug!("Skipping funding rate update: {e}"),
+        }
+    }
+
+    if msg.data.mark_price.is_some() {
+        match parse_ticker_linear_mark_price(&msg.data, &instrument, ts_event, ts_init) {
+            Ok(update) => send_to_python(update, call_soon, callback),
+            Err(e) => log::debug!("Skipping mark price update: {e}"),
+        }
+    }
+
+    if msg.data.index_price.is_some() {
+        match parse_ticker_linear_index_price(&msg.data, &instrument, ts_event, ts_init) {
+            Ok(update) => send_to_python(update, call_soon, callback),
+            Err(e) => log::debug!("Skipping index price update: {e}"),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_ticker_option(
+    msg: &crate::websocket::messages::BybitWsTickerOptionMsg,
+    product_type: Option<BybitProductType>,
+    instruments: &DashMap<Ustr, InstrumentAny>,
+    quote_cache: &mut AHashMap<InstrumentId, QuoteTick>,
+    option_greeks_subs: &DashSet<InstrumentId>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let Some(instrument) = resolve_instrument(&msg.data.symbol, product_type, instruments) else {
+        return;
+    };
+    let instrument_id = instrument.id();
+    let ts_init = clock.get_time_ns();
+
+    match parse_ticker_option_quote(msg, &instrument, ts_init) {
+        Ok(quote) => {
+            let last = quote_cache.get(&instrument_id);
+
+            if last.is_none_or(|q| *q != quote) {
+                quote_cache.insert(instrument_id, quote);
+                send_data_to_python(Data::Quote(quote), call_soon, callback);
+            }
+        }
+        Err(e) => log::error!("Failed to parse ticker option quote: {e}"),
+    }
+
+    match parse_ticker_option_mark_price(msg, &instrument, ts_init) {
+        Ok(update) => send_to_python(update, call_soon, callback),
+        Err(e) => log::error!("Failed to parse ticker option mark price: {e}"),
+    }
+
+    match parse_ticker_option_index_price(msg, &instrument, ts_init) {
+        Ok(update) => send_to_python(update, call_soon, callback),
+        Err(e) => log::error!("Failed to parse ticker option index price: {e}"),
+    }
+
+    if option_greeks_subs.contains(&instrument_id) {
+        match parse_ticker_option_greeks(msg, &instrument, ts_init) {
+            Ok(greeks) => send_to_python(greeks, call_soon, callback),
+            Err(e) => log::error!("Failed to parse option greeks: {e}"),
+        }
+    }
+}
+
+fn handle_account_order(
+    msg: &crate::websocket::messages::BybitWsAccountOrderMsg,
+    instruments: &DashMap<Ustr, InstrumentAny>,
+    account_id: Option<AccountId>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let ts_init = clock.get_time_ns();
+    for order in &msg.data {
+        let symbol = make_bybit_symbol(order.symbol, order.category);
+        let Some(instrument) = instruments.get(&symbol).map(|r| r.value().clone()) else {
+            log::warn!("No instrument for order update: {symbol}");
+            continue;
+        };
+        let Some(account_id) = account_id else {
+            continue;
+        };
+
+        match parse_ws_order_status_report(order, &instrument, account_id, ts_init) {
+            Ok(report) => send_to_python(report, call_soon, callback),
+            Err(e) => log::error!("Failed to parse order status report: {e}"),
+        }
+    }
+}
+
+fn handle_account_execution(
+    msg: &crate::websocket::messages::BybitWsAccountExecutionMsg,
+    instruments: &DashMap<Ustr, InstrumentAny>,
+    account_id: Option<AccountId>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let ts_init = clock.get_time_ns();
+    for exec in &msg.data {
+        let symbol = make_bybit_symbol(exec.symbol, exec.category);
+        let Some(instrument) = instruments.get(&symbol).map(|r| r.value().clone()) else {
+            log::warn!("No instrument for execution update: {symbol}");
+            continue;
+        };
+        let Some(account_id) = account_id else {
+            continue;
+        };
+
+        match parse_ws_fill_report(exec, account_id, &instrument, ts_init) {
+            Ok(report) => send_to_python(report, call_soon, callback),
+            Err(e) => log::error!("Failed to parse fill report: {e}"),
+        }
+    }
+}
+
+fn handle_account_wallet(
+    msg: &crate::websocket::messages::BybitWsAccountWalletMsg,
+    account_id: Option<AccountId>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let ts_init = clock.get_time_ns();
+    let ts_event = parse_millis_i64(msg.creation_time, "wallet.creation_time").unwrap_or(ts_init);
+    let Some(account_id) = account_id else {
+        return;
+    };
+
+    for wallet in &msg.data {
+        match parse_ws_account_state(wallet, account_id, ts_event, ts_init) {
+            Ok(state) => send_to_python(state, call_soon, callback),
+            Err(e) => log::error!("Failed to parse account state: {e}"),
+        }
+    }
+}
+
+fn handle_account_position(
+    msg: &crate::websocket::messages::BybitWsAccountPositionMsg,
+    instruments: &DashMap<Ustr, InstrumentAny>,
+    account_id: Option<AccountId>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let ts_init = clock.get_time_ns();
+    for position in &msg.data {
+        let symbol = make_bybit_symbol(position.symbol, position.category);
+        let Some(instrument) = instruments.get(&symbol).map(|r| r.value().clone()) else {
+            log::warn!("No instrument for position update: {symbol}");
+            continue;
+        };
+        let Some(account_id) = account_id else {
+            continue;
+        };
+
+        match parse_ws_position_status_report(position, account_id, &instrument, ts_init) {
+            Ok(report) => send_to_python(report, call_soon, callback),
+            Err(e) => log::error!("Failed to parse position status report: {e}"),
+        }
+    }
+}
+
+fn handle_order_response(
+    resp: &crate::websocket::messages::BybitWsOrderResponse,
+    pending_py_requests: &DashMap<String, Vec<PendingPyRequest>>,
+    account_id: Option<AccountId>,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    if resp.ret_code == 0 {
+        let entries = resp
+            .req_id
+            .as_ref()
+            .and_then(|rid| pending_py_requests.remove(rid))
+            .map(|(_, v)| v);
+
+        // Check for per-order failures in batch retExtInfo
+        if let Some(entries) = entries {
+            let batch_errors = resp.extract_batch_errors();
+            let data_array = resp.data.as_array();
+            let ts_init = clock.get_time_ns();
+
+            for (idx, error) in batch_errors.iter().enumerate() {
+                if error.code == 0 {
+                    continue;
+                }
+
+                let pending = data_array
+                    .and_then(|arr| arr.get(idx))
+                    .and_then(|item| item.get("orderLinkId"))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .and_then(|oli| {
+                        let cid = ClientOrderId::new(oli);
+                        entries.iter().find(|e| e.client_order_id == cid)
+                    })
+                    .or_else(|| entries.get(idx));
+
+                if let Some(pending) = pending {
+                    let reason = Ustr::from(&error.msg);
+                    emit_rejection(pending, reason, account_id, ts_init, call_soon, callback);
+                } else {
+                    log::warn!(
+                        "Batch error at index {idx} without correlation: code={}, msg={}",
+                        error.code,
+                        error.msg,
+                    );
+                }
+            }
+        }
+        return;
+    }
+
+    // Try to find the pending entries by req_id, then by orderLinkId
+    let entries = resp
+        .req_id
+        .as_ref()
+        .and_then(|rid| pending_py_requests.remove(rid))
+        .map(|(_, v)| v)
+        .or_else(|| {
+            // Bybit sometimes omits req_id, search by orderLinkId instead
+            let order_link_id = resp
+                .data
+                .get("orderLinkId")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())?;
+            let cid = ClientOrderId::new(order_link_id);
+            let key = pending_py_requests
+                .iter()
+                .find(|entry| entry.value().iter().any(|e| e.client_order_id == cid))
+                .map(|entry| entry.key().clone())?;
+            pending_py_requests.remove(&key).map(|(_, v)| v)
+        });
+
+    let Some(entries) = entries else {
+        log::warn!(
+            "Unmatched order response: ret_code={}, ret_msg={}",
+            resp.ret_code,
+            resp.ret_msg,
+        );
+        return;
+    };
+
+    let ts_init = clock.get_time_ns();
+    let reason = Ustr::from(&resp.ret_msg);
+
+    for pending in &entries {
+        emit_rejection(pending, reason, account_id, ts_init, call_soon, callback);
+    }
+}
+
+fn emit_rejection(
+    pending: &PendingPyRequest,
+    reason: Ustr,
+    account_id: Option<AccountId>,
+    ts_init: UnixNanos,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    match pending.operation {
+        PendingOperation::Place => {
+            let event = OrderRejected::new(
+                pending.trader_id,
+                pending.strategy_id,
+                pending.instrument_id,
+                pending.client_order_id,
+                account_id.unwrap_or(AccountId::from("BYBIT-000")),
+                reason,
+                UUID4::new(),
+                ts_init,
+                ts_init,
+                false,
+                false,
+            );
+            send_to_python(event, call_soon, callback);
+        }
+        PendingOperation::Cancel => {
+            let event = OrderCancelRejected::new(
+                pending.trader_id,
+                pending.strategy_id,
+                pending.instrument_id,
+                pending.client_order_id,
+                reason,
+                UUID4::new(),
+                ts_init,
+                ts_init,
+                false,
+                pending.venue_order_id,
+                account_id,
+            );
+            send_to_python(event, call_soon, callback);
+        }
+        PendingOperation::Amend => {
+            let event = OrderModifyRejected::new(
+                pending.trader_id,
+                pending.strategy_id,
+                pending.instrument_id,
+                pending.client_order_id,
+                reason,
+                UUID4::new(),
+                ts_init,
+                ts_init,
+                false,
+                pending.venue_order_id,
+                account_id,
+            );
+            send_to_python(event, call_soon, callback);
+        }
+    }
 }

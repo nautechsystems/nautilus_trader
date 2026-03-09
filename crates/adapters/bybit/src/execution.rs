@@ -17,10 +17,11 @@
 
 use std::{
     future::Future,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
+use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
@@ -44,8 +45,8 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderSide, OrderType, TimeInForce},
-    events::OrderEventAny,
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
+    instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
@@ -61,16 +62,14 @@ use crate::{
             BybitAccountType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
             BybitTimeInForce,
         },
-        parse::extract_raw_symbol,
+        parse::{extract_raw_symbol, nanos_to_millis},
     },
     config::BybitExecClientConfig,
     http::client::BybitHttpClient,
     websocket::{
         client::BybitWebSocketClient,
-        messages::{
-            BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams,
-            NautilusWsMessage,
-        },
+        dispatch::{OrderIdentity, PendingOperation, WsDispatchState, dispatch_ws_message},
+        messages::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams},
     },
 };
 
@@ -87,6 +86,8 @@ pub struct BybitExecutionClient {
     ws_private_stream_handle: Option<JoinHandle<()>>,
     ws_trade_stream_handle: Option<JoinHandle<()>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+    dispatch_state: Arc<WsDispatchState>,
 }
 
 impl BybitExecutionClient {
@@ -148,6 +149,8 @@ impl BybitExecutionClient {
             ws_private_stream_handle: None,
             ws_trade_stream_handle: None,
             pending_tasks: Mutex::new(Vec::new()),
+            instruments_cache: Arc::new(AHashMap::new()),
+            dispatch_state: Arc::new(WsDispatchState::default()),
         })
     }
 
@@ -311,8 +314,11 @@ impl ExecutionClient for BybitExecutionClient {
             }
 
             if !all_instruments.is_empty() {
-                self.ws_private.cache_instruments(all_instruments.clone());
-                self.ws_trade.cache_instruments(all_instruments);
+                let mut instruments_map = AHashMap::new();
+                for instrument in &all_instruments {
+                    instruments_map.insert(instrument.id().symbol.inner(), instrument.clone());
+                }
+                self.instruments_cache = Arc::new(instruments_map);
             }
             self.core.set_instruments_initialized();
         }
@@ -327,10 +333,21 @@ impl ExecutionClient for BybitExecutionClient {
         if self.ws_private_stream_handle.is_none() {
             let stream = self.ws_private.stream();
             let emitter = self.emitter.clone();
+            let account_id = self.core.account_id;
+            let instruments = Arc::clone(&self.instruments_cache);
+            let state = Arc::clone(&self.dispatch_state);
+            let clock = self.clock;
             let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 while let Some(message) = stream.next().await {
-                    dispatch_ws_message(message, &emitter);
+                    dispatch_ws_message(
+                        &message,
+                        &emitter,
+                        &state,
+                        account_id,
+                        &instruments,
+                        clock,
+                    );
                 }
             });
             self.ws_private_stream_handle = Some(handle);
@@ -347,10 +364,21 @@ impl ExecutionClient for BybitExecutionClient {
             if self.ws_trade_stream_handle.is_none() {
                 let stream = self.ws_trade.stream();
                 let emitter = self.emitter.clone();
+                let account_id = self.core.account_id;
+                let instruments = Arc::clone(&self.instruments_cache);
+                let state = Arc::clone(&self.dispatch_state);
+                let clock = self.clock;
                 let handle = get_runtime().spawn(async move {
                     pin_mut!(stream);
                     while let Some(message) = stream.next().await {
-                        dispatch_ws_message(message, &emitter);
+                        dispatch_ws_message(
+                            &message,
+                            &emitter,
+                            &state,
+                            account_id,
+                            &instruments,
+                            clock,
+                        );
                     }
                 });
                 self.ws_trade_stream_handle = Some(handle);
@@ -446,8 +474,6 @@ impl ExecutionClient for BybitExecutionClient {
         self.core.set_started();
 
         let http_client = self.http_client.clone();
-        let mut ws_private = self.ws_private.clone();
-        let mut ws_trade = self.ws_trade.clone();
         let product_types = self.config.product_types.clone();
 
         get_runtime().spawn(async move {
@@ -473,9 +499,7 @@ impl ExecutionClient for BybitExecutionClient {
                     "Instrument bootstrap yielded no instruments; WebSocket submissions may fail"
                 );
             } else {
-                ws_private.cache_instruments(all_instruments.clone());
-                ws_trade.cache_instruments(all_instruments);
-                log::info!("Instruments initialized");
+                log::info!("Instruments initialized: count={}", all_instruments.len());
             }
         });
 
@@ -509,470 +533,6 @@ impl ExecutionClient for BybitExecutionClient {
         }
         self.abort_pending_tasks();
         log::info!("Stopped: client_id={}", self.core.client_id);
-        Ok(())
-    }
-
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        let order = {
-            let cache = self.core.cache();
-            let order = cache
-                .order(&cmd.client_order_id)
-                .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
-
-            if order.is_closed() {
-                log::warn!("Cannot submit closed order {}", order.client_order_id());
-                return Ok(());
-            }
-
-            order.clone()
-        };
-
-        // Validate order params before emitting submitted event
-        if let Err(e) = BybitOrderSide::try_from(order.order_side()) {
-            self.emitter.emit_order_denied(&order, &e.to_string());
-            return Ok(());
-        }
-
-        if let Err(e) = Self::map_order_type(order.order_type()) {
-            self.emitter.emit_order_denied(&order, &e.to_string());
-            return Ok(());
-        }
-
-        log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-        self.emitter.emit_order_submitted(&order);
-
-        let instrument_id = order.instrument_id();
-        let product_type = self.get_product_type_for_instrument(instrument_id);
-        let client_order_id = order.client_order_id();
-        let strategy_id = order.strategy_id();
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-
-        if self.config.environment == BybitEnvironment::Demo {
-            let http_client = self.http_client.clone();
-            let account_id = self.core.account_id;
-            let order_side = order.order_side();
-            let order_type = order.order_type();
-            let quantity = order.quantity();
-            let time_in_force = order.time_in_force();
-            let price = order.price();
-            let trigger_price = order.trigger_price();
-            let post_only = order.is_post_only();
-            let reduce_only = order.is_reduce_only();
-
-            self.spawn_task("submit_order_http", async move {
-                let result = http_client
-                    .submit_order(
-                        account_id,
-                        product_type,
-                        instrument_id,
-                        client_order_id,
-                        order_side,
-                        order_type,
-                        quantity,
-                        Some(time_in_force),
-                        price,
-                        trigger_price,
-                        Some(post_only),
-                        reduce_only,
-                        false, // is_quote_quantity
-                        false, // is_leverage
-                    )
-                    .await;
-
-                if let Err(e) = result {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        &format!("submit-order-error: {e}"),
-                        ts_event,
-                        false,
-                    );
-                    anyhow::bail!("submit order failed: {e}");
-                }
-
-                Ok(())
-            });
-
-            return Ok(());
-        }
-
-        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let bybit_side = BybitOrderSide::try_from(order.order_side())?;
-        let bybit_order_type = Self::map_order_type(order.order_type())?;
-
-        let params = BybitWsPlaceOrderParams {
-            category: product_type,
-            symbol: Ustr::from(raw_symbol),
-            side: bybit_side,
-            order_type: bybit_order_type,
-            qty: order.quantity().to_string(),
-            is_leverage: None,
-            market_unit: None,
-            price: order.price().map(|p| p.to_string()),
-            time_in_force: Some(Self::map_time_in_force(
-                order.time_in_force(),
-                order.is_post_only(),
-            )),
-            order_link_id: Some(order.client_order_id().to_string()),
-            reduce_only: if order.is_reduce_only() {
-                Some(true)
-            } else {
-                None
-            },
-            close_on_trigger: None,
-            trigger_price: order.trigger_price().map(|p| p.to_string()),
-            trigger_by: None,
-            trigger_direction: None,
-            tpsl_mode: None,
-            take_profit: None,
-            stop_loss: None,
-            tp_trigger_by: None,
-            sl_trigger_by: None,
-            sl_trigger_price: None,
-            tp_trigger_price: None,
-            sl_order_type: None,
-            tp_order_type: None,
-            sl_limit_price: None,
-            tp_limit_price: None,
-        };
-
-        let ws_trade = self.ws_trade.clone();
-        let trader_id = self.core.trader_id;
-
-        self.spawn_task("submit_order", async move {
-            let result = ws_trade
-                .place_order(
-                    params,
-                    client_order_id,
-                    trader_id,
-                    strategy_id,
-                    instrument_id,
-                )
-                .await
-                .map_err(|e| anyhow::anyhow!("submit order failed: {e}"));
-
-            if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    &format!("submit-order-error: {e}"),
-                    ts_event,
-                    false,
-                );
-                return Err(e);
-            }
-
-            Ok(())
-        });
-
-        Ok(())
-    }
-
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        log::warn!(
-            "submit_order_list not yet implemented for Bybit execution client (got {} orders)",
-            cmd.order_list.client_order_ids.len()
-        );
-        Ok(())
-    }
-
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self.get_product_type_for_instrument(instrument_id);
-        let client_order_id = cmd.client_order_id;
-        let strategy_id = cmd.strategy_id;
-        let venue_order_id = cmd.venue_order_id;
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-
-        if self.config.environment == BybitEnvironment::Demo {
-            let http_client = self.http_client.clone();
-            let account_id = self.core.account_id;
-            let quantity = cmd.quantity;
-            let price = cmd.price;
-
-            self.spawn_task("modify_order_http", async move {
-                let result = http_client
-                    .modify_order(
-                        account_id,
-                        product_type,
-                        instrument_id,
-                        Some(client_order_id),
-                        venue_order_id,
-                        quantity,
-                        price,
-                    )
-                    .await;
-
-                if let Err(e) = result {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_modify_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        venue_order_id,
-                        &format!("modify-order-error: {e}"),
-                        ts_event,
-                    );
-                    anyhow::bail!("modify order failed: {e}");
-                }
-
-                Ok(())
-            });
-
-            return Ok(());
-        }
-
-        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-
-        let params = BybitWsAmendOrderParams {
-            category: product_type,
-            symbol: Ustr::from(raw_symbol),
-            order_id: cmd.venue_order_id.map(|v| v.to_string()),
-            order_link_id: Some(cmd.client_order_id.to_string()),
-            qty: cmd.quantity.map(|q| q.to_string()),
-            price: cmd.price.map(|p| p.to_string()),
-            trigger_price: None,
-            take_profit: None,
-            stop_loss: None,
-            tp_trigger_by: None,
-            sl_trigger_by: None,
-        };
-
-        let ws_trade = self.ws_trade.clone();
-        let trader_id = cmd.trader_id;
-
-        self.spawn_task("modify_order", async move {
-            let result = ws_trade
-                .amend_order(
-                    params,
-                    client_order_id,
-                    trader_id,
-                    strategy_id,
-                    instrument_id,
-                    venue_order_id,
-                )
-                .await
-                .map_err(|e| anyhow::anyhow!("modify order failed: {e}"));
-
-            if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_modify_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    venue_order_id,
-                    &format!("modify-order-error: {e}"),
-                    ts_event,
-                );
-                return Err(e);
-            }
-
-            Ok(())
-        });
-
-        Ok(())
-    }
-
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self.get_product_type_for_instrument(instrument_id);
-        let client_order_id = cmd.client_order_id;
-        let strategy_id = cmd.strategy_id;
-        let venue_order_id = cmd.venue_order_id;
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-
-        if self.config.environment == BybitEnvironment::Demo {
-            let http_client = self.http_client.clone();
-            let account_id = self.core.account_id;
-
-            self.spawn_task("cancel_order_http", async move {
-                let result = http_client
-                    .cancel_order(
-                        account_id,
-                        product_type,
-                        instrument_id,
-                        Some(client_order_id),
-                        venue_order_id,
-                    )
-                    .await;
-
-                if let Err(e) = result {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_cancel_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        venue_order_id,
-                        &format!("cancel-order-error: {e}"),
-                        ts_event,
-                    );
-                    anyhow::bail!("cancel order failed: {e}");
-                }
-
-                Ok(())
-            });
-
-            return Ok(());
-        }
-
-        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-
-        let params = BybitWsCancelOrderParams {
-            category: product_type,
-            symbol: Ustr::from(raw_symbol),
-            order_id: cmd.venue_order_id.map(|v| v.to_string()),
-            order_link_id: Some(cmd.client_order_id.to_string()),
-        };
-
-        let ws_trade = self.ws_trade.clone();
-        let trader_id = cmd.trader_id;
-
-        self.spawn_task("cancel_order", async move {
-            let result = ws_trade
-                .cancel_order(
-                    params,
-                    client_order_id,
-                    trader_id,
-                    strategy_id,
-                    instrument_id,
-                    venue_order_id,
-                )
-                .await
-                .map_err(|e| anyhow::anyhow!("cancel order failed: {e}"));
-
-            if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_cancel_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    venue_order_id,
-                    &format!("cancel-order-error: {e}"),
-                    ts_event,
-                );
-                return Err(e);
-            }
-
-            Ok(())
-        });
-
-        Ok(())
-    }
-
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
-        if cmd.order_side != OrderSide::NoOrderSide {
-            log::warn!(
-                "Bybit does not support order_side filtering for cancel all orders; \
-                ignoring order_side={:?} and canceling all orders",
-                cmd.order_side,
-            );
-        }
-
-        let instrument_id = cmd.instrument_id;
-        let product_type = self.get_product_type_for_instrument(instrument_id);
-        let account_id = self.core.account_id;
-        let http_client = self.http_client.clone();
-
-        self.spawn_task("cancel_all_orders", async move {
-            match http_client
-                .cancel_all_orders(account_id, product_type, instrument_id)
-                .await
-            {
-                Ok(reports) => {
-                    for report in reports {
-                        log::debug!("Cancelled order: {report:?}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to cancel all orders for {instrument_id}: {e}");
-                }
-            }
-            Ok(())
-        });
-
-        Ok(())
-    }
-
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
-        if cmd.cancels.is_empty() {
-            return Ok(());
-        }
-
-        let instrument_id = cmd.instrument_id;
-        let product_type = self.get_product_type_for_instrument(instrument_id);
-
-        // Demo mode: cancel individually via HTTP (batch not supported)
-        if self.config.environment == BybitEnvironment::Demo {
-            let http_client = self.http_client.clone();
-            let account_id = self.core.account_id;
-            let strategy_id = cmd.strategy_id;
-            let emitter = self.emitter.clone();
-            let clock = self.clock;
-            let cancels: Vec<_> = cmd
-                .cancels
-                .iter()
-                .map(|c| (c.client_order_id, c.venue_order_id))
-                .collect();
-
-            self.spawn_task("batch_cancel_orders_http", async move {
-                for (client_order_id, venue_order_id) in cancels {
-                    if let Err(e) = http_client
-                        .cancel_order(
-                            account_id,
-                            product_type,
-                            instrument_id,
-                            Some(client_order_id),
-                            venue_order_id,
-                        )
-                        .await
-                    {
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_cancel_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            venue_order_id,
-                            &format!("cancel-order-error: {e}"),
-                            ts_event,
-                        );
-                    }
-                }
-                Ok(())
-            });
-
-            return Ok(());
-        }
-
-        let raw_symbol = Ustr::from(extract_raw_symbol(instrument_id.symbol.as_str()));
-
-        let mut cancel_params = Vec::with_capacity(cmd.cancels.len());
-        for cancel in &cmd.cancels {
-            cancel_params.push(BybitWsCancelOrderParams {
-                category: product_type,
-                symbol: raw_symbol,
-                order_id: cancel.venue_order_id.map(|v| v.to_string()),
-                order_link_id: Some(cancel.client_order_id.to_string()),
-            });
-        }
-
-        let ws_trade = self.ws_trade.clone();
-        let trader_id = cmd.trader_id;
-        let strategy_id = cmd.strategy_id;
-
-        self.spawn_task("batch_cancel_orders", async move {
-            ws_trade
-                .batch_cancel_orders(trader_id, strategy_id, cancel_params)
-                .await?;
-            Ok(())
-        });
-
         Ok(())
     }
 
@@ -1201,58 +761,492 @@ impl ExecutionClient for BybitExecutionClient {
 
         Ok(Some(mass_status))
     }
-}
 
-/// Dispatches a WebSocket message using the event emitter.
-fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitter) {
-    match message {
-        NautilusWsMessage::AccountState(state) => {
-            emitter.send_account_state(state);
-        }
-        NautilusWsMessage::PositionStatusReport(report) => {
-            emitter.send_position_report(report);
-        }
-        NautilusWsMessage::OrderStatusReports(reports) => {
-            log::debug!("Processing {} order status report(s)", reports.len());
-            for report in reports {
-                emitter.send_order_status_report(report);
+    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+        let order = {
+            let cache = self.core.cache();
+            let order = cache
+                .order(&cmd.client_order_id)
+                .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
+
+            if order.is_closed() {
+                log::warn!("Cannot submit closed order {}", order.client_order_id());
+                return Ok(());
             }
+
+            order.clone()
+        };
+
+        // Validate order params before emitting submitted event
+        if let Err(e) = BybitOrderSide::try_from(order.order_side()) {
+            self.emitter.emit_order_denied(&order, &e.to_string());
+            return Ok(());
         }
-        NautilusWsMessage::FillReports(reports) => {
-            log::debug!("Processing {} fill report(s)", reports.len());
-            for report in reports {
-                emitter.send_fill_report(report);
+
+        if let Err(e) = Self::map_order_type(order.order_type()) {
+            self.emitter.emit_order_denied(&order, &e.to_string());
+            return Ok(());
+        }
+
+        log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
+        self.emitter.emit_order_submitted(&order);
+
+        let instrument_id = order.instrument_id();
+        let product_type = self.get_product_type_for_instrument(instrument_id);
+        let client_order_id = order.client_order_id();
+        let strategy_id = order.strategy_id();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        // Store identity for WS dispatch to produce proper order events
+        self.dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side: order.order_side(),
+                order_type: order.order_type(),
+            },
+        );
+
+        if self.config.environment == BybitEnvironment::Demo {
+            let http_client = self.http_client.clone();
+            let account_id = self.core.account_id;
+            let order_side = order.order_side();
+            let order_type = order.order_type();
+            let quantity = order.quantity();
+            let time_in_force = order.time_in_force();
+            let price = order.price();
+            let trigger_price = order.trigger_price();
+            let post_only = order.is_post_only();
+            let reduce_only = order.is_reduce_only();
+
+            self.spawn_task("submit_order_http", async move {
+                let result = http_client
+                    .submit_order(
+                        account_id,
+                        product_type,
+                        instrument_id,
+                        client_order_id,
+                        order_side,
+                        order_type,
+                        quantity,
+                        Some(time_in_force),
+                        price,
+                        trigger_price,
+                        Some(post_only),
+                        reduce_only,
+                        false, // is_quote_quantity
+                        false, // is_leverage
+                    )
+                    .await;
+
+                if let Err(e) = result {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        &format!("submit-order-error: {e}"),
+                        ts_event,
+                        false,
+                    );
+                    anyhow::bail!("submit order failed: {e}");
+                }
+
+                Ok(())
+            });
+
+            return Ok(());
+        }
+
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+        let bybit_side = BybitOrderSide::try_from(order.order_side())?;
+        let bybit_order_type = Self::map_order_type(order.order_type())?;
+
+        let params = BybitWsPlaceOrderParams {
+            category: product_type,
+            symbol: Ustr::from(raw_symbol),
+            side: bybit_side,
+            order_type: bybit_order_type,
+            qty: order.quantity().to_string(),
+            is_leverage: None,
+            market_unit: None,
+            price: order.price().map(|p| p.to_string()),
+            time_in_force: Some(Self::map_time_in_force(
+                order.time_in_force(),
+                order.is_post_only(),
+            )),
+            order_link_id: Some(order.client_order_id().to_string()),
+            reduce_only: if order.is_reduce_only() {
+                Some(true)
+            } else {
+                None
+            },
+            close_on_trigger: None,
+            trigger_price: order.trigger_price().map(|p| p.to_string()),
+            trigger_by: None,
+            trigger_direction: None,
+            tpsl_mode: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            sl_trigger_price: None,
+            tp_trigger_price: None,
+            sl_order_type: None,
+            tp_order_type: None,
+            sl_limit_price: None,
+            tp_limit_price: None,
+        };
+
+        let ws_trade = self.ws_trade.clone();
+        let dispatch_state = Arc::clone(&self.dispatch_state);
+
+        self.spawn_task("submit_order", async move {
+            match ws_trade.place_order(params).await {
+                Ok(req_id) => {
+                    dispatch_state.pending_requests.insert(
+                        req_id,
+                        (vec![client_order_id], vec![None], PendingOperation::Place),
+                    );
+                }
+                Err(e) => {
+                    dispatch_state.order_identities.remove(&client_order_id);
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        &format!("submit-order-error: {e}"),
+                        ts_event,
+                        false,
+                    );
+                    anyhow::bail!("submit order failed: {e}");
+                }
             }
-        }
-        NautilusWsMessage::OrderRejected(event) => {
-            emitter.send_order_event(OrderEventAny::Rejected(event));
-        }
-        NautilusWsMessage::OrderCancelRejected(event) => {
-            emitter.send_order_event(OrderEventAny::CancelRejected(event));
-        }
-        NautilusWsMessage::OrderModifyRejected(event) => {
-            emitter.send_order_event(OrderEventAny::ModifyRejected(event));
-        }
-        NautilusWsMessage::Error(e) => {
-            log::warn!("Websocket error: code={} message={}", e.code, e.message);
-        }
-        NautilusWsMessage::Reconnected => {
-            log::info!("Websocket reconnected");
-        }
-        NautilusWsMessage::Authenticated => {
-            log::debug!("Websocket authenticated");
-        }
-        NautilusWsMessage::Deltas(_)
-        | NautilusWsMessage::Data(_)
-        | NautilusWsMessage::FundingRates(_)
-        | NautilusWsMessage::MarkPrices(_)
-        | NautilusWsMessage::IndexPrices(_)
-        | NautilusWsMessage::OptionGreeks(_) => {
-            log::debug!("Ignoring websocket data message");
-        }
+
+            Ok(())
+        });
+
+        Ok(())
     }
-}
 
-fn nanos_to_millis(value: Option<UnixNanos>) -> Option<i64> {
-    value.map(|nanos| (nanos.as_u64() / 1_000_000) as i64)
+    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+        log::warn!(
+            "submit_order_list not yet implemented for Bybit execution client (got {} orders)",
+            cmd.order_list.client_order_ids.len()
+        );
+        Ok(())
+    }
+
+    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        let product_type = self.get_product_type_for_instrument(instrument_id);
+        let client_order_id = cmd.client_order_id;
+        let strategy_id = cmd.strategy_id;
+        let venue_order_id = cmd.venue_order_id;
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        if self.config.environment == BybitEnvironment::Demo {
+            let http_client = self.http_client.clone();
+            let account_id = self.core.account_id;
+            let quantity = cmd.quantity;
+            let price = cmd.price;
+
+            self.spawn_task("modify_order_http", async move {
+                let result = http_client
+                    .modify_order(
+                        account_id,
+                        product_type,
+                        instrument_id,
+                        Some(client_order_id),
+                        venue_order_id,
+                        quantity,
+                        price,
+                    )
+                    .await;
+
+                if let Err(e) = result {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_modify_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        &format!("modify-order-error: {e}"),
+                        ts_event,
+                    );
+                    anyhow::bail!("modify order failed: {e}");
+                }
+
+                Ok(())
+            });
+
+            return Ok(());
+        }
+
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+
+        let params = BybitWsAmendOrderParams {
+            category: product_type,
+            symbol: Ustr::from(raw_symbol),
+            order_id: cmd.venue_order_id.map(|v| v.to_string()),
+            order_link_id: Some(cmd.client_order_id.to_string()),
+            qty: cmd.quantity.map(|q| q.to_string()),
+            price: cmd.price.map(|p| p.to_string()),
+            trigger_price: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+        };
+
+        let ws_trade = self.ws_trade.clone();
+        let dispatch_state = Arc::clone(&self.dispatch_state);
+
+        self.spawn_task("modify_order", async move {
+            match ws_trade.amend_order(params).await {
+                Ok(req_id) => {
+                    dispatch_state.pending_requests.insert(
+                        req_id,
+                        (
+                            vec![client_order_id],
+                            vec![venue_order_id],
+                            PendingOperation::Amend,
+                        ),
+                    );
+                }
+                Err(e) => {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_modify_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        &format!("modify-order-error: {e}"),
+                        ts_event,
+                    );
+                    anyhow::bail!("modify order failed: {e}");
+                }
+            }
+
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        let product_type = self.get_product_type_for_instrument(instrument_id);
+        let client_order_id = cmd.client_order_id;
+        let strategy_id = cmd.strategy_id;
+        let venue_order_id = cmd.venue_order_id;
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        if self.config.environment == BybitEnvironment::Demo {
+            let http_client = self.http_client.clone();
+            let account_id = self.core.account_id;
+
+            self.spawn_task("cancel_order_http", async move {
+                let result = http_client
+                    .cancel_order(
+                        account_id,
+                        product_type,
+                        instrument_id,
+                        Some(client_order_id),
+                        venue_order_id,
+                    )
+                    .await;
+
+                if let Err(e) = result {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_cancel_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        &format!("cancel-order-error: {e}"),
+                        ts_event,
+                    );
+                    anyhow::bail!("cancel order failed: {e}");
+                }
+
+                Ok(())
+            });
+
+            return Ok(());
+        }
+
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+
+        let params = BybitWsCancelOrderParams {
+            category: product_type,
+            symbol: Ustr::from(raw_symbol),
+            order_id: cmd.venue_order_id.map(|v| v.to_string()),
+            order_link_id: Some(cmd.client_order_id.to_string()),
+        };
+
+        let ws_trade = self.ws_trade.clone();
+        let dispatch_state = Arc::clone(&self.dispatch_state);
+
+        self.spawn_task("cancel_order", async move {
+            match ws_trade.cancel_order(params).await {
+                Ok(req_id) => {
+                    dispatch_state.pending_requests.insert(
+                        req_id,
+                        (
+                            vec![client_order_id],
+                            vec![venue_order_id],
+                            PendingOperation::Cancel,
+                        ),
+                    );
+                }
+                Err(e) => {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_cancel_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        &format!("cancel-order-error: {e}"),
+                        ts_event,
+                    );
+                    anyhow::bail!("cancel order failed: {e}");
+                }
+            }
+
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+        if cmd.order_side != OrderSide::NoOrderSide {
+            log::warn!(
+                "Bybit does not support order_side filtering for cancel all orders; \
+                ignoring order_side={:?} and canceling all orders",
+                cmd.order_side,
+            );
+        }
+
+        let instrument_id = cmd.instrument_id;
+        let product_type = self.get_product_type_for_instrument(instrument_id);
+        let account_id = self.core.account_id;
+        let http_client = self.http_client.clone();
+
+        self.spawn_task("cancel_all_orders", async move {
+            match http_client
+                .cancel_all_orders(account_id, product_type, instrument_id)
+                .await
+            {
+                Ok(reports) => {
+                    for report in reports {
+                        log::debug!("Cancelled order: {report:?}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to cancel all orders for {instrument_id}: {e}");
+                }
+            }
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+        if cmd.cancels.is_empty() {
+            return Ok(());
+        }
+
+        let instrument_id = cmd.instrument_id;
+        let product_type = self.get_product_type_for_instrument(instrument_id);
+
+        // Demo mode: cancel individually via HTTP (batch not supported)
+        if self.config.environment == BybitEnvironment::Demo {
+            let http_client = self.http_client.clone();
+            let account_id = self.core.account_id;
+            let strategy_id = cmd.strategy_id;
+            let emitter = self.emitter.clone();
+            let clock = self.clock;
+            let cancels: Vec<_> = cmd
+                .cancels
+                .iter()
+                .map(|c| (c.client_order_id, c.venue_order_id))
+                .collect();
+
+            self.spawn_task("batch_cancel_orders_http", async move {
+                for (client_order_id, venue_order_id) in cancels {
+                    if let Err(e) = http_client
+                        .cancel_order(
+                            account_id,
+                            product_type,
+                            instrument_id,
+                            Some(client_order_id),
+                            venue_order_id,
+                        )
+                        .await
+                    {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_cancel_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            &format!("cancel-order-error: {e}"),
+                            ts_event,
+                        );
+                    }
+                }
+                Ok(())
+            });
+
+            return Ok(());
+        }
+
+        let raw_symbol = Ustr::from(extract_raw_symbol(instrument_id.symbol.as_str()));
+
+        let mut cancel_params = Vec::with_capacity(cmd.cancels.len());
+        let client_order_ids: Vec<_> = cmd.cancels.iter().map(|c| c.client_order_id).collect();
+        let venue_order_ids: Vec<_> = cmd.cancels.iter().map(|c| c.venue_order_id).collect();
+        for cancel in &cmd.cancels {
+            cancel_params.push(BybitWsCancelOrderParams {
+                category: product_type,
+                symbol: raw_symbol,
+                order_id: cancel.venue_order_id.map(|v| v.to_string()),
+                order_link_id: Some(cancel.client_order_id.to_string()),
+            });
+        }
+
+        let ws_trade = self.ws_trade.clone();
+        let dispatch_state = Arc::clone(&self.dispatch_state);
+
+        self.spawn_task("batch_cancel_orders", async move {
+            match ws_trade.batch_cancel_orders(cancel_params).await {
+                Ok(req_ids) => {
+                    for (req_id, (chunk_cids, chunk_voids)) in req_ids.into_iter().zip(
+                        client_order_ids
+                            .chunks(20)
+                            .map(|c| c.to_vec())
+                            .zip(venue_order_ids.chunks(20).map(|c| c.to_vec())),
+                    ) {
+                        dispatch_state
+                            .pending_requests
+                            .insert(req_id, (chunk_cids, chunk_voids, PendingOperation::Cancel));
+                    }
+                }
+                Err(e) => {
+                    anyhow::bail!("batch cancel orders failed: {e}");
+                }
+            }
+            Ok(())
+        });
+
+        Ok(())
+    }
 }
