@@ -56,16 +56,82 @@ use nautilus_model::{
     },
     types::{Price, Quantity},
 };
-use pyo3::{IntoPyObjectExt, prelude::*};
+use pyo3::{IntoPyObjectExt, prelude::*, types::PyDict};
 use ustr::Ustr;
 
 use crate::{
-    common::enums::{OKXInstrumentType, OKXTradeMode, OKXVipLevel},
+    common::enums::{OKXInstrumentType, OKXTradeMode, OKXTriggerType, OKXVipLevel},
     websocket::{
         OKXWebSocketClient,
-        messages::{ExecutionReport, NautilusWsMessage, OKXWebSocketError},
+        messages::{
+            ExecutionReport, NautilusWsMessage, OKXWebSocketError, WsAttachAlgoOrdParams,
+            WsAttachAlgoOrdParamsBuilder,
+        },
     },
 };
+
+fn extract_optional_string(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<String>> {
+    dict.get_item(key)?
+        .map(|value| value.extract::<String>())
+        .transpose()
+}
+
+fn extract_optional_trigger_type(
+    dict: &Bound<'_, PyDict>,
+    key: &str,
+) -> PyResult<Option<OKXTriggerType>> {
+    extract_optional_string(dict, key)?
+        .map(|value| {
+            OKXTriggerType::from_str(&value).map_err(|_| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "Invalid OKX trigger type {value:?} for {key}",
+                ))
+            })
+        })
+        .transpose()
+}
+
+fn parse_attach_algo_ords(
+    py: Python<'_>,
+    attach_algo_ords: Option<Vec<Py<PyDict>>>,
+) -> PyResult<Option<Vec<WsAttachAlgoOrdParams>>> {
+    attach_algo_ords
+        .map(|items| {
+            items.into_iter()
+                .map(|item| {
+                    let dict = item.bind(py);
+                    let mut builder = WsAttachAlgoOrdParamsBuilder::default();
+
+                    if let Some(value) = extract_optional_string(&dict, "attach_algo_cl_ord_id")? {
+                        builder.attach_algo_cl_ord_id(value);
+                    }
+                    if let Some(value) = extract_optional_string(&dict, "sl_trigger_px")? {
+                        builder.sl_trigger_px(value);
+                    }
+                    if let Some(value) = extract_optional_string(&dict, "sl_ord_px")? {
+                        builder.sl_ord_px(value);
+                    }
+                    if let Some(value) = extract_optional_trigger_type(&dict, "sl_trigger_px_type")?
+                    {
+                        builder.sl_trigger_px_type(value);
+                    }
+                    if let Some(value) = extract_optional_string(&dict, "tp_trigger_px")? {
+                        builder.tp_trigger_px(value);
+                    }
+                    if let Some(value) = extract_optional_string(&dict, "tp_ord_px")? {
+                        builder.tp_ord_px(value);
+                    }
+                    if let Some(value) = extract_optional_trigger_type(&dict, "tp_trigger_px_type")?
+                    {
+                        builder.tp_trigger_px_type(value);
+                    }
+
+                    builder.build().map_err(to_pyvalue_err)
+                })
+                .collect::<PyResult<Vec<_>>>()
+        })
+        .transpose()
+}
 
 #[pyo3::pymethods]
 impl OKXWebSocketError {
@@ -936,6 +1002,7 @@ impl OKXWebSocketClient {
         reduce_only=None,
         quote_quantity=None,
         position_side=None,
+        attach_algo_ords=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -956,7 +1023,9 @@ impl OKXWebSocketClient {
         reduce_only: Option<bool>,
         quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
+        attach_algo_ords: Option<Vec<Py<PyDict>>>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let attach_algo_ords = parse_attach_algo_ords(py, attach_algo_ords)?;
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -977,6 +1046,7 @@ impl OKXWebSocketClient {
                     reduce_only,
                     quote_quantity,
                     position_side,
+                    attach_algo_ords,
                 )
                 .await
                 .map_err(to_pyvalue_err)

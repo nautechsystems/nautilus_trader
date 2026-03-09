@@ -298,6 +298,7 @@ impl OKXExecutionClient {
                     Some(is_reduce_only),
                     Some(is_quote_quantity),
                     None,
+                    None,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
@@ -383,6 +384,7 @@ impl OKXExecutionClient {
                     trigger_type,
                     price,
                     Some(is_reduce_only),
+                    None,
                     callback_ratio,
                     callback_spread,
                     activation_price,

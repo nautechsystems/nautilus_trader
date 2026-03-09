@@ -730,6 +730,36 @@ pub struct OKXStatusMsg {
 }
 
 /// Order update message from WebSocket orders channel.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAttachedAlgoOrd {
+    /// Attached algo order ID, if assigned by OKX.
+    #[serde(default)]
+    pub attach_algo_id: String,
+    /// Attached child client order ID.
+    #[serde(default)]
+    pub attach_algo_cl_ord_id: String,
+    /// Stop-loss trigger price.
+    #[serde(default)]
+    pub sl_trigger_px: String,
+    /// Stop-loss order price.
+    #[serde(default)]
+    pub sl_ord_px: String,
+    /// Stop-loss trigger price type.
+    #[serde(default)]
+    pub sl_trigger_px_type: Option<OKXTriggerType>,
+    /// Take-profit trigger price.
+    #[serde(default)]
+    pub tp_trigger_px: String,
+    /// Take-profit order price.
+    #[serde(default)]
+    pub tp_ord_px: String,
+    /// Take-profit trigger price type.
+    #[serde(default)]
+    pub tp_trigger_px_type: Option<OKXTriggerType>,
+}
+
+/// Order update message from WebSocket orders channel.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OKXOrderMsg {
@@ -756,6 +786,12 @@ pub struct OKXOrderMsg {
     /// Parent algo client order ID if present.
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub algo_cl_ord_id: Option<String>,
+    /// Attached child client order ID if surfaced at the top level.
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub attach_algo_cl_ord_id: Option<String>,
+    /// Attached TP/SL child order metadata.
+    #[serde(default)]
+    pub attach_algo_ords: Vec<OKXAttachedAlgoOrd>,
     /// Fee.
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub fee: Option<String>,
@@ -833,25 +869,53 @@ pub struct OKXAlgoOrderMsg {
     /// Position side.
     pub pos_side: OKXPositionSide,
     /// Size.
+    #[serde(default)]
     pub sz: String,
     /// Trigger price.
+    #[serde(default)]
     pub trigger_px: String,
     /// Trigger price type (last, mark, index).
     #[serde(default)]
     pub trigger_px_type: OKXTriggerType,
+    /// Stop-loss trigger price for conditional close orders.
+    #[serde(default)]
+    pub sl_trigger_px: String,
+    /// Stop-loss order price for conditional close orders.
+    #[serde(default)]
+    pub sl_ord_px: String,
+    /// Stop-loss trigger price type (last, mark, index).
+    #[serde(default)]
+    pub sl_trigger_px_type: OKXTriggerType,
+    /// Take-profit trigger price for conditional close orders.
+    #[serde(default)]
+    pub tp_trigger_px: String,
+    /// Take-profit order price for conditional close orders.
+    #[serde(default)]
+    pub tp_ord_px: String,
+    /// Take-profit trigger price type (last, mark, index).
+    #[serde(default)]
+    pub tp_trigger_px_type: OKXTriggerType,
     /// Order price (-1 for market orders).
+    #[serde(default)]
     pub ord_px: String,
     /// Trade mode.
     pub td_mode: OKXTradeMode,
     /// Leverage.
     pub lever: String,
     /// Reduce only flag.
+    #[serde(default)]
     pub reduce_only: String,
+    /// Fraction of the position to close for close-order algos.
+    #[serde(default)]
+    pub close_fraction: String,
     /// Actual filled price.
+    #[serde(default)]
     pub actual_px: String,
     /// Actual filled size.
+    #[serde(default)]
     pub actual_sz: String,
     /// Notional USD value.
+    #[serde(default)]
     pub notional_usd: String,
     /// Creation time, Unix timestamp in milliseconds.
     #[serde(deserialize_with = "deserialize_string_to_u64")]
@@ -860,6 +924,7 @@ pub struct OKXAlgoOrderMsg {
     #[serde(deserialize_with = "deserialize_string_to_u64")]
     pub u_time: u64,
     /// Trigger time (empty until triggered).
+    #[serde(default)]
     pub trigger_time: String,
     /// Tag.
     #[serde(default)]
@@ -873,6 +938,35 @@ pub struct OKXAlgoOrderMsg {
     /// Activation price for trailing stop.
     #[serde(default)]
     pub active_px: String,
+}
+
+/// Parameters for WebSocket place order operation.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct WsAttachAlgoOrdParams {
+    /// Attached algo client order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_algo_cl_ord_id: Option<String>,
+    /// Stop-loss trigger price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sl_trigger_px: Option<String>,
+    /// Stop-loss order price (`-1` for market).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sl_ord_px: Option<String>,
+    /// Stop-loss trigger price type (last, mark, index).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sl_trigger_px_type: Option<OKXTriggerType>,
+    /// Take-profit trigger price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tp_trigger_px: Option<String>,
+    /// Take-profit order price (`-1` for market).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tp_ord_px: Option<String>,
+    /// Take-profit trigger price type (last, mark, index).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tp_trigger_px_type: Option<OKXTriggerType>,
 }
 
 /// Parameters for WebSocket place order operation.
@@ -930,6 +1024,10 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    /// Attached TP/SL orders submitted with the parent order.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attach_algo_ords: Option<Vec<WsAttachAlgoOrdParams>>,
 }
 
 /// Parameters for WebSocket cancel order operation (instType not included).
@@ -1775,6 +1873,51 @@ mod tests {
         // Verify instIdCode is NOT included when None
         assert!(!json.contains("instIdCode"));
         assert!(json.contains("\"instId\":\"BTC-USDT\""));
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_serializes_attached_tp_sl() {
+        use super::{WsAttachAlgoOrdParamsBuilder, WsPostOrderParamsBuilder};
+        use crate::common::enums::{
+            OKXOrderType, OKXSide, OKXTradeMode, OKXTriggerType,
+        };
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id(Ustr::from("BTC-USDT-SWAP"))
+            .inst_id_code(10459u64)
+            .td_mode(OKXTradeMode::Cross)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Limit)
+            .sz("0.01".to_string())
+            .px("50000".to_string())
+            .attach_algo_ords(vec![
+                WsAttachAlgoOrdParamsBuilder::default()
+                    .attach_algo_cl_ord_id("O-bracket-sl")
+                    .sl_trigger_px("39000")
+                    .sl_ord_px("-1")
+                    .sl_trigger_px_type(OKXTriggerType::Last)
+                    .build()
+                    .unwrap(),
+                WsAttachAlgoOrdParamsBuilder::default()
+                    .attach_algo_cl_ord_id("O-bracket-tp")
+                    .tp_trigger_px("41000")
+                    .tp_ord_px("-1")
+                    .tp_trigger_px_type(OKXTriggerType::Last)
+                    .build()
+                    .unwrap(),
+            ])
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+
+        assert!(json.contains("\"attachAlgoOrds\""));
+        assert!(json.contains("\"attachAlgoClOrdId\":\"O-bracket-sl\""));
+        assert!(json.contains("\"slTriggerPx\":\"39000\""));
+        assert!(json.contains("\"slOrdPx\":\"-1\""));
+        assert!(json.contains("\"attachAlgoClOrdId\":\"O-bracket-tp\""));
+        assert!(json.contains("\"tpTriggerPx\":\"41000\""));
+        assert!(json.contains("\"tpOrdPx\":\"-1\""));
     }
 
     #[rstest]

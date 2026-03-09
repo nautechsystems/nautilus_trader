@@ -1,0 +1,31 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "algoId": "close-frac-algo",
+      "algoClOrdId": "O-close-frac-status",
+      "clOrdId": "",
+      "ordId": "",
+      "instId": "BTC-USDT-SWAP",
+      "instType": "SWAP",
+      "ordType": "conditional",
+      "state": "live",
+      "side": "sell",
+      "posSide": "net",
+      "sz": "",
+      "slTriggerPx": "50000",
+      "slOrdPx": "-1",
+      "slTriggerPxType": "last",
+      "tdMode": "cross",
+      "reduceOnly": "true",
+      "closeFraction": "1",
+      "actualSz": "0",
+      "actualPx": "",
+      "triggerTime": "",
+      "cTime": "1622559930237",
+      "uTime": "1622559930237",
+      "tag": ""
+    }
+  ]
+}

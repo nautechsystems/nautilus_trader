@@ -7910,6 +7910,24 @@ class OKXHttpClient:
         instrument_type: OKXInstrumentType | None = None,
         instrument_id: InstrumentId | None = None,
     ) -> list[PositionStatusReport]: ...
+    async def place_order(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        td_mode: OKXTradeMode,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce | None = None,
+        price: Price | None = None,
+        post_only: bool | None = None,
+        reduce_only: bool | None = None,
+        quote_quantity: bool | None = None,
+        position_side: PositionSide | None = None,
+        attach_algo_ords: list[dict[str, str]] | None = None,
+    ) -> Any: ...
     async def place_algo_order(
         self,
         trader_id: TraderId,
@@ -7924,6 +7942,7 @@ class OKXHttpClient:
         trigger_type: TriggerType | None = None,
         limit_price: Price | None = None,
         reduce_only: bool | None = None,
+        close_fraction: str | None = None,
         callback_ratio: str | None = None,
         callback_spread: str | None = None,
         activation_price: Price | None = None,
@@ -8061,6 +8080,7 @@ class OKXWebSocketClient:
         reduce_only: bool | None = None,
         quote_quantity: bool | None = None,
         position_side: PositionSide | None = None,
+        attach_algo_ords: list[dict[str, str]] | None = None,
     ) -> None: ...
     async def cancel_order(
         self,

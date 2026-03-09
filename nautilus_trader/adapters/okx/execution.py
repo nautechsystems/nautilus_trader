@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -44,6 +45,7 @@ from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -55,6 +57,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
@@ -76,6 +79,30 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
+
+
+@dataclass(frozen=True)
+class _OKXAttachedOcoBinding:
+    parent_client_order_id: ClientOrderId
+    attach_client_order_id: ClientOrderId
+    instrument_id: InstrumentId
+    sl_client_order_id: ClientOrderId | None
+    tp_client_order_id: ClientOrderId | None
+
+    def child_client_order_ids(self) -> list[ClientOrderId]:
+        child_ids: list[ClientOrderId] = []
+        if self.sl_client_order_id is not None:
+            child_ids.append(self.sl_client_order_id)
+        if self.tp_client_order_id is not None and self.tp_client_order_id not in child_ids:
+            child_ids.append(self.tp_client_order_id)
+        return child_ids
+
+    def all_client_order_ids(self) -> list[ClientOrderId]:
+        ids = [self.parent_client_order_id, self.attach_client_order_id]
+        for child_id in self.child_client_order_ids():
+            if child_id not in ids:
+                ids.append(child_id)
+        return ids
 
 
 class OKXExecutionClient(LiveExecutionClient):
@@ -184,6 +211,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self._algo_order_instruments: dict[ClientOrderId, InstrumentId] = {}
         self._client_id_aliases: dict[ClientOrderId, ClientOrderId] = {}
         self._client_id_children: dict[ClientOrderId, ClientOrderId] = {}
+        self._attached_oco_bindings: dict[ClientOrderId, _OKXAttachedOcoBinding] = {}
 
         # WebSocket API
         self._ws_client = nautilus_pyo3.OKXWebSocketClient.with_credentials(
@@ -592,6 +620,7 @@ class OKXExecutionClient(LiveExecutionClient):
             if algo_report is None:
                 return None
 
+            algo_report = self._hydrate_zero_quantity_algo_report(algo_report)
             report = OrderStatusReport.from_pyo3(algo_report)
             self._apply_client_order_alias(report)
             self._log.debug(
@@ -622,6 +651,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 algo_id=algo_id,
             )
             for algo_report in algo_reports:
+                algo_report = self._hydrate_zero_quantity_algo_report(algo_report)
                 report = OrderStatusReport.from_pyo3(algo_report)
                 self._apply_client_order_alias(report)
                 self._log.debug(
@@ -1025,9 +1055,89 @@ class OKXExecutionClient(LiveExecutionClient):
         else:
             await self._submit_order_websocket(command)
 
-    async def _submit_order_websocket(self, command: SubmitOrder) -> None:
-        order = command.order
+    async def _submit_order_list(self, command: SubmitOrderList) -> None:
+        order_list = command.order_list
+        if not order_list.orders:
+            self._log.warning("Received SubmitOrderList with empty order list")
+            return
 
+        try:
+            parent_order, sl_order, tp_order = self._extract_attached_bracket_orders(
+                order_list.orders,
+            )
+            attach_algo_ords = self._build_attach_algo_ords(sl_order, tp_order)
+            self._register_attached_oco_binding(parent_order, sl_order, tp_order)
+
+            for order in order_list.orders:
+                self.generate_order_submitted(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+
+            await self._submit_regular_order_http(
+                order=parent_order,
+                params=command.params,
+                attach_algo_ords=attach_algo_ords,
+                )
+        except Exception as e:
+            self._clear_attached_oco_binding(parent_order.client_order_id if "parent_order" in locals() else None)
+            for order in order_list.orders:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=str(e),
+                    ts_event=self._clock.timestamp_ns(),
+                )
+
+    async def _submit_regular_order_http(
+        self,
+        order: Order,
+        params: dict[str, Any] | None,
+        attach_algo_ords: list[dict[str, str]] | None = None,
+    ) -> None:
+        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+        pyo3_order_side = order_side_to_pyo3(order.side)
+        pyo3_order_type = order_type_to_pyo3(order.order_type)
+        pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+        pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
+        pyo3_time_in_force = (
+            time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
+        )
+
+        td_mode = self._get_trade_mode_for_order(order.instrument_id, params)
+
+        response = await self._http_client.place_order(
+            trader_id=pyo3_trader_id,
+            strategy_id=pyo3_strategy_id,
+            instrument_id=pyo3_instrument_id,
+            td_mode=td_mode,
+            client_order_id=pyo3_client_order_id,
+            order_side=pyo3_order_side,
+            order_type=pyo3_order_type,
+            quantity=pyo3_quantity,
+            time_in_force=pyo3_time_in_force,
+            price=pyo3_price,
+            post_only=order.is_post_only,
+            reduce_only=order.is_reduce_only or None,
+            quote_quantity=order.is_quote_quantity,
+            attach_algo_ords=attach_algo_ords,
+        )
+
+        if response.get("s_code") and response["s_code"] != "0":
+            raise ValueError(f"OKX API error: {response.get('s_msg', 'Unknown error')}")
+
+    async def _submit_regular_order_websocket(
+        self,
+        order: Order,
+        params: dict[str, Any] | None,
+        attach_algo_ords: list[dict[str, str]] | None = None,
+    ) -> None:
         pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
         pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
@@ -1046,7 +1156,28 @@ class OKXExecutionClient(LiveExecutionClient):
             time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
         )
 
-        td_mode = self._get_trade_mode_for_order(order.instrument_id, command.params)
+        td_mode = self._get_trade_mode_for_order(order.instrument_id, params)
+
+        await self._ws_client.submit_order(
+            trader_id=pyo3_trader_id,
+            strategy_id=pyo3_strategy_id,
+            instrument_id=pyo3_instrument_id,
+            td_mode=td_mode,
+            client_order_id=pyo3_client_order_id,
+            order_side=pyo3_order_side,
+            order_type=pyo3_order_type,
+            quantity=pyo3_quantity,
+            price=pyo3_price,
+            trigger_price=pyo3_trigger_price,
+            time_in_force=pyo3_time_in_force,
+            post_only=order.is_post_only,
+            reduce_only=order.is_reduce_only,
+            quote_quantity=order.is_quote_quantity,
+            attach_algo_ords=attach_algo_ords,
+        )
+
+    async def _submit_order_websocket(self, command: SubmitOrder) -> None:
+        order = command.order
 
         try:
             # Generate OrderSubmitted event here to ensure correct event sequencing
@@ -1057,21 +1188,9 @@ class OKXExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
             )
 
-            await self._ws_client.submit_order(
-                trader_id=pyo3_trader_id,
-                strategy_id=pyo3_strategy_id,
-                instrument_id=pyo3_instrument_id,
-                td_mode=td_mode,
-                client_order_id=pyo3_client_order_id,
-                order_side=pyo3_order_side,
-                order_type=pyo3_order_type,
-                quantity=pyo3_quantity,
-                price=pyo3_price,
-                trigger_price=pyo3_trigger_price,
-                time_in_force=pyo3_time_in_force,
-                post_only=order.is_post_only,
-                reduce_only=order.is_reduce_only,
-                quote_quantity=order.is_quote_quantity,
+            await self._submit_regular_order_websocket(
+                order=order,
+                params=command.params,
             )
         except Exception as e:
             self.generate_order_rejected(
@@ -1081,6 +1200,231 @@ class OKXExecutionClient(LiveExecutionClient):
                 reason=str(e),
                 ts_event=self._clock.timestamp_ns(),
             )
+
+    def _normalize_close_fraction(self, command: SubmitOrder) -> str | None:
+        close_fraction = command.params.get("close_fraction") if command.params else None
+
+        if close_fraction is None:
+            return None
+        if isinstance(close_fraction, str):
+            return close_fraction
+        if isinstance(close_fraction, bool):
+            raise ValueError("OKX close_fraction must be a str, int, or float, not bool")
+        if isinstance(close_fraction, int | float):
+            return str(close_fraction)
+
+        raise ValueError(
+            f"OKX close_fraction must be a str, int, or float, got {type(close_fraction).__name__}",
+        )
+
+    def _extract_attached_bracket_orders(
+        self,
+        orders: list[Order],
+    ) -> tuple[Order, Order | None, Order | None]:
+        parent_order = self._extract_attached_bracket_parent(orders)
+        child_orders = [
+            order
+            for order in orders
+            if order.parent_order_id == parent_order.client_order_id
+        ]
+        if not child_orders:
+            raise ValueError("OKX attached TP/SL requires at least one child protective order")
+
+        sl_order: Order | None = None
+        tp_order: Order | None = None
+        for child_order in child_orders:
+            self._validate_attached_bracket_child(
+                parent_order=parent_order,
+                child_order=child_order,
+            )
+            sl_order, tp_order = self._assign_attached_bracket_child(
+                child_order=child_order,
+                sl_order=sl_order,
+                tp_order=tp_order,
+            )
+
+        if len(child_orders) != sum(order is not None for order in (sl_order, tp_order)):
+            raise ValueError("OKX attached TP/SL bracket contains unsupported child orders")
+
+        return parent_order, sl_order, tp_order
+
+    def _extract_attached_bracket_parent(self, orders: list[Order]) -> Order:
+        parent_orders = [order for order in orders if order.parent_order_id is None]
+        if len(parent_orders) != 1:
+            raise ValueError("OKX attached TP/SL requires exactly one parent entry order")
+
+        parent_order = parent_orders[0]
+        if self._is_conditional_order(parent_order):
+            raise ValueError("OKX attached TP/SL requires a non-conditional parent order")
+
+        return parent_order
+
+    @staticmethod
+    def _validate_attached_bracket_child(
+        parent_order: Order,
+        child_order: Order,
+    ) -> None:
+        if child_order.instrument_id != parent_order.instrument_id:
+            raise ValueError("OKX attached TP/SL bracket orders must use one instrument")
+        if child_order.quantity != parent_order.quantity:
+            raise ValueError("OKX attached TP/SL child quantity must match the parent")
+        if child_order.side == parent_order.side:
+            raise ValueError("OKX attached TP/SL child side must oppose the parent")
+
+    @staticmethod
+    def _assign_attached_bracket_child(
+        child_order: Order,
+        sl_order: Order | None,
+        tp_order: Order | None,
+    ) -> tuple[Order | None, Order | None]:
+        if child_order.order_type in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT):
+            if sl_order is not None:
+                raise ValueError("OKX attached TP/SL supports only one stop-loss child")
+            return child_order, tp_order
+
+        if child_order.order_type in (OrderType.MARKET_IF_TOUCHED, OrderType.LIMIT_IF_TOUCHED):
+            if tp_order is not None:
+                raise ValueError("OKX attached TP/SL supports only one take-profit child")
+            return sl_order, child_order
+
+        raise ValueError(
+            f"OKX attached TP/SL does not support child order type {child_order.order_type.name}",
+        )
+
+    @staticmethod
+    def _okx_trigger_type_str(order: Order) -> str:
+        trigger_type = getattr(order, "trigger_type", TriggerType.DEFAULT)
+        if trigger_type == TriggerType.MARK_PRICE:
+            return "mark"
+        if trigger_type == TriggerType.INDEX_PRICE:
+            return "index"
+        return "last"
+
+    @staticmethod
+    def _attached_oco_attach_client_order_id(
+        sl_order: Order | None,
+        tp_order: Order | None,
+    ) -> ClientOrderId | None:
+        if sl_order is not None:
+            return sl_order.client_order_id
+        if tp_order is not None:
+            return tp_order.client_order_id
+        return None
+
+    def _register_attached_oco_binding(
+        self,
+        parent_order: Order,
+        sl_order: Order | None,
+        tp_order: Order | None,
+    ) -> None:
+        attach_client_order_id = self._attached_oco_attach_client_order_id(sl_order, tp_order)
+        if attach_client_order_id is None:
+            return
+
+        binding = _OKXAttachedOcoBinding(
+            parent_client_order_id=parent_order.client_order_id,
+            attach_client_order_id=attach_client_order_id,
+            instrument_id=parent_order.instrument_id,
+            sl_client_order_id=sl_order.client_order_id if sl_order is not None else None,
+            tp_client_order_id=tp_order.client_order_id if tp_order is not None else None,
+        )
+
+        for client_order_id in binding.all_client_order_ids():
+            self._attached_oco_bindings[client_order_id] = binding
+
+    def _attached_oco_orders_from_cache(
+        self,
+        order: Order,
+    ) -> list[Order]:
+        orders: list[Order] = []
+        seen_ids: set[ClientOrderId] = set()
+
+        def add_order(candidate_id: ClientOrderId | None) -> None:
+            if candidate_id is None or candidate_id in seen_ids:
+                return
+            candidate = self._cache.order(candidate_id)
+            if candidate is None:
+                return
+            seen_ids.add(candidate_id)
+            orders.append(candidate)
+
+        if order.order_list_id is not None:
+            order_list = self._cache.order_list(order.order_list_id)
+            if order_list is not None and order_list.orders:
+                return list(order_list.orders)
+
+        add_order(order.client_order_id)
+        if order.parent_order_id is not None:
+            add_order(order.parent_order_id)
+
+        for linked_id in order.linked_order_ids or []:
+            add_order(linked_id)
+
+        parent_candidate = self._cache.order(order.parent_order_id) if order.parent_order_id else None
+        if parent_candidate is not None:
+            add_order(parent_candidate.client_order_id)
+            for linked_id in parent_candidate.linked_order_ids or []:
+                add_order(linked_id)
+
+        return orders
+
+    def _rebuild_attached_oco_binding(
+        self,
+        client_order_id: ClientOrderId,
+    ) -> _OKXAttachedOcoBinding | None:
+        order = self._cache.order(client_order_id)
+        if order is None:
+            return None
+
+        orders = self._attached_oco_orders_from_cache(order)
+        if not orders:
+            return None
+
+        try:
+            parent_order, sl_order, tp_order = self._extract_attached_bracket_orders(orders)
+        except ValueError:
+            return None
+
+        self._register_attached_oco_binding(parent_order, sl_order, tp_order)
+        return self._attached_oco_bindings.get(client_order_id)
+
+    def _attached_oco_binding(
+        self,
+        client_order_id: ClientOrderId | None,
+    ) -> _OKXAttachedOcoBinding | None:
+        if client_order_id is None:
+            return None
+        binding = self._attached_oco_bindings.get(client_order_id)
+        if binding is not None:
+            return binding
+        return self._rebuild_attached_oco_binding(client_order_id)
+
+    def _build_attach_algo_ords(
+        self,
+        sl_order: Order | None,
+        tp_order: Order | None,
+    ) -> list[dict[str, str]]:
+        attach_algo_ord: dict[str, str] = {}
+        attach_client_order_id = self._attached_oco_attach_client_order_id(sl_order, tp_order)
+        if sl_order is not None:
+            if attach_client_order_id is not None:
+                attach_algo_ord["attach_algo_cl_ord_id"] = attach_client_order_id.value
+            attach_algo_ord["sl_trigger_px"] = str(sl_order.trigger_price)
+            attach_algo_ord["sl_ord_px"] = (
+                "-1" if sl_order.order_type == OrderType.STOP_MARKET else str(sl_order.price)
+            )
+            attach_algo_ord["sl_trigger_px_type"] = self._okx_trigger_type_str(sl_order)
+
+        if tp_order is not None:
+            if attach_client_order_id is not None:
+                attach_algo_ord.setdefault("attach_algo_cl_ord_id", attach_client_order_id.value)
+            attach_algo_ord["tp_trigger_px"] = str(tp_order.trigger_price)
+            attach_algo_ord["tp_ord_px"] = (
+                "-1" if tp_order.order_type == OrderType.MARKET_IF_TOUCHED else str(tp_order.price)
+            )
+            attach_algo_ord["tp_trigger_px_type"] = self._okx_trigger_type_str(tp_order)
+
+        return [attach_algo_ord] if attach_algo_ord else []
 
     async def _submit_algo_order_http(self, command: SubmitOrder) -> None:
         order = command.order
@@ -1138,6 +1482,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 )
 
         td_mode = self._get_trade_mode_for_order(order.instrument_id, command.params)
+        close_fraction = self._normalize_close_fraction(command)
+        reduce_only = True if close_fraction is not None else (order.is_reduce_only or None)
 
         try:
             # Generate OrderSubmitted event here to ensure correct event sequencing
@@ -1160,7 +1506,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 trigger_price=pyo3_trigger_price,
                 trigger_type=pyo3_trigger_type,
                 limit_price=pyo3_limit_price,
-                reduce_only=order.is_reduce_only or None,
+                reduce_only=reduce_only,
+                close_fraction=close_fraction,
                 callback_ratio=callback_ratio,
                 callback_spread=callback_spread,
                 activation_price=pyo3_activation_price,
@@ -1298,6 +1645,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Failed to cancel advance algo order {algo_id}: {e}")
 
         for client_order_id in cancelled_client_order_ids:
+            self._clear_attached_oco_binding(client_order_id)
             self._algo_order_ids.pop(client_order_id, None)
             self._algo_order_instruments.pop(client_order_id, None)
 
@@ -1531,6 +1879,7 @@ class OKXExecutionClient(LiveExecutionClient):
                     ):
                         raise
 
+                self._clear_attached_oco_binding(command.client_order_id)
                 self._algo_order_ids.pop(alias_lookup_key, None)
                 self._algo_order_instruments.pop(alias_lookup_key, None)
             else:
@@ -1631,6 +1980,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 f"Failed fallback cancel for OKX algo order {client_order_id!r} (algo_id={algo_id}): {e}",
             )
         finally:
+            self._clear_attached_oco_binding(client_order_id)
             self._algo_order_ids.pop(client_order_id, None)
             self._algo_order_instruments.pop(client_order_id, None)
 
@@ -1751,9 +2101,191 @@ class OKXExecutionClient(LiveExecutionClient):
         algo_id), so venue_order_id must not be used as a fallback.
 
         """
+        binding = self._attached_oco_binding(order.client_order_id)
+        if binding is not None:
+            for candidate in binding.all_client_order_ids():
+                algo_id = self._algo_order_ids.get(candidate)
+                if algo_id is not None:
+                    return algo_id
+
         canonical = self._canonical_client_order_id(order.client_order_id)
         key = canonical or order.client_order_id
         return self._algo_order_ids.get(key)
+
+    @staticmethod
+    def _attached_oco_fanout_statuses() -> frozenset[OrderStatus]:
+        return frozenset(
+            {
+                OrderStatus.ACCEPTED,
+                OrderStatus.REJECTED,
+                OrderStatus.CANCELED,
+                OrderStatus.EXPIRED,
+            },
+        )
+
+    def _augment_attached_oco_parent_report(self, report: OrderStatusReport) -> None:
+        binding = self._attached_oco_binding(report.client_order_id)
+        if binding is None or report.client_order_id != binding.parent_client_order_id:
+            return
+
+        linked_order_ids = list(report.linked_order_ids or [])
+        for child_id in binding.child_client_order_ids():
+            if child_id not in linked_order_ids:
+                linked_order_ids.append(child_id)
+
+        report.linked_order_ids = linked_order_ids or None
+
+    def _build_attached_oco_child_report(
+        self,
+        venue_report: OrderStatusReport,
+        child_order: Order,
+        linked_order_ids: list[ClientOrderId],
+        *,
+        is_originating_child: bool,
+    ) -> OrderStatusReport:
+        values = venue_report.to_dict()
+        values["client_order_id"] = child_order.client_order_id.value
+        values["order_list_id"] = (
+            child_order.order_list_id.value if child_order.order_list_id is not None else None
+        )
+        values["linked_order_ids"] = [client_order_id.value for client_order_id in linked_order_ids] or None
+        values["parent_order_id"] = (
+            child_order.parent_order_id.value if child_order.parent_order_id is not None else None
+        )
+        values["contingency_type"] = child_order.contingency_type.value
+        values["order_side"] = child_order.side.value
+        values["order_type"] = child_order.order_type.value
+        values["time_in_force"] = child_order.time_in_force.value
+        values["quantity"] = str(child_order.quantity)
+        values["price"] = str(child_order.price) if child_order.has_price else None
+        values["trigger_price"] = (
+            str(child_order.trigger_price) if child_order.has_trigger_price else None
+        )
+        values["trigger_type"] = (
+            child_order.trigger_type.value if child_order.has_trigger_price else TriggerType.NO_TRIGGER.value
+        )
+        values["reduce_only"] = child_order.is_reduce_only
+
+        if not is_originating_child:
+            values["filled_qty"] = "0"
+            values["avg_px"] = None
+            values["ts_triggered"] = None
+
+        return OrderStatusReport.from_dict(values)
+
+    def _expand_attached_oco_child_reports(
+        self,
+        venue_report: OrderStatusReport,
+    ) -> list[OrderStatusReport]:
+        binding = self._attached_oco_binding(venue_report.client_order_id)
+        if binding is None or venue_report.client_order_id not in binding.child_client_order_ids():
+            return [venue_report]
+
+        child_client_order_ids = binding.child_client_order_ids()
+        if len(child_client_order_ids) <= 1:
+            linked_order_ids = [
+                client_order_id
+                for client_order_id in child_client_order_ids
+                if client_order_id != venue_report.client_order_id
+            ]
+            order = self._cache.order(venue_report.client_order_id)
+            if order is None:
+                return [venue_report]
+            return [
+                self._build_attached_oco_child_report(
+                    venue_report=venue_report,
+                    child_order=order,
+                    linked_order_ids=linked_order_ids,
+                    is_originating_child=True,
+                ),
+            ]
+
+        if venue_report.order_status not in self._attached_oco_fanout_statuses():
+            return [venue_report]
+
+        reports: list[OrderStatusReport] = []
+        for child_client_order_id in child_client_order_ids:
+            child_order = self._cache.order(child_client_order_id)
+            if child_order is None or not self._is_conditional_order(child_order):
+                continue
+
+            linked_order_ids = [
+                client_order_id
+                for client_order_id in child_client_order_ids
+                if client_order_id != child_client_order_id
+            ]
+            reports.append(
+                self._build_attached_oco_child_report(
+                    venue_report=venue_report,
+                    child_order=child_order,
+                    linked_order_ids=linked_order_ids,
+                    is_originating_child=child_client_order_id == venue_report.client_order_id,
+                ),
+            )
+
+        return reports or [venue_report]
+
+    def _is_attached_oco_child_report(self, report: OrderStatusReport) -> bool:
+        binding = self._attached_oco_binding(report.client_order_id)
+        return binding is not None and report.client_order_id in binding.child_client_order_ids()
+
+    def _hydrate_zero_quantity_algo_report(
+        self,
+        pyo3_report: nautilus_pyo3.OrderStatusReport,
+    ) -> nautilus_pyo3.OrderStatusReport:
+        if Decimal(str(pyo3_report.quantity)) != 0:
+            return pyo3_report
+
+        if pyo3_report.client_order_id is None:
+            return pyo3_report
+
+        report_client_order_id = ClientOrderId(pyo3_report.client_order_id.value)
+        canonical_client_order_id = (
+            self._canonical_client_order_id(report_client_order_id) or report_client_order_id
+        )
+        order = self._cache.order(canonical_client_order_id)
+        if order is None or not self._is_conditional_order(order):
+            return pyo3_report
+
+        self._log.debug(
+            f"Hydrating zero-quantity OKX algo report for {canonical_client_order_id!r} "
+            f"from cached quantity {order.quantity}",
+        )
+
+        return nautilus_pyo3.OrderStatusReport(
+            account_id=pyo3_report.account_id,
+            instrument_id=pyo3_report.instrument_id,
+            venue_order_id=pyo3_report.venue_order_id,
+            client_order_id=pyo3_report.client_order_id,
+            order_side=pyo3_report.order_side,
+            order_type=pyo3_report.order_type,
+            time_in_force=pyo3_report.time_in_force,
+            order_status=pyo3_report.order_status,
+            quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
+            filled_qty=pyo3_report.filled_qty,
+            report_id=pyo3_report.report_id,
+            ts_accepted=pyo3_report.ts_accepted,
+            ts_last=pyo3_report.ts_last,
+            ts_init=pyo3_report.ts_init,
+            order_list_id=pyo3_report.order_list_id,
+            venue_position_id=pyo3_report.venue_position_id,
+            linked_order_ids=pyo3_report.linked_order_ids or None,
+            parent_order_id=pyo3_report.parent_order_id,
+            contingency_type=pyo3_report.contingency_type,
+            expire_time=pyo3_report.expire_time,
+            price=pyo3_report.price,
+            trigger_price=pyo3_report.trigger_price,
+            trigger_type=pyo3_report.trigger_type,
+            limit_offset=pyo3_report.limit_offset,
+            trailing_offset=pyo3_report.trailing_offset,
+            trailing_offset_type=pyo3_report.trailing_offset_type,
+            avg_px=pyo3_report.avg_px,
+            display_qty=pyo3_report.display_qty,
+            post_only=pyo3_report.post_only,
+            reduce_only=pyo3_report.reduce_only,
+            cancel_reason=pyo3_report.cancel_reason,
+            ts_triggered=pyo3_report.ts_triggered,
+        )
 
     # -- WEBSOCKET HANDLERS -----------------------------------------------------------------------
 
@@ -1863,7 +2395,7 @@ class OKXExecutionClient(LiveExecutionClient):
         event = OrderModifyRejected.from_dict(pyo3_event.to_dict())
         self._send_order_event(event)
 
-    def _handle_order_status_report_pyo3(  # noqa: C901 (too complex)
+    def _handle_order_status_report_pyo3(
         self,
         pyo3_report: nautilus_pyo3.OrderStatusReport,
     ) -> None:
@@ -1881,18 +2413,28 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             return
 
+        pyo3_report = self._hydrate_zero_quantity_algo_report(pyo3_report)
         report = OrderStatusReport.from_pyo3(pyo3_report)
-        self._apply_client_order_alias(report)
 
-        if self._is_external_order(report.client_order_id):
-            self._send_order_status_report(report)
-            return
+        if self._is_attached_oco_child_report(report):
+            reports = self._expand_attached_oco_child_reports(report)
+        else:
+            self._apply_client_order_alias(report)
+            self._augment_attached_oco_parent_report(report)
+            reports = [report]
 
+        for normalized_report in reports:
+            if self._is_external_order(normalized_report.client_order_id):
+                self._send_order_status_report(normalized_report)
+                continue
+
+            self._handle_internal_order_status_report(normalized_report)
+
+    def _handle_internal_order_status_report(  # noqa: C901 (too complex)
+        self,
+        report: OrderStatusReport,
+    ) -> None:
         order = self._cache.order(report.client_order_id)
-        canonical_client_order_id = (
-            self._canonical_client_order_id(report.client_order_id) or report.client_order_id
-        )
-        algo_id_for_client = self._algo_order_ids.get(canonical_client_order_id)
         if order is None:
             self._log.error(
                 f"Cannot process order status report - order for {report.client_order_id!r} not found",
@@ -1902,16 +2444,19 @@ class OKXExecutionClient(LiveExecutionClient):
         if order.is_closed:
             return
 
-        # For conditional/algo orders, store the algo_id mapping
-        # The venue_order_id is actually the algo_id for algo orders
-        if order.order_type in (
-            OrderType.STOP_MARKET,
-            OrderType.STOP_LIMIT,
-            OrderType.MARKET_IF_TOUCHED,
-            OrderType.LIMIT_IF_TOUCHED,
-            OrderType.TRAILING_STOP_MARKET,
-        ):
-            child = self._client_id_children.get(report.client_order_id)
+        binding = self._attached_oco_binding(report.client_order_id)
+        is_attached_oco_child = (
+            binding is not None and report.client_order_id in binding.child_client_order_ids()
+        )
+        canonical_client_order_id = (
+            report.client_order_id
+            if is_attached_oco_child
+            else (self._canonical_client_order_id(report.client_order_id) or report.client_order_id)
+        )
+        algo_id_for_client = self._algo_order_ids.get(canonical_client_order_id)
+
+        if self._is_conditional_order(order):
+            child = None if is_attached_oco_child else self._client_id_children.get(report.client_order_id)
             venue_changed = (
                 order.venue_order_id is not None
                 and report.venue_order_id is not None
@@ -1923,8 +2468,13 @@ class OKXExecutionClient(LiveExecutionClient):
                 and report.client_order_id
                 and not venue_changed
             ):
-                self._algo_order_ids[canonical_client_order_id] = str(report.venue_order_id)
-                self._algo_order_instruments[canonical_client_order_id] = order.instrument_id
+                if is_attached_oco_child and binding is not None:
+                    for child_client_order_id in binding.child_client_order_ids():
+                        self._algo_order_ids[child_client_order_id] = str(report.venue_order_id)
+                        self._algo_order_instruments[child_client_order_id] = order.instrument_id
+                else:
+                    self._algo_order_ids[canonical_client_order_id] = str(report.venue_order_id)
+                    self._algo_order_instruments[canonical_client_order_id] = order.instrument_id
 
         if report.order_status == OrderStatus.REJECTED:
             self.generate_order_rejected(
@@ -2051,7 +2601,6 @@ class OKXExecutionClient(LiveExecutionClient):
         elif report.order_status == OrderStatus.FILLED:
             self._clear_client_order_aliases(report)
         else:
-            # Fills should be handled from FillReports
             self._log.warning(f"Received unhandled OrderStatusReport: {report}")
 
     def _handle_order_update(self, order: Any, report: OrderStatusReport) -> None:
@@ -2195,6 +2744,19 @@ class OKXExecutionClient(LiveExecutionClient):
 
         return canonical, canonical
 
+    def _clear_attached_oco_binding(
+        self,
+        client_order_id: ClientOrderId | None,
+    ) -> None:
+        binding = self._attached_oco_binding(client_order_id)
+        if binding is None:
+            return
+
+        for identifier in binding.all_client_order_ids():
+            self._attached_oco_bindings.pop(identifier, None)
+            self._algo_order_ids.pop(identifier, None)
+            self._algo_order_instruments.pop(identifier, None)
+
     def _canonical_client_order_id(
         self,
         client_order_id: ClientOrderId | None,
@@ -2283,6 +2845,7 @@ class OKXExecutionClient(LiveExecutionClient):
         for identifier in ids:
             if identifier is None:
                 continue
+            self._clear_attached_oco_binding(identifier)
             self._client_id_aliases.pop(identifier, None)
 
             for key, value in list(self._client_id_aliases.items()):
@@ -2298,6 +2861,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
     def _clear_order_state(self, client_order_id: ClientOrderId) -> None:
         canonical = self._canonical_client_order_id(client_order_id) or client_order_id
+        self._clear_attached_oco_binding(client_order_id)
         self._algo_order_ids.pop(canonical, None)
         self._algo_order_instruments.pop(canonical, None)
 

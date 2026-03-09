@@ -15,11 +15,13 @@
 
 //! Python bindings exposing OKX HTTP helper functions and data conversions.
 
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderType, TriggerType},
+    enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
@@ -31,9 +33,69 @@ use pyo3::{
 };
 
 use crate::{
-    common::enums::{OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode},
-    http::{client::OKXHttpClient, error::OKXHttpError, models::OKXCancelAlgoOrderRequest},
+    common::enums::{
+        OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode, OKXTriggerType,
+    },
+    http::{
+        client::OKXHttpClient,
+        error::OKXHttpError,
+        models::{OKXAttachAlgoOrdRequest, OKXCancelAlgoOrderRequest},
+    },
 };
+
+fn extract_optional_string(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<String>> {
+    dict.get_item(key)?
+        .map(|value| value.extract::<String>())
+        .transpose()
+}
+
+fn extract_optional_trigger_type(
+    dict: &Bound<'_, PyDict>,
+    key: &str,
+) -> PyResult<Option<OKXTriggerType>> {
+    extract_optional_string(dict, key)?
+        .map(|value| {
+            OKXTriggerType::from_str(&value).map_err(|_| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "Invalid OKX trigger type {value:?} for {key}",
+                ))
+            })
+        })
+        .transpose()
+}
+
+fn parse_attach_algo_ords(
+    py: Python<'_>,
+    attach_algo_ords: Option<Vec<Py<PyDict>>>,
+) -> PyResult<Option<Vec<OKXAttachAlgoOrdRequest>>> {
+    attach_algo_ords
+        .map(|items| {
+            items.into_iter()
+                .map(|item| {
+                    let dict = item.bind(py);
+                    Ok(OKXAttachAlgoOrdRequest {
+                        attach_algo_cl_ord_id: extract_optional_string(
+                            &dict,
+                            "attach_algo_cl_ord_id",
+                        )?,
+                        sl_trigger_px: extract_optional_string(&dict, "sl_trigger_px")?,
+                        sl_ord_px: extract_optional_string(&dict, "sl_ord_px")?,
+                        sl_trigger_px_type: extract_optional_trigger_type(
+                            &dict,
+                            "sl_trigger_px_type",
+                        )?,
+                        tp_trigger_px: extract_optional_string(&dict, "tp_trigger_px")?,
+                        tp_ord_px: extract_optional_string(&dict, "tp_ord_px")?,
+                        tp_trigger_px_type: extract_optional_trigger_type(
+                            &dict,
+                            "tp_trigger_px_type",
+                        )?,
+                    })
+                })
+                .collect::<PyResult<Vec<_>>>()
+        })
+        .transpose()
+}
 
 #[pymethods]
 impl OKXHttpClient {
@@ -488,6 +550,88 @@ impl OKXHttpClient {
         })
     }
 
+    #[pyo3(name = "place_order")]
+    #[pyo3(signature = (
+        trader_id,
+        strategy_id,
+        instrument_id,
+        td_mode,
+        client_order_id,
+        order_side,
+        order_type,
+        quantity,
+        time_in_force=None,
+        price=None,
+        post_only=None,
+        reduce_only=None,
+        quote_quantity=None,
+        position_side=None,
+        attach_algo_ords=None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_place_order<'py>(
+        &self,
+        py: Python<'py>,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        td_mode: OKXTradeMode,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: Option<TimeInForce>,
+        price: Option<Price>,
+        post_only: Option<bool>,
+        reduce_only: Option<bool>,
+        quote_quantity: Option<bool>,
+        position_side: Option<PositionSide>,
+        attach_algo_ords: Option<Vec<Py<PyDict>>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let attach_algo_ords = parse_attach_algo_ords(py, attach_algo_ords)?;
+        let client = self.clone();
+
+        let _ = (trader_id, strategy_id);
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let resp = client
+                .place_order_with_domain_types(
+                    instrument_id,
+                    td_mode,
+                    client_order_id,
+                    order_side,
+                    order_type,
+                    quantity,
+                    time_in_force,
+                    price,
+                    post_only,
+                    reduce_only,
+                    quote_quantity,
+                    position_side,
+                    attach_algo_ords,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let dict = PyDict::new(py);
+                if let Some(ord_id) = resp.ord_id {
+                    dict.set_item("ord_id", ord_id.as_str())?;
+                }
+                if let Some(cl_ord_id) = resp.cl_ord_id {
+                    dict.set_item("cl_ord_id", cl_ord_id.as_str())?;
+                }
+                if let Some(s_code) = resp.s_code {
+                    dict.set_item("s_code", s_code)?;
+                }
+                if let Some(s_msg) = resp.s_msg {
+                    dict.set_item("s_msg", s_msg)?;
+                }
+                Ok(dict.into_py_any_unwrap(py))
+            })
+        })
+    }
+
     #[pyo3(name = "place_algo_order")]
     #[pyo3(signature = (
         trader_id,
@@ -502,6 +646,7 @@ impl OKXHttpClient {
         trigger_type=None,
         limit_price=None,
         reduce_only=None,
+        close_fraction=None,
         callback_ratio=None,
         callback_spread=None,
         activation_price=None,
@@ -522,6 +667,7 @@ impl OKXHttpClient {
         trigger_type: Option<TriggerType>,
         limit_price: Option<Price>,
         reduce_only: Option<bool>,
+        close_fraction: Option<String>,
         callback_ratio: Option<String>,
         callback_spread: Option<String>,
         activation_price: Option<Price>,
@@ -544,6 +690,7 @@ impl OKXHttpClient {
                     trigger_type,
                     limit_price,
                     reduce_only,
+                    close_fraction,
                     callback_ratio,
                     callback_spread,
                     activation_price,

@@ -1097,21 +1097,11 @@ pub fn parse_algo_order_status_report(
 
     let order_side: OrderSide = msg.side.into();
 
-    let order_type = match msg.ord_type {
-        OKXAlgoOrderType::MoveOrderStop => OrderType::TrailingStopMarket,
-        OKXAlgoOrderType::Conditional | OKXAlgoOrderType::Oco | OKXAlgoOrderType::Trigger => {
-            if is_market_price(&msg.ord_px) {
-                OrderType::StopMarket
-            } else {
-                OrderType::StopLimit
-            }
-        }
-        _ => anyhow::bail!("Unsupported algo order type: {:?}", msg.ord_type),
-    };
+    let algo_fields = parse_algo_order_fields(msg)?;
 
     let status: OrderStatus = msg.state.into();
 
-    let quantity = parse_quantity(msg.sz.as_str(), instrument.size_precision())?;
+    let quantity = parse_algo_order_quantity(msg, instrument)?;
 
     // For algo orders, actual_sz represents filled quantity (if any)
     let filled_qty = if msg.actual_sz.is_empty() || msg.actual_sz == "0" {
@@ -1121,16 +1111,16 @@ pub fn parse_algo_order_status_report(
     };
 
     // Parse limit price if it exists (not -1)
-    let price = if is_market_price(&msg.ord_px) {
+    let price = if is_market_price(algo_fields.ord_px) {
         None
     } else {
         Some(parse_price(
-            msg.ord_px.as_str(),
+            algo_fields.ord_px,
             instrument.price_precision(),
         )?)
     };
 
-    let trigger_type = match msg.trigger_px_type {
+    let trigger_type = match algo_fields.trigger_px_type {
         OKXTriggerType::Last => TriggerType::LastPrice,
         OKXTriggerType::Mark => TriggerType::MarkPrice,
         OKXTriggerType::Index => TriggerType::IndexPrice,
@@ -1146,7 +1136,7 @@ pub fn parse_algo_order_status_report(
         client_order_id,
         venue_order_id,
         order_side,
-        order_type,
+        algo_fields.order_type,
         TimeInForce::Gtc,
         status,
         quantity,
@@ -1157,9 +1147,11 @@ pub fn parse_algo_order_status_report(
         None,
     );
 
-    // Trigger price for trailing stops is the dynamic trigger level
-    if !msg.trigger_px.is_empty() {
-        report.trigger_price = Some(parse_price(&msg.trigger_px, instrument.price_precision())?);
+    if !algo_fields.trigger_px.is_empty() {
+        report.trigger_price = Some(parse_price(
+            algo_fields.trigger_px,
+            instrument.price_precision(),
+        )?);
     }
 
     report.trigger_type = Some(trigger_type);
@@ -1168,7 +1160,7 @@ pub fn parse_algo_order_status_report(
         report.price = Some(limit_price);
     }
 
-    if order_type == OrderType::TrailingStopMarket {
+    if algo_fields.order_type == OrderType::TrailingStopMarket {
         if !msg.callback_ratio.is_empty() {
             // OKX ratio is e.g. "0.01" for 1%, convert to basis points
             let ratio = Decimal::from_str(&msg.callback_ratio)?;
@@ -1180,7 +1172,98 @@ pub fn parse_algo_order_status_report(
         }
     }
 
+    if msg.reduce_only == "true" {
+        report = report.with_reduce_only(true);
+    }
+
     Ok(report)
+}
+
+struct AlgoOrderFields<'a> {
+    order_type: OrderType,
+    trigger_px: &'a str,
+    trigger_px_type: OKXTriggerType,
+    ord_px: &'a str,
+}
+
+fn parse_algo_order_fields(msg: &OKXAlgoOrderMsg) -> anyhow::Result<AlgoOrderFields<'_>> {
+    match msg.ord_type {
+        OKXAlgoOrderType::MoveOrderStop => Ok(AlgoOrderFields {
+            order_type: OrderType::TrailingStopMarket,
+            trigger_px: msg.trigger_px.as_str(),
+            trigger_px_type: msg.trigger_px_type,
+            ord_px: msg.ord_px.as_str(),
+        }),
+        OKXAlgoOrderType::Conditional | OKXAlgoOrderType::Oco => {
+            if !msg.tp_trigger_px.is_empty() {
+                let ord_px = msg.tp_ord_px.as_str();
+                Ok(AlgoOrderFields {
+                    order_type: if is_market_price(ord_px) {
+                        OrderType::MarketIfTouched
+                    } else {
+                        OrderType::LimitIfTouched
+                    },
+                    trigger_px: msg.tp_trigger_px.as_str(),
+                    trigger_px_type: msg.tp_trigger_px_type,
+                    ord_px,
+                })
+            } else {
+                let (trigger_px, trigger_px_type, ord_px) = if !msg.sl_trigger_px.is_empty() {
+                    (
+                        msg.sl_trigger_px.as_str(),
+                        msg.sl_trigger_px_type,
+                        msg.sl_ord_px.as_str(),
+                    )
+                } else {
+                    (
+                        msg.trigger_px.as_str(),
+                        msg.trigger_px_type,
+                        msg.ord_px.as_str(),
+                    )
+                };
+
+                Ok(AlgoOrderFields {
+                    order_type: if is_market_price(ord_px) {
+                        OrderType::StopMarket
+                    } else {
+                        OrderType::StopLimit
+                    },
+                    trigger_px,
+                    trigger_px_type,
+                    ord_px,
+                })
+            }
+        }
+        OKXAlgoOrderType::Trigger => Ok(AlgoOrderFields {
+            order_type: if is_market_price(&msg.ord_px) {
+                OrderType::StopMarket
+            } else {
+                OrderType::StopLimit
+            },
+            trigger_px: msg.trigger_px.as_str(),
+            trigger_px_type: msg.trigger_px_type,
+            ord_px: msg.ord_px.as_str(),
+        }),
+        _ => anyhow::bail!("Unsupported algo order type: {:?}", msg.ord_type),
+    }
+}
+
+fn parse_algo_order_quantity(
+    msg: &OKXAlgoOrderMsg,
+    instrument: &InstrumentAny,
+) -> anyhow::Result<Quantity> {
+    if !msg.sz.is_empty() {
+        return parse_quantity(msg.sz.as_str(), instrument.size_precision());
+    }
+
+    if !msg.close_fraction.is_empty()
+        || !msg.sl_trigger_px.is_empty()
+        || !msg.tp_trigger_px.is_empty()
+    {
+        return Ok(Quantity::zero(instrument.size_precision()));
+    }
+
+    anyhow::bail!("Missing sz for algo order {}", msg.algo_id)
 }
 
 /// Parses an OKX order message into a Nautilus order status report.
@@ -1387,6 +1470,49 @@ pub fn parse_order_status_report(
 
     if msg.reduce_only == "true" {
         report = report.with_reduce_only(true);
+    }
+
+    let mut linked_ids = Vec::new();
+
+    if let Some(algo_cl_ord_id) = msg
+        .algo_cl_ord_id
+        .as_ref()
+        .filter(|value| !value.is_empty())
+    {
+        let algo_client_id = ClientOrderId::new(algo_cl_ord_id.as_str());
+        if report.client_order_id != Some(algo_client_id) {
+            linked_ids.push(algo_client_id);
+        }
+    }
+
+    if let Some(attach_algo_cl_ord_id) = msg
+        .attach_algo_cl_ord_id
+        .as_ref()
+        .filter(|value| !value.is_empty())
+    {
+        let attach_client_id = ClientOrderId::new(attach_algo_cl_ord_id.as_str());
+        if report.client_order_id != Some(attach_client_id)
+            && !linked_ids.contains(&attach_client_id)
+        {
+            linked_ids.push(attach_client_id);
+        }
+    }
+
+    for attach_algo in &msg.attach_algo_ords {
+        if attach_algo.attach_algo_cl_ord_id.is_empty() {
+            continue;
+        }
+
+        let attach_client_id = ClientOrderId::new(attach_algo.attach_algo_cl_ord_id.as_str());
+        if report.client_order_id != Some(attach_client_id)
+            && !linked_ids.contains(&attach_client_id)
+        {
+            linked_ids.push(attach_client_id);
+        }
+    }
+
+    if !linked_ids.is_empty() {
+        report = report.with_linked_order_ids(linked_ids);
     }
 
     if let Some(reason) = msg
@@ -1782,7 +1908,9 @@ mod tests {
             testing::load_test_json,
         },
         http::models::OKXAccount,
-        websocket::messages::{OKXAlgoOrderMsg, OKXWebSocketArg, OKXWsMessage},
+        websocket::messages::{
+            OKXAlgoOrderMsg, OKXAttachedAlgoOrd, OKXWebSocketArg, OKXWsMessage,
+        },
     };
 
     fn create_stub_instrument() -> CryptoPerpetual {
@@ -1832,6 +1960,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_1".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("-1.0".to_string()),
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
@@ -2572,6 +2702,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_1".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("-1.0".to_string()), // Total fee so far
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
@@ -2620,6 +2752,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_1".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("-3.0".to_string()), // Same total fee
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
@@ -2705,6 +2839,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_rebate".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("0.5".to_string()), // Rebate: positive value from OKX
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
@@ -2753,6 +2889,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_rebate".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("0.8".to_string()), // Cumulative rebate
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
@@ -2836,6 +2974,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_transition".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("1.0".to_string()), // Rebate from OKX
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
@@ -2886,6 +3026,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_transition".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("-2.0".to_string()), // Now a charge (negative from OKX)
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
@@ -2970,6 +3112,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_neg_inc".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("-2.0".to_string()),
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
@@ -3018,6 +3162,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_order_neg_inc".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("-1.5".to_string()), // Total reduced
             fee_ccy: Ustr::from("USDT"),
             fill_px: "50000.0".to_string(),
@@ -3751,6 +3897,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: String::new(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("-9.75".to_string()),
             fee_ccy: Ustr::from("USDT"),
             fill_px: "39000.0".to_string(),
@@ -4195,6 +4343,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: cl_ord_id.to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: Some("0".to_string()),
             fee_ccy: Ustr::from("USDT"),
             fill_px: String::new(),
@@ -4735,6 +4885,8 @@ mod tests {
             ccy: Ustr::from("USDT"),
             cl_ord_id: "test_ts_order".to_string(),
             algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: None,
+            attach_algo_ords: Vec::new(),
             fee: None,
             fee_ccy: Ustr::from("USDT"),
             fill_px: String::new(),
@@ -4773,6 +4925,80 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_order_status_report_preserves_attached_tp_sl_child_ids() {
+        let instrument = create_stub_instrument();
+        let inst = InstrumentAny::CryptoPerpetual(instrument);
+        let account_id = AccountId::new("OKX-001");
+        let ts_init = UnixNanos::default();
+
+        let msg = OKXOrderMsg {
+            acc_fill_sz: Some("0".to_string()),
+            avg_px: String::new(),
+            c_time: 1706000000000,
+            cancel_source: None,
+            cancel_source_reason: None,
+            category: OKXOrderCategory::Normal,
+            ccy: Ustr::from("USDT"),
+            cl_ord_id: "O-attached-entry".to_string(),
+            algo_cl_ord_id: None,
+            attach_algo_cl_ord_id: Some("O-attached-sl".to_string()),
+            attach_algo_ords: vec![
+                OKXAttachedAlgoOrd {
+                    attach_algo_id: "algo-sl".to_string(),
+                    attach_algo_cl_ord_id: "O-attached-sl".to_string(),
+                    sl_trigger_px: "1500".to_string(),
+                    sl_ord_px: "-1".to_string(),
+                    sl_trigger_px_type: Some(OKXTriggerType::Last),
+                    tp_trigger_px: String::new(),
+                    tp_ord_px: String::new(),
+                    tp_trigger_px_type: None,
+                },
+                OKXAttachedAlgoOrd {
+                    attach_algo_id: "algo-tp".to_string(),
+                    attach_algo_cl_ord_id: "O-attached-tp".to_string(),
+                    sl_trigger_px: String::new(),
+                    sl_ord_px: String::new(),
+                    sl_trigger_px_type: None,
+                    tp_trigger_px: "2500".to_string(),
+                    tp_ord_px: "-1".to_string(),
+                    tp_trigger_px_type: Some(OKXTriggerType::Last),
+                },
+            ],
+            fee: None,
+            fee_ccy: Ustr::from("USDT"),
+            fill_px: String::new(),
+            fill_sz: String::new(),
+            fill_time: 0,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_type: OKXInstrumentType::Swap,
+            lever: String::new(),
+            ord_id: Ustr::from("123456"),
+            ord_type: OKXOrderType::Limit,
+            pnl: String::new(),
+            pos_side: OKXPositionSide::Long,
+            px: "2000.00".to_string(),
+            reduce_only: "false".to_string(),
+            side: OKXSide::Buy,
+            state: OKXOrderStatus::Live,
+            exec_type: OKXExecType::Taker,
+            sz: "0.01".to_string(),
+            td_mode: OKXTradeMode::Cross,
+            tgt_ccy: None,
+            trade_id: String::new(),
+            u_time: 1706000001000,
+        };
+
+        let report = parse_order_status_report(&msg, &inst, account_id, ts_init).unwrap();
+        let linked_order_ids = report
+            .linked_order_ids
+            .expect("expected linked child order ids");
+
+        assert_eq!(linked_order_ids.len(), 2);
+        assert!(linked_order_ids.contains(&ClientOrderId::from("O-attached-sl")));
+        assert!(linked_order_ids.contains(&ClientOrderId::from("O-attached-tp")));
+    }
+
+    #[rstest]
     fn test_parse_algo_order_timestamps_converted_from_ms_to_ns() {
         let instrument = create_stub_instrument();
         let inst = InstrumentAny::CryptoPerpetual(instrument);
@@ -4793,10 +5019,17 @@ mod tests {
             sz: "0.01".to_string(),
             trigger_px: "45000.00".to_string(),
             trigger_px_type: OKXTriggerType::Last,
+            sl_trigger_px: String::new(),
+            sl_ord_px: String::new(),
+            sl_trigger_px_type: OKXTriggerType::None,
+            tp_trigger_px: String::new(),
+            tp_ord_px: String::new(),
+            tp_trigger_px_type: OKXTriggerType::None,
             ord_px: "-1".to_string(),
             td_mode: OKXTradeMode::Cross,
             lever: String::new(),
             reduce_only: "false".to_string(),
+            close_fraction: String::new(),
             actual_px: String::new(),
             actual_sz: String::new(),
             notional_usd: String::new(),
@@ -4833,10 +5066,17 @@ mod tests {
             sz: "0.01".to_string(),
             trigger_px: "95000.00".to_string(),
             trigger_px_type: OKXTriggerType::Last,
+            sl_trigger_px: String::new(),
+            sl_ord_px: String::new(),
+            sl_trigger_px_type: OKXTriggerType::None,
+            tp_trigger_px: String::new(),
+            tp_ord_px: String::new(),
+            tp_trigger_px_type: OKXTriggerType::None,
             ord_px: "-1".to_string(),
             td_mode: OKXTradeMode::Cross,
             lever: String::new(),
             reduce_only: "false".to_string(),
+            close_fraction: String::new(),
             actual_px: String::new(),
             actual_sz: String::new(),
             notional_usd: String::new(),
@@ -4917,6 +5157,65 @@ mod tests {
 
         assert_eq!(report.trigger_type, Some(TriggerType::Default));
         assert_eq!(report.order_type, OrderType::TrailingStopMarket);
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_close_fraction_stop_market_without_sz() {
+        let instrument = create_stub_instrument();
+        let inst = InstrumentAny::CryptoPerpetual(instrument);
+        let account_id = AccountId::new("OKX-001");
+
+        let mut msg = stub_algo_order_msg(OKXAlgoOrderType::Conditional);
+        msg.sz = String::new();
+        msg.trigger_px = String::new();
+        msg.trigger_px_type = OKXTriggerType::None;
+        msg.ord_px = String::new();
+        msg.sl_trigger_px = "50000".to_string();
+        msg.sl_ord_px = "-1".to_string();
+        msg.sl_trigger_px_type = OKXTriggerType::Last;
+        msg.close_fraction = "1".to_string();
+        msg.reduce_only = "true".to_string();
+
+        let report =
+            parse_algo_order_status_report(&msg, &inst, account_id, UnixNanos::default()).unwrap();
+
+        assert_eq!(report.order_type, OrderType::StopMarket);
+        assert_eq!(report.trigger_price, Some(Price::from("50000.00")));
+        assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+        assert_eq!(report.price, None);
+        assert_eq!(report.quantity, Quantity::zero(inst.size_precision()));
+        assert!(report.reduce_only);
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_close_fraction_market_if_touched_without_sz() {
+        let instrument = create_stub_instrument();
+        let inst = InstrumentAny::CryptoPerpetual(instrument);
+        let account_id = AccountId::new("OKX-001");
+
+        let mut msg = stub_algo_order_msg(OKXAlgoOrderType::Conditional);
+        msg.sz = String::new();
+        msg.trigger_px = String::new();
+        msg.trigger_px_type = OKXTriggerType::None;
+        msg.ord_px = String::new();
+        msg.sl_trigger_px = String::new();
+        msg.sl_ord_px = String::new();
+        msg.tp_trigger_px = "50000".to_string();
+        msg.tp_ord_px = "-1".to_string();
+        msg.tp_trigger_px_type = OKXTriggerType::Last;
+        msg.close_fraction = "1".to_string();
+        msg.reduce_only = "true".to_string();
+        msg.side = OKXSide::Buy;
+
+        let report =
+            parse_algo_order_status_report(&msg, &inst, account_id, UnixNanos::default()).unwrap();
+
+        assert_eq!(report.order_type, OrderType::MarketIfTouched);
+        assert_eq!(report.trigger_price, Some(Price::from("50000.00")));
+        assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+        assert_eq!(report.price, None);
+        assert_eq!(report.quantity, Quantity::zero(inst.size_precision()));
+        assert!(report.reduce_only);
     }
 
     fn stub_book_entry(price: &str, size: &str) -> OrderBookEntry {

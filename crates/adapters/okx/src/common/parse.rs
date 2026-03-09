@@ -650,6 +650,32 @@ pub fn parse_order_status_report(
         }
     }
 
+    if let Some(attach_algo_cl_ord_id) = order
+        .attach_algo_cl_ord_id
+        .as_ref()
+        .filter(|value| !value.as_str().is_empty())
+    {
+        let attach_client_id = ClientOrderId::new(attach_algo_cl_ord_id.as_str());
+        match &client_order_id {
+            Some(existing) if existing == &attach_client_id => {}
+            _ if linked_ids.contains(&attach_client_id) => {}
+            _ => linked_ids.push(attach_client_id),
+        }
+    }
+
+    for attach_algo in &order.attach_algo_ords {
+        if attach_algo.attach_algo_cl_ord_id.is_empty() {
+            continue;
+        }
+
+        let attach_client_id = ClientOrderId::new(attach_algo.attach_algo_cl_ord_id.as_str());
+        match &client_order_id {
+            Some(existing) if existing == &attach_client_id => {}
+            _ if linked_ids.contains(&attach_client_id) => {}
+            _ => linked_ids.push(attach_client_id),
+        }
+    }
+
     let venue_order_id = if order.ord_id.is_empty() {
         if let Some(algo_id) = order
             .algo_id

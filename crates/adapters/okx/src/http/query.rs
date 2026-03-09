@@ -32,8 +32,8 @@ use serde::{self, Deserialize, Serialize};
 
 use crate::{
     common::enums::{
-        OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
-        OKXTradeMode,
+        OKXAlgoOrderType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode,
+        OKXPositionSide, OKXTradeMode,
     },
     http::error::BuildError,
 };
@@ -399,7 +399,7 @@ pub struct GetAlgoOrdersParams {
     pub inst_id: Option<String>,
     /// Order type filter (optional).
     #[serde(rename = "ordType", skip_serializing_if = "Option::is_none")]
-    pub ord_type: Option<OKXOrderType>,
+    pub ord_type: Option<OKXAlgoOrderType>,
     /// State filter (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<OKXOrderStatus>,

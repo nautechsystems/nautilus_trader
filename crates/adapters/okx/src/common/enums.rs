@@ -590,6 +590,7 @@ pub enum OKXTakeProfitKind {
     Deserialize,
 )]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
 pub enum OKXTriggerType {
     #[default]
     #[serde(rename = "")]
@@ -607,6 +608,20 @@ impl From<TriggerType> for OKXTriggerType {
             TriggerType::IndexPrice => Self::Index,
             _ => Self::Last,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::OKXTriggerType;
+
+    #[test]
+    fn test_okx_trigger_type_from_str_accepts_snake_case_values() {
+        assert_eq!(OKXTriggerType::from_str("last").unwrap(), OKXTriggerType::Last);
+        assert_eq!(OKXTriggerType::from_str("mark").unwrap(), OKXTriggerType::Mark);
+        assert_eq!(OKXTriggerType::from_str("index").unwrap(), OKXTriggerType::Index);
     }
 }
 
