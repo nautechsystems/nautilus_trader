@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import threading
 import subprocess
 import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,57 @@ def _repo_root() -> Path:
 
 def _read(relative_path: str) -> str:
     return (_repo_root() / relative_path).read_text(encoding="utf-8")
+
+
+class _RolloutHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path == "/lp":
+            body = b"<!doctype html><html><body>lp</body></html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path in {"/api/v1/hedgers/instances", "/api/v1/hedgers/eth_plume_lp"}:
+            body = json.dumps({"ok": True}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == "/api/pulse/jobs":
+            body = json.dumps(
+                {
+                    "jobs": [],
+                    "shell_links": [],
+                    "total": 0,
+                    "active": 0,
+                    "failed": 0,
+                },
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+        return
+
+
+def _run_rollout_check(base_url: str) -> subprocess.CompletedProcess[str]:
+    script = _repo_root() / "ops/scripts/deploy/check_lp_rollout.sh"
+    return subprocess.run(  # noqa: S603
+        ["bash", str(script), "--base-url", base_url],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _run_preflight(
@@ -195,6 +248,20 @@ def test_lp_rollout_check_script_covers_ui_api_and_pulse() -> None:
     assert "/api/v1/hedgers/instances" in script
     assert "/api/v1/hedgers/eth_plume_lp" in script
     assert "/api/pulse/jobs" in script
+
+
+def test_lp_rollout_check_accepts_real_pulse_jobs_payload_shape() -> None:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _RolloutHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = _run_rollout_check(f"http://127.0.0.1:{server.server_port}")
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+    assert result.returncode == 0, result.stderr or result.stdout
 
 
 def test_lp_prod_runbook_documents_go_no_go_and_rollback() -> None:

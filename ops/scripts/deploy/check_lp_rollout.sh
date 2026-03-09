@@ -50,6 +50,25 @@ if payload.get("ok") is not True:
 ' || fail "${path} did not return ok=true JSON"
 }
 
+check_pulse_jobs() {
+  local path="$1"
+  local body
+  body="$(curl -fsS "${BASE_URL}${path}")" || fail "failed to reach ${path}"
+  printf '%s' "$body" | python3 -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+required = {"jobs", "total", "active", "failed"}
+if not isinstance(payload, dict):
+    raise SystemExit(1)
+if missing := sorted(required - set(payload)):
+    raise SystemExit(1)
+if not isinstance(payload["jobs"], list):
+    raise SystemExit(1)
+' || fail "${path} did not return the expected Pulse jobs JSON"
+}
+
 main() {
   while (($# > 0)); do
     case "$1" in
@@ -72,7 +91,7 @@ main() {
   check_html "/lp"
   check_json_ok "/api/v1/hedgers/instances"
   check_json_ok "/api/v1/hedgers/eth_plume_lp"
-  check_json_ok "/api/pulse/jobs"
+  check_pulse_jobs "/api/pulse/jobs"
   echo "[lp-rollout] rollout checks passed against ${BASE_URL}"
 }
 
