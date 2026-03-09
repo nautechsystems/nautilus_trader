@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+import flux.tg_bots.lan_rogue_trader_alert as alert_module
 from flux.tg_bots.lan_rogue_trader_alert import BinancePmClient
 from flux.tg_bots.lan_rogue_trader_alert import JsonStateStore
 from flux.tg_bots.lan_rogue_trader_alert import LanRogueTraderAlertService
@@ -13,6 +14,7 @@ from flux.tg_bots.lan_rogue_trader_alert import MissingAssetError
 from flux.tg_bots.lan_rogue_trader_alert import TelegramNotifier
 from flux.tg_bots.lan_rogue_trader_alert import WatchConfig
 from flux.tg_bots.lan_rogue_trader_alert import WatchState
+from flux.tg_bots.lan_rogue_trader_alert import load_config
 
 
 pytestmark = pytest.mark.unit
@@ -251,3 +253,80 @@ def test_binance_fetch_balance_accepts_single_object_payload() -> None:
     )
 
     assert client.fetch_balance() == Decimal("123.45")
+
+
+def test_build_http_session_configures_source_style_retries() -> None:
+    session = alert_module.build_http_session()
+
+    https_adapter = session.get_adapter("https://papi.binance.com")
+    retries = https_adapter.max_retries
+
+    assert retries.total == 3
+    assert retries.backoff_factor == 0.5
+    assert set(retries.status_forcelist) == {500, 502, 503, 504}
+
+
+def test_load_config_accepts_renamed_section_and_renamed_default_state_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "lan_rogue_trader_alert.ini"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[lan_rogue_trader_alert]",
+                "poll_secs = 60",
+                "cooldown_secs = 300",
+                "binance_base_url = https://papi.binance.com",
+                "asset = USDT",
+                "api_key_env = BINANCE_API_KEY",
+                "api_secret_env = BINANCE_API_SECRET",
+                "account_label = LanSub: traderX",
+                "telegram_bot_token_env = TELEGRAM_BOT_TOKEN",
+                "telegram_chat_id = -100123",
+                "telegram_thread_id = 42",
+                "strict_thread = false",
+                "timezone = Asia/Bangkok",
+                "send_baseline = false",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BINANCE_API_KEY", "k")
+    monkeypatch.setenv("BINANCE_API_SECRET", "s")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+
+    config = load_config(config_path)
+
+    assert config.state_path == Path("state/lan_rogue_trader_alert.json")
+    assert config.telegram_thread_id == 42
+
+
+def test_load_config_accepts_legacy_section_name_for_backwards_compat(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "lan_usdt_watch.ini"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[lan_usdt_watch]",
+                "binance_base_url = https://papi.binance.com",
+                "api_key_env = BINANCE_API_KEY",
+                "api_secret_env = BINANCE_API_SECRET",
+                "account_label = LanSub: traderX",
+                "telegram_bot_token_env = TELEGRAM_BOT_TOKEN",
+                "telegram_chat_id = -100123",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BINANCE_API_KEY", "k")
+    monkeypatch.setenv("BINANCE_API_SECRET", "s")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+
+    config = load_config(config_path)
+
+    assert config.account_label == "LanSub: traderX"

@@ -6,10 +6,9 @@ import argparse
 from pathlib import Path
 from typing import Sequence
 
-import requests
-
 from flux.runners.shared.logging import configure_service_logging
 from flux.tg_bots.lan_rogue_trader_alert import BinancePmClient
+from flux.tg_bots.lan_rogue_trader_alert import build_http_session
 from flux.tg_bots.lan_rogue_trader_alert import JsonStateStore
 from flux.tg_bots.lan_rogue_trader_alert import LanRogueTraderAlertService
 from flux.tg_bots.lan_rogue_trader_alert import TelegramNotifier
@@ -42,7 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.error("Failed to load lan rogue trader alert config: %s", exc)
         return 1
 
-    session = requests.Session()
+    session = build_http_session()
     try:
         client = BinancePmClient(
             base_url=config.binance_base_url,

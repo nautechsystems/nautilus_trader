@@ -19,6 +19,8 @@ from typing import Sequence
 from urllib.parse import urlencode
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 try:
     from zoneinfo import ZoneInfo
@@ -40,6 +42,39 @@ _THREAD_ERR_TOKENS = (
     "thread not found",
     "topic",
 )
+_CONFIG_SECTION_NAME = "lan_rogue_trader_alert"
+_LEGACY_CONFIG_SECTION_NAME = "lan_usdt_watch"
+_DEFAULT_STATE_PATH = Path("state/lan_rogue_trader_alert.json")
+
+
+def _default_http_timeout_seconds() -> float:
+    return float(os.getenv("HTTP_DEFAULT_TIMEOUT", "5"))
+
+
+def build_http_session() -> requests.Session:
+    """Build a local equivalent of the source retrying engine HTTP session."""
+    session = requests.Session()
+    retry = Retry(
+        total=3,
+        backoff_factor=0.5,
+        status_forcelist=(500, 502, 503, 504),
+        allowed_methods=("GET", "POST", "PUT", "DELETE", "PATCH"),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=50)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+
+    default_timeout = _default_http_timeout_seconds()
+    original_request = session.request
+
+    def _timeout_request(method: str, url: str, **kwargs: Any) -> requests.Response:
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = default_timeout
+        return original_request(method, url, **kwargs)
+
+    session.request = _timeout_request  # type: ignore[assignment]
+    return session
 
 
 class MissingAssetError(RuntimeError):
@@ -439,9 +474,14 @@ def load_config(config_path: str | Path | None = None) -> WatchConfig:
     read_files = parser.read(resolved_path)
     if not read_files:
         raise RuntimeError(f"Config file not found: {resolved_path}")
-    if "lan_usdt_watch" not in parser:
-        raise RuntimeError(f"Missing [lan_usdt_watch] section in {resolved_path}")
-    cfg = parser["lan_usdt_watch"]
+    if _CONFIG_SECTION_NAME in parser:
+        cfg = parser[_CONFIG_SECTION_NAME]
+    elif _LEGACY_CONFIG_SECTION_NAME in parser:
+        cfg = parser[_LEGACY_CONFIG_SECTION_NAME]
+    else:
+        raise RuntimeError(
+            f"Missing [{_CONFIG_SECTION_NAME}] or [{_LEGACY_CONFIG_SECTION_NAME}] section in {resolved_path}"
+        )
 
     poll_secs = _get_int(cfg, "poll_secs", 60)
     cooldown_secs = _get_int(cfg, "cooldown_secs", 10800)
@@ -461,7 +501,7 @@ def load_config(config_path: str | Path | None = None) -> WatchConfig:
     thread_id = int(thread_raw) if thread_raw else None
 
     strict_thread = _get_bool(cfg, "strict_thread", False)
-    state_path = Path((cfg.get("state_path") or "state/lan_usdt_watch.json").strip())
+    state_path = Path((cfg.get("state_path") or str(_DEFAULT_STATE_PATH)).strip())
     emergency_bypass = _get_decimal(cfg, "emergency_bypass_usdt", Decimal("0"))
     timezone_name = (cfg.get("timezone") or "Asia/Bangkok").strip() or "Asia/Bangkok"
     send_baseline = _get_bool(cfg, "send_baseline", True)
@@ -652,6 +692,7 @@ def _load_secret(env_key: str) -> str:
 
 __all__ = [
     "BinancePmClient",
+    "build_http_session",
     "JsonStateStore",
     "LanRogueTraderAlertService",
     "MissingAssetError",
