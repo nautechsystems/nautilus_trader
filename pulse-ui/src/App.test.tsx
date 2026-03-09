@@ -54,7 +54,7 @@ const jobsPayload = {
       group_order: 10,
       description: "TokenMM Bridge",
       cmd: "python -m flux.runners.tokenmm.run_bridge",
-      errors: { count: 1, last_seen: null, preview: "ERROR something bad" },
+      errors: { count: 1, last_seen: "2026-03-06T19:20:49+00:00", preview: "ERROR something bad" },
     },
   ],
   shell_links: shellLinks("tokenmm"),
@@ -212,6 +212,47 @@ describe("App", () => {
     });
   });
 
+  it("opens the error preview in error-focused mode and shows the error recency", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/pulse/jobs")) {
+        return new Response(JSON.stringify(jobsPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/pulse/jobs/tokenmm-bridge/logs")) {
+        return new Response(
+          [
+            "2026-03-06T19:20:48+00:00 host flux-tokenmm-bridge[237388]: INFO booting",
+            "2026-03-06T19:20:49+00:00 host flux-tokenmm-bridge[237388]: ERROR first failure",
+            "2026-03-06T19:20:50+00:00 host flux-tokenmm-bridge[237388]: WARNING retrying",
+            "2026-03-06T19:20:51+00:00 host flux-tokenmm-bridge[237388]: CRITICAL latest failure",
+          ].join("\n"),
+          { status: 200 },
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText("tokenmm-bridge")).toBeInTheDocument();
+    expect(screen.getByText(/Mar 06/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /view latest error tokenmm-bridge/i }));
+
+    const logsDialog = await screen.findByRole("dialog", { name: /logs for tokenmm-bridge/i });
+
+    expect(within(logsDialog).getByRole("button", { name: "Error" })).toHaveClass("button--active");
+    expect(within(logsDialog).getByText("Showing 2 of 4 lines")).toBeInTheDocument();
+    expect(within(logsDialog).getByText(/ERROR first failure/)).toBeInTheDocument();
+    expect(within(logsDialog).getByText(/CRITICAL latest failure/)).toBeInTheDocument();
+    expect(within(logsDialog).queryByText(/INFO booting/)).not.toBeInTheDocument();
+  });
+
   it("surfaces backend group-action failures instead of treating them as success", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -251,6 +292,154 @@ describe("App", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "restarted 0 jobs in group 'tokenmm': tokenmm-bridge: sudo: The \"no new privileges\" flag is set. (+1 more)",
     );
+  });
+
+  it("disables group action buttons while the request is in flight", async () => {
+    let resolveGroupAction: ((value: Response | PromiseLike<Response>) => void) | undefined;
+    const groupActionResponse = new Promise<Response>((resolve) => {
+      resolveGroupAction = resolve;
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/pulse/jobs")) {
+        return new Response(JSON.stringify(jobsPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/pulse/jobs/group/tokenmm/restart")) {
+        return groupActionResponse;
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("TokenMM");
+
+    const startButton = screen.getByRole("button", { name: /start all tokenmm/i });
+    const stopButton = screen.getByRole("button", { name: /stop all tokenmm/i });
+    const restartButton = screen.getByRole("button", { name: /restart all tokenmm/i });
+
+    expect(startButton).toBeEnabled();
+    expect(stopButton).toBeEnabled();
+    expect(restartButton).toBeEnabled();
+
+    await userEvent.click(restartButton);
+
+    await waitFor(() => {
+      expect(startButton).toBeDisabled();
+      expect(stopButton).toBeDisabled();
+      expect(restartButton).toBeDisabled();
+    });
+
+    resolveGroupAction?.(
+      new Response(
+        JSON.stringify({
+          success: true,
+          message: "restarted 1 jobs in group 'tokenmm'",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    expect(await screen.findByRole("status")).toHaveTextContent("restarted 1 jobs in group 'tokenmm'");
+  });
+
+  it("includes pending and deferred details in group-action success feedback", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/pulse/jobs")) {
+        return new Response(JSON.stringify(jobsPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/pulse/jobs/group/tokenmm/restart")) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "restarted 1 jobs in group 'tokenmm'",
+            pending: true,
+            deferred: ["tokenmm-api"],
+          }),
+          {
+            status: 202,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("TokenMM");
+    await userEvent.click(screen.getByRole("button", { name: /restart all tokenmm/i }));
+
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("restarted 1 jobs in group 'tokenmm'");
+    expect(status).toHaveTextContent(/pending/i);
+    expect(status).toHaveTextContent("tokenmm-api");
+  });
+
+  it("does not submit duplicate group actions while the first request is outstanding", async () => {
+    let resolveGroupAction: ((value: Response | PromiseLike<Response>) => void) | undefined;
+    const groupActionResponse = new Promise<Response>((resolve) => {
+      resolveGroupAction = resolve;
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/pulse/jobs")) {
+        return new Response(JSON.stringify(jobsPayload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/pulse/jobs/group/tokenmm/restart")) {
+        expect(init?.method).toBe("POST");
+        return groupActionResponse;
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByText("TokenMM");
+
+    const restartButton = screen.getByRole("button", { name: /restart all tokenmm/i });
+    await userEvent.click(restartButton);
+    await userEvent.click(restartButton);
+
+    expect(
+      fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/api/pulse/jobs/group/tokenmm/restart")),
+    ).toHaveLength(1);
+
+    resolveGroupAction?.(
+      new Response(
+        JSON.stringify({
+          success: true,
+          message: "restarted 1 jobs in group 'tokenmm'",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    expect(await screen.findByRole("status")).toHaveTextContent("restarted 1 jobs in group 'tokenmm'");
   });
 
   it("does not treat Ctrl+A as the auto-refresh shortcut", async () => {

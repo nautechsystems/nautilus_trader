@@ -9,6 +9,7 @@ interface JobRowProps {
   busy: boolean;
   onAction: (jobId: string, action: "start" | "stop" | "restart") => void;
   onViewLogs: (job: Job) => void;
+  onViewError: (job: Job) => void;
 }
 
 function formatTimestamp(timestamp: string | null | undefined): string {
@@ -30,7 +31,7 @@ function formatTimestamp(timestamp: string | null | undefined): string {
   }).format(parsed);
 }
 
-export function JobRow({ job, busy, onAction, onViewLogs }: JobRowProps) {
+export function JobRow({ job, busy, onAction, onViewLogs, onViewError }: JobRowProps) {
   const jobId = job.id || job.name;
   const status = job.status || job.state || "inactive";
   const canStart = status === "inactive" || status === "failed";
@@ -58,9 +59,16 @@ export function JobRow({ job, busy, onAction, onViewLogs }: JobRowProps) {
               tone={job.errors.count === 0 ? "success" : "danger"}
             />
             {job.errors.preview ? (
-              <span className="job-row__secondary" title={job.errors.preview}>
+              <button
+                type="button"
+                className="job-row__secondary job-row__secondary-button"
+                title={job.errors.preview}
+                onClick={() => onViewError(job)}
+                disabled={busy}
+                aria-label={`View latest error ${job.name}`}
+              >
                 {job.errors.preview}
-              </span>
+              </button>
             ) : null}
             {job.errors.last_seen ? (
               <span className="job-row__secondary">{formatTimestamp(job.errors.last_seen)}</span>

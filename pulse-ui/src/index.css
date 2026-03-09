@@ -322,6 +322,26 @@ a {
   background: rgba(47, 155, 116, 0.18);
 }
 
+.button--active {
+  border-color: rgba(95, 122, 195, 0.42);
+  background: var(--info-soft);
+  color: #c8d4f5;
+}
+
+.button__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font-size: 11px;
+  line-height: 1;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -507,6 +527,26 @@ a {
   white-space: nowrap;
 }
 
+.job-row__secondary-button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f0b0b7;
+  text-align: left;
+  cursor: pointer;
+}
+
+.job-row__secondary-button:hover:not(:disabled) {
+  color: #ffd1d6;
+  text-decoration: underline;
+}
+
+.job-row__secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .error-stack {
   display: flex;
   flex-direction: column;
@@ -632,6 +672,46 @@ a {
   box-shadow: inset 0 0 0 1px rgba(120, 136, 160, 0.08);
 }
 
+.log-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.log-toolbar__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.log-toolbar__window {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.log-toolbar__window select {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-alt);
+  color: var(--text-primary);
+}
+
+.log-toolbar__summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
 .log-output {
   margin: 0;
   color: #d9e1ec;
@@ -640,6 +720,32 @@ a {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.log-output__line {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.log-output__line--error {
+  color: #ffb4bb;
+}
+
+.log-output__line--warning {
+  color: #f0c07c;
+}
+
+.log-output__line--info {
+  color: #d9e1ec;
+}
+
+.log-output__line--other {
+  color: #b7bfca;
+}
+
+.log-output__line--targeted {
+  background: rgba(215, 95, 106, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(215, 95, 106, 0.24);
 }
 
 .spin {

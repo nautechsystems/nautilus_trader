@@ -12,6 +12,7 @@ interface JobGroupProps {
   onAction: (jobId: string, action: "start" | "stop" | "restart") => void;
   onGroupAction: (groupKey: string, action: "start" | "stop" | "restart") => void;
   onViewLogs: (job: Job) => void;
+  onViewError: (job: Job) => void;
 }
 
 export function JobGroup({
@@ -22,6 +23,7 @@ export function JobGroup({
   onAction,
   onGroupAction,
   onViewLogs,
+  onViewError,
 }: JobGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const activeCount = jobs.filter((job) => (job.status || job.state) === "active").length;
@@ -88,6 +90,7 @@ export function JobGroup({
               busy={busyJobIds.has(job.id || job.name)}
               onAction={onAction}
               onViewLogs={onViewLogs}
+              onViewError={onViewError}
             />
           ))}
     </>

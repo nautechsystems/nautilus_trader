@@ -5,12 +5,14 @@ import { calculateStats, getJobs, groupJobs, performGroupAction, performJobActio
 import { JobGroup } from "./components/JobGroup";
 import { LogsModal } from "./components/LogsModal";
 import { TopBar } from "./components/TopBar";
+import type { LogFilter } from "./logs";
 import { REFRESH_INTERVAL_MS } from "./theme";
 
 interface OpenLogsState {
   jobId: string;
   jobName: string;
   jobCmd?: string | null;
+  initialFilter?: LogFilter;
 }
 
 interface ActionResult {
@@ -249,6 +251,15 @@ export default function App() {
                       jobId: jobIdOf(job),
                       jobName: job.name,
                       jobCmd: job.cmd,
+                      initialFilter: "ALL",
+                    })
+                  }
+                  onViewError={(job) =>
+                    setOpenLogs({
+                      jobId: jobIdOf(job),
+                      jobName: job.name,
+                      jobCmd: job.cmd,
+                      initialFilter: "ERROR",
                     })
                   }
                 />
@@ -266,6 +277,7 @@ export default function App() {
           jobId={openLogs.jobId}
           jobName={openLogs.jobName}
           jobCmd={openLogs.jobCmd}
+          initialFilter={openLogs.initialFilter}
           onClose={() => setOpenLogs(null)}
         />
       ) : null}
