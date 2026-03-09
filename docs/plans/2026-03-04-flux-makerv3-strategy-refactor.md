@@ -215,7 +215,8 @@ Progress log:
 - 2026-03-04: User-requested docstring coverage hardening completed for new `makerv3` production modules/exports and verified with targeted `ruff check --select D` against touched strategy files.
 - 2026-03-04: Task 12 completed (fill reconciliation determinism: `on_order_filled` reconciles managed tracking without cache-closed timing; covered by a new unit test).
 - 2026-03-04: Quality hardening (post-plan): extracted `quote_engine.py` to reduce `strategy.py` size, and split/renamed strategy unit tests to remove legacy `single_leg_quoter` naming.
-- 2026-03-04: Docs added at `docs/flux/makerv3.md` (architecture, invariants, and ops playbook).
+- 2026-03-04: Docs added at `systems/flux/docs/makerv3.md` (architecture, invariants, and ops playbook).
+  The document now lives under `systems/flux/docs/` after the monorepo ownership split.
 - 2026-03-04: Review fixes applied (timer-side stale-data enforcement on feed silence, tracked IDs preserved on empty snapshots, NaN/Infinity rejected in pricing/rebalancing, restart latch reset + distinct instrument validation, docs topic drift corrected).
 
 ---

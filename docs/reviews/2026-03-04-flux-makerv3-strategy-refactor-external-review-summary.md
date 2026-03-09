@@ -85,4 +85,5 @@ All commands below were run with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`.
 All plan checklist items are now complete:
 
 - fill reconciliation/tracking determinism follow-up completed (managed tracking reconciles on fills without cache timing),
-- strategy architecture/invariants/ops-playbook documentation added at `docs/flux/makerv3.md`.
+- strategy architecture/invariants/ops-playbook documentation added at `systems/flux/docs/makerv3.md`.
+  This document moved under `systems/flux/docs/` during the monorepo ownership split.
