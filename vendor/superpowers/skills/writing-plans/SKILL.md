@@ -33,7 +33,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 ```markdown
 # [Feature Name] Implementation Plan
 
-> **For the execution agent:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For the execution agent:** REQUIRED SUB-SKILL: Before implementing this plan, choose exactly one execution mode and use the matching skill: `superpowers:subagent-driven-development` for same-session execution or `superpowers:executing-plans` for a separate-session handoff.
 > **Progress:** The Progress Tracker in this document is the execution source of truth and must be updated on every state change.
 
 **Goal:** [One sentence describing what this builds]
