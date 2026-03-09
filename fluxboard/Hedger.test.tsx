@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -232,6 +234,13 @@ describe('Hedger layout', () => {
     const selector = await screen.findByLabelText(/Hedger/i);
     await user.selectOptions(selector, 'hype_usdt_lp');
     expect(editButton).not.toBeDisabled();
+  });
+
+  it('documents the intentional monorepo lp deltas from Chainsaw', () => {
+    const contract = readFileSync(resolve(process.cwd(), 'docs/lp_contract.md'), 'utf-8');
+
+    expect(contract).toContain('non-ETH hedgers use the same generic by-ID operator controls');
+    expect(contract).toContain('Edit Config remains available for ETH/PLUME Band1 and Band2 on `/lp`');
   });
 
   it('allows disabling hedging for token1 in the config drawer', async () => {

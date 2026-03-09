@@ -53,3 +53,8 @@ Each LP hedger uses the same Redis family keyed by `<state_key>`:
 - `LP_API_BACKEND_URL=http://127.0.0.1:5025` remains the hidden backend contract.
 - Band1 and Band2 are the only active checked-in production instances during rollout.
 - The shared surface must keep the Chainsaw-visible controls available: instance selector, state pills, restart, enable/disable, config editing, geometry overrides, threshold overrides, and recent-hedges clear.
+
+## Intentional monorepo deltas versus Chainsaw
+
+- non-ETH hedgers use the same generic by-ID operator controls for geometry overrides, threshold overrides, enable/disable, and recent-hedges clear.
+- Edit Config remains available for ETH/PLUME Band1 and Band2 on `/lp`, even though Chainsaw limited that control more narrowly; target values still remain config-driven.

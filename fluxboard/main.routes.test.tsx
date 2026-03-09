@@ -120,6 +120,16 @@ describe('main route builder', () => {
     expect(buildTokenmmAliasTarget('alerts/deep/path')).toBe('/tokenmm/alerts/deep/path');
   });
 
+  it('treats /lp as the lp hedger home surface', () => {
+    const routes = buildFluxboardChildRoutes(getUiSurface('lp'), {
+      includeScannersHarness: false,
+      fallbackPath: '/lp',
+    });
+
+    expect(routes[0]?.element).toBeTruthy();
+    expect(getUiSurface('lp').homeRoutePath).toBe('/hedger');
+  });
+
   it('preserves query and hash in tokenm alias redirect', () => {
     expect(buildTokenmmAliasTarget('signal', '?foo=1', '#section')).toBe('/tokenmm/signal?foo=1#section');
     expect(buildTokenmmAliasTarget(undefined, '?foo=1', '#section')).toBe('/tokenmm?foo=1#section');

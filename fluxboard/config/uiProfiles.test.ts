@@ -105,6 +105,7 @@ describe('uiProfiles', () => {
 
   it('exposes dedicated lp hedger surface', () => {
     const surface = getUiSurface('lp');
+    expect(surface.homeRoutePath).toBe('/hedger');
     expect(surface.routePaths).toEqual(['/', '/hedger']);
     expect(surface.navLinks).toEqual([{ path: '/', label: 'Hedger' }]);
     expect(surface.externalLinks).toEqual([]);
