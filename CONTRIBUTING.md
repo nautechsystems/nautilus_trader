@@ -19,10 +19,11 @@ Keep changes aligned with the repo ownership model.
 6. Put developer, CI, and release automation in `tooling/`.
 7. Put experiments and notebooks in `research/`.
 8. Update the relevant docs whenever you move ownership boundaries, change contracts, or introduce compatibility shims.
+9. Reference canonical `apps/*`, `ops/*`, and `tooling/*` paths in docs and workflows even when compatibility mirrors still exist.
 
 ## Structural migration rule
 
-If a legacy path still exists for compatibility, do not add new implementation there. Update the canonical location and adjust the compatibility bridge only when needed.
+If a legacy path still exists for compatibility, do not add new implementation there. Update the canonical location and adjust the compatibility bridge only when needed. `scripts/*` helper paths are compatibility shims only, and the repo-root app directories remain mirrored worktrees behind the `apps/*` entrypoints.
 
 ## Review guidance
 

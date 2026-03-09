@@ -19,11 +19,11 @@ This repository is the working monorepo for the trading stack.
 
 ## Canonical paths
 
-- Use `systems/flux/docs/` for Flux durable docs.
-- Use `apps/fluxboard/docs/` for Fluxboard-owned docs and runbooks.
-- Use `ops/scripts/deploy/` for deploy and local stack scripts.
-- Use `tooling/` for dev, CI, and release automation.
+- Use `systems/flux/flux/` for Flux runtime code and `systems/flux/docs/` for durable Flux docs.
+- Use `apps/fluxboard/docs/` for Fluxboard-owned docs and runbooks. `apps/fluxboard` currently resolves to the existing top-level `fluxboard/` tree.
+- Use `ops/scripts/` for operational scripts such as TokenMM risk audits and deploy helpers.
+- Use `tooling/dev/`, `tooling/ci/`, and `tooling/release/` for version, CI, and release helpers.
 
 ## Migration note
 
-Legacy root paths remain available while the repo transitions to the new structure. New work should prefer the canonical domains listed above.
+Legacy root paths remain available while the repo transitions to the new structure. New work should update the canonical `systems/`, `apps/`, `ops/`, and `tooling/` locations first, then adjust compatibility shims only when needed.

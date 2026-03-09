@@ -33,6 +33,8 @@ def test_tokenmm_risk_validation_runbook_documents_authoritative_checks_and_roll
     assert "TokenMM group restarted cleanly through Pulse" in runbook
     assert "partial vs strict" in runbook
     assert "startup reconciliation" in runbook
+    assert "python ops/scripts/tokenmm_risk_audit.py" in runbook
+    assert "python scripts/ops/tokenmm_risk_audit.py" not in runbook
 
     assert "docs/runbooks/tokenmm-risk-validation.md" in deploy_readme
     assert "docs/runbooks/tokenmm-risk-validation.md" in strategies_readme
@@ -42,7 +44,13 @@ def test_tokenmm_risk_validation_runbook_documents_authoritative_checks_and_roll
 def test_tokenmm_risk_audit_script_checks_canonical_endpoints_and_reconciliation_failures() -> (
     None
 ):
-    script = _read(_repo_root() / "scripts/ops/tokenmm_risk_audit.py")
+    canonical_script = _repo_root() / "ops/scripts/tokenmm_risk_audit.py"
+    compatibility_shim = _repo_root() / "scripts/ops/tokenmm_risk_audit.py"
+    script = _read(canonical_script)
+
+    assert canonical_script.is_file()
+    assert compatibility_shim.is_symlink()
+    assert compatibility_shim.resolve() == canonical_script.resolve()
 
     assert "/api/v1/signals?profile=tokenmm" in script
     assert "/api/v1/balances?profile=tokenmm" in script

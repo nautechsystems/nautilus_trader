@@ -6,7 +6,7 @@ trading.
 
 Use it together with `deploy/tokenmm/README.md`,
 `deploy/tokenmm/strategies/README.md`, and
-`fluxboard/docs/tokenmm_contract.md`.
+`apps/fluxboard/docs/tokenmm_contract.md`.
 
 ## What local risk and global risk mean
 
@@ -41,8 +41,11 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/signals?profile=tokenmm'
 curl -fsS 'http://127.0.0.1:5022/api/v1/balances?profile=tokenmm'
 curl -fsS 'http://127.0.0.1:5022/api/v1/balances?strategy=plumeusdt_bybit_perp_makerv3'
 curl -fsS 'http://127.0.0.1:5022/api/pulse/jobs'
-python scripts/ops/tokenmm_risk_audit.py --base-url http://127.0.0.1:5022
+python ops/scripts/tokenmm_risk_audit.py --base-url http://127.0.0.1:5022
 ```
+
+Treat `scripts/ops/tokenmm_risk_audit.py` as a compatibility shim only. The
+authoritative operator entrypoint lives under `ops/scripts/`.
 
 ## Single-strategy review
 
